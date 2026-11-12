@@ -134,12 +134,7 @@ describe('LandingPage', () => {
     expect(html).not.toContain('What changed');
     expect(html).not.toContain('Who owns the next step');
     expect(html).not.toContain('Link to the source');
-    expect(html).toContain('data-first-run="full"');
-    expect(html).toContain('Your first team is created');
-    expect(html).toContain('Bring something in');
-    expect(html).toContain(
-      'Scan a website, upload a document, forward an email, or connect Slack or Telegram.',
-    );
+    expect(html).not.toContain('data-first-run="full"');
     expect(html).not.toContain('direct chat');
     expect(html).not.toContain('Screenshot placeholder');
     expect(html).not.toContain('data-home-ambient');

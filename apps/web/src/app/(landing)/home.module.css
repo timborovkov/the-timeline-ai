@@ -2163,33 +2163,39 @@
   flex: 0 0 auto;
 }
 
-.ctaScene {
-  display: grid;
-  place-items: center;
-  text-align: center;
+.scene.ctaScene {
+  padding-block: 2rem;
+  text-align: left;
 }
-
 .ctaInner {
   display: grid;
-  justify-items: center;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.55fr);
+  align-items: center;
+  gap: 1.5rem 3rem;
+  padding: clamp(1.5rem, 3vw, 3rem);
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
 }
-
 .ctaInner h2 {
-  max-width: 18ch;
-  margin-block: 0.6rem 1rem;
-  font-size: clamp(3rem, 5.5vw, 5.5rem);
-  line-height: 1.08;
+  max-width: 25ch;
+  margin-block: 0.75rem;
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  line-height: 1.12;
 }
-
-.ctaInner > p {
+.ctaCopy > p {
   max-width: 39rem;
   color: var(--home-muted);
-  font-size: 1.05rem;
-  line-height: 1.65;
+  font-size: 1rem;
+  line-height: 1.6;
 }
-
+.ctaActions {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
 .ctaInner .primaryCta {
-  margin-top: 1.25rem;
+  margin-top: 0;
 }
 
 .ctaSignIn {
@@ -2218,9 +2224,10 @@
 .ctaProof {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  grid-column: 1 / -1;
+  justify-content: flex-start;
   gap: 0.45rem;
-  margin-top: 3rem;
+  margin-top: 0;
 }
 
 .ctaProof span {
@@ -3116,8 +3123,13 @@
     padding: 1rem 1.25rem;
   }
 
+  .ctaInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
   .ctaInner h2 {
-    font-size: clamp(2.25rem, 10vw, 3.5rem);
+    font-size: clamp(1.75rem, 7vw, 2.5rem);
   }
 
   .footer {

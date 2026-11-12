@@ -362,3 +362,8 @@ The six-use-case overview sits immediately after the homepage hero and before
 walkthrough. It appears once; the later audience section retains the daily-update
 screenshot and trust flow. The overview is unnumbered navigation within the
 existing seven-scene narrative.
+
+The closing CTA is a compact bordered panel: copy and action alongside each
+other on desktop, stacked on mobile. Keep the action near the headline and omit
+the repeated first-run walkthrough, which otherwise reserves blank space for
+signed-in visitors. Trust labels sit directly below, without a large spacer.

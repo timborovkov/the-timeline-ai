@@ -27,7 +27,6 @@ import {
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
-import { FirstRunPath } from '@/components/marketing/first-run-path';
 import { CitedAnswer } from '@/components/marketing/home/cited-answer';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import {
@@ -647,50 +646,53 @@ function CtaScene() {
       data-scene="07-start"
     >
       <div className={styles.ctaInner}>
-        <SceneIndex number="07" label="Start free" />
-        <h2 id="cta-title">
-          Link one channel. Watch the <em>record</em> fill in.
-        </h2>
-        <p>
-          Bring in your first source, then read the daily update or approve the suggested updates.
-        </p>
-        <FirstRunPath showNote={false} />
-        <PublicSessionBranch
-          signedOut={
-            <Link
-              href="/sign-up"
-              data-public-analytics-cta="start_free"
-              className={styles.primaryCta}
-            >
-              {START_FREE_LABEL} <span aria-hidden>→</span>
-            </Link>
-          }
-          signedIn={
-            <Link
-              href="/app"
-              data-public-analytics-cta="open_dashboard"
-              className={styles.primaryCta}
-            >
-              Open your Timeline <span aria-hidden>→</span>
-            </Link>
-          }
-        />
-        <PublicSessionBranch
-          signedOut={
-            <>
-              <p className={styles.ctaFinePrint}>
-                {CTA_MICROCOPY_LEAD}{' '}
-                <Link href="/pricing" className={styles.textLink}>
-                  See pricing
-                </Link>
-              </p>
-              <span className={styles.ctaSignIn}>
-                Already have a Timeline? <Link href="/sign-in">Sign in</Link>
-              </span>
-            </>
-          }
-          signedIn={null}
-        />
+        <div className={styles.ctaCopy}>
+          <SceneIndex number="07" label="Start free" />
+          <h2 id="cta-title">
+            Link one channel. Watch the <em>record</em> fill in.
+          </h2>
+          <p>
+            Bring in your first source, then read the daily update or approve the suggested updates.
+          </p>
+        </div>
+        <div className={styles.ctaActions}>
+          <PublicSessionBranch
+            signedOut={
+              <Link
+                href="/sign-up"
+                data-public-analytics-cta="start_free"
+                className={styles.primaryCta}
+              >
+                {START_FREE_LABEL} <span aria-hidden>→</span>
+              </Link>
+            }
+            signedIn={
+              <Link
+                href="/app"
+                data-public-analytics-cta="open_dashboard"
+                className={styles.primaryCta}
+              >
+                Open your Timeline <span aria-hidden>→</span>
+              </Link>
+            }
+          />
+          <PublicSessionBranch
+            signedOut={
+              <>
+                <p className={styles.ctaFinePrint}>
+                  {CTA_MICROCOPY_LEAD}{' '}
+                  <Link href="/pricing" className={styles.textLink}>
+                    See pricing
+                  </Link>
+                </p>
+                <span className={styles.ctaSignIn}>
+                  Already have a Timeline? <Link href="/sign-in">Sign in</Link>
+                </span>
+              </>
+            }
+            signedIn={null}
+          />
+        </div>
         <div className={styles.ctaProof} aria-label="Timeline trust defaults">
           <span>Captured</span>
           <span>Chronological</span>
