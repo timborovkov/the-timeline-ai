@@ -41,7 +41,7 @@ describe('LandingPage', () => {
     expect(html.match(/>Source on GitHub</g)).toHaveLength(2);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Your team&#x27;s work, <em>written down for you</em>');
+    expect(html).toContain('Your team&#x27;s work, <em>written</em> down for you');
     expect(html).toContain(
       'Your team&#x27;s work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.',
     );
@@ -101,7 +101,7 @@ describe('LandingPage', () => {
     expect(html).toContain('llms.txt');
     expect(html).not.toContain('>AI assistants<');
     expect(html).toContain('what did we promise Northstar');
-    expect(html).toContain('Ask in Slack. An agent can ask <em>the same record.</em>');
+    expect(html).toContain('Ask in Slack. An agent can ask the same <em>record.</em>');
     expect(html).toContain('timeline.subject');
     expect(html).toContain('<code>timeline.get</code>');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
@@ -113,7 +113,7 @@ describe('LandingPage', () => {
     expect(html).not.toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Telegram group message');
-    expect(html).toContain('Built for teams that run their work <em>through chat.</em>');
+    expect(html).toContain('Built for teams that run their work through <em>chat.</em>');
     expect(html).toContain('href="/use-cases/work-record"');
     expect(html).toContain('href="/use-cases/team-daily-log"');
     expect(html).toContain('href="/use-cases/crm"');
@@ -252,12 +252,12 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'Your team&#x27;s work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.',
     );
-    expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
+    expect(html).toContain('Link one channel. Watch the <em>record</em> fill in.');
     expect(html).toContain('approve the suggested updates');
     expect(html).toContain(
       'Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology.',
     );
-    expect(html).toContain('Everything lands on <em>one timeline.</em>');
+    expect(html).toContain('Everything lands on one <em>timeline.</em>');
     expect(html).toContain('Search it by person, client or source.');
     expect(html).toContain('Get a status or handoff brief without retracing every conversation.');
     expect(html).toContain(
@@ -266,7 +266,7 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'Replace manual CRM and task-board entry with suggested updates from your conversations.',
     );
-    expect(html).toContain('ready for your review.');
+    expect(html).toContain('ready for your <em>review.</em>');
     expect(html).not.toContain('update themselves');
     expect(html).toContain('Ingest webhooks');
     expect(html).not.toContain('A direct chat asks the agent');

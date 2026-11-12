@@ -180,16 +180,16 @@
 .heroTitle,
 .sceneHeading h2,
 .ctaInner h2 {
-  font-weight: 600;
-  letter-spacing: -0.075em;
+  font-weight: 500;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
 .heroTitle {
   max-width: 18ch;
   margin-block: 0.85rem 1rem;
-  font-size: clamp(3.1rem, 6.6vw, 6.4rem);
-  line-height: 0.9;
+  font-size: clamp(3rem, 5.5vw, 5.5rem);
+  line-height: 1.08;
 }
 
 .heroTitle em,
@@ -1110,10 +1110,10 @@
 }
 
 .sceneHeading h2 {
-  max-width: 14ch;
+  max-width: 20ch;
   margin: 0;
-  font-size: clamp(3.1rem, 6.9vw, 7.2rem);
-  line-height: 0.88;
+  font-size: clamp(2.75rem, 5vw, 5rem);
+  line-height: 1.08;
 }
 
 .sceneHeading > div > p {
@@ -1219,10 +1219,10 @@
 
 .threadHeading {
   max-width: 16ch;
-  font-size: clamp(2.4rem, 5vw, 4.4rem);
+  font-size: clamp(2.25rem, 4vw, 3.75rem);
   font-weight: 600;
-  letter-spacing: -0.06em;
-  line-height: 0.96;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
   text-wrap: balance;
 }
 
@@ -1468,8 +1468,8 @@
   margin-top: 0.8rem;
   font-size: clamp(1.8rem, 3.1vw, 3.4rem);
   font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.055em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 
@@ -1837,8 +1837,8 @@
   margin-top: 1rem;
   font-size: clamp(2rem, 3.4vw, 3.6rem);
   font-weight: 600;
-  line-height: 0.98;
-  letter-spacing: -0.055em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 
@@ -1926,8 +1926,8 @@
   max-width: 15ch;
   font-size: clamp(2.1rem, 4.2vw, 4.6rem);
   font-weight: 600;
-  line-height: 0.96;
-  letter-spacing: -0.06em;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 
@@ -2034,8 +2034,8 @@
   max-width: 18ch;
   font-size: clamp(2rem, 3vw, 3.25rem);
   font-weight: 600;
-  line-height: 0.97;
-  letter-spacing: -0.055em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
 }
 
 .connectorPanel > header p {
@@ -2239,10 +2239,10 @@
 }
 
 .ctaInner h2 {
-  max-width: 11ch;
+  max-width: 18ch;
   margin-block: 0.6rem 1rem;
-  font-size: clamp(4rem, 9vw, 9rem);
-  line-height: 0.82;
+  font-size: clamp(3rem, 5.5vw, 5.5rem);
+  line-height: 1.08;
 }
 
 .ctaInner > p {
@@ -2388,8 +2388,8 @@
   margin-block: 1.5rem 2rem;
   font-size: clamp(3.8rem, 7.5vw, 7.5rem);
   font-weight: 600;
-  line-height: 0.84;
-  letter-spacing: -0.075em;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
@@ -3020,7 +3020,7 @@
   }
 
   .sceneHeading h2 {
-    font-size: clamp(3rem, 16.5vw, 5rem);
+    font-size: clamp(2rem, 9vw, 3.25rem);
   }
 
   .memoryCore {
@@ -3184,7 +3184,7 @@
   }
 
   .ctaInner h2 {
-    font-size: clamp(3.7rem, 18vw, 6rem);
+    font-size: clamp(2.25rem, 10vw, 3.5rem);
   }
 
   .footer {

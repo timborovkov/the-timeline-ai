@@ -66,7 +66,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
-            <h1 className="max-w-[15ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
+            <h1 className="max-w-[15ch] break-words text-balance text-[3rem] font-semibold leading-[1.1] tracking-[-0.03em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               {connector.hero}
             </h1>
           </div>

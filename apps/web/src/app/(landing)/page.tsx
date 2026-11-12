@@ -200,7 +200,7 @@ function ClaimScene() {
       <div className={styles.heroCopy}>
         <SceneIndex number="01" label="The auto-updating work record" />
         <h1 id="claim-title" className={styles.heroTitle}>
-          Your team's work, <em>written down for you</em>
+          Your team's work, <em>written</em> down for you
         </h1>
         <p className={styles.heroIntro}>{HERO_INTRO}</p>
         <div className={styles.heroActions}>
@@ -270,7 +270,7 @@ function IntakeScene() {
         id="intake-title"
         title={
           <>
-            Bring the work in. <em>Keep the context.</em>
+            Bring the work in. Keep the <em>context.</em>
           </>
         }
         copy="Connect the tools you use, forward email, upload documents, or scan a public website."
@@ -330,7 +330,7 @@ function TimelineScene() {
         id="timeline-title"
         title={
           <>
-            Everything lands on <em>one timeline.</em>
+            Everything lands on one <em>timeline.</em>
           </>
         }
         copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
@@ -445,7 +445,7 @@ function AnswerScene() {
       <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
       <div className={styles.threadBlock} id="chat-to-answer">
         <h2 className={styles.threadHeading}>
-          Ask in Slack. An agent can ask <em>the same record.</em>
+          Ask in Slack. An agent can ask the same <em>record.</em>
         </h2>
         <p className={styles.threadLead}>
           Someone asks @Timeline in Slack. The bot answers with numbered citations back to the call
@@ -554,7 +554,7 @@ function OrganisedScene() {
         id="organised-title"
         title={
           <>
-            Clients and to-dos, <em>ready for your review.</em>
+            Clients and to-dos, ready for your <em>review.</em>
           </>
         }
         copy="Replace manual CRM and task-board entry with suggested updates from your conversations."
@@ -582,7 +582,7 @@ function AudienceScene() {
         id="trust-title"
         title={
           <>
-            Built for teams that run their work <em>through chat.</em>
+            Built for teams that run their work through <em>chat.</em>
           </>
         }
         copy="For client delivery, product and operations work that happens in conversation."
@@ -646,7 +646,7 @@ function CtaScene() {
       <div className={styles.ctaInner}>
         <SceneIndex number="07" label="Start free" />
         <h2 id="cta-title">
-          Link one channel. <em>Watch the record fill in.</em>
+          Link one channel. Watch the <em>record</em> fill in.
         </h2>
         <p>
           Bring in your first source, then read the daily update or approve the suggested updates.

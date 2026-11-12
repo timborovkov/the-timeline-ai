@@ -257,7 +257,7 @@ export default function TrustPage() {
           <MarketingContainer className="py-16 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Trust / Security / Data privacy</p>
             <div className="mt-6 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
-              <h1 className="max-w-[14ch] text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
+              <h1 className="max-w-[14ch] text-balance text-[3rem] font-semibold leading-[1.1] tracking-[-0.03em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
                 Your work should not become someone else&apos;s training set.
               </h1>
               <div className="max-w-[46ch] space-y-5 text-base leading-8 text-fg-muted sm:text-lg">

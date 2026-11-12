@@ -338,3 +338,9 @@ uploads, and native connectors together as compact linked cards. Live MCP lookup
 and coming-soon connectors are not presented as ingest options. The intake heading
 explains bringing work in; “Status should not require an investigation” belongs
 with the cited-answer section.
+
+Public display headings use open line spacing (at least 1.08) and moderate negative
+tracking (no tighter than -0.035em). Homepage scene titles are smaller than the
+hero and use medium weight, with mobile sizes scaled independently. Green italic
+emphasis in a heading is limited to one meaningful word; surrounding words stay
+in the normal heading face and color.

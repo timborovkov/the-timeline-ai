@@ -7,8 +7,8 @@
   text-wrap: balance;
   font-size: clamp(3rem, 5vw, 4.75rem);
   font-weight: 600;
-  line-height: 0.92;
-  letter-spacing: -0.055em;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .guideTitle {
@@ -16,8 +16,8 @@
   text-wrap: balance;
   font-size: clamp(2.5rem, 4.5vw, 4.25rem);
   font-weight: 600;
-  line-height: 0.95;
-  letter-spacing: -0.055em;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .heroGrid {
