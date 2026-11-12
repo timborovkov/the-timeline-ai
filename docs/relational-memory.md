@@ -369,6 +369,9 @@ restricting a document during review pauses the run rather than completing it.
 Document review uses the same proposal normalization, identity resolver, company
 affiliation and acceptance pipeline as incoming events. Client-list rows may originate
 company/person profiles and relationships without implying a task commitment.
+If the model proposes a person but omits a separate email identity proposal,
+document extraction preserves uniquely attributed structured contact records.
+Ambiguous or non-current email ownership is left unresolved.
 Document content is untrusted data. Each bundle cites the upload event plus immutable
 document-version and chunk IDs, with a source quote; accepting proposals remains
 separate from extraction. Document-backed acceptance validates inside the canonical-write

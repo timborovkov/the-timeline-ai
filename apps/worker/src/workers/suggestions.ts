@@ -1941,6 +1941,102 @@ function itemCanonicalName(item: SuggestionItemOutput): string {
   return typeof name === 'string' && name.trim() ? name.trim() : item.title.trim();
 }
 
+/** Keep explicit contact identities when the model remembers a person but omits
+ * the separate approval item. Only a unique name/email contact record qualifies. */
+export function preserveDocumentPersonEmails(
+  bundles: SuggestionBundleOutput[],
+  text: string,
+): void {
+  // Examples, superseded contacts and instructions cannot establish identities.
+  if (
+    /\b(?:example|sample|fictional|former|previous contact|ignore (?:all |the )?(?:previous|prior)|system prompt)\b|\b(?:not|never)\b[^.!?\n]{0,40}\b(?:contact|email|address|identity)\b/iu.test(
+      text,
+    )
+  )
+    return;
+  const records = text.split(/\r?\n|;|(?<=[.!?])\s+(?=[A-Z])/u);
+  const people = bundles.flatMap((bundle) =>
+    bundle.items.filter(
+      (item) =>
+        item.operation === 'create' &&
+        item.targetKind === 'object' &&
+        itemCreateType(item) === 'person',
+    ),
+  );
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const bundle of bundles) {
+    for (const person of [...bundle.items].filter((item) => people.includes(item))) {
+      const name = itemCanonicalName(person);
+      if (name.split(/\s+/u).length < 2) continue;
+      const named = new RegExp(`(?<![\\p{L}\\p{N}])${escape(name)}(?![\\p{L}\\p{N}])`, 'iu');
+      const emails = new Set<string>();
+      let conflictingRecord = false;
+      for (const record of records) {
+        const match = named.exec(record);
+        if (
+          !match ||
+          !/^\s*[-*]?\s*(?:(?:contact|person|name)\s*:\s*)?$/iu.test(record.slice(0, match.index))
+        )
+          continue;
+        const recordEmails =
+          record.match(
+            /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9.-]*[A-Z0-9])?\.[A-Z]{2,}/gi,
+          ) ?? [];
+        if (recordEmails.length > 1) conflictingRecord = true;
+        if (recordEmails.length !== 1) continue;
+        if (
+          people.some(
+            (other) =>
+              itemCanonicalName(other) !== name &&
+              record.toLowerCase().includes(itemCanonicalName(other).toLowerCase()),
+          )
+        )
+          continue;
+        const email = recordEmails[0];
+        if (!email) continue;
+        // Direct CSV/name-address forms or one role field followed by an email.
+        // "Name spoke with other@example.com" and multiple contacts are excluded.
+        const suffix = record.slice(match.index + match[0].length);
+        const attribution = suffix.slice(0, suffix.indexOf(email));
+        if (/\b(?:for|with|to|via|behalf|instead|delegate|delegated)\b/iu.test(attribution)) {
+          conflictingRecord = true;
+          continue;
+        }
+        const directContact = new RegExp(
+          `^\\s*(?:<|[,|:\\t]\\s*(?:[^,|;@<>\\n]{1,80}[,|]\\s*)?(?:e-?mail\\s*:?\\s*)?|e-?mail\\s*:?\\s*)${escape(email)}(?:>|\\b)`,
+          'iu',
+        );
+        if (directContact.test(suffix)) emails.add(email.toLowerCase());
+      }
+      if (conflictingRecord || emails.size !== 1) continue;
+      const email = [...emails][0];
+      if (!email) continue;
+      if (
+        bundles.some((entry) =>
+          entry.items.some(
+            (item) =>
+              item.targetKind === 'identity_facet' &&
+              item.proposedPayload.kind === 'email' &&
+              String(item.proposedPayload.value).toLowerCase() === email,
+          ),
+        )
+      )
+        continue;
+      const ref =
+        typeof person.proposedPayload.localRef === 'string'
+          ? person.proposedPayload.localRef
+          : `document_person_${suggestions.suggestionDedupeKey(name)}`;
+      person.proposedPayload.localRef = ref;
+      bundle.items.push({
+        operation: 'create',
+        targetKind: 'identity_facet',
+        title: `Remember email for ${name}`,
+        proposedPayload: { entityRef: ref, kind: 'email', value: email },
+      });
+    }
+  }
+}
+
 function payloadHasKey(payload: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(payload, key);
 }
@@ -3795,6 +3891,7 @@ async function runSuggestionExtraction(
         );
       }
   }
+  if (args.document) preserveDocumentPersonEmails(modelBundles, text);
   const matchingRowsForCreates =
     modelBundles.length > 0
       ? await rowsMatchingProposedCreates(deps.db, teamId, modelBundles, objectRowsForMatching)
