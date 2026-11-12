@@ -25,7 +25,7 @@ export const HOME_TIMELINE_SHOT = {
   file: '11-timeline-dark.png',
   kicker: 'Work record',
   alt: 'The Timeline with messages, notes, documents and code activity in order.',
-  caption: 'Review work across sources in time order.',
+  caption: 'Search it by person, client or source.',
   callouts: [
     {
       label: 'What changed',

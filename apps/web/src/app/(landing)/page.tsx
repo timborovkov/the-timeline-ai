@@ -321,7 +321,6 @@ function TimelineScene() {
           ))}
         </ol>
       </div>
-      <p className={styles.timelineSearchLine}>Search it by person, client or source.</p>
       <HomeProof shot={HOME_TIMELINE_SHOT} align="shot-first" />
     </section>
   );
@@ -376,11 +375,11 @@ function AnswerScene() {
           </div>
         </article>
 
-        <details className={styles.receiptLedger}>
-          <summary className={styles.ledgerTitle}>
+        <aside className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
+          <header className={styles.ledgerTitle}>
             <span id="receipt-ledger-title">The original messages, with links</span>
             <span>5 / 5</span>
-          </summary>
+          </header>
           <ol>
             {ACME_EVENTS.map((event) => (
               <li key={event.id}>
@@ -401,7 +400,7 @@ function AnswerScene() {
               </li>
             ))}
           </ol>
-        </details>
+        </aside>
       </div>
       <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
       <div className={styles.threadBlock} id="chat-to-answer">
@@ -521,10 +520,11 @@ function OrganisedScene() {
         }
         copy="Replace manual CRM and task-board entry with suggested updates from your conversations."
       />
-      <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first" />
-      <p className={styles.approvalLine}>
-        <strong>Suggested changes wait.</strong> A person approves each one.
-      </p>
+      <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first">
+        <p className={styles.approvalLine}>
+          <strong>Suggested changes wait.</strong> A person approves each one.
+        </p>
+      </HomeProof>
     </section>
   );
 }
@@ -669,7 +669,15 @@ function SceneIndex({ number, label }: { number: string; label: string }) {
   );
 }
 
-function HomeProof({ shot, align }: { shot: HomeProofShot; align: 'copy-first' | 'shot-first' }) {
+function HomeProof({
+  shot,
+  align,
+  children,
+}: {
+  shot: HomeProofShot;
+  align: 'copy-first' | 'shot-first';
+  children?: ReactNode;
+}) {
   return (
     <div
       className={cn(styles.proofStage, align === 'shot-first' && styles.proofShotFirst)}
@@ -686,6 +694,7 @@ function HomeProof({ shot, align }: { shot: HomeProofShot; align: 'copy-first' |
             </li>
           ))}
         </ol>
+        {children}
         <p className={styles.proofDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
       </div>
       <div className={styles.proofMedia}>

@@ -22,7 +22,8 @@ Its signature example project, Acme rollout, shows five cited work sources
 converging into one work record, with a linked Telegram group as the first source.
 Captured work settles onto a chronological rail, connects to project, person,
 task, and calendar context, and resolves into an answer with tangible source
-links. The cited-answer evidence cards keep “Inspect example source” as a native
+links. The cited-answer source list is always visible beside the example answer, with
+a static header rather than an outer disclosure. Individual evidence cards keep “Inspect example source” as a native
 `<details>` disclosure aligned to the padded titles: a custom chevron beside the
 summary, padded expanded text, and the landing lime `:focus-visible` ring around
 the summary rather than an unstyled full-width browser outline. Homepage proof screenshots keep the real captures and fictional Acme Labs
@@ -326,3 +327,7 @@ Homepage session-dependent metadata switches as one row. In signed-in mode the
 GitHub source link stays at the content’s left edge; a hidden signed-out pricing
 note must not reserve horizontal space ahead of it. Both complete row variants
 still reserve their shared height to avoid shifting the agent setup card.
+
+Homepage screenshot captions own their supporting copy. Search guidance belongs
+with the timeline screenshot, and the approval note belongs with the client
+screenshot; neither appears as an isolated line between blocks.

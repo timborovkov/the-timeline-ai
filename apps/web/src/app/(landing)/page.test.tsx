@@ -342,14 +342,10 @@ describe('LandingPage', () => {
     );
     expect(citedAnswer?.querySelector('[data-home-proof="32-ask-handoff-dark.png"]')).toBeTruthy();
     expect(disclosures).toHaveLength(acmeEvents.length);
-    const ledger = citedAnswer?.querySelector('details');
-    expect(ledger).toBeTruthy();
-    expect(ledger?.open).toBe(false);
-    const ledgerSummary = ledger?.querySelector('summary');
-    expect(ledgerSummary).toBeTruthy();
-    if (!ledger || !ledgerSummary) throw new Error('Expected the collapsed message ledger');
-    await user.click(ledgerSummary);
-    expect(ledger.open).toBe(true);
+    const ledger = screen.getByRole('complementary', { name: 'The original messages, with links' });
+    expect(ledger.tagName).toBe('ASIDE');
+    expect(ledger.querySelector(':scope > summary')).toBeNull();
+    expect(ledger.querySelectorAll(':scope > ol > li')).toHaveLength(acmeEvents.length);
     expect(screen.getAllByText('Inspect example source')).toHaveLength(acmeEvents.length);
 
     for (const [index, disclosure] of disclosures.entries()) {

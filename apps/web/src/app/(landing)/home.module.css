@@ -1718,37 +1718,6 @@
   align-content: start;
 }
 
-.receiptLedger > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.receiptLedger > summary::-webkit-details-marker,
-.receiptLedger > summary::marker {
-  display: none;
-  content: none;
-}
-
-.receiptLedger > summary::after {
-  width: 0.4rem;
-  height: 0.4rem;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  margin-left: 0.75rem;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  content: '';
-}
-
-.receiptLedger[open] > summary::after {
-  transform: rotate(45deg);
-}
-
-.receiptLedger:not([open]) > :not(summary) {
-  display: none;
-}
-
 .receiptLedger ol {
   margin: 0;
   padding: 0;
@@ -2106,14 +2075,6 @@
 
 .connectorPathsSingle {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.timelineSearchLine {
-  max-width: 40rem;
-  margin: 1.5rem 0 0;
-  color: var(--home-paper);
-  font-size: 1.05rem;
-  line-height: 1.6;
 }
 
 .approvalCard {
