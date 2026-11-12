@@ -382,34 +382,43 @@ export function createBoardQualificationScope(
           return;
         }
       }
-      if (request.includeRelationshipNeighbors) {
-        const edges = await db
-          .select({
-            id: entityRelationships.id,
-            from: entityRelationships.fromEntityId,
-            to: entityRelationships.toEntityId,
-          })
-          .from(entityRelationships)
-          .where(
-            and(
-              eq(entityRelationships.teamId, scope.teamId),
-              or(
-                eq(entityRelationships.fromEntityId, request.entityId),
-                eq(entityRelationships.toEntityId, request.entityId),
-              ),
-              request.relationshipCursor
-                ? gt(entityRelationships.id, request.relationshipCursor)
-                : undefined,
-            ),
-          )
-          .orderBy(asc(entityRelationships.id))
-          .limit(50);
+      if (request.includeRelationshipNeighbors || request.pendingEntityIds.length) {
+        const pendingPage = request.pendingEntityIds.slice(0, 50);
+        const edges = pendingPage.length
+          ? []
+          : await db
+              .select({
+                id: entityRelationships.id,
+                from: entityRelationships.fromEntityId,
+                to: entityRelationships.toEntityId,
+              })
+              .from(entityRelationships)
+              .where(
+                and(
+                  eq(entityRelationships.teamId, scope.teamId),
+                  or(
+                    eq(entityRelationships.fromEntityId, request.entityId),
+                    eq(entityRelationships.toEntityId, request.entityId),
+                  ),
+                  request.relationshipCursor
+                    ? gt(entityRelationships.id, request.relationshipCursor)
+                    : undefined,
+                ),
+              )
+              .orderBy(asc(entityRelationships.id))
+              .limit(50);
         const neighbors = [
           ...new Set(
-            edges.flatMap((edge) => [edge.from, edge.to]).filter((id) => id !== request.entityId),
+            [...pendingPage, ...edges.flatMap((edge) => [edge.from, edge.to])].filter(
+              (id) => id !== request.entityId,
+            ),
           ),
         ];
-        const hasMore = edges.length === 50;
+        const includeRelationshipNeighbors = pendingPage.length
+          ? request.includeRelationshipNeighbors
+          : edges.length === 50;
+        const remainingEntityIds = request.pendingEntityIds.slice(pendingPage.length);
+        const hasMore = includeRelationshipNeighbors || remainingEntityIds.length > 0;
         const expanded = await db.transaction(async (tx) => {
           // Parent-first locks protect inbox foreign keys. Fail fast on busy parents because
           // canonical relationship edits can lock their entities in a different order.
@@ -458,8 +467,13 @@ export function createBoardQualificationScope(
           await tx
             .update(boardQualificationRequests)
             .set({
-              includeRelationshipNeighbors: hasMore,
-              relationshipCursor: hasMore ? edges.at(-1)?.id : null,
+              includeRelationshipNeighbors,
+              pendingEntityIds: remainingEntityIds,
+              relationshipCursor: pendingPage.length
+                ? request.relationshipCursor
+                : includeRelationshipNeighbors
+                  ? edges.at(-1)?.id
+                  : null,
               ...(hasMore ? { availableAt: new Date() } : {}),
             })
             .where(requestWhere);
@@ -544,6 +558,7 @@ export function createBoardQualificationScope(
             entityId: request.entityId,
             inputHash: input.inputHash,
             memberId: input.member?.id ?? null,
+            memberUpdatedAt: input.member?.updatedAt.toISOString() ?? null,
             decision: result.decision,
           });
           const title = `${result.decision === 'add' ? 'Add' : 'Remove'} ${input.object.canonicalName} ${result.decision === 'add' ? 'to' : 'from'} ${input.board.name}`;

@@ -15,6 +15,7 @@ export async function requestBoardQualification(
     sourceEventId: string | null;
     requestedBoardId?: string;
     includeRelationshipNeighbors?: boolean;
+    pendingEntityIds?: string[];
   },
 ) {
   // Service principals cannot inherit a member's authority for background inference.
@@ -65,6 +66,10 @@ export async function requestBoardQualification(
           boardQualificationRequests.entityId,
         ],
         set: {
+          pendingEntityIds: sql`ARRAY(SELECT DISTINCT unnest(${boardQualificationRequests.pendingEntityIds} || ${sql`ARRAY[${sql.join(
+            (input.pendingEntityIds ?? []).map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}]::uuid[]`}))`,
           includeRelationshipNeighbors: sql`${boardQualificationRequests.includeRelationshipNeighbors} OR ${input.includeRelationshipNeighbors ?? false}`,
           relationshipCursor: input.includeRelationshipNeighbors
             ? null

@@ -501,6 +501,7 @@ async function emitRelationshipDirectWriteOutput(input: {
   teamId: string;
   userId: string;
   relationshipId: string;
+  qualificationAnchorId?: string;
   fromEntityId: string;
   toEntityId: string;
   relationshipKind: RelationshipKind;
@@ -510,18 +511,31 @@ async function emitRelationshipDirectWriteOutput(input: {
   systemEventKind: 'relationship_create' | 'relationship_delete';
 }): Promise<void> {
   if (!input.sourceEventId) return;
-  await requestBoardQualification(input.db, {
-    teamId: input.teamId,
-    userId: input.userId,
-    entityId: input.fromEntityId,
-    sourceEventId: input.sourceEventId,
-  });
-  await requestBoardQualification(input.db, {
-    teamId: input.teamId,
-    userId: input.userId,
-    entityId: input.toEntityId,
-    sourceEventId: input.sourceEventId,
-  });
+  if (input.qualificationAnchorId) {
+    // Replacement holds the child, but need not lock old parents just to enqueue work.
+    await requestBoardQualification(input.db, {
+      teamId: input.teamId,
+      userId: input.userId,
+      entityId: input.qualificationAnchorId,
+      sourceEventId: input.sourceEventId,
+      pendingEntityIds: [input.fromEntityId, input.toEntityId].filter(
+        (id) => id !== input.qualificationAnchorId,
+      ),
+    });
+  } else {
+    await requestBoardQualification(input.db, {
+      teamId: input.teamId,
+      userId: input.userId,
+      entityId: input.fromEntityId,
+      sourceEventId: input.sourceEventId,
+    });
+    await requestBoardQualification(input.db, {
+      teamId: input.teamId,
+      userId: input.userId,
+      entityId: input.toEntityId,
+      sourceEventId: input.sourceEventId,
+    });
+  }
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -6188,6 +6202,7 @@ export async function setTaskProject(
 
     for (const old of existing) {
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: taskId,
         db: tx,
         teamId: scope.teamId,
         userId: scope.userId,
@@ -6203,6 +6218,7 @@ export async function setTaskProject(
     }
     if (created && project) {
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: taskId,
         db: tx,
         teamId: scope.teamId,
         userId: scope.userId,
@@ -6547,6 +6563,7 @@ export async function setPersonCompany(
     for (const old of existing) {
       const oldEndpoints = canonicalRelationshipEndpoints(personId, old.companyId, 'related');
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: personId,
         db: tx,
         teamId: scope.teamId,
         userId: scope.userId,
@@ -6562,6 +6579,7 @@ export async function setPersonCompany(
     }
     if (created && company && endpoints) {
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: personId,
         db: tx,
         teamId: scope.teamId,
         userId: scope.userId,

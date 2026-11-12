@@ -277,6 +277,10 @@ export const boardQualificationRequests = pgTable(
       .notNull()
       .default(false),
     relationshipCursor: uuid('relationship_cursor'),
+    pendingEntityIds: uuid('pending_entity_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
     requestedBoardId: uuid('requested_board_id').references(() => boards.id, {
       onDelete: 'cascade',
     }),

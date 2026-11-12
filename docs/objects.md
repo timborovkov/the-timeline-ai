@@ -143,11 +143,16 @@ requires at least one type and applies to manual add, quick create, agent propos
 and approval acceptance. Recommended types without strict mode only rank discovery.
 Changing restrictions does not evict existing items; an existing member that fails
 the restriction can receive a removal proposal. Removal archives the specific board
-membership, preserving the object and board history.
+membership, preserving the object and board history. Removal proposal identities
+include the membership version, so an explicit rescan can replace a proposal made
+stale by a board-item edit. Approval locks the membership before its entity and board,
+matching manual item edits.
 
 Committed object creates/updates, notes, identity facets and relationship changes
 persist qualification requests in the canonical write transaction. Relationship
-changes request both endpoints. Object updates persist a neighbor-expansion flag in the same transaction. The
+changes request both endpoints. Company/project replacement stores old and new
+endpoint IDs on the already-locked child request; workers enqueue those endpoints
+after commit, without making the edit acquire old-parent locks. Object updates persist a neighbor-expansion flag in the same transaction. The
 worker expands relationships in durable batches of 50, acquiring entity key locks
 before inbox locks. Busy entity keys abort the expansion for durable retry instead
 of waiting against canonical relationship lock order, so related names/statuses are reevaluated without locking

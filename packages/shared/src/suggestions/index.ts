@@ -3987,6 +3987,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'board_membership') {
       const parsed = boardMembershipPayload.safeParse(item.proposedPayload);
       if (!parsed.success) return;
+      if (item.operation === 'archive_or_cancel' && parsed.data.boardItemId) {
+        await db
+          .select({ id: boardItems.id })
+          .from(boardItems)
+          .where(and(eq(boardItems.id, parsed.data.boardItemId), eq(boardItems.teamId, teamId)))
+          .for('update');
+      }
       await db
         .select({ id: entities.id })
         .from(entities)

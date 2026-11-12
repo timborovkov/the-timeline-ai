@@ -2424,6 +2424,58 @@ describe('automatic board membership', () => {
     ).toBe('superseded');
     expect(await scope.boards.getBoardItem(second.id)).not.toBeNull();
   });
+  it('offers a fresh removal after a membership edit supersedes the old proposal', async () => {
+    const { scope, board, object } = await setup();
+    const member = await scope.boards.addBoardItem(board.id, {
+      entityId: object.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.boardQualification.scan(board.id);
+    await process(scope, 'remove');
+    const first = required(
+      required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+    );
+    await scope.boards.updateBoardItem(
+      member.id,
+      { notes: 'Reviewed manually' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    expect(await scope.suggestions.acceptSuggestionItemWithOutcome(first.id)).toBe('superseded');
+    await scope.boardQualification.scan(board.id);
+    await process(scope, 'remove');
+    const next = required(required((await scope.suggestions.listPendingSuggestions())[0]).items[0]);
+    expect(next.id).not.toBe(first.id);
+    await scope.suggestions.acceptSuggestionItem(next.id);
+    expect(await scope.boards.getBoardItem(member.id)).toBeNull();
+  });
+  it('durably retains both old and new relationship endpoints on the locked child', async () => {
+    const { scope, object } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const actor = { kind: 'user' as const, userId: USER_OWNER };
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'First',
+      actor,
+    });
+    const second = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Second',
+      actor,
+    });
+    await scope.objects.setPersonCompany(object.id, first.id, actor);
+    await db.delete(boardQualificationRequests);
+    await scope.objects.setPersonCompany(object.id, second.id, actor);
+    const requests = await db.select().from(boardQualificationRequests);
+    expect(requests).toHaveLength(1);
+    expect(required(requests[0]).entityId).toBe(object.id);
+    expect(required(requests[0]).pendingEntityIds.sort()).toEqual([first.id, second.id].sort());
+    await process(scope, 'insufficient_evidence');
+    expect(
+      (await db.select().from(boardQualificationRequests)).map((row) => row.entityId).sort(),
+    ).toEqual([first.id, second.id].sort());
+    await process(scope, 'insufficient_evidence');
+    expect(await db.select().from(boardQualificationRequests)).toHaveLength(0);
+  });
   it('retains failed work for retry and does not discard a newer request', async () => {
     const { scope, object } = await setup();
     const { boardQualificationRequests } = await import('@timeline/db');
