@@ -2537,6 +2537,14 @@ describe('automatic board membership', () => {
       expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
       expect(await scope.suggestions.acceptSuggestionItemWithOutcome(itemId)).toBe('superseded');
       expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(0);
+      await scope.boardQualification.scan(board.id);
+      await process(scope);
+      const replacement = required(
+        required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+      );
+      expect(replacement.id).not.toBe(itemId);
+      await scope.suggestions.acceptSuggestionItem(replacement.id);
+      expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
     });
   }
   for (const change of ['policy', 'facts'] as const) {

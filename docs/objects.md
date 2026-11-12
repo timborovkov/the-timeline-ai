@@ -144,7 +144,8 @@ and approval acceptance. Recommended types without strict mode only rank discove
 Changing restrictions does not evict existing items; an existing member that fails
 the restriction can receive a removal proposal. Removal archives the specific board
 membership, preserving the object and board history. Removal proposal identities
-include the membership version, so an explicit rescan can replace a proposal made
+include the membership version and source dependency, so an explicit source-free
+rescan can replace a proposal whose source became unavailable or one made
 stale by a board-item edit. Approval locks the membership before its entity and board,
 matching manual item edits.
 

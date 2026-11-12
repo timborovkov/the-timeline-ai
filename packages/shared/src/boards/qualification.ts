@@ -558,6 +558,7 @@ export function createBoardQualificationScope(
             boardId: candidate.id,
             entityId: request.entityId,
             inputHash: input.inputHash,
+            sourceEventId: request.sourceEventId,
             memberId: input.member?.id ?? null,
             memberUpdatedAt: input.member?.updatedAt.toISOString() ?? null,
             decision: result.decision,
@@ -614,6 +615,7 @@ export function createBoardQualificationScope(
             boardId: candidate.id,
             entityId: request.entityId,
             inputHash: input.inputHash,
+            sourceEventId: request.sourceEventId,
             decision: result.decision,
           });
           const [run] = await db
