@@ -4,7 +4,11 @@ The machine-facing public-site seam lives in
 [`apps/web/src/lib/public-site`](../apps/web/src/lib/public-site). It is the
 single source for canonical public paths, sitemap discovery, `llms.txt`,
 `llms-full.txt`, capability disclosure, and reusable structured-data input.
-Public route content and UI remain owned by their feature modules.
+Public route content and UI remain owned by their feature modules. The homepage
+uses shared positioning from `apps/web/src/lib/product-positioning.ts`, also used
+by root metadata defaults and the manifest. Keep specialized page descriptions
+specific to their supported capabilities; shared social artwork follows the
+[public-site design patterns](design/public.md#search-and-social-previews).
 
 ## Contribution interface
 

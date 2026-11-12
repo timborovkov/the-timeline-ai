@@ -17,8 +17,10 @@ then demonstrates how that history helps answer a question. Do not place a
 standalone Acme answer panel directly after the hero; it assumes context a new
 visitor has not yet acquired.
 
-The opening claim describes selected conversations, calls and documents, not
-universal capture. Work continues through the use-case chooser, intake,
+The opening claim describes a living record built from selected tools and sources,
+with connected clients, projects, tasks and decisions. Keep sources attached and
+approval boundaries explicit; asking questions is one use of the record, not its
+only outcome. Work continues through the use-case chooser, intake,
 chronology, cited answer, connected records, audience fit with trust, and Start
 free. Section headings carry the narrative without decorative numbered rails or
 repeated eyebrows. Source timestamps, citation numbers and actual process order
@@ -429,3 +431,16 @@ disclosures remain reachable on short screens. Reject and Accept stay equally
 prominent in the compact desktop bottom-right analytics banner; no optional
 analytics is sent before a choice. Cookie settings remains a persistent button
 with the footer links' typography and treatment.
+
+## Search and social previews
+
+Shared homepage positioning lives in `apps/web/src/lib/product-positioning.ts`.
+Use it for the hero, root metadata defaults, manifest and homepage registry entry.
+Specialized pages retain their own search intent and capability boundaries in the
+[public document registry](../public-site-registry.md).
+
+OG and Twitter cards share a 1200 × 630 composition: the official mark, Switzer,
+near-black background and lime emphasis. Describe the living record, connected
+objects, attached sources and approval boundary; avoid fabricated event IDs or
+version labels. Static social font subsets and their generation instructions live
+in `apps/web/public/fonts/switzer/SOCIAL-FONTS.md`.

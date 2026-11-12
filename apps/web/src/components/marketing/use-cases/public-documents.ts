@@ -9,7 +9,7 @@ import {
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const REVIEW_DATE = '2026-11-07' as const;
-const PRODUCT_TOUR_REVIEW_DATE = '2026-11-07' as const;
+const PRODUCT_TOUR_REVIEW_DATE = '2026-11-12' as const;
 
 function useCaseLlmsSections(useCase: UseCaseContent): readonly PublicLlmsContentSection[] {
   return [
@@ -40,7 +40,7 @@ export const USE_CASE_PUBLIC_DOCUMENTS = definePublicDocuments('use-cases', [
     title: USE_CASE_HUB.seoTitle,
     description: USE_CASE_HUB.seoDescription,
     indexability: 'index',
-    dates: { modified: REVIEW_DATE, reviewed: REVIEW_DATE },
+    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -78,7 +78,10 @@ export const USE_CASE_PUBLIC_DOCUMENTS = definePublicDocuments('use-cases', [
     title: useCase.seoTitle,
     description: useCase.seoDescription,
     indexability: 'index',
-    dates: { modified: REVIEW_DATE, reviewed: REVIEW_DATE },
+    dates: {
+      modified: useCase.route === '/use-cases/work-record' ? '2026-11-12' : REVIEW_DATE,
+      reviewed: useCase.route === '/use-cases/work-record' ? '2026-11-12' : REVIEW_DATE,
+    },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'monthly', priority: 0.8 },
     structuredData: [

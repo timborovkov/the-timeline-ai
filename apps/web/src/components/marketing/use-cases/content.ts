@@ -71,7 +71,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     cardBody: 'Every decision, promise and handoff in order, with where it was said.',
     seoTitle: 'An auto-updating work record',
     seoDescription:
-      'Every decision, promise and handoff in order, with where it was said. The Timeline keeps it current from Slack, Telegram, email and calls.',
+      'Keep decisions, promises and handoffs in one searchable work record, built from selected tools and sources with their evidence attached.',
     eyebrow: 'Use case · Work record',
     title: 'A work record that keeps itself current.',
     summary: 'Find the decisions, promises and handoffs behind a project’s current state.',
@@ -421,10 +421,10 @@ export const USE_CASE_HUB = {
   route: '/use-cases' as const satisfies PublicCanonicalPath,
   seoTitle: 'Use cases',
   seoDescription:
-    'One work record kept current from Slack, Telegram, email and calls. Use it for a work record, daily updates, communication history, customer context, task boards and onboarding.',
+    'Turn connected sources into a work record, daily updates, customer context and task boards. Explore six ways teams use The Timeline.',
   title: 'One record. Six ways teams use it.',
   summary:
-    'The Timeline keeps your work record current from the conversations your team already has. Here’s what teams do with it.',
+    'The Timeline turns context from your tools and sources into a connected work record. Here’s what teams do with it.',
 } as const;
 
 export const USE_CASE_CANONICAL_ROUTES = USE_CASES.map((useCase) => useCase.route);

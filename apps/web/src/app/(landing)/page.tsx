@@ -49,6 +49,7 @@ import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import { PublicFooterColumns } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
   buildPublicStructuredData,
@@ -61,8 +62,7 @@ import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
 const CONTACT_HREF = '/help/support';
-const HERO_INTRO =
-  'Your team’s work record: conversations, decisions and commitments on one searchable timeline, kept current from Slack, Telegram, email and calls.';
+const HERO_INTRO = PRODUCT_POSITIONING.hero;
 const HOME_INTAKE_SURFACES = [
   ...CAPTURE_SURFACES.map((surface) => ({
     id: surface.id,

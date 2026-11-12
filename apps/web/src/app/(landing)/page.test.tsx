@@ -31,7 +31,7 @@ describe('LandingPage', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Know where the work stands.');
     expect(html).toContain(
-      'Your team’s work record: conversations, decisions and commitments on one searchable timeline, kept current from Slack, Telegram, email and calls.',
+      'Your team’s work becomes a living record. Bring in context from the tools and sources you use, and turn it into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
     );
 
     const scenes = [
@@ -150,8 +150,8 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-11-07',
-      lastReviewed: '2026-11-07',
+      dateModified: '2026-11-12',
+      lastReviewed: '2026-11-12',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -160,13 +160,13 @@ describe('LandingPage', () => {
       'Human approval before inferred durable workspace changes',
     );
     expect(metadata).toMatchObject({
-      title: "Your team's work, written down for you",
+      title: 'Your team’s living work record',
       description:
-        'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+        'Turn context from your tools and sources into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
       alternates: { canonical: '/' },
       openGraph: {
         description:
-          'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+          'Turn context from your tools and sources into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
       },
     });
   });
@@ -265,7 +265,7 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'Your team’s work record: conversations, decisions and commitments on one searchable timeline, kept current from Slack, Telegram, email and calls.',
+      'Your team’s work becomes a living record. Bring in context from the tools and sources you use, and turn it into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
     );
     expect(html).toContain('Link one channel. Watch the record fill in.');
     expect(html).toContain('approve the suggested updates');
