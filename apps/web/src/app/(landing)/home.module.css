@@ -2563,175 +2563,16 @@
     animation: evidencePulse 3.6s 1.1s ease-in-out infinite;
   }
 
-  .motionReady .timelineStage[data-home-entered] .timelineHeader,
-  .motionReady .timelineStage[data-home-entered] .timelineList li,
-  .motionReady .timelineStage[data-home-entered] .chronologyContract,
-  .motionReady .connectorPanel[data-home-entered] > header,
-  .motionReady .connectorPanel[data-home-entered] .connectorPath,
-  .motionReady .connectorPanel[data-home-entered] .connectorFooter,
-  .motionReady .fitPanel[data-home-entered] .fitPanelIntro,
-  .motionReady .fitPanel[data-home-entered] .audienceRail a,
-  .motionReady .trustFlowPanel[data-home-entered] > header,
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlow li,
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlowProof {
-    animation: diagramItemIn 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
   .motionReady .timelineStage[data-home-entered] .timelineList::after {
     animation: chronologyDraw 1.25s 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .timelineStage[data-home-entered] .timelineList li:nth-child(1) {
-    animation-delay: 180ms;
-  }
-
-  .motionReady .timelineStage[data-home-entered] .timelineList li:nth-child(2) {
-    animation-delay: 340ms;
-  }
-
-  .motionReady .timelineStage[data-home-entered] .timelineList li:nth-child(3) {
-    animation-delay: 500ms;
-  }
-
-  .motionReady .timelineStage[data-home-entered] .timelineList li:nth-child(4) {
-    animation-delay: 660ms;
-  }
-
-  .motionReady .timelineStage[data-home-entered] .timelineList li:nth-child(5) {
-    animation-delay: 820ms;
   }
 
   .motionReady .timelineStage[data-home-entered] .timelineNode span {
     animation: evidenceNode 720ms 920ms ease-out both;
   }
 
-  .motionReady .timelineStage[data-home-entered] .chronologyContract {
-    animation-delay: 1060ms;
-  }
-
-  .motionReady .connectorPanel[data-home-entered] .connectorPath:nth-child(1) {
-    animation-delay: 120ms;
-  }
-
-  .motionReady .connectorPanel[data-home-entered] .connectorPath:nth-child(2) {
-    animation-delay: 240ms;
-  }
-
-  .motionReady .connectorPanel[data-home-entered] .connectorFooter {
-    animation-delay: 360ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .answerWindow,
-  .motionReady .answerLayout[data-home-entered] .receiptLedger {
-    animation: answerPanelIn 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .receiptLedger {
-    animation-name: answerPanelInReverse;
-    animation-delay: 160ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .question,
-  .motionReady .answerLayout[data-home-entered] .answerBody,
-  .motionReady .answerLayout[data-home-entered] .answerFooter,
-  .motionReady .answerLayout[data-home-entered] .receiptLedger li {
-    animation: diagramItemIn 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .question {
-    animation-delay: 180ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .answerBody {
-    animation-delay: 340ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .answerFooter {
-    animation-delay: 780ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .citation {
-    animation: citationResolve 620ms 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .citation:nth-of-type(2) {
-    animation-delay: 780ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .citation:nth-of-type(3) {
-    animation-delay: 860ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .citation:nth-of-type(4) {
-    animation-delay: 940ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .receiptLedger li:nth-child(1) {
-    animation-delay: 380ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .receiptLedger li:nth-child(2) {
-    animation-delay: 500ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .receiptLedger li:nth-child(3) {
-    animation-delay: 620ms;
-  }
-
-  .motionReady .answerLayout[data-home-entered] .receiptLedger li:nth-child(4) {
-    animation-delay: 740ms;
-  }
-
-  .motionReady .fitPanel[data-home-entered] .audienceRail a:nth-child(1) {
-    animation-delay: 140ms;
-  }
-
-  .motionReady .fitPanel[data-home-entered] .audienceRail a:nth-child(2) {
-    animation-delay: 260ms;
-  }
-
-  .motionReady .fitPanel[data-home-entered] .audienceRail a:nth-child(3) {
-    animation-delay: 380ms;
-  }
-
-  .motionReady .fitPanel[data-home-entered] .audienceRail a:nth-child(4) {
-    animation-delay: 500ms;
-  }
-
-  .motionReady .fitPanel[data-home-entered] .audienceRail a:nth-child(5) {
-    animation-delay: 620ms;
-  }
-
-  .motionReady .fitPanel[data-home-entered] .audienceRail a:nth-child(6) {
-    animation-delay: 740ms;
-  }
-
   .motionReady .trustFlowPanel[data-home-entered] .trustFlow::before {
     animation: trustPathDraw 1.15s 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlow li:nth-child(1) {
-    animation-delay: 260ms;
-  }
-
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlow li:nth-child(2) {
-    animation-delay: 440ms;
-  }
-
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlow li:nth-child(3) {
-    animation-delay: 620ms;
-  }
-
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlow li:nth-child(4) {
-    animation-delay: 800ms;
-  }
-
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlow li > span {
-    animation: evidenceNode 620ms 900ms ease-out both;
-  }
-
-  .motionReady .trustFlowPanel[data-home-entered] .trustFlowProof {
-    animation-delay: 980ms;
   }
 
   .motionReady [data-flow-step].visible .flowPacketTrackHorizontal .flowPacketRunner {
@@ -2848,10 +2689,6 @@
     .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(5)::before {
       animation-delay: 0.8s;
     }
-  }
-
-  .motionReady [data-home-reveal].visible {
-    animation: diagramItemIn 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .loadingSignals span {
@@ -3024,54 +2861,6 @@
 
   to {
     transform: scaleY(1);
-  }
-}
-
-@keyframes diagramItemIn {
-  from {
-    opacity: 0;
-    transform: translateY(1rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes answerPanelIn {
-  from {
-    opacity: 0;
-    transform: translateX(-1.25rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes answerPanelInReverse {
-  from {
-    opacity: 0;
-    transform: translateX(1.25rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes citationResolve {
-  from {
-    opacity: 0;
-    transform: scale(0.65);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 

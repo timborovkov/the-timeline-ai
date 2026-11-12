@@ -46,10 +46,11 @@ customer data. Provider pages may show distinct slices, but people, identifiers,
 records, and outcomes stay coherent across the journey. Connector capability belongs with the
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
-diagrams are server-rendered; a small client motion controller may progressively
-reveal below-the-fold scenes once, replay evidence flow while it is in view, and show
-scroll progress. Returning to a scene never restarts content entrances or hides
-previously revealed text. Looping diagram motion pauses offscreen independently. The hero copy, source cards, central mark, and outcome labels
+diagrams are server-rendered. Text, cards, answer panels, and calls to action
+stay visible from first paint: scrolling must never trigger an opacity reset or
+slide-in entrance. A small client controller runs evidence flows while in view,
+pauses them offscreen, draws decorative chronology rails once, and shows scroll
+progress. The hero copy, source cards, central mark, and outcome labels
 are complete and in their final positions on first paint; hydration must not
 hide or slide them into place. Background motion is prohibited: movement belongs
 to the evidence diagram and must explain provenance or hierarchy. The shared public canvas uses

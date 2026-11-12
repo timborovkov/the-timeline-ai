@@ -604,7 +604,7 @@ function CtaScene() {
       aria-labelledby="cta-title"
       data-scene="07-start"
     >
-      <div className={styles.ctaInner} data-home-reveal>
+      <div className={styles.ctaInner}>
         <SceneIndex number="07" label="Start free" />
         <h2 id="cta-title">
           Link one channel. <em>Watch the record fill in.</em>
@@ -725,7 +725,7 @@ function SceneHeading({
   copy: string;
 }) {
   return (
-    <header className={styles.sceneHeading} data-home-reveal>
+    <header className={styles.sceneHeading}>
       <SceneIndex number={number} label={label} />
       <div>
         <h2 id={id}>{title}</h2>

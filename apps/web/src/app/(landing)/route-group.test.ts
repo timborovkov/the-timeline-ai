@@ -29,6 +29,25 @@ describe('landing route group', () => {
     }
   });
 
+  it('keeps content visible instead of starting scroll entrance animations', () => {
+    const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
+    const motion = readFileSync(
+      new URL('../../components/marketing/home/home-motion.tsx', import.meta.url),
+      'utf8',
+    );
+    for (const entrance of [
+      'diagramItemIn',
+      'answerPanelIn',
+      'citationResolve',
+      '[data-home-reveal]',
+    ]) {
+      expect(styles).not.toContain(entrance);
+    }
+    expect(motion).not.toContain('revealObserver');
+    expect(styles).toContain('animation: evidencePath');
+    expect(motion).toContain('pauseAnimations()');
+  });
+
   it('keeps public-page preferences, metadata, and motion usable', () => {
     const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
     const agentSetupStyles = readFileSync(
@@ -82,8 +101,9 @@ describe('landing route group', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.flowPacketRunner\s*\{[\s\S]*display: none !important;/u,
     );
     expect(styles).toContain('animation: chronologyDraw 1.25s');
-    expect(styles).toMatch(/\.timelineList li:nth-child\(5\)\s*\{\s*animation-delay: 820ms;/u);
-    expect(styles).toContain('animation: answerPanelIn 680ms');
+    expect(styles).not.toContain('answerPanelIn');
+    expect(styles).not.toContain('diagramItemIn');
+    expect(styles).not.toContain('citationResolve');
     expect(styles).toContain('animation: trustPathDraw 1.15s');
     expect(styles).not.toContain('ambientSweep');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
@@ -96,7 +116,8 @@ describe('landing route group', () => {
     expect(styles).toContain('stroke-dashoffset');
     expect(styles).not.toContain(':not(.visible)');
     expect(styles).not.toContain('.motionReady [data-home-diagram] {');
-    expect(styles).toContain('.motionReady [data-home-reveal].visible {');
+    expect(styles).not.toContain('[data-home-reveal]');
+    expect(motion).not.toContain('revealObserver');
     expect(motion).toContain("'[data-home-diagram]'");
     expect(motion).not.toContain('data-home-ambient');
     expect(motion).toContain('classList.toggle(visibleClass, entry.isIntersecting)');
