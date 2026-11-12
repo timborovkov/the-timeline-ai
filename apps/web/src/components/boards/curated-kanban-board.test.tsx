@@ -154,6 +154,23 @@ describe('CuratedKanbanBoard', () => {
     fakes.updateBoardItemAction.mockResolvedValue({ ok: true, id: 'item-1' });
   });
 
+  it('keeps past due dates neutral for completed tasks', () => {
+    const item = boardItem('Finished task');
+    item.object.status = 'done';
+    item.dueAt = new Date('2000-01-01');
+    const { container } = render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[item]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+    expect(container.textContent).toContain('2000');
+    expect(container.textContent).not.toContain('Overdue');
+  });
+
   it('groups the scrollable board columns with uniquely named duplicate lane regions', () => {
     render(
       <CuratedKanbanBoard
@@ -430,12 +447,12 @@ describe('CuratedKanbanBoard', () => {
     expect(metadataRow?.contains(priority)).toBe(true);
     expect(metadataRow?.className).toContain('items-center');
     expect(metadataRow?.className).not.toContain('flex-wrap');
-    expect(owner.className).toContain('h-5');
-    expect(due.className).toContain('h-5');
-    expect(priority.className).toContain('h-5');
+    expect(owner.className).toContain('min-h-7');
+    expect(due.className).toContain('min-h-7');
+    expect(priority.className).toContain('min-h-7');
     expect(priority.textContent).toContain('No priority');
     expect(priority.querySelector('svg')).toBeNull();
-    expect(card.querySelector('.px-1\\.5')).toBeNull();
+    expect(metadataRow?.className).not.toContain('px-1.5');
 
     const newColumn = screen.getByRole('region', { name: 'New, board column 1' });
     expect(newColumn.className).toContain('border-r');

@@ -76,12 +76,8 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
   return (
     <div
       data-app-width="collection"
-      data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
-      className={
-        rows.length > 0
-          ? '-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
-          : 'space-y-5'
-      }
+      data-app-layout="full-bleed"
+      className="flex h-full min-h-0 min-w-0 flex-col"
     >
       <PageHeader
         variant="collection"
@@ -115,12 +111,9 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
               ]
             : []),
         ]}
-        className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
+        className="w-full shrink-0 px-4 md:px-8"
       />
-      <WorkSubnav
-        current="/app/tasks"
-        className={rows.length > 0 ? 'shrink-0 px-4 md:px-8' : undefined}
-      />
+      <WorkSubnav current="/app/tasks" className="shrink-0 px-4 md:px-8" />
 
       <WorkFilterBar
         mode="tasks"
@@ -151,11 +144,13 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       ) : null}
 
       {rows.length === 0 ? (
-        <TasksEmptyState
-          activeFilters={activeFilters}
-          pendingTaskItems={pendingTaskItems}
-          view={view}
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <TasksEmptyState
+            activeFilters={activeFilters}
+            pendingTaskItems={pendingTaskItems}
+            view={view}
+          />
+        </div>
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {

@@ -21,10 +21,7 @@ export default function BoardDetailLoading() {
         Loading board
       </output>
       <h1 className="sr-only">Board</h1>
-      <div
-        data-app-layout="full-bleed"
-        className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
-      >
+      <div data-app-layout="full-bleed" className="flex h-full min-h-0 min-w-0 flex-col">
         <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8 md:pt-6">
           <PageHeaderSkeleton variant="collection" />
         </div>

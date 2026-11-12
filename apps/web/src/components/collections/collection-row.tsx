@@ -108,12 +108,9 @@ export function CollectionRow({
       </div>
       <div
         data-slot="collection-row-content"
-        className={cn(
-          SLOT_LAYER,
-          'col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-2 @min-[40rem]/collection-row:col-span-1',
-        )}
+        className={cn(SLOT_LAYER, 'flex min-w-0 flex-col items-start gap-1 py-3')}
       >
-        <div data-slot="collection-row-heading" className="min-w-0 flex-[1_1_20rem]">
+        <div data-slot="collection-row-heading" className="w-full min-w-0">
           <div
             data-slot="collection-row-title"
             className="min-w-0 whitespace-normal text-sm font-medium leading-5 text-fg [overflow-wrap:anywhere]"
@@ -124,34 +121,33 @@ export function CollectionRow({
           {subtitle ? (
             <div
               data-slot="collection-row-subtitle"
-              className="min-w-0 truncate text-[11px] font-normal leading-4 text-fg-dim"
+              className="min-w-0 whitespace-normal text-xs font-normal leading-5 text-fg-muted [overflow-wrap:anywhere]"
             >
               {subtitle}
             </div>
           ) : null}
         </div>
-        {context ? (
-          <div
-            data-slot="collection-row-context"
-            className="min-w-0 max-w-[22rem] truncate text-xs text-fg-dim"
-            title={contextTitle}
-          >
-            {context}
-          </div>
-        ) : null}
-        {metadata ? (
-          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-1 gap-y-0.5">
-            {metadata}
+        {context || metadata ? (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            {context ? (
+              <div
+                data-slot="collection-row-context"
+                className="min-w-0 text-xs leading-5 text-fg-muted [overflow-wrap:anywhere]"
+                title={contextTitle}
+              >
+                {context}
+              </div>
+            ) : null}
+            {metadata ? (
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1">
+                {metadata}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
       {actions ? (
-        <div
-          className={cn(
-            SLOT_LAYER,
-            'col-span-2 col-start-2 flex min-h-10 min-w-0 items-center @min-[40rem]/collection-row:col-span-1 @min-[40rem]/collection-row:col-start-auto',
-          )}
-        >
+        <div className={cn(SLOT_LAYER, 'flex min-h-10 min-w-0 items-center self-start pt-1')}>
           {actions}
         </div>
       ) : null}

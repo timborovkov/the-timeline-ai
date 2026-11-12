@@ -1,23 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-
-function subscribe(onChange: () => void): () => void {
-  const media = window.matchMedia('(min-width: 1280px)');
-  media.addEventListener('change', onChange);
-  return () => {
-    media.removeEventListener('change', onChange);
-  };
-}
-function desktopSnapshot(): boolean {
-  return window.matchMedia('(min-width: 1280px)').matches;
-}
-function serverSnapshot(): boolean {
-  return true;
-}
 
 export function ObjectPeekFrame({
   children,
@@ -28,11 +14,9 @@ export function ObjectPeekFrame({
   title: string;
   closeHref: string;
 }) {
-  const desktop = useSyncExternalStore(subscribe, desktopSnapshot, serverSnapshot);
   const router = useRouter();
   const contentRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
-  if (desktop) return children;
   return (
     <Sheet
       open
@@ -49,19 +33,21 @@ export function ObjectPeekFrame({
           const close = contentRef.current?.querySelector<HTMLElement>('[data-peek-close]');
           if (close) {
             event.preventDefault();
-            close.focus();
+            close.focus({ preventScroll: true });
           }
         }}
         onCloseAutoFocus={(event) => {
           if (restoreFocusRef.current?.isConnected) {
             event.preventDefault();
-            restoreFocusRef.current.focus();
+            restoreFocusRef.current.focus({ preventScroll: true });
           }
         }}
         aria-describedby={undefined}
-        className="inset-x-0 top-auto bottom-0 h-[90dvh] max-w-none rounded-t-lg border-t bg-surface"
+        className="max-w-2xl"
       >
-        <SheetTitle className="sr-only">{title}</SheetTitle>
+        <SheetTitle asChild>
+          <span className="sr-only">{title}</span>
+        </SheetTitle>
         {children}
       </SheetContent>
     </Sheet>

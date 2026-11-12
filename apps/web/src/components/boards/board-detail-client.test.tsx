@@ -381,7 +381,7 @@ describe('BoardDetailClient', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Alpha')).toBeNull();
-      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Beta', hidden: true })).toBeTruthy();
     });
   });
 
@@ -458,7 +458,7 @@ describe('BoardDetailClient', () => {
     await user.click(screen.getByRole('button', { name: 'Fake committed add' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Beta', hidden: true })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Remove local item' })).toBeTruthy();
     });
 
@@ -506,9 +506,9 @@ describe('BoardDetailClient', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set P1' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Priority for Alpha' }).textContent).toContain(
-        'P1',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Priority for Alpha', hidden: true }).textContent,
+      ).toContain('P1');
     });
 
     rerender(
@@ -527,9 +527,9 @@ describe('BoardDetailClient', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Priority for Alpha' }).textContent).toContain(
-        'P1',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Priority for Alpha', hidden: true }).textContent,
+      ).toContain('P1');
     });
 
     rerender(
@@ -548,9 +548,9 @@ describe('BoardDetailClient', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Priority for Alpha' }).textContent).toContain(
-        'P2',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Priority for Alpha', hidden: true }).textContent,
+      ).toContain('P2');
     });
   });
 

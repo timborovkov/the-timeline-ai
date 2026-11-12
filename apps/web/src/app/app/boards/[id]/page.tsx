@@ -76,10 +76,7 @@ export default async function BoardDetailPage({
     filterParams,
   } = await loadBoardDetailPage({ params, searchParams });
   return (
-    <div
-      data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
-    >
+    <div data-app-layout="full-bleed" className="flex h-full min-h-0 min-w-0 flex-col">
       {categoryFilterBaseline ? (
         <TaskCategoryFilterRefresh
           surface="board"

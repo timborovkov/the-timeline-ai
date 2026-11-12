@@ -17,6 +17,7 @@ import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 import { HistoryBackLink } from '@/components/history-back-link';
+import { ObjectPeekFrame } from '@/components/objects/object-peek-frame';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
@@ -24,6 +25,7 @@ import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { boardViewHref } from '@/lib/board-links';
+import { displayObjectTitle } from '@/lib/object-title';
 
 export interface BoardMemberOption {
   id: string;
@@ -327,13 +329,7 @@ export function BoardDetailClient({
           }
         />
 
-        <div
-          className={
-            selectedItem
-              ? 'grid min-h-0 min-w-0 flex-1 gap-4 overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.35fr)]'
-              : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
-          }
-        >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {view === 'kanban' && (
               <CuratedKanbanBoard
@@ -358,7 +354,10 @@ export function BoardDetailClient({
             )}
           </div>
           {selectedItem ? (
-            <div className="min-h-0 overflow-y-auto pr-4 md:pr-8">
+            <ObjectPeekFrame
+              title={displayObjectTitle(selectedItem.object)}
+              closeHref={boardViewHref(boardId, view, null, filterParams)}
+            >
               <BoardCardDetail
                 key={selectedItem.id}
                 boardId={boardId}
@@ -377,7 +376,7 @@ export function BoardDetailClient({
                 onItemRemoved={removeLocalItem}
                 filterParams={filterParams}
               />
-            </div>
+            </ObjectPeekFrame>
           ) : null}
         </div>
       </div>

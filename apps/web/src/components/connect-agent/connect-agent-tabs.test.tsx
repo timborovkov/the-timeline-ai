@@ -40,7 +40,7 @@ describe('ConnectAgentTabs', () => {
     expect(screen.queryByText(/Developer Mode/)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'ChatGPT' }));
-    expect(screen.getByText(/Settings → Apps/)).toBeTruthy();
+    expect(screen.getByText(/Open ChatGPT Settings, then Apps/)).toBeTruthy();
     expect(
       screen
         .getByRole('button', { name: 'ChatGPT' })
@@ -49,6 +49,12 @@ describe('ConnectAgentTabs', () => {
         ?.getAttribute('src'),
     ).toBe('/connectors/openai.svg');
     expect(screen.queryByText(/Developer Mode/)).toBeNull();
+
+    const setupText = screen.getByText('Show setup text');
+    expect(setupText.closest('details')?.open).toBe(false);
+    fireEvent.click(setupText);
+    expect(setupText.closest('details')?.open).toBe(true);
+    expect(setupText.closest('details')?.textContent).toContain(MCP_URL);
 
     fireEvent.click(screen.getByRole('button', { name: 'Cursor' }));
     expect(

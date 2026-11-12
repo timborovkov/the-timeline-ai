@@ -291,3 +291,8 @@ works disclosure. Inputs stay local; the calculator neither changes billing nor
 collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
+
+The agent help page and authenticated Connect your agent screen reuse the homepage
+AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
+closed. Long agent instructions remain copyable payloads, never a visible Codex
+text wall; advanced setup and access explanations are optional disclosures.

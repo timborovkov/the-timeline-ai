@@ -1,4 +1,5 @@
 {
+  "apps/web/src/components/agent-reporting-settings.test.tsx": { "group": "dom" },
   "apps/web/src/app/team-deletion-requested/page.test.tsx": {
     "group": "dom"
   },
