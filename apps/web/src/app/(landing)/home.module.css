@@ -118,8 +118,7 @@
 .primaryCta,
 .footer a,
 .citation,
-.superCitation,
-.receiptLedger button {
+.superCitation {
   border-radius: 2px;
   outline-offset: 4px;
 }
@@ -128,8 +127,7 @@
 .primaryCta:focus-visible,
 .footer a:focus-visible,
 .citation:focus-visible,
-.superCitation:focus-visible,
-.receiptLedger button:focus-visible {
+.superCitation:focus-visible {
   outline: 2px solid var(--home-signal);
 }
 
@@ -1494,11 +1492,6 @@
   vertical-align: 0.05em;
 }
 
-.citation:hover {
-  background: var(--home-signal);
-  color: var(--home-ink);
-}
-
 .threadLayout {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1711,10 +1704,9 @@
   border-top: 1px solid var(--home-line);
 }
 
-.receiptLedger button {
+.sourceCard {
   width: 100%;
   text-align: left;
-  cursor: pointer;
   display: grid;
   grid-template-columns: 2rem 1fr;
   gap: 0.2rem 0.75rem;
@@ -1725,11 +1717,7 @@
   text-decoration: none;
 }
 
-.receiptLedger button:hover {
-  background: var(--home-signal-soft);
-}
-
-.receiptLedger button > span {
+.sourceCard > span {
   grid-row: 1 / 3;
   color: var(--home-signal);
   font-family: var(--font-mono);
@@ -2448,10 +2436,6 @@
 
   .primaryCta {
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .receiptLedger button {
-    transition: background-color 120ms ease-out;
   }
 
   .primaryCta:hover {
@@ -3235,43 +3219,12 @@
   outline-offset: 3px;
 }
 
-.sourcePreview {
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  width: min(32rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
-  overflow: auto;
-  padding: 1.5rem;
-  border: 1px solid var(--home-line-strong);
-  background: var(--home-ink);
-  color: var(--home-paper);
-}
-.sourcePreview::backdrop {
-  background: rgb(0 0 0 / 65%);
-}
-.sourcePreview h3 {
-  margin-block: 1rem;
-  font-size: 1.5rem;
-  line-height: 1.2;
-}
-.sourcePreview > p:last-child {
+.sourceCard p {
+  grid-column: 2;
+  margin: 0.5rem 0 0;
   color: var(--home-muted);
-  line-height: 1.65;
-}
-.sourcePreview form {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 1rem;
-}
-.sourceClose {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--home-line-strong);
-  cursor: pointer;
-}
-.sourceClose:focus-visible {
-  outline: 2px solid var(--home-signal);
-  outline-offset: 3px;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
 .recordShowcase {

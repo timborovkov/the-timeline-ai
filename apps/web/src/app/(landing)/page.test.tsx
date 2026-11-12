@@ -64,7 +64,7 @@ describe('LandingPage', () => {
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
-    expect(html).toContain('Select a reference to read its source.');
+    expect(html).toContain('Each numbered reference matches a source shown here.');
     expect(html).not.toContain('5 of 6 sources used');
     expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
@@ -322,18 +322,15 @@ describe('LandingPage', () => {
     expect(skipLink.className).toContain('focus:z-[90]');
   });
 
-  it('opens the matching source locally instead of navigating to the earlier timeline', async () => {
-    const user = userEvent.setup();
+  it('shows every source detail inline without dialogs, disclosures or navigation', () => {
     const { container } = render(<LandingPage />);
     const block = container.querySelector('[data-scene="04-ask"]');
+    const ledger = screen.getByRole('complementary', { name: 'Sources behind this answer' });
+    expect(block?.querySelector('dialog')).toBeNull();
+    expect(ledger.querySelector('button, a, details')).toBeNull();
     expect(block?.querySelector('a[href^="#acme-source-"]')).toBeNull();
-    expect(block?.querySelector('details')).toBeNull();
     for (const event of PUBLIC_DEMO_STORY.landing.events) {
-      const trigger = screen.getByRole('button', { name: new RegExp(`Source ${event.id}:`) });
-      await user.click(trigger);
-      const dialog = screen.getByRole('dialog', { name: event.title });
-      expect(dialog.textContent).toContain(event.detail);
-      (dialog as HTMLDialogElement).close();
+      expect(ledger.textContent).toContain(event.detail);
     }
   });
 });
