@@ -2305,12 +2305,22 @@
   color: var(--home-signal);
 }
 
-.footerGithub {
-  min-height: 2rem !important;
-  width: 2rem !important;
-  border: 0 !important;
-  background: transparent !important;
-  color: var(--home-paper) !important;
+.footerSettings {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--home-paper);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.footerSettings:hover {
+  color: var(--home-signal);
+}
+.footerSettings:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 4px;
 }
 
 .recoveryScene {

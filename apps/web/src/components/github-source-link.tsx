@@ -6,10 +6,12 @@ export function GitHubSourceLink({
   className,
   compact = false,
   appearance = 'button',
+  label = 'Source on GitHub',
 }: {
   className?: string;
   compact?: boolean;
   appearance?: 'button' | 'inline';
+  label?: string;
 }) {
   const inline = appearance === 'inline' && !compact;
   return (
@@ -27,7 +29,7 @@ export function GitHubSourceLink({
       )}
     >
       {inline ? null : <GitHubMark />}
-      {compact ? null : <span>Source on GitHub</span>}
+      {compact ? null : <span>{label}</span>}
     </a>
   );
 }

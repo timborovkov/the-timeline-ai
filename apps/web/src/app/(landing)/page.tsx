@@ -788,7 +788,7 @@ function Footer() {
           legalItems={
             <>
               <li>
-                <GitHubSourceLink compact className={styles.footerGithub} />
+                <GitHubSourceLink appearance="inline" label="GitHub" />
               </li>
               <li>
                 <Link href="/trust">Trust</Link>
@@ -803,7 +803,7 @@ function Footer() {
                 <Link href="/cookies">Cookies</Link>
               </li>
               <li>
-                <CookieSettingsButton />
+                <CookieSettingsButton className={styles.footerSettings} />
               </li>
               <li>
                 <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">

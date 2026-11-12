@@ -367,3 +367,7 @@ The closing CTA is a compact bordered panel: copy and action alongside each
 other on desktop, stacked on mobile. Keep the action near the headline and omit
 the repeated first-run walkthrough, which otherwise reserves blank space for
 signed-in visitors. Trust labels sit directly below, without a large spacer.
+
+The homepage footer shows the source repository as a text link labeled GitHub.
+Cookie settings remains a button that opens consent preferences, but shares the
+footer links’ typography, casing, color and hover treatment.
