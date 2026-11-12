@@ -1,4 +1,5 @@
 import { boardQualificationRequests, teamMembers, type Db } from '@timeline/db';
+import { activeWorkspaceCondition } from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, isNull, lte } from 'drizzle-orm';
 
 /** One due request per active workspace keeps bulk scans from starving other teams. */
@@ -21,7 +22,12 @@ export function discoverBoardQualificationRequests(db: Db, now = new Date()) {
         isNull(teamMembers.removedAt),
       ),
     )
-    .where(lte(boardQualificationRequests.availableAt, now))
+    .where(
+      and(
+        lte(boardQualificationRequests.availableAt, now),
+        activeWorkspaceCondition(boardQualificationRequests.teamId),
+      ),
+    )
     .orderBy(
       asc(boardQualificationRequests.teamId),
       asc(boardQualificationRequests.availableAt),

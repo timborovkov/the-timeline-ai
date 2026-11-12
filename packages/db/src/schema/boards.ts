@@ -273,6 +273,10 @@ export const boardQualificationRequests = pgTable(
     platformOperatorSessionId: uuid('platform_operator_session_id'),
     version: integer('version').notNull().default(1),
     boardCursor: uuid('board_cursor'),
+    includeRelationshipNeighbors: boolean('include_relationship_neighbors')
+      .notNull()
+      .default(false),
+    relationshipCursor: uuid('relationship_cursor'),
     requestedBoardId: uuid('requested_board_id').references(() => boards.id, {
       onDelete: 'cascade',
     }),

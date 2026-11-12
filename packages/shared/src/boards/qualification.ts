@@ -382,6 +382,90 @@ export function createBoardQualificationScope(
           return;
         }
       }
+      if (request.includeRelationshipNeighbors) {
+        const edges = await db
+          .select({
+            id: entityRelationships.id,
+            from: entityRelationships.fromEntityId,
+            to: entityRelationships.toEntityId,
+          })
+          .from(entityRelationships)
+          .where(
+            and(
+              eq(entityRelationships.teamId, scope.teamId),
+              or(
+                eq(entityRelationships.fromEntityId, request.entityId),
+                eq(entityRelationships.toEntityId, request.entityId),
+              ),
+              request.relationshipCursor
+                ? gt(entityRelationships.id, request.relationshipCursor)
+                : undefined,
+            ),
+          )
+          .orderBy(asc(entityRelationships.id))
+          .limit(50);
+        const neighbors = [
+          ...new Set(
+            edges.flatMap((edge) => [edge.from, edge.to]).filter((id) => id !== request.entityId),
+          ),
+        ];
+        const hasMore = edges.length === 50;
+        const expanded = await db.transaction(async (tx) => {
+          // Acquire parent keys before inbox rows. Canonical edits already hold their own entity lock.
+          const parents = await tx
+            .select({
+              id: entities.id,
+              archivedAt: entities.archivedAt,
+              mergedIntoId: entities.mergedIntoId,
+            })
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, scope.teamId),
+                inArray(entities.id, [request.entityId, ...neighbors]),
+              ),
+            )
+            .orderBy(asc(entities.id))
+            .for('key share');
+          const inbox = await tx
+            .select({
+              id: boardQualificationRequests.id,
+              version: boardQualificationRequests.version,
+            })
+            .from(boardQualificationRequests)
+            .where(
+              and(
+                eq(boardQualificationRequests.teamId, scope.teamId),
+                eq(boardQualificationRequests.userId, scope.userId),
+                inArray(boardQualificationRequests.entityId, [request.entityId, ...neighbors]),
+              ),
+            )
+            .orderBy(asc(boardQualificationRequests.entityId))
+            .for('update');
+          if (!inbox.some((row) => row.id === request.id && row.version === request.version))
+            return false;
+          for (const parent of parents) {
+            if (parent.id === request.entityId || parent.archivedAt || parent.mergedIntoId)
+              continue;
+            await requestBoardQualification(tx, {
+              teamId: scope.teamId,
+              userId: scope.userId,
+              entityId: parent.id,
+              sourceEventId: request.sourceEventId,
+            });
+          }
+          await tx
+            .update(boardQualificationRequests)
+            .set({
+              includeRelationshipNeighbors: hasMore,
+              relationshipCursor: hasMore ? edges.at(-1)?.id : null,
+              ...(hasMore ? { availableAt: new Date() } : {}),
+            })
+            .where(requestWhere);
+          return true;
+        });
+        if (!expanded || hasMore) return;
+      }
       const candidates = await db
         .select({ id: boards.id })
         .from(boards)

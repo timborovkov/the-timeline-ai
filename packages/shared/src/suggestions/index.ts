@@ -3185,7 +3185,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       identity_facet: ['entityId'],
       object_note: ['entityId', 'entityName', 'entityType', 'noteId'],
       object_relationship: ['fromEntityId', 'fromRef', 'fromName', 'toEntityId', 'toRef', 'toName'],
-      board_membership: ['boardId', 'entityId'],
+      board_membership: [
+        'boardId',
+        'entityId',
+        'boardItemId',
+        'expectedUpdatedAt',
+        'qualification',
+      ],
       board_item_update: ['boardItemId'],
     };
     const keys = targetKeys[targetKind];

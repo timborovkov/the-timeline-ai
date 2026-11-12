@@ -147,9 +147,10 @@ membership, preserving the object and board history.
 
 Committed object creates/updates, notes, identity facets and relationship changes
 persist qualification requests in the canonical write transaction. Relationship
-changes request both endpoints. Object updates also enqueue active relationship
-neighbors with a set-based durable write, so supplied related names/statuses are
-reevaluated when their source object changes. Pending or rejected object proposals do not trigger
+changes request both endpoints. Object updates persist a neighbor-expansion flag in the same transaction. The
+worker expands relationships in durable batches of 50, acquiring entity key locks
+before inbox locks, so related names/statuses are reevaluated without locking
+neighboring entities during the originating object edit. Pending or rejected object proposals do not trigger
 qualification. The durable inbox coalesces per member/object, uses leases and
 version-checked completion, and retries failures with bounded backoff. Queue outages
 cannot lose committed requests. The worker discovers routing metadata globally and
@@ -168,7 +169,8 @@ No-action outcomes also appear in reconciliation diagnostics.
 
 Accepting a proposal rechecks current criteria, object facts, membership and type
 restrictions within the same transaction as the membership mutation. Source-backed
-items retain explicit evidence dependencies and lock available sources during acceptance. Newer manual membership decisions take precedence. A removal for a
+items retain explicit evidence dependencies and lock available sources during acceptance.
+Revising proposal wording preserves the original qualification and membership-version guards. Newer manual membership decisions take precedence. A removal for a
 previous membership cannot remove a later re-added membership. Evaluated fact/policy
 fingerprints suppress repeated decisions, including declined proposals. Evaluation
 caches and private proposal identities include the originating member, preserving
@@ -183,7 +185,7 @@ provides an explicit recheck of previously evaluated objects. Matching proposals
 reviewed through the board-filtered Approvals page; there is no second approval store.
 Saving criteria alone does not scan historical objects.
 
-Discovery selects at most one due request per workspace before applying its global
+Discovery excludes inactive workspaces and selects at most one due request per workspace before applying its global
 batch limit, so a bulk scan cannot occupy every discovery slot.
 
 Operational bounds: at most five boards per request pass, one pass per team per 30

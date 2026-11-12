@@ -2617,9 +2617,11 @@ describe('automatic board membership', () => {
       { kind: 'user', userId: USER_OWNER },
     );
     const requests = await db.select().from(boardQualificationRequests);
-    expect(requests.map((request) => request.entityId).sort()).toEqual(
-      [company.id, object.id].sort(),
-    );
+    expect(requests.map((request) => request.entityId)).toEqual([company.id]);
+    expect(requests[0]?.includeRelationshipNeighbors).toBe(true);
+    await process(scope, 'remove');
+    const neighbors = await db.select().from(boardQualificationRequests);
+    expect(neighbors.map((request) => request.entityId)).toEqual([object.id]);
     await process(scope, 'remove');
     const [bundle] = await scope.suggestions.listPendingSuggestions();
     expect(required(required(bundle).items[0]).operation).toBe('archive_or_cancel');
@@ -2656,5 +2658,97 @@ describe('automatic board membership', () => {
     expect(evaluations.map((evaluation) => evaluation.userId).sort()).toEqual(
       [USER_OWNER, USER_MEMBER].sort(),
     );
+  });
+  for (const decision of ['add', 'remove'] as const) {
+    it(`preserves automatic ${decision} freshness guards through proposal revision`, async () => {
+      const { scope, board, object } = await setup();
+      if (decision === 'remove') {
+        await scope.boards.addBoardItem(board.id, {
+          entityId: object.id,
+          actor: { kind: 'user', userId: USER_OWNER },
+        });
+        await scope.objects.updateObject(
+          object.id,
+          { status: 'declined' },
+          { kind: 'user', userId: USER_OWNER },
+        );
+      }
+      await process(scope, decision);
+      const item = required(
+        required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+      );
+      const revising = withTeam(db, TEAM_A, USER_OWNER, {
+        chatStructured: vi.fn().mockResolvedValue({
+          object: {
+            title: 'Reworded membership suggestion',
+            description: null,
+            proposedPayload: { note: 'A shorter explanation' },
+            explanation: 'Shortened the note',
+          },
+          model: 'test-revision',
+        }) as never,
+      });
+      await revising.suggestions.reviseSuggestionItem({
+        itemId: item.id,
+        feedback: 'Make the note shorter',
+      });
+      const revised = required(
+        required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+      );
+      expect(revised.proposedPayload.qualification).toEqual(item.proposedPayload.qualification);
+      if (decision === 'remove') {
+        expect(revised.proposedPayload.boardItemId).toBe(item.proposedPayload.boardItemId);
+        expect(revised.proposedPayload.expectedUpdatedAt).toBe(
+          item.proposedPayload.expectedUpdatedAt,
+        );
+      }
+      await scope.boards.updateBoardSettings({ id: board.id, qualificationEnabled: false });
+      expect(await scope.suggestions.acceptSuggestionItemWithOutcome(item.id)).toBe('superseded');
+    });
+  }
+  it('persists bounded neighbor-expansion progress across worker passes', async () => {
+    const { scope, object } = await setup();
+    const { boardQualificationRequests, entityRelationships } = await import('@timeline/db');
+    const neighbors = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 51 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'person' as const,
+          canonicalName: `Neighbor ${index}`,
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      neighbors.map((neighbor) => ({
+        teamId: TEAM_A,
+        fromEntityId: object.id,
+        toEntityId: neighbor.id,
+        kind: 'related' as const,
+      })),
+    );
+    await db.delete(boardQualificationRequests);
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'considering' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    const initial = required((await db.select().from(boardQualificationRequests))[0]);
+    const classify = vi
+      .fn()
+      .mockResolvedValue({ decision: 'insufficient_evidence', reason: 'Test', evidenceKeys: [] });
+    await scope.boardQualification.processRequest(initial.id, classify);
+    const page = await db.select().from(boardQualificationRequests);
+    expect(page).toHaveLength(51);
+    expect(required(page.find((request) => request.id === initial.id)).relationshipCursor).toEqual(
+      expect.any(String),
+    );
+    expect(classify).not.toHaveBeenCalled();
+    await scope.boardQualification.processRequest(initial.id, classify);
+    const pending = await db.select().from(boardQualificationRequests);
+    expect(pending.map((request) => request.entityId).sort()).toEqual(
+      neighbors.map((neighbor) => neighbor.id).sort(),
+    );
+    expect(pending.every((request) => !request.includeRelationshipNeighbors)).toBe(true);
   });
 });

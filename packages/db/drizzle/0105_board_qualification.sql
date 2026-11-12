@@ -10,6 +10,7 @@ CREATE TABLE board_qualification_requests (
  source_event_id uuid REFERENCES raw_events(id) ON DELETE CASCADE,
  platform_operator_session_id uuid,
  version integer NOT NULL DEFAULT 1, board_cursor uuid,
+ include_relationship_neighbors boolean NOT NULL DEFAULT false, relationship_cursor uuid,
  requested_board_id uuid REFERENCES boards(id) ON DELETE CASCADE,
  requested_at timestamptz NOT NULL DEFAULT now(), available_at timestamptz NOT NULL DEFAULT now(),
  attempts integer NOT NULL DEFAULT 0, failure_code text,
