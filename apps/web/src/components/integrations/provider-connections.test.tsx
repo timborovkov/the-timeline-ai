@@ -148,7 +148,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'github',
-            displayName: 'GitHub — tim',
+            displayName: 'GitHub — taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -192,7 +192,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'monday',
             provider: 'monday',
-            displayName: 'Monday.com — Tim',
+            displayName: 'Monday.com — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -254,7 +254,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'monday',
             provider: 'monday',
-            displayName: 'Monday.com — Tim',
+            displayName: 'Monday.com — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -280,7 +280,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -319,7 +319,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -368,7 +368,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -408,7 +408,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -457,7 +457,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -502,7 +502,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-a',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -533,7 +533,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -542,7 +542,7 @@ describe('PersonalConnectionsUi', () => {
     );
 
     const region = await screen.findByRole('region', {
-      name: 'Google Drive account Google Drive — Tim',
+      name: 'Google Drive account Google Drive — Taylor',
     });
     expect(await screen.findByRole('checkbox', { name: /My Drive \(root\)/i })).toBeTruthy();
     expect(screen.getByText('0 sources shared')).toBeTruthy();
@@ -575,7 +575,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -616,7 +616,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -660,7 +660,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -719,7 +719,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -785,7 +785,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'monday',
             provider: 'monday',
-            displayName: 'Monday.com — Tim',
+            displayName: 'Monday.com — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -838,7 +838,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'monday',
             provider: 'monday',
-            displayName: 'Monday.com — Tim',
+            displayName: 'Monday.com — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -897,7 +897,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'github',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -931,7 +931,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'monday',
             provider: 'monday',
-            displayName: 'Monday.com — Tim',
+            displayName: 'Monday.com — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -963,7 +963,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'github',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -971,7 +971,7 @@ describe('PersonalConnectionsUi', () => {
       />,
     );
 
-    await screen.findByText('GitHub — Tim');
+    await screen.findByText('GitHub — Taylor');
     await user.click(screen.getByRole('button', { name: 'Actions for this provider account' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Delete account' }));
     await user.click(screen.getByRole('button', { name: 'Delete provider account' }));
@@ -1006,7 +1006,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: 'token_revoked',
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -1064,7 +1064,7 @@ describe('PersonalConnectionsUi', () => {
           row({
             id: 'share-drive',
             connectionId: 'conn-drive',
-            ownerLabel: 'Tim',
+            ownerLabel: 'Taylor',
             provider: 'google_drive',
             resourceKind: 'drive.file',
             sourceExternalId: 'file-1',
@@ -1095,7 +1095,7 @@ describe('PersonalConnectionsUi', () => {
       <TeamSourcesUi
         isAdmin
         activeShareIds={[]}
-        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' })]}
+        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Taylor' })]}
       />,
     );
 
@@ -1120,7 +1120,7 @@ describe('PersonalConnectionsUi', () => {
       <TeamSourcesUi
         isAdmin
         activeShareIds={[]}
-        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' })]}
+        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Taylor' })]}
       />,
     );
 
@@ -1142,7 +1142,7 @@ describe('PersonalConnectionsUi', () => {
       <TeamSourcesUi
         isAdmin={false}
         activeShareIds={[]}
-        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' })]}
+        rows={[row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Taylor' })]}
       />,
     );
 
@@ -1160,13 +1160,13 @@ describe('PersonalConnectionsUi', () => {
         isAdmin
         activeShareIds={['share-a']}
         rows={[
-          row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' }),
+          row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Taylor' }),
           row({ id: 'share-b', connectionId: 'conn-b', ownerLabel: 'Ada' }),
         ]}
       />,
     );
 
-    expect(screen.getByText('Provider account owner: Tim')).toBeTruthy();
+    expect(screen.getByText('Provider account owner: Taylor')).toBeTruthy();
     expect(screen.getByText('Provider account owner: Ada')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Save team sync' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Activate team sync' })).toBeTruthy();
@@ -1182,7 +1182,7 @@ describe('PersonalConnectionsUi', () => {
 
   it('updates selected sources when refreshed active shares change', () => {
     const rows = [
-      row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Tim' }),
+      row({ id: 'share-a', connectionId: 'conn-a', ownerLabel: 'Taylor' }),
       row({ id: 'share-b', connectionId: 'conn-b', ownerLabel: 'Ada', sourceExternalId: 'repo-2' }),
     ];
     const { rerender } = render(<TeamSourcesUi isAdmin activeShareIds={['share-a']} rows={rows} />);

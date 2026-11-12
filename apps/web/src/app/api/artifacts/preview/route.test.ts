@@ -157,8 +157,8 @@ beforeEach(() => {
       authorUserId: null,
       sourceMetadata: {
         tg_chat_title: 'AuditAI Founders',
-        tg_sender_name: 'Miku',
-        tg_username: 'miku',
+        tg_sender_name: 'Casey',
+        tg_username: 'casey',
       },
     },
   ]);
@@ -169,15 +169,15 @@ beforeEach(() => {
         {
           sender: {
             source: 'telegram',
-            displayName: 'Miku',
-            handle: '@miku',
+            displayName: 'Casey',
+            handle: '@casey',
             externalId: null,
             provider: 'telegram',
           },
           resolvedSenderObject: {
             id: IDS.object,
-            canonicalName: 'Mikael',
-            aliases: ['Miku'],
+            canonicalName: 'Cameron',
+            aliases: ['Casey'],
             linkedUserId: null,
           },
           senderResolutionStatus: 'resolved',
@@ -276,7 +276,7 @@ describe('POST /api/artifacts/preview', () => {
 
   it('hydrates every supported preview shape', async () => {
     const cases = [
-      [{ kind: 'timeline_event', id: IDS.event }, 'Telegram from Mikael (Miku, @miku)'],
+      [{ kind: 'timeline_event', id: IDS.event }, 'Telegram from Cameron (Casey, @casey)'],
       [{ kind: 'object', id: IDS.object }, 'Otto Silventola'],
       [{ kind: 'object_note', id: IDS.note }, 'Note on Otto Silventola'],
       [
@@ -313,11 +313,11 @@ describe('POST /api/artifacts/preview', () => {
 
     expect(response.status).toBe(200);
     const body = await response.text();
-    expect(body).toContain('"title":"Telegram from Mikael (Miku, @miku)"');
+    expect(body).toContain('"title":"Telegram from Cameron (Casey, @casey)"');
     expect(body).toContain('"subtitle":"AuditAI Founders');
     expect(body).toContain('"badges":["Telegram"]');
     expect(body).toContain('"label":"Source","value":"Telegram"');
-    expect(body).toContain('"label":"Sender","value":"Mikael (Miku, @miku)"');
+    expect(body).toContain('"label":"Sender","value":"Cameron (Casey, @casey)"');
     expect(body).toContain('"label":"Conversation","value":"AuditAI Founders"');
     expect(body).toContain('"label":"Open on Timeline"');
     expect(body).toContain(`/app/timeline?event=${IDS.event}#ev-${IDS.event}`);
@@ -325,7 +325,7 @@ describe('POST /api/artifacts/preview', () => {
     expect(body).toContain('Original message');
     expect(body).toContain('"sourceKey":"telegram"');
     expect(body).toContain('"logoSrc":"/connectors/telegram.svg"');
-    expect(body).toContain('"author":"Mikael (Miku, @miku)"');
+    expect(body).toContain('"author":"Cameron (Casey, @casey)"');
     expect(body).toContain('"quote":"Otto mentioned the pilot."');
   });
 
@@ -361,7 +361,7 @@ describe('POST /api/artifacts/preview', () => {
       {
         id: IDS.event,
         source: 'meeting',
-        contentText: '[0s] Mikael: Next up.',
+        contentText: '[0s] Cameron: Next up.',
         contentAudioUrl: null,
         occurredAt: new Date('2026-07-17T08:01:00.000Z'),
         visibility: 'team',

@@ -730,7 +730,7 @@ describe('BoardCardDetail', () => {
         })}
         history={[]}
         lanes={lanes}
-        members={[{ id: 'user-1', label: 'Mikael' }]}
+        members={[{ id: 'user-1', label: 'Cameron' }]}
         onUpdateItem={onUpdateItem}
       />,
     );

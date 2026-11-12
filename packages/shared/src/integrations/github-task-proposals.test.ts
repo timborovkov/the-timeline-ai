@@ -58,7 +58,7 @@ function githubPrWorkItem(overrides: Record<string, unknown> = {}) {
     externalObjectId: 'timborovkov/audit-ai#10',
     eventType: 'pr.merged',
     occurredAt: new Date('2026-06-01T12:00:00Z'),
-    actor: { externalId: 'timborovkov', name: 'timborovkov' },
+    actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
     contentText:
       'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
     extra: {
@@ -85,21 +85,21 @@ function githubPrWorkItem(overrides: Record<string, unknown> = {}) {
 
 describe('GitHub task proposal matching', () => {
   it('parses GitHub connection display names into logins', () => {
-    expect(githubLoginFromConnectionDisplayName('GitHub — timborovkov')).toBe('timborovkov');
+    expect(githubLoginFromConnectionDisplayName('GitHub — taylorbennett')).toBe('taylorbennett');
     expect(githubLoginFromConnectionDisplayName('GitHub - octocat')).toBe('octocat');
     expect(githubLoginFromConnectionDisplayName('GitHub')).toBeNull();
   });
 
   it('maps GitHub logins through connection ownership before name compaction', () => {
     const members = [
-      { userId: USER_ID, name: 'Tim Borovkov' },
+      { userId: USER_ID, name: 'Taylor Bennett' },
       { userId: OTHER_USER_ID, name: 'Other Person' },
     ];
     expect(
-      resolveGithubLoginToUserId('timborovkov', members, new Map([[USER_ID, ['timborovkov']]])),
+      resolveGithubLoginToUserId('taylorbennett', members, new Map([[USER_ID, ['taylorbennett']]])),
     ).toBe(USER_ID);
-    expect(resolveGithubLoginToUserId('timborovkov', members, new Map())).toBe(USER_ID);
-    expect(compactGithubPersonKey('Tim Borovkov')).toBe('timborovkov');
+    expect(resolveGithubLoginToUserId('taylorbennett', members, new Map())).toBe(USER_ID);
+    expect(compactGithubPersonKey('Taylor Bennett')).toBe('taylorbennett');
     expect(
       resolveGithubLoginToUserId(
         'octocat',
@@ -118,8 +118,8 @@ describe('GitHub task proposal matching', () => {
     expect(
       resolveGithubLoginToUserId(
         workItem?.actorLogin ?? '',
-        [{ userId: USER_ID, name: 'Tim Borovkov' }],
-        new Map([[USER_ID, ['timborovkov']]]),
+        [{ userId: USER_ID, name: 'Taylor Bennett' }],
+        new Map([[USER_ID, ['taylorbennett']]]),
       ),
     ).toBeNull();
   });
@@ -224,7 +224,7 @@ describe('GitHub task proposal matching', () => {
       externalObjectId: 'timborovkov/audit-ai#11',
       eventType: 'pr.closed',
       occurredAt: new Date('2026-06-01T12:00:00Z'),
-      actor: { externalId: 'timborovkov', name: 'timborovkov' },
+      actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
       contentText: 'GitHub PR timborovkov/audit-ai#11 — Abandoned experiment',
       extra: {
         github: {
@@ -272,7 +272,7 @@ describe('GitHub task proposal matching', () => {
           provider: 'github',
           event_type: 'issue_comment.created',
           external_object_id: 'timborovkov/audit-ai#10:comment:99',
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           github: {
             type: 'issue_comment',
             repo: 'timborovkov/audit-ai',
@@ -289,7 +289,7 @@ describe('GitHub task proposal matching', () => {
         externalObjectId: 'timborovkov/audit-ai#10:review:1',
         eventType: 'pr.review.approved',
         occurredAt: new Date('2026-06-01T12:00:00Z'),
-        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
         contentText: 'Approved',
         extra: {
           github: {
@@ -411,13 +411,13 @@ describe('GitHub task proposal matching', () => {
         provider: 'github',
         event_type: 'pr.merged',
         external_object_id: 'timborovkov/audit-ai#88',
-        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
         github: {
           type: 'pull_request',
           repo: 'timborovkov/audit-ai',
           number: 88,
           merged_at: '2026-06-02T09:00:00Z',
-          assignees: [{ login: 'timborovkov' }],
+          assignees: [{ login: 'taylorbennett' }],
         },
       },
       'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
@@ -426,8 +426,8 @@ describe('GitHub task proposal matching', () => {
       kind: 'pull_request',
       number: 88,
       status: 'done',
-      actorLogin: 'timborovkov',
-      assigneeLogins: ['timborovkov'],
+      actorLogin: 'taylorbennett',
+      assigneeLogins: ['taylorbennett'],
     });
   });
 });
@@ -444,7 +444,7 @@ describe('GitHub task proposal persistence', () => {
     await pg.exec(`
       INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 'audit-ai', 'AuditAI');
       INSERT INTO users (id, email, name) VALUES
-        ('${USER_ID}', 'tim@example.com', 'Tim Borovkov'),
+        ('${USER_ID}', 'taylor@example.com', 'Taylor Bennett'),
         ('${OTHER_USER_ID}', 'other@example.com', 'Other Person');
       INSERT INTO team_members (team_id, user_id, role) VALUES
         ('${TEAM_ID}', '${USER_ID}', 'owner'),
@@ -463,7 +463,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -491,7 +491,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-01T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -560,7 +560,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -626,7 +626,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -643,7 +643,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#88',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-02T09:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
           extra: {
@@ -739,7 +739,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-01T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -799,7 +799,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -827,7 +827,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.opened',
           occurredAt: new Date('2026-06-01T11:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -867,7 +867,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-01T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -911,7 +911,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -939,7 +939,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#issue:22',
           eventType: 'issue.closed',
           occurredAt: new Date('2026-06-03T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText: 'GitHub Issue timborovkov/audit-ai#22 — Document the audit seed contract',
           extra: {
             github: {

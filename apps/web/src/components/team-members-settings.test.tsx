@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 const users = new Map([
-  ['owner-1', { id: 'owner-1', name: 'Tim', email: 'tim@example.com' }],
+  ['owner-1', { id: 'owner-1', name: 'Taylor', email: 'taylor@example.com' }],
   ['member-1', { id: 'member-1', name: 'Ada Lovelace', email: 'ada@example.com' }],
 ]);
 

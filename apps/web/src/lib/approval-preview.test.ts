@@ -60,7 +60,7 @@ describe('buildApprovalPreviewFields', () => {
           archivedAt: null,
         },
       },
-      members: { 'user-1': 'Mikael' },
+      members: { 'user-1': 'Cameron' },
       timezone: 'UTC',
     });
 
@@ -76,7 +76,7 @@ describe('buildApprovalPreviewFields', () => {
       changed: true,
     });
     expect(fields.find((field) => field.key === 'assigneeUserId')).toMatchObject({
-      current: 'Mikael',
+      current: 'Cameron',
       changed: false,
     });
   });

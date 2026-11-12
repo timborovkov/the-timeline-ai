@@ -248,7 +248,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         normalizeOutput: normalizeExtractionModelOutput,
-        prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for Otto.',
+        prompt: 'Extract facts from: Cameron Vale shared a Google Drive folder for Otto.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       {
@@ -256,14 +256,14 @@ describe('chatStructured', () => {
           JSON.stringify([
             {
               statement:
-                'Mikael Rintala shared a Google Drive folder link containing zip files and an HTML version for Otto.',
+                'Cameron Vale shared a Google Drive folder link containing zip files and an HTML version for Otto.',
               confidence: 1,
               mentions: [
                 {
-                  name: 'Mikael Rintala',
+                  name: 'Cameron Vale',
                   type: 'person',
                   role: 'subject',
-                  aliases: ['@mikaelrintala'],
+                  aliases: ['@cameronvale'],
                 },
                 { name: 'Otto', type: 'person', role: 'object', aliases: [] },
                 { name: 'Google Drive', type: 'company', role: 'object', aliases: [] },
@@ -277,9 +277,9 @@ describe('chatStructured', () => {
     expect(result.object.facts).toHaveLength(1);
     expect(result.object.facts[0]).toMatchObject({
       statement:
-        'Mikael Rintala shared a Google Drive folder link containing zip files and an HTML version for Otto.',
+        'Cameron Vale shared a Google Drive folder link containing zip files and an HTML version for Otto.',
       mentions: [
-        { name: 'Mikael Rintala', type: 'person', role: 'subject' },
+        { name: 'Cameron Vale', type: 'person', role: 'subject' },
         { name: 'Otto', type: 'person', role: 'object' },
         { name: 'Google Drive', type: 'company', role: 'object' },
       ],
@@ -302,7 +302,7 @@ describe('chatStructured', () => {
         model: makeMockModel(
           JSON.stringify({
             summary: 'The team discussed launch readiness.',
-            actionItems: [{ text: 'Send the launch checklist.', owner: 'Mikael' }],
+            actionItems: [{ text: 'Send the launch checklist.', owner: 'Cameron' }],
           }),
         ),
       },
@@ -310,7 +310,7 @@ describe('chatStructured', () => {
 
     expect(result.object).toEqual({
       summary: 'The team discussed launch readiness.',
-      action_items: [{ text: 'Send the launch checklist.', owner: 'Mikael' }],
+      action_items: [{ text: 'Send the launch checklist.', owner: 'Cameron' }],
     });
   });
 
@@ -370,14 +370,14 @@ describe('chatStructured', () => {
                   content: JSON.stringify({
                     facts: [
                       {
-                        statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
+                        statement: 'Cameron Vale shared a Google Drive folder for AuditAI.',
                         confidence: 1,
                         mentions: [
                           {
-                            name: 'Mikael Rintala',
+                            name: 'Cameron Vale',
                             type: 'person',
                             role: 'subject',
-                            aliases: ['mikaelrintala'],
+                            aliases: ['cameronvale'],
                           },
                         ],
                       },
@@ -398,7 +398,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         normalizeOutput: normalizeExtractionModelOutput,
-        prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for AuditAI.',
+        prompt: 'Extract facts from: Cameron Vale shared a Google Drive folder for AuditAI.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
@@ -406,8 +406,8 @@ describe('chatStructured', () => {
 
     expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
     expect(result.object.facts[0]).toMatchObject({
-      statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
-      mentions: [{ name: 'Mikael Rintala', type: 'person', role: 'subject' }],
+      statement: 'Cameron Vale shared a Google Drive folder for AuditAI.',
+      mentions: [{ name: 'Cameron Vale', type: 'person', role: 'subject' }],
     });
     expect(requests).toHaveLength(1);
     expect(requestHeaders[0]?.get('X-OpenRouter-Cache')).toBe('false');
@@ -1349,7 +1349,7 @@ describe('chatStructured', () => {
         normalizeOutput: normalizeExtractionModelOutput,
         instructions: EXTRACTION_SYSTEM_PROMPT,
         prompt:
-          'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
+          'Current event: Taylor met Apple about SaaS licensing. Return one explicit fact with mentions.',
       });
 
       expect(result.model).toBe(TIMELINE_MODELS.extraction.id);

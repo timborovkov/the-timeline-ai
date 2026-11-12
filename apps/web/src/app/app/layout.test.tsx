@@ -35,7 +35,7 @@ function queryResult<T>(value: T) {
 }
 
 const selectResults = [
-  [{ email: 'tim@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
+  [{ email: 'taylor@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
   [],
 ];
 const select = vi.fn(() => queryResult(selectResults.shift() ?? []));
@@ -147,10 +147,12 @@ beforeEach(() => {
   selectResults.splice(
     0,
     selectResults.length,
-    [{ email: 'tim@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
+    [{ email: 'taylor@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
     [],
   );
-  fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } });
+  fakes.auth.mockResolvedValue({
+    user: { id: 'user-1', name: 'Taylor', email: 'taylor@example.com' },
+  });
   fakes.getRequestIdentity.mockImplementation(() =>
     fakes.auth().then((session) => ({ session, impersonation: null })),
   );

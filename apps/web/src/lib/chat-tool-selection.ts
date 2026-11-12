@@ -7,7 +7,7 @@ import type { ToolSet } from 'ai';
  * `buildAgentTools` must appear here except `propose_object_change`, which
  * stays on proposal-only MCP/Telegram agents. `list_team_members` stays in
  * `core` so the model can resolve teammate names even when the user message
- * is only "assign Mikael". Keyword matchers must cover the system prompt's
+ * is only "assign Cameron". Keyword matchers must cover the system prompt's
  * example phrases (scheduled, pins, sentry) and any snake_case tool name the
  * user mentions.
  */

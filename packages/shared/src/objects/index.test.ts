@@ -3298,7 +3298,7 @@ describe('object scope — notes and suggestions', () => {
           authorUserId: USER_OWNER,
           source: 'telegram',
           contentText:
-            'Mikael asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
+            'Cameron asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
           occurredAt: new Date('2026-06-29T11:00:00.000Z'),
           visibility: 'team',
         },
@@ -3313,7 +3313,7 @@ describe('object scope — notes and suggestions', () => {
       expect.objectContaining({
         id: sourceEvent?.id,
         contentText:
-          'Mikael asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
+          'Cameron asked to replace the current FSLI scoping logic in AuditAI with a risk-informed approach based on ISA 320 and ISA 315.',
       }),
     ]);
     expect(detail?.provenance.relatedEvidence).toEqual([

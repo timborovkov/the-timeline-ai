@@ -109,15 +109,15 @@ function makeScope() {
           source: 'slack',
           sender: {
             source: 'slack',
-            displayName: 'Miku',
+            displayName: 'Casey',
             handle: 'U-MIKU',
             externalId: 'U-MIKU',
             provider: 'auditai',
           },
           resolvedSenderObject: {
             id: '12121212-1212-4121-8121-121212121212',
-            canonicalName: 'Mikael',
-            aliases: ['Miku'],
+            canonicalName: 'Cameron',
+            aliases: ['Casey'],
             linkedUserId: null,
           },
           senderResolutionStatus: 'resolved',
@@ -136,7 +136,7 @@ function makeScope() {
           authorUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           sourceMetadata: {
             slack_sender_id: 'U-MIKU',
-            slack_sender_name: 'Miku',
+            slack_sender_name: 'Casey',
             slack_channel_name: 'pilot-delivery',
           },
           visibility: 'team',
@@ -321,7 +321,7 @@ describe('retrieveWorkspaceContext', () => {
     });
     expect(
       (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
-    ).toContain('"senderName":"Miku"');
+    ).toContain('"senderName":"Casey"');
     expect(
       (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
     ).toContain('"timelineAuthorUserId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"');
@@ -363,8 +363,8 @@ describe('retrieveWorkspaceContext', () => {
     );
     expect(retrievedEvent).toMatchObject({
       citation: `[ev:${EVENT_ID}]`,
-      sender: { displayName: 'Miku' },
-      resolved_sender_object: { canonicalName: 'Mikael' },
+      sender: { displayName: 'Casey' },
+      resolved_sender_object: { canonicalName: 'Cameron' },
       sender_resolution_status: 'resolved',
     });
     expect(result.events).toEqual(
