@@ -123,6 +123,7 @@ function heroSourcePath(source: (typeof HERO_SOURCES)[number]): string {
 function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
   return (
     <figure
+      id="hero-work-flow"
       className={styles.observatory}
       data-home-diagram
       aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
@@ -222,12 +223,12 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
 
   return (
     <section id={id} className={styles.flowExplainer} data-flow-explainer aria-labelledby={titleId}>
-      <TimelineFlowMotion targetId={id} />
       <header className={styles.flowExplainerHeader}>
         <span className={styles.monoLabel}>The platform flow</span>
         <div>
           <h2 id={titleId}>How scattered work becomes useful context.</h2>
           <p>Sources become history, working records and verifiable answers.</p>
+          <TimelineFlowMotion targetId={id} />
         </div>
       </header>
 

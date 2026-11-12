@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { Logo } from '@/components/brand/logo';
 import styles from '@/components/marketing/integrations/inbound-mcp-diagram.module.css';
 import { MCP_GUIDE_HOSTED_TOOL_NAMES } from '@/components/marketing/integrations/mcp-guide-content';
+import { MotionFigure } from '@/components/marketing/motion-figure';
 
 const TOOL_MARKS: Record<(typeof MCP_GUIDE_HOSTED_TOOL_NAMES)[number], string> = {
   Notion: '/connectors/notion.svg',
@@ -14,7 +15,7 @@ const TOOL_MARKS: Record<(typeof MCP_GUIDE_HOSTED_TOOL_NAMES)[number], string> =
 
 export function InboundMcpDiagram() {
   return (
-    <figure className={styles.figure} data-inbound-mcp aria-labelledby="inbound-mcp-title">
+    <MotionFigure className={styles.figure} data-inbound-mcp aria-labelledby="inbound-mcp-title">
       <figcaption className={styles.caption}>
         <span id="inbound-mcp-title" className={styles.kicker}>
           Live lookup
@@ -59,6 +60,6 @@ export function InboundMcpDiagram() {
           </ul>
         </section>
       </div>
-    </figure>
+    </MotionFigure>
   );
 }

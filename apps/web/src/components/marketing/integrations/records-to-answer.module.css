@@ -23,7 +23,7 @@
 }
 
 .index {
-  color: var(--fg-dim);
+  color: var(--fg);
   font-size: 0.72rem;
   font-weight: 600;
 }
@@ -275,11 +275,11 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .transfer span::after {
+  .figure[data-motion-entered='true'] .transfer span::after {
     animation: trace-pass 900ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
   }
 
-  .rail i {
+  .figure[data-motion-entered='true'] .rail i {
     animation: marker-pulse 640ms cubic-bezier(0.22, 1, 0.36, 1) 840ms both;
   }
 
@@ -293,7 +293,7 @@
 }
 
 @media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
-  .transfer span::after {
+  .figure[data-motion-entered='true'] .transfer span::after {
     animation-name: trace-pass-vertical;
   }
 }

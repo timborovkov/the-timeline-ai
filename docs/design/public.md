@@ -1,8 +1,8 @@
 # Public-site design patterns
 
-The public landing page is an editorial, six-scene acquisition narrative:
-claim, evidence and chronology, cited answer, chat-and-agent answers with a shared
-example, audience fit with trust, and a Start free CTA. The claim scene also
+The public landing page is an editorial, seven-scene acquisition narrative:
+claim, what goes in, one timeline, ask, connected records, audience fit with
+trust, and a Start free CTA. The claim scene also
 includes a compact For agents card: title and body that agents read the work
 record and write notes back like teammates, official Claude, ChatGPT, Cursor,
 Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyable
@@ -10,10 +10,9 @@ Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyabl
 landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
 what is said in Slack, Telegram, email and calls becomes current client, deal,
 task and decision records, with the source for every line. Captured evidence
-lands automatically; lasting record changes wait for human approval. Closing
-signup entry points (home, product tour, team daily log, and the Free pricing
-card) show the first-run path: team created, one capture source, then the first
-source-linked record or a question. Audience copy describes how teams work (chat-run teams
+lands automatically; lasting record changes wait for human approval. The product tour and Free pricing card show the first-run path: team created, one capture source,
+then the first source-linked record or a question. Homepage and use-case closing
+CTAs stay compact and omit that repeated walkthrough. Audience copy describes how teams work (chat-run teams
 on Slack or Telegram, with the rest of the work spread across email, calls and
 documents), not team size or role. Updates are daily, with no weekly framing.
 The chronology scene names the cost of rebuilding status, promises and decisions
@@ -26,8 +25,8 @@ links. The cited-answer source list stays visible beside the answer, with each s
 details written directly in its card. Numbered references are static labels that
 match those cards. No modal, folding, navigation or scrolling is needed to read
 the evidence. Homepage screenshots use the real captures with theme-matched variants.
-Mobile retains the complete landscape frame rather than cropping out source
-inspectors. Screenshots are display-only: no links, zoom actions, or instructions
+Small-screen homepage screenshots retain the landscape 16×10 frame; dedicated
+portrait captures retain their full frame. Screenshots are display-only: no links, zoom actions, or instructions
 to click them. Each frame reserves its aspect box and shows a loading label until
 it paints. Homepage screenshots pair with one feature-specific heading and a
 short paragraph, rather than repeating generic ownership and citation checklists.
@@ -65,7 +64,9 @@ one quiet rail then resolves into **Daily update** and **Linked answers**. It
 does not reproduce the expanded
 timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
-hides the packets while preserving the complete static explanation. Mobile
+hides the packets while preserving the complete static explanation. Motion follows viewport visibility and the reduced-motion preference; there are
+no playback controls in public diagrams. Source and output paths, halo, and orbit stay still; packets carry the
+direction without a competing dash or pulse animation. Mobile
 retains the same topology and removes secondary metadata so cards and labels do
 not overlap.
 
@@ -89,12 +90,20 @@ briefly acknowledge their arrival. Each stage activates independently as it
 enters view. Wide layouts use one four-stage row, medium containers use a 2 × 2
 grid without decorative connectors, and narrow containers stack stages with
 vertical packet tracks. Reduced-motion mode hides packets and preserves the
-complete static story.
+complete static story. Each stage pauses automatically offscreen; no playback controls are shown.
+
+One-shot source-to-answer, external-agent, and inbound-MCP diagrams start their
+decorative traces once on first meaningful visibility. Their text, cards, and
+complete static paths remain visible without JavaScript and under reduced motion.
+Scroll progress updates only its own indicator, never an inherited property on
+the landing root.
 
 The public header stays uncluttered: Product, Use cases, Integrations, Agents,
 and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
 in the mobile menu. Expandable rows show a down chevron when collapsed and an up
 chevron when expanded; the mobile Menu overlay must not invert those icons.
+Escape closes the focused dropdown and returns focus to its own summary. In the
+mobile menu, dismiss a nested dropdown before dismissing the outer menu.
 Second-level nav popups use a hairline border, compact padding, and a short
 black-based shadow in light and dark mode rather than a large foreground glow.
 The Integrations dropdown is the hub, then Slack · Native sync and Telegram ·
@@ -144,7 +153,7 @@ portrait slots keep the full capture so Ask citations stay in frame. The
 homepage shows proof shots in alternating split rows (screenshot beside the
 copy, stacked on small screens): voice notes, work record, stored cited Ask
 answer, client record, and daily update. On small screens those landscape
-frames use a taller 3×4 crop so the product UI stays readable. `/agents` pairs the current Agent
+frames retain the same 16×10 aspect ratio. `/agents` pairs the current Agent
 tools screen with a read-out / write-in diagram for external agents.
 `/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party
@@ -229,7 +238,15 @@ Agent setup guides may use a bespoke copy-ready pattern: one recommended install
 prompt first, narrower skill-only and MCP-only fallbacks, then numbered setup,
 usage guidance, and an explicit access FAQ. Copy controls stay adjacent to
 their complete prompt or command, secrets never appear in those payloads, and
-the guide remains searchable from the Help directory.
+the guide remains searchable from the Help directory. Expanded setup grids allow
+children to shrink; long install controls wrap at phone widths without truncating
+commands. Public setup copy controls reserve the larger idle/success label width.
+Pointer success may fade the icon and label together for 120ms with
+`cubic-bezier(0.22, 1, 0.36, 1)`; keyboard and reduced-motion feedback is immediate.
+The existing status announcement, error recovery, and 1600ms reset remain.
+Help search and pricing controls use 16px text on phones and retain the existing
+desktop density. Help hover/press movement respects reduced motion; homepage
+hover lift additionally requires a fine pointer with hover capability.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
 the shared marketing container and aligned section labels, with the same hero
@@ -260,6 +277,14 @@ Privacy versions for that person, and protected product access does not continue
 until it succeeds. While production publication is withheld, existing signed-in
 users retain product access and `/legal/accept` returns them to the product.
 
+Account-entry forms keep input text at 16px on phones and may use the existing
+14px desktop density. Inline legal and recovery links stay underlined. A wrong-account
+invitation offers an explicit account switch that signs out, clears local session
+state, and preserves a validated same-origin invitation destination. Leaving an
+invitation is labelled “Not now”; it does not revoke the invite. Suspended-workspace
+pages retain public support and sign-out actions. Missing required signup protection
+keeps submission disabled and offers the configured support email as a recovery route.
+
 `/cookies` uses the same legal-page reading surface for the exact cookie and
 browser-storage inventory. It separates necessary storage, always-on personless
 surface-request counts, optional public browser analytics, pseudonymous product
@@ -283,10 +308,14 @@ server-resolved account/team identifiers and role, a normalized app surface,
 release, optional error reference, and bounded browser diagnostics. Never put
 that context or workspace content in a GitHub issue. Dashboard desktop and
 mobile footers use the same “Help & support” label; shared error states pair
-Retry with a contextual Get support action.
+Retry with a contextual Get support action. Saved support requests move focus to
+an announced confirmation and expose the reference and any delivery warning immediately.
+Pointer-submitted confirmations may fade their heading and instruction together over
+160ms with `cubic-bezier(0.22, 1, 0.36, 1)`; references and warnings remain static.
+Keyboard and reduced-motion confirmations are instant. Support inputs use 16px text
+at phone widths without changing shared private-app input density.
 
 Foundations and shared components: [design system](../../design.md).
-
 
 ### Public pricing calculator
 
@@ -404,3 +433,10 @@ reading instructions with the product screenshot. Native connector pages use a
 split introductory header and tighter section spacing; setup, permissions and
 provider limitations remain intact. Integration directory, Telegram, MCP guides,
 works-with pages and Trust use the same reduced vertical rhythm.
+
+Inline legal and closing-signup prose links remain underlined without hover.
+Long inline technical values wrap without changing their bytes or hiding content.
+Small callout labels use a foreground that meets 4.5:1 contrast on their actual
+tinted surface in both themes. Cookie preferences inherit the dialog viewport
+height cap and scrolling, with overscroll contained inside the dialog; all
+controls and disclosures remain reachable on short screens.

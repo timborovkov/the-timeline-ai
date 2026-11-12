@@ -3,6 +3,7 @@
 import { Check, Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import styles from '@/components/copy-button.module.css';
 import { Button } from '@/components/ui/button';
 import { copyAnnouncement } from '@/lib/copy-announcement';
 import { cn } from '@/lib/utils';
@@ -13,11 +14,13 @@ export function CopyButton({
   value,
   label = 'Copy',
   appearance = 'button',
+  publicFeedback = false,
   className,
 }: {
   value: string;
   label?: string;
   appearance?: 'button' | 'icon';
+  publicFeedback?: boolean;
   className?: string;
 }) {
   const nextRequest = useRef(0);
@@ -25,6 +28,7 @@ export function CopyButton({
     value: string;
     request: number;
     status: 'idle' | 'copied' | 'error';
+    pointer?: boolean;
   }>({ value, request: 0, status: 'idle' });
   if (feedback.value !== value) {
     setFeedback({ value, request: 0, status: 'idle' });
@@ -47,13 +51,13 @@ export function CopyButton({
     <>
       <Button
         type="button"
-        size={appearance === 'icon' ? 'sm' : 'sm'}
+        size="sm"
         variant="ghost"
         aria-label={accessibleLabel}
         className={cn(appearance === 'icon' && 'h-7 shrink-0 px-2', className)}
-        onClick={() => {
+        onClick={(event) => {
           const request = ++nextRequest.current;
-          setFeedback({ value, request, status: 'idle' });
+          setFeedback({ value, request, status: 'idle', pointer: event.detail > 0 });
           const finish = (status: 'copied' | 'error') => {
             setFeedback((current) =>
               current.request === request && current.value === value
@@ -76,8 +80,13 @@ export function CopyButton({
             });
         }}
       >
-        {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-        {appearance === 'icon' ? (copied ? 'Copied' : 'Copy') : copied ? 'Copied' : label}
+        <CopyButtonContent
+          label={appearance === 'icon' ? 'Copy' : label}
+          copied={copied}
+          publicFeedback={publicFeedback}
+          pointer={Boolean(feedback.pointer)}
+          request={feedback.request}
+        />
       </Button>
       {copyError ? (
         <output
@@ -92,5 +101,44 @@ export function CopyButton({
         </output>
       )}
     </>
+  );
+}
+
+function CopyButtonContent({
+  label,
+  copied,
+  publicFeedback,
+  pointer,
+  request,
+}: {
+  label: string;
+  copied: boolean;
+  publicFeedback: boolean;
+  pointer: boolean;
+  request: number;
+}) {
+  const Icon = copied ? Check : Copy;
+  const visibleLabel = copied ? 'Copied' : label;
+  if (!publicFeedback) {
+    return (
+      <>
+        <Icon aria-hidden="true" />
+        {visibleLabel}
+      </>
+    );
+  }
+  return (
+    <span
+      key={`${request}-${copied}`}
+      className={cn(styles.content, copied && pointer && styles.confirmed)}
+      aria-hidden="true"
+    >
+      <Icon />
+      <span className={styles.label}>
+        <span className={styles.reserve}>{label}</span>
+        <span className={styles.reserve}>Copied</span>
+        <span>{visibleLabel}</span>
+      </span>
+    </span>
   );
 }

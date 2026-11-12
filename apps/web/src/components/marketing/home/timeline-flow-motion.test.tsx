@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import styles from '@/app/(landing)/home.module.css';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
+import { MotionFigure } from '@/components/marketing/motion-figure';
 // Test environment: happy-dom
 
 const MOTION_READY_CLASS = requiredClassName(styles.motionReady, 'motionReady');
@@ -159,7 +160,9 @@ describe('TimelineFlowMotion', () => {
     const firstObserver = FakeIntersectionObserver.instances[0];
     firstObserver?.trigger(fixture.steps[0], true);
 
-    reducedMotion.setMatches(true);
+    act(() => {
+      reducedMotion.setMatches(true);
+    });
 
     expect(firstObserver?.disconnect).toHaveBeenCalledOnce();
     expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(false);
@@ -167,7 +170,9 @@ describe('TimelineFlowMotion', () => {
     expect(fixture.pauseAnimations).toHaveBeenCalled();
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
-    reducedMotion.setMatches(false);
+    act(() => {
+      reducedMotion.setMatches(false);
+    });
 
     expect(FakeIntersectionObserver.instances).toHaveLength(2);
     expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(true);
@@ -176,6 +181,24 @@ describe('TimelineFlowMotion', () => {
     view.unmount();
     expect(reducedMotion.listeners.size).toBe(0);
     expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(false);
+  });
+
+  it('waits to start one-shot decoration until visible and then stops observing', () => {
+    const { container } = render(
+      <MotionFigure>
+        <p>Always visible explanation</p>
+      </MotionFigure>,
+    );
+    const figure = container.querySelector('figure');
+    if (!figure) throw new Error('Missing motion figure');
+    const observer = FakeIntersectionObserver.instances[0];
+    expect(figure.textContent).toBe('Always visible explanation');
+    expect(figure.dataset.motionEntered).toBeUndefined();
+    observer?.trigger(figure, false);
+    expect(figure.dataset.motionEntered).toBeUndefined();
+    observer?.trigger(figure, true);
+    expect(figure.dataset.motionEntered).toBe('true');
+    expect(observer?.disconnect).toHaveBeenCalledOnce();
   });
 
   it('shows and starts every step when IntersectionObserver is unavailable', () => {
@@ -196,6 +219,35 @@ describe('HomeMotion cleanup', () => {
     cleanup();
     document.getElementById('expanded-flow')?.remove();
     vi.unstubAllGlobals();
+  });
+
+  it('pauses the hero offscreen, resumes on re-entry, and scopes progress to its indicator', () => {
+    FakeIntersectionObserver.instances = [];
+    const preference = new FakeReducedMotion();
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => preference as unknown as MediaQueryList),
+    );
+    const fixture = createFlowFixture();
+    fixture.root.dataset.homeRoot = '';
+    fixture.steps[0].dataset.homeDiagram = '';
+    fixture.steps[0].id = 'test-hero';
+    const progress = document.createElement('div');
+    progress.className = requiredClassName(styles.progress, 'progress');
+    const indicator = document.createElement('span');
+    progress.append(indicator);
+    fixture.root.append(progress);
+    render(<HomeMotion />);
+    const observer = FakeIntersectionObserver.instances[0];
+    observer?.trigger(fixture.steps[0], true);
+    fixture.unpauseAnimations.mockClear();
+    observer?.trigger(fixture.steps[0], false);
+    expect(fixture.unpauseAnimations).not.toHaveBeenCalled();
+    observer?.trigger(fixture.steps[0], true);
+    expect(fixture.unpauseAnimations).toHaveBeenCalledOnce();
+    expect(indicator.style.transform).toBe('scaleX(0)');
+    expect(fixture.root.style.getPropertyValue('--home-progress')).toBe('');
   });
 
   it('disconnects observers and stops SVG motion when preferences change and on unmount', () => {

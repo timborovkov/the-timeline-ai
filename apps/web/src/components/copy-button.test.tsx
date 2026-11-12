@@ -134,4 +134,21 @@ describe('CopyButton', () => {
       expect(button.textContent).toContain('Copied');
     });
   });
+  it('keeps public copy controls named and reports success and failure without replacing the button', async () => {
+    render(<CopyButton publicFeedback value="setup-command" label="Copy a long setup command" />);
+    const button = screen.getByRole('button', { name: 'Copy a long setup command' });
+    button.focus();
+    fireEvent.click(button, { detail: 1 });
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toBe('Copied a long setup command.');
+    });
+    expect(document.activeElement).toBe(button);
+    expect(button.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    writeText.mockRejectedValueOnce(new Error('Permission denied'));
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('Could not copy');
+    });
+    expect(document.activeElement).toBe(button);
+  });
 });

@@ -199,7 +199,7 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
               ))}
             </ol>
             <div className="mt-10 border-l-2 border-signal bg-signal-soft p-5">
-              <span className="text-sm font-medium text-fg-dim">Result</span>
+              <span className="text-sm font-medium text-fg">Result</span>
               <p className="mt-2 font-semibold text-fg">{connector.scenario.result}</p>
             </div>
           </div>

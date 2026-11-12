@@ -157,7 +157,7 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
         />
       ) : null}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="border-border bg-bg sm:max-w-lg">
+        <DialogContent className="overscroll-contain border-border bg-bg sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Analytics preferences</DialogTitle>
             <DialogDescription>

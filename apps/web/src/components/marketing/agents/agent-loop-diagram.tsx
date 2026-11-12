@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { Logo } from '@/components/brand/logo';
 import styles from '@/components/marketing/agents/agent-loop-diagram.module.css';
+import { MotionFigure } from '@/components/marketing/motion-figure';
 
 const WRITE_PATHS = [
   { name: 'Remember a note', body: 'An agent adds a cited note to the record.' },
@@ -26,7 +27,7 @@ const CLIENTS = [
 
 export function AgentLoopDiagram() {
   return (
-    <figure className={styles.figure} data-agent-loop aria-labelledby="agent-loop-title">
+    <MotionFigure className={styles.figure} data-agent-loop aria-labelledby="agent-loop-title">
       <figcaption className={styles.caption}>
         <span id="agent-loop-title" className={styles.kicker}>
           Read out · write in
@@ -89,6 +90,6 @@ export function AgentLoopDiagram() {
           </ul>
         </section>
       </div>
-    </figure>
+    </MotionFigure>
   );
 }

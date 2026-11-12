@@ -63,12 +63,14 @@ export function HomeMotion() {
       { rootMargin: '-4% 0px -4% 0px', threshold: 0.06 },
     );
 
+    const progress = root.querySelector<HTMLElement>(`.${styles.progress} span`);
+
     let frame = 0;
     const updateProgress = () => {
       frame = 0;
       const distance = document.documentElement.scrollHeight - window.innerHeight;
       const ratio = distance > 0 ? Math.min(1, Math.max(0, window.scrollY / distance)) : 0;
-      root.style.setProperty('--home-progress', String(ratio));
+      if (progress) progress.style.transform = `scaleX(${ratio})`;
     };
     const requestProgress = () => {
       if (frame) return;
@@ -92,7 +94,7 @@ export function HomeMotion() {
         setFlowMotion(node, false);
       }
       root.classList.remove(motionReadyClass);
-      root.style.removeProperty('--home-progress');
+      progress?.style.removeProperty('transform');
     };
   }, [reducedMotion]);
 
