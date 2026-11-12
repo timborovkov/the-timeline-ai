@@ -282,7 +282,7 @@ beforeEach(() => {
   fakes.fakeOpenRouterUsdCost.mockImplementation(() => 0);
   delete process.env.E2E_DETERMINISTIC_CHAT;
   fakes.fakeAuth.mockResolvedValue({
-    user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
+    user: { id: USER_ID, name: 'Taylor', email: 'taylor@example.test' },
   });
   fakes.fakeResolveActiveTeam.mockResolvedValue({
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
@@ -297,8 +297,8 @@ beforeEach(() => {
   fakes.fakeCurrentUserIdentityContext.mockResolvedValue({
     userId: USER_ID,
     role: 'member',
-    name: 'Tim',
-    email: 'tim@example.test',
+    name: 'Taylor',
+    email: 'taylor@example.test',
     person: null,
     facets: [],
   });
@@ -496,13 +496,13 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeBuildSystemPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
         teamName: 'Team From Scope',
-        userName: 'Tim',
+        userName: 'Taylor',
         presentation: 'web_rich',
         currentUser: {
           userId: USER_ID,
           role: 'member',
-          name: 'Tim',
-          email: 'tim@example.test',
+          name: 'Taylor',
+          email: 'taylor@example.test',
           person: null,
           facets: [],
         },
@@ -682,7 +682,7 @@ describe('POST /api/chat', () => {
     const correctionMessage = {
       id: 'm-correction',
       role: 'user',
-      parts: [{ type: 'text', text: "It's not Otto who is in Italy, it's Miku." }],
+      parts: [{ type: 'text', text: "It's not Otto who is in Italy, it's Casey." }],
     };
     fakes.fakeSafeValidateUIMessages.mockResolvedValue({
       success: true,
@@ -713,7 +713,7 @@ describe('POST /api/chat', () => {
     const correctionMessage = {
       id: 'm-promise-correction',
       role: 'user',
-      parts: [{ type: 'text', text: 'Miku promised it, not Tim.' }],
+      parts: [{ type: 'text', text: 'Casey promised it, not Taylor.' }],
     };
     fakes.fakeSafeValidateUIMessages.mockResolvedValue({
       success: true,
@@ -911,7 +911,7 @@ describe('POST /api/chat', () => {
     const assignMessage = {
       id: 'm-assign',
       role: 'user',
-      parts: [{ type: 'text', text: 'assign mikael' }],
+      parts: [{ type: 'text', text: 'assign cameron' }],
     };
     fakes.fakeSafeValidateUIMessages.mockResolvedValue({
       success: true,

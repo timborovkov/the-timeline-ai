@@ -258,12 +258,12 @@ describe('ApprovalsClient', () => {
             evidence: [
               {
                 rawEventId: EVENT_ID,
-                quote: '@timbo0 lupaan hoitaa PRH-rekisteröinnin.',
+                quote: '@taylo0 lupaan hoitaa PRH-rekisteröinnin.',
                 occurredAt: '2026-07-23T10:00:00.000Z',
                 source: 'telegram',
-                senderName: 'Miku',
-                senderHandle: '@mikael',
-                senderTimelineName: 'Mikael',
+                senderName: 'Casey',
+                senderHandle: '@cameron',
+                senderTimelineName: 'Cameron',
                 conversationName: 'Founders',
               },
             ],
@@ -276,7 +276,7 @@ describe('ApprovalsClient', () => {
                 targetId: null,
                 title: 'Submit company registration to PRH',
                 description: null,
-                proposedPayload: { ownerName: 'Miku' },
+                proposedPayload: { ownerName: 'Casey' },
                 failureReason: null,
               },
             ],
@@ -285,7 +285,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Evidence from Mikael (Miku, @mikael) in Founders on Telegram');
+    expect(html).toContain('Evidence from Cameron (Casey, @cameron) in Founders on Telegram');
   });
 
   it('renders exact evidence beneath each change and blocks stale evidence acceptance', () => {

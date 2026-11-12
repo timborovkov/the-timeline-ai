@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import type { BoardLayout } from '@/lib/board-links';
+import type { BoardQualificationDraft } from '@/lib/board-qualification';
 import type { WorkFilterState } from '@/lib/work-filters';
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
@@ -12,6 +13,7 @@ import { updateBoardItemAction } from '@/app/actions/boards';
 import { BoardActionsMenu } from '@/components/boards/board-actions-menu';
 import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
 import { BoardCardDetail } from '@/components/boards/board-card-detail';
+import { BoardQualificationTools } from '@/components/boards/board-qualification-tools';
 import { CuratedBoardList } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
@@ -45,6 +47,7 @@ interface BoardItemPatchOverlay {
 }
 
 interface Props {
+  qualification?: BoardQualificationDraft;
   boardId: string;
   boardName: string;
   purpose: string | null;
@@ -102,6 +105,7 @@ export function BoardDetailClient({
   boardId,
   boardName,
   purpose,
+  qualification,
   pinned,
   itemCount,
   view,
@@ -276,10 +280,16 @@ export function BoardDetailClient({
           boardId={boardId}
         />
         <PinButton target={{ kind: 'board', key: boardId }} initialPinned={pinned} />
-        <BoardActionsMenu id={boardId} name={boardName} purpose={purpose ?? ''} lanes={lanes} />
+        <BoardActionsMenu
+          id={boardId}
+          name={boardName}
+          purpose={purpose ?? ''}
+          lanes={lanes}
+          qualification={qualification}
+        />
       </div>
     ),
-    [boardId, boardName, lanes, pinned, purpose],
+    [boardId, boardName, lanes, pinned, purpose, qualification],
   );
 
   return (
@@ -322,6 +332,7 @@ export function BoardDetailClient({
               defaultLaneId={defaultLaneId}
               candidates={availableCandidates}
               recommendedTypes={recommendedTypes}
+              strictObjectTypes={qualification?.strictObjectTypes}
               onOptimisticItem={addOptimisticItem}
               onItemAdded={commitAddedItem}
               onItemAddFailed={rollbackAddedItem}
@@ -329,6 +340,7 @@ export function BoardDetailClient({
           }
         />
 
+        {qualification?.qualificationEnabled ? <BoardQualificationTools boardId={boardId} /> : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {view === 'kanban' && (

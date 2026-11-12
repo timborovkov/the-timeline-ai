@@ -301,11 +301,11 @@ describe('collectTimelinePage', () => {
             ? [
                 event('message-a', '2026-06-27T18:08:00.000Z', {
                   source: 'telegram',
-                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Tim' },
+                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Taylor' },
                 }),
                 event('message-b', '2026-06-27T18:03:00.000Z', {
                   source: 'telegram',
-                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Mikael' },
+                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Cameron' },
                 }),
                 event('message-other-bucket', '2026-06-27T18:30:00.000Z', {
                   source: 'telegram',

@@ -2,9 +2,10 @@
 
 import { Boxes, ClipboardList, KanbanSquare, PackageOpen, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useReducer, useTransition } from 'react';
+import { useReducer, useState, useTransition } from 'react';
 
 import { createBoardAction } from '@/app/actions/boards';
+import { BoardQualificationFields } from '@/components/boards/board-qualification-fields';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { EMPTY_BOARD_QUALIFICATION } from '@/lib/board-qualification';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
@@ -158,6 +160,7 @@ export function BoardCreateDialog({
 
 function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
   const router = useRouter();
+  const [qualification, setQualification] = useState(EMPTY_BOARD_QUALIFICATION);
   const [pending, startTransition] = useTransition();
   const [{ error, name, templateKind, purpose, stages }, dispatch] = useReducer(reducer, {
     error: null,
@@ -187,6 +190,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
             templateKind,
             purpose: purpose.trim() || undefined,
             lanes,
+            ...qualification,
           }),
       });
       if (result.error) return;
@@ -252,6 +256,11 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
           />
         </label>
       </div>
+      <BoardQualificationFields
+        value={qualification}
+        onChange={setQualification}
+        disabled={pending}
+      />
       <BoardStageEditor
         stages={stages}
         onChange={(nextStages) => {

@@ -167,8 +167,9 @@ batch limits, including reminders, digest recipients, integration polling/renewa
 deferred enrichment, health checks and janitor recovery. Queued workspace jobs finish
 as skipped on lifecycle denial; unrelated authorization and infrastructure failures
 still fail. Skipping must not update workspace content or send notifications.
-Overdue reminders recheck admission under a workspace lock and insert per workspace,
-so disabling one workspace cannot roll back another workspace's reminders.
+Overdue reminders recheck admission under a workspace lock and insert per workspace.
+A lifecycle denial while inserting one workspace's reminders skips that workspace.
+Other workspaces still receive their reminders, and the scan completes.
 Explicit lifecycle cleanup, credential revocation, retention and reconciliation of
 previously incurred billing remain the documented maintenance exceptions.
 

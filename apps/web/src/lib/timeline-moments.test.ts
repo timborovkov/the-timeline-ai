@@ -14,7 +14,7 @@ import {
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 const authorMap = new Map<string, TimelineAuthor>([
-  [USER_ID, { id: USER_ID, name: 'Tim', email: 'tim@example.com' }],
+  [USER_ID, { id: USER_ID, name: 'Taylor', email: 'taylor@example.com' }],
 ]);
 
 function event(
@@ -611,7 +611,7 @@ describe('timeline moment grouping', () => {
             tg_chat_id: 'chat-1',
             tg_chat_title: 'AuditAI',
             tg_user_id: 12345,
-            tg_username: 'mikaelrintala',
+            tg_username: 'cameronvale',
           },
           contentText: 'Confirmed',
         }),
@@ -621,7 +621,7 @@ describe('timeline moment grouping', () => {
     );
 
     expect(moments).toHaveLength(1);
-    expect(moments[0]?.actorLabel).toBe('Tim');
+    expect(moments[0]?.actorLabel).toBe('Taylor');
   });
 
   it('treats Telegram sender as a valid literal source sender name', () => {
@@ -669,7 +669,7 @@ describe('timeline moment grouping', () => {
           sourceMetadata: {
             meeting_id: 'meet-1',
             summary: 'Launch scope narrowed.',
-            action_items: [{ text: 'Send agenda', owner: 'Tim' }],
+            action_items: [{ text: 'Send agenda', owner: 'Taylor' }],
           },
         }),
       ],

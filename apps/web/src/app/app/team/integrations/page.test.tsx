@@ -75,7 +75,7 @@ afterEach(() => {
 
 const baseConnectedRow = {
   provider: 'github',
-  displayName: 'GitHub — Tim',
+  displayName: 'GitHub — Taylor',
   enabled: true,
   lastSyncedAt: '2026-06-29T10:00:00.000Z',
   lastError: null,
@@ -119,10 +119,10 @@ function model(): Parameters<typeof IntegrationsPageView>[0]['model'] {
         connection: {
           id: 'conn-1',
           provider: 'github',
-          displayName: 'GitHub — Tim',
+          displayName: 'GitHub — Taylor',
           lastError: null,
           lastConnectedAt: '2026-06-01T00:00:00.000Z',
-          ownerLabel: 'Tim',
+          ownerLabel: 'Taylor',
           ownerUserId: 'user-1',
         },
       },

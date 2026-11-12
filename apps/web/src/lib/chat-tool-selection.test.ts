@@ -33,7 +33,7 @@ describe('chat tool selection', () => {
 
   it('exposes member lookup and board mutation tools for assign-by-name', () => {
     const selection = selectAgentToolGroups({
-      question: 'assign mikael',
+      question: 'assign cameron',
       dashboardContext: {
         pathname: `/app/boards/${BOARD_ID}`,
         routeKind: 'boards',

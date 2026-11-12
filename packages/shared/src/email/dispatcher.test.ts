@@ -214,7 +214,7 @@ describe('email dispatcher', () => {
       'from: Ada Lovelace <ada@example.com>',
       'Date: Wed, Jun 17, 2026 at 2:15 PM',
       'subject: Re: Launch checklist',
-      'to: Tim <tim@team.example>',
+      'to: Taylor <taylor@team.example>',
       '',
       'The launch checklist is approved.',
       '',
