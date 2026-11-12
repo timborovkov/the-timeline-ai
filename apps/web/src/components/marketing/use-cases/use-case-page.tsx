@@ -5,7 +5,6 @@ import { EditorialBreadcrumb } from '@/components/marketing/editorial/editorial-
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
-import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
@@ -15,6 +14,7 @@ import {
   type UseCaseContent,
 } from '@/components/marketing/use-cases/content';
 import { findUseCasePublicDocument } from '@/components/marketing/use-cases/public-documents';
+import styles from '@/components/marketing/use-cases/use-case-page.module.css';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -25,14 +25,42 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
     (shot) => shot.placement === 'after-how-it-works',
   );
 
+  const exampleCard = (
+    <aside className={styles.example} aria-label={useCase.example.label}>
+      <div className="relative z-10">
+        <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
+          {useCase.example.label}
+        </p>
+        {useCase.example.title ? (
+          <h2 className="mt-5 max-w-2xl text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
+            {useCase.example.title}
+          </h2>
+        ) : null}
+        <ol className={styles.exampleSteps}>
+          {useCase.example.lines.map((line, index) => (
+            <li
+              key={line}
+              className="grid grid-cols-[1.6rem_minmax(0,1fr)] gap-3 text-sm leading-6"
+            >
+              <span className="grid size-6 place-items-center rounded-full border border-signal font-mono text-xs text-signal">
+                {index + 1}
+              </span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </aside>
+  );
+
   return (
-    <main id="main" tabIndex={-1} data-use-case-route={useCase.route}>
+    <main id="main" tabIndex={-1} data-use-case-route={useCase.route} className={styles.page}>
       <EditorialStructuredData
         data={buildPublicStructuredData(findUseCasePublicDocument(useCase), getSiteUrl())}
       />
       <article>
         <header>
-          <MarketingContainer className="py-14 sm:py-20">
+          <MarketingContainer className={styles.hero}>
             <EditorialBreadcrumb
               items={[
                 { href: '/', label: 'The Timeline' },
@@ -41,29 +69,28 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
               ]}
             />
 
-            <EditorialKicker>{useCase.eyebrow}</EditorialKicker>
-            <h1 className={`${styles.guideTitle} mt-6`}>{useCase.title}</h1>
-            <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-              {useCase.summary}
-            </p>
-            {useCase.problemLine ? (
-              <p className="mt-6 max-w-2xl text-base leading-7 text-fg-muted">
-                {useCase.problemLine}
-              </p>
-            ) : null}
-
-            <div className="mt-10 grid gap-6">
-              {afterSubhead.map((shot) => (
-                <MarketingProductScreenshot
-                  key={shot.file}
-                  file={shot.file}
-                  alt={shot.alt}
-                  caption={shot.caption}
-                  reshoot={shot.reshoot}
-                  callouts={shot.callouts}
-                  priority
-                />
-              ))}
+            <div className={styles.heroGrid}>
+              <div className={styles.heroCopy}>
+                <EditorialKicker>{useCase.eyebrow}</EditorialKicker>
+                <h1 className={styles.title}>{useCase.title}</h1>
+                <p className={styles.summary}>{useCase.summary}</p>
+                {useCase.problemLine ? (
+                  <p className={styles.problem}>{useCase.problemLine}</p>
+                ) : null}
+              </div>
+              <div className={styles.heroMedia}>
+                {afterSubhead.map((shot) => (
+                  <MarketingProductScreenshot
+                    key={shot.file}
+                    file={shot.file}
+                    alt={shot.alt}
+                    caption={shot.caption}
+                    reshoot={shot.reshoot}
+                    callouts={shot.callouts}
+                    priority
+                  />
+                ))}
+              </div>
             </div>
           </MarketingContainer>
         </header>
@@ -73,7 +100,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
             className="border-y border-border bg-surface/45"
             aria-labelledby="how-it-works-title"
           >
-            <MarketingContainer className="grid gap-10 py-14 sm:py-20">
+            <MarketingContainer className={styles.process}>
               <div>
                 <EditorialKicker>How it works</EditorialKicker>
                 <h2
@@ -83,23 +110,24 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                   From conversation to current record.
                 </h2>
               </div>
-              <div className="space-y-4">
-                {useCase.howItWorks.map((paragraph) => (
-                  <p key={paragraph} className="max-w-[70ch] text-base leading-7 text-fg-muted">
-                    {paragraph}
-                  </p>
+              <ol className={styles.steps}>
+                {useCase.howItWorks.map((paragraph, index) => (
+                  <li key={paragraph}>
+                    <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                    <p>{paragraph}</p>
+                  </li>
                 ))}
-              </div>
+              </ol>
             </MarketingContainer>
           </section>
         ) : null}
 
         {useCase.blocks ? (
           <section>
-            <MarketingContainer className="py-16 sm:py-24">
-              <div className="grid gap-px bg-border sm:grid-cols-2">
+            <MarketingContainer className={styles.section}>
+              <div className={styles.cards}>
                 {useCase.blocks.map((block) => (
-                  <article key={block.title} className="bg-bg py-6 sm:pr-8 sm:even:pl-8">
+                  <article key={block.title} className={styles.featureCard}>
                     <h2 className="text-xl font-semibold tracking-[-0.025em]">{block.title}</h2>
                     <p className="mt-4 text-sm leading-7 text-fg-muted">{block.body}</p>
                   </article>
@@ -109,31 +137,15 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
           </section>
         ) : null}
 
-        {afterHowItWorks.length > 0 ? (
-          <section>
-            <MarketingContainer className="pb-16 sm:pb-24">
-              <div className="grid gap-6">
-                {afterHowItWorks.map((shot) => (
-                  <MarketingProductScreenshot
-                    key={shot.file}
-                    file={shot.file}
-                    alt={shot.alt}
-                    caption={shot.caption}
-                    reshoot={shot.reshoot}
-                    callouts={shot.callouts}
-                  />
-                ))}
-              </div>
-            </MarketingContainer>
-          </section>
-        ) : null}
-
         <section className="border-y border-border bg-surface/45">
-          <MarketingContainer className="grid gap-12 py-16 sm:py-24">
+          <MarketingContainer className={styles.walkthrough}>
             <div>
               <EditorialSectionHeading index="Example" title="A walk-through." />
+              {afterHowItWorks.length > 0 ? (
+                <div className={styles.exampleBelow}>{exampleCard}</div>
+              ) : null}
               {useCase.needs ? (
-                <div className="mt-10">
+                <div className={styles.contextItem}>
                   <h3 className="text-lg font-semibold tracking-[-0.02em]">What it needs</h3>
                   <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
                     {useCase.needs}
@@ -141,7 +153,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 </div>
               ) : null}
               {useCase.whoItsFor ? (
-                <div className="mt-10">
+                <div className={styles.contextItem}>
                   <h3 className="text-lg font-semibold tracking-[-0.02em]">Who it’s for</h3>
                   <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
                     {useCase.whoItsFor}
@@ -149,7 +161,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 </div>
               ) : null}
               {useCase.boundary ? (
-                <div className="mt-10">
+                <div className={styles.contextItem}>
                   <h3 className="text-lg font-semibold tracking-[-0.02em]">Boundary</h3>
                   <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
                     {useCase.boundary}
@@ -157,41 +169,26 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 </div>
               ) : null}
             </div>
-            <aside
-              className="border-y border-border py-7 sm:py-9"
-              aria-label={useCase.example.label}
-            >
-              <div className="relative z-10">
-                <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                  {useCase.example.label}
-                </p>
-                {useCase.example.title ? (
-                  <h2 className="mt-5 max-w-2xl text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
-                    {useCase.example.title}
-                  </h2>
-                ) : null}
-                <ol className="mt-8 grid gap-3">
-                  {useCase.example.lines.map((line, index) => (
-                    <li
-                      key={line}
-                      className="grid grid-cols-[1.6rem_minmax(0,1fr)] gap-3 text-sm leading-6"
-                    >
-                      <span className="grid size-6 place-items-center rounded-full border border-signal font-mono text-[0.62rem] text-signal">
-                        {index + 1}
-                      </span>
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </aside>
+            <div className={styles.exampleColumn}>
+              {afterHowItWorks.map((shot) => (
+                <MarketingProductScreenshot
+                  key={shot.file}
+                  file={shot.file}
+                  alt={shot.alt}
+                  caption={shot.caption}
+                  reshoot={shot.reshoot}
+                  callouts={shot.callouts}
+                />
+              ))}
+              {afterHowItWorks.length === 0 ? exampleCard : null}
+            </div>
           </MarketingContainer>
         </section>
 
         <section>
-          <MarketingContainer className="py-16 sm:py-24">
+          <MarketingContainer className={styles.faq}>
             <EditorialSectionHeading index="Questions" title="Common questions." />
-            <div className="mt-10 divide-y divide-border border-y border-border">
+            <div className="divide-y divide-border border-y border-border">
               {useCase.faqs.map((faq) => (
                 <details key={faq.question} className="group py-1">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-6 rounded-sm py-5 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
@@ -210,14 +207,14 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
         </section>
 
         <section className="border-t border-border">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className={styles.section}>
             <EditorialSectionHeading index="Explore" title="Related use cases." />
-            <div className="mt-10 grid gap-px bg-border sm:grid-cols-2">
+            <div className={styles.related}>
               {related.map((item) => (
                 <Link
                   key={item.route}
                   href={item.route}
-                  className="group bg-bg py-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:pr-8 sm:even:pl-8"
+                  className={`${styles.relatedCard} group outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
                 >
                   <p className="font-mono text-[0.65rem] tracking-[0.12em] text-signal uppercase">
                     {item.eyebrow}
@@ -242,7 +239,6 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
         <MarketingCtaBand
           title="Link one channel. Watch the record fill in."
           body="Start with one Slack channel or Telegram group."
-          firstRun={useCase.slug === 'team-daily-log'}
         />
       </article>
     </main>

@@ -1,0 +1,202 @@
+.page {
+  --section-space: clamp(2rem, 4vw, 3.5rem);
+}
+.hero {
+  padding-block: 2rem var(--section-space);
+}
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  margin-top: 1.5rem;
+}
+.heroCopy,
+.heroMedia {
+  min-width: 0;
+}
+.title {
+  margin: 0.75rem 0 1rem;
+  max-width: 20ch;
+  font-size: clamp(2rem, 3.4vw, 3.25rem);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.summary {
+  font-size: 1.125rem;
+  line-height: 1.65;
+  color: var(--fg-muted);
+}
+.problem {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+.heroMedia {
+  display: grid;
+  gap: 1.25rem;
+}
+.heroMedia [data-screenshot-callouts] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.heroMedia [data-screenshot-callouts] li {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.heroMedia [data-screenshot-callouts] li p {
+  margin: 0;
+}
+.section {
+  padding-block: var(--section-space);
+}
+.process {
+  display: grid;
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1.35fr);
+  gap: 2rem;
+  padding-block: 2rem;
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.steps li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.steps li > span {
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding-top: 0.25rem;
+}
+.steps p {
+  color: var(--fg-muted);
+  line-height: 1.65;
+}
+.cards,
+.related {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.featureCard,
+.relatedCard {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--surface);
+  min-width: 0;
+}
+.featureCard p {
+  margin-top: 0.75rem;
+}
+.exampleColumn {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.walkthrough {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: start;
+  padding-block: var(--section-space);
+}
+.contextItem {
+  margin-top: 1.5rem;
+}
+.contextItem p {
+  margin-top: 0.5rem;
+}
+.example {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--signal);
+  border-radius: 0.375rem;
+  background: var(--bg);
+  min-width: 0;
+}
+.exampleSteps {
+  display: grid;
+  gap: 0;
+  margin-top: 1.25rem;
+}
+.exampleSteps li {
+  padding-block: 0.85rem;
+}
+.exampleSteps li + li {
+  border-top: 1px solid var(--border);
+}
+.faq {
+  display: grid;
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1.35fr);
+  gap: 2rem;
+  padding-block: var(--section-space);
+}
+.related {
+  margin-top: 1.5rem;
+}
+.relatedCard h3 {
+  margin-top: 0.75rem;
+}
+.relatedCard > span {
+  margin-top: 1rem;
+}
+@media (max-width: 64rem) {
+  .heroGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .heroCopy {
+    max-width: 44rem;
+  }
+  .heroMedia [data-screenshot-callouts] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .heroMedia [data-screenshot-callouts] li {
+    display: block;
+  }
+  .heroMedia [data-screenshot-callouts] li p + p {
+    margin-top: 0.5rem;
+  }
+}
+@media (max-width: 44rem) {
+  .process,
+  .walkthrough,
+  .faq,
+  .cards,
+  .related {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+  .heroMedia [data-screenshot-callouts] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .heroMedia [data-screenshot-callouts] li {
+    display: grid;
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+  .heroMedia [data-screenshot-callouts] li p + p {
+    margin-top: 0;
+  }
+}
+
+.exampleBelow {
+  margin-top: 1.5rem;
+}
+.page [aria-labelledby='cta-title'] > div {
+  padding-block: 2rem;
+  gap: 1.5rem;
+  align-items: center;
+}
+.page [aria-labelledby='cta-title'] h2 {
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+}

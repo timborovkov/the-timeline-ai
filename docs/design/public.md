@@ -377,3 +377,16 @@ mixing a heavy heading with a thin italic serif.
 
 Leave a responsive 2–4rem gap between the daily-update screenshot and the trust
 panel; their borders must not touch.
+
+Use-case detail pages use a denser shared template: introductory copy beside the
+first screenshot on desktop, numbered process rows, bordered feature cards, and
+requirements beside the walkthrough and supporting screenshots. FAQs pair their
+heading with the question list. Related-use-case cards share the same page grid.
+Sections use 2–3.5rem vertical spacing and stack on narrow screens. Preserve every
+page’s content, native FAQ disclosures, complete screenshot frames and theme
+matching; do not inflate short copy into separate full-width sections.
+
+Use-case CTAs stay compact and omit the repeated first-run walkthrough; setup
+detail remains on the product tour and onboarding surfaces. When a walkthrough
+has a screenshot, its example sits in the adjacent column rather than stacking
+both in one column and leaving the other empty.
