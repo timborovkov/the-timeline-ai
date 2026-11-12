@@ -497,13 +497,13 @@
 }
 
 .orbitSource3 {
-  bottom: 17%;
-  left: 4%;
+  bottom: 3%;
+  left: 2%;
 }
 
 .orbitSource4 {
-  right: 7%;
-  bottom: 9%;
+  right: 2%;
+  bottom: 3%;
 }
 
 .orbitSource5 {
@@ -512,8 +512,36 @@
 }
 
 .orbitSource6 {
-  top: 48%;
+  top: 58%;
   right: 2%;
+}
+
+.orbitPerson {
+  top: 0.5%;
+  left: 50%;
+  min-width: 6.4rem;
+  transform: translateX(-50%);
+}
+
+.orbitAgent {
+  bottom: 1%;
+  left: 50%;
+  min-width: 8.6rem;
+  transform: translateX(-50%);
+}
+
+.orbitAgent strong {
+  font-size: 0.72rem;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.orbitAgentMeta {
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .observatoryCaption {
@@ -3395,13 +3423,13 @@
   }
 
   .orbitSource3 {
-    bottom: 15%;
-    left: 3%;
+    bottom: 2%;
+    left: 1%;
   }
 
   .orbitSource4 {
-    right: 3%;
-    bottom: 9%;
+    right: 1%;
+    bottom: 2%;
   }
 
   .orbitSource5 {
@@ -3410,8 +3438,26 @@
   }
 
   .orbitSource6 {
-    top: 46%;
+    top: 52%;
     right: 1%;
+  }
+
+  .orbitPerson,
+  .orbitAgent {
+    min-width: 5.4rem;
+    padding: 0.35rem 0.4rem;
+  }
+
+  .orbitPerson {
+    top: 0;
+  }
+
+  .orbitAgent {
+    bottom: 0;
+  }
+
+  .orbitAgent strong {
+    font-size: var(--home-meta-size);
   }
 
   .proofMedia figure[data-screenshot-frame='landscape'] > div {

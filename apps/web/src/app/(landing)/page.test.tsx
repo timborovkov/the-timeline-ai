@@ -63,7 +63,7 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
+      'aria-label="A person and an agent write into the work record and read context back. Six sources stream in. The record becomes a daily update and linked answers."',
     );
     expect(html).toContain('one timeline');
     expect(html).toContain('Fictional Acme example, not customer data.');
@@ -86,8 +86,13 @@ describe('LandingPage', () => {
     expect(html.match(/data-hero-flow-path="outcome"/g)).toHaveLength(1);
     expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(6);
     expect(html.match(/data-hero-flow-packet="outcome"/g)).toHaveLength(1);
+    expect(html.match(/data-hero-flow-path="write"/g)).toHaveLength(2);
+    expect(html.match(/data-hero-flow-path="read"/g)).toHaveLength(2);
+    expect(html).toContain('>Person<');
+    expect(html).toContain('Claude / Codex');
+    expect(html).toContain('via MCP');
     expect(html).toContain('data-flow-motion');
-    expect(html.match(/<animateMotion/g)).toHaveLength(7);
+    expect(html.match(/<animateMotion/g)).toHaveLength(11);
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
