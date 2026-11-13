@@ -1339,18 +1339,18 @@ function TimelineMomentRow({
         {selectedChatBinder}
         <Link
           href={compactTimelineMomentHref(moment)}
-          className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
+          className="grid min-h-9 min-w-0 grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 py-3 text-left sm:flex sm:gap-3 sm:py-1.5"
         >
           <span
             data-visual-dynamic="timeline-time"
-            className="w-[4.75rem] shrink-0 font-mono text-[11px] tabular-nums text-fg-dim"
+            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:w-[4.75rem] sm:text-[11px]"
           >
             {moment.timeLabel}
           </span>
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
+          <span className="order-first col-span-2 min-w-0 pr-6 text-sm leading-5 text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal sm:order-none sm:flex-1 sm:truncate sm:pr-0">
             {title}
           </span>
         </Link>

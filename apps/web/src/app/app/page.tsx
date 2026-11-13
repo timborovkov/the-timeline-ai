@@ -48,7 +48,7 @@ export const metadata: Metadata = {
 };
 
 const HOME_TIMELINE_EVENT_LIMIT = 16;
-const HOME_TIMELINE_MOMENT_LIMIT = 8;
+const HOME_TIMELINE_MOMENT_LIMIT = 4;
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);
@@ -191,7 +191,7 @@ export default async function HomeDashboardPage() {
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
-    scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT }),
+    scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT, to: now }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),
     scope.pins.list({ limit: 6 }),
@@ -275,32 +275,39 @@ export default async function HomeDashboardPage() {
 
   return (
     <div data-app-width="overview" className="home-overview space-y-8">
-      <h1 className="sr-only">Home</h1>
+      <header className="grid items-start gap-6 border-b border-border pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,1fr)]">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Your workspace</h1>
+          <p className="mt-2 text-sm text-fg-muted">
+            Review what needs attention and catch up on recent work.
+          </p>
+          <div className="mt-4 flex items-center gap-4">
+            <CaptureDialog>
+              <CaptureForm
+                initialVisibility={quickCaptureVisibility}
+                currentUser={{
+                  id: session.user.id,
+                  name: session.user.name ?? null,
+                  email: session.user.email ?? '',
+                }}
+                filters={{}}
+              />
+            </CaptureDialog>
+          </div>
+        </div>
+        <HomeAskComposer
+          teamId={active.teamId}
+          hasSources={events.length > 0 || sourceDocuments.length > 0}
+        />
+      </header>
       {firstRunBanner}
       {billingDashboard?.restrictionReason ? (
         <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
       ) : null}
-      <HomeAskComposer
-        teamId={active.teamId}
-        hasSources={events.length > 0 || sourceDocuments.length > 0}
-        actions={
-          <CaptureDialog>
-            <CaptureForm
-              initialVisibility={quickCaptureVisibility}
-              currentUser={{
-                id: session.user.id,
-                name: session.user.name ?? null,
-                email: session.user.email ?? '',
-              }}
-              filters={{}}
-            />
-          </CaptureDialog>
-        }
-      />
 
       <OnboardingChecklist initialData={initialChecklist} />
 
-      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-8">
           <HomeAttention
             title="Your work"
@@ -340,9 +347,13 @@ export default async function HomeDashboardPage() {
             ]}
           />
 
-          <PinnedWorkspacePreview initialItems={pinnedPage.items} />
-
-          <section className="space-y-2" aria-label="Recent moments">
+          <section className="space-y-4 border-t border-border pt-6" aria-label="Recent moments">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Recent activity</h2>
+              <Link href="/app/timeline" className="text-sm text-fg-muted hover:text-fg">
+                View timeline →
+              </Link>
+            </div>
             <TimelineFeed
               initialPage={{
                 items: events.map((event) => ({
@@ -387,21 +398,36 @@ export default async function HomeDashboardPage() {
               </Link>
             </p>
           </section>
+          <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
         </div>
         <aside
           aria-label="Workspace context"
           className="min-w-0 space-y-6 border-t border-border pt-6 xl:border-t-0 xl:border-l xl:pl-6 xl:pt-0"
         >
+          <PinnedWorkspacePreview initialItems={pinnedPage.items.slice(0, 3)} />
           <ConnectAgentOnboardingCard initialData={initialChecklist} />
-          <HomeTeamEmail inboundEmail={inboundEmail} />
+          <details className="group border-b border-border pb-5">
+            <summary className="cursor-pointer text-sm font-medium">Capture by email</summary>
+            <div className="pt-4">
+              <HomeTeamEmail inboundEmail={inboundEmail} />
+            </div>
+          </details>
 
-          <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
-
-          <HomeProcessingAttention
-            isAdmin={isAdmin}
-            recoverableJobs={recoverableJobs.length}
-            connectionIssues={connectionAttention.length}
-          />
+          <details>
+            <summary className="cursor-pointer text-sm font-medium">
+              Connections & processing
+              {(isAdmin ? recoverableJobs.length : 0) + connectionAttention.length > 0 ? (
+                <span className="ml-2 text-xs text-danger">
+                  {(isAdmin ? recoverableJobs.length : 0) + connectionAttention.length} issues
+                </span>
+              ) : null}
+            </summary>
+            <HomeProcessingAttention
+              isAdmin={isAdmin}
+              recoverableJobs={recoverableJobs.length}
+              connectionIssues={connectionAttention.length}
+            />
+          </details>
           {isAdmin && billingDashboard?.nudge ? (
             <BillingUpgradeNudge nudge={billingDashboard.nudge} />
           ) : null}

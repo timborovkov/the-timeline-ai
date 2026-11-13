@@ -13,9 +13,16 @@ queue. The empty Boards explanation and Create board action stay together.
 
 ### Home
 
-Home does not repeat its navigation label as a visible page title. It starts
-with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. The team setup checklist is Home onboarding. For a member who
+Home leads with a workspace heading and Capture action, beside a compact Ask
+composer on wide screens. Prompt suggestions are quiet text actions. Attention
+and recent activity form the primary column; three pinned shortcuts and workspace
+utilities support them in the secondary column. Email and processing tools use
+explicit disclosures; processing retains a visible issue count respecting admin access.
+Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
+four moments; the full timeline remains one click away. The latest digest follows
+activity with a bounded summary preview and an expandable full body.
+
+The team setup checklist is Home onboarding. For a member who
 has not hidden it, the list sits open directly under Ask with the same small
 quiet label used when it is folded: completed steps, the current step with
 guidance and one outline action, later incomplete steps as underlined links,
@@ -32,7 +39,12 @@ Setup actions stay disabled until saving finishes, and failed saves retain the c
 step with an inline retryable error. Email capture can wait in the background while
 the member continues to Home.
 
-New teams start in a focused setup shell for Welcome and Bring something real
+The source chooser presents Document, Email, and Website as three mutually
+exclusive choices with one active form. Document is the initial choice. Skip is
+a separate footer action, not a fourth source. Switching forms preserves entered
+values, remains disabled during saving, and respects reduced-motion preferences.
+
+New teams start in a focused setup shell for Welcome and Start with one source
 (processing and failed website-scan stay in that shell). After the first capture,
 guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
 started strip (Capture, Ask, Approve, Go live). Fresh guided Ask includes the visible
@@ -42,7 +54,7 @@ supporting-evidence visibility checks as the approval queue. Empty first-record 
 guided Approvals views offer Check for suggestions so asynchronously generated
 proposals can be discovered without reloading the page. Home never shows that strip.
 Skipping lands on an empty Home with the same checklist and next-step copy, not a
-sample workspace. Website scan is an available chooser card backed by Firecrawl. Work-style chips describe how the team works, never
+sample workspace. Website scan is an available source choice backed by Firecrawl. Work-style chips describe how the team works, never
 headcount, and only reorder suggestions plus the recommended Go live channel.
 
 Website scan asks “Who is this website about?” with “Our team or company” selected
@@ -61,14 +73,14 @@ Free teams see the specific verification or grant issue with its resolution acti
 Home’s **Your work** section shows non-zero pending approvals, overdue work,
 open tasks, and open objects, using singular labels for one item. Overdue work
 links to the work queue; tasks and objects link to their respective indexes.
-“You’re caught up” replaces an empty work summary. Personal pins and recent
-moments follow in the primary column. A supporting column holds the team inbound
-email (`#team-email`), agent connection onboarding, latest digest, and
+“You’re caught up” replaces an empty work summary. Recent activity and the digest follow in the primary column. A supporting column
+holds three personal pins, team inbound email (`#team-email`), agent connection onboarding, and
 **Connections & processing** issues. Actual billing restrictions remain prominent;
 upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
 smaller screens. No synthetic records or empty metric cards fill spare space.
 
-The latest digest stays folded until opened. Its summary and section bodies are
+The latest digest shows a short summary preview; its full body stays folded until opened.
+Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
 pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
 UUIDs: it scrubs them from the briefing packet, retries a draft that still

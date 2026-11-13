@@ -328,7 +328,7 @@ describe('HomeDashboardPage', () => {
   it('composes the caught-up state without zero-count attention links for a member', async () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).toContain('Your workspace');
     expect(html).toContain('data-testid="home-onboarding"');
     expect(html.indexOf('data-testid="home-onboarding"')).toBeLessThan(
       html.indexOf('You’re caught up'),
@@ -396,11 +396,14 @@ describe('HomeDashboardPage', () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(fakes.listPins).toHaveBeenCalledWith({ limit: 6 });
-    expect(fakes.listEventsPage).toHaveBeenCalledWith({ limit: 16 });
+    const eventFilters = fakes.listEventsPage.mock.calls[0]?.[0] as { limit: number; to: Date };
+    expect(eventFilters.limit).toBe(16);
+    expect(eventFilters.to).toBeInstanceOf(Date);
+    expect(eventFilters.to.getTime()).toBeLessThanOrEqual(Date.now());
     expect(fakes.timelineFeedProps).toMatchObject({
       compact: true,
       live: false,
-      maxMoments: 8,
+      maxMoments: 4,
       emptyLabel: 'Your timeline starts with a source',
     });
     expect(html).not.toContain('>Attention<');
@@ -510,7 +513,7 @@ describe('HomeDashboardPage', () => {
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).toContain('Your workspace');
     expect(html).not.toContain('data-billing-nudge');
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
       surface: 'render',
@@ -575,7 +578,7 @@ it('keeps Home usable when optional PAYG eligibility cannot be loaded', async ()
   });
   fakes.hasCompletedChatAnswer.mockRejectedValue(new Error('lookup unavailable'));
   const html = renderToStaticMarkup(await HomeDashboardPage());
-  expect(html).toContain('<h1 class="sr-only">Home</h1>');
+  expect(html).toContain('Your workspace');
   expect(html).not.toContain('Optional PAYG suggestion');
   expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
     surface: 'render',

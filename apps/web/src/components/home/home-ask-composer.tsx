@@ -45,14 +45,14 @@ export function HomeAskComposer({
   }
 
   return (
-    <section aria-labelledby="home-ask-title" className="max-w-4xl space-y-3">
+    <section aria-labelledby="home-ask-title" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="home-ask-title" className="text-2xl font-semibold tracking-tight text-fg">
+        <h2 id="home-ask-title" className="sr-only">
           Ask the timeline
         </h2>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      <p className="max-w-[65ch] text-sm leading-6 text-fg-muted">
+      <p className={hasSources ? 'sr-only' : 'text-sm leading-6 text-fg-muted'}>
         {hasSources
           ? 'Find a decision, check what changed, or work through a next step—with sources you can open.'
           : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
@@ -73,7 +73,7 @@ export function HomeAskComposer({
             type="text"
             value={prompt}
             maxLength={CHAT_HANDOFF_MAX_PROMPT_LENGTH}
-            className="h-12 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
+            className="h-12 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base placeholder:text-fg-muted focus:outline-none sm:text-sm"
             placeholder="Ask the timeline…"
             aria-describedby={error ? 'home-ask-error' : undefined}
             aria-invalid={Boolean(error)}
@@ -102,12 +102,12 @@ export function HomeAskComposer({
           {error}
         </p>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-x-5 gap-y-1">
         {(hasSources ? SUGGESTIONS : []).map((suggestion) => (
           <button
             key={suggestion}
             type="button"
-            className="rounded-sm border border-border bg-surface px-3 py-2.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-sm px-0 py-1 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               submit(suggestion);
             }}
