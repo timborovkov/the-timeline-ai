@@ -82,7 +82,7 @@ describe('IntegrationAuditPage', () => {
     );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(fakes.integrationAuditList).toHaveBeenCalledWith(null, 200);
+    expect(fakes.integrationAuditList).toHaveBeenCalledWith(null, 201, 0);
     expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
     expect(html).toContain(
       new Intl.DateTimeFormat('en-US', {
@@ -128,4 +128,15 @@ describe('integrationAuditSummary', () => {
   it('keeps new audit event codes readable without dropping the code from technical details', () => {
     expect(integrationAuditSummary('provider:sync_complete')).toBe('Provider sync complete');
   });
+});
+
+it('loads the next audit page without changing the access gate', async () => {
+  fakes.integrationAuditList.mockResolvedValue([]);
+  const html = renderToStaticMarkup(
+    await IntegrationAuditPage({ searchParams: Promise.resolve({ page: '2' }) }),
+  );
+  expect(fakes.requireMembership).toHaveBeenCalledWith('admin');
+  expect(fakes.integrationAuditList).toHaveBeenCalledWith(null, 201, 200);
+  expect(html).toContain('Newer entries');
+  expect(html).not.toContain('Older entries');
 });

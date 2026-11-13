@@ -122,7 +122,10 @@ export function DocumentPreview({
           aria-label="Loading preview"
           className="flex min-h-48 items-center justify-center rounded-sm border border-border bg-bg text-sm text-muted-foreground"
         >
-          <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />
+          <Loader2
+            aria-hidden="true"
+            className="mr-2 size-4 animate-spin motion-reduce:animate-none"
+          />
           Loading preview…
         </div>
       ) : null}
@@ -181,7 +184,7 @@ function DocumentPreviewButton({
       className="gap-1.5"
     >
       {pending ? (
-        <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+        <Loader2 aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" />
       ) : (
         <Eye aria-hidden="true" className="size-3.5" />
       )}

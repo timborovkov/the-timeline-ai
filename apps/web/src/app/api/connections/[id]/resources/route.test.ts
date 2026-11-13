@@ -65,7 +65,7 @@ const connection = {
   id: CONNECTION_ID,
   ownerUserId: USER_ID,
   provider: 'github',
-  displayName: 'tim/github',
+  displayName: 'taylor/github',
   externalAccountId: '42',
   scopes: ['repo'],
   authSecretCiphertext: 'encrypted-token',
@@ -157,7 +157,7 @@ describe('/api/connections/[id]/resources', () => {
       id: CONNECTION_ID,
       ownerUserId: USER_ID,
       provider: 'github',
-      displayName: 'tim/github',
+      displayName: 'taylor/github',
       externalAccountId: '42',
       scopes: ['repo'],
     });

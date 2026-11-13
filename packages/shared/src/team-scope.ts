@@ -39,6 +39,7 @@ import { createBillingOperatorScope } from '#src/billing/operator-store.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
+import { createBoardQualificationScope } from '#src/boards/qualification.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
 import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
@@ -100,6 +101,7 @@ import {
   type SuggestionAcceptanceTransaction,
 } from '#src/suggestions/acceptance-transaction.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import { createEngineMaintenanceScope } from '#src/suggestions/maintenance-scope.js';
 import { createTeamLifecycleScope } from '#src/team-lifecycle/scope.js';
 import { createTelegramScope } from '#src/telegram/scope.js';
 import { createTimelineReadScope } from '#src/timeline/read-scope.js';
@@ -3571,8 +3573,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     conversations: conversationSurfaceScope,
     boards: boardScope,
+    boardQualification: createBoardQualificationScope(
+      db,
+      core,
+      (transactionDb): ReturnType<typeof createSuggestionScope> =>
+        withTeam(transactionDb, teamId, userId, deps).suggestions,
+    ),
     pins: pinScope,
     suggestions: suggestionScope,
+    engineMaintenance: createEngineMaintenanceScope(db, core),
     reconciliation: createReconciliationScope({ db, scope: core }),
     integrations: integrationScope,
     mcp: mcpScope,

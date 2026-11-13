@@ -240,7 +240,7 @@ describe('githubProvider.handleOAuthCallback', () => {
       }
       if (url.pathname === '/user') {
         return Promise.resolve(
-          new Response(JSON.stringify({ id: 42, login: 'tim' }), {
+          new Response(JSON.stringify({ id: 42, login: 'taylor' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           }),
@@ -252,7 +252,7 @@ describe('githubProvider.handleOAuthCallback', () => {
             JSON.stringify({
               installations: [
                 { id: 123, account: { login: 'acme', type: 'Organization' } },
-                { id: 456, account: { login: 'tim', type: 'User' } },
+                { id: 456, account: { login: 'taylor', type: 'User' } },
               ],
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
@@ -276,13 +276,13 @@ describe('githubProvider.handleOAuthCallback', () => {
 
     expect(result).toMatchObject({
       externalAccountId: '42',
-      displayName: 'GitHub — tim',
+      displayName: 'GitHub — taylor',
     });
     expect(result.tokens).toMatchObject({
       access_token: 'ghu_user',
       github_app_installations: [
         { id: '123', account_login: 'acme', account_type: 'Organization' },
-        { id: '456', account_login: 'tim', account_type: 'User' },
+        { id: '456', account_login: 'taylor', account_type: 'User' },
       ],
     });
   });

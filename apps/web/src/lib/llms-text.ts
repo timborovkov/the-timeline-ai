@@ -34,6 +34,8 @@ const AGENT_SETUP_SECTION = [
   '',
   '## Report in',
   '',
+  'Agents read decisions, owners and history, with citations, and they write updates back. They do not need a standup or a re-brief, and they can read what people and other agents already did.',
+  '',
   '- `timeline.remember` stores cited ingest evidence and counts toward the accepted-sources meter, like other ingest. It does not mutate canonical records. Capture is a separate consent checkbox, on by default, so remember can store cited notes; unchecking it is read-only.',
   '- Ingest email: forward, CC, or BCC mail to the team inbound address (`<team-slug>@<INBOUND_EMAIL_DOMAIN>`).',
   '- Ingest webhook: authenticated `POST https://thetimeline.cc/api/webhooks/ingest` with a Bearer `tli_` key, or a one-time URL under `/api/webhooks/ingest/<token>`.',

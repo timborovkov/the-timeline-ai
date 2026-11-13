@@ -210,7 +210,7 @@ describe('WorkQueueRow', () => {
         item={item()}
         members={[
           { id: 'user-1', label: 'Ada' },
-          { id: 'user-2', label: 'Tim' },
+          { id: 'user-2', label: 'Taylor' },
         ]}
         timezone="UTC"
       />,

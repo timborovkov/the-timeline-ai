@@ -308,7 +308,7 @@ function mockTransactionWithTx(tx: unknown): void {
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeAuth.mockResolvedValue({
-    user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
+    user: { id: USER_ID, name: 'Taylor', email: 'taylor@example.test' },
   });
   fakes.fakeResolveActiveTeam.mockResolvedValue({
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
@@ -740,7 +740,7 @@ describe('inviteMemberAction', () => {
       token: 'invite-token',
       expiresAt: new Date('2026-06-09T00:00:00.000Z'),
       teamName: 'Timeline E2E',
-      inviterName: 'Tim',
+      inviterName: 'Taylor',
     });
 
     await expect(
@@ -781,7 +781,7 @@ describe('inviteMemberAction', () => {
       token: 'invite-token',
       expiresAt: new Date('2026-06-09T00:00:00.000Z'),
       teamName: 'Timeline E2E',
-      inviterName: 'Tim',
+      inviterName: 'Taylor',
     });
     fakes.fakeSendMessage.mockResolvedValue({ ok: false, error: 'resend down' });
 
@@ -809,7 +809,7 @@ describe('inviteMemberAction', () => {
       token: 'invite-token',
       expiresAt: new Date('2026-06-09T00:00:00.000Z'),
       teamName: 'Timeline E2E',
-      inviterName: 'Tim',
+      inviterName: 'Taylor',
     });
     fakes.fakeSendMessage.mockResolvedValue({ ok: true, skipped: true });
 
@@ -1126,7 +1126,7 @@ describe('removeMemberAction', () => {
     });
 
     fakes.fakeAuth.mockResolvedValue({
-      user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
+      user: { id: USER_ID, name: 'Taylor', email: 'taylor@example.test' },
     });
     fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({

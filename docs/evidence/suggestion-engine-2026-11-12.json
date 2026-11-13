@@ -1,0 +1,221 @@
+{
+  "date": "2026-11-12",
+  "branch": "codex/suggestion-engine-improvements",
+  "baseline_commit": "dd938a9ebb0546f1c6804449c95d0e08b4ca4e83",
+  "scope": "Pre-launch suggestion engine; synthetic local validation only. No deployment or production mutation.",
+  "engine_version": "2026-11-engine-v2",
+  "models": {
+    "extraction": "deepseek/deepseek-v4.1-flash-1017",
+    "embedding": "openai/text-embedding-3-small"
+  },
+  "identity_experiment": {
+    "unique_cases": 5,
+    "repetitions_per_case": 3,
+    "positives": 2,
+    "negatives": 3,
+    "baseline": "Shared deterministic resolver without semantic adjudication; same candidates and source text.",
+    "baseline_true_positive": 0,
+    "baseline_false_positive": 0,
+    "semantic_true_positive_attempts": 6,
+    "semantic_false_positive_attempts": 0,
+    "semantic_true_negative_attempts": 9,
+    "precision": 1,
+    "recall": 1,
+    "limitations": "Only two unambiguous positive cases. Repetitions are not independent samples. This does not establish population-level 95% precision or 90% recall. Threshold sweep not performed: failure was absent semantic recall, not an identified numeric threshold."
+  },
+  "validation": {
+    "offline_evaluations": {
+      "passed": 115,
+      "command": "bun run test:eval"
+    },
+    "live_final": {
+      "passed_tests": 13,
+      "files": [
+        "suggestions.live-eval.test.ts",
+        "identity-resolution.live-eval.test.ts",
+        "engine.live-eval.test.ts"
+      ],
+      "includes": "Three repeated document client-list extraction/approval/affiliation scenarios; five identity cases repeated three times; original chronology/GitHub/summary cases; real Qdrant entity-only vector recall with team filtering.",
+      "command": "ENGINE_END_TO_END_LIVE_EVAL=1 SUGGESTIONS_LIVE_EVAL=1 ENGINE_IDENTITY_LIVE_EVAL=1 IDENTITY_SEMANTIC_ENABLED=true bun scripts/testing/run.ts --live workers/engine.live-eval.test workers/suggestions.live-eval.test identity-resolution.live-eval.test"
+    },
+    "persistence_contracts": {
+      "passed": 10,
+      "includes": "601 objects, stable pagination, exclusive leases, stale-owner publication fencing, document readiness and visibility races, idempotency, development reset team isolation and environment restrictions. Same-name project merge abstention; deduplicated billing-operation references."
+    },
+    "real_redis_reset": {
+      "passed": 1,
+      "includes": "Paused and prioritized target-team jobs removed; another team and queue pause preserved."
+    },
+    "worker_regressions": {
+      "initial_passed": 181,
+      "initial_failed": 7,
+      "corrected_targeted_passed": 7,
+      "total_cases": 188,
+      "notes": "Initial candidate retrieval missed compact company names and provider titles; restored retrieval. Unsafe first-name match and ambiguous-create expectations replaced with approved-alias matching and abstention."
+    },
+    "document_enqueue_regression": {
+      "passed": 2,
+      "includes": "Successful extraction enqueues suggestions; already-extracted retry recovers suggestion enqueue."
+    },
+    "web": {
+      "passed": 41,
+      "files": 3
+    },
+    "typechecks": {
+      "packages": ["apps/worker", "apps/web", "packages/db"],
+      "result": "pass",
+      "previous_blocker": "Stale generated pnpm dependency symlinks pointed at Postgres 3.4.9 rather than Bun-locked 4.0.0. Removed generated stale links; no database client source workaround."
+    },
+    "lint": {
+      "scope": "All changed app/package TypeScript files",
+      "result": "pass"
+    },
+    "environment": "Bun 1.4.4, migrated PGlite for persistence; disposable real Redis 7 and Qdrant containers for external-service boundaries."
+  },
+  "limitations": [
+    "No Railway credentials or connected Railway tooling: deployed scheduler registration and worker consumption unverified.",
+    "No reviewed customer-event sample available; no customer content in fixtures or this record.",
+    "Full operator CLI kill/restart rehearsal against local PostgreSQL is not performed; migrated PGlite reset state and real Redis queue handling are tested separately.",
+    "Calendar mirror vector deletion uses existing best-effort effects; SQL tombstones are authoritative.",
+    "Production inference is metered in existing per-team billing ledger; synthetic calls outside billing context do not establish deployment cost."
+  ],
+  "changed_source_sha256": {
+    "apps/worker/src/scripts/reset-objects.integration.test.ts": "02e833b5fd223483ef231a0c7107466d85f0798b19c570362257983b8c8e637e",
+    "apps/worker/src/scripts/reset-objects.ts": "d433141c58752e0eedef1b8990d1754da06e6164ba30756f82f316aa3ab920a9",
+    "apps/worker/src/workers/engine-correctness.test.ts": "44cda6336a0db7961be3f7cc9f7afe1834749cc10127364b5eb30f92337c9d8a",
+    "apps/worker/src/workers/engine.live-eval.test.ts": "abc32f93398efa51542f741152756c6ecd7bbeb84817877398c2e16e8dfda381",
+    "packages/db/drizzle/0105_engine_maintenance.sql": "8ef84cbc4b6c00eecf1abcf476bd0773fd4ce388deb51f9f7b1b77cf1f68e877",
+    "packages/db/src/schema/engine-maintenance.ts": "c6ea710be9782d9fa1628c7fd35a598767749104ec9e97a89a5f4468a9a8c083",
+    "packages/shared/src/suggestions/development-reset.ts": "ea932cd96c1af321f3caaf31d01c71f4ccc1fcf4ca0496d972459224655dd383",
+    "packages/shared/src/suggestions/identity-resolution.live-eval.test.ts": "2c39b9b5d05e239961bcd772aeecd195d47cae30e2e54564499a0d7162a63672",
+    "packages/shared/src/suggestions/identity-resolution.test.ts": "97962d9d50b875b845a6d4649c96901ad08cc790f725190e3a90700a267aff13",
+    "packages/shared/src/suggestions/identity-resolution.ts": "33f988bcd8fdf463e49b8a82b41d0f6d2bb9d87645748848ac5274c4d2e7d719",
+    "packages/shared/src/suggestions/maintenance-scope.ts": "00c77e8c82a330d3790dff6f2dad9e9b2186eebb243fb8eb661ab616ef136668",
+    "packages/shared/src/suggestions/semantic-identity.ts": "0fdf041f9180431e91032814125c99d4f62c8a7bbb1f3871c408318ab2027d33",
+    "apps/web/src/app/actions/documents.test.ts": "13d517d51ddb51ccd8341d30aaf00973b8fdc9079553c55eee93aa8a49562f79",
+    "apps/web/src/app/actions/documents.ts": "3e57bc0d6492bf96cfd87e2532f8de8f94798a144b19d8d264fcef34648912c5",
+    "apps/web/src/app/app/team/reconciliation/page.test.tsx": "a489b612aa713cff1fef5e13ade7df1609ec081a66cf66d083aae4066f8c2325",
+    "apps/web/src/app/app/team/reconciliation/page.tsx": "4cd5fdd4ddc846ab2ee147f484cc5272b1b71c16600a82bdc821455e7cd47d46",
+    "apps/web/src/components/documents/document-drive.test.tsx": "96bb2f83c24e9db684d8f2dcaa0ca40510a33994e5065df32e8783f342d081da",
+    "apps/web/src/components/documents/document-drive.tsx": "1c8c66d08ab0f27e16b923c44736016aabd56947a1e82ee65cda518a244a1bb0",
+    "apps/worker/src/workers/documentExtract.test.ts": "e7abbbf8ded1dccdb4d60a1bb007e42f978bb1e2115345a95a80b65093fd4389",
+    "apps/worker/src/workers/documentExtract.ts": "9107e7d62e20c382a1dd2622abe264ecff183a198efb324ab61d0d25257c68c2",
+    "apps/worker/src/workers/suggestions.evals.test.ts": "cf197e58a6b3f4d6f9ed14041e50dd570ee4820e0d7f3aa9177969f54201ce93",
+    "apps/worker/src/workers/suggestions.live-eval.test.ts": "73c88568f672607e5a58bc5c578bdc894e0599d3db5e8cb27a1027935e39aed5",
+    "apps/worker/src/workers/suggestions.test.ts": "e28c7a661c2d32a955637d0b9c6b84074ef172c1248fd6e53b7a656922a15654",
+    "apps/worker/src/workers/suggestions.ts": "0f044e00643e41f0058ca5754f887b47a3752e7fff5b0c3aec5eb91671e255d2",
+    "packages/db/src/schema/index.ts": "1bd1b6c71cb40039d3ef0dad5ee469c80d8f89bb58d19de158291d5fe6d2976c",
+    "packages/shared/src/calendar/due-dates.ts": "7e4c6cc10c73e3023f0f6e85e1008bf70a28ad6484bcc7c7004b0553b73966e1",
+    "packages/shared/src/env.ts": "b41094a6bdd0e9634735a76afa371b26a731b1fb0e0d17341034e0fa39bf61ca",
+    "packages/shared/src/extract/noise.test.ts": "53dbe9ba5083262ff9deed7d900c2704bae9965a889c89ed26b6967a85510785",
+    "packages/shared/src/extract/noise.ts": "a27c8ebd3cadbfee9bd37d072ee21f73a81309e5e53f500a352300a052d9411c",
+    "packages/shared/src/integrations/github-task-proposals.test.ts": "3f8af55759222df271e1f816cbc69ef4b760e7181a3962e404aabc3dd868c173",
+    "packages/shared/src/integrations/github-task-proposals.ts": "39241799676c2afe692fc8746f2cacff627d35cc2b2dff0288b6a4e6b8c8bc1e",
+    "packages/shared/src/objects/summaries.ts": "11888d6d5f4c352cd3e2aad338536097713d75d29a9bdd4c81969864d22abde4",
+    "packages/shared/src/objects/summary-evals.test.ts": "b88cb3d14b0fb411690fd105cca1719c48ab90237396542b56cd415838e9378d",
+    "packages/shared/src/platform-admin/workspace-policy.ts": "404f631c1d78c82e24051899c3b586c146c59df1288d9f6a7c426c8c7f4d5c0e",
+    "packages/shared/src/queue/queues.ts": "a215dd03259523cff53360b41a04b2e85996c18c99caa9710050da54ac445df2",
+    "packages/shared/src/suggestions/hub-context.test.ts": "d06cf6f7954c22e7bbfef3edb57250120c034307423f736deee2412f34315f85",
+    "packages/shared/src/suggestions/hub-context.ts": "d9723b2ead41fa1ecc2aa498df1c1577292a03a80707d1efdabb1a6e3638ef7c",
+    "packages/shared/src/suggestions/index.ts": "a1e786fd9e52c65152ae8290d155c4fccc98d117f74e81fe4ac0d9debb301eb8",
+    "packages/shared/src/team-scope.ts": "e3ebd231e0ceff5b8706d0368d7b6734a86587973c294fb2b027ccb7259377be",
+    "scripts/testing/run.ts": "9857f996fc50db14da9657e324e1865a847c6de7ef1b148c561247adf356d123"
+  },
+  "usage_observations": {
+    "observed_calls": 18,
+    "reported_openrouter_usd": 0.004505484394,
+    "calls": [
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.0001825
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.000157192
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.000167366
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00032418
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00061065
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.000280018
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 5.057e-5
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 7.908e-5
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 4.9091994e-5
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 7.212e-5
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 4.6638e-5
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00015625
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00011088
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 5.17e-5
+      },
+      {
+        "evaluationUsage": "identity",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 1.5876e-5
+      },
+      {
+        "evaluationUsage": "document_pipeline",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00077197
+      },
+      {
+        "evaluationUsage": "document_pipeline",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.0007139244
+      },
+      {
+        "evaluationUsage": "document_pipeline",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.000665478
+      }
+    ],
+    "limitations": "Provider-reported cost for identity and document structured calls only; excludes embeddings, original four worker live tests, earlier experiments and retries outside this final sample. Production billing remains separately metered."
+  }
+}

@@ -73,6 +73,7 @@ interface Harness {
   db: AnyDb;
   fetchBlob: ReturnType<typeof vi.fn>;
   enqueueEmbed: ReturnType<typeof vi.fn>;
+  enqueueSuggestions: ReturnType<typeof vi.fn>;
   extractFromMedia: ReturnType<typeof vi.fn>;
   extractOffice: ReturnType<typeof vi.fn>;
   extractPdfSandbox: ReturnType<typeof vi.fn>;
@@ -110,6 +111,7 @@ function makeHarness(
   // (which returns a Promise) without an empty async function.
   const body = typeof blobBody === 'string' ? Buffer.from(blobBody, 'utf-8') : blobBody;
   const fetchBlob = vi.fn(() => Promise.resolve({ body }));
+  const enqueueSuggestions = vi.fn((_data: queueNS.SuggestionJobData) => Promise.resolve());
   const enqueueEmbed = vi.fn((_data: queueNS.EmbedJobData) => Promise.resolve(undefined));
   const extractFromMedia = vi.fn(
     (_input: { body: Buffer; mediaType: string; filename: string; pageImages?: Buffer[] }) =>
@@ -149,6 +151,7 @@ function makeHarness(
   const io: DocumentExtractIO = {
     fetchBlob,
     enqueueEmbed,
+    enqueueSuggestions,
     requireEnv,
     extractFromMedia,
     extractOffice,
@@ -163,6 +166,7 @@ function makeHarness(
     db,
     fetchBlob,
     enqueueEmbed,
+    enqueueSuggestions,
     extractFromMedia,
     extractOffice,
     extractPdfSandbox,
@@ -313,6 +317,11 @@ describe('processDocumentExtractJob — happy path', () => {
       h.io,
     );
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.enqueueSuggestions).toHaveBeenCalledWith({
+      scope: 'document',
+      teamId: TEAM_ID,
+      documentVersionId: versionId,
+    });
     // Status promoted to 'chunked'.
     const status = await h.pg.query<{ processing_status: string }>(
       `SELECT processing_status FROM document_versions WHERE id = $1`,
@@ -409,6 +418,8 @@ describe('processDocumentExtractJob — short-circuits', () => {
     );
     expect(second.skipped).toBe(true);
     expect(second.reason).toBe('already_processed');
+    // A retry repairs an enqueue failure without re-extracting the immutable version.
+    expect(h.enqueueSuggestions).toHaveBeenCalledTimes(2);
     // No additional embed enqueues.
     expect(h.enqueueEmbed.mock.calls.length).toBe(callsAfterFirst);
     // Chunk count unchanged (no duplicate inserts).

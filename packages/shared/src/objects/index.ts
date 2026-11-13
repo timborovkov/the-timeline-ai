@@ -67,6 +67,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { requestBoardQualification } from '#src/boards/qualification-request.js';
 import {
   dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
@@ -86,11 +87,14 @@ import {
 } from '#src/chat-context.js';
 import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
+import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
+import { createChatTurnScope } from '#src/objects/chat-turns.js';
 import {
   normalizeIdentityFacet,
   objectSupportsIdentityFacets,
@@ -356,6 +360,7 @@ async function normalizeSystemRawEventEvidence(input: {
 async function emitObjectDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   entityId: string;
   objectType: ObjectType;
   canonicalName: string;
@@ -372,6 +377,13 @@ async function emitObjectDirectWriteOutput(input: {
   };
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+    sourceEventId: input.sourceEventId,
+    includeRelationshipNeighbors: input.operation !== 'create',
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -490,7 +502,9 @@ async function emitObjectDirectWriteOutput(input: {
 async function emitRelationshipDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   relationshipId: string;
+  qualificationAnchorId?: string;
   fromEntityId: string;
   toEntityId: string;
   relationshipKind: RelationshipKind;
@@ -500,6 +514,27 @@ async function emitRelationshipDirectWriteOutput(input: {
   systemEventKind: 'relationship_create' | 'relationship_delete';
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  if (input.qualificationAnchorId) {
+    // Replacement holds the child, but need not lock old parents just to enqueue work.
+    await requestBoardQualification(input.db, {
+      teamId: input.teamId,
+      userId: input.userId,
+      entityId: input.qualificationAnchorId,
+      sourceEventId: input.sourceEventId,
+      pendingEntityIds: [input.fromEntityId, input.toEntityId].filter(
+        (id) => id !== input.qualificationAnchorId,
+      ),
+    });
+  } else {
+    for (const entityId of [input.fromEntityId, input.toEntityId].sort()) {
+      await requestBoardQualification(input.db, {
+        teamId: input.teamId,
+        userId: input.userId,
+        entityId,
+        sourceEventId: input.sourceEventId,
+      });
+    }
+  }
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -602,6 +637,7 @@ async function emitRelationshipDirectWriteOutput(input: {
 async function emitNoteDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   entityId: string;
   noteId: string;
   actor: { kind: ActorKind; userId?: string | null };
@@ -612,6 +648,12 @@ async function emitNoteDirectWriteOutput(input: {
   previousBody?: string | null;
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+    sourceEventId: input.sourceEventId,
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -719,6 +761,7 @@ async function emitNoteDirectWriteOutput(input: {
 async function emitIdentityFacetDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   entityId: string;
   identityFacetId: string;
   identityFacetKind: IdentityFacetKind;
@@ -740,6 +783,12 @@ async function emitIdentityFacetDirectWriteOutput(input: {
   };
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+    sourceEventId: input.sourceEventId,
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -3709,6 +3758,7 @@ export async function listReadyObjectSummaries(
         eq(objectSummaries.teamId, scope.teamId),
         inArray(objectSummaries.status, ['ready', 'stale']),
         inArray(objectSummaries.entityId, ids),
+        documentSummarySourcesAreCurrent(scope.teamId, objectSummaries.sourceRefs),
       ),
     );
 }
@@ -3724,6 +3774,7 @@ export async function searchObjectsBySummary(
   const conds = [
     eq(objectSummaries.teamId, scope.teamId),
     inArray(objectSummaries.status, ['ready', 'stale']),
+    documentSummarySourcesAreCurrent(scope.teamId, objectSummaries.sourceRefs),
     eq(entities.teamId, scope.teamId),
     isNull(entities.mergedIntoId),
   ];
@@ -4225,6 +4276,7 @@ export async function createObject(
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: row.id,
       objectType: input.type,
       canonicalName: name,
@@ -4306,6 +4358,7 @@ export async function createObject(
         await emitRelationshipDirectWriteOutput({
           db: tx,
           teamId: scope.teamId,
+          userId: scope.userId,
           relationshipId: relationship.id,
           fromEntityId: row.id,
           toEntityId: primaryProject.id,
@@ -4376,6 +4429,7 @@ export async function createObject(
 type PostCommitEffect = () => void;
 
 interface ObjectMutationOptions {
+  expectedUpdatedAt?: string | undefined;
   transactionClient?: DbOrTx;
   postCommitEffects?: PostCommitEffect[];
   requireActive?: boolean;
@@ -4425,6 +4479,8 @@ export async function updateObject(
     const currentRow = currentRows[0];
     if (!currentRow) throw new Error('Object not found');
     const current: EntityRow = currentRow;
+    if (options?.expectedUpdatedAt && current.updatedAt.toISOString() !== options.expectedUpdatedAt)
+      throw new StaleWorkspaceStateError();
     if (options?.requireActive && current.archivedAt) throw new Error('Object is archived');
 
     const unchangedResult = () => ({
@@ -4728,6 +4784,7 @@ export async function updateObject(
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId,
       objectType: updated.type,
       canonicalName: updated.canonicalName,
@@ -5081,8 +5138,11 @@ export async function unarchiveObject(
   scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
+  expectedUpdatedAt?: string,
 ): Promise<ObjectRow & { changedFields: string[] }> {
-  const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor);
+  const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor, {
+    expectedUpdatedAt,
+  });
   return { ...result.object, changedFields: result.changedFields };
 }
 
@@ -5547,6 +5607,7 @@ export async function mergeObjects(
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: survivor.id,
       objectType: survivor.type,
       canonicalName: survivor.canonicalName,
@@ -5672,9 +5733,9 @@ export async function addRelationship(
         ),
       )
       // Project mutations lock the project before linked tasks. Use the same
-      // order here, then UUID order for same-type/generic relationships.
+      // order here; employment updates lock company before person, then UUID within each type.
       .orderBy(
-        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 ELSE 2 END`,
+        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
         asc(entities.id),
       )
       .for('update');
@@ -5819,6 +5880,7 @@ export async function addRelationship(
     await emitRelationshipDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       relationshipId: row.id,
       fromEntityId: endpoints.fromEntityId,
       toEntityId: endpoints.toEntityId,
@@ -6147,8 +6209,10 @@ export async function setTaskProject(
 
     for (const old of existing) {
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: taskId,
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: old.id,
         fromEntityId: taskId,
         toEntityId: old.projectId,
@@ -6161,8 +6225,10 @@ export async function setTaskProject(
     }
     if (created && project) {
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: taskId,
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: created.id,
         fromEntityId: taskId,
         toEntityId: project.id,
@@ -6504,8 +6570,10 @@ export async function setPersonCompany(
     for (const old of existing) {
       const oldEndpoints = canonicalRelationshipEndpoints(personId, old.companyId, 'related');
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: personId,
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: old.id,
         fromEntityId: oldEndpoints.fromEntityId,
         toEntityId: oldEndpoints.toEntityId,
@@ -6518,8 +6586,10 @@ export async function setPersonCompany(
     }
     if (created && company && endpoints) {
       await emitRelationshipDirectWriteOutput({
+        qualificationAnchorId: personId,
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: created.id,
         fromEntityId: endpoints.fromEntityId,
         toEntityId: endpoints.toEntityId,
@@ -6571,7 +6641,55 @@ export async function removeRelationship(
   scope: TeamScopeCore,
   relationshipId: string,
   actor: UpdateActor = { kind: 'user', userId: null },
+  expectedCurrent?: { fromEntityId: string; toEntityId: string; kind: string },
 ): Promise<{ removed: boolean; touchedIds: string[] }> {
+  if (expectedCurrent) {
+    await scope.requireMembership();
+    const effects: (() => void | Promise<void>)[] = [];
+    const result = await db.transaction(async (tx) => {
+      const endpoints = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, scope.teamId),
+            inArray(entities.id, [expectedCurrent.fromEntityId, expectedCurrent.toEntityId]),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .orderBy(
+          sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
+          asc(entities.id),
+        )
+        .for('update');
+      if (endpoints.length !== 2) throw new Error('Objects not found');
+      const [rel] = await tx
+        .select()
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.id, relationshipId),
+            eq(entityRelationships.teamId, scope.teamId),
+          ),
+        )
+        .for('update');
+      if (
+        rel?.fromEntityId !== expectedCurrent.fromEntityId ||
+        rel.toEntityId !== expectedCurrent.toEntityId ||
+        rel.kind !== expectedCurrent.kind
+      )
+        throw new StaleWorkspaceStateError();
+      return removeRelationship(
+        tx as unknown as Db,
+        { ...scope, postCommitEffects: effects, postCommitDb: scope.postCommitDb ?? db },
+        relationshipId,
+        actor,
+      );
+    });
+    if (scope.postCommitEffects) scope.postCommitEffects.push(...effects);
+    else for (const effect of effects) await effect();
+    return result;
+  }
   await scope.requireMembership();
   if (!UUID_RE.test(relationshipId)) return { removed: false, touchedIds: [] };
 
@@ -6732,6 +6850,7 @@ export async function removeRelationship(
     await emitRelationshipDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       relationshipId: rel.id,
       fromEntityId: rel.fromEntityId,
       toEntityId: rel.toEntityId,
@@ -6745,14 +6864,16 @@ export async function removeRelationship(
   });
   if (!result) return { removed: false, touchedIds: [] };
   const touchedIds = [result.fromEntityId, result.toEntityId];
-  for (const objectId of touchedIds) {
-    void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-      teamId: scope.teamId,
-      objectId,
-      relationshipId,
-      op: 'removeRelationship',
-    });
-  }
+  runOrDeferPostCommit(scope, () => {
+    for (const objectId of touchedIds) {
+      void fireAndForgetObjectSummaryRefresh(scope.postCommitDb ?? db, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        relationshipId,
+        op: 'removeRelationship',
+      });
+    }
+  });
   return { removed: true, touchedIds };
 }
 
@@ -6868,6 +6989,7 @@ export async function createNote(
     await emitNoteDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: input.entityId,
       noteId,
       actor: {
@@ -7183,6 +7305,7 @@ export async function createIdentityFacet(
       await emitIdentityFacetDirectWriteOutput({
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         entityId: input.entityId,
         identityFacetId: existing[0].id,
         identityFacetKind: input.kind,
@@ -7295,6 +7418,7 @@ export async function createIdentityFacet(
     await emitIdentityFacetDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: input.entityId,
       identityFacetId: row.id,
       identityFacetKind: input.kind,
@@ -7446,6 +7570,7 @@ export async function archiveIdentityFacet(
     await emitIdentityFacetDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: facet.entityId,
       identityFacetId: facet.id,
       identityFacetKind: facet.kind,
@@ -7487,6 +7612,7 @@ export async function updateNote(
   db: Db,
   scope: TeamScopeCore,
   input: {
+    expectedCurrent?: { entityId: string; body: string; updatedAt: string };
     noteId: string;
     body: string;
     actorUserId: string | null;
@@ -7511,7 +7637,7 @@ export async function updateNote(
       eq(objectNotes.teamId, scope.teamId),
       isNull(objectNotes.deletedAt),
     ];
-    if (actor.kind === 'user') {
+    if (actor.kind === 'user' || input.expectedCurrent) {
       if (!input.actorUserId) return null;
       conditions.push(eq(objectNotes.authorUserId, input.actorUserId));
     }
@@ -7520,9 +7646,17 @@ export async function updateNote(
       .select()
       .from(objectNotes)
       .where(and(...conditions))
+      .for('update')
       .limit(1);
     const note = existing[0];
     if (!note) return null;
+    if (
+      input.expectedCurrent &&
+      (note.entityId !== input.expectedCurrent.entityId ||
+        note.body !== input.expectedCurrent.body ||
+        note.updatedAt.toISOString() !== input.expectedCurrent.updatedAt)
+    )
+      throw new StaleWorkspaceStateError();
     if (note.body === body) return { changed: false, entityId: note.entityId };
 
     await tx
@@ -7585,6 +7719,7 @@ export async function updateNote(
     await emitNoteDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: note.entityId,
       noteId: note.id,
       actor,
@@ -7674,7 +7809,12 @@ export async function updateNote(
 export async function deleteNote(
   db: Db,
   scope: TeamScopeCore,
-  input: { noteId: string; actorUserId: string },
+  input: {
+    noteId: string;
+    actorUserId: string;
+    actor?: UpdateActor;
+    expectedCurrent?: { entityId: string; body: string; updatedAt: string };
+  },
 ): Promise<boolean> {
   await scope.requireMembership();
   if (!UUID_RE.test(input.noteId)) return false;
@@ -7693,9 +7833,17 @@ export async function deleteNote(
           isNull(objectNotes.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const note = existing[0];
     if (!note) return null;
+    if (
+      input.expectedCurrent &&
+      (note.entityId !== input.expectedCurrent.entityId ||
+        note.body !== input.expectedCurrent.body ||
+        note.updatedAt.toISOString() !== input.expectedCurrent.updatedAt)
+    )
+      throw new StaleWorkspaceStateError();
 
     await tx
       .update(objectNotes)
@@ -7724,7 +7872,7 @@ export async function deleteNote(
             entity_id: note.entityId,
             note_id: note.id,
             previous_body: note.body,
-            actor_kind: 'user',
+            actor_kind: input.actor?.kind ?? 'user',
             actor_user_id: input.actorUserId,
           },
         }),
@@ -7745,7 +7893,7 @@ export async function deleteNote(
       teamId: scope.teamId,
       entityId: note.entityId,
       actorUserId: input.actorUserId,
-      actorKind: 'user',
+      actorKind: input.actor?.kind ?? 'user',
       status: 'applied',
       field: '__note_delete__',
       previousValue: { note_id: note.id, body: note.body },
@@ -7755,9 +7903,10 @@ export async function deleteNote(
     await emitNoteDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: note.entityId,
       noteId: note.id,
-      actor: { kind: 'user', userId: input.actorUserId },
+      actor: input.actor ?? { kind: 'user', userId: input.actorUserId },
       sourceEventId,
       operation: 'archive_or_cancel',
       systemEventKind: 'object_note_delete',
@@ -8775,6 +8924,7 @@ export async function rejectObjectChange(
 
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
+    ...createChatTurnScope(db, scope),
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     listObjectsLinkedToIntegration: (input: { provider: string; ids: string[] }) =>
       listObjectsLinkedToIntegration(db, scope, input),
@@ -8826,8 +8976,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       actor: UpdateActor,
       options?: Parameters<typeof archiveSuggestionCreatedObjectIfUnadopted>[4],
     ) => archiveSuggestionCreatedObjectIfUnadopted(db, scope, suggestionItemId, actor, options),
-    unarchiveObject: (entityId: string, actor: UpdateActor) =>
-      unarchiveObject(db, scope, entityId, actor),
+    unarchiveObject: (entityId: string, actor: UpdateActor, expectedUpdatedAt?: string) =>
+      unarchiveObject(db, scope, entityId, actor, expectedUpdatedAt),
     mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),
     listPrimaryProjectsForTasks: (taskIds: string[]) =>
       listPrimaryProjectsForTasks(db, scope, taskIds),
@@ -8875,8 +9025,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     listIdentityFacets: (entityId: string) => listIdentityFacets(db, scope, entityId),
     listIdentityFacetsForUser: (linkedUserId: string) =>
       listIdentityFacetsForUser(db, scope, linkedUserId),
-    removeRelationship: (id: string, actor: UpdateActor) =>
-      removeRelationship(db, scope, id, actor),
+    removeRelationship: (
+      id: string,
+      actor: UpdateActor,
+      expectedCurrent?: Parameters<typeof removeRelationship>[4],
+    ) => removeRelationship(db, scope, id, actor, expectedCurrent),
     createNote: (input: Parameters<typeof createNote>[2]) => createNote(db, scope, input),
     updateNote: (input: Parameters<typeof updateNote>[2]) => updateNote(db, scope, input),
     deleteNote: (input: Parameters<typeof deleteNote>[2]) => deleteNote(db, scope, input),

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
+import type { ComponentProps } from 'react';
 
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
@@ -21,12 +22,20 @@ import {
 } from '@/components/ui/dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import {
   buildApprovalPreviewFields,
   type ApprovalPreviewField,
   type ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
 import { displayText } from '@/lib/display-dates';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { cn } from '@/lib/utils';
 
 interface PreviewEvidence {
@@ -41,6 +50,9 @@ interface PreviewEvidence {
 }
 
 export function ApprovalPreviewDialog({
+  returnFocusTo,
+  presentation = 'dialog',
+  reason,
   open,
   onOpenChange,
   item,
@@ -53,6 +65,9 @@ export function ApprovalPreviewDialog({
   onAccept,
   onReject,
 }: {
+  returnFocusTo?: HTMLElement | null;
+  presentation?: 'dialog' | 'panel' | 'sheet';
+  reason?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: {
@@ -122,69 +137,159 @@ export function ApprovalPreviewDialog({
   });
   const evidence = item.evidence ?? [];
 
+  const actions = (
+    <PreviewDecisionActions
+      item={item}
+      mergeHref={mergeHref}
+      pending={pending}
+      busy={busy}
+      acceptDisabled={acceptDisabled}
+      presentation={presentation}
+      onAccept={onAccept}
+      onReject={onReject}
+    />
+  );
+  const content = (
+    <>
+      <div className="space-y-3">
+        {acceptDisabled ? (
+          <p role="status" className="text-sm text-danger">
+            Source evidence has changed. Regenerate this proposal before accepting.
+          </p>
+        ) : null}
+        {reason ? (
+          <section>
+            <h3 className="text-sm font-semibold">Why this change</h3>
+            <p className="mt-2 text-sm leading-6 text-fg-muted">
+              {displayText(reason, { timezone })}
+            </p>
+          </section>
+        ) : null}
+        <ApprovalPreviewContent
+          bounded={presentation === 'dialog'}
+          loadingSnapshot={loadingSnapshot}
+          fields={fields}
+          timestamps={timestamps}
+          item={item.description?.trim() === reason?.trim() ? { ...item, description: null } : item}
+          timezone={timezone}
+          evidence={evidence}
+          currentEvidence={loaded?.key === requestKey ? loaded.currentEvidence : []}
+        />
+      </div>
+    </>
+  );
+  const description = `${actionLabel} · ${item.operation === 'create' ? 'Proposed record' : 'Current record with highlighted changes'}`;
+  const restoreFocus = (event: Event) => {
+    if (returnFocusTo?.isConnected) {
+      event.preventDefault();
+      returnFocusTo.focus();
+    }
+  };
+  if (presentation === 'panel')
+    return (
+      <section
+        aria-label="Review proposal"
+        className="sticky top-4 flex max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-sm border border-border bg-surface"
+      >
+        <header className="border-b border-border p-5">
+          <p className="mb-2 text-xs text-fg-muted">{description}</p>
+          <h2 className="text-xl font-semibold leading-7">
+            {displayText(item.title, { timezone })}
+          </h2>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">{content}</div>
+        <footer className="border-t border-border bg-surface p-4">{actions}</footer>
+      </section>
+    );
+  if (presentation === 'sheet')
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent onCloseAutoFocus={restoreFocus} className="max-w-xl">
+          <SheetHeader>
+            <SheetTitle className="pr-8">{displayText(item.title, { timezone })}</SheetTitle>
+            <SheetDescription>{description}</SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">{content}</div>
+          <footer className="border-t border-border p-4">{actions}</footer>
+        </SheetContent>
+      </Sheet>
+    );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-bg sm:max-w-2xl">
+      <DialogContent className="border-border bg-bg sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
         <DialogHeader>
           <DialogTitle className="pr-8">{displayText(item.title, { timezone })}</DialogTitle>
-          <DialogDescription>
-            {actionLabel}
-            {item.operation === 'create'
-              ? ' · Proposed record'
-              : ' · Current record with highlighted changes'}
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {
-          <ApprovalPreviewContent
-            loadingSnapshot={loadingSnapshot}
-            fields={fields}
-            timestamps={timestamps}
-            item={item}
-            timezone={timezone}
-            evidence={evidence}
-            currentEvidence={loaded?.key === requestKey ? loaded.currentEvidence : []}
-          />
-        }
-        <DialogFooter className="sm:justify-between">
-          <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
-            {mergeHref ? (
-              <Button asChild size="sm" variant="ghost" disabled={pending}>
-                <Link href={mergeHref}>
-                  <GitMerge className="size-4" />
-                  Review merge
-                </Link>
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy || acceptDisabled}
-                  onClick={onAccept}
-                >
-                  <Check className="size-4" />
-                  Accept
-                </Button>
-                <SuggestionChangeDialog
-                  itemId={item.id}
-                  title={displayText(item.title)}
-                  disabled={busy || acceptDisabled}
-                />
-              </>
-            )}
-            <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onReject}>
-              <X className="size-4" />
-              Reject
-            </Button>
-          </ItemActionGroup>
-        </DialogFooter>
+        {content}
+        <DialogFooter className="sm:justify-between">{actions}</DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
+function PreviewDecisionActions({
+  item,
+  mergeHref,
+  pending,
+  busy,
+  acceptDisabled,
+  presentation,
+  onAccept,
+  onReject,
+}: Pick<
+  ComponentProps<typeof ApprovalPreviewDialog>,
+  | 'item'
+  | 'mergeHref'
+  | 'pending'
+  | 'busy'
+  | 'acceptDisabled'
+  | 'presentation'
+  | 'onAccept'
+  | 'onReject'
+>) {
+  return isActionableSuggestionStatus(item.status) ? (
+    <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
+      {mergeHref ? (
+        <Button asChild size="sm" variant="ghost" disabled={pending}>
+          <Link href={mergeHref}>
+            <GitMerge className="size-4" />
+            Review merge
+          </Link>
+        </Button>
+      ) : (
+        <>
+          <Button
+            type="button"
+            size="sm"
+            variant={presentation === 'dialog' ? 'ghost' : 'default'}
+            disabled={pending || busy || acceptDisabled}
+            onClick={onAccept}
+          >
+            <Check className="size-4" />
+            Accept
+          </Button>
+          <SuggestionChangeDialog
+            itemId={item.id}
+            title={displayText(item.title)}
+            disabled={pending || busy || acceptDisabled}
+          />
+        </>
+      )}
+      <Button type="button" size="sm" variant="ghost" disabled={pending || busy} onClick={onReject}>
+        <X className="size-4" />
+        Reject
+      </Button>
+    </ItemActionGroup>
+  ) : (
+    <p className="text-sm capitalize text-fg-muted">
+      {item.status.replaceAll('_', ' ')} · Read-only
+    </p>
+  );
+}
+
 function ApprovalPreviewContent({
+  bounded = true,
   loadingSnapshot,
   fields,
   timestamps,
@@ -193,6 +298,7 @@ function ApprovalPreviewContent({
   evidence,
   currentEvidence,
 }: {
+  bounded?: boolean;
   loadingSnapshot: boolean;
   fields: ApprovalPreviewField[];
   timestamps: ApprovalPreviewTimestamps;
@@ -212,24 +318,16 @@ function ApprovalPreviewContent({
   currentEvidence: PreviewEvidence[];
 }) {
   return (
-    <div className="max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1">
+    <div
+      className={bounded ? 'max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1' : 'space-y-4'}
+    >
       {loadingSnapshot ? <p className="text-xs text-fg-dim">Loading current record…</p> : null}
       <dl className="grid gap-1.5">
         {fields.map((field) => (
           <PreviewFieldRow field={field} key={field.key} />
         ))}
       </dl>
-      {timestamps.createdAt || timestamps.updatedAt ? (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
-          {timestamps.createdAt ? (
-            <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
-          ) : null}
-          {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
-          {timestamps.updatedAt ? (
-            <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
-          ) : null}
-        </p>
-      ) : null}
+      <PreviewTimestamps timestamps={timestamps} />
       {item.description ? (
         <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
       ) : null}
@@ -302,6 +400,25 @@ function ApprovalPreviewContent({
     </div>
   );
 }
+function PreviewTimestamps({ timestamps }: { timestamps: ApprovalPreviewTimestamps }) {
+  return (
+    <>
+      {' '}
+      {timestamps.createdAt || timestamps.updatedAt ? (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
+          {timestamps.createdAt ? (
+            <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
+          ) : null}
+          {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
+          {timestamps.updatedAt ? (
+            <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
+          ) : null}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function PreviewFieldRow({ field }: { field: ApprovalPreviewField }) {
   const proposed = field.proposed ?? '—';
   return (

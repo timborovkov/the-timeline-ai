@@ -1,6 +1,9 @@
 import { type Db, entities, notifications, teams, teamCalendarSettings } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
-import { activeWorkspaceCondition } from '@timeline/shared/platform-admin/runtime';
+import {
+  activeWorkspaceCondition,
+  isInactiveWorkspaceError,
+} from '@timeline/shared/platform-admin/runtime';
 import { presentDueDate } from '@timeline/shared/time';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
@@ -171,26 +174,33 @@ export async function processOverdueScanTick(
       }
       for (const [teamId, teamValues] of byTeam) {
         // Serialize against disable/delete. Recheck admission after taking the
-        // lock so a workspace disabled since discovery is a harmless skip.
-        pageInserted += await deps.db.transaction(async (tx) => {
-          const [team] = await tx
-            .select({ id: teams.id })
-            .from(teams)
-            .where(eq(teams.id, teamId))
-            .for('share');
-          if (!team) return 0;
-          const [active] = await tx
-            .select({ id: teams.id })
-            .from(teams)
-            .where(and(eq(teams.id, teamId), activeWorkspaceCondition(teams.id)));
-          if (!active) return 0;
-          const inserted = await tx
-            .insert(notifications)
-            .values(teamValues)
-            .onConflictDoNothing()
-            .returning({ id: notifications.id });
-          return inserted.length;
-        });
+        // lock so a workspace disabled since discovery is a harmless skip. The
+        // lifecycle guard can still reject the insert; that denial skips only
+        // this workspace and must not fail the global tick.
+        try {
+          pageInserted += await deps.db.transaction(async (tx) => {
+            const [team] = await tx
+              .select({ id: teams.id })
+              .from(teams)
+              .where(eq(teams.id, teamId))
+              .for('share');
+            if (!team) return 0;
+            const [active] = await tx
+              .select({ id: teams.id })
+              .from(teams)
+              .where(and(eq(teams.id, teamId), activeWorkspaceCondition(teams.id)));
+            if (!active) return 0;
+            const inserted = await tx
+              .insert(notifications)
+              .values(teamValues)
+              .onConflictDoNothing()
+              .returning({ id: notifications.id });
+            return inserted.length;
+          });
+        } catch (error) {
+          if (!isInactiveWorkspaceError(error)) throw error;
+          log.info({ jobId, teamId }, 'overdue scan skipped inactive workspace');
+        }
       }
       totalInserted += pageInserted;
     }

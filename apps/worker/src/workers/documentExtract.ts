@@ -60,6 +60,7 @@ export interface DocumentExtractIO {
   ) => Promise<{ body: Buffer; contentType?: string }>;
   /** Enqueue one embed job per chunk. Defaults to the real BullMQ queue. */
   enqueueEmbed: (data: queue.EmbedJobData) => Promise<void>;
+  enqueueSuggestions?: (data: queue.SuggestionJobData) => Promise<unknown>;
   /**
    * Gate for vision/OpenRouter. Called only when a route needs
    * `extractFromMedia` (images, sparse PDFs). Text, office anydoc, and
@@ -135,6 +136,7 @@ function defaultIO(): DocumentExtractIO {
     async fetchBlob(objectKey, maxBytes) {
       return getObjectBuffer(getS3Client(), getDocumentsBucket(), objectKey, maxBytes);
     },
+    enqueueSuggestions: queue.enqueueSuggestionJob,
     enqueueEmbed: queue.enqueueEmbedJob,
     requireEnv() {
       const env = getEnv();
@@ -460,6 +462,13 @@ export async function processDocumentExtractJob(
     return { skipped: false };
   });
   if (claim.skipped) {
+    if (
+      claim.reason === 'already_processed' &&
+      ['chunked', 'embedded'].includes(version.processingStatus) &&
+      document.fileKind === 'document'
+    ) {
+      await io.enqueueSuggestions?.({ scope: 'document', teamId, documentVersionId });
+    }
     return {
       documentVersionId,
       skipped: true,
@@ -745,6 +754,8 @@ export async function processDocumentExtractJob(
     },
     'document chunked',
   );
+  if (document.fileKind === 'document')
+    await io.enqueueSuggestions?.({ scope: 'document', teamId, documentVersionId });
   return { documentVersionId, chunkCount: chunks.length };
 }
 

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import * as agent from '@timeline/shared/agent';
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import {
@@ -19,7 +21,6 @@ import {
 import { getEnv } from '@timeline/shared/env';
 import * as llm from '@timeline/shared/llm';
 import { childLogger } from '@timeline/shared/logger';
-import * as objects from '@timeline/shared/objects';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import * as time from '@timeline/shared/time';
@@ -36,6 +37,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
+import { modelChatMessages } from '@/lib/chat-session';
 import {
   filterToolSet,
   hasExplicitPinMutationIntent,
@@ -366,8 +368,8 @@ async function deterministicChatResponse(input: {
   const wantsWorkspaceState =
     /\b(task|calendar|object|status|stage|durable|workspace state)\b/i.test(question) &&
     !/\btimeline\b/i.test(question);
-  const toolCallId = wantsWorkspaceState ? 'deterministic-workspace-state' : 'deterministic-search';
-  const textId = 'deterministic-answer';
+  const toolCallId = randomUUID();
+  const textId = randomUUID();
   const toolInput = { query: question };
   const toolName = wantsWorkspaceState ? 'list_workspace_state' : 'search_timeline';
   let toolOutput: Record<string, unknown>;
@@ -398,33 +400,26 @@ async function deterministicChatResponse(input: {
   }
 
   if (input.sessionId) {
-    const turnsToPersist: objects.AppendChatMessageInput[] = [];
-    if (input.latestUserMessage) {
-      turnsToPersist.push({
-        role: 'user',
-        authorUserId: input.userId,
-        content: { ui_message: input.latestUserMessage },
-      });
-    }
-    turnsToPersist.push({
+    const assistantMessage: UIMessage = {
+      id: textId,
       role: 'assistant',
-      content: {
-        text: answer,
-        tool_calls: [
-          {
-            toolCallId,
-            toolName,
-            input: toolInput,
-            output: toolOutput,
-          },
-        ],
-        finish_reason: 'stop',
-        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        prompt_version: agent.AGENT_PROMPT_VERSION,
-      },
-    });
+      parts: [
+        {
+          type: `tool-${toolName}`,
+          toolCallId,
+          state: 'output-available',
+          input: toolInput,
+          output: toolOutput,
+        },
+        { type: 'text', text: answer },
+      ],
+    };
     try {
-      await objects.appendChatMessages(db, input.scope, input.sessionId, turnsToPersist);
+      await input.scope.objects.persistChatTurn(input.sessionId, {
+        userMessage: input.latestUserMessage,
+        assistantMessage,
+        metadata: { finish_reason: 'stop', prompt_version: agent.AGENT_PROMPT_VERSION },
+      });
     } catch (err) {
       log.warn(
         { err, sessionId: input.sessionId, teamId: input.teamId, userId: input.userId },
@@ -476,7 +471,7 @@ function createDeterministicResponse(input: {
 }): Response {
   const stream = createUIMessageStream({
     execute: ({ writer }) => {
-      writer.write({ type: 'start' });
+      writer.write({ type: 'start', messageId: input.streamId });
       writer.write({
         type: 'tool-input-available',
         toolCallId: input.toolCallId,
@@ -635,6 +630,38 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
   }
   const uiMessages = validation.data;
+  const continuation = uiMessages.at(-1);
+  const hasApprovalDecisions =
+    continuation?.role === 'assistant' &&
+    continuation.parts.some((part) => 'state' in part && part.state === 'approval-responded');
+  const earlierDecision = uiMessages
+    .slice(0, -1)
+    .some((message) =>
+      message.parts.some((part) => 'state' in part && part.state === 'approval-responded'),
+    );
+  if (earlierDecision || (continuation?.role === 'assistant' && !hasApprovalDecisions)) {
+    return Response.json({ ok: false, error: 'approval_no_longer_available' }, { status: 409 });
+  }
+  if (
+    continuation?.role === 'user' &&
+    !continuation.parts.some(
+      (part) => (part.type === 'text' && part.text.trim().length > 0) || part.type === 'file',
+    )
+  ) {
+    return Response.json({ ok: false, error: 'invalid_user_message' }, { status: 400 });
+  }
+  if (hasApprovalDecisions) {
+    if (!sessionId)
+      return Response.json({ ok: false, error: 'approval_session_required' }, { status: 409 });
+    try {
+      uiMessages[uiMessages.length - 1] = await scope.objects.claimChatApprovals(
+        sessionId,
+        continuation,
+      );
+    } catch {
+      return Response.json({ ok: false, error: 'approval_no_longer_available' }, { status: 409 });
+    }
+  }
   const titleSourceMessage = firstUserMessageWithText(uiMessages);
   const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
 
@@ -682,6 +709,7 @@ export async function POST(req: Request): Promise<Response> {
   const latestQuestion = messageText(latestUserMessage);
   const toolSelection = selectAgentToolGroups({
     question: latestQuestion,
+    recentMessages: uiMessages.slice(-6),
     dashboardContext: parsed.data.dashboardContext,
     contextTrail,
   });
@@ -732,7 +760,7 @@ export async function POST(req: Request): Promise<Response> {
   });
   const toolApproval = agent.userApprovalForTools(observedTools);
 
-  const messages = await convertToModelMessages(uiMessages);
+  const messages = await convertToModelMessages(modelChatMessages(uiMessages));
   const modelId = llm.resolveAgentModelId();
   const billingOperationId = askOperationId('web');
   const reserved = await reserveAskAi(scope.billing, {
@@ -859,6 +887,7 @@ export async function POST(req: Request): Promise<Response> {
     'chat agent tools selected',
   );
 
+  let completionMetadata: Record<string, unknown> = {};
   const result = llm.streamChat({
     instructions,
     messages: memory.messages,
@@ -960,47 +989,37 @@ export async function POST(req: Request): Promise<Response> {
           ...tokenUsage(e.usage),
         },
       );
-      if (!sessionId) return;
-      // Persist after the stream resolves. Errors here must NOT crash the
-      // response — the user already saw the assistant reply and a failed
-      // append is recoverable next turn. Logged at warn so retries are
-      // observable without paging.
-      const turnsToPersist: objects.AppendChatMessageInput[] = [];
-      if (latestUserMessage) {
-        turnsToPersist.push({
-          role: 'user',
-          authorUserId: session.user.id,
-          content: { ui_message: latestUserMessage },
-        });
-      }
-      turnsToPersist.push({
-        role: 'assistant',
-        content: {
-          text: answerText || null,
-          tool_calls: 'toolCalls' in e ? e.toolCalls : undefined,
-          tool_observability: toolObservability,
-          finish_reason: 'finishReason' in e ? e.finishReason : undefined,
-          usage: e.usage,
-          prompt_version: agent.AGENT_PROMPT_VERSION,
-        },
-      });
-      void (async () => {
+      completionMetadata = {
+        tool_observability: toolObservability,
+        finish_reason: 'finishReason' in e ? e.finishReason : undefined,
+        usage: e.usage,
+        prompt_version: agent.AGENT_PROMPT_VERSION,
+      };
+    },
+  });
+
+  const response = createUIMessageStreamResponse({
+    stream: toUIMessageStream({
+      stream: result.stream,
+      originalMessages: uiMessages,
+      generateMessageId: randomUUID,
+      onEnd: async ({ responseMessage, isContinuation, isAborted, isCancelled }) => {
+        if (!sessionId) return;
         try {
-          await objects.appendChatMessages(db, scope, sessionId, turnsToPersist);
+          await scope.objects.persistChatTurn(sessionId, {
+            userMessage: isContinuation ? null : latestUserMessage,
+            assistantMessage: responseMessage,
+            metadata: { ...completionMetadata, interrupted: isAborted || Boolean(isCancelled) },
+          });
         } catch (err) {
           log.warn(
             { err, sessionId, teamId: active.teamId, userId: session.user.id },
             'chat session append failed',
           );
           reportCaughtError(err, { surface: 'background', operation: 'chat_session_append' });
-          return;
         }
-      })();
-    },
-  });
-
-  const response = createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+      },
+    }),
   });
   // Surface the (possibly auto-created) session id so the client can pin
   // subsequent turns to this row. Header form is read-only metadata —

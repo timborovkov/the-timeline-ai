@@ -17,6 +17,7 @@ interface DueDateDisplayProps {
   variant?: DueDateDisplayVariant;
   className?: string;
   completed?: boolean;
+  workStatus?: string;
   completedAt?: Date | string | null;
 }
 
@@ -40,14 +41,17 @@ export function DueDateDisplay({
   variant = 'inline',
   className,
   completed = false,
+  workStatus,
   completedAt = null,
 }: DueDateDisplayProps) {
   const workspaceTimezone = useWorkspaceTimezone();
+  const terminal =
+    completed || ['done', 'completed', 'cancelled', 'canceled'].includes(workStatus ?? '');
   const due = presentDueDate(value, {
     timezone: timezone ?? workspaceTimezone,
     ...(now ? { now } : {}),
     ...(locale ? { locale } : {}),
-    ...(completed ? { completed, completedAt } : {}),
+    ...(terminal ? { completed: true, completedAt } : {}),
   });
   const tone = TONE_CLASS[due.tone];
 

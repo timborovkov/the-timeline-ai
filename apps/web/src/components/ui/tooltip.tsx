@@ -28,13 +28,11 @@ function TooltipContent({ className, sideOffset = 8, ref, ...props }: TooltipCon
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
+        data-motion="popover"
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
           'z-50 rounded-sm border border-border bg-surface-2 px-2 py-1 font-mono text-xs text-fg shadow-sm',
-          'data-[state=delayed-open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=delayed-open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=delayed-open]:zoom-in-95',
           className,
         )}
         {...props}

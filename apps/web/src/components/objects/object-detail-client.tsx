@@ -1729,7 +1729,7 @@ function ObjectEditableFields({
       <ObjectRailRow label="Status">
         <EditableMetadata
           label={`Status for ${displayText(title)}`}
-          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
         >
           <EditableMetadata.Value>
             <CollectionStatus
@@ -1774,10 +1774,14 @@ function ObjectEditableFields({
         <ObjectRailRow label="Due">
           <EditableMetadata
             label={`Due date for ${displayText(title)}`}
-            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
           >
             <EditableMetadata.Value>
-              <DueDateDisplay value={detail.dueAt} variant="field-hint" />
+              <DueDateDisplay
+                workStatus={detail.status}
+                value={detail.dueAt}
+                variant="field-hint"
+              />
             </EditableMetadata.Value>
             <EditableMetadata.Editor>
               <MetadataDateEditor
@@ -1798,7 +1802,7 @@ function ObjectEditableFields({
         </p>
       ) : detail.type === 'task' ? (
         <>
-          <div className="px-2">
+          <ObjectRailRow label="Project">
             <TaskProjectSelect
               taskId={detail.id}
               projectId={primaryProject?.projectId ?? null}
@@ -1807,7 +1811,7 @@ function ObjectEditableFields({
               projects={projects}
               quiet
             />
-          </div>
+          </ObjectRailRow>
           {taskCategoriesEnabled ? (
             <div className="px-2">
               <TaskCategorySelect
@@ -1892,7 +1896,7 @@ function ObjectPriorityField({
     <ObjectRailRow label="Priority">
       <EditableMetadata
         label={`Priority for ${displayText(title)}`}
-        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
       >
         <EditableMetadata.Value>
           <CollectionStatus
@@ -1940,7 +1944,7 @@ function ObjectAssigneeField({
     <ObjectRailRow label="Assignee">
       <EditableMetadata
         label={`Assignee for ${displayText(title)}`}
-        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
       >
         <EditableMetadata.Value>
           <span className="text-sm font-normal leading-5 text-fg">
@@ -2724,7 +2728,7 @@ function ObjectRelationshipsSection({
             <li key={`${relationship.direction}-${relationship.id}`} className="grid gap-0.5">
               <a
                 href={`/app/objects/${relationship.otherId}`}
-                className={`min-w-0 truncate ${DETAIL_LINK_CLASS}`}
+                className={`inline-flex min-h-6 items-center min-w-0 truncate ${DETAIL_LINK_CLASS}`}
               >
                 {displayText(relationship.otherName)}
               </a>
@@ -2754,7 +2758,7 @@ function ObjectRelationshipsSection({
                       onClick={() => {
                         onRemoveRelationship(relationship.id, relationship.otherId);
                       }}
-                      className="text-xs text-danger hover:underline disabled:opacity-50"
+                      className="inline-flex min-h-8 min-w-8 items-center text-xs text-danger hover:underline disabled:opacity-50"
                     >
                       Unlink
                     </button>
@@ -2874,7 +2878,7 @@ function ObjectArchiveFooter({
         type="button"
         disabled={pending || archivedAt !== null}
         onClick={onArchiveObject}
-        className="text-xs text-danger hover:underline disabled:opacity-50"
+        className="inline-flex min-h-8 min-w-8 items-center text-xs text-danger hover:underline disabled:opacity-50"
       >
         {archivedAt ? 'Archived' : 'Archive object'}
       </button>

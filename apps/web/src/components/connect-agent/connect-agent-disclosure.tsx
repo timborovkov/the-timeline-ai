@@ -19,11 +19,11 @@ export function ConnectAgentDisclosure({
   }, [defaultOpen]);
 
   return (
-    <details ref={detailsRef} className="group py-4">
+    <details ref={detailsRef} className="py-4 [&[open]>summary>svg]:rotate-90">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-fg marker:content-none [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-fg-dim transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          className="size-3.5 shrink-0 text-fg-dim transition-transform motion-reduce:transition-none"
         />
         {title}
       </summary>

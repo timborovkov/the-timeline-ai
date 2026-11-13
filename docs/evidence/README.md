@@ -13,3 +13,9 @@ These records retain unique observations or decisions, not current instructions.
 Historical benchmark JSON remains under `docs/research`; [the harness](../../scripts/performance/README.md) explains its methodology and limitations.
 
 - [Analytics observations](analytics-observations-2026.md).
+
+- [Suggestion engine live-model investigation, 11 November 2026](suggestion-engine-2026-11-11.json).
+
+- [Pre-launch engine correctness evaluations, 12 November 2026](suggestion-engine-2026-11-12.json).
+
+- [Recall-oriented proposal evaluations, 12 November 2026](suggestion-engine-recall-2026-11-12.json).

@@ -6,7 +6,7 @@ describe('buildSystemPrompt', () => {
   it('keeps first-person statements in retrieved messages attached to their sender', () => {
     const prompt = buildSystemPrompt({
       teamName: 'AuditAI',
-      userName: 'Tim',
+      userName: 'Taylor',
       currentDate: new Date('2026-07-24T12:00:00.000Z'),
       presentation: 'external_chat',
     });
@@ -32,7 +32,7 @@ describe('buildSystemPrompt', () => {
   it('gives web chat rich source-linked presentation instructions', () => {
     const prompt = buildSystemPrompt({
       teamName: 'AuditAI',
-      userName: 'Tim',
+      userName: 'Taylor',
       currentDate: new Date('2026-08-07T12:00:00.000Z'),
       presentation: 'web_rich',
     });

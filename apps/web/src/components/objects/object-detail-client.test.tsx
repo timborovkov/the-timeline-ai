@@ -1003,7 +1003,7 @@ describe('ObjectDetailClient', () => {
             {
               id: 'suggestion-item-1',
               title: 'Research tilintarkastusyhteisö founding process',
-              reason: 'Mikael asked for this from the Telegram discussion.',
+              reason: 'Cameron asked for this from the Telegram discussion.',
               operation: 'create',
               targetKind: 'task',
               createdAt: new Date('2026-06-25T19:08:00.000Z'),
@@ -1027,7 +1027,7 @@ describe('ObjectDetailClient', () => {
     });
 
     expect(html).toContain('Why this exists');
-    expect(html).toContain('Mikael asked for this from the Telegram discussion.');
+    expect(html).toContain('Cameron asked for this from the Telegram discussion.');
     expect(html).not.toContain('No accepted update evidence yet.');
     expect(html).toContain('telegram');
     expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);

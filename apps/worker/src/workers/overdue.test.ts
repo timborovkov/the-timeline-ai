@@ -115,6 +115,51 @@ describe('processOverdueScanTick', () => {
     },
   );
 
+  it('continues active workspaces when the lifecycle guard rejects one insert', async () => {
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Guarded task',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000002',
+      teamId: TEAM_B,
+      name: 'Active task',
+      ownerUserId: OWNER_B,
+    });
+    // The real guard raises this exact error. Force it at insert time, after
+    // discovery and the admission recheck, so one workspace cannot fail the tick.
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION reject_inactive_team_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.team_id = '${TEAM_A}' THEN
+          RAISE EXCEPTION 'Workspace is disabled' USING ERRCODE = '42501';
+        END IF;
+        RETURN NEW;
+      END $$;
+    `);
+
+    expect(await processOverdueScanTick({ db })).toEqual({ scanned: 2, inserted: 1 });
+    expect((await db.select().from(notifications)).map((row) => row.teamId)).toEqual([TEAM_B]);
+  });
+
+  it('still fails the scan when a notification insert hits an unrelated database error', async () => {
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Broken insert',
+      ownerUserId: OWNER_A,
+    });
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION reject_inactive_team_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'connection lost' USING ERRCODE = '08006';
+      END $$;
+    `);
+
+    await expect(processOverdueScanTick({ db })).rejects.toThrow(/Failed query/);
+    expect(await db.select().from(notifications)).toEqual([]);
+  });
+
   it('skips a workspace disabled after discovery and continues the other workspace', async () => {
     await insertObject({
       id: '00000000-0000-0000-0000-000000000001',

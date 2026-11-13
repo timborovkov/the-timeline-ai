@@ -96,9 +96,9 @@ beforeEach(() => {
   fakes.fakeSuggestions.reviseSuggestionItem.mockResolvedValue({
     id: ITEM_ID,
     status: 'pending',
-    title: 'Miku to register with PRH',
-    description: 'Miku made the promise.',
-    proposedPayload: { ownerName: 'Miku' },
+    title: 'Casey to register with PRH',
+    description: 'Casey made the promise.',
+    proposedPayload: { ownerName: 'Casey' },
   });
   fakes.fakeSuggestions.reviseTaskSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.listSuggestions.mockResolvedValue([
@@ -235,22 +235,22 @@ describe('suggestion item actions', () => {
     await expect(
       reviseSuggestionItemAction({
         itemId: ITEM_ID,
-        feedback: 'Miku made this promise, not Tim.',
+        feedback: 'Casey made this promise, not Taylor.',
       }),
     ).resolves.toEqual({
       ok: true,
       revisedItem: {
         id: ITEM_ID,
         status: 'pending',
-        title: 'Miku to register with PRH',
-        description: 'Miku made the promise.',
-        proposedPayload: { ownerName: 'Miku' },
+        title: 'Casey to register with PRH',
+        description: 'Casey made the promise.',
+        proposedPayload: { ownerName: 'Casey' },
       },
     });
 
     expect(fakes.fakeSuggestions.reviseSuggestionItem).toHaveBeenCalledWith({
       itemId: ITEM_ID,
-      feedback: 'Miku made this promise, not Tim.',
+      feedback: 'Casey made this promise, not Taylor.',
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       ANALYTICS_ACTOR,

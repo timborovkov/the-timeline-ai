@@ -19,7 +19,6 @@ import { ObjectListViewport } from '@/components/objects/object-list-viewport';
 import { PageHeader } from '@/components/page-header';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WorkFilterBar } from '@/components/work-filter-bar';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -91,7 +90,7 @@ export default async function ObjectsIndexPage({
     <div
       data-app-width="collection"
       data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
+      className="flex h-full min-w-0 flex-col"
     >
       <PageHeader
         className="w-full shrink-0 px-4 md:px-8"
@@ -105,7 +104,6 @@ export default async function ObjectsIndexPage({
             : []),
         ]}
       />
-      <WorkSubnav current="/app/objects" className="px-4 md:px-8" />
 
       <WorkFilterBar
         mode="objects"
@@ -143,13 +141,7 @@ export default async function ObjectsIndexPage({
       ) : null}
 
       <ObjectListViewport>
-        <div
-          className={
-            selectedObjectDetail
-              ? 'grid min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_min(40%,40rem)]'
-              : 'min-w-0'
-          }
-        >
+        <div className="min-w-0">
           <div className="min-w-0">
             {rows.length === 0 ? (
               <ObjectsEmptyState activeFilters={activeFilters} />
@@ -169,7 +161,7 @@ export default async function ObjectsIndexPage({
             )}
           </div>
           {selectedObjectDetail ? (
-            <div className="min-w-0 xl:sticky xl:top-0 xl:h-[calc(100dvh-14rem)]">
+            <div className="min-w-0">
               <ObjectIndexPeek
                 key={selectedObjectDetail.id}
                 detail={selectedObjectDetail}

@@ -86,6 +86,12 @@ and evidence; never treat an offline CI pass as live promotion evidence.
   `bun run test:reconciliation-eval:live` when prompts or live-model
   reconciliation behavior changed and the required env vars are available.
 
+Board qualification has a focused synthetic live suite:
+`BOARD_QUALIFICATION_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/boards/qualification.live-eval.test.ts --live`.
+It needs the normal runtime environment and `OPENROUTER_API_KEY`; it calls the shared
+model without creating board items or approvals. Cases cover inclusion, affirmative
+removal, uncertainty and hostile source text.
+
 Use `bun` only. Do not use `pnpm`, `npm`, or `yarn`.
 
 Offline test execution is declared in `scripts/testing/manifest.json`: each file

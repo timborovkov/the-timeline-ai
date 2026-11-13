@@ -33,7 +33,7 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await pg.exec(`
     INSERT INTO teams (id, slug, name)
-    VALUES ('${TEAM_ID}', 'tim-labs', 'Tim Labs');
+    VALUES ('${TEAM_ID}', 'taylor-labs', 'Taylor Labs');
     INSERT INTO users (id, email, "emailVerified")
     VALUES
       ('${ADMIN_ID}', 'ops@example.test', '2026-01-01T00:00:00Z'),
@@ -114,7 +114,7 @@ describe('billing operator store', () => {
       teamId: TEAM_ID,
       entitlementsPlanId: 'team',
       spendCapCents: 2_500,
-      reason: 'Tim internal',
+      reason: 'Taylor internal',
       expiresAt: new Date('2026-12-31T23:59:59.999Z'),
     });
     await setTeamPriceOverride({
@@ -132,7 +132,7 @@ describe('billing operator store', () => {
     expect(account?.arrangement).toBe('comped');
     expect(account?.planId).toBe('team');
     expect(account?.spendCapCents).toBe(2_500);
-    expect(account?.compReason).toBe('Tim internal');
+    expect(account?.compReason).toBe('Taylor internal');
     expect(account?.priceOverride).toEqual({
       meteredDiscountPercent: 25,
       includedActiveMembers: 10,

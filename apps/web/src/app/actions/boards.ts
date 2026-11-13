@@ -16,6 +16,13 @@ const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 const boardTemplateSchema = z.enum(['pipeline', 'task_board', 'catalog', 'custom']);
 const laneKindSchema = z.enum(['active', 'done', 'terminal', 'lost', 'blocked']);
 
+const qualificationFields = {
+  qualificationEnabled: z.boolean().optional(),
+  qualificationInstructions: z.string().trim().max(2000).optional(),
+  strictObjectTypes: z.boolean().optional(),
+  recommendedObjectTypes: z.array(objectTypeSchema).max(32).optional(),
+};
+
 const laneSchema = z.object({
   id: uuidSchema.optional(),
   name: z.string().trim().min(1).max(120),
@@ -23,10 +30,10 @@ const laneSchema = z.object({
 });
 
 const createBoardSchema = z.object({
+  ...qualificationFields,
   name: z.string().trim().min(1).max(120),
   purpose: z.string().trim().max(1000).optional(),
   templateKind: boardTemplateSchema,
-  recommendedObjectTypes: z.array(objectTypeSchema).max(8).optional(),
   lanes: z.array(laneSchema).max(16).optional(),
 });
 
@@ -36,6 +43,7 @@ const renameBoardSchema = z.object({
 });
 
 const updateBoardSettingsSchema = z.object({
+  ...qualificationFields,
   id: uuidSchema,
   name: z.string().trim().min(1).max(120),
   purpose: z.string().trim().max(1000),
@@ -67,12 +75,24 @@ const quickCreateSchema = z.object({
 });
 
 function friendlyError(err: unknown, fallback: string): string {
+  if (err instanceof z.ZodError) return err.issues[0]?.message ?? 'Invalid board settings';
   if (err && typeof err === 'object' && 'code' in err) {
     const code = (err as { code?: unknown }).code;
     if (code === '23505') return 'That item is already on this board.';
     if (code === '23503') return 'Linked record no longer exists.';
   }
-  return publicActionError(err, { operation: fallback, fallback: 'Board action failed.' });
+  return publicActionError(err, {
+    operation: fallback,
+    fallback: 'Board action failed.',
+    expected: {
+      'This object type is not allowed on this board.': {
+        message: 'This object type is not allowed on this board.',
+      },
+      'Board suggestions are not enabled.': {
+        message: 'Enable suggestions and save the board criteria first.',
+      },
+    },
+  });
 }
 
 export async function createBoardAction(input: unknown): Promise<ActionState> {
@@ -87,9 +107,14 @@ export async function createBoardAction(input: unknown): Promise<ActionState> {
         name: parsed.data.name,
         purpose: parsed.data.purpose ?? '',
         templateKind,
-        recommendedObjectTypes:
-          parsed.data.recommendedObjectTypes ??
-          boardDomain.defaultBoardRecommendedTypes(templateKind),
+        qualificationEnabled: parsed.data.qualificationEnabled,
+        qualificationInstructions: parsed.data.qualificationInstructions,
+        strictObjectTypes: parsed.data.strictObjectTypes,
+        recommendedObjectTypes: parsed.data.strictObjectTypes
+          ? (parsed.data.recommendedObjectTypes ?? [])
+          : parsed.data.recommendedObjectTypes?.length
+            ? parsed.data.recommendedObjectTypes
+            : boardDomain.defaultBoardRecommendedTypes(templateKind),
         lanes: parsed.data.lanes ?? boardDomain.defaultBoardLanes(templateKind),
       });
       trackProductEventBestEffort(
@@ -347,4 +372,44 @@ export async function unpinBoardAction(input: unknown): Promise<ActionState> {
       return { error: friendlyError(err, 'unpin_board') };
     }
   });
+}
+
+export async function previewBoardMatchesAction(input: unknown) {
+  const parsed = z.object({ boardId: uuidSchema }).safeParse(input);
+  if (!parsed.success) return { error: 'Invalid board' };
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  try {
+    const objects = await r.scope.objects.listObjects({ limit: 3, archived: false });
+    const results = await Promise.allSettled(
+      objects.map(async (object) => ({
+        id: object.id,
+        name: object.canonicalName,
+        ...(await r.scope.boardQualification.preview(parsed.data.boardId, object.id)),
+      })),
+    );
+    const matches = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    if (results.some((result) => result.status === 'rejected'))
+      return {
+        matches,
+        warning: 'Some objects could not be checked. Preview is incomplete; try again.',
+      };
+    return { matches };
+  } catch (err) {
+    return { error: friendlyError(err, 'preview_board_matches') };
+  }
+}
+
+export async function scanBoardMatchesAction(input: unknown) {
+  const parsed = z.object({ boardId: uuidSchema, afterId: uuidSchema.optional() }).safeParse(input);
+  if (!parsed.success) return { error: 'Invalid board' };
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  try {
+    return await r.scope.boardQualification.scan(parsed.data.boardId, parsed.data.afterId);
+  } catch (err) {
+    return { error: friendlyError(err, 'scan_board_matches') };
+  }
 }

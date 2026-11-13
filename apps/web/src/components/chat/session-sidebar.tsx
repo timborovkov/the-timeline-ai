@@ -405,6 +405,9 @@ function MobileSessionNavContent({
           <span className="min-w-0 truncate">
             {activeTitle ?? (activeSessionId ? 'Current chat' : 'Chats')}
           </span>
+          <span aria-hidden="true" className="shrink-0 group-open:rotate-180">
+            ⌄
+          </span>
         </summary>
         <div ref={scrollParentRef} className="max-h-56 space-y-2 overflow-y-auto border-t p-2">
           <NewChatButton onClick={newChat} className="w-full" />

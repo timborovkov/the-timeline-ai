@@ -97,7 +97,7 @@ export function RailNav({
                               'grid min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px] leading-4',
                               active
                                 ? 'border-signal/40 bg-bg text-signal'
-                                : 'border-danger/40 text-danger',
+                                : 'border-border text-fg-muted',
                               expanded ? 'ml-auto h-5' : 'absolute -right-1 -top-1 h-4',
                             )}
                           >

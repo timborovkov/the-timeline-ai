@@ -11,10 +11,12 @@ import {
   type CapabilityTool,
   type AgentToolMode,
 } from '#src/agent/tool-policy.js';
+import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import * as objects from '#src/objects/index.js';
 import {
   serializeObjectRow,
@@ -733,6 +735,7 @@ async function buildAgentTimelineMoments(
       ];
       return {
         moment_id: moment.id,
+        legacy_moment_ids: moment.legacyIds ?? [],
         pin_target: { kind: 'timeline_moment' as const, key: moment.id },
         version: moment.version,
         anchor_id: moment.anchorId,
@@ -796,6 +799,9 @@ function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
     purpose: row.purpose,
     template_kind: row.templateKind,
     recommended_object_types: row.recommendedObjectTypes,
+    strict_object_types: row.strictObjectTypes,
+    qualification_enabled: row.qualificationEnabled ?? false,
+    qualification_instructions: row.qualificationInstructions ?? '',
     item_count: row.itemCount,
     due_soon_count: row.dueSoonCount,
     overdue_count: row.overdueCount,
@@ -858,6 +864,7 @@ async function safe<T>(
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof StaleWorkspaceStateError) return { error: `stale_state: ${err.message}` };
     if (err instanceof QdrantUnavailableError) {
       return {
         error: err.outcomeUnknown
@@ -1287,6 +1294,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       options.sanitizeError,
     );
   const tools: Record<string, CapabilityTool> = {
+    ...buildWorkspaceTools(scope, runSafe),
     list_pins: capabilityTool({
       capability: 'pin_read',
       description:
@@ -1892,7 +1900,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           }));
           const moments = await buildAgentTimelineMoments(scope, hits, events);
           const expanded = input.momentId
-            ? moments.find((moment) => moment.moment_id === input.momentId)
+            ? (moments.find((moment) => moment.moment_id === input.momentId) ??
+              moments.find((moment) =>
+                Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
+              ))
             : moments[0];
           if (!expanded) {
             return {
@@ -2072,10 +2083,21 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 }
               : null,
             archived: result.archivedAt !== null,
+            updatedAt: result.updatedAt.toISOString(),
+            relationships: result.relationships.map((r) => ({
+              id: r.id,
+              kind: r.kind,
+              otherName: r.otherName,
+              fromEntityId: r.direction === 'out' ? result.id : r.otherId,
+              toEntityId: r.direction === 'out' ? r.otherId : result.id,
+            })),
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,
               citation: artifactRefCitation({ kind: 'object_note', id: n.id }),
-              body: n.body,
+              body: fenceExternalContent(n.body, { source: 'object_note', eventId: n.id }),
+              entityId: result.id,
+              authorUserId: n.authorUserId,
+              updatedAt: n.updatedAt.toISOString(),
             })),
             recent_changes: result.recentChanges.slice(0, 20).map((c) => ({
               id: c.id,

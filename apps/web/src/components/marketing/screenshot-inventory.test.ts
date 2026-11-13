@@ -47,14 +47,14 @@ describe('marketing screenshot inventory', () => {
     ).toEqual(['missing-shot-light.png', 'missing-shot-dark.png']);
   });
 
-  it('labels Ask captures as stored fictional examples without install noise', () => {
+  it('keeps Ask captions focused on the screen without repeated disclaimers or install noise', () => {
     const askCopy = listMarketingScreenshotReferences()
       .filter((ref) => ref.file.includes('ask'))
       .map((ref) => `${ref.alt} ${ref.caption}`)
       .join('\n');
 
-    expect(askCopy).toMatch(/stored example/i);
-    expect(askCopy).toMatch(/fictional Acme Labs demo/i);
+    expect(askCopy).not.toMatch(/stored example/i);
+    expect(askCopy).not.toMatch(/fictional Acme Labs demo/i);
     expect(askCopy).not.toMatch(/not live generated proof/i);
     expect(askCopy).not.toMatch(/\btli_|\btla_|POST \/api/u);
   });

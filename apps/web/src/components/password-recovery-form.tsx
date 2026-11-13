@@ -27,7 +27,14 @@ export function ForgotPasswordForm() {
       ) : null}
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" autoComplete="email" required />
+        <Input
+          className="text-base sm:text-sm"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+        />
       </div>
       {state.error ? (
         <p role="alert" className="text-sm text-destructive">
@@ -59,7 +66,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <p role="alert" className="text-sm text-destructive">
           {state.error}
         </p>
-        <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+        <Link href="/forgot-password" className="text-sm text-primary underline underline-offset-4">
           Request a new reset link
         </Link>
       </div>
@@ -70,6 +77,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       <div className="space-y-2">
         <Label htmlFor="password">New password</Label>
         <Input
+          className="text-base sm:text-sm"
           id="password"
           name="password"
           type="password"
@@ -86,6 +94,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       <div className="space-y-2">
         <Label htmlFor="confirmation">Confirm new password</Label>
         <Input
+          className="text-base sm:text-sm"
           id="confirmation"
           name="confirmation"
           type="password"

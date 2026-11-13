@@ -817,7 +817,12 @@ describe('TaskBoard', () => {
       />,
     );
 
-    expect(screen.getAllByText('the-timeline-ai: Add cursor pagination')).toHaveLength(2);
+    expect(
+      screen.getByRole('dialog', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 
@@ -901,10 +906,11 @@ describe('TaskBoard', () => {
       'timborovkov/the-timeline-ai#202: Add cursor pagination to the visible tasks board so the title can be read';
     renderBoard('task-1', [task({ canonicalName: longTitle })]);
 
-    const cardTitle = screen.getByRole('link', { name: longTitle });
+    const cardTitle = screen.getByRole('link', { name: longTitle, hidden: true });
     const panelTitle = screen.getByRole('heading', { name: longTitle });
 
-    expect(cardTitle.className).toContain('break-words');
+    expect(cardTitle.className).toContain('[overflow-wrap:anywhere]');
+    expect(cardTitle.className).not.toContain('line-clamp');
     expect(cardTitle.className).not.toContain('truncate');
     expect(panelTitle.className).toContain('break-words');
     expect(panelTitle.className).not.toContain('truncate');
@@ -920,12 +926,12 @@ describe('TaskBoard', () => {
       'border-border',
     );
     expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).toBe('/app/tasks');
-    expect(screen.getByRole('link', { name: 'Open object' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Open task' }).getAttribute('href')).toBe(
       '/app/objects/task-1?returnTo=%2Fapp%2Ftasks%3Ftask%3Dtask-1',
     );
   });
 
-  it('uses a dismissible focus-managed preview sheet on narrow screens', async () => {
+  it('uses a dismissible focus-managed preview sheet at every width', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'matchMedia').mockImplementation(
       (query) =>
@@ -940,7 +946,7 @@ describe('TaskBoard', () => {
     );
     renderBoard('task-1');
     expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open object' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open task' })).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
     });
@@ -1006,13 +1012,13 @@ describe('TaskBoard', () => {
       q: 'proposal',
     });
 
-    expect(screen.getByRole('link', { name: 'Send proposal' }).getAttribute('href')).toBe(
-      '/app/tasks?assignee=user-1&due=next7&q=proposal&view=list&task=task-1',
-    );
+    expect(
+      screen.getByRole('link', { name: 'Send proposal', hidden: true }).getAttribute('href'),
+    ).toBe('/app/tasks?assignee=user-1&due=next7&q=proposal&view=list&task=task-1');
     expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).toBe(
       '/app/tasks?assignee=user-1&due=next7&q=proposal&view=list',
     );
-    expect(screen.getByRole('link', { name: 'Open object' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Open task' }).getAttribute('href')).toBe(
       '/app/objects/task-1?returnTo=%2Fapp%2Ftasks%3Fassignee%3Duser-1%26due%3Dnext7%26q%3Dproposal%26view%3Dlist%26task%3Dtask-1',
     );
   });
@@ -1222,7 +1228,7 @@ describe('TaskBoard', () => {
     );
 
     await clickLoadMore(user);
-    await screen.findByRole('link', { name: 'Stale project match' });
+    await screen.findByRole('link', { name: 'Stale project match', hidden: true });
     await user.click(screen.getByRole('button', { name: /^Task project:/ }));
     await user.click(screen.getByRole('button', { name: 'Project B' }));
 
@@ -1231,7 +1237,7 @@ describe('TaskBoard', () => {
         id: 'task-2',
         projectId: 'project-b',
       });
-      expect(screen.queryByRole('link', { name: 'Stale project match' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Stale project match', hidden: true })).toBeNull();
     });
 
     view.rerender(
@@ -1374,11 +1380,11 @@ describe('TaskBoard', () => {
     expect(list?.className.split(/\s+/)).not.toContain('md:px-8');
   });
 
-  it('shows project once per list row as the editable control', () => {
+  it('omits unset project metadata from list rows', () => {
     renderBoard(null, [task()], 'list');
 
-    expect(screen.getAllByText('No project')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
+    expect(screen.queryByText('No project')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Project for Send proposal' })).toBeNull();
   });
 
   it('keeps kanban cards compact without a redundant Task type label', () => {
@@ -1386,15 +1392,17 @@ describe('TaskBoard', () => {
 
     expect(screen.queryByText('Task', { exact: true })).toBeNull();
     expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Send proposal' }).className).toContain('line-clamp-2');
+    expect(screen.getByRole('link', { name: 'Send proposal' }).className).not.toContain(
+      'line-clamp',
+    );
     const card = screen.getByRole('link', { name: 'Send proposal' }).closest('article');
     const drag = screen.getByRole('button', { name: /Drag Send proposal/ });
     const project = screen.getByRole('button', { name: 'Project for Send proposal' });
     expect(
       card?.firstElementChild?.contains(screen.getByRole('link', { name: 'Send proposal' })),
     ).toBe(true);
-    expect(project.className).toContain('h-5');
-    expect(drag.className).toContain('size-6');
+    expect(project.className).toContain('min-h-7');
+    expect(drag.className).toContain('size-8');
   });
 
   it('bulk assigns selected tasks from list view', async () => {

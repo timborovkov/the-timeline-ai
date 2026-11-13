@@ -184,7 +184,7 @@ describe('CuratedBoardList', () => {
     );
 
     const title = screen.getByRole('link', { name: 'Launch review' });
-    const titleBlock = title.closest('.min-w-0.flex-1');
+    const titleBlock = title.closest('[data-slot="collection-row-heading"]');
     expect(titleBlock?.textContent).toContain('Call customer');
     expect(screen.queryByRole('button', { name: 'Next step for Launch review' })).toBeNull();
   });

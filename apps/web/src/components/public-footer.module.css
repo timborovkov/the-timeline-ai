@@ -1,0 +1,91 @@
+.footer {
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+}
+.inner {
+  margin-inline: auto;
+  padding: 3rem 1.5rem 1rem;
+}
+.intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.intro p {
+  margin: 0.75rem 0 0;
+  line-height: 1.6;
+}
+.utilities {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.footer a,
+.footer button,
+.footer summary {
+  outline-offset: 4px;
+}
+.footer a:focus-visible,
+.footer button:focus-visible,
+.footer summary:focus-visible {
+  outline: 2px solid var(--signal);
+}
+.footer a:hover,
+.footer button:hover {
+  color: var(--fg);
+}
+.link,
+.utilities a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  text-decoration: none;
+  line-height: 1.4;
+}
+.active {
+  color: var(--signal);
+}
+.bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.bottom nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+}
+.bottom a,
+.bottom button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+@media (max-width: 44rem) {
+  .inner {
+    padding: 2rem 1.25rem 1rem;
+  }
+  .intro,
+  .bottom {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .intro {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+  }
+  .bottom nav {
+    gap: 0 1.25rem;
+  }
+}

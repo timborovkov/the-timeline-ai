@@ -41,8 +41,8 @@ const { MobileNav } = await import('./mobile-nav.js');
 
 const active = {
   teamId: 'team-1',
-  teamName: "Tim Borovkov's Team",
-  teamSlug: 'tim-borovkov',
+  teamName: "Taylor Bennett's Team",
+  teamSlug: 'taylor-bennett',
   role: 'admin' as const,
 };
 
@@ -77,7 +77,7 @@ describe('MobileNav team switcher', () => {
     await user.click(screen.getByRole('button', { name: 'Open navigation' }));
     const navigationDialog = screen.getByRole('dialog', { name: 'Navigation' });
     await user.click(
-      screen.getByRole('button', { name: "Switch team — current: Tim Borovkov's Team" }),
+      screen.getByRole('button', { name: "Switch team — current: Taylor Bennett's Team" }),
     );
 
     const teamsDialog = await screen.findByRole('dialog', { name: 'Teams' });

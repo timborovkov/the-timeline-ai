@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import {
   filterByDirectoryQuery,
+  openConnectionsPanel,
   providerStatusTone,
   type DirectoryProvider,
 } from '@/app/app/connections/connection-directory';
@@ -22,11 +23,14 @@ export function ConnectionsEmptyHint({ children }: { children: string }) {
   return <p className="px-3 py-8 text-center text-sm text-fg-muted">{children}</p>;
 }
 
-function ProviderAction({ provider }: { provider: DirectoryProvider }) {
+function ProviderAction({ provider, onOpen }: { provider: DirectoryProvider; onOpen: () => void }) {
   if (provider.primaryAction === 'setup') {
     return (
       <a
         href={`#${provider.id}`}
+        onClick={(event) => {
+          openConnectionsPanel(event, onOpen);
+        }}
         aria-label={`Set up: ${provider.id}`}
         className={CONNECTIONS_ROW_ACTION_CLASS}
       >
@@ -55,7 +59,13 @@ function ProviderAction({ provider }: { provider: DirectoryProvider }) {
     );
   }
   return (
-    <a href={`#${provider.id}`} className={CONNECTIONS_ROW_ACTION_CLASS}>
+    <a
+      href={`#${provider.id}`}
+      onClick={(event) => {
+        openConnectionsPanel(event, onOpen);
+      }}
+      className={CONNECTIONS_ROW_ACTION_CLASS}
+    >
       Open
     </a>
   );
@@ -65,10 +75,12 @@ function DirectoryProviderRow({
   provider,
   selected,
   showDescription = false,
+  onOpen,
 }: {
   provider: DirectoryProvider;
   selected: boolean;
   showDescription?: boolean;
+  onOpen: (id: string) => void;
 }) {
   const connected = provider.connected;
   return (
@@ -77,6 +89,11 @@ function DirectoryProviderRow({
         selected={selected}
         href={`#${provider.id}`}
         activateLabel={`Open ${provider.label} details`}
+        onNavigate={(event) => {
+          openConnectionsPanel(event, () => {
+            onOpen(provider.id);
+          });
+        }}
       >
         <CollectionRow.Leading>
           <ProviderLogo src={provider.logo} />
@@ -96,7 +113,12 @@ function DirectoryProviderRow({
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${provider.label}`}>
-            <ProviderAction provider={provider} />
+            <ProviderAction
+              provider={provider}
+              onOpen={() => {
+                onOpen(provider.id);
+              }}
+            />
           </ItemActionGroup>
         </CollectionRow.Actions>
       </CollectionRow>
@@ -104,13 +126,21 @@ function DirectoryProviderRow({
   );
 }
 
-function InboxSection({ email, selected }: { email: DirectoryProvider; selected: boolean }) {
+function InboxSection({
+  email,
+  selected,
+  onOpen,
+}: {
+  email: DirectoryProvider;
+  selected: boolean;
+  onOpen: (id: string) => void;
+}) {
   return (
     <section className="min-w-0">
       <div className="flex min-h-8 items-center px-2 sm:px-3">
         <h2 className="text-xs font-medium text-fg-muted">Inbox</h2>
       </div>
-      <DirectoryProviderRow provider={email} selected={selected} showDescription />
+      <DirectoryProviderRow provider={email} selected={selected} showDescription onOpen={onOpen} />
     </section>
   );
 }
@@ -121,12 +151,14 @@ export function ConnectionsDirectory({
   available,
   query,
   selectedId,
+  onOpen,
 }: {
   email: DirectoryProvider;
   connected: DirectoryProvider[];
   available: DirectoryProvider[];
   query: string;
   selectedId: string | null;
+  onOpen: (id: string) => void;
 }) {
   const visibleEmail = filterByDirectoryQuery([email], query)[0] ?? null;
   const visibleWebsites = 'websites website sources add scan schedule'.includes(
@@ -151,7 +183,11 @@ export function ConnectionsDirectory({
   return (
     <div className="[&>section+section]:-mt-px">
       {visibleEmail ? (
-        <InboxSection email={visibleEmail} selected={selectedId === visibleEmail.id} />
+        <InboxSection
+          email={visibleEmail}
+          selected={selectedId === visibleEmail.id}
+          onOpen={onOpen}
+        />
       ) : null}
 
       {visibleWebsites ? (
@@ -179,6 +215,7 @@ export function ConnectionsDirectory({
             <DirectoryProviderRow
               key={provider.id}
               provider={provider}
+              onOpen={onOpen}
               selected={selectedId === provider.id}
             />
           ))}
@@ -191,6 +228,7 @@ export function ConnectionsDirectory({
             <DirectoryProviderRow
               key={provider.id}
               provider={provider}
+              onOpen={onOpen}
               selected={selectedId === provider.id}
               showDescription
             />

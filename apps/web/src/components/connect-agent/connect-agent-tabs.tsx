@@ -59,63 +59,75 @@ export function ConnectAgentTabs({
         </div>
         <ConnectAgentPromptBar teamEmail={teamEmail} />
       </div>
-      <ul className="border-t border-border" onKeyDown={onListKeyDown} aria-label="Agent clients">
-        {CONNECT_AGENT_GUIDES.map((guide) => {
-          const selected = guide.id === active.id;
-          return (
-            <li key={guide.id} id={`connect-agent-client-${guide.id}`}>
-              <CollectionRow
-                selected={selected}
-                onActivate={() => {
-                  setActiveId(guide.id);
-                }}
-                activateLabel={guide.label}
-              >
-                {guide.logo ? (
-                  <CollectionRow.Leading>
-                    <ProviderLogo src={guide.logo} size="sm" />
-                  </CollectionRow.Leading>
-                ) : null}
-                <CollectionRow.Title>{guide.label}</CollectionRow.Title>
-              </CollectionRow>
-            </li>
-          );
-        })}
-      </ul>
-      <div
-        role="region"
-        id={`connect-agent-panel-${active.id}`}
-        aria-labelledby={`connect-agent-client-${active.id}`}
-        className="space-y-4"
-      >
-        <p className="text-sm leading-6 text-fg-muted">{active.summary}</p>
-        <ol className="space-y-2">
-          {active.steps.map((step, index) => (
-            <li key={step} className="flex gap-3 text-sm leading-6 text-fg">
-              <span aria-hidden="true" className="w-4 shrink-0 font-mono text-[11px] text-fg-dim">
-                {index + 1}
-              </span>
-              <span>{step}</span>
-            </li>
-          ))}
-        </ol>
-        {active.copy ? (
-          <pre
-            translate="no"
-            className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
-          >
-            <code>{active.copy.value(mcpUrl)}</code>
-          </pre>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          {active.deeplink ? (
-            <Button asChild size="sm">
-              <a href={active.deeplink.href(mcpUrl)}>{active.deeplink.label}</a>
-            </Button>
-          ) : null}
+      <div className="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <ul
+          className="min-w-0 border-t border-border"
+          onKeyDown={onListKeyDown}
+          aria-label="Agent clients"
+        >
+          {CONNECT_AGENT_GUIDES.map((guide) => {
+            const selected = guide.id === active.id;
+            return (
+              <li key={guide.id} id={`connect-agent-client-${guide.id}`}>
+                <CollectionRow
+                  selected={selected}
+                  onActivate={() => {
+                    setActiveId(guide.id);
+                  }}
+                  activateLabel={guide.label}
+                >
+                  {guide.logo ? (
+                    <CollectionRow.Leading>
+                      <ProviderLogo src={guide.logo} size="sm" />
+                    </CollectionRow.Leading>
+                  ) : null}
+                  <CollectionRow.Title>{guide.label}</CollectionRow.Title>
+                </CollectionRow>
+              </li>
+            );
+          })}
+        </ul>
+        <div
+          role="region"
+          id={`connect-agent-panel-${active.id}`}
+          aria-labelledby={`connect-agent-client-${active.id}`}
+          className="min-w-0 space-y-4 rounded-md bg-surface p-4 sm:p-6"
+        >
+          <h3 className="text-base font-semibold text-fg">Set up {active.label}</h3>
+          <p className="text-sm leading-6 text-fg-muted">{active.summary}</p>
+          <ol className="space-y-2">
+            {active.steps.map((step, index) => (
+              <li key={step} className="flex gap-3 text-sm leading-6 text-fg">
+                <span aria-hidden="true" className="w-4 shrink-0 font-mono text-[11px] text-fg-dim">
+                  {index + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
           {active.copy ? (
-            <CopyButton value={active.copy.value(mcpUrl)} label={active.copy.label} />
+            <details className="text-sm text-fg-muted">
+              <summary className="cursor-pointer rounded-sm py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Show setup text
+              </summary>
+              <pre
+                translate="no"
+                className="mt-2 whitespace-pre-wrap break-words rounded-sm bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
+              >
+                <code>{active.copy.value(mcpUrl)}</code>
+              </pre>
+            </details>
           ) : null}
+          <div className="flex flex-wrap gap-2">
+            {active.deeplink ? (
+              <Button asChild size="sm">
+                <a href={active.deeplink.href(mcpUrl)}>{active.deeplink.label}</a>
+              </Button>
+            ) : null}
+            {active.copy ? (
+              <CopyButton value={active.copy.value(mcpUrl)} label={active.copy.label} />
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

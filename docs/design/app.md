@@ -6,14 +6,24 @@ settings group related controls with short supporting text. Full source material
 and secondary context belong in disclosures with clear ways to open them.
 
 Collection indexes keep a bounded inner content width and shared responsive
-gutters. Section backgrounds and row separators extend to the main pane edges. Work’s empty Boards group is a compact inline prompt with Create board,
-so the work queue remains near the top even before a team creates its first board.
+gutters. Section backgrounds and row separators extend to the main pane edges.
+Work overview places the queue in the primary column and boards and personal
+pins in a narrow supporting column. At smaller widths they stack after the
+queue. The empty Boards explanation and Create board action stay together.
 
 ### Home
 
-Home does not repeat its navigation label as a visible page title. It starts
-with a quiet Capture action and the same compact, icon-only-send Ask composer
-used in chat. The team setup checklist is Home onboarding. For a member who
+Home leads with the active workspace’s actual name as its heading and a Capture action, beside a compact Ask
+composer on wide screens. Prompt suggestions use compact bordered buttons. Attention
+and recent activity form the primary column; three pinned shortcuts and workspace
+utilities support them in the secondary column. Email capture stays visible with copy and settings actions. Processing issues use a
+stacked notice with explicit review actions; job counts remain admin-only. Healthy
+processing adds no notice.
+Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
+four moments; the full timeline remains one click away. The latest digest follows
+activity with a bounded summary preview and an expandable full body.
+
+The team setup checklist is Home onboarding. For a member who
 has not hidden it, the list sits open directly under Ask with the same small
 quiet label used when it is folded: completed steps, the current step with
 guidance and one outline action, later incomplete steps as underlined links,
@@ -26,7 +36,16 @@ reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
 work surface.
 
-New teams start in a focused setup shell for Welcome and Bring something real
+Setup actions stay disabled until saving finishes, and failed saves retain the current
+step with an inline retryable error. Email capture can wait in the background while
+the member continues to Home.
+
+The source chooser presents Document, Email, and Website as three mutually
+exclusive choices with one active form. Document is the initial choice. Skip is
+a separate footer action, not a fourth source. Switching forms preserves entered
+values, remains disabled during saving, and respects reduced-motion preferences.
+
+New teams start in a focused setup shell for Welcome and Start with one source
 (processing and failed website-scan stay in that shell). After the first capture,
 guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
 started strip (Capture, Ask, Approve, Go live). Fresh guided Ask includes the visible
@@ -36,7 +55,7 @@ supporting-evidence visibility checks as the approval queue. Empty first-record 
 guided Approvals views offer Check for suggestions so asynchronously generated
 proposals can be discovered without reloading the page. Home never shows that strip.
 Skipping lands on an empty Home with the same checklist and next-step copy, not a
-sample workspace. Website scan is an available chooser card backed by Firecrawl. Work-style chips describe how the team works, never
+sample workspace. Website scan is an available source choice backed by Firecrawl. Work-style chips describe how the team works, never
 headcount, and only reorder suggestions plus the recommended Go live channel.
 
 Website scan asks “Who is this website about?” with “Our team or company” selected
@@ -52,21 +71,17 @@ and CTA remain visible independently of the next incomplete product step; it nev
 blocks product onboarding progression. Restricted
 Free teams see the specific verification or grant issue with its resolution action.
 
-Attention has no visible heading; the region is named for
-assistive tech only.
-It shows only non-zero groups: pending approvals, overdue work, open tasks,
-open objects, recoverable jobs, and connection issues. Overdue work stays the
-danger row into the work queue. Open tasks stay their own row into Tasks. Open
-objects is one generic count for people, companies, projects, deals, and
-follow-ups, linking to the Objects list rather than typed filters or dumping
-those records onto Home. “You’re caught up” replaces empty dashboard grids
-when every group is zero. Pinned work, the team inbound email as one readonly
-copyable field (`#team-email`) with a quiet link to Team → Email settings,
-digest, and a dense recent-moments scan follow as full-width sections without
-duplicating Timeline or Connections. These sections use spacing between groups and hairlines between dense rows,
-following the boundary rules in [the design system](../../design.md#core-rules).
+Home’s **Your work** section shows non-zero pending approvals, overdue work,
+open tasks, and open objects, using singular labels for one item. Overdue work
+links to the work queue; tasks and objects link to their respective indexes.
+“You’re caught up” replaces an empty work summary. Recent activity and the digest follow in the primary column. A supporting column
+holds three personal pins, team inbound email (`#team-email`), agent connection onboarding, and
+**Connections & processing** issues. Actual billing restrictions remain prominent;
+upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
+smaller screens. No synthetic records or empty metric cards fill spare space.
 
-The latest digest stays folded until opened. Its summary and section bodies are
+The latest digest shows a short summary preview; its full body stays folded until opened.
+Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
 pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
 UUIDs: it scrubs them from the briefing packet, retries a draft that still
@@ -97,9 +112,8 @@ Home previews at most six currently available pins as lightweight, full-width
 rows with a type icon, title, one context line, and overflow menu. Hidden,
 archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
-opens Work → Pinned. Work overview repeats that same mixed preview (heading
-**Pinned**, omitted when empty) above a separate **Boards** list of team boards
-and the work queue. Overview board rows use the same overflow **Pin to Home**
+opens the same pin-management view used by Work overview. Work overview repeats that same mixed preview (heading
+**Pinned work**, with a short pinning hint when empty) in the supporting column above a separate **Boards** list of team boards. On narrow screens, a Pinned work jump link above the queue keeps that section within reach. Overview board rows use the same overflow **Pin to Home**
 control and quiet pin glyph as the Boards index. Pins are personal shortcuts, not a team-shared board set.
 
 Home recent moments have no visible heading. They show up to eight dense rows
@@ -114,13 +128,15 @@ rest of the archive.
 Timeline is the strongest archive expression. Chrome is a sticky
 `CollectionToolbar` under the 48px shell header. The row includes **Search
 timeline**, a Filters trigger (source, origin, author, impact, and dates),
-source presets, and **Moments** / **All events** as the view control. Search
+and **Moments** / **All events** as the view control. Source presets occupy a separate horizontally scrollable row beneath the toolbar. Search
 submits on Enter and opens global search with the current source and date
 filters. Moments group related activity and give rows
 different visual weight. All events is a uniform compact log of every captured
 source event. The labels and the row density should make the difference
 obvious without a lecture. Timeline has no inventory chip; Moments versus All
-events is the page mode.
+events is the page mode. Repeated system notices for the same operation and integration status pulses for the same record/action collapse within a minute when their content, source actor, connection, and access scope match. Stable source metadata determines identity; delivery IDs and processing timestamps do not. Unknown system operations stay separate. Generic webhook moments require the same webhook and matching payload text instead of grouping all payloads in a time window. GitHub workflow lifecycle updates group by run identity and connection; separate runs remain separate even on the same day. Calendar notice grouping follows the [calendar contract](../calendar.md#manual-editing).
+
+Grouping preserves the source events in the inspector and All events. Saved moment links and pins retain legacy aliases, including pin-state checks and pin/unpin controls; an older broad group that now splits resolves to a matching current moment. Exact current IDs take precedence over aliases, and separately displayed calendar occurrences and notices keep independent pins. Notice lookups scan the bounded minute for the exact group before applying the evidence limit, so unrelated traffic cannot hide a valid pin.
 
 Each Moments row is a Linear-style collection row: time, one source icon, a
 title of up to two lines, and at most one muted source/actor/context line.
@@ -153,7 +169,7 @@ multiline title and retains keyboard/focus behavior.
 
 Ask uses a standard sans header. Human/assistant role labels are quiet 12px
 text; inline citations are mono lime superscripts, not raw chips. Tool
-execution is collapsed. Ask object
+execution details are collapsed. Status badges distinguish running, approval needed, denied, completed, failed, interrupted, and unavailable historical results; only active calls spin. Approval previews show effective defaults and before/after values, including lane kinds and removal consequences. Only the latest assistant turn offers actionable approval controls. Ask object
 bindings always have a human label and read **About {name}**, not Pin. Prompts
 handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
@@ -197,10 +213,9 @@ side effects, and human-reviewed proposals.
 
 ### Work and settings
 
-Work pages share one subnavigation and lead with the task at hand, not a grid of
+Work pages share one shell-owned subnavigation directly below the top bar, outside the page scroller. Overview, Objects, Tasks, Boards, Calendar, Digests, and Approvals keep the same tab position and horizontal gutters across route changes, loading, errors, and nested creation views. Page headers sit below the tabs. Tasks exposes a compact New task toolbar action, returning to Tasks after creation. Work pages lead with the task at hand, not a grid of
 links. Work → Digests is the day-by-day archive of those briefings. Work overview
-leads with mixed personal pins (same rows as Home), then team boards, then the
-work queue so saved work stays in reach before due and assigned items. Tasks default to the grouped list; the list table
+leads with the work queue, with mixed personal pins (same rows as Home) and team boards in the supporting column. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
 filters, not on a second strip. Board kanban/list uses the same toolbar
@@ -214,19 +229,19 @@ list/kanban each have a matching skeleton. Timeline loading uses the same
 toolbar row without a page header or inventory chip, then Linear feed rows.
 Collection pages load as flat rows, not boxed card grids. Objects New object and
 Boards Create board use the same compact toolbar/header action as Add item, not a
-filled primary chip. Kanban cards stay compact: a clamped title plus one
+filled primary chip. Kanban cards stay compact: a wrapping title plus one
 metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban and grouped list — no boxed inner
-container around the collection. Board kanban cards stay compact: a clamped
+container around the collection. Board kanban cards stay compact: a wrapping
 title, optional next-step line directly under the title, and one metadata row.
 Kanban lanes use a hairline divider, not boxed column chrome. Pipeline boards
 keep a readable lane min-width and scroll horizontally when the columns do not
 fit, including 1280 and 1440 canvases; they do not clip the last lanes. Card title and
-metadata share the same left edge: compact 20px chips, no extra type/metadata
+metadata share the same left edge: compact 28px controls, no extra type/metadata
 padding, and no wrapping priority row. The drag handle sits with the card
 actions on the right. Cards have no Move control; the drag handle is the
 on-card move path (Space or Enter, then arrow keys), and opening the card is
-the keyboard alternative. Task kanban paging uses card skeletons in columns
+an alternative to dragging. Task and curated board handles support Space/Enter pickup and drop, Left/Right lane movement, Escape cancellation, and contextual announcements. Touch gesture capture stays on the handle. Reduced motion disables overlay travel and drop settling. Task kanban paging uses card skeletons in columns
 that already have cards; empty lanes stay empty instead of flashing
 Loading more labels.
 Grouped board list does not repeat the current lane name or add a Move row. Next
@@ -243,7 +258,18 @@ copyable support fields — team id and slug — with spacing between sections
 and no nested cards.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
-visible role and quiet actions, not a padded card list. Role changes save on
+visible role and quiet actions, not a padded card list. Member and invitation actions stack below
+identity in containers narrower than 32rem, preserving readable text at 200% size.
+An email used as a member or removed-member title is not repeated as secondary
+context. Inviter labels use the trimmed name, then email, then an unknown-member
+fallback. Member, invitation, and removed-member lists independently render 50
+rows per page with Previous/Next controls and a formatted range. Ranges use a
+stable English server/hydration format, then adopt the browser language and follow
+language changes; these controls
+disappear for 50 or fewer rows. Deliberate Previous/Next navigation scrolls the
+new page into view below the shell header and focuses its named list, so the
+next Tab reaches the new rows. Automatic membership updates do not move focus. The Team accessible summary uses singular
+“member” for a single-member workspace. Role changes save on
 select. Remove, resend, and revoke are tooltiped icon buttons. Invite, pending,
 removed, and export lists use the same rows. Other settings sections stay
 forms, with spacing between sections, 12px muted labels, compact `sm`
@@ -275,8 +301,9 @@ tools holds compact rows for Agent MCP servers and Connect your agent;
 local-only and unroutable catalog entries such as Figma sit in Coming soon with
 no Connect action. Developer holds ingest webhooks, integration audit, and job
 recovery.
-Connect your agent is a client picker plus one install path: official vendor
-marks on white tiles, a CollectionRow list, and a single selected setup. Add
+Connect your agent leads with the shared AgentSetupCard and generic
+llms.txt setup prompt. A closed Client-specific setup disclosure contains the client picker: official vendor
+marks on white tiles, a CollectionRow list, and a single selected setup. Long installation prompts stay in copy actions, with a closed Show setup text fallback for manual copying. On wide screens, the picker sits beside the selected setup on a quiet surface; narrow screens stack them. Add
 memory, Timeline skill, connected grants, and static keys stay in one closed
 hairline disclosure stack. Admin grant rows show the consenting member next to
 the client so Revoke is unambiguous. Do not nest cards, stack `border-y`
@@ -303,10 +330,15 @@ second “Edit saved meeting” control. Join, archive, and skip are tooltiped i
 buttons. Capture times use relative age with a timestamp tooltip. Meeting
 mutations use the shared toast contract.
 
+Board list metadata is secondary to its purpose text: dates say “Updated”, counts stay quiet, and a template label is not repeated when it already supplies the row context. Object rows show assigned priorities; unset priorities stay inline only for schedulable work. The Tasks approvals summary reserves room for floating chat so its Open control remains reachable.
+
+### Object creation
+
+New-object creation uses a contained form below the shared Work navigation. Type and name lead; the optional-fields area appears only for supported types. Name examples follow the selected type. Create and Cancel share the form footer; empty due dates do not repeat a “No due date” hint.
+
 ### Calendar
 
-Month and week cells are title-first. Time is a muted prefix that does not
-share the truncated title string. Tentative and recurring are a left rail or
+Month and week cells are title-first, with up to two title lines and a separate muted time. Date navigation sits beside the month heading; view selection and event creation stay together. Today uses a filled date badge, and adjacent-month cells use a quiet background. Mobile week view stacks days into readable agenda rows, with 44px event and date controls. Tentative and recurring are a left rail or
 tiny icon, never the word “Tentative” or a pencil on the chip. Month cells
 show at most three events, then `+N more`, which opens day view for that
 date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
@@ -359,7 +391,7 @@ stay in the row hover title. Cluster output JSON copy lives in the row overflow
 menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
 back link; Reconcile and View workspace item sit in the header.
 
-Work → Pinned is the complete pin-management surface. It is a single
+Work overview owns pinned work. Its **Manage** link opens the complete pin-management surface; Pinned is not a separate Work tab. Legacy `/app/work?view=pinned` links remain valid. It is a single
 side-to-side Linear list with infinite scroll, virtualization, and no inventory
 chip. An empty All or filter list uses shared `EmptyState` with title
 **No pins yet**. Filters are All, Objects, Boards, Documents, Meetings, Calendar, and
@@ -413,17 +445,19 @@ instruction to unarchive the task first.
 ### Object and task detail
 
 Task list selection opens a right-hand peek on the same route (`?task=`); Objects
-rows use `?object=` and preserve list filters. Both use the shared preview with
-discussion and type-appropriate editable properties. The full-width, quiet outlined “Open object”
+rows use `?object=` and preserve list filters. All task, object, and board previews use the same fixed modal Sheet at every viewport, with focus containment, Escape dismissal, scroll preservation, and focus restoration. They never shrink the underlying list. Both task and object previews retain
+discussion and type-appropriate editable properties. The quiet Open task / Open object
 link at the top goes to `/app/objects/[id]` with `returnTo`
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
-The peek is a dense inspector on the shared detail rail, not a form card:
-14px title, ghost icon pin (tooltip Pin to Home) and Close, then the same status / priority / assignee /
-due / project / category triggers used in the list. Project and category pickers on this
-surface are borderless. Do not duplicate those values in a second “current”
-grid. Do not label the peek “side panel.” If accepted creation evidence exists,
+The preview uses a wrapping 18px title, quiet Pin and Close controls, and a small
+Open task / Open object link. Properties use aligned, visible labels for Status,
+Priority, Assignee, Due date, Project, and Category. The fields remain editable
+when empty; task collection rows omit unset project, assignee, date, priority, and
+category placeholders. Categories use sentence case at 12px, and priority uses a
+flag rather than the failure icon. Terminal work never shows an overdue warning.
+If accepted creation evidence exists,
 lead with that “why this exists” excerpt. Discussion (activity and comments)
 always follows as unboxed rows, including the borderless composer so a
 comment can start from the peek. Empty memory and empty related context stay
@@ -474,8 +508,7 @@ Change history starts closed unless suggested changes need review. Technical
 details live at the bottom of the rail. Aliases appear in their editable property
 without repeating a long alternate-name line beneath the title. Status and Priority keep a toned icon with quiet `--fg`
 value text so they match Stage/Aliases. Do not nest a card per
-field. The task peek and board card peek retain their compact bordered rail treatment
-to lift off the list in light and dark; both include Discussion below command fields and
+field. Task and board previews share the modal reading surface described above; both include Discussion below command fields and
 before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
 quiet text control, not a signal chip. Supporting copy stays 12px `--fg-dim`.
 Quiet fold/actions use 12px medium `--fg-muted`. `--signal` is reserved for
@@ -512,7 +545,20 @@ what is wrong, Timeline rewrites the same unresolved proposal, and the row
 stays pending. Merge proposals still offer `Review merge` for survivor
 choices and also open this preview.
 
-Actionable rows use ghost icon `Accept`, `Change`, `Preview`, and `Reject`.
+The main Approvals route uses a compact inbox with a persistent review pane at
+large-screen widths. The first visible proposal is selected initially. Clicking a
+proposal updates the pane; checkboxes independently select items for bulk actions.
+Rows show a wrapping proposal title and source/action context, with a lime edge
+marking the proposal under review. Resolved relationships read “Link … with …”.
+Related proposals share a compact heading and labeled change count.
+
+The review pane keeps the proposed fields, rationale, dependencies, and source
+evidence together, with Accept, Change, and Reject in its footer. The desktop pane leaves room for the shell navigation so its decision footer stays within short viewports. On smaller
+screens the same review opens in a full-width sheet and restores focus to its
+invoking control when closed. Embedded approval lists retain their inline rows
+and modal review. Resolved inbox proposals show their outcome and stay read-only. Inbox decisions remain disabled while an earlier decision is pending, so repeated clicks cannot accept the next proposal. Stale evidence still disables acceptance; merge proposals keep
+the dedicated merge-review path.
+
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.
@@ -531,7 +577,7 @@ Visible overdue tasks are eligible for the queue regardless of teammate assignme
 Queue rows do not repeat the object type: status, assignee, due date, and priority
 are inline-editable on object and board items, matching the task list. Approval
 rows stay review-only. Due state keeps a consistent right-aligned position and
-follows the shared due-date vocabulary above.
+follows the shared [due-date vocabulary](components.md#due-dates).
 
 
 
@@ -555,7 +601,7 @@ jobs as status/label/time rows with queue names in the hover title.
 
 
 
-Foundations and shared components: [design system](../../design.md).
+Foundations: [design system](../../design.md). Shared behavior: [component contracts](components.md).
 
 
 ### Billing benefits and recorded charges
@@ -614,9 +660,113 @@ for that user/team in the current browser. The CTA opens plan selection only.
 
 ### Coworker account and reporting controls
 
-Connect your agent includes workspace reporting defaults and connection-specific overrides, with explicit on-request/meaningful-handoffs modes and a required ongoing work scope. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
+Connect your agent leads with client setup. Workspace reporting defaults and connection-specific overrides live in a closed “Reporting preferences” disclosure below setup. Use compact, labeled forms with the shared controls; show the required work-scope field only for meaningful-work-and-handoff reporting. Connection overrides expand individually and use client names and consenting member labels, never raw client IDs. Saves announce progress and outcome through the shared toast channel. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
 
 OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
 
 Website sources are managed from the searchable Websites row directly below Email
-in Connections → Sources. Use compact source rows with one scan action. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.
+in Connections → Sources. Use compact source rows with one scan action, the latest scan outcome and relative time. Show “Not scanned yet” before the first run; queued and active scans name their progress and disable scan actions until completion. Changed scans link directly to their timeline evidence. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.
+
+### Side-panel reading layout
+
+Connections provider and tool panels and the global inspector use the shared
+Sheet surface described in [design foundations](../../design.md#layout-and-navigation).
+Panel URLs retain Back/Forward and deep linking without moving the directory
+behind them. Only a target inside an open panel may scroll into view.
+Catalog entries show a readable title, wrapping description, subordinate metadata,
+and an outlined connect action. Empty custom-server lists use a concise hint so
+the available catalog remains visible. Task and object detail rails retain their
+workspace-specific split layout.
+
+### Board membership setup and review
+
+Board creation and settings use the same **Board membership** field group. Type
+restrictions and **Suggest board changes** are independent controls. Explain that
+type restrictions also apply to manual additions, while suggested additions and
+removals always require separate review. When suggestions are enabled, show
+**What belongs here?**, a short inclusion/exclusion prompt and editable examples.
+Keep these criteria distinct from purpose and stages.
+
+The board header area offers a collapsed **Membership suggestions** disclosure.
+Preview is explicitly read-only; checking existing objects is an explicit batched
+action with queued/continuation or failure feedback. Review links to the existing
+Approvals surface filtered to this board. Removal proposals name the object and
+board and say that the object is retained. Hide qualification hashes, revisions and
+internal concurrency fields from ordinary approval previews. The
+[object contract](../objects.md#automatic-membership-suggestions) owns the behavior.
+
+## Installed app launch
+
+Home-screen Timeline uses the existing mark on `#0a0e0d`. Android Chrome
+composes the splash from the web app manifest `name`, `background_color`,
+`theme_color`, and 512px icon. iOS ignores that manifest splash and needs a
+startup image per device size and orientation. Those images are the same dark
+field with the centered mark — no wordmark, no extra chrome, no light-mode
+variant. Keep them in lockstep with
+[`apps/web/src/app/icon.svg`](../../apps/web/src/app/icon.svg); regenerate with
+`bun apps/web/scripts/generate-pwa-splash.ts`.
+
+## Remembered sign-in method
+
+Sign-in and sign-up show a compact neutral “Last used” badge beside the last
+successfully used Google or GitHub button, or beside the Email label for
+password authentication. Both routes use the same browser preference; a failed
+or cancelled attempt does not change it. New browsers show no badge. Keep the
+badge readable in both themes. Place OAuth badges on the top-right button edge,
+outside the centered icon-and-label flow, with enough spacing between buttons
+to prevent overlap. Preserve the existing primary action and provider order. Cookie lifetime
+and contents are disclosed in the [cookie notice](../../apps/web/src/app/cookies/page.tsx).
+
+## Administrative lifecycle controls
+
+Platform directories expose copyable identifiers, lifecycle status, disabled timestamps, and URL-persisted sorting/filtering. Use “Disabled” for reversible team access suspension, “Deletion requested” for owner requests, and “Active-system data removed” only after verification. Owner deletion requests lead to a standalone confirmation with restoration contact details, reachable without an active team. It confirms the request, not completed deletion, and explains that only platform admins can restore access before permanent deletion begins. Permanent actions live in a danger disclosure with exact team-name confirmation and explicit consequences for every member. Admin deletion details show retries and external retention follow-up separately. UUIDs remain an administrative/support detail rather than ordinary workspace navigation.
+
+Website source management follows [the application patterns](../../docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.
+
+Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Trust audit redaction remains in force on every page.
+
+### Dashboard clarity and responsive controls
+
+Collection title bands begin at the top of the page canvas below shell-owned Work navigation; adjacent section tabs do
+not add a second top gutter. Header descriptions have a readable line length and
+actions wrap when space is limited. Home keeps Capture beside its introductory
+copy, while empty Ask suggestions sit near the composer. Inactive attention
+counts use neutral styling; errors and consequential states retain their semantics.
+
+Board lanes keep a 16rem minimum width (bounded by the viewport) and scroll
+horizontally. Card metadata wraps instead of truncating every editable field.
+Objects already grouped by type do not repeat that type in every row. New record
+forms place the required name before optional project context.
+
+Document content search is named explicitly. Processing labels distinguish
+Awaiting indexing from Searchable. Detail context uses flat Summary, Source,
+Search status and Content excerpts sections; extracted prose uses the UI face.
+User-facing counts say passages, with indexing identifiers retained in technical
+details. Meeting transcripts precede technical identifiers.
+
+Approval actions use plain record/contact-detail/note labels and a visible Accept
+action. Mobile item icon controls have 44px targets. Planned agent tools start
+collapsed and open when searching, keeping available connections first.
+
+Team visibility controls have visible column labels as well as accessible names.
+Advanced settings group administration links under Workspace maintenance. Export
+copy describes the download's 24-hour expiry, not the archive's data range.
+Slack destination choices load only for Preferences. Editable member roles do not
+repeat their current role in a second badge.
+
+Work and Team tab strips reveal the active destination after navigation and
+resize, without mandatory snap points. Mobile Work navigation includes a scroll
+hint. Calendar month cells use day event counts on phones; opening a count shows
+the readable day view. Approval actions stack beneath their context on phones.
+Work relevance badges do not duplicate the canonical Blocked status, and normal
+pending approval uses the signal tone rather than danger. Narrow object property
+values wrap so dates remain complete. Website polling skips overlapping requests, so slow responses can settle.
+
+### Global search palette
+
+The header search opens a panel capped at 44rem and the available viewport
+width. Quick destinations use compact single rows with destination-specific
+icons; content results retain their context and due dates. Arrow navigation,
+Enter, Escape, active-descendant semantics, and row actions keep their existing
+linear order. Opening and closing use the shared popover transition; closing
+returns focus to the search input.

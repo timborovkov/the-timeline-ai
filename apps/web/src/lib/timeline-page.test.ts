@@ -36,6 +36,48 @@ function event(
 }
 
 describe('collectTimelinePage', () => {
+  it('merges identical calendar notices across raw pages and preserves their evidence', async () => {
+    const notices = Array.from({ length: 50 }, (_, index) =>
+      event(`notice-${index}`, '2026-05-28T12:00:00.000Z', {
+        source: 'calendar',
+        contentText: 'Scheduled: Daily digest',
+        sourceMetadata: { action: 'scheduled', calendar_event_id: `calendar-${index}` },
+      }),
+    );
+    const page = await collectTimelinePage({
+      limit: 1,
+      pageSize: 25,
+      fetchPage: ({ cursor }) =>
+        Promise.resolve(
+          cursor
+            ? { items: notices.slice(25), nextCursor: null }
+            : { items: notices.slice(0, 25), nextCursor: 'next' },
+        ),
+      hydrateImpact: () => Promise.resolve({}),
+    });
+    expect(page.items).toHaveLength(50);
+    expect(buildTimelineMoments(page.items, new Map())).toHaveLength(1);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('resolves saved calendar moment IDs after notices are regrouped', async () => {
+    const notice = event('notice', '2026-05-28T12:00:00.000Z', {
+      source: 'calendar',
+      contentText: 'Scheduled: Digest',
+      sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+    });
+    const page = await collectTimelinePage({
+      focusMomentId: 'moment:calendar:calendar-a',
+      fetchPage: () => Promise.resolve({ items: [], nextCursor: null }),
+      fetchEventsForMoment: () => Promise.resolve([notice]),
+      hydrateImpact: () => Promise.resolve({}),
+    });
+    expect(page.items.map((item) => item.id)).toEqual(['notice']);
+    expect(buildTimelineMoments(page.items, new Map())[0]?.legacyIds).toContain(
+      'moment:calendar:calendar-a',
+    );
+  });
+
   it('scans past unmatching pages for impact-filtered timelines', async () => {
     const pages = new Map([
       [
@@ -301,11 +343,11 @@ describe('collectTimelinePage', () => {
             ? [
                 event('message-a', '2026-06-27T18:08:00.000Z', {
                   source: 'telegram',
-                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Tim' },
+                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Taylor' },
                 }),
                 event('message-b', '2026-06-27T18:03:00.000Z', {
                   source: 'telegram',
-                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Mikael' },
+                  sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Cameron' },
                 }),
                 event('message-other-bucket', '2026-06-27T18:30:00.000Z', {
                   source: 'telegram',
@@ -318,6 +360,25 @@ describe('collectTimelinePage', () => {
     });
 
     expect(page.items.map((item) => item.id)).toEqual(['newest', 'message-a', 'message-b']);
+  });
+
+  it('hydrates an exact calendar occurrence before a notice alias', async () => {
+    const notice = event('notice', '2026-06-28T12:00:00.000Z', {
+      source: 'calendar',
+      sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+    });
+    const occurrence = event('occurrence', '2026-06-27T12:00:00.000Z', {
+      source: 'calendar',
+      sourceMetadata: { action: 'event', calendar_event_id: 'calendar-a' },
+    });
+    const page = await collectTimelinePage({
+      focusMomentId: 'moment:calendar:calendar-a',
+      timezone: 'UTC',
+      fetchPage: () => Promise.resolve({ items: [notice], nextCursor: null }),
+      fetchEventsForMoment: () => Promise.resolve([notice, occurrence]),
+      hydrateImpact: (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, []]))),
+    });
+    expect(page.items.map((item) => item.id)).toContain('occurrence');
   });
 
   it('does not hydrate focused moment siblings in source event mode', async () => {
@@ -555,7 +616,7 @@ describe('collectTimelinePage', () => {
     });
     expect(page.diagnostics.providerMetadata.diagnostics[0]).toMatchObject({
       eventId: 'weak-provider-event',
-      groupingStrategy: 'provider_workflow_window',
+      groupingStrategy: 'identical_notice_window',
     });
   });
 

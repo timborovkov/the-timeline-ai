@@ -76,7 +76,7 @@ describe('billing catalog', () => {
     expect(CAPACITY_BY_PLAN.team.documents).toBeGreaterThanOrEqual(
       CAPACITY_BY_PLAN.payg.documents ?? 0,
     );
-    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
+    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(0.1);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
   });

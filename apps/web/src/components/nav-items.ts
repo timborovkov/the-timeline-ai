@@ -87,7 +87,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     href: CONNECTIONS_HREF,
     label: 'Connections',
     icon: Cable,
-    group: 'manage',
+    group: 'workspace',
     badgeKey: 'connections',
     activeHrefs: [
       CONNECTIONS_HREF,

@@ -39,8 +39,8 @@ describe('agents marketing copy', () => {
     expect(copy).not.toMatch(/\bweekly\b/iu);
     expect(copy).not.toMatch(/structured memory/iu);
     expect(copy).not.toContain('Garry Tan');
-    expect(AGENTS_HUB.setupPrerequisite.body).toContain('create your first team automatically');
-    expect(AGENTS_HUB.setupPrerequisite.body).toContain('sign in and choose it');
+    expect(AGENTS_HUB.setupPrerequisite.body).toContain('first team automatically');
+    expect(AGENTS_HUB.setupPrerequisite.body).toContain('choose your team');
     expect(AGENTS_HUB.setupPrerequisite.distinction).toContain('external agent');
     expect(AGENTS_HUB.setupPrerequisite.distinction).toContain(
       'does not add third-party tools to The Timeline Agent',
@@ -49,7 +49,7 @@ describe('agents marketing copy', () => {
   });
 
   it('labels the Grok Bot progress note as an illustration, not a shipped product', () => {
-    expect(AGENTS_HUB.example.label).toBe('Illustrative example');
+    expect(AGENTS_HUB.example.label).toBe('Example');
     expect(AGENTS_HUB.example.title).toContain('Grok Bot');
     expect(AGENTS_HUB.example.boundary).toContain('not a dedicated Grok Bot product');
     expect(AGENT_SETUP_CARD.title).not.toContain('Grok');

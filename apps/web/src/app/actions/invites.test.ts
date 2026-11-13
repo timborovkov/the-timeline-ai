@@ -180,7 +180,7 @@ function makeTx(selectRows: unknown[][]) {
 
 function mockSignedIn(email = 'invited@example.test'): void {
   fakes.fakeAuth.mockResolvedValue({
-    user: { id: USER_ID, name: 'Tim', email },
+    user: { id: USER_ID, name: 'Taylor', email },
   });
 }
 
@@ -313,7 +313,7 @@ describe('acceptInviteAction', () => {
     );
 
     expect(fakes.fakeEnsureSoloTeam).toHaveBeenCalledWith(USER_ID, {
-      name: 'Tim',
+      name: 'Taylor',
       email: 'invited@example.test',
     });
     expect(fakes.fakeLoggerError).toHaveBeenCalledWith(

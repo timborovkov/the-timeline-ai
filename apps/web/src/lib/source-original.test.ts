@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  authoredCaptureFromEvent,
   framedHtmlDocument,
   hasSourceOriginal,
   sourceOriginalFromEvent,
@@ -105,5 +106,41 @@ describe('source original filename redaction', () => {
 
     expect(JSON.stringify(original.json)).not.toContain(filename);
     expect(JSON.stringify(original.json)).toContain('AgACAgQ…msbjOI.jpg');
+  });
+});
+
+describe('authored agent capture previews', () => {
+  it('shows the authored note while retaining the complete source payload', () => {
+    const body = {
+      source: 'mcp_remember',
+      title: 'Launch review',
+      text: 'Keep the staged rollout. Confirm the owner on Friday.',
+    };
+    const event = {
+      source: 'ingest_webhook',
+      sourceMetadata: { source_snapshot: { body: JSON.stringify(body) } },
+    };
+    expect(authoredCaptureFromEvent(event)).toEqual({ title: body.title, text: body.text });
+    expect(sourceOriginalFromEvent(event).json).toEqual({ body });
+  });
+  it('does not reinterpret arbitrary webhooks or malformed payloads', () => {
+    for (const body of [
+      'not JSON',
+      '{"text":"ordinary webhook"}',
+      '{"source":"mcp_remember","text":42}',
+    ]) {
+      expect(
+        authoredCaptureFromEvent({
+          source: 'ingest_webhook',
+          sourceMetadata: { source_snapshot: { body } },
+        }),
+      ).toBeNull();
+    }
+    expect(
+      authoredCaptureFromEvent({
+        source: 'slack',
+        sourceMetadata: { source_snapshot: { body: '{"source":"mcp_remember","text":"message"}' } },
+      }),
+    ).toBeNull();
   });
 });

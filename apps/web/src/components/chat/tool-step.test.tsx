@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import { hasToolApprovalPreview } from '@/lib/chat-approval-previews';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -48,11 +50,83 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ToolStep', () => {
+  it('has a meaningful preview for every approval-required native mutation', async () => {
+    const { buildAgentTools, userApprovalForTools } = await import('@timeline/shared/agent');
+    const tools = buildAgentTools({} as Parameters<typeof buildAgentTools>[0]);
+    for (const name of Object.keys(userApprovalForTools(tools) ?? {}))
+      expect(hasToolApprovalPreview(name)).toBe(true);
+    expect(hasToolApprovalPreview('execute_unknown_mutation')).toBe(false);
+  });
+
+  it('shows approval execution as running only while its stream is active', () => {
+    const { rerender } = render(
+      <ToolStep name="execute_board_create" state="approval-responded" isActive />,
+    );
+    expect(screen.getByRole('status').textContent).toContain('Running');
+    expect(screen.getByRole('status').textContent).not.toContain('Completed');
+    rerender(<ToolStep name="execute_board_create" state="approval-responded" />);
+    expect(screen.getByRole('status').textContent).toContain('Interrupted');
+  });
+  it('previews effective CRM defaults and lane kind changes', () => {
+    const { rerender } = render(
+      <ToolStep
+        name="execute_board_create"
+        state="approval-requested"
+        input={{ name: 'CRM', templateKind: 'pipeline' }}
+        approval={{ id: 'a' }}
+        onApprovalResponse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Qualified/)).toBeTruthy();
+    expect(screen.getAllByText('Off').length).toBeGreaterThan(0);
+    rerender(
+      <ToolStep
+        name="execute_board_update"
+        state="approval-requested"
+        input={{
+          expectedCurrent: { lanes: [{ id: 'lane-1', name: 'Active', kind: 'active' }] },
+          patch: { lanes: [{ id: 'lane-1', name: 'Active', kind: 'done' }] },
+        }}
+        approval={{ id: 'a' }}
+        onApprovalResponse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Active \(active\)/)).toBeTruthy();
+    expect(screen.getByText(/Active \(done\)/)).toBeTruthy();
+    expect(screen.getByText(/Cards in removed lanes become unassigned/)).toBeTruthy();
+  });
+
+  it('shows readable note content instead of model evidence fences in approval previews', () => {
+    render(
+      <ToolStep
+        name="execute_object_note_update"
+        state="approval-requested"
+        input={{
+          expectedCurrent: {
+            body: '<external_content source="object_note" event_id="note-1">Original note</external_content>',
+          },
+          body: 'Revised note',
+        }}
+        approval={{ id: 'note-approval' }}
+        onApprovalResponse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Original note/)).toBeTruthy();
+    expect(screen.getByText(/Revised note/)).toBeTruthy();
+    expect(screen.queryByText(/external_content/)).toBeNull();
+  });
+
+  it('does not label a denied action completed', () => {
+    render(<ToolStep name="execute_object_update" state="output-denied" />);
+    expect(screen.getByRole('status').textContent).toContain('Denied');
+    expect(screen.getByRole('status').textContent).not.toContain('Completed');
+  });
   it('uses an announced status and only mounts raw tool data while its disclosure is open', async () => {
     const { container, rerender } = render(
       <ToolStep
         name="search_timeline"
         state="input-streaming"
+        isActive
         input={{ query: 'open customer work' }}
       />,
     );
@@ -108,7 +182,7 @@ describe('ToolStep', () => {
                 id: itemId,
                 status: 'pending',
                 targetKind: 'task',
-                title: 'Tim to register with PRH',
+                title: 'Taylor to register with PRH',
               },
             ],
           },
@@ -116,13 +190,13 @@ describe('ToolStep', () => {
       />,
     );
 
-    const accept = screen.getByRole('button', { name: 'Accept Tim to register with PRH' });
+    const accept = screen.getByRole('button', { name: 'Accept Taylor to register with PRH' });
     expect(accept).toBeTruthy();
     expect(accept.getAttribute('class')).toContain('focus-visible:ring-fg-muted');
-    expect(screen.getByRole('button', { name: 'Change Tim to register with PRH' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Reject Tim to register with PRH' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change Taylor to register with PRH' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reject Taylor to register with PRH' })).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Accept Tim to register with PRH' }));
+    await user.click(screen.getByRole('button', { name: 'Accept Taylor to register with PRH' }));
 
     await waitFor(() => {
       expect(screen.getByText('Accepted')).toBeTruthy();
@@ -138,9 +212,9 @@ describe('ToolStep', () => {
       revisedItem: {
         id: itemId,
         status: 'pending',
-        title: 'Miku to register with PRH',
-        description: 'Miku made the promise.',
-        proposedPayload: { ownerName: 'Miku' },
+        title: 'Casey to register with PRH',
+        description: 'Casey made the promise.',
+        proposedPayload: { ownerName: 'Casey' },
       },
     });
     render(
@@ -154,11 +228,11 @@ describe('ToolStep', () => {
             evidence: [
               {
                 rawEventId: '33333333-3333-4333-8333-333333333333',
-                quote: '@timbo0 I will register the company with PRH.',
+                quote: '@taylo0 I will register the company with PRH.',
                 source: 'telegram',
-                senderName: 'Miku',
-                senderHandle: '@mikael',
-                senderTimelineName: 'Mikael Rintala',
+                senderName: 'Casey',
+                senderHandle: '@cameron',
+                senderTimelineName: 'Cameron Vale',
                 conversationName: 'AuditAI founders',
               },
             ],
@@ -167,8 +241,8 @@ describe('ToolStep', () => {
                 id: itemId,
                 status: 'pending',
                 targetKind: 'task',
-                title: 'Tim to register with PRH',
-                description: 'Tim made the promise.',
+                title: 'Taylor to register with PRH',
+                description: 'Taylor made the promise.',
               },
             ],
           },
@@ -177,21 +251,21 @@ describe('ToolStep', () => {
     );
 
     expect(
-      screen.getByText('Mikael Rintala (Miku, @mikael) in AuditAI founders on Telegram'),
+      screen.getByText('Cameron Vale (Casey, @cameron) in AuditAI founders on Telegram'),
     ).toBeTruthy();
     expect(screen.getByText('Pending')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Change Tim to register with PRH' }));
+    await user.click(screen.getByRole('button', { name: 'Change Taylor to register with PRH' }));
     const dialog = screen.getByRole('dialog');
     await user.type(
       within(dialog).getByLabelText('What should change?'),
-      'Miku made this promise, not Tim.',
+      'Casey made this promise, not Taylor.',
     );
     await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Miku to register with PRH')).toBeTruthy();
+      expect(screen.getByText('Casey to register with PRH')).toBeTruthy();
     });
-    expect(screen.queryByText('Tim to register with PRH')).toBeNull();
+    expect(screen.queryByText('Taylor to register with PRH')).toBeNull();
   });
 
   it('renders in-chat approval controls for approval-requested tools', () => {

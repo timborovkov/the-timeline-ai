@@ -82,6 +82,7 @@ describe('MemberRoleForm', () => {
       error: 'Only owners can change roles',
     });
     expect(fakes.refresh).not.toHaveBeenCalled();
+    expect(screen.getByLabelText<HTMLSelectElement>('Role for Ada Lovelace').value).toBe('member');
   });
 });
 

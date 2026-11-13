@@ -279,6 +279,7 @@ const checks = [
             sourceMetadata: {
               provider: 'github',
               event_type: 'workflow_run.success',
+              external_object_id: 'timborovkov/audit-ai#workflow_run:1',
               github: {
                 type: 'workflow_run',
                 repo: 'timborovkov/audit-ai',
@@ -302,7 +303,7 @@ const checks = [
       if (moments[0]?.version !== 'timeline_moment.v1') {
         throw new Error(`Unexpected timeline moment version: ${moments[0]?.version ?? 'missing'}`);
       }
-      if (!moments[0]?.anchorId?.startsWith('tm-moment_3Aintegration_3Agithub')) {
+      if (!moments[0]?.anchorId?.startsWith('tm-moment_3Aworkflow-run')) {
         throw new Error(`Unexpected timeline moment anchor: ${moments[0]?.anchorId ?? 'missing'}`);
       }
 

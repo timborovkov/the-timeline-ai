@@ -243,6 +243,47 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 
+  it('keeps a saved calendar link focused after notice grouping changes', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: 'notice',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+          source: 'calendar',
+          contentText: 'Scheduled: Digest',
+          sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+        }),
+      ],
+      { focusMomentId: 'moment:calendar:calendar-a' },
+    );
+    expect(html).toContain('aria-current="true"');
+    expect(html).toContain('Scheduled: Digest');
+  });
+
+  it('focuses only the current calendar occurrence when a notice shares its legacy ID', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: 'notice',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+          source: 'calendar',
+          contentText: 'Scheduled: Digest',
+          sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+        }),
+        timelineEvent({
+          id: 'occurrence',
+          occurredAt: '2026-06-02T13:04:00.000Z',
+          source: 'calendar',
+          contentText: 'Digest occurrence',
+          sourceMetadata: { action: 'event', calendar_event_id: 'calendar-a' },
+        }),
+      ],
+      { focusMomentId: 'moment:calendar:calendar-a' },
+    );
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+    expect(html).toContain('Digest occurrence');
+  });
+
   it('keeps a focused moment visible through impact filters', () => {
     const focusedEventId = '66666666-6666-4666-8666-666666666666';
     const taskEventId = '77777777-7777-4777-8777-777777777777';
@@ -413,7 +454,7 @@ describe('TimelineList document attachments', () => {
             source: 'telegram',
             contentText:
               'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
@@ -567,7 +608,7 @@ describe('TimelineList moment presentation', () => {
             sourceMetadata: {
               tg_chat_id: 'chat-1',
               tg_chat_title: 'Operations',
-              tg_sender_name: 'Tim',
+              tg_sender_name: 'Taylor',
               tg_user_id: 1,
             },
           }),
@@ -578,7 +619,7 @@ describe('TimelineList moment presentation', () => {
       }),
     );
 
-    expect(screen.getByText('Tim', { selector: 'span' })).toBeTruthy();
+    expect(screen.getByText('Taylor', { selector: 'span' })).toBeTruthy();
   });
 
   it('opens the inspector automatically for focused moment links', async () => {
@@ -619,7 +660,7 @@ describe('TimelineList moment presentation', () => {
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'telegram',
             contentText: 'Done / 16.20-16.30 asti vapaa täs about',
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
@@ -688,7 +729,7 @@ describe('TimelineList evidence-owned actions', () => {
           tg_chat_id: 'audit-ai',
           tg_message_id: 100 + index,
           tg_chat_title: 'AuditAI',
-          tg_sender_name: 'Mikael',
+          tg_sender_name: 'Cameron',
         },
       }),
     );
@@ -712,12 +753,12 @@ describe('TimelineList evidence-owned actions', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Telegram message 4 ·/i }));
     renderLastInspectorContent();
     expect(
-      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
+      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Cameron/ }),
     ).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: 'Show 2 older evidence items' }));
 
     expect(
-      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
+      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Cameron/ }),
     ).toHaveLength(5);
     expect(screen.queryByRole('heading', { name: 'Controls' })).toBeNull();
     expect(screen.getAllByText('Team visibility')).toHaveLength(3);
@@ -731,7 +772,7 @@ describe('TimelineList evidence-owned actions', () => {
     expect(screen.getByText('Audio unavailable for this evidence item.')).toBeTruthy();
 
     const firstFooter = screen.getAllByRole('group', {
-      name: /Actions for Telegram evidence .* from Mikael/,
+      name: /Actions for Telegram evidence .* from Cameron/,
     })[0];
     if (!firstFooter) throw new Error('Expected the first evidence footer.');
     await user.click(within(firstFooter).getByText('Team visibility'));
@@ -754,7 +795,7 @@ describe('TimelineList evidence-owned actions', () => {
           slack_workspace_id: 'workspace-1',
           slack_channel_id: 'channel-1',
           slack_message_ts: '123.456',
-          slack_sender_name: 'Mikael',
+          slack_sender_name: 'Cameron',
         },
       });
 
@@ -815,6 +856,47 @@ describe('TimelineList evidence-owned actions', () => {
 });
 
 describe('TimelineList inspector source caps', () => {
+  it('keeps authored MCP notes readable even when the event is a compact pulse', () => {
+    const event = timelineEvent({
+      id: '19191919-1919-4191-8191-191919191919',
+      occurredAt: '2026-11-12T10:00:00Z',
+      source: 'ingest_webhook',
+      authorUserId: null,
+      contentText: 'Ingest webhook: MCP remember',
+      sourceMetadata: {
+        ingest_webhook_name: 'MCP remember',
+        source_snapshot: {
+          body: JSON.stringify({
+            source: 'mcp_remember',
+            title: 'Launch review',
+            text: 'Keep the pilot limited until Maya approves the checklist.',
+          }),
+        },
+      },
+    });
+    render(
+      createElement(TimelineList, {
+        events: [event],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+        mode: 'events',
+        focusEventId: event.id,
+      }),
+    );
+    expect(fakes.showInspector).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Launch review' }),
+    );
+    renderLastInspectorContent();
+    expect(screen.getByRole('heading', { name: 'Source evidence' })).toBeTruthy();
+    const note = screen.getByText('Keep the pilot limited until Maya approves the checklist.');
+    expect(note.tagName).toBe('P');
+    expect(note.className).toContain('whitespace-pre-wrap');
+    expect(screen.getByText('MCP remember payload').closest('details')?.hasAttribute('open')).toBe(
+      false,
+    );
+  });
+
   it('reveals older source evidence in batches without exposing orphaned controls', () => {
     const events = Array.from({ length: 9 }, (_, index) =>
       timelineEvent({
@@ -876,7 +958,7 @@ describe('TimelineList inspector source caps', () => {
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'telegram',
             contentText: longBody,
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
@@ -906,7 +988,7 @@ describe('TimelineList inspector source caps', () => {
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'telegram',
             contentText: 'Short source note.',
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
