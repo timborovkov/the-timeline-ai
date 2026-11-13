@@ -27,8 +27,11 @@ Open a new shell after installing Bun. For a checkout previously installed with 
 Fill in at minimum:
 
 - `AUTH_SECRET` — `openssl rand -base64 32`
-- `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features. Other third-party service keys can stay empty for the demo.
+- `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features.
+- `FIRECRAWL_API_KEY` — required before the web app or full worker boots. Get a key at [firecrawl.dev](https://firecrawl.dev); the free plan works.
 - `SECRETS_ENCRYPTION_KEY` — 32-byte base64 key required as soon as you connect any integration or custom MCP server. Generate with `openssl rand -base64 32`. See [integrations setup](integrations.md).
+
+Other third-party service keys can stay empty for the demo.
 
 The rest of the defaults already match `docker-compose.yml`. When you use `docker compose --profile app up`, Compose forwards `TELEGRAM_BOT_TOKEN` and `SECRETS_ENCRYPTION_KEY` to the worker so Telegram and Slack direct-agent replies use the production-parity external-chat profile.
 
