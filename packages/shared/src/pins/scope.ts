@@ -13,10 +13,7 @@ import {
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
-import { documentVisibleToUser } from '#src/documents/visibility.js';
 import { childLogger } from '#src/logger.js';
-import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import {
   buildTimelineMoments,
   timelineMomentAnchorId,
@@ -26,6 +23,10 @@ import {
 import type { CalendarScope } from '#src/calendar/scope.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 import type { TimelineMomentEvent } from '#src/timeline-moments/index.js';
+
+import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
+import { documentVisibleToUser } from '#src/documents/visibility.js';
+import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 
 export const PIN_TARGET_KINDS = pinTargetKind.enumValues;
 
@@ -434,12 +435,13 @@ export function createPinScope(deps: PinScopeDeps) {
             return plan ? [plan] : [];
           });
           const events = await listEventsForMomentLookups(plans);
-          const momentsById = new Map(
-            buildTimelineMoments(events, new Map(), { timezone }).map((moment) => [
-              moment.id,
-              moment,
-            ]),
-          );
+          const moments = buildTimelineMoments(events, new Map(), { timezone });
+          const momentsById = new Map(moments.map((moment) => [moment.id, moment]));
+          for (const moment of moments) {
+            for (const legacyId of moment.legacyIds ?? []) {
+              if (!momentsById.has(legacyId)) momentsById.set(legacyId, moment);
+            }
+          }
           for (const pin of momentPinRows) {
             const moment = momentsById.get(pin.targetKey);
             if (!moment) continue;
@@ -836,7 +838,7 @@ export function createPinScope(deps: PinScopeDeps) {
         if (!plan) continue;
         const events = await listTeamEventsForMomentLookup(plan);
         const stillExists = buildTimelineMoments(events, new Map(), { timezone }).some(
-          (moment) => moment.id === row.key,
+          (moment) => moment.id === row.key || Boolean(moment.legacyIds?.includes(row.key)),
         );
         if (!stillExists) {
           deleted += await deleteForTarget({ kind: 'timeline_moment', key: row.key });

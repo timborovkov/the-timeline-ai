@@ -11,6 +11,7 @@ import {
 import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
+import { timelineGroupKey } from '#src/timeline-moments/index.js';
 import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 import type {
@@ -673,6 +674,28 @@ export function createTimelineReadScope({
         if (condition) conditions.push(condition);
       }
     }
+    if (plan.matchingGroupKey) {
+      const matches: (typeof rawEvents.$inferSelect)[] = [];
+      let cursor: typeof rawEvents.$inferSelect | undefined;
+      for (;;) {
+        const rows: (typeof rawEvents.$inferSelect)[] = await db
+          .select()
+          .from(rawEvents)
+          .where(
+            and(
+              ...conditions,
+              cursor
+                ? sql`(${rawEvents.occurredAt}, ${rawEvents.id}) < (${cursor.occurredAt}, ${cursor.id})`
+                : undefined,
+            ),
+          )
+          .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+          .limit(300);
+        matches.push(...rows.filter((event) => timelineGroupKey(event) === plan.matchingGroupKey));
+        if (matches.length >= plan.limit || rows.length < 300) return matches.slice(0, plan.limit);
+        cursor = rows.at(-1);
+      }
+    }
     return db
       .select()
       .from(rawEvents)
@@ -686,6 +709,12 @@ export function createTimelineReadScope({
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
     await ensureMember();
     if (plans.length === 0) return [];
+    if (plans.some((plan) => plan.matchingGroupKey)) {
+      const rows = await Promise.all(
+        plans.map((plan) => listEventsForMomentLookupBase(plan, true)),
+      );
+      return [...new Map(rows.flat().map((row) => [row.id, row])).values()];
+    }
     const planConditions = plans.map((plan) => {
       const conditions = [eq(rawEvents.source, plan.source)];
       if (plan.from) conditions.push(gte(rawEvents.occurredAt, plan.from));

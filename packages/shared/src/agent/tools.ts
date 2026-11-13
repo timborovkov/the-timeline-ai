@@ -3,20 +3,11 @@ import { jsonSchema, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
-import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
-import {
-  capabilityTool,
-  capabilityAllowed,
-  type CapabilityTool,
-  type AgentToolMode,
-} from '#src/agent/tool-policy.js';
-import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
-import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import * as objects from '#src/objects/index.js';
 import {
   serializeObjectRow,
@@ -24,9 +15,7 @@ import {
 } from '#src/objects/tool-serialization.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { PIN_TARGET_KINDS } from '#src/pins/index.js';
-import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
-import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
   enrichTaskProposalCategories,
@@ -48,14 +37,26 @@ import {
   type TimelineMoment,
   type TimelineMomentEvent,
 } from '#src/timeline-moments/index.js';
+
+import type * as boards from '#src/boards/index.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
+
+import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
+import {
+  capabilityTool,
+  capabilityAllowed,
+  type CapabilityTool,
+  type AgentToolMode,
+} from '#src/agent/tool-policy.js';
+import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
+import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
-
-import type * as boards from '#src/boards/index.js';
-import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('agent:tools');
 
@@ -735,6 +736,7 @@ async function buildAgentTimelineMoments(
       ];
       return {
         moment_id: moment.id,
+        legacy_moment_ids: moment.legacyIds ?? [],
         pin_target: { kind: 'timeline_moment' as const, key: moment.id },
         version: moment.version,
         anchor_id: moment.anchorId,
@@ -1899,7 +1901,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           }));
           const moments = await buildAgentTimelineMoments(scope, hits, events);
           const expanded = input.momentId
-            ? moments.find((moment) => moment.moment_id === input.momentId)
+            ? moments.find(
+                (moment) =>
+                  moment.moment_id === input.momentId ||
+                  Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
+              )
             : moments[0];
           if (!expanded) {
             return {

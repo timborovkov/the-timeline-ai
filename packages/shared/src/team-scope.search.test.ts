@@ -4,7 +4,6 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { generateAndStoreTimelineMomentPresentation } from '#src/timeline-moments/generation.js';
@@ -22,6 +21,8 @@ import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { ZodType } from 'zod';
+
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 // These tests protect the semantic retrieval contract the agent depends on:
 // query text is embedded once, vector hits are only a first pass, and Postgres
 // hydration still enforces team/visibility boundaries before evidence reaches
@@ -166,6 +167,30 @@ describe('withTeam timeline semantic search', () => {
       ranking: 'relevance',
     });
     expect(historical.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
+  });
+
+  it('finds and preserves a pinned notice beyond unrelated lookup candidates', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='system', content_text='Completed task', occurred_at='2026-06-27T18:00:00Z', source_metadata='{"kind":"object_update","entity_id":"target"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    await pg.query(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT $1::uuid, $2::uuid, 'system', 'Unrelated ' || n, '2026-06-27T18:00:30Z', 'team', jsonb_build_object('kind','object_update','entity_id','unrelated-' || n) FROM generate_series(1, 305) n`,
+      [TEAM_A, OWNER],
+    );
+    const scope = scopeFor(OWNER);
+    const target = await scope.timeline.getEventsByIds([TEAM_EVENT]);
+    const moment = buildTimelineMoments(target, new Map())[0];
+    if (!moment) throw new Error('Expected notice');
+    const plan = timelineMomentLookupPlan(moment.id);
+    if (!plan) throw new Error('Expected lookup plan');
+    expect((await scope.timeline.listEventsForMomentLookup(plan)).map((row) => row.id)).toEqual([
+      TEAM_EVENT,
+    ]);
+    await scope.pins.pin({ kind: 'timeline_moment', key: moment.id });
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
   });
 
   it('expands website scan moments through the scoped metadata predicate', async () => {

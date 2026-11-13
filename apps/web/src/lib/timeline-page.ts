@@ -530,14 +530,14 @@ async function focusedMomentIdTargetEvents({
 }): Promise<TimelineEvent[]> {
   if (!focusMomentId) return [];
   const selectedMoment = buildTimelineMoments(selectedEvents, new Map(), { timezone }).find(
-    (moment) => moment.id === focusMomentId,
+    (moment) => moment.id === focusMomentId || Boolean(moment.legacyIds?.includes(focusMomentId)),
   );
   if (selectedMoment) return selectedMoment.rawEvents;
   if (!fetchEventsForMoment) return [];
 
   const candidateEvents = await fetchEventsForMoment(focusMomentId);
   const targetMoment = buildTimelineMoments(candidateEvents, new Map(), { timezone }).find(
-    (moment) => moment.id === focusMomentId,
+    (moment) => moment.id === focusMomentId || Boolean(moment.legacyIds?.includes(focusMomentId)),
   );
   return targetMoment?.rawEvents ?? [];
 }

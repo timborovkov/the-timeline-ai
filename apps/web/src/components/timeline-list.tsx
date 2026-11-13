@@ -1642,6 +1642,7 @@ export function TimelineList({
                   capturedFilesByEventId={capturedFilesByEventId}
                   focused={
                     moment.id === focusMomentId ||
+                    Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId)) ||
                     moment.rawEvents.some((event) => event.id === focusEventId)
                   }
                   compact={compact}
@@ -1678,6 +1679,7 @@ export function TimelineList({
               capturedFilesByEventId={capturedFilesByEventId}
               focused={
                 moment.id === focusMomentId ||
+                Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId)) ||
                 moment.rawEvents.some((event) => event.id === focusEventId)
               }
               compact={compact}
@@ -1753,6 +1755,7 @@ function timelineVisibleMoments(
       : moments.filter(
           (moment) =>
             moment.id === focusMomentId ||
+            Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId)) ||
             moment.rawEvents.some((event) => event.id === focusEventId),
         );
   const filteredMoments = mergeTimelineMoments(
@@ -1769,6 +1772,7 @@ function timelineVisibleMoments(
       : (visibleMoments.find(
           (moment) =>
             moment.id === focusMomentId ||
+            Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId)) ||
             moment.rawEvents.some((event) => event.id === focusEventId),
         ) ?? null);
   return { focusKey, focusedMoment, visibleMoments, dateGroups };

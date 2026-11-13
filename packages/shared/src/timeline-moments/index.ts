@@ -6,6 +6,7 @@ import {
   type TimelineEventClass,
   type TimelineVisualWeight,
 } from '#src/event-class.js';
+import { stableJson } from '#src/reconciliation/stable-json.js';
 
 const ISO_INSTANT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z\b/g;
 const PROVIDER_LABELS: Record<string, string> = {
@@ -148,6 +149,7 @@ export interface TimelineMomentLookupPlan {
   from?: Date | undefined;
   to?: Date | undefined;
   limit: number;
+  matchingGroupKey?: string;
   metadataPredicates?: TimelineMomentMetadataPredicate[] | undefined;
   metadataPredicateGroups?: TimelineMomentMetadataPredicate[][] | undefined;
 }
@@ -185,6 +187,7 @@ export interface TimelineMoment<
   id: string;
   version: TimelineMomentVersion;
   anchorId: string;
+  legacyIds?: string[];
   kind: TimelineMomentKind;
   dateKey: string;
   dateLabel: string;
@@ -387,6 +390,111 @@ function fifteenMinuteBucket(input: Date | string, timezone?: string): string {
   return `${hour.padStart(2, '0')}:${String(bucket).padStart(2, '0')}`;
 }
 
+// Browser-compatible FNV-1a fingerprint: keep source text out of moment URLs.
+// This identifies presentation groups; it is not a security or integrity check.
+function groupingFingerprint(value: string): string {
+  let hash = 0x6c62272e07bb014262b821756295c58dn;
+  for (const byte of new TextEncoder().encode(value)) {
+    hash = BigInt.asUintN(128, (hash ^ BigInt(byte)) * 0x1000000000000000000013bn);
+  }
+  return hash.toString(16).padStart(32, '0');
+}
+
+function eventAccessIdentity(event: TimelineEvent): unknown[] {
+  return [
+    event.teamId ?? null,
+    event.authorUserId,
+    event.visibility ?? null,
+    event.visibilityOwnerUserId ?? null,
+    [...(event.visibilityUserIds ?? [])].sort(),
+  ];
+}
+
+function noticeGroupKey(event: TimelineEvent, context: unknown): string {
+  const minute = Math.floor(eventDate(event.occurredAt).getTime() / 60_000);
+  if (!event.contentText?.trim() || !Number.isFinite(minute)) return `${event.source}:${event.id}`;
+  const identity = stableJson([
+    eventAccessIdentity(event),
+    event.contentText,
+    event.contentAudioUrl,
+    context,
+  ]);
+  return `notice:${event.source}:${minute}:${groupingFingerprint(identity)}`;
+}
+
+function selectedMetadata(meta: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  return Object.fromEntries(
+    keys.filter((key) => meta[key] !== undefined).map((key) => [key, meta[key]]),
+  );
+}
+
+function integrationNoticeContext(meta: Record<string, unknown>, resource: string): unknown {
+  const provider = stringMeta(meta, 'provider') ?? '';
+  const context = selectedMetadata(meta, [
+    'provider',
+    'integration_id',
+    'event_type',
+    'actor',
+    'content',
+    'status',
+    'state',
+    'action',
+    'changes',
+    'changed_fields',
+    'object_map',
+    'event_class',
+    'signal_class',
+    ...Object.keys(meta).filter(
+      (key) => key === provider || (provider && key.startsWith(`${provider}_`)),
+    ),
+  ]);
+  if (meta.source_snapshot_kind === 'normalized_integration_event') {
+    context.source_snapshot = selectedMetadata(nestedRecord(meta, 'source_snapshot'), [
+      'provider',
+      'externalObjectId',
+      'eventType',
+      'actor',
+      'contentText',
+      'visibility',
+      'visibilityUserIds',
+      'extra',
+      'objectMap',
+    ]);
+  }
+  return { resource, metadata: context };
+}
+
+function systemNoticeContext(meta: Record<string, unknown>): Record<string, unknown> | null {
+  const subjects = [
+    'entity_id',
+    'object_id',
+    'board_id',
+    'board_item_id',
+    'relationship_id',
+    'target_id',
+    'operation_id',
+  ];
+  if (
+    !subjects.some((key) => stringMeta(meta, key)) ||
+    !(stringMeta(meta, 'event_type') ?? stringMeta(meta, 'kind'))
+  )
+    return null;
+  // Source snapshots are immutable; enrichment timestamps must not change IDs.
+  return selectedMetadata(meta, [
+    ...subjects,
+    'kind',
+    'event_type',
+    'actor',
+    'source_snapshot',
+    'source_snapshot_kind',
+    'source_snapshot_version',
+    'changes',
+    'changed_fields',
+    'status',
+    'state',
+  ]);
+}
+
 export function timelineGroupKey(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'web' && stringMeta(meta, 'websiteScanId'))
@@ -412,6 +520,17 @@ export function timelineGroupKey(event: TimelineEvent, timezone?: string): strin
       : `telegram:${event.id}`;
   }
   if (event.source === 'calendar') {
+    const action = stringMeta(meta, 'action');
+    if (
+      action &&
+      ['scheduled', 'updated', 'cancelled'].includes(action) &&
+      event.contentText?.trim()
+    ) {
+      return noticeGroupKey(event, {
+        action,
+        recurrence_edit_mode: meta.recurrence_edit_mode ?? null,
+      });
+    }
     return `calendar:${stringMeta(meta, 'calendar_event_id') ?? event.id}`;
   }
   if (event.source === 'document') {
@@ -426,31 +545,70 @@ export function timelineGroupKey(event: TimelineEvent, timezone?: string): strin
     const github = nestedRecord(meta, 'github');
     const githubType = stringMeta(github, 'type');
     if (provider === 'github' && githubType === 'workflow_run') {
-      const repo = stringMeta(github, 'repo') ?? 'repo';
-      const branch = stringMeta(github, 'head_branch') ?? 'branch';
-      const name = workflowNameFromContent(event) ?? 'workflow';
-      return `integration:github:workflow_run:${repo}:${name}:${branch}:${dateKey(
-        event.occurredAt,
-        timezone,
-      )}`;
+      const run = stringMeta(meta, 'external_object_id');
+      if (run) {
+        const scope = groupingFingerprint(
+          stableJson([eventAccessIdentity(event), meta.integration_id ?? null]),
+        );
+        return `workflow-run:${encodeURIComponent(run)}:${scope}`;
+      }
+      return noticeGroupKey(event, {
+        provider,
+        github,
+        actor: meta.actor ?? null,
+        integration_id: meta.integration_id ?? null,
+      });
     }
     if (provider === 'github' && (githubType === 'pull_request' || githubType === 'review')) {
       const repo = stringMeta(github, 'repo') ?? 'repo';
       const prNumber = numberMeta(github, 'pr_number') ?? numberMeta(github, 'number');
       if (prNumber) return `integration:github:pr:${repo}:${String(prNumber)}`;
     }
+    if (classifyCapturedEvent({ source: event.source, metadata: meta }) === 'pulse') {
+      const resource =
+        stringMeta(meta, 'external_object_id') ??
+        stringMeta(meta, 'external_event_id') ??
+        stringMeta(meta, 'dedup_key');
+      if (!resource) return `integration:${event.id}`;
+      return noticeGroupKey(event, integrationNoticeContext(meta, resource));
+    }
     const external =
       stringMeta(meta, 'external_object_id') ?? stringMeta(meta, 'external_event_id');
     return external ? `integration:${provider}:${external}` : `integration:${event.id}`;
   }
   if (event.source === 'ingest_webhook') {
-    const webhook = stringMeta(meta, 'ingest_webhook_id') ?? 'webhook';
-    return `ingest_webhook:${webhook}:${dateKey(event.occurredAt, timezone)}:${fifteenMinuteBucket(
-      event.occurredAt,
-      timezone,
-    )}`;
+    const webhook = stringMeta(meta, 'ingest_webhook_id');
+    return webhook
+      ? noticeGroupKey(event, { webhook, event_class: meta.event_class ?? null })
+      : `ingest_webhook:${event.id}`;
+  }
+  if (event.source === 'system') {
+    const context = systemNoticeContext(meta);
+    if (context) return noticeGroupKey(event, context);
   }
   return `${event.source}:${event.id}`;
+}
+
+function legacyMomentId(event: TimelineEvent, timezone?: string): string | null {
+  const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'calendar')
+    return `moment:calendar:${stringMeta(meta, 'calendar_event_id') ?? event.id}`;
+  if (event.source === 'ingest_webhook') {
+    return `moment:ingest_webhook:${stringMeta(meta, 'ingest_webhook_id') ?? 'webhook'}:${dateKey(event.occurredAt, timezone)}:${fifteenMinuteBucket(event.occurredAt, timezone)}`;
+  }
+  if (event.source === 'integration') {
+    const provider = stringMeta(meta, 'provider') ?? 'provider';
+    const github = nestedRecord(meta, 'github');
+    if (provider === 'github' && stringMeta(github, 'type') === 'workflow_run') {
+      return `moment:integration:github:workflow_run:${stringMeta(github, 'repo') ?? 'repo'}:${workflowNameFromContent(event) ?? 'workflow'}:${stringMeta(github, 'head_branch') ?? 'branch'}:${dateKey(event.occurredAt, timezone)}`;
+    }
+    const external =
+      stringMeta(meta, 'external_object_id') ?? stringMeta(meta, 'external_event_id');
+    return external
+      ? `moment:integration:${provider}:${external}`
+      : `moment:integration:${event.id}`;
+  }
+  return null;
 }
 
 export function timelineMomentAnchorId(momentId: string): string {
@@ -473,6 +631,41 @@ export function timelineMomentLookupPlan(momentId: string): TimelineMomentLookup
   if (family === 'email') {
     const threadId = parts.slice(1).join(':');
     return threadId ? metadataLookupPlan('email', [[['thread_root_id'], threadId]], 300) : null;
+  }
+  if (family === 'notice') {
+    const source = parts[1];
+    const minute = Number(parts[2]);
+    if (
+      !['calendar', 'system', 'integration', 'ingest_webhook'].includes(source ?? '') ||
+      !parts[2] ||
+      !Number.isInteger(minute) ||
+      !/^[a-f0-9]{32}$/.test(parts[3] ?? '') ||
+      parts.length !== 4
+    )
+      return null;
+    const from = new Date(minute * 60_000);
+    const to = new Date((minute + 1) * 60_000);
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) return null;
+    return { source: source as TimelineEventSource, from, to, limit: 300, matchingGroupKey: key };
+  }
+  if (family === 'workflow-run') {
+    try {
+      const run = decodeURIComponent(parts[1] ?? '');
+      if (!run || !/^[a-f0-9]{32}$/.test(parts[2] ?? '') || parts.length !== 3) return null;
+      return {
+        ...metadataLookupPlan(
+          'integration',
+          [
+            [['provider'], 'github'],
+            [['external_object_id'], run],
+          ],
+          300,
+        ),
+        matchingGroupKey: key,
+      };
+    } catch {
+      return null;
+    }
   }
   if (family === 'calendar') {
     const calendarEventId = parts.slice(1).join(':');
@@ -1363,22 +1556,29 @@ function sourceLabelForEvent(event: TimelineEvent): string {
 function timelineGroupingStrategy(event: TimelineEvent): string {
   const meta = metaObject(event.sourceMetadata);
   if (parentRawEventId(event)) return 'parent_raw_event';
-  if (
-    event.source === 'telegram' ||
-    event.source === 'slack' ||
-    event.source === 'ingest_webhook'
-  ) {
+  if (event.source === 'telegram' || event.source === 'slack') {
     return 'source_time_window';
   }
+  if (event.source === 'ingest_webhook') return 'identical_notice_window';
   if (event.source === 'integration') {
     const provider = stringMeta(meta, 'provider');
     const githubType = stringMeta(nestedRecord(meta, 'github'), 'type');
-    if (provider === 'github' && githubType === 'workflow_run') return 'provider_workflow_window';
+    if (provider === 'github' && githubType === 'workflow_run')
+      return stringMeta(meta, 'external_object_id')
+        ? 'provider_workflow_run'
+        : 'identical_notice_window';
+    if (classifyCapturedEvent({ source: event.source, metadata: meta }) === 'pulse')
+      return 'identical_notice_window';
     return 'provider_object';
   }
   if (event.source === 'email') return 'email_thread';
   if (event.source === 'meeting') return 'meeting_id';
-  if (event.source === 'calendar') return 'calendar_event_id';
+  if (event.source === 'calendar')
+    return ['scheduled', 'updated', 'cancelled'].includes(stringMeta(meta, 'action') ?? '') &&
+      event.contentText?.trim()
+      ? 'identical_notice_window'
+      : 'calendar_event_id';
+  if (event.source === 'system' && systemNoticeContext(meta)) return 'identical_notice_window';
   if (event.source === 'document') return 'document_action';
   return 'single_event';
 }
@@ -1557,6 +1757,18 @@ export function buildTimelineMoments<
           id: `moment:${key}`,
           version: 'timeline_moment.v1' as const,
           anchorId: timelineMomentAnchorId(`moment:${key}`),
+          ...(groupingMode === 'moments' &&
+          (key.startsWith('notice:') || key.startsWith('workflow-run:'))
+            ? {
+                legacyIds: [
+                  ...new Set(
+                    sorted
+                      .map((event) => legacyMomentId(event, timezone))
+                      .filter((id): id is string => Boolean(id)),
+                  ),
+                ],
+              }
+            : {}),
           kind,
           dateKey: dateKey(lead.occurredAt, timezone),
           dateLabel: formatDateSection(lead.occurredAt, now, timezone),
