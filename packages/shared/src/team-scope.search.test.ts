@@ -196,6 +196,60 @@ describe('withTeam timeline semantic search', () => {
     expect((await scope.pins.list()).items).toHaveLength(0);
   });
 
+  it('assigns a split legacy workflow pin to only the run displayed on Home', async () => {
+    for (const [id, run, time] of [
+      [TEAM_EVENT, 'run-a', '2026-06-27T18:00:00Z'],
+      [RELATED_EVENT, 'run-b', '2026-06-27T18:05:00Z'],
+    ]) {
+      await pg.query(
+        `UPDATE raw_events SET source='integration', content_text='Workflow CI succeeded', occurred_at=$2, source_metadata=$3::jsonb WHERE id=$1`,
+        [
+          id,
+          time,
+          JSON.stringify({
+            provider: 'github',
+            external_object_id: run,
+            github: {
+              type: 'workflow_run',
+              repo: 'fixture/repo',
+              workflow_name: 'CI',
+              head_branch: 'main',
+            },
+          }),
+        ],
+      );
+    }
+    const scope = scopeFor(OWNER);
+    const moments = buildTimelineMoments(
+      await scope.timeline.getEventsByIds([TEAM_EVENT, RELATED_EVENT]),
+      new Map(),
+    );
+    const current = moments[0];
+    const other = moments[1];
+    const legacy = current?.legacyIds?.find((id) => other?.legacyIds?.includes(id));
+    if (!current || !other || !legacy) throw new Error('Expected split legacy workflow group');
+    await pg.query(
+      `INSERT INTO user_pins (team_id,user_id,target_kind,target_key,sort_key) VALUES ($1,$2,'timeline_moment',$3,0)`,
+      [TEAM_A, OWNER, legacy],
+    );
+    expect((await scope.pins.list()).items[0]?.href).toContain(encodeURIComponent(current.id));
+    const currentRef = { kind: 'timeline_moment' as const, key: current.id };
+    const otherRef = { kind: 'timeline_moment' as const, key: other.id };
+    expect(await scope.pins.isPinnedMany([currentRef, otherRef])).toEqual({
+      [`timeline_moment:${current.id}`]: true,
+      [`timeline_moment:${other.id}`]: false,
+    });
+    expect(await scope.pins.isPinned(otherRef)).toBe(false);
+    expect(await scope.pins.unpin(otherRef)).toBe(false);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    await scope.pins.pin(otherRef);
+    expect((await scope.pins.list()).items).toHaveLength(2);
+    expect(await scope.pins.unpin(otherRef)).toBe(true);
+    expect(await scope.pins.isPinned(currentRef)).toBe(true);
+    expect(await scope.pins.unpin(currentRef)).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(0);
+  });
+
   it('finds and preserves a pinned notice beyond unrelated lookup candidates', async () => {
     await pg.query(
       `UPDATE raw_events SET source='system', content_text='Completed task', occurred_at='2026-06-27T18:00:00Z', source_metadata='{"kind":"object_update","entity_id":"target"}'::jsonb WHERE id=$1`,

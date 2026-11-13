@@ -253,35 +253,23 @@ export function createPinScope(deps: PinScopeDeps) {
             timezone: await getTimezone(),
           })
         : [];
-    // An alias may still be the canonical ID of a separately displayed moment.
-    // Only obsolete references are equivalent for pin-state checks and mutations.
-    const aliasPlans = unique(moments.flatMap((moment) => moment.legacyIds ?? [])).flatMap((id) => {
-      const lookupPlan = timelineMomentLookupPlan(id);
-      if (!lookupPlan) return [];
-      const { preferredGroupKey: _preferredGroupKey, ...plan } = lookupPlan;
-      return [
-        {
-          ...plan,
-          matchingGroupKey: id.slice('moment:'.length),
-          matchGroupAliases: false,
-          limit: 1,
-        },
-      ];
-    });
-    const currentAliasIds = new Set(
-      aliasPlans.length > 0
-        ? buildTimelineMoments(await listEventsForMomentLookups(aliasPlans), new Map(), {
-            timezone: await getTimezone(),
-          }).map((moment) => moment.id)
-        : [],
+    // Resolve each old reference exactly as Home does. A split legacy group
+    // belongs to one current moment; it must not pin every resulting group.
+    const aliases = unique(moments.flatMap((moment) => moment.legacyIds ?? []));
+    const canonicalAliases = await canonicalizeMany(
+      aliases.map((key) => ({ kind: 'timeline_moment', key })),
     );
+    const aliasTargets = new Map(aliases.map((id, index) => [id, canonicalAliases[index]?.key]));
     return new Map(
       refs.map((ref) => {
         const moment =
           ref.kind === 'timeline_moment' ? moments.find((item) => item.id === ref.key) : undefined;
         return [
           `${ref.kind}:${ref.key}`,
-          unique([ref.key, ...(moment?.legacyIds ?? []).filter((id) => !currentAliasIds.has(id))]),
+          unique([
+            ref.key,
+            ...(moment?.legacyIds ?? []).filter((id) => aliasTargets.get(id) === ref.key),
+          ]),
         ];
       }),
     );
