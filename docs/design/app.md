@@ -13,7 +13,7 @@ queue. The empty Boards explanation and Create board action stay together.
 
 ### Home
 
-Home leads with a workspace heading and Capture action, beside a compact Ask
+Home leads with the active workspace’s actual name as its heading and a Capture action, beside a compact Ask
 composer on wide screens. Prompt suggestions are quiet text actions. Attention
 and recent activity form the primary column; three pinned shortcuts and workspace
 utilities support them in the secondary column. Email and processing tools use

@@ -284,7 +284,9 @@ beforeEach(() => {
   fakes.role = 'member';
   fakes.timelineFeedProps = null;
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Ada', email: 'ada@example.com' } });
-  fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
+  fakes.resolveActiveTeam.mockResolvedValue({
+    active: { teamId: 'team-1', teamName: 'Acme Labs' },
+  });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.getDashboard.mockResolvedValue({ nudge: null });
   fakes.hasCompletedChatAnswer.mockResolvedValue(false);
@@ -328,7 +330,7 @@ describe('HomeDashboardPage', () => {
   it('composes the caught-up state without zero-count attention links for a member', async () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain('Your workspace');
+    expect(html).toContain('Acme Labs');
     expect(html).toContain('data-testid="home-onboarding"');
     expect(html.indexOf('data-testid="home-onboarding"')).toBeLessThan(
       html.indexOf('You’re caught up'),
@@ -513,7 +515,7 @@ describe('HomeDashboardPage', () => {
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain('Your workspace');
+    expect(html).toContain('Acme Labs');
     expect(html).not.toContain('data-billing-nudge');
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
       surface: 'render',
@@ -578,7 +580,7 @@ it('keeps Home usable when optional PAYG eligibility cannot be loaded', async ()
   });
   fakes.hasCompletedChatAnswer.mockRejectedValue(new Error('lookup unavailable'));
   const html = renderToStaticMarkup(await HomeDashboardPage());
-  expect(html).toContain('Your workspace');
+  expect(html).toContain('Acme Labs');
   expect(html).not.toContain('Optional PAYG suggestion');
   expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
     surface: 'render',

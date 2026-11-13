@@ -277,7 +277,9 @@ export default async function HomeDashboardPage() {
     <div data-app-width="overview" className="home-overview space-y-8">
       <header className="grid items-start gap-6 border-b border-border pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,1fr)]">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Your workspace</h1>
+          <h1 className="text-3xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+            {active.teamName}
+          </h1>
           <p className="mt-2 text-sm text-fg-muted">
             Review what needs attention and catch up on recent work.
           </p>
