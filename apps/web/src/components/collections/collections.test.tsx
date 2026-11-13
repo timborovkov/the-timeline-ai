@@ -47,7 +47,7 @@ describe('collection primitives', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     await user.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByText('Group contents').closest('[hidden]')).toBeTruthy();
+    expect(screen.getByText('Group contents').closest('[inert]')).toBeTruthy();
   });
 
   it('can start a group collapsed', () => {
@@ -60,7 +60,7 @@ describe('collection primitives', () => {
     expect(screen.getByRole('button', { name: /Advanced 4/ }).getAttribute('aria-expanded')).toBe(
       'false',
     );
-    expect(screen.getByText('Folded tools').closest('[hidden]')).toBeTruthy();
+    expect(screen.getByText('Folded tools').closest('[inert]')).toBeTruthy();
   });
 
   it('shows selection chrome only while items are selected', () => {

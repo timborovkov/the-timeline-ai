@@ -2,10 +2,9 @@ import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
-import styles from '@/components/marketing/editorial/editorial.module.css';
 import { InboundMcpDiagram } from '@/components/marketing/integrations/inbound-mcp-diagram';
+import styles from '@/components/marketing/integrations/integration-detail.module.css';
 import {
   MCP_GUIDE_PAGE,
   MCP_GUIDE_RELATED,
@@ -15,7 +14,6 @@ import { MCP_GUIDE_DOCUMENT } from '@/components/marketing/integrations/mcp-guid
 import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -30,20 +28,17 @@ export function McpGuidePage() {
       <EditorialStructuredData data={buildPublicStructuredData(MCP_GUIDE_DOCUMENT, getSiteUrl())} />
       <main id="main" tabIndex={-1} data-mcp-guide>
         <section className="border-b border-border">
-          <MarketingContainer className="py-10 sm:py-14">
+          <MarketingContainer className={styles.hero}>
             <Link
               href="/integrations"
               className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             >
               All integrations
             </Link>
-            <EditorialKicker>{MCP_GUIDE_PAGE.kicker}</EditorialKicker>
-            <div className="mt-8 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
-              <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{MCP_GUIDE_PAGE.title}</h1>
+            <div className={styles.heroGrid}>
               <div>
-                <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-                  {MCP_GUIDE_PAGE.summary}
-                </p>
+                <h1 className={styles.title}>{MCP_GUIDE_PAGE.title}</h1>
+                <p className={styles.intro}>{MCP_GUIDE_PAGE.summary}</p>
                 <div className="mt-7 flex flex-wrap gap-3">
                   <StartFreeLink className="inline-flex min-h-12 items-center gap-2 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
                   <PublicSessionBranch
@@ -59,6 +54,13 @@ export function McpGuidePage() {
                     }
                   />
                 </div>
+              </div>{' '}
+              <div>
+                <InboundMcpDiagram />
+                <p className={styles.note}>
+                  Live lookup when you ask. Connecting a tool does not sync its history into
+                  Timeline.
+                </p>
               </div>
             </div>
           </MarketingContainer>
@@ -67,7 +69,6 @@ export function McpGuidePage() {
         <section className="border-b border-border" aria-labelledby="mcp-directions">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="01" label="Directions" />
               <div>
                 <h2
                   id="mcp-directions"
@@ -103,9 +104,7 @@ export function McpGuidePage() {
                     </Link>
                   </article>
                 </div>
-                <div className="mt-10">
-                  <InboundMcpDiagram />
-                </div>
+
                 <div className="mt-10 max-w-xl">
                   <ClaudeMcpExample />
                 </div>
@@ -117,7 +116,6 @@ export function McpGuidePage() {
         <section className="border-b border-border bg-surface/45" aria-labelledby="mcp-setup">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="02" label="In the product" />
               <div>
                 <h2
                   id="mcp-setup"
@@ -171,7 +169,6 @@ export function McpGuidePage() {
         <section className="border-b border-border" aria-labelledby="mcp-catalog">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="03" label="Catalog" />
               <div>
                 <h2
                   id="mcp-catalog"
@@ -200,7 +197,6 @@ export function McpGuidePage() {
         <section className="border-b border-border" aria-labelledby="mcp-limits">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="04" label="Limits" />
               <div>
                 <h2
                   id="mcp-limits"
@@ -215,7 +211,7 @@ export function McpGuidePage() {
                     ))}
                   </ul>
                 </MarketingDisclosure>
-                <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2">
+                <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2 sm:[&>:last-child:nth-child(odd)]:col-span-2">
                   {MCP_GUIDE_RELATED.map((item) => (
                     <Link
                       key={item.href}
@@ -239,8 +235,8 @@ export function McpGuidePage() {
         </section>
 
         <MarketingCtaBand
-          title="Start with the conversation record."
-          body="Link Slack or Telegram first if you need a work record. Add MCP tools later when The Timeline Agent should look something up live."
+          title="Bring the right tools to the question."
+          body="Build your work record from selected sources. Add MCP tools when The Timeline Agent needs to look something up live."
         />
       </main>
     </PublicShell>

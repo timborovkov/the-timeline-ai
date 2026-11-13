@@ -143,11 +143,11 @@ describe('SlackSettingsPageView', () => {
     expect(screen.getByLabelText('Conversation to bind')).toHaveProperty('required', true);
     expect(screen.queryByRole('option', { name: '#launch' })).toBeNull();
     expect(screen.getByText('#launch')).toBeTruthy();
-    expect(screen.getAllByText('Channel · Team visibility')).toHaveLength(2);
+    expect(screen.getAllByText('Channel · Team visibility')).toHaveLength(1);
     expect(screen.getByText('Slack conversation ID').closest('details')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unbind' })).toBeTruthy();
     expect(screen.getByText('Ada')).toBeTruthy();
-    expect(screen.getAllByText(/Slack Ada Lovelace · ada@slack\.test/)).toHaveLength(2);
+    expect(screen.getAllByText(/Slack Ada Lovelace · ada@slack\.test/)).toHaveLength(1);
     expect(screen.getByText('Active DM')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Slack', level: 1 })).toBeTruthy();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
@@ -185,18 +185,20 @@ describe('SlackSettingsPageView', () => {
     const bindingRow = bindingTitle.closest('[class*="group/collection-row"]');
     expect(bindingRow?.className).toContain('min-h-11');
     expect(bindingRow?.className).toContain('grid-cols-[auto_minmax(0,1fr)_auto]');
-    expect(bindingTitle.className).toContain('truncate');
-    expect(bindingRow?.querySelector('.sm\\:flex-row')).toBeTruthy();
-    expect(screen.getAllByText('Private channel · Selected people')).toHaveLength(2);
+    expect(bindingTitle.className).toContain('[overflow-wrap:anywhere]');
+    expect(bindingRow?.querySelector('[data-slot=collection-row-content].flex-col')).toBeTruthy();
+    expect(screen.getAllByText('Private channel · Selected people')).toHaveLength(1);
 
     const identityContexts = screen.getAllByText(
       'Slack A very long Slack member name · a-very-long-slack-identity-address@example.test',
     );
-    expect(identityContexts).toHaveLength(2);
+    expect(identityContexts).toHaveLength(1);
     const identityRow = identityContexts[0]?.closest('[class*="group/collection-row"]');
     expect(identityRow?.className).toContain('min-h-11');
-    expect(identityRow?.querySelector('.sm\\:flex-row')).toBeTruthy();
-    expect(screen.getByText('A very long Timeline member name').className).toContain('truncate');
+    expect(identityRow?.querySelector('[data-slot=collection-row-content].flex-col')).toBeTruthy();
+    expect(screen.getByText('A very long Timeline member name').className).toContain(
+      '[overflow-wrap:anywhere]',
+    );
     expect(screen.getByText('Active DM').className).toContain('truncate');
   });
 

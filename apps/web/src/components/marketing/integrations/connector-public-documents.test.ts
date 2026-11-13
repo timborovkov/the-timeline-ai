@@ -29,7 +29,7 @@ describe('connector public documents', () => {
   it('publishes capture-surface truth without inventing additional connector routes', () => {
     const serialized = JSON.stringify(INTEGRATION_DIRECTORY_DOCUMENT);
 
-    expect(INTEGRATION_DIRECTORY_REVIEW_DATE).toBe('2026-11-06');
+    expect(INTEGRATION_DIRECTORY_REVIEW_DATE).toBe('2026-11-12');
     expect(INTEGRATION_DIRECTORY_DOCUMENT.dates).toEqual({
       modified: INTEGRATION_DIRECTORY_REVIEW_DATE,
       reviewed: INTEGRATION_DIRECTORY_REVIEW_DATE,

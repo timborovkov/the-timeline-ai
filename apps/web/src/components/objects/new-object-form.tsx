@@ -1,6 +1,7 @@
 'use client';
 
 import { LoaderCircle } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReducer, useRef, useTransition, type SyntheticEvent } from 'react';
 
@@ -78,7 +79,12 @@ export function NewObjectForm({
   }
 
   return (
-    <form className="max-w-xl space-y-5" noValidate onSubmit={submit} aria-busy={pending}>
+    <form
+      className="w-full max-w-2xl space-y-6 rounded-sm border border-border bg-surface p-5 sm:p-8"
+      noValidate
+      onSubmit={submit}
+      aria-busy={pending}
+    >
       <label className="block" htmlFor="object-type">
         <span className="mb-1 block text-xs text-fg-muted">Object type</span>
         <select
@@ -92,27 +98,12 @@ export function NewObjectForm({
         >
           {TYPES.map((t) => (
             <option key={t} value={t}>
-              {t}
+              {t.charAt(0).toUpperCase() + t.slice(1).replaceAll('_', ' ')}
             </option>
           ))}
         </select>
       </label>
-      {type === 'task' ? (
-        <div>
-          <span className="mb-1 block text-xs text-fg-muted">Project (optional)</span>
-          <ProjectPicker
-            value={projectId || null}
-            selectedLabel={projectLabel}
-            projects={projects}
-            onValueChange={(project) => {
-              updateForm({
-                projectId: project?.id ?? '',
-                projectLabel: project?.label ?? '',
-              });
-            }}
-          />
-        </div>
-      ) : null}
+
       <div>
         <label className="block" htmlFor="object-name">
           <span className="mb-1 block text-xs text-fg-muted">
@@ -134,7 +125,7 @@ export function NewObjectForm({
             aria-invalid={nameError ? true : undefined}
             aria-describedby={nameError ? 'object-name-error' : undefined}
             className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-            placeholder="e.g. Acme deal, Q2 OKRs, post-mortem 2026-05-15"
+            placeholder={objectNameExample(type)}
           />
         </label>
         {nameError ? (
@@ -144,34 +135,71 @@ export function NewObjectForm({
         ) : null}
       </div>
       {isSchedulableObjectType(type) ? (
-        <label className="block" htmlFor="object-due-at">
-          <span className="mb-1 block text-xs text-fg-muted">Due date (optional)</span>
-          <input
-            id="object-due-at"
-            name="dueAt"
-            type="date"
-            value={dueAt}
-            onChange={(e) => {
-              updateForm({ dueAt: e.target.value });
-            }}
-            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-          />
-          <DueDateDisplay value={dueAt || null} variant="field-hint" className="mt-1 block" />
-        </label>
+        <div className="grid gap-5 sm:grid-cols-2">
+          {type === 'task' ? (
+            <div>
+              <span className="mb-1 block text-xs text-fg-muted">Project (optional)</span>
+              <ProjectPicker
+                value={projectId || null}
+                selectedLabel={projectLabel}
+                projects={projects}
+                onValueChange={(project) => {
+                  updateForm({
+                    projectId: project?.id ?? '',
+                    projectLabel: project?.label ?? '',
+                  });
+                }}
+              />
+            </div>
+          ) : null}
+          <label className="block" htmlFor="object-due-at">
+            <span className="mb-1 block text-xs text-fg-muted">Due date (optional)</span>
+            <input
+              id="object-due-at"
+              name="dueAt"
+              type="date"
+              value={dueAt}
+              onChange={(e) => {
+                updateForm({ dueAt: e.target.value });
+              }}
+              className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            />
+            {dueAt ? (
+              <DueDateDisplay value={dueAt} variant="field-hint" className="mt-1 block" />
+            ) : null}
+          </label>
+        </div>
       ) : null}
-      <button
-        type="submit"
-        disabled={pending}
-        className="inline-flex h-9 items-center justify-center gap-2 rounded-sm bg-signal px-3 text-sm font-medium text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
-      >
-        Create object
-        {pending ? (
-          <>
-            <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
-            <span className="sr-only">Creating</span>
-          </>
-        ) : null}
-      </button>
+      <div className="flex items-center gap-4 border-t border-border pt-5">
+        <button
+          type="submit"
+          disabled={pending}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-sm bg-signal px-3 text-sm font-medium text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
+        >
+          Create object
+          {pending ? (
+            <>
+              <LoaderCircle
+                className="size-4 animate-spin motion-reduce:animate-none"
+                aria-hidden
+              />
+              <span className="sr-only">Creating</span>
+            </>
+          ) : null}
+        </button>
+        <Link href={returnTo ?? '/app/objects'} className="text-sm text-fg-muted hover:text-fg">
+          Cancel
+        </Link>
+      </div>
     </form>
   );
+}
+
+function objectNameExample(type: string): string {
+  const examples: Record<string, string> = {
+    task: 'e.g. Prepare the launch checklist',
+    person: 'e.g. Morgan Lee',
+    company: 'e.g. Northwind',
+  };
+  return examples[type] ?? 'Give this record a clear name';
 }

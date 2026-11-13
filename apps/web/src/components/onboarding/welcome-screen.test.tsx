@@ -2,7 +2,7 @@ import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { act, cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { WelcomeScreen } = await import('./welcome-screen.js');
 
@@ -33,4 +33,30 @@ describe('WelcomeScreen', () => {
 
     await user.click(screen.getByRole('button', { name: 'Skip question' }));
   });
+});
+
+it('keeps actions disabled until progress has finished saving', async () => {
+  let finish!: () => void;
+  const saving = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const user = userEvent.setup();
+  render(
+    <WelcomeScreen
+      teamName="Northwind"
+      inboundEmail={null}
+      initialWorkStyle={null}
+      onContinue={() => saving}
+    />,
+  );
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Continue' }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Skip question' }).disabled).toBe(
+    true,
+  );
+  await act(async () => {
+    finish();
+    await saving;
+  });
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Continue' }).disabled).toBe(false);
 });

@@ -107,21 +107,21 @@ next before seeing how the system represented it.
 The neutral OKLCH palette and single lime signal remain. Tokens live in
 [`globals.css`](apps/web/src/app/globals.css).
 
-| Token | Purpose |
-| --- | --- |
-| `--bg` | Page background |
-| `--surface` | Panels, cards, inspector |
-| `--surface-2` | Hover, inputs, selected neutral surfaces |
-| `--border` | Hairline separators |
-| `--border-strong` | Focus and emphasized boundaries |
-| `--fg` | Primary text |
-| `--fg-muted` | Supporting text |
-| `--fg-dim` | Non-essential metadata; light-mode lightness 0.50 to preserve small-text contrast on all three surfaces |
-| `--signal` / `--signal-soft` | Primary action, active route, citation |
-| `--danger` | Failure, destructive state, overdue work |
-| `--status-progress` | Active, doing, and in-progress work |
-| `--status-review` | Proposed, pending, and review states |
-| `--status-success` | Done, shipped, and complete states |
+| Token                        | Purpose                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--bg`                       | Page background                                                                                         |
+| `--surface`                  | Panels, cards, inspector                                                                                |
+| `--surface-2`                | Hover, inputs, selected neutral surfaces                                                                |
+| `--border`                   | Hairline separators                                                                                     |
+| `--border-strong`            | Focus and emphasized boundaries                                                                         |
+| `--fg`                       | Primary text                                                                                            |
+| `--fg-muted`                 | Supporting text                                                                                         |
+| `--fg-dim`                   | Non-essential metadata; light-mode lightness 0.50 to preserve small-text contrast on all three surfaces |
+| `--signal` / `--signal-soft` | Primary action, active route, citation                                                                  |
+| `--danger`                   | Failure, destructive state, overdue work                                                                |
+| `--status-progress`          | Active, doing, and in-progress work                                                                     |
+| `--status-review`            | Proposed, pending, and review states                                                                    |
+| `--status-success`           | Done, shipped, and complete states                                                                      |
 
 Collection status color is muted and always paired with a glyph and readable
 label. Outside collection status metadata, success and informational states
@@ -139,15 +139,15 @@ cached fonts are available on subsequent loads.
 - **Commit Mono:** timestamps, citations, counts, shortcuts, code, filenames,
   and public external keys.
 
-| Role | Font and size |
-| --- | --- |
-| Page title | Switzer 600, 24px default / 18px object, task detail, and collection variant |
-| Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
-| Public acquisition display | Switzer 600, 64px mobile / fluid up to 150px desktop |
-| Section heading | Switzer 600, 16px |
-| Body and controls | Switzer 400–600, 14px |
-| Secondary metadata | Switzer 400, 12px |
-| Technical value | Commit Mono 400, 12px |
+| Role                         | Font and size                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| Page title                   | Switzer 600, 24px default / 18px object, task detail, and collection variant     |
+| Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop                            |
+| Public acquisition display   | Switzer 500–600; responsive scale owned by [public pages](docs/design/public.md) |
+| Section heading              | Switzer 600, 16px                                                                |
+| Body and controls            | Switzer 400–600, 14px                                                            |
+| Secondary metadata           | Switzer 400, 12px                                                                |
+| Technical value              | Commit Mono 400, 12px                                                            |
 
 Use 1.35 line height for dense rows, 1.55 for normal interface copy, and 1.65
 for long-form prose. Article text is limited to 65–70ch.
@@ -170,12 +170,13 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   on wide screens, stacking on mobile. Empty collections use `EmptyState`;
   grants use `CollectionRow` with readable expiry dates and explicit status.
 - The shell owns consistent page gutters: 16px on mobile and 32px on desktop,
-  with a centered `max-w-6xl` content container. Collection indexes (Work and
-  its tabs, Timeline, Documents, Meetings) mark their frame with
+  with a centered `max-w-6xl` content container. Collection indexes (Work tabs, Timeline, Documents, Meetings) mark their frame with
   `data-app-width="collection"`. Their section bands and row separators extend
   to the main pane edges while labels, controls, and row content retain the
   bounded inner width. Empty and loading states retain the same content width.
-  Forms, settings, and reading views keep the default cap without decorative bleed.
+  Home and Work overview use `data-app-width="overview"`: a left-aligned 80rem
+  cap with primary work and a narrow context column at wide widths, stacked on
+  smaller screens. Forms, settings, and reading views keep the default cap without decorative bleed.
 - Full-canvas chat and boards may opt into full bleed. The shell supplies their
   available height, including banners; routes do not subtract a fixed header
   height from the viewport or cancel shell gutters with negative margins.
@@ -213,7 +214,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   [billing presentation contract](docs/design/app.md#billing-benefits-and-recorded-charges).
 
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
-  Visibility, Email, Exports, and admin-only Advanced.
+  Visibility, Email, Exports, and admin-only Billing and Advanced.
 
 The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
 a sticky collection toolbar under the 48px shell header instead of an index
@@ -231,8 +232,12 @@ strip or loaded-count heading.
   dim icon, and an action only when the person can create or recover.
 - All screens work at 320px, tablet, desktop, dark mode, and 200% zoom without
   document-level horizontal scrolling.
-- Authenticated-product motion is minimal-functional: 80ms hover, 120ms overlay
-  transitions, and no page transitions. Public acquisition motion follows the
+- Authenticated-product motion connects state changes: 120ms popovers, 180ms
+  dialogs, 220ms drawer entry and 150ms exit, and 220ms group disclosures.
+  Route replacement uses a brief 120ms opacity change without remounting page
+  content. Reduced motion removes spatial travel and route animation, using
+  short opacity changes for overlays. Shared state selectors in `app-motion.css`
+  own entry and exit, including retained Radix close states. Public acquisition motion follows the
   transform/opacity and reduced-motion contract in
   [public pages](docs/design/public.md).
 

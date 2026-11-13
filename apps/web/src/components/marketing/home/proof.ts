@@ -4,8 +4,8 @@ export const HOME_VOICE_SHOT = {
   file: '17-timeline-voice-dark.png',
   kicker: 'Voice notes',
   alt: 'A Telegram voice note on the timeline with its transcript and the original audio.',
-  caption: 'Voice notes you can read.',
-  body: 'Send a voice note in Telegram. Its transcript sits beside the original audio, with the sender and a link back to the message.',
+  caption: 'Turn conversations into shared context.',
+  body: 'Capture an update, decision or commitment while it’s fresh—even as a quick voice note. The Timeline keeps it with the rest of your work, ready to find and use in answers, with its source attached.',
 } as const satisfies MarketingScreenshotSlot & { kicker: string; body: string };
 
 export const HOME_TIMELINE_SHOT = {

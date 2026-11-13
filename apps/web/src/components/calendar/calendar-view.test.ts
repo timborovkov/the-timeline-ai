@@ -684,7 +684,7 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     const eventControl = screen.getByRole('button', { name: new RegExp(title) });
     expect(eventControl.className).toContain('min-w-0');
-    expect(within(eventControl).getByText(new RegExp(title)).className).toContain('truncate');
+    expect(within(eventControl).getByText(new RegExp(title)).className).toContain('line-clamp-2');
     expect(screen.getByRole('status', { name: '1' }).textContent).toBe('1');
   });
 

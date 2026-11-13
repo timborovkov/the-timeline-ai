@@ -2,6 +2,15 @@
 
 import {
   CalendarDays,
+  Bot,
+  CircleCheckBig,
+  Clock3,
+  House,
+  ListTodo,
+  Mail,
+  PlugZap,
+  Settings,
+  Boxes,
   ExternalLink,
   FileText,
   LayoutDashboard,
@@ -10,6 +19,7 @@ import {
   SquareKanban,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { Collapsible } from 'radix-ui';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import type { GlobalSearchResult } from '@timeline/shared/search';
@@ -69,7 +79,30 @@ function resultGroup(result: GlobalSearchResult): (typeof GROUP_ORDER)[number] {
   return 'Work';
 }
 
-function resultIcon(kind: GlobalSearchResult['kind']): Icon {
+function resultIcon(result: GlobalSearchResult): Icon {
+  const { kind } = result;
+  if (kind === 'quick_link') {
+    const path = result.href.split(/[?#]/)[0];
+    const destinations: Record<string, Icon> = {
+      '/app': House,
+      '/app/chat': Bot,
+      '/app/approvals': CircleCheckBig,
+      '/app/boards': SquareKanban,
+      '/app/calendar': CalendarDays,
+      '/app/connect-agent': Bot,
+      '/app/connections/agent-tools': Bot,
+      '/app/documents': FileText,
+      '/app/digests': Clock3,
+      '/app/timeline': Clock3,
+      '/app/team': Settings,
+      '/app/tasks': ListTodo,
+      '/app/objects': Boxes,
+      '/app/work': ListTodo,
+      '/app/connections': PlugZap,
+      '/app/connections/sources': Mail,
+    };
+    return destinations[path ?? ''] ?? LayoutDashboard;
+  }
   if (kind === 'timeline_event') return Search;
   if (kind === 'document_chunk') return FileText;
   if (kind === 'calendar_event') return CalendarDays;
@@ -203,7 +236,11 @@ export function GlobalSearchPalette({ hint, className }: Props) {
   }, [open, view.activeIndex]);
 
   return (
-    <div ref={rootRef} className={cn('relative flex-1', className)}>
+    <Collapsible.Root
+      open={open}
+      ref={rootRef}
+      className={cn('relative min-w-0 flex-1', className)}
+    >
       <div
         className={cn(
           'flex h-10 w-full items-center gap-2 rounded-sm border border-border bg-surface px-3',
@@ -235,7 +272,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           value={query}
           placeholder="Ask, jump, capture, or search…"
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent font-mono text-xs text-fg placeholder:text-fg-dim focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-dim focus:outline-none"
           onFocus={() => {
             setOpen(true);
           }}
@@ -288,19 +325,17 @@ export function GlobalSearchPalette({ hint, className }: Props) {
         ) : null}
       </div>
 
-      {open ? (
-        <SearchPaletteResults
-          view={view}
-          grouped={grouped}
-          selectableResults={selectableResults}
-          dispatchView={dispatchView}
-          setOpen={setOpen}
-          router={router}
-          query={query}
-          submitSearch={submitSearch}
-        />
-      ) : null}
-    </div>
+      <SearchPaletteResults
+        view={view}
+        grouped={grouped}
+        selectableResults={selectableResults}
+        dispatchView={dispatchView}
+        setOpen={setOpen}
+        router={router}
+        query={query}
+        submitSearch={submitSearch}
+      />
+    </Collapsible.Root>
   );
 }
 
@@ -324,14 +359,23 @@ function SearchPaletteResults({
   submitSearch: () => void;
 }) {
   return (
-    <div
+    <Collapsible.Content
+      data-motion="popover"
       role="grid"
       id="global-search-results"
       aria-label="Search results"
       aria-busy={view.loading}
-      className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl"
+      className="absolute left-0 top-12 z-50 w-[min(44rem,calc(100vw-3rem))] max-w-full max-h-[min(32rem,calc(100dvh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl"
     >
-      {view.error ? (
+      {view.loading && grouped.length === 0 ? (
+        <div role="row">
+          <div role="gridcell">
+            <p role="status" className="px-3 py-4 text-sm text-fg-muted">
+              Searching your workspace…
+            </p>
+          </div>
+        </div>
+      ) : view.error ? (
         <div role="row">
           <div role="gridcell">
             <p role="status" className="p-3 text-sm text-destructive">
@@ -367,7 +411,8 @@ function SearchPaletteResults({
               </div>
               {items.map((result) => {
                 const index = selectableResults.indexOf(result);
-                const IconComponent = resultIcon(result.kind);
+                const IconComponent = resultIcon(result);
+                const quickLink = result.kind === 'quick_link';
                 const objectType =
                   typeof result.metadata?.type === 'string' ? result.metadata.type : '';
                 const dueAt =
@@ -389,7 +434,10 @@ function SearchPaletteResults({
                     <div role="gridcell" className="min-w-0 flex-1">
                       <button
                         type="button"
-                        className="flex w-full min-w-0 items-center gap-3 px-3 py-2 text-left"
+                        className={cn(
+                          'flex w-full min-w-0 items-center gap-3 px-3 text-left',
+                          quickLink ? 'min-h-10 py-1.5' : 'min-h-14 py-2',
+                        )}
                         onClick={() => {
                           setOpen(false);
                           openResult(result, router);
@@ -401,9 +449,11 @@ function SearchPaletteResults({
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{result.title}</span>
-                          <span className="block truncate text-xs text-fg-muted">
-                            {result.snippet}
-                          </span>
+                          {!quickLink ? (
+                            <span className="block truncate text-xs text-fg-muted">
+                              {result.snippet}
+                            </span>
+                          ) : null}
                           {isSchedulableObjectType(objectType) ? (
                             <DueDateDisplay
                               value={dueAt}
@@ -412,9 +462,11 @@ function SearchPaletteResults({
                             />
                           ) : null}
                         </span>
-                        <span className="shrink-0 text-xs text-fg-dim">
-                          {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
-                        </span>
+                        {!quickLink ? (
+                          <span className="shrink-0 text-xs text-fg-dim">
+                            {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
+                          </span>
+                        ) : null}
                       </button>
                     </div>
                     {result.pinTarget ? (
@@ -459,6 +511,6 @@ function SearchPaletteResults({
           </div>
         </div>
       ) : null}
-    </div>
+    </Collapsible.Content>
   );
 }

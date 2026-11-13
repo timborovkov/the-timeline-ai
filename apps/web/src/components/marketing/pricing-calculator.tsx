@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 
+import styles from '@/components/marketing/pricing-page.module.css';
 import { NativeSelect } from '@/components/ui/native-select';
 import {
   CALCULATOR_PLANS,
@@ -21,9 +22,9 @@ import {
 import { cn } from '@/lib/utils';
 
 const CONTROL =
-  'h-9 rounded-sm border border-border bg-surface-2 px-2.5 text-base sm:text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-11 rounded-sm border border-border bg-surface-2 px-2.5 text-base sm:text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const SLIDER =
-  'block h-6 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
+  'block h-11 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
 
 function UsageControl({
   field,
@@ -141,7 +142,7 @@ function PlanResults({
               </label>
             ))}
           </div>
-          <div className="border-t border-border p-5">
+          <div id="pricing-breakdown" className="scroll-mt-40 border-t border-border p-5">
             <h3 className="text-lg font-semibold">{plan.name} breakdown</h3>
             <dl className="mt-4 space-y-3 text-sm">
               <CostRow label="Platform fee" cents={bill.platformFeeCents} />
@@ -203,7 +204,7 @@ function PlanResults({
         ).join(', ')}
         . Excluding VAT.
       </p>
-      <p className="text-xs leading-4 text-fg-muted">
+      <p className="max-w-[75ch] text-sm leading-6 text-fg-muted">
         Estimates assume a full month at standard published prices on one eligible workspace. Actual
         AI charges vary. Other capacity limits apply, including inbound email, agent turns and
         concurrent meetings. Usage may require raising your spend cap; the estimate is not capped.
@@ -249,12 +250,30 @@ export function PricingCalculator() {
           type="button"
           onClick={() => {
             setDraft(EXAMPLE_USAGE);
+            setSelected('payg');
             setWebsiteInput({ websites: 0, pages: 5, frequency: 'manual', manualScans: 1 });
           }}
-          className="rounded-sm text-sm text-fg-muted underline decoration-border-strong underline-offset-4 outline-none hover:text-fg hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-11 rounded-sm text-sm text-fg-muted underline decoration-border-strong underline-offset-4 outline-none hover:text-fg hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
         >
           Reset example
         </button>
+      </div>
+      <div className={styles.mobileEstimate} data-mobile-estimate>
+        {estimate ? (
+          <>
+            <div>
+              <p>{PLAN_CATALOG[selected].name} estimate</p>
+              <strong>{formatEuroFromCents(estimate.bills[selected].totalCents)}</strong>
+              <span className="ml-2 text-sm text-fg-muted">/mo, excl. VAT</span>
+            </div>
+            <a href="#pricing-breakdown">View breakdown</a>
+            {estimate.capacityWarnings[selected].length > 0 ? (
+              <p className="basis-full">Exceeds this plan’s capacity. Check the breakdown.</p>
+            ) : null}
+          </>
+        ) : (
+          <p>Check your usage fields to see an estimate.</p>
+        )}
       </div>
       <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <div className="space-y-5">

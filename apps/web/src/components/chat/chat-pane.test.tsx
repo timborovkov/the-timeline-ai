@@ -20,7 +20,8 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('ai'),
-  () => ({
+  async () => ({
+    ...(await import('ai')),
     DefaultChatTransport: class DefaultChatTransport {
       options: {
         body?: () => unknown;

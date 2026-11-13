@@ -45,7 +45,9 @@ describe('root route recovery states', () => {
     setPublicSessionCache({ status: 'signed-in' });
     render(<NotFound />);
 
-    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    for (const link of screen.getAllByRole('link', { name: 'Dashboard' })) {
+      expect(link.getAttribute('href')).toBe('/app');
+    }
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
   });
 

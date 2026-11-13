@@ -29,9 +29,9 @@ describe('LandingPage', () => {
     expect(html.match(/>Source on GitHub</g)).toHaveLength(2);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Your team&#x27;s work, <em>written down</em> for you');
+    expect(html).toContain('Know where the work stands.');
     expect(html).toContain(
-      'Your team&#x27;s work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.',
+      'Your team’s work becomes a living record. Bring in context from the tools and sources you use, and turn it into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
     );
 
     const scenes = [
@@ -50,17 +50,17 @@ describe('LandingPage', () => {
       previousIndex = sceneIndex;
     }
 
-    expect(html).toContain('Acme rollout / Last 7 days');
+    expect(html).toContain('Acme rollout · Illustrative example / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
+      'aria-label="Work events stream from nine sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources."',
     );
     expect(html).toContain('one timeline');
     expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
     expect(html).toContain('Work record');
-    expect(html).toContain('Daily update');
-    expect(html).toContain('Linked answers');
+    expect(html).toContain('Decisions, promises');
+    expect(html).toContain('Sources attached');
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
@@ -71,15 +71,15 @@ describe('LandingPage', () => {
     expect(html).toContain('Sentry');
     expect(html).toContain('/connectors/telegram.svg');
     expect(html).toContain('/connectors/google-meet.svg');
-    expect(html.match(/data-hero-flow-path="ingest"/g)).toHaveLength(6);
+    expect(html.match(/data-hero-flow-path="ingest"/g)).toHaveLength(9);
     expect(html.match(/data-hero-flow-path="outcome"/g)).toHaveLength(1);
-    expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(6);
+    expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(9);
     expect(html.match(/data-hero-flow-packet="outcome"/g)).toHaveLength(1);
     expect(html).not.toContain('data-hero-flow-path="write"');
     expect(html).not.toContain('data-hero-flow-path="read"');
     expect(html).not.toContain('>Person<');
     expect(html).toContain('data-flow-motion');
-    expect(html.match(/<animateMotion/g)).toHaveLength(7);
+    expect(html.match(/<animateMotion/g)).toHaveLength(10);
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
@@ -89,7 +89,7 @@ describe('LandingPage', () => {
     expect(html).toContain('llms.txt');
     expect(html).not.toContain('>AI assistants<');
     expect(html).toContain('What did we promise Northstar?');
-    expect(html).toContain('One <em>record</em> for chat and agents.');
+    expect(html).toContain('One record for chat and agents.');
     expect(html).toContain('aria-label="Chat conversation"');
     expect(html).toContain('aria-label="Agent conversation"');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
@@ -105,22 +105,20 @@ describe('LandingPage', () => {
     expect(html).not.toContain('Evidence behind this answer');
     expect(html).not.toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Telegram group message');
-    expect(html).toContain('Built for teams that run their work through <em>chat.</em>');
+    expect(html).toContain('Built for teams that run their work through chat.');
     expect(html).toContain('href="/use-cases/work-record"');
     expect(html).toContain('href="/use-cases/team-daily-log"');
     expect(html).toContain('href="/use-cases/crm"');
-    expect(html).toContain('<a href="/use-cases/work-record"><span>01</span><h3>Work record</h3>');
-    expect(html).toContain(
-      '<a href="/use-cases/team-daily-log"><span>02</span><h3>Team daily log</h3>',
-    );
-    expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h3>CRM</h3>');
+    expect(html).toContain('<a href="/use-cases/work-record"><h3>Work record</h3>');
+    expect(html).toContain('<a href="/use-cases/team-daily-log"><h3>Team daily log</h3>');
+    expect(html).toContain('<a href="/use-cases/crm"><h3>CRM</h3>');
     expect(html).toContain('on one timeline, with where it was said.');
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).toContain('Suggested changes wait');
     expect(html).toContain('A person approves each one.');
     expect(html).not.toContain('Suggested changes wait — human approval required.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(5);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(4);
     expect(html.match(/data-home-proof=/g)).toHaveLength(5);
     expect(html).toContain('data-home-proof="11-timeline-dark.png"');
     expect(html).toContain('data-home-proof="17-timeline-voice-dark.png"');
@@ -152,8 +150,8 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-11-07',
-      lastReviewed: '2026-11-07',
+      dateModified: '2026-11-12',
+      lastReviewed: '2026-11-12',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -162,15 +160,44 @@ describe('LandingPage', () => {
       'Human approval before inferred durable workspace changes',
     );
     expect(metadata).toMatchObject({
-      title: "Your team's work, written down for you",
+      title: 'Your team’s living work record',
       description:
-        'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+        'Turn context from your tools and sources into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
       alternates: { canonical: '/' },
       openGraph: {
         description:
-          'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+          'Turn context from your tools and sources into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
       },
     });
+  });
+
+  it('introduces the product and use cases before the illustrative walkthrough', () => {
+    const { container } = render(<LandingPage />);
+    const hero = container.querySelector('[data-scene="01-claim"]');
+    expect(hero?.querySelectorAll('[data-hero-flow-path="ingest"]')).toHaveLength(9);
+    expect(container.querySelector('[data-hero-evidence]')).toBeNull();
+    const overview = container.querySelector('[data-use-case-overview]');
+    expect(overview?.textContent).toContain('Your team’s work, in one shared record.');
+    expect(overview?.textContent).toContain('selected conversations, calls and documents');
+    expect(overview?.querySelectorAll('a')).toHaveLength(6);
+    const html = container.innerHTML;
+    expect(html.indexOf('data-use-case-overview')).toBeLessThan(
+      html.indexOf('data-scene="02-intake"'),
+    );
+    expect(html.indexOf('data-scene="02-intake"')).toBeLessThan(
+      html.indexOf('Acme rollout · Illustrative example'),
+    );
+    expect(container.querySelector('#answer')).not.toBeNull();
+  });
+
+  it('keeps compact agent setup visible in the hero without a disclosure', () => {
+    const { container } = render(<LandingPage />);
+    const setup = container.querySelector('[data-scene="01-claim"] [data-agent-setup]');
+    expect(setup).not.toBeNull();
+    expect(setup?.closest('details')).toBeNull();
+    expect(setup?.textContent).toContain('Get started with your agent');
+    expect(setup?.textContent).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(setup?.querySelector('button')?.getAttribute('aria-label')).toBe('Copy setup command');
   });
 
   it('pairs ingest and answers with the right headings and removes screenshot interactions', () => {
@@ -209,9 +236,10 @@ describe('LandingPage', () => {
       expect(html).toContain(connector);
     }
 
-    expect(html).toContain('Status should not require an <em>investigation.</em>');
+    expect(html).toContain('Status should not require an investigation.');
     expect(html).toContain('forward email, upload documents, or scan a public website');
-    expect(html).toContain('Its transcript sits beside the original audio');
+    expect(html).toContain('Turn conversations into shared context.');
+    expect(html).toContain('ready to find and use in answers, with its source attached');
     expect(html).toContain('Telegram');
     expect(html).toContain('Email forwarding');
     expect(html).not.toContain('Connected tools');
@@ -237,14 +265,14 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'Your team&#x27;s work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.',
+      'Your team’s work becomes a living record. Bring in context from the tools and sources you use, and turn it into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
     );
-    expect(html).toContain('Link one channel. Watch the <em>record</em> fill in.');
+    expect(html).toContain('Link one channel. Watch the record fill in.');
     expect(html).toContain('approve the suggested updates');
     expect(html).toContain(
       'Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology.',
     );
-    expect(html).toContain('Everything lands on one <em>timeline.</em>');
+    expect(html).toContain('Everything lands on one timeline.');
     expect(html).toContain('Search it by person, client or source.');
     expect(html).toContain('Get a status or handoff brief without retracing every conversation.');
     expect(html).toContain(
@@ -253,7 +281,7 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place.',
     );
-    expect(html).toContain('Conversations become connected <em>records.</em>');
+    expect(html).toContain('Conversations become connected records.');
     for (const record of ['Tasks', 'People', 'Projects', 'Companies', 'Deals']) {
       expect(html).toContain(`${record}</h3>`);
     }

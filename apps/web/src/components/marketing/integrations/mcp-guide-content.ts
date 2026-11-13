@@ -3,7 +3,7 @@ import { getConnectorCapabilityTiers } from '@/components/marketing/integrations
 export const MCP_GUIDE_ROUTE = '/integrations/mcp' as const;
 export const MCP_GUIDE_NAV_LABEL = 'Connect MCP tools';
 
-const REVIEW_DATE = '2026-11-07' as const;
+const REVIEW_DATE = '2026-11-12' as const;
 
 /** Hosted Agent-tools catalog labels; keep in lockstep with listCatalog `mcp_available`. */
 export const MCP_GUIDE_HOSTED_TOOL_NAMES = ['Notion', 'Jira', 'Confluence', 'Stripe'] as const;
@@ -30,7 +30,7 @@ export const MCP_GUIDE_PAGE = {
   route: MCP_GUIDE_ROUTE,
   navLabel: MCP_GUIDE_NAV_LABEL,
   kicker: 'Agent tools',
-  title: 'Connect MCP tools to The Timeline Agent.',
+  title: 'Let your agent look beyond the record.',
   summary: 'Give The Timeline Agent live access to tools you connect.',
   seoTitle: 'Connect MCP tools to The Timeline Agent',
   seoDescription:

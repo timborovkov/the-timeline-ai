@@ -119,7 +119,7 @@ describe('PinnedWorkspaceManager', () => {
     expect(
       screen.getAllByRole('link', { name: /Alpha|Beta/ }).map((link) => link.textContent),
     ).toEqual(['Beta', 'Alpha']);
-    expect(screen.getAllByText('Project · active')).toHaveLength(4);
+    expect(screen.getAllByText('Project · active')).toHaveLength(2);
   });
 
   it('allows the last loaded item to move to the global bottom when another page exists', async () => {

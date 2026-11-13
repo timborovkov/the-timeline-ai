@@ -15,7 +15,7 @@ describe('editorial metadata', () => {
     const metadata = createHowItWorksMetadata();
 
     const description =
-      'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.';
+      'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.';
     expect(metadata.description).toBe(description);
     expect(metadata.alternates).toEqual({ canonical: HOW_IT_WORKS_ROUTE });
     expect(metadata.openGraph).toMatchObject({

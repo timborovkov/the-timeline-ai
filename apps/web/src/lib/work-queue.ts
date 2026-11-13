@@ -68,12 +68,12 @@ export function reasonLabel(reason: WorkQueueReason): string {
 }
 
 export function reasonTone(reason: WorkQueueReason): 'danger' | 'signal' | 'neutral' {
-  if (reason === 'overdue' || reason === 'pending_approval') return 'danger';
+  if (reason === 'overdue' || reason === 'blocked') return 'danger';
   if (
     reason === 'due_soon' ||
     reason === 'responsible_to_you' ||
     reason === 'team_due' ||
-    reason === 'blocked'
+    reason === 'pending_approval'
   ) {
     return 'signal';
   }

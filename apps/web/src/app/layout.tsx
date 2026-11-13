@@ -8,6 +8,7 @@ import { PublicAnalyticsBoundary } from '@/components/public-analytics';
 import { SupportEmailProvider } from '@/components/support-email-provider';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { appleWebApp, pwaViewport } from '@/lib/pwa-splash';
 import { SIDEBAR_PREFERENCE_BOOTSTRAP } from '@/lib/sidebar-preference';
 import { getSiteUrl } from '@/lib/site-url';
@@ -56,11 +57,10 @@ const commitMono = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   title: {
-    default: "Your team's work, written down for you · The Timeline",
+    default: `${PRODUCT_POSITIONING.title} · The Timeline`,
     template: '%s · The Timeline',
   },
-  description:
-    'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+  description: PRODUCT_POSITIONING.description,
   keywords: [
     'work record',
     'auto-updating work record',
@@ -88,9 +88,8 @@ export const metadata: Metadata = {
   },
   appleWebApp,
   openGraph: {
-    title: "Your team's work, written down for you · The Timeline",
-    description:
-      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+    title: `${PRODUCT_POSITIONING.title} · The Timeline`,
+    description: PRODUCT_POSITIONING.description,
     url: '/',
     siteName: 'The Timeline',
     images: [
@@ -98,7 +97,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: "The Timeline — your team's work, written down for you",
+        alt: PRODUCT_POSITIONING.socialAlt,
       },
     ],
     locale: 'en_US',
@@ -106,9 +105,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: "Your team's work, written down for you · The Timeline",
-    description:
-      "The Timeline updates itself from your team's Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what's next, always current.",
+    title: `${PRODUCT_POSITIONING.title} · The Timeline`,
+    description: PRODUCT_POSITIONING.description,
     images: ['/twitter-image'],
   },
   robots: {

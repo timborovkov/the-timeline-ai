@@ -1,109 +1,139 @@
 # Public-site design patterns
 
-The public landing page is an editorial, seven-scene acquisition narrative:
-claim, what goes in, one timeline, ask, connected records, audience fit with
-trust, and a Start free CTA. The claim scene also
-includes a compact For agents card: title and body that agents read the work
-record and write notes back like teammates, official Claude, ChatGPT, Cursor,
-Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyable
-`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The card follows
-landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
-what is said in Slack, Telegram, email and calls becomes current client, deal,
-task and decision records, with the source for every line. Captured evidence
-lands automatically; lasting record changes wait for human approval. The product tour and Free pricing card show the first-run path: team created, one capture source,
-then the first source-linked record or a question. Homepage and use-case closing
-CTAs stay compact and omit that repeated walkthrough. Audience copy describes how teams work (chat-run teams
-on Slack or Telegram, with the rest of the work spread across email, calls and
-documents), not team size or role. Updates are daily, with no weekly framing.
-The chronology scene names the cost of rebuilding status, promises and decisions
-from conversation before showing how selected work becomes an inspectable record.
-Its signature example project, Acme rollout, shows five cited work sources
-converging into one work record, with a linked Telegram group as the first source.
-Captured work settles onto a chronological rail, connects to project, person,
-task, and calendar context, and resolves into an answer with tangible source
-links. The cited-answer source list stays visible beside the answer, with each source’s
-details written directly in its card. Numbered references are static labels that
-match those cards. No modal, folding, navigation or scrolling is needed to read
-the evidence. Homepage screenshots use the real captures with theme-matched variants.
-Small-screen homepage screenshots retain the landscape 16×10 frame; dedicated
-portrait captures retain their full frame. Screenshots are display-only: no links, zoom actions, or instructions
-to click them. Each frame reserves its aspect box and shows a loading label until
-it paints. Homepage screenshots pair with one feature-specific heading and a
-short paragraph, rather than repeating generic ownership and citation checklists.
-Suggested
-durable workspace changes remain approval-backed; the diagram never implies that
-evidence silently rewrites canonical objects. The product-tour approvals step
-uses the same narrower promise: lasting record changes wait for approval.
-`/pricing` leads with Start Free, no card; the usage estimator is optional
-planning, not the first decision. The optional analytics banner sits as a compact
-bottom-right card on desktop so proof captions stay readable; Reject and Accept
-stay equally prominent, and nothing is sent before a choice. Acme rollout is
-the canonical fictional public demo corpus across landing, connector, and guide
-examples. Public pages omit repeated fictional/demo-workspace disclaimers; they
-must not recast the examples as customer testimonials or measured proof. Provider pages may show distinct slices, but people, identifiers,
-records, and outcomes stay coherent across the journey. Connector capability belongs with the
-evidence-entry scene; audience fit and the evidence chain remain a separate,
-stacked explanation rather than an equal-height split. Substantive copy and
-diagrams are server-rendered. Text, cards, answer panels, and calls to action
-stay visible from first paint: scrolling must never trigger an opacity reset or
-slide-in entrance. A small client controller runs evidence flows while in view,
-pauses them offscreen, draws decorative chronology rails once, and shows scroll
-progress. The hero copy, source cards, central mark, and outcome labels
-are complete and in their final positions on first paint; hydration must not
-hide or slide them into place. Background motion is prohibited: movement belongs
-to the evidence diagram and must explain provenance or hierarchy. The shared public canvas uses
-the same subtle fixed grain in both themes, with theme-specific blending so
-cream reads like paper and near-black retains its tactile texture.
+The public site helps chat-run client delivery, product and operations teams
+understand the work record, choose a useful starting point, and inspect its
+boundaries. Preserve the official Timeline mark, Switzer typography, one lime
+signal, and source-backed explanations. Start free is the primary acquisition
+action; See it first links to the product tour. Warm paper and near-black are
+plain, theme-matched surfaces, without a grain overlay.
 
-The landing hero keeps the observatory composition: six compact source cards sit around a square grid. Cards and path endpoints share normalized coordinates at every viewport
-width. Source packets stream along visible curved paths into the official
-Timeline mark. The hero shows source capture only; person and external-agent setup belong in
-their dedicated sections. The centered diamond is
-labelled **The Timeline**, **Work record**, and a small **one timeline** line;
-one quiet rail then resolves into **Daily update** and **Linked answers**. It
-does not reproduce the expanded
-timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
-the animation restarts only when the diagram enters view, and reduced motion
-hides the packets while preserving the complete static explanation. Motion follows viewport visibility and the reduced-motion preference; there are
-no playback controls in public diagrams. Source and output paths, halo, and orbit stay still; packets carry the
-direction without a competing dash or pulse animation. Mobile
-retains the same topology and removes secondary metadata so cards and labels do
-not overlap.
+## Landing narrative
 
-The landing page moves from the compact observatory into what goes in, one
-timeline, ask, connected records, who it is for, and start. The copyable agent
-setup card is in the homepage hero and on `/agents`. The full trust flow is on
-the homepage and on `/trust`. “What Timeline preserves” lives on `/trust`; the
-preserves strip is also on `/how-it-works`. The complete
-four-stage product loop lives on `/how-it-works`, where it has enough room to
-explain the platform without turning the home page into a second hero. The reusable expanded diagram groups
-inputs into conversations, meetings and documents, and delivery and incidents;
-keeps five representative source-linked events; shows four useful record types;
-and closes with one compact assistant exchange across Web, Slack, Telegram, and
-an own MCP agent. Permitted live CRM context, approval-backed Timeline changes,
-and enabled MCP tool effects remain explicit.
+The homepage leads with “Know where the work stands” and the animated source
+flow. Explain the shared work record in plain language before presenting use
+cases and capture options. Introduce the illustrative Acme rollout only in the
+chronology walkthrough, after visitors understand the product. The cited answer
+then demonstrates how that history helps answer a question. Do not place a
+standalone Acme answer panel directly after the hero; it assumes context a new
+visitor has not yet acquired.
 
-Motion in the expanded diagram explains causality rather than introducing whole
-columns. Signal packets repeatedly traverse the exact responsive track between
-stages and through the local timeline and answer exchange, while nearby nodes
-briefly acknowledge their arrival. Each stage activates independently as it
-enters view. Wide layouts use one four-stage row, medium containers use a 2 × 2
-grid without decorative connectors, and narrow containers stack stages with
-vertical packet tracks. Reduced-motion mode hides packets and preserves the
-complete static story. Each stage pauses automatically offscreen; no playback controls are shown.
+The opening claim describes a living record built from selected tools and sources,
+with connected clients, projects, tasks and decisions. Keep sources attached and
+approval boundaries explicit; asking questions is one use of the record, not its
+only outcome. Work continues through the use-case chooser, intake,
+chronology, cited answer, connected records, audience fit with trust, and Start
+free. Section headings carry the narrative without decorative numbered rails or
+repeated eyebrows. Source timestamps, citation numbers and actual process order
+remain meaningful metadata.
 
-One-shot source-to-answer, external-agent, and inbound-MCP diagrams start their
-decorative traces once on first meaningful visibility. Their text, cards, and
-complete static paths remain visible without JavaScript and under reduced motion.
-Scroll progress updates only its own indicator, never an inherited property on
-the landing root.
+The six-use-case overview appears once, immediately after the hero. It presents
+linked job rows before the detailed walkthrough. The intake section brings
+supported capture surfaces, document uploads and native connectors together as
+compact links. Frame the voice-note example around capturing updates, decisions
+and commitments for later retrieval and cited answers, rather than transcription
+as the primary benefit. Live MCP lookup and coming-soon connectors are not ingest options.
+The nine-source animation sits beside the hero copy, with the plain-language product
+introduction directly below. Use quiet curved paths and a slowly rotating wireframe record mesh;
+source logos and selected-source boundaries carry the meaning. The output is a
+compact record summary (“Decisions, promises & next steps” with “Sources attached”),
+not a pair of button-like feature labels.
+Keep one diagram instance, a keyboard-accessible pause control, offscreen and
+hidden-tab suspension, and a static reduced-motion alternative. Extend source
+paths into the hero background, faded behind copy. A coordinated twelve-second
+sequence feeds source tiles, carries evidence into the record, then sends the
+result onward. Leave the mesh unobstructed: no center badge, logo or work-record label.
+Use visible junction nodes on the mesh; show Email, Google Drive and Linear
+alongside Telegram, Slack, meetings, GitHub, documents and Sentry as surrounding sources. Precompute
+the mesh projection without a canvas render loop or 3D dependency. Keep every
+moving trace and mesh edge in the same pausable SVG timeline; use
+only quiet static routes for reduced motion. Avoid continuous canvas rendering,
+blur filters and unrelated particles. Mobile stacks
+the diagram after the primary action without removing its source labels.
+
+AgentSetupCard is always visible beneath the hero actions in its compact variant.
+Use a short setup instruction, small official marks and the copyable command; do
+not put this signup/setup path behind a disclosure.
+The card explains agents reading the cited work record and writing notes back,
+shows official Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes marks, and keeps
+the copyable `Set up The Timeline - https://thetimeline.cc/llms.txt` command.
+It uses the landing tokens in both themes. At narrow widths the command takes a
+full row and the Copy control is at least 44px tall. Clipboard errors occupy
+their own line so the command remains selectable and readable.
+
+The Acme chronology retains five cited work sources, beginning with the linked
+Telegram group. Captured work stays inspectable by source and time. The complete
+cited answer keeps its source list visible alongside it on desktop and stacked
+on mobile; each source has its details in place. Numbered references are static
+labels matching those sources, not controls that require a modal or expansion.
+The Chat and Agent comparison uses the same question, concise answer and local
+source legend in two provider-neutral panels. Raw MCP tool calls and
+provider-specific setup belong on their dedicated pages.
+
+Connected records give Tasks, People, Projects, Companies and Deals equal
+prominence, explaining purpose and relationships before the company-record
+screenshot. The conversation → suggestion → approval → record sequence keeps
+durable changes explicitly approval-backed. This is a product explanation, not
+customer proof. Audience copy describes work spread across Slack or Telegram,
+email, calls and documents. Updates are daily, without weekly framing.
+
+Homepage screenshot captions own their supporting copy: search guidance belongs
+with the timeline capture, approval guidance with the client record. Alternate
+copy and screenshots on desktop and stack them on phones. Keep one specific
+heading and short explanation per capture. The daily-update screenshot and trust
+summary have a clear gap. The trust summary presents capture, immutability,
+visibility and approval as flat evidence steps, with a direct Trust & Security
+link; it does not imply certification.
+
+Secondary-page closing CTAs are open, compact copy-and-action rows, side by side on desktop and
+stacked on phones. Keep the action near the headline without repeated nested
+panels, decorative labels or first-run walkthroughs. The product tour and pricing signup disclosure own the first-run path: create a team, connect one capture source,
+then inspect a source-linked record or ask a question. Pricing leads with Start
+free and no card; its estimator is optional planning.
+The homepage closing action follows its heading and supporting paragraph in one
+left-aligned column. Keep the signed-in “Open your Timeline” button and the
+signed-out “Start free” button in the same position, with account and pricing
+notes below. Do not float the action in a separate right-hand column.
+
+## Evidence and motion
+
+Acme rollout is the canonical fictional public story across landing, connector
+and guide examples. Keep people, identifiers, records and outcomes coherent.
+Real captures may show a different named project; distinguish that screen from
+an adjacent story rather than implying a matching before/after result. Do not
+recast examples as customer testimonials or measured proof, and avoid repeating
+fictional-workspace disclaimers.
+
+Substantive copy and diagrams are server-rendered and visible from first paint.
+Scrolling and hydration never hide or slide the narrative into place. Motion
+explains provenance or hierarchy; backgrounds remain still. Evidence flows run
+only in view and pause offscreen. Reduced motion keeps the complete static
+explanation and hides decorative packets. Every moving packet follows the exact
+visible path; static paths and nodes do not compete with extra pulse animation.
+There are no playback controls in public diagrams. Scroll progress updates its
+own indicator, never an inherited property on the landing root.
+
+The complete four-stage loop lives on `/how-it-works`. Its inputs group
+conversations, meetings and documents, and delivery and incidents; five
+representative events lead to useful records and a compact assistant exchange
+across Web, Slack, Telegram and an own MCP agent. Permitted live CRM context,
+approval-backed changes and enabled MCP tool effects stay explicit. Wide layouts
+use one row, medium layouts a 2 × 2 grid without decorative connectors, and
+narrow layouts stack stages. One-shot source-to-answer, external-agent and
+inbound-MCP diagrams retain their complete static paths without JavaScript.
+
+## Navigation and destinations
 
 The public header stays uncluttered: Product, Use cases, Integrations, Agents,
 and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
 in the mobile menu. Expandable rows show a down chevron when collapsed and an up
 chevron when expanded; the mobile Menu overlay must not invert those icons.
 Escape closes the focused dropdown and returns focus to its own summary. In the
-mobile menu, dismiss a nested dropdown before dismissing the outer menu.
+mobile menu, dismiss a nested dropdown before dismissing the outer menu. Both
+levels dismiss on outside pointer interaction, focus departure, and navigation,
+including selecting the current route. Only one sibling group opens at a time.
+Dropdown destinations use two columns, with an emphasized overview and a named
+Agent tools group. Active child links identify the exact current page. The
+homepage scroll progress bar remains above the sticky header.
 Second-level nav popups use a hairline border, compact padding, and a short
 black-based shadow in light and dark mode rather than a large foreground glow.
 The Integrations dropdown is the hub, then Slack · Native sync and Telegram ·
@@ -111,10 +141,19 @@ Capture, then Google Drive, GitHub, Linear, Monday.com, Sentry, then Connect
 MCP tools. Slack and Telegram keep those status labels so channel-history sync
 is not confused with deliberate capture. Other live destinations stay as plain
 product names. The menu does not list Jira or Notion as if they were native
-integrations. Coming-soon tools stay on the integrations hub cards and their
+integrations. Coming-soon tools stay on the integrations directory and their
 pages, not in the header dropdown or footer Integrations column. How it works,
 Help, Trust, and head-to-head Compare pages remain in the footer. The footer is
-columnar: Product, Use cases, Integrations, Compare, and Legal. `/compare` is a
+shared by the homepage and public shell: an official wordmark and short brand
+statement, followed by Product, Use cases, Integrations, and Resources columns.
+Resources contains help, contact, trust, the comparison hub, and a disclosure
+for individual comparisons. Product tour lives under Product. GitHub and the
+session-aware account action sit in the brand row; copyright, Terms, Privacy,
+Cookies, and Cookie settings have their own bottom rail. Auth-neutral shells
+omit account actions. The footer uses sentence-case Switzer labels and two
+columns on phones, with 44px-tall link and cookie-setting targets. Mobile homepage scenes keep 48px vertical padding;
+the hero starts at 40px and stacks its evidence example below the opening copy.
+`/compare` is a
 thin hub for head-to-head pages versus Day AI, Folk, Glean, Geekbot, Suda,
 MemoryCrow, and Achiral. Those pages keep the honest “vs” framing and also
 target “[competitor] alternatives” on the existing URLs rather than extra
@@ -146,6 +185,8 @@ and `<stem>-dark.png` twins from the same fictional seed and framing. The
 resolved site theme selects one unoptimized image after hydration, including
 saved Light/Dark overrides and System changes. No variant is preloaded before
 the preference is known; the reserved loading frame prevents layout shift.
+Each screenshot reserves its aspect box and shows a loading label until painted.
+Screenshots are display-only, without links, zoom actions or instructions to click.
 Inventory tests require both twins, including legacy unthemed mobile slots.
 See the [recapture guide](../../apps/web/public/marketing/screenshots/README.md).
 Landscape slots use a 16×10 top crop; mobile
@@ -157,8 +198,11 @@ frames retain the same 16×10 aspect ratio. `/agents` pairs the current Agent
 tools screen with a read-out / write-in diagram for external agents.
 `/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party
-MCP tools. `/use-cases` opens with a conversations → work record → six jobs
-diagram rather than a screenshot wall. Referenced screenshot files are
+MCP tools. `/use-cases` puts the six linked jobs first, grouped into Understand what
+happened (work record and communication trail), Keep work moving (CRM and task
+board), and Share the context (team daily log and onboarding). Each group has
+an aligned heading and two descriptive link rows, followed by one shared-record
+explanation. Do not repeat the chooser as a second diagram. Referenced screenshot files are
 inventory-tested so a missing asset fails CI instead of shipping as a silent
 placeholder. Public screenshot slots serve the committed PNG bytes (unoptimized)
 so a recapture cannot stay hidden behind a stale image-optimizer cache. Ask
@@ -168,37 +212,44 @@ Visible copy must stay consistent with deliberate capture, source-linked claims,
 daily (not weekly) updates, and human review before inferred durable workspace
 changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
 
-Public pages may use oversized Switzer display type, denser Commit Mono source
-metadata, a near-black evidence-instrument canvas, and more cinematic spacing
-than the authenticated Quiet Archive. Motion must explain provenance or
+Public pages use responsive Switzer display headings, readable body copy and
+Commit Mono for source metadata. Plain warm surfaces and deliberate whitespace
+separate page jobs without repeating the authenticated application's density. Motion must explain provenance or
 hierarchy, use transforms and opacity, and opt in only under
 `prefers-reduced-motion: no-preference`; the default HTML is a complete static
 narrative. Public pages still use one lime signal, hairline structure, and no
 decorative AI gradients. Connector references distinguish native ingestion
 (GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry), hosted live MCP
 access, local-desktop MCP access, and planned support. Local-desktop entries
-must never imply they connect from hosted Timeline; planned destinations stay
-unlinked and unindexed until real. The landing claim owns the largest display
+must never imply they connect from hosted Timeline; planned integrations remain clearly unavailable; links to explanatory pages
+must not suggest that the connection itself can be enabled. The landing claim owns the largest display
 scale. Integration directory and connector-detail titles use a subordinate,
 capped display scale so long provider headlines preserve the first viewport's
 explanation and evidence.
-Review dates, implementation labels, indexing state, and capability-tier names
-belong in metadata and the typed content manifest, not visible marketing chrome.
+Review dates, implementation labels and indexing state belong in metadata and
+the typed content manifest. Visible capability labels explain the available
+connection: native sync, live lookup, local-only access or coming later.
 Public copy explains the same truth through customer actions and constraints:
 what enters the record, what is looked up only on request, what requires local
 setup, and what cannot be connected yet.
-The integration directory leads with implemented first-party capture surfaces:
-Telegram and Slack conversation capture, forward/CC/BCC email,
-participant-notification-gated-by-default Google Meet/Microsoft Teams/Zoom
-transcripts, and named textual ingest webhooks.
-It then presents the six native provider-record connectors separately. Slack
-appears in both groups because conversational capture and selected-channel
-history sync are distinct contracts; public copy must say so. Generic ingest
-webhooks are evidence-only, meeting capture stores transcripts rather than raw
-audio, and implemented surfaces may still require workspace or provider setup.
-The directory uses the expanded public acquisition measure with a narrow fixed
-section-index rail so two-up capture and provider cards retain a readable text
-measure instead of being squeezed by a proportional sidebar.
+The integration directory is a chooser before a guide. Three prominent local
+links lead to capture, native sync and live lookup, with a subordinate link
+to planned integrations. Telegram
+and Slack conversation capture lead the compact capture rows; email forwarding,
+meeting transcripts, ingest webhooks and websites remain available with their
+existing boundaries. Capture details and limits stay in closed native
+disclosures. Six native provider connectors have descriptive rows with visible
+Native sync labels. Live lookup and planned integrations have distinct groups;
+Local-desktop and complete provider lists use disclosures. Provider detail pages
+supply the specific evidence examples; the directory prioritizes finding a source.
+
+Slack conversation capture and selected-channel history sync remain separate
+contracts. Generic ingest webhooks are evidence-only; meeting capture stores
+transcripts rather than raw audio and uses participant notification by default.
+Implemented surfaces may still require workspace or provider setup. Connector
+detail pages expose local navigation to evidence, captured data, setup and
+limits, with early setup guidance near the initial action. Keep complete
+permission and recovery details accessible without expanding them by default.
 
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
@@ -217,7 +268,7 @@ the browser's page-sized focus outline; interactive controls retain their focus 
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
 and Pricing (`/pricing`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and the columnar footer repeats them plus How it works, Help, Compare, and Legal. The
+menu disclosure, and the shared footer repeats them alongside How it works, Resources, and a legal/privacy rail. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
 theme controls move into the disclosure instead of disappearing, and the
 disclosure closes after link activation or a persisted-layout route change.
@@ -232,7 +283,10 @@ Public pricing copy explains plans, usage costs, and billing terms in customer l
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
-provide a visible route back to all guides; article bodies may optionally
+provide a visible route back to all guides, and the help navigation includes
+Back to workspace. Guide icons identify subjects without arbitrary directory
+numbers. Integration setup guidance precedes deletion guidance, whose full
+retention caveats remain intact. Article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
 Agent setup guides may use a bespoke copy-ready pattern: one recommended install
 prompt first, narrower skill-only and MCP-only fallbacks, then numbered setup,
@@ -249,7 +303,7 @@ desktop density. Help hover/press movement respects reduced motion; homepage
 hover lift additionally requires a fine pointer with hover capability.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
-the shared marketing container and aligned section labels, with the same hero
+the shared marketing container and aligned headings, with the same hero
 scale, footer, and section rhythm as the integration directory. A short hero leads
 directly into the full-width animated platform flow; separate introductory step
 cards and trust cards do not repeat that story. The diagram states the capture,
@@ -261,10 +315,14 @@ taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
-`/trust` is the public technical security and privacy reference. It follows the
-shared secondary marketing grid, leads with the training-data boundary, then shows the data path,
-AI routing, storage and access, processor roles, permissions, current assurance
-status, and private vulnerability-reporting route. It must distinguish controls
+`/trust` is the public technical security and privacy reference. A compact
+introduction leads to local topic navigation: Data & evidence, AI & retention,
+Access & deletion, Processors & policies, Assurance, and Deployment. Short facts
+and the current independent-assurance limitation are visible near the top.
+Question-led sections and flat evidence summaries make policy answers scannable;
+exact request controls, processor roles and staff-access details remain in
+native disclosures. The data-path section includes what Timeline preserves,
+without a second full marketing trust-flow panel. It must distinguish controls
 enforced in code from production-account, contract, and certification evidence;
 unverified badges and absolute “nothing leaves our servers” claims are
 prohibited. Privacy and Terms remain the detailed legal surfaces and cross-link
@@ -317,11 +375,30 @@ at phone widths without changing shared private-app input density.
 
 Foundations and shared components: [design system](../../design.md).
 
+### Public pricing
+
+A compact no-card introduction leads directly to four catalog-backed plans.
+Distinguish the platform fee from usage charges at the price, show included
+members and pooled usage credit, and keep Free/PAYG monthly allowances visible
+below the plans. The plan grid uses four columns on wide screens, two on tablet
+and one on phones. No repeated plan-name eyebrows or recommended-plan badge.
+The optional signup walkthrough is a disclosure; Enterprise is a quiet contact
+line. Follow the estimator with complete comparison, spending boundaries,
+billing-focused questions and a final Start free action.
+
+Comparison tables have row/column scopes, a keyboard-focusable labelled scroll
+region, a mobile scroll hint and a sticky row-label column. Billing copy makes
+clear that spend caps exclude platform fees and tax, commitment credit is
+applied after the cap check, and capacity limits are separate.
+
 ### Public pricing calculator
 
 The pricing Usage section compares PAYG, Team and Business through paired native
 sliders and exact number fields. A labelled editable example renders on the server.
-Desktop inputs sit beside a single hairline results panel; mobile stacks them.
+Desktop inputs sit beside a single hairline results panel; mobile stacks them
+with a compact selected-plan estimate that stays visible while editing. Number
+inputs and slider targets are at least 44px high. Reset restores both the usage
+example and Pay as you go selection. Invalid inputs suppress all estimates.
 Plan totals share one border with the selected breakdown underneath — no nested
 cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
 and Business show a pooled usage-credit deduction. Capacity warnings exclude
@@ -333,110 +410,93 @@ collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
 
-The homepage hero, `/agents` page, agent help page, and authenticated Connect
+The homepage hero disclosure, `/agents` page, agent help page, and authenticated Connect
 your agent screen share AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
 closed. Long agent instructions remain copyable payloads, never a visible Codex
 text wall; advanced setup and access explanations are optional disclosures.
 
 ### Secondary marketing layout and policy disclosures
 
-Use-case, integration, trust, and agents pages use `MarketingContainer` with a
-shared `max-w-6xl` width and responsive gutters. Section labels, headings, prose,
-screenshots, walkthroughs, and related links share the same left edge. Prose may
-have a shorter reading measure without narrowing the surrounding section or rule.
-The homepage keeps its independent layout.
+Use-case, integration, Trust and agents pages use `MarketingContainer` at
+`max-w-6xl` with responsive gutters. Headings, prose, screenshots, walkthroughs
+and related links share the page grid. Prose keeps a shorter reading measure
+without narrowing its surrounding section. The homepage owns its independent
+layout. Plain Switzer headings, moderate tracking and restrained signal accents
+connect these surfaces; legal prose and private app screens retain their own
+contracts. Commit Mono identifies timestamps, citations, counts and commands,
+not decorative section labels. Use readable sentence-case labels instead of
+small, widely tracked uppercase eyebrows. Standalone decorative eyebrows are
+not public page scaffolding; retain functional breadcrumbs and source metadata.
+Do not add numeric section rails when
+sequence does not explain the work.
 
-Keep one idea per paragraph and avoid repeating capture, approval, and citation
-explanations within a page. Preserve headings and content blocks. Policy detail
-uses native, closed-by-default `MarketingDisclosure` elements: summaries remain
-keyboard accessible and all details remain in the DOM. Short summaries must not
-strengthen the policy promises; Privacy and Terms retain their legal text.
+Use-case details pair a clear outcome and acquisition action with a readable,
+semantic example of the work: chronology, daily update, agreement, customer,
+proposed task or handoff. Examples are labelled illustrative and never imitate
+clickable product controls. Preserve approval and visibility boundaries in the
+example; CRM explicitly distinguishes Timeline records from planned external
+CRM sync. A full-width, theme-matched product capture follows the explanation,
+with further captures and FAQs supporting the specific use case. Keep complete
+screenshot frames. The fictional Acme examples and Northstar product captures
+remain separate. Source entries may arrive once with a brief transform/opacity
+sequence; content is visible by default and reduced motion is static.
 
-Homepage session-dependent metadata switches as one row. In signed-in mode the
-GitHub source link stays at the content’s left edge; a hidden signed-out pricing
-note must not reserve horizontal space ahead of it. Both complete row variants
-still reserve their shared height to avoid shifting the agent setup card.
+Integration details use short benefit headlines, explicit capability labels and
+provider-specific evidence previews. Native sync, deliberate capture, live MCP
+lookup and planned integrations must be distinguishable in the first viewport.
+Provider setup and recovery belong in anchored sections after the value and
+example; do not duplicate raw errors or OAuth prerequisites in the hero.
+Native pages preserve captured-record lists, provider ownership, permissions,
+limits, recipes and FAQ content. Questions are one way to use the work record,
+not the whole pitch. Planned integrations show Today and Planned alongside the
+introduction and link to available sources, never an unavailable connect flow.
+MCP introduces live lookup beside the hero and keeps inbound tools separate
+from external agents reading Timeline. Websites shows capture history before
+its concrete scan price. Related tools use compact rows with readable status.
 
-Homepage screenshot captions own their supporting copy. Search guidance belongs
-with the timeline screenshot, and the approval note belongs with the client
-screenshot; neither appears as an isolated line between blocks.
+The use-case hub pairs its introduction with an illustrative shared record,
+then groups six distinct outcomes by the visitor’s job. The integrations hub
+leads with capture, native history and live-lookup choices, followed by a
+compact two-column directory that stacks on mobile. Planned support is
+subordinate and explicitly unavailable. Keep complete capture boundaries in
+native disclosures; do not use long connector introductions as directory copy.
 
-The homepage intake section presents the supported capture surfaces, document
-uploads, and native connectors together as compact linked cards. Live MCP lookup
-and coming-soon connectors are not presented as ingest options. The intake heading
-explains bringing work in; “Status should not require an investigation” belongs
-with the cited-answer section.
+Agents keeps its copyable setup command visible beside the introduction and a
+read/contribute example. Notes add evidence, not canonical changes. The
+connection screenshot supports access instructions below; manual commands,
+scopes and key details belong in an optional disclosure. Keep the distinction
+between external agents reading Timeline and Timeline looking up external tools.
+Native connector pages retain local section links. Telegram, MCP guides,
+works-with pages and Trust keep a compact reading rhythm. Keep one idea per paragraph and
+avoid repeating capture, approval and citation explanations. Policy detail uses
+closed-by-default `MarketingDisclosure` elements: keyboard-accessible summaries
+and complete content in the DOM. Short summaries never strengthen the underlying
+promise. Privacy and Terms retain their legal text.
 
-Public display headings use open line spacing (at least 1.08) and moderate negative
-tracking (no tighter than -0.035em). Homepage scene titles are smaller than the
-hero and use medium weight, with mobile sizes scaled independently. Green italic
-emphasis in a heading uses one meaningful word, except the hero’s “written down” phrase; surrounding words stay
-in the normal heading face and color.
-
-The homepage chat-and-agent comparison uses two equally sized, provider-neutral
-cards labeled Chat and Agent. Both show the same question, concise answer and
-local source legend. Citation markers in this comparison are static labels, not
-links to another card. Keep raw MCP tool calls and provider-specific branding out
-of this overview; integration pages own setup details.
-
-The connected-records homepage section gives Tasks, People, Projects, Companies
-and Deals equal prominence. Show each record’s purpose and named relationships,
-then the actual company-record screenshot as concrete product evidence. The
-conversation → suggestion → approval → record sequence keeps durable changes
-explicitly approval-backed. This section describes records, not customer proof.
-
-The six-use-case overview sits immediately after the homepage hero and before
-“What goes in”, so visitors can choose a relevant job before the detailed product
-walkthrough. It appears once; the later audience section retains the daily-update
-screenshot and trust flow. The overview is unnumbered navigation within the
-existing seven-scene narrative.
-
-The closing CTA is a compact bordered panel: copy and action alongside each
-other on desktop, stacked on mobile. Keep the action near the headline and omit
-the repeated first-run walkthrough, which otherwise reserves blank space for
-signed-in visitors. Trust labels sit directly below, without a large spacer.
-
-The homepage footer shows the source repository as a text link labeled GitHub.
-Cookie settings remains a button that opens consent preferences, but shares the
-footer links’ typography, casing, color and hover treatment.
-
-The chat-and-agent comparison uses a shorter, medium-weight sans-serif heading.
-Its single green word stays in the same upright typeface and weight, rather than
-mixing a heavy heading with a thin italic serif.
-
-Leave a responsive 2–4rem gap between the daily-update screenshot and the trust
-panel; their borders must not touch.
-
-Use-case detail pages use a denser shared template: introductory copy beside the
-first screenshot on desktop, numbered process rows, bordered feature cards, and
-requirements beside the walkthrough and supporting screenshots. FAQs pair their
-heading with the question list. Related-use-case cards share the same page grid.
-Sections use 2–3.5rem vertical spacing and stack on narrow screens. Preserve every
-page’s content, native FAQ disclosures, complete screenshot frames and theme
-matching; do not inflate short copy into separate full-width sections.
-
-Use-case CTAs stay compact and omit the repeated first-run walkthrough; setup
-detail remains on the product tour and onboarding surfaces. When a walkthrough
-has a screenshot, its example sits in the adjacent column rather than stacking
-both in one column and leaving the other empty.
-
-The homepage trust panel uses a signal-accented header, a clear link to Trust &
-Security, and four bordered evidence cards. Keep the heading and explanation
-close, with no oversized empty grid row. The cards retain the existing capture,
-immutability, visibility and approval claims; this is not a certification claim.
-
-Secondary marketing pages share the homepage’s medium-weight sans-serif headings,
-moderate tracking, signal accents and compact bordered CTA panels. Shared
-MarketingContainer headings use this treatment; legal documents and private app
-screens are outside its scope. Agents pairs its introduction with setup, and MCP
-reading instructions with the product screenshot. Native connector pages use a
-split introductory header and tighter section spacing; setup, permissions and
-provider limitations remain intact. Integration directory, Telegram, MCP guides,
-works-with pages and Trust use the same reduced vertical rhythm.
+Homepage session metadata switches as one complete row. Signed-in mode keeps
+the GitHub link at the left edge without reserving space for hidden pricing
+copy. Both row variants reserve their shared height. Closing actions similarly
+retain stable geometry when the session resolves.
 
 Inline legal and closing-signup prose links remain underlined without hover.
-Long inline technical values wrap without changing their bytes or hiding content.
-Small callout labels use a foreground that meets 4.5:1 contrast on their actual
-tinted surface in both themes. Cookie preferences inherit the dialog viewport
-height cap and scrolling, with overscroll contained inside the dialog; all
-controls and disclosures remain reachable on short screens.
+Long technical values wrap without changing bytes or hiding content. Small
+callout labels, homepage dim text and signal text meet 4.5:1 contrast against
+their actual surfaces in both themes. Cookie preferences inherit the dialog's
+viewport height cap and scrolling, with overscroll contained; all controls and
+disclosures remain reachable on short screens. Reject and Accept stay equally
+prominent in the compact desktop bottom-right analytics banner; no optional
+analytics is sent before a choice. Cookie settings remains a persistent button
+with the footer links' typography and treatment.
+
+## Search and social previews
+
+Shared homepage positioning lives in `apps/web/src/lib/product-positioning.ts`.
+Use it for the hero, root metadata defaults, manifest and homepage registry entry.
+Specialized pages retain their own search intent and capability boundaries in the
+[public document registry](../public-site-registry.md).
+
+OG and Twitter cards share a 1200 × 630 composition: the official mark, Switzer,
+near-black background and lime emphasis. Describe the living record, connected
+objects, attached sources and approval boundary; avoid fabricated event IDs or
+version labels. Static social font subsets and their generation instructions live
+in `apps/web/public/fonts/switzer/SOCIAL-FONTS.md`.
