@@ -21,6 +21,7 @@ import {
 import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS, FREE_ALLOWANCES } from '#src/billing/catalog.js';
 import { settlePendingBillingReservations } from '#src/billing/runtime.js';
 import { createBillingScope } from '#src/billing/scope.js';
+import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -76,7 +77,83 @@ describe('billing admission helpers', () => {
 
     const dash = await billing.getDashboard();
     expect(dash.meters.ai?.customerChargeCents).toBeGreaterThan(0);
-    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
+    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(0.1);
+  });
+
+  // Near-exhausted Free usage must still allow a useful Ask, including search.
+  it('admits Ask with one cent left and records an overrun before blocking the next turn', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'prior-usage',
+      meterId: 'ai',
+      nativeUnits: 199,
+      customerChargeCents: 199,
+    });
+    const operationId = askOperationId('web', 'last-cent');
+    expect(await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).toEqual({
+      ok: true,
+    });
+    // A search has its own tiny reservation while the Ask hold is active.
+    expect(
+      (
+        await billing.reserve({
+          operationId: 'search',
+          meterId: 'ai',
+          reservedNativeUnits: 0.001,
+          reservedChargeCents: 0.001,
+        })
+      ).ok,
+    ).toBe(true);
+    await billing.release('search');
+    await settleAskAiFromOpenRouterUsd(billing, {
+      operationId,
+      deliverySurface: 'web',
+      openRouterUsd: 0.01,
+    });
+    const dashboard = await billing.getDashboard();
+    expect(dashboard.meters.ai?.nativeUnits).toBeGreaterThan(200);
+    expect(
+      await reserveAskAi(billing, {
+        operationId: askOperationId('web', 'exhausted'),
+        deliverySurface: 'web',
+      }),
+    ).toEqual({ ok: false, code: 'free_allowance_reached' });
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger[0]?.metadata.openrouter_usd).toBe(0.01);
+  });
+
+  it('keeps Ask blocked by a zero paid spend cap', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      await pg.exec(
+        `UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active', shadow_billing = false, spend_cap_cents = 0 WHERE team_id = '${TEAM_ID}'`,
+      );
+      expect(
+        await reserveAskAi(billing, {
+          operationId: askOperationId('web', 'zero-cap'),
+          deliverySurface: 'web',
+        }),
+      ).toEqual({ ok: false, code: 'spend_cap_reached' });
+    } finally {
+      delete process.env.BILLING_CHARGES_ENABLED;
+      resetEnvForTests();
+    }
   });
 
   it('does not turn an unused Ask reservation into a customer charge', async () => {

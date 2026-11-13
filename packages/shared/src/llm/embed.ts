@@ -3,6 +3,10 @@ import { createRequire } from 'node:module';
 
 import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
 
+import {
+  EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS,
+  customerAiChargeCentsFromOpenRouterUsd,
+} from '#src/billing/catalog.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   attachOpenRouterFinish,
@@ -81,6 +85,20 @@ function encodeEmbeddingText(text: string): number[] {
 
 export function countEmbeddingTokens(text: string): number {
   return encodeEmbeddingText(text).length;
+}
+
+function embeddingReservationCents(texts: readonly string[], maxRetries: number): number {
+  const tokens = texts.reduce((sum, text) => sum + countEmbeddingTokens(text), 0);
+  const providerUsd =
+    (tokens * (1 + maxRetries) * EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS) / 1_000_000;
+  // Round up to the ledger’s six-decimal native-unit precision. Settlement
+  // still uses reported provider cost, including failed attempts.
+  return Math.max(
+    0.000001,
+    Math.ceil(
+      customerAiChargeCentsFromOpenRouterUsd(providerUsd).customerChargeExactCents * 1_000_000,
+    ) / 1_000_000,
+  );
 }
 
 export function truncateEmbeddingTextToTokenBudget(text: string, maxTokens: number): string {
@@ -345,6 +363,7 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
         operationClass: 'embedding',
         model: modelId,
         stage: 'embed',
+        reservedChargeCents: embeddingReservationCents([text], deps.maxRetries ?? 2),
         callMaterial: [modelId, text],
       },
       async () => {
@@ -388,6 +407,7 @@ export async function embedMany(
         operationClass: 'embedding',
         model: modelId,
         stage: 'embed_many',
+        reservedChargeCents: embeddingReservationCents(texts, deps.maxRetries ?? 2),
         callMaterial: [modelId, String(texts.length), ...texts],
       },
       async () => {
