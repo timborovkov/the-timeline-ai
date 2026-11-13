@@ -80,8 +80,7 @@ export function buildWorkspaceTools(
   async function originalNoteState(noteId: string, expected: z.output<typeof noteState>) {
     const note = await scope.objects.getObjectNotePreview(noteId);
     if (
-      !note ||
-      note.object.id !== expected.entityId ||
+      note?.object.id !== expected.entityId ||
       note.updatedAt.toISOString() !== expected.updatedAt ||
       (note.body !== expected.body &&
         fenceExternalContent(note.body, { source: 'object_note', eventId: noteId }) !==
