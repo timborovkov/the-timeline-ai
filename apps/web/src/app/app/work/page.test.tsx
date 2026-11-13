@@ -305,10 +305,10 @@ describe('WorkPage', () => {
     expect(html).toContain('3 pending approvals');
     expect(html).toContain('Pending approval');
     expect(html).toContain('/app/approvals?status=pending');
-    expect(html).toContain('>Overdue</dt>');
+    expect(html).toContain('overdue');
     expect(html).toContain('aria-label="2 overdue tasks"');
     expect(html).toContain('/app/tasks?due=overdue');
-    expect(html).toContain('>Approvals</dt>');
+    expect(html).toContain('pending approvals');
     expect(html).toContain('aria-label="3 pending approvals"');
     expect(navWorkAttention).toBe(5);
   });
@@ -543,7 +543,7 @@ describe('WorkPage', () => {
 
     expect((html.match(/>Revigo pilot</g) ?? []).length).toBe(1);
     expect(html).toContain('/app/boards/board-1?item=board-item-1');
-    expect(html).toContain('Queue');
+    expect(html).toContain('in your queue');
   });
 
   it('renders empty state when no queue items exist', async () => {
@@ -557,7 +557,7 @@ describe('WorkPage', () => {
     expect(html).toContain('Start with a preset to organize your team');
     expect(html).toContain('Create board');
     expect(html).not.toContain('Pinned and team boards');
-    expect(html.indexOf('Boards')).toBeLessThan(html.indexOf('Work queue'));
+    expect(html.indexOf('Work queue')).toBeLessThan(html.indexOf('Boards'));
     expect(html).not.toContain('Work surfaces');
   });
 
@@ -618,12 +618,12 @@ describe('WorkPage', () => {
 
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
-    expect(html).toContain('aria-label="Pinned"');
+    expect(html).toContain('aria-label="Pinned work"');
     expect(html).toContain('Northstar pilot');
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Pin to Home Pilot pipeline');
     expect(html.indexOf('Northstar pilot')).toBeLessThan(html.indexOf('Pilot pipeline'));
-    expect(html.indexOf('Work queue')).toBeLessThan(html.indexOf('aria-label="Pinned"'));
+    expect(html.indexOf('Work queue')).toBeLessThan(html.indexOf('aria-label="Pinned work"'));
   });
 
   it('does not duplicate timeline event text on the work overview', async () => {

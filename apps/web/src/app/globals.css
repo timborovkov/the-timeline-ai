@@ -379,3 +379,11 @@ dialog#floating-agent-chat-panel::backdrop {
 .home-overview aside {
   font-size: 0.875rem;
 }
+
+/* Work uses one shell-owned tab strip and a consistent canvas gutter. */
+.app-page-container[data-work-page] {
+  max-width: none;
+}
+#main:has(> .app-page-container[data-work-page]):not(:has([data-app-layout='full-bleed'])) {
+  padding-top: 1.5rem;
+}

@@ -1,6 +1,7 @@
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
-import { ListTodo } from 'lucide-react';
+import { ListTodo, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { TaskRowsPage } from '@/lib/task-page';
@@ -13,8 +14,8 @@ import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { TaskViewToggle } from '@/components/tasks/task-view-toggle';
+import { Button } from '@/components/ui/button';
 import { WorkFilterBar } from '@/components/work-filter-bar';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -113,9 +114,16 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
         ]}
         className="w-full shrink-0 px-4 md:px-8"
       />
-      <WorkSubnav current="/app/tasks" className="shrink-0 px-4 md:px-8" />
 
       <WorkFilterBar
+        actions={
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/app/objects/new?returnTo=%2Fapp%2Ftasks">
+              <Plus aria-hidden="true" className="size-4" />
+              New task
+            </Link>
+          </Button>
+        }
         mode="tasks"
         basePath="/app/tasks"
         filters={filters}
@@ -182,6 +190,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
           taskCategoriesEnabled={taskCategoriesEnabled}
           folded={{
             title: 'Task approvals',
+            summaryClassName: 'min-h-12 cursor-pointer list-none pr-16 pb-3',
             summary: {
               singular: 'pending task proposal',
               plural: 'pending task proposals',

@@ -111,8 +111,8 @@ Home previews at most six currently available pins as lightweight, full-width
 rows with a type icon, title, one context line, and overflow menu. Hidden,
 archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
-opens Work → Pinned. Work overview repeats that same mixed preview (heading
-**Pinned**, omitted when empty) in the supporting column above a separate **Boards** list of team boards. Overview board rows use the same overflow **Pin to Home**
+opens the same pin-management view used by Work overview. Work overview repeats that same mixed preview (heading
+**Pinned work**, with a short pinning hint when empty) in the supporting column above a separate **Boards** list of team boards. On narrow screens, a Pinned work jump link above the queue keeps that section within reach. Overview board rows use the same overflow **Pin to Home**
 control and quiet pin glyph as the Boards index. Pins are personal shortcuts, not a team-shared board set.
 
 Home recent moments have no visible heading. They show up to eight dense rows
@@ -210,7 +210,7 @@ side effects, and human-reviewed proposals.
 
 ### Work and settings
 
-Work pages share one subnavigation and lead with the task at hand, not a grid of
+Work pages share one shell-owned subnavigation directly below the top bar, outside the page scroller. Overview, Objects, Tasks, Boards, Calendar, Digests, and Approvals keep the same tab position and horizontal gutters across route changes, loading, errors, and nested creation views. Page headers sit below the tabs. Tasks exposes a compact New task toolbar action, returning to Tasks after creation. Work pages lead with the task at hand, not a grid of
 links. Work → Digests is the day-by-day archive of those briefings. Work overview
 leads with the work queue, with mixed personal pins (same rows as Home) and team boards in the supporting column. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
@@ -327,10 +327,15 @@ second “Edit saved meeting” control. Join, archive, and skip are tooltiped i
 buttons. Capture times use relative age with a timestamp tooltip. Meeting
 mutations use the shared toast contract.
 
+Board list metadata is secondary to its purpose text: dates say “Updated”, counts stay quiet, and a template label is not repeated when it already supplies the row context. Object rows show assigned priorities; unset priorities stay inline only for schedulable work. The Tasks approvals summary reserves room for floating chat so its Open control remains reachable.
+
+### Object creation
+
+New-object creation uses a contained form below the shared Work navigation. Type and name lead; the optional-fields area appears only for supported types. Name examples follow the selected type. Create and Cancel share the form footer; empty due dates do not repeat a “No due date” hint.
+
 ### Calendar
 
-Month and week cells are title-first. Time is a muted prefix that does not
-share the truncated title string. Tentative and recurring are a left rail or
+Month and week cells are title-first, with up to two title lines and a separate muted time. Date navigation sits beside the month heading; view selection and event creation stay together. Today uses a filled date badge, and adjacent-month cells use a quiet background. Mobile week view stacks days into readable agenda rows, with 44px event and date controls. Tentative and recurring are a left rail or
 tiny icon, never the word “Tentative” or a pencil on the chip. Month cells
 show at most three events, then `+N more`, which opens day view for that
 date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
@@ -383,7 +388,7 @@ stay in the row hover title. Cluster output JSON copy lives in the row overflow
 menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
 back link; Reconcile and View workspace item sit in the header.
 
-Work → Pinned is the complete pin-management surface. It is a single
+Work overview owns pinned work. Its **Manage** link opens the complete pin-management surface; Pinned is not a separate Work tab. Legacy `/app/work?view=pinned` links remain valid. It is a single
 side-to-side Linear list with infinite scroll, virtualization, and no inventory
 chip. An empty All or filter list uses shared `EmptyState` with title
 **No pins yet**. Filters are All, Objects, Boards, Documents, Meetings, Calendar, and
@@ -537,20 +542,20 @@ what is wrong, Timeline rewrites the same unresolved proposal, and the row
 stays pending. Merge proposals still offer `Review merge` for survivor
 choices and also open this preview.
 
-Approval rows lead with a wrapping title, then wrapping proposed-change metadata.
-Evidence, warnings and dependency context align with that reading column. A single
-proposal’s explanation sits inside its row boundary; shared bundle evidence follows
-the group heading, before its proposals. Disclosure focus outlines fit their labels. Relationship proposals show resolved endpoint names once, as From/To lines with the relationship kind in supporting metadata; unresolved endpoints retain the original title rather than guessing from its wording.
-Related proposals share a clear heading, labeled change count, and subordinate source/time
-inside a bounded group. Dependencies already named in From/To use a short requirement note. The approval queue
-does not use full-bleed collection row or group backgrounds. Checkboxes remain
-visible. Selected rows use a neutral background; bulk Accept carries lime emphasis.
-Status filters align with the queue below the Work tabs.
+The main Approvals route uses a compact inbox with a persistent review pane at
+large-screen widths. The first visible proposal is selected initially. Clicking a
+proposal updates the pane; checkboxes independently select items for bulk actions.
+Rows show a wrapping proposal title and source/action context, with a lime edge
+marking the proposal under review. Resolved relationships read “Link … with …”.
+Related proposals share a compact heading and labeled change count.
 
-Individual actions have no enclosing control box. Accept has a distinct outline;
-Preview is visibly labeled Review. Change and Reject are available inside Review,
-while bulk rejection remains available after selection. Actions move beneath the content below the large-screen breakpoint so
-long titles have room. The full row still opens the preview. Closing it restores focus to the invoking control.
+The review pane keeps the proposed fields, rationale, dependencies, and source
+evidence together, with Accept, Change, and Reject in its footer. The desktop pane leaves room for the shell navigation so its decision footer stays within short viewports. On smaller
+screens the same review opens in a full-width sheet and restores focus to its
+invoking control when closed. Embedded approval lists retain their inline rows
+and modal review. Resolved inbox proposals show their outcome and stay read-only. Inbox decisions remain disabled while an earlier decision is pending, so repeated clicks cannot accept the next proposal. Stale evidence still disables acceptance; merge proposals keep
+the dedicated merge-review path.
+
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.
@@ -719,7 +724,7 @@ Team trust and integration audit views are admin-only and show up to 200 entries
 
 ### Dashboard clarity and responsive controls
 
-Collection title bands begin at the top of the canvas; adjacent section tabs do
+Collection title bands begin at the top of the page canvas below shell-owned Work navigation; adjacent section tabs do
 not add a second top gutter. Header descriptions have a readable line length and
 actions wrap when space is limited. Home keeps Capture beside its introductory
 copy, while empty Ask suggestions sit near the composer. Inactive attention

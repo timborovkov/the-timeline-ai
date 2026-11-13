@@ -18,7 +18,6 @@ import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-ba
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { WorkOverviewHeader } from '@/components/work/work-overview-header';
 import { WorkQueueRow } from '@/components/work/work-queue-row';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -69,11 +68,14 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
     return (
       <div data-app-width="collection" className="space-y-6">
         <PageHeader
-          variant="collection"
-          title="Work"
+          leading={
+            <Link href="/app/work" className="text-sm text-fg-muted hover:text-fg">
+              ← Work overview
+            </Link>
+          }
+          title="Pinned work"
           subtitle="Personal shortcuts to the work and context you return to."
         />
-        <WorkSubnav current="/app/work?view=pinned" />
         <PinnedWorkspaceManager initialPage={page} filter={filter} />
       </div>
     );
@@ -140,7 +142,6 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
         overdueCount={attention.overdueTasks}
         approvalCount={attention.pendingApprovals}
       />
-      <WorkSubnav current="/app/work" />
 
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-6">
@@ -193,10 +194,11 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
           </CollectionGroup>
         </div>
         <aside
+          id="pinned-work"
           aria-label="Boards and pinned work"
-          className="min-w-0 space-y-8 border-t border-border pt-6 xl:border-t-0 xl:border-l xl:pl-6 xl:pt-0"
+          className="min-w-0 scroll-mt-4 space-y-8 border-t border-border pt-6 xl:border-t-0 xl:border-l xl:pl-6 xl:pt-0"
         >
-          <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned" />
+          <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned work" showEmpty />
 
           <CollectionGroup title="Boards" count={boards.length}>
             {boards.length === 0 ? (

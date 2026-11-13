@@ -5,7 +5,16 @@ import { presentDueDate } from '@timeline/shared/time';
 import { ArrowRight, Check, ExternalLink, GitMerge, Inbox, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from 'react';
 
 import type { JSX } from 'react';
 
@@ -216,7 +225,25 @@ const INITIAL_APPROVALS_QUEUE: ApprovalsQueueState = {
   actionFailedItemIds: new Set(),
 };
 
+const InboxContext = createContext<{ enabled: boolean; activeId?: string }>({ enabled: false });
+function subscribeDesktopReview(callback: () => void) {
+  const query = window.matchMedia('(min-width: 1024px)');
+  query.addEventListener('change', callback);
+  return () => {
+    query.removeEventListener('change', callback);
+  };
+}
+function desktopReviewSnapshot() {
+  return (
+    typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1024px)').matches
+  );
+}
+function serverReviewSnapshot() {
+  return false;
+}
+
 interface Props {
+  layout?: 'list' | 'inbox';
   boardId?: string;
   guided?: boolean;
   suggestions: SuggestionBundle[];
@@ -682,6 +709,7 @@ function foldedSummaryText(
 }
 
 export function ApprovalsClient({
+  layout = 'list',
   boardId,
   guided = false,
   suggestions,
@@ -694,6 +722,12 @@ export function ApprovalsClient({
   emptyState,
   folded,
 }: Props) {
+  const desktopReview = useSyncExternalStore(
+    subscribeDesktopReview,
+    desktopReviewSnapshot,
+    serverReviewSnapshot,
+  );
+  const inbox = layout === 'inbox';
   const previewTriggerRef = useRef<HTMLElement | null>(null);
   const workspaceTimezone = useWorkspaceTimezone();
   const resolvedTimezone = timezone ?? workspaceTimezone;
@@ -837,6 +871,17 @@ export function ApprovalsClient({
     });
   }
 
+  const firstBundle = visibleSuggestions[0];
+  const activePreview =
+    previewItem ??
+    (inbox && desktopReview && firstBundle?.items[0]
+      ? { bundle: firstBundle, item: firstBundle.items[0] }
+      : null);
+  const inboxContext = useMemo(
+    () => ({ enabled: inbox, activeId: activePreview?.item.id }),
+    [inbox, activePreview?.item.id],
+  );
+
   if (loadedSuggestions.length === 0 && pageCursor === null) {
     return (
       <EmptyState
@@ -853,77 +898,94 @@ export function ApprovalsClient({
   }
 
   const body = (
-    <>
-      <ApprovalListBody
-        allowBulkAccept={allowBulkAccept}
-        allowBulkReject={allowBulkReject}
-        actionFailedItemIds={actionFailedItemIds}
-        busyItemIds={busyItemIds}
-        error={error ?? pageState.loadError}
-        hasMore={pageCursor !== null}
-        loadingMore={loadingMore}
-        onLoadMore={loadMore}
-        pending={pending}
-        run={run}
-        selectedIds={selectedIds}
-        timezone={resolvedTimezone}
-        taskCategoriesEnabled={taskCategoriesEnabled}
-        visibleSuggestions={visibleSuggestions}
-        onPreview={(bundle, item) => {
-          previewTriggerRef.current =
-            document.activeElement instanceof HTMLElement ? document.activeElement : null;
-          dispatch({ type: 'openPreview', bundle, item });
-        }}
-        onSelectedChange={(itemId, checked) => {
-          dispatch({ type: 'selectChange', itemId, checked });
-        }}
-        onSelectedMany={(itemIds, checked) => {
-          dispatch({ type: 'selectMany', itemIds, checked });
-        }}
-        onClearSelection={() => {
-          dispatch({ type: 'clearSelection' });
-        }}
-      />
-      {previewItem ? (
-        <ApprovalPreviewDialog
-          returnFocusTo={previewTriggerRef.current}
-          open
-          onOpenChange={(open) => {
-            if (!open) dispatch({ type: 'closePreview' });
-          }}
-          item={{
-            ...previewItem.item,
-            evidence: previewItem.item.evidence?.length
-              ? previewItem.item.evidence
-              : previewItem.bundle.evidence,
-          }}
-          timezone={resolvedTimezone}
-          actionLabel={itemActionLabel(previewItem.item)}
-          acceptDisabled={previewItem.item.evidenceStatus === 'stale'}
-          busy={busyItemIds.has(previewItem.item.id)}
-          pending={pending}
-          mergeHref={
-            previewItem.item.targetKind === 'object_merge'
-              ? objectMergeHref(previewItem.item)
-              : null
-          }
-          onAccept={() => {
-            run(
-              () => acceptSuggestionItemAction({ itemId: previewItem.item.id }),
-              [previewItem.item.id],
-              decisionMessages('accept', 1, previewItem.item.title, previewItem.item.id),
-            );
-          }}
-          onReject={() => {
-            run(
-              () => rejectSuggestionItemAction({ itemId: previewItem.item.id }),
-              [previewItem.item.id],
-              decisionMessages('reject', 1, previewItem.item.title, previewItem.item.id),
-            );
-          }}
-        />
-      ) : null}
-    </>
+    <InboxContext value={inboxContext}>
+      <div
+        className={
+          inbox
+            ? 'grid items-start gap-5 lg:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.15fr)]'
+            : undefined
+        }
+      >
+        <div className="min-w-0">
+          <ApprovalListBody
+            allowBulkAccept={allowBulkAccept}
+            allowBulkReject={allowBulkReject}
+            actionFailedItemIds={actionFailedItemIds}
+            busyItemIds={busyItemIds}
+            error={error ?? pageState.loadError}
+            hasMore={pageCursor !== null}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
+            pending={pending}
+            run={run}
+            selectedIds={selectedIds}
+            timezone={resolvedTimezone}
+            taskCategoriesEnabled={taskCategoriesEnabled}
+            visibleSuggestions={visibleSuggestions}
+            onPreview={(bundle, item) => {
+              previewTriggerRef.current =
+                document.activeElement instanceof HTMLElement ? document.activeElement : null;
+              dispatch({ type: 'openPreview', bundle, item });
+            }}
+            onSelectedChange={(itemId, checked) => {
+              dispatch({ type: 'selectChange', itemId, checked });
+            }}
+            onSelectedMany={(itemIds, checked) => {
+              dispatch({ type: 'selectMany', itemIds, checked });
+            }}
+            onClearSelection={() => {
+              dispatch({ type: 'clearSelection' });
+            }}
+          />
+        </div>
+        {activePreview ? (
+          <ApprovalPreviewDialog
+            presentation={inbox ? (desktopReview ? 'panel' : 'sheet') : 'dialog'}
+            reason={[
+              activePreview.bundle.reason,
+              approvalDependencyText(activePreview.item, activePreview.bundle),
+            ]
+              .filter(Boolean)
+              .join('\n')}
+            returnFocusTo={previewTriggerRef.current}
+            open
+            onOpenChange={(open) => {
+              if (!open) dispatch({ type: 'closePreview' });
+            }}
+            item={{
+              ...activePreview.item,
+              evidence: activePreview.item.evidence?.length
+                ? activePreview.item.evidence
+                : activePreview.bundle.evidence,
+            }}
+            timezone={resolvedTimezone}
+            actionLabel={itemActionLabel(activePreview.item)}
+            acceptDisabled={activePreview.item.evidenceStatus === 'stale'}
+            busy={inbox ? busyItemIds.size > 0 : busyItemIds.has(activePreview.item.id)}
+            pending={pending}
+            mergeHref={
+              activePreview.item.targetKind === 'object_merge'
+                ? objectMergeHref(activePreview.item)
+                : null
+            }
+            onAccept={() => {
+              run(
+                () => acceptSuggestionItemAction({ itemId: activePreview.item.id }),
+                [activePreview.item.id],
+                decisionMessages('accept', 1, activePreview.item.title, activePreview.item.id),
+              );
+            }}
+            onReject={() => {
+              run(
+                () => rejectSuggestionItemAction({ itemId: activePreview.item.id }),
+                [activePreview.item.id],
+                decisionMessages('reject', 1, activePreview.item.title, activePreview.item.id),
+              );
+            }}
+          />
+        ) : null}
+      </div>
+    </InboxContext>
   );
 
   if (!folded) return body;
@@ -1297,6 +1359,7 @@ function ApprovalBundleRow({
   onSelectedChange: (itemId: string, checked: boolean) => void;
   onSelectedMany: (itemIds: string[], checked: boolean) => void;
 }) {
+  const inbox = useContext(InboxContext);
   const bundleActionableIds: string[] = [];
   for (const item of bundle.items) {
     if (isActionableSuggestionStatus(item.status)) bundleActionableIds.push(item.id);
@@ -1333,7 +1396,13 @@ function ApprovalBundleRow({
   }
   const bundleTitle = displayText(bundle.title, { timezone });
   return (
-    <article className="approval-bundle my-5 rounded-sm border border-border p-3 sm:p-4">
+    <article
+      className={
+        inbox.enabled
+          ? 'approval-bundle border-b border-border py-2'
+          : 'approval-bundle my-5 rounded-sm border border-border p-3 sm:p-4'
+      }
+    >
       <CollectionGroup
         className="[&>[data-slot=collection-group-header]]:bg-transparent"
         count={bundle.items.length}
@@ -1362,7 +1431,7 @@ function ApprovalBundleRow({
           ) : undefined
         }
       >
-        {bundle.evidence.length > 0 || bundle.reason ? (
+        {!inbox.enabled && (bundle.evidence.length > 0 || bundle.reason) ? (
           <div className="pb-3 pl-9 pr-3">
             <ApprovalEvidence bundle={bundle} timezone={timezone} />
           </div>
@@ -1400,6 +1469,7 @@ function ApprovalItemRow({
   onPreview: () => void;
   onSelectedChange: (checked: boolean) => void;
 }) {
+  const inbox = useContext(InboxContext);
   const title = displayText(item.title, { timezone });
   const source = approvalSourceLabel(bundle);
   const context =
@@ -1408,6 +1478,58 @@ function ApprovalItemRow({
       : itemActionLabel(item);
   const relationship = relationshipEndpoints(item, bundle);
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
+  if (inbox.enabled)
+    return (
+      <div
+        className={`flex items-start gap-3 border-b border-border/60 px-3 py-4 transition-colors last:border-0 ${inbox.activeId === item.id ? 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]' : 'hover:bg-surface'}`}
+      >
+        {selectable && isActionableSuggestionStatus(item.status) ? (
+          <input
+            type="checkbox"
+            className="mt-1 size-4 shrink-0 accent-signal"
+            checked={selected}
+            aria-label={`Select ${title}`}
+            onChange={(event) => {
+              onSelectedChange(event.currentTarget.checked);
+            }}
+          />
+        ) : null}
+        <button
+          type="button"
+          aria-label={`Preview ${title}`}
+          aria-current={inbox.activeId === item.id ? 'true' : undefined}
+          onClick={onPreview}
+          className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+        >
+          <span className="block text-sm font-medium leading-6">
+            {relationship ? (
+              <>
+                Link {relationship.from} with {relationship.to}
+              </>
+            ) : (
+              title
+            )}
+          </span>
+          <span className="mt-1 block text-xs leading-5 text-fg-muted">{context}</span>
+          {!isActionableSuggestionStatus(item.status) ? (
+            <span className="mt-1 block text-xs capitalize text-fg-dim">
+              {itemStatusLabel(item.status)}
+            </span>
+          ) : null}
+          {item.status === 'failed' || actionFailed ? (
+            <span className="mt-1 block text-xs text-danger">
+              {actionFailureReason ?? item.failureReason ?? 'Needs attention'}
+            </span>
+          ) : null}
+          {item.evidenceStatus === 'stale' ? (
+            <span className="mt-1 block text-xs text-danger">
+              Source changed · regenerate before accepting
+            </span>
+          ) : null}
+        </button>
+        <ArrowRight aria-hidden="true" className="mt-1 size-4 shrink-0 text-fg-dim" />
+      </div>
+    );
   return (
     <div className="border-b border-border/60 last:border-b-0">
       <CollectionRow

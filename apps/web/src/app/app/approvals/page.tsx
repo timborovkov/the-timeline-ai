@@ -11,7 +11,6 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { GuidedContinue } from '@/components/onboarding/guided-continue';
 import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
@@ -137,10 +136,10 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
       : null;
 
   return (
-    <div data-app-width="overview" className="mx-auto max-w-6xl space-y-6">
+    <div data-app-width="overview" className="space-y-4">
       <PageHeader
         variant="default"
-        className="pt-6"
+
         title="Approvals"
         subtitle={
           params.boardId
@@ -160,7 +159,6 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         ]}
       />
       <div>
-        <WorkSubnav current="/app/approvals" />
         <CollectionToolbar>
           <CollectionToolbar.Search>
             <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
@@ -186,6 +184,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         </CollectionToolbar>
         <GuidedApprovalsChrome enabled={guidedApprovals} />
         <ApprovalsClient
+          layout="inbox"
           key={`${status}:${params.boardId ?? 'all'}`}
           boardId={params.boardId}
           suggestions={visibleSuggestions}

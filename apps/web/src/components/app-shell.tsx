@@ -26,6 +26,7 @@ import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
+import { WorkNavigation } from '@/components/work-subnav';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
 
@@ -157,6 +158,7 @@ export function AppShell({
               {gettingStarted ? (
                 <GettingStartedStrip phase={gettingStarted.phase} hidden={gettingStarted.hidden} />
               ) : null}
+              <WorkNavigation />
               {/* The shell owns a bounded content column. Collection bands can
               bleed to pane edges without stretching their inner content. */}
               <main

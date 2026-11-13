@@ -1,11 +1,14 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render as renderContent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
+import type { ReactElement } from 'react';
+
 import ApprovalsError from '@/app/app/approvals/error';
 import ApprovalsLoading from '@/app/app/approvals/loading';
+import { WorkSubnav as ShellWorkTabs } from '@/components/work-subnav';
 // Test environment: happy-dom
 
 afterEach(() => {
@@ -90,3 +93,14 @@ describe('Approvals route states', () => {
     ).toBe(true);
   });
 });
+
+function render(ui: ReactElement) {
+  return renderContent(ui, {
+    wrapper: ({ children }) => (
+      <>
+        <ShellWorkTabs current="/app/approvals" />
+        {children}
+      </>
+    ),
+  });
+}

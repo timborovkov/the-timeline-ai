@@ -3,7 +3,6 @@ import {
   CollectionGroupSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function ApprovalsLoading() {
   return (
@@ -13,7 +12,7 @@ export default function ApprovalsLoading() {
       </output>
       <div
         data-app-width="overview"
-        className="mx-auto max-w-6xl space-y-6"
+        className="space-y-4"
         aria-busy="true"
         aria-label="Loading approvals"
       >
@@ -22,7 +21,6 @@ export default function ApprovalsLoading() {
           <PageHeaderSkeleton />
         </div>
         <div>
-          <WorkSubnav current="/app/approvals" />
           <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
             <section aria-label="Approvals loading placeholder">
               <div className="border-b border-border bg-bg">

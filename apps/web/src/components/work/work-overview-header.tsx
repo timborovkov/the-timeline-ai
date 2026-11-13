@@ -30,6 +30,7 @@ export function WorkOverviewHeader({
         {overdueCount > 0 ? (
           <Link
             href="/app/tasks?due=overdue"
+            aria-label={`${overdueCount} overdue tasks`}
             className="inline-flex min-h-8 items-center gap-1.5 text-danger hover:underline"
           >
             <span className="font-mono">{overdueCount}</span> overdue
@@ -38,11 +39,18 @@ export function WorkOverviewHeader({
         {approvalCount > 0 ? (
           <Link
             href="/app/approvals?status=pending"
+            aria-label={`${approvalCount} pending approvals`}
             className="inline-flex min-h-8 items-center gap-1.5 text-signal hover:underline"
           >
             <span className="font-mono">{approvalCount}</span> pending approvals
           </Link>
         ) : null}
+        <Link
+          href="#pinned-work"
+          className="inline-flex min-h-8 items-center text-fg hover:underline xl:hidden"
+        >
+          Pinned work ↓
+        </Link>
       </div>
     </header>
   );

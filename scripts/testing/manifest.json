@@ -1186,6 +1186,9 @@
   "apps/web/src/components/work-filter-bar.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/work-navigation.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/work-subnav.test.tsx": {
     "group": "dom"
   },

@@ -1,13 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
 const WORK_LINKS = [
   { label: 'Overview', href: '/app/work' },
-  { label: 'Pinned', href: '/app/work?view=pinned' },
   { label: 'Objects', href: '/app/objects' },
   { label: 'Tasks', href: '/app/tasks' },
   { label: 'Boards', href: '/app/boards' },
@@ -80,6 +80,19 @@ export function WorkSubnav({
       <p aria-hidden="true" className="py-1 text-xs text-fg-dim md:hidden">
         Swipe or scroll for more work views.
       </p>
+    </div>
+  );
+}
+
+/** Shell-owned navigation stays in place while Work routes replace their content. */
+export function WorkNavigation() {
+  const pathname = usePathname();
+  if (!pathname) return null;
+  if (!WORK_LINKS.some(({ href }) => pathname === href || pathname.startsWith(`${href}/`)))
+    return null;
+  return (
+    <div className="shrink-0 border-b border-border bg-bg px-4 md:px-8" data-slot="work-navigation">
+      <WorkSubnav current={pathname} className="border-b-0" />
     </div>
   );
 }

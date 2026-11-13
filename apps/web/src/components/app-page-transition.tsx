@@ -22,6 +22,10 @@ export function AppPageTransition({ children }: { children: ReactNode }) {
     <div
       ref={element}
       data-slot="app-page-container"
+      data-work-page={
+        /^\/app\/(work|objects|tasks|boards|calendar|digests|approvals)(\/|$)/.test(pathname) ||
+        undefined
+      }
       className="app-page-container mx-auto w-full min-w-0 max-w-6xl"
     >
       {children}

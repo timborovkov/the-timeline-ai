@@ -9,12 +9,10 @@ import {
   PageHeaderSkeleton,
 } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function WorkLoading() {
   const searchParams = useSearchParams();
   const isPinned = searchParams.get('view') === 'pinned';
-  const current = isPinned ? '/app/work?view=pinned' : '/app/work';
 
   return (
     <>
@@ -31,7 +29,6 @@ export default function WorkLoading() {
         <div aria-hidden="true">
           <PageHeaderSkeleton variant={isPinned ? 'collection' : undefined} />
         </div>
-        <WorkSubnav current={current} />
         <div
           aria-hidden="true"
           className={

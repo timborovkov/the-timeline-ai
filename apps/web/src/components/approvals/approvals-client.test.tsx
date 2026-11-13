@@ -2,7 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -131,6 +131,80 @@ afterEach(() => {
 });
 
 describe('ApprovalsClient', () => {
+  it.each(['accepted', 'rejected', 'superseded'])(
+    'keeps %s inbox proposals read-only',
+    (status) => {
+      render(<ApprovalsClient layout="inbox" suggestions={[inboxBundle(status)]} />);
+      const review = screen.getByRole('region', { name: 'Review proposal' });
+      expect(within(review).getByText(`${status} · Read-only`)).toBeTruthy();
+      expect(screen.getByText(status)).toBeTruthy();
+      expect(within(review).queryByRole('button', { name: 'Accept', exact: true })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Reject', exact: true })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Change', exact: true })).toBeNull();
+    },
+  );
+
+  it('locks decisions while the previous inbox proposal is still being accepted', async () => {
+    fakes.acceptSuggestionItemAction.mockReturnValue(new Promise(() => undefined));
+    render(
+      <ApprovalsClient
+        layout="inbox"
+        suggestions={[inboxBundle('pending', ['First proposal', 'Second proposal'])]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Accept', exact: true }));
+    const review = screen.getByRole('region', { name: 'Review proposal' });
+    expect(within(review).getByRole('heading', { name: 'Second proposal' })).toBeTruthy();
+    const accept = within(review).getByRole('button', { name: 'Accept', exact: true });
+    expect(accept.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(accept);
+    await waitFor(() => {
+      expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps inbox decisions in review and preserves the proposal reason', async () => {
+    const user = userEvent.setup();
+    render(
+      <ApprovalsClient
+        layout="inbox"
+        suggestions={[
+          {
+            id: 'inbox-bundle',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow-up',
+            summary: null,
+            reason: 'The customer requested a follow-up.',
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'inbox-item',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Follow up with customer',
+                description: null,
+                proposedPayload: { name: 'Follow up with customer' },
+                failureReason: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Accept Follow up with customer' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Preview Follow up with customer' }));
+    const review = await screen.findByRole('region', { name: 'Review proposal' });
+    expect(within(review).getByText('The customer requested a follow-up.')).toBeTruthy();
+    await user.click(within(review).getByRole('button', { name: /^Accept$/ }));
+    await waitFor(() => {
+      expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'inbox-item' });
+    });
+  });
   it('renders the empty approval state', () => {
     const html = renderToStaticMarkup(createElement(ApprovalsClient, { suggestions: [] }));
 
@@ -3049,3 +3123,31 @@ describe('ApprovalsClient', () => {
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledTimes(1);
   });
 });
+
+function inboxBundle(
+  status: string,
+  titles = ['Reviewed proposal'],
+): ComponentProps<typeof ApprovalsClient>['suggestions'][number] {
+  return {
+    id: 'review-bundle',
+    source: 'background',
+    status,
+    title: 'Review',
+    summary: null,
+    reason: null,
+    confidence: 'high',
+    createdAt: '2026-06-01T10:00:00.000Z',
+    evidence: [],
+    items: titles.map((title, index) => ({
+      id: `review-item-${index}`,
+      status,
+      operation: 'create',
+      targetKind: 'task',
+      targetId: null,
+      title,
+      description: null,
+      proposedPayload: { name: title },
+      failureReason: null,
+    })),
+  };
+}

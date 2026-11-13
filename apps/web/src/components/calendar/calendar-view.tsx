@@ -1204,33 +1204,13 @@ function CalendarToolbar({
       className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       aria-labelledby="calendar-view-heading"
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <CalendarDays className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2">
         <div>
           <h2 id="calendar-view-heading" className="text-lg font-semibold">
             {title}
           </h2>
-          <p className="text-xs text-muted-foreground">{timezone} · ISO weeks</p>
+          <p className="text-xs text-muted-foreground">{timezone}</p>
         </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <fieldset className="flex items-center gap-1 border-0 p-0">
-          <legend className="sr-only">Calendar view</legend>
-          {(['month', 'week', 'day'] as const).map((view) => (
-            <Button
-              key={view}
-              type="button"
-              variant={mode === view ? 'secondary' : 'ghost'}
-              size="sm"
-              aria-pressed={mode === view}
-              onClick={() => {
-                onPush(view, anchor);
-              }}
-            >
-              {view === 'month' ? 'Month' : view === 'week' ? 'Week' : 'Day'}
-            </Button>
-          ))}
-        </fieldset>
         <fieldset className="flex items-center gap-1 border-0 p-0">
           <legend className="sr-only">Calendar navigation</legend>
           <Button
@@ -1266,6 +1246,26 @@ function CalendarToolbar({
             <ChevronRight className="size-4" />
           </Button>
         </fieldset>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <fieldset className="flex items-center gap-1 border-0 p-0">
+          <legend className="sr-only">Calendar view</legend>
+          {(['month', 'week', 'day'] as const).map((view) => (
+            <Button
+              key={view}
+              type="button"
+              variant={mode === view ? 'secondary' : 'ghost'}
+              size="sm"
+              aria-pressed={mode === view}
+              onClick={() => {
+                onPush(view, anchor);
+              }}
+            >
+              {view === 'month' ? 'Month' : view === 'week' ? 'Week' : 'Day'}
+            </Button>
+          ))}
+        </fieldset>
+
         <Button type="button" size="sm" onClick={onCreate}>
           <Plus className="mr-1 size-4" aria-hidden="true" />
           New event
@@ -1321,7 +1321,7 @@ function CalendarBody({
   }
   return (
     <section
-      className={`grid min-w-0 overflow-hidden ${gridCols} gap-px rounded-sm border bg-border`}
+      className={`grid min-w-0 overflow-hidden ${mode === 'week' ? 'grid-cols-1 sm:grid-cols-[3rem_repeat(7,minmax(0,1fr))]' : gridCols} gap-px rounded-sm border bg-border`}
       aria-label={calendarLabel}
     >
       <div className="hidden bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground sm:block">
@@ -1331,7 +1331,7 @@ function CalendarBody({
       {WEEKDAYS.map((day) => (
         <div
           key={day.short}
-          className="min-w-0 bg-muted/40 p-1 text-center text-xs font-medium text-muted-foreground sm:p-2"
+          className={`min-w-0 bg-muted/40 p-1 text-center text-xs font-medium text-muted-foreground sm:p-2 ${mode === 'week' ? 'hidden sm:block' : ''}`}
         >
           <abbr title={day.label} className="no-underline">
             {day.short}
@@ -1800,7 +1800,7 @@ function DayCell({
   const overflow = mode === 'month' ? Math.max(0, events.length - monthCap) : 0;
   return (
     <div
-      className={`min-w-0 bg-background p-1 sm:min-h-28 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}
+      className={`min-w-0 p-2 sm:min-h-28 ${muted ? 'bg-surface-2 text-fg-dim' : 'bg-background'}`}
     >
       <div className="mb-1 flex items-center justify-between gap-1">
         <button
@@ -1809,11 +1809,12 @@ function DayCell({
           onClick={() => {
             onCreate(day);
           }}
-          className={`min-h-6 min-w-6 rounded-sm px-1 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${muted ? 'text-muted-foreground' : ''} ${
-            isToday ? 'text-signal' : ''
+          data-mode={mode}
+          className={`min-h-11 sm:min-h-6 data-[mode=month]:min-h-6 min-w-6 rounded-sm px-1 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${muted ? 'text-muted-foreground' : ''} ${
+            isToday ? 'bg-signal text-signal-fg hover:bg-signal' : ''
           }`}
         >
-          {day.day}
+          <CalendarDateLabel day={day} mode={mode} />
         </button>
       </div>
       {mode === 'month' && events.length > 0 ? (
@@ -1841,7 +1842,7 @@ function DayCell({
               onClick={() => {
                 onEdit(event);
               }}
-              className={`block min-h-6 w-full min-w-0 overflow-hidden rounded-sm px-1 py-0.5 text-left text-[11px] leading-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`block min-h-11 sm:min-h-6 w-full min-w-0 overflow-hidden rounded-sm px-1 py-0.5 text-left text-[11px] leading-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 event.redacted
                   ? 'bg-muted text-muted-foreground italic'
                   : event.showAs === 'tentative'
@@ -1851,7 +1852,7 @@ function DayCell({
                       : 'bg-primary/10 text-foreground hover:bg-primary/15'
               } ${selected ? 'ring-1 ring-signal' : ''} disabled:opacity-70`}
             >
-              <span className="flex min-w-0 items-center gap-1">
+              <span className="flex min-w-0 flex-wrap items-center gap-x-1">
                 {event.showAs === 'tentative' ? (
                   <span
                     className="size-1.5 shrink-0 rounded-full bg-warning"
@@ -1875,7 +1876,7 @@ function DayCell({
                     {formatTime(event, timezone)}
                   </span>
                 )}
-                <span className="min-w-0 truncate">{title}</span>
+                <span className="order-first line-clamp-2 w-full min-w-0 font-medium">{title}</span>
               </span>
             </button>
           );
@@ -1893,5 +1894,17 @@ function DayCell({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function CalendarDateLabel({ day, mode }: { day: Temporal.PlainDate; mode: CalendarViewMode }) {
+  if (mode !== 'week') return day.day;
+  return (
+    <>
+      <span className="sm:hidden">
+        {day.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+      </span>
+      <span className="hidden sm:inline">{day.day}</span>
+    </>
   );
 }
