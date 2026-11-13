@@ -1,6 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+import type { ReactElement } from 'react';
+
+import { WorkSubnav as ShellWorkTabs } from '@/components/work-subnav';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -22,7 +26,7 @@ await vi.mock(
   () => import('next/navigation'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, render: renderContent, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { default: WorkError } = await import('@/app/app/work/error');
 const { default: WorkLoading } = await import('@/app/app/work/loading');
@@ -73,8 +77,10 @@ describe('Work route states', () => {
 
     const { rerender } = render(<WorkLoading />);
 
-    expect(screen.getByRole('link', { name: 'Pinned' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.queryByRole('link', { name: 'Pinned' })).toBeNull();
     const pinnedSkeleton = document.querySelector('[data-work-loading-view="pinned"]');
     expect(pinnedSkeleton).toBeTruthy();
     expect(pinnedSkeleton?.querySelectorAll('.h-9').length).toBeGreaterThan(6);
@@ -84,8 +90,10 @@ describe('Work route states', () => {
 
     rerender(<WorkError error={new Error('route failed')} reset={vi.fn()} />);
 
-    expect(screen.getByRole('link', { name: 'Pinned' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.queryByRole('link', { name: 'Pinned' })).toBeNull();
     expect(
       screen.getByText('Personal shortcuts to the work and context you return to.'),
     ).toBeTruthy();
@@ -125,3 +133,14 @@ describe('Work route states', () => {
     }
   });
 });
+
+function render(ui: ReactElement) {
+  return renderContent(ui, {
+    wrapper: ({ children }) => (
+      <>
+        <ShellWorkTabs current="/app/work" />
+        {children}
+      </>
+    ),
+  });
+}

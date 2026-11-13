@@ -19,7 +19,6 @@ import { ObjectListViewport } from '@/components/objects/object-list-viewport';
 import { PageHeader } from '@/components/page-header';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WorkFilterBar } from '@/components/work-filter-bar';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -105,7 +104,6 @@ export default async function ObjectsIndexPage({
             : []),
         ]}
       />
-      <WorkSubnav current="/app/objects" className="px-4 md:px-8" />
 
       <WorkFilterBar
         mode="objects"

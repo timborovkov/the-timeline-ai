@@ -43,6 +43,7 @@ type SubContentProps = React.ComponentPropsWithoutRef<typeof DropdownMenuPrimiti
 function DropdownMenuSubContent({ className, ref, ...props }: SubContentProps) {
   return (
     <DropdownMenuPrimitive.SubContent
+      data-motion="popover"
       ref={ref}
       className={cn(
         'z-50 min-w-32 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg',
@@ -62,6 +63,7 @@ function DropdownMenuContent({ className, sideOffset = 4, ref, ...props }: Conte
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        data-motion="popover"
         ref={ref}
         sideOffset={sideOffset}
         className={cn(

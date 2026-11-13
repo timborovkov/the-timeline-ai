@@ -4,11 +4,10 @@ import { GUIDED_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboar
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
-import { Boxes, CircleAlert, CircleCheckBig, ListTodo, PlugZap, Wrench } from 'lucide-react';
+import { Boxes, CircleAlert, CircleCheckBig, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type { BillingNudge } from '@timeline/shared/billing/status';
 import type { Metadata } from 'next';
 
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
@@ -19,6 +18,7 @@ import { CaptureDialog } from '@/components/home/capture-dialog';
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
+import { HomeProcessingAttention } from '@/components/home/home-processing-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
 import { FirstRunHomeCapture } from '@/components/onboarding/first-run-home-capture';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
 };
 
 const HOME_TIMELINE_EVENT_LIMIT = 16;
-const HOME_TIMELINE_MOMENT_LIMIT = 8;
+const HOME_TIMELINE_MOMENT_LIMIT = 4;
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);
@@ -96,28 +96,10 @@ async function shouldShowPaygSuggestion(input: {
   });
 }
 
-function HomePlanNotices({
-  nudge,
-  showPayg,
-  paygStorageKey,
-}: {
-  nudge: BillingNudge | null;
-  showPayg: boolean;
-  paygStorageKey: string;
-}) {
-  return (
-    <>
-      {nudge ? <BillingUpgradeNudge nudge={nudge} /> : null}
-      {showPayg ? <PaygValueNudge key={paygStorageKey} storageKey={paygStorageKey} /> : null}
-    </>
-  );
-}
-
 function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: string } {
   if (isEmpty) {
     return {
-      label:
-        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+      label: 'Your timeline starts with a source',
       actionBody: 'Forward an email, upload a document or connect a channel to start it.',
     };
   }
@@ -168,7 +150,12 @@ async function FirstRunHomeBanner(input: {
   const result = await resolveFirstRunHomeCapture(input);
   if (result === 'record') redirect('/app/onboarding/record');
   if (!result) return null;
-  return <FirstRunHomeCapture failed={result.failed} />;
+  return (
+    <FirstRunHomeCapture
+      failed={result.failed}
+      emailWaiting={input.firstRun?.starterPath === 'email'}
+    />
+  );
 }
 
 export default async function HomeDashboardPage() {
@@ -204,7 +191,7 @@ export default async function HomeDashboardPage() {
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
-    scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT }),
+    scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT, to: now }),
     scope.timeline.listMembers(),
     scope.timeline.resolveVisibilityDefault('web'),
     scope.pins.list({ limit: 6 }),
@@ -287,144 +274,150 @@ export default async function HomeDashboardPage() {
   const emptyTimeline = homeEmptyTimelineCopy(events.length === 0);
 
   return (
-    <div className="space-y-8">
-      <h1 className="sr-only">Home</h1>
+    <div data-app-width="overview" className="home-overview space-y-8">
+      <header className="grid items-start gap-6 border-b border-border pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,1fr)]">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+            {active.teamName}
+          </h1>
+          <p className="mt-2 text-sm text-fg-muted">
+            Review what needs attention and catch up on recent work.
+          </p>
+          <div className="mt-4 flex items-center gap-4">
+            <CaptureDialog>
+              <CaptureForm
+                initialVisibility={quickCaptureVisibility}
+                currentUser={{
+                  id: session.user.id,
+                  name: session.user.name ?? null,
+                  email: session.user.email ?? '',
+                }}
+                filters={{}}
+              />
+            </CaptureDialog>
+          </div>
+        </div>
+        <HomeAskComposer
+          teamId={active.teamId}
+          hasSources={events.length > 0 || sourceDocuments.length > 0}
+        />
+      </header>
       {firstRunBanner}
       {billingDashboard?.restrictionReason ? (
         <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
       ) : null}
-      <HomeAskComposer
-        teamId={active.teamId}
-        hasSources={events.length > 0 || sourceDocuments.length > 0}
-        actions={
-          <CaptureDialog>
-            <CaptureForm
-              initialVisibility={quickCaptureVisibility}
-              currentUser={{
-                id: session.user.id,
-                name: session.user.name ?? null,
-                email: session.user.email ?? '',
-              }}
-              filters={{}}
-            />
-          </CaptureDialog>
-        }
-      />
 
-      <ConnectAgentOnboardingCard initialData={initialChecklist} />
       <OnboardingChecklist initialData={initialChecklist} />
 
-      <HomePlanNotices
-        nudge={isAdmin ? (billingDashboard?.nudge ?? null) : null}
-        showPayg={showPaygSuggestion}
-        paygStorageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
-      />
+      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-8">
+          <HomeAttention
+            title="Your work"
+            groups={[
+              {
+                href: '/app/approvals',
+                label: 'Pending approvals',
+                singularLabel: 'Pending approval',
+                count: pendingApprovals,
+                action: 'Review proposals',
+                icon: <CircleCheckBig aria-hidden="true" />,
+              },
+              {
+                href: '/app/work',
+                label: 'Items needing attention',
+                singularLabel: 'Item needing attention',
+                count: urgentWorkCount,
+                action: 'Open work queue',
+                icon: <CircleAlert aria-hidden="true" />,
+                danger: true,
+              },
+              {
+                href: '/app/tasks',
+                label: 'Open tasks',
+                singularLabel: 'Open task',
+                count: openObjectCounts.task,
+                action: 'Open tasks',
+                icon: <ListTodo aria-hidden="true" />,
+              },
+              {
+                href: '/app/objects',
+                label: 'Open objects',
+                singularLabel: 'Open object',
+                count: openObjectTotal,
+                action: 'Browse objects',
+                icon: <Boxes aria-hidden="true" />,
+              },
+            ]}
+          />
 
-      <HomeAttention
-        groups={[
-          {
-            href: '/app/approvals',
-            label: 'Pending approvals',
-            count: pendingApprovals,
-            action: 'Review proposals',
-            icon: <CircleCheckBig aria-hidden="true" />,
-          },
-          {
-            href: '/app/work',
-            label: 'Work needing attention',
-            count: urgentWorkCount,
-            action: 'Open work queue',
-            icon: <CircleAlert aria-hidden="true" />,
-            danger: true,
-          },
-          {
-            href: '/app/tasks',
-            label: 'Open tasks',
-            count: openObjectCounts.task,
-            action: 'Open tasks',
-            icon: <ListTodo aria-hidden="true" />,
-          },
-          {
-            href: '/app/objects',
-            label: 'Open objects',
-            count: openObjectTotal,
-            action: 'People, companies, projects, and more',
-            icon: <Boxes aria-hidden="true" />,
-          },
-          ...(isAdmin
-            ? [
-                {
-                  href: '/app/team/jobs',
-                  label: 'Recoverable jobs',
-                  count: recoverableJobs.length,
-                  action: 'Retry processing',
-                  icon: <Wrench aria-hidden="true" />,
-                  danger: true,
-                },
-              ]
-            : []),
-          {
-            href: '/app/connections',
-            label: 'Connection issues',
-            count: connectionAttention.length,
-            action: 'Repair connections',
-            icon: <PlugZap aria-hidden="true" />,
-            danger: true,
-          },
-        ]}
-      />
-
-      <PinnedWorkspacePreview initialItems={pinnedPage.items} />
-
-      <HomeTeamEmail inboundEmail={inboundEmail} />
-
-      <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
-
-      <section className="space-y-2" aria-label="Recent moments">
-        <TimelineFeed
-          initialPage={{
-            items: events.map((event) => ({
-              ...event,
-              occurredAt: event.occurredAt.toISOString(),
-              createdAt: event.createdAt.toISOString(),
-            })),
-            nextCursor: null,
-            pinnedMomentIds: homeMoments.flatMap((moment) =>
-              homeMomentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
-            ),
-            authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
-            audioUrls: Object.fromEntries(audioUrlMap),
-            impactItems,
-            artifactClusters,
-            capturedFiles,
-          }}
-          filters={{}}
-          currentUserId={session.user.id}
-          isAdmin={isAdmin}
-          members={members.map((member) => ({
-            id: member.userId,
-            label: displayMemberLabel(userMap.get(member.userId)),
-          }))}
-          compact
-          maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
-          live={false}
-          timezone={calendarSettings.defaultTimezone}
-          emptyLabel={emptyTimeline.label}
-          emptyAction={{
-            href: '/app/timeline',
-            label: 'Open timeline',
-            body: emptyTimeline.actionBody,
-          }}
-        />
-        <p>
-          <Link
-            href="/app/timeline"
-            className="text-xs text-fg-dim transition-colors hover:text-fg"
-          >
-            Go to the full timeline
-          </Link>
-        </p>
-      </section>
+          <section className="space-y-4 border-t border-border pt-6" aria-label="Recent moments">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Recent activity</h2>
+              <Link
+                href="/app/timeline"
+                className="inline-flex min-h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                View timeline →
+              </Link>
+            </div>
+            <TimelineFeed
+              initialPage={{
+                items: events.map((event) => ({
+                  ...event,
+                  occurredAt: event.occurredAt.toISOString(),
+                  createdAt: event.createdAt.toISOString(),
+                })),
+                nextCursor: null,
+                pinnedMomentIds: homeMoments.flatMap((moment) =>
+                  homeMomentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
+                ),
+                authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
+                audioUrls: Object.fromEntries(audioUrlMap),
+                impactItems,
+                artifactClusters,
+                capturedFiles,
+              }}
+              filters={{}}
+              currentUserId={session.user.id}
+              isAdmin={isAdmin}
+              members={members.map((member) => ({
+                id: member.userId,
+                label: displayMemberLabel(userMap.get(member.userId)),
+              }))}
+              compact
+              maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
+              live={false}
+              timezone={calendarSettings.defaultTimezone}
+              emptyLabel={emptyTimeline.label}
+              emptyAction={{
+                href: '/app/timeline',
+                label: 'Open timeline',
+                body: emptyTimeline.actionBody,
+              }}
+            />
+          </section>
+          <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
+        </div>
+        <aside
+          aria-label="Workspace context"
+          className="min-w-0 space-y-6 border-t border-border pt-6 xl:border-t-0 xl:border-l xl:pl-6 xl:pt-0"
+        >
+          <PinnedWorkspacePreview initialItems={pinnedPage.items.slice(0, 3)} />
+          <ConnectAgentOnboardingCard initialData={initialChecklist} />
+          <HomeTeamEmail inboundEmail={inboundEmail} />
+          <HomeProcessingAttention
+            isAdmin={isAdmin}
+            recoverableJobs={recoverableJobs.length}
+            connectionIssues={connectionAttention.length}
+          />
+          {isAdmin && billingDashboard?.nudge ? (
+            <BillingUpgradeNudge nudge={billingDashboard.nudge} />
+          ) : null}
+          {showPaygSuggestion ? (
+            <PaygValueNudge storageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`} />
+          ) : null}
+        </aside>
+      </div>
     </div>
   );
 }

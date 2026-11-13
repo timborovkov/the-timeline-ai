@@ -3194,6 +3194,10 @@ describe('processSuggestionJobForTests', () => {
       })
       .returning({ id: documentVersions.id });
     if (!version) throw new Error('failed to insert version');
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, document.id));
     const [chunk] = await db
       .insert(documentChunks)
       .values({
@@ -6745,7 +6749,8 @@ describe('processSuggestionJobForTests', () => {
       targetKind: 'object',
       targetId: null,
       proposedPayload: {
-        canonicalName: 'Dormant migration',
+        canonicalName: `Dormant migration (distinct scope ${suggestions.suggestionDedupeKey({}).slice(0, 12)})`,
+        aliases: ['Dormant migration'],
         status: 'blocked',
       },
     });

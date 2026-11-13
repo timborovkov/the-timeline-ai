@@ -4,7 +4,6 @@ import {
   PageHeaderSkeleton,
 } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function CalendarLoading() {
   return (
@@ -22,7 +21,6 @@ export default function CalendarLoading() {
         <div aria-hidden="true" inert>
           <PageHeaderSkeleton variant="collection" showMetadata={false} />
         </div>
-        <WorkSubnav current="/app/calendar" spacing="comfortable" />
         <div aria-hidden="true" inert>
           <div className="space-y-4">
             <section className="space-y-4" aria-label="Calendar loading placeholder">

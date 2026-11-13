@@ -641,23 +641,25 @@ function DocumentDriveChrome({
         onFileChange={onFileChange}
       />
       <UploadStatusList uploads={uploads} />
-      <label className="flex items-center gap-2 text-sm text-fg-dim">
-        <input
-          type="checkbox"
-          checked={suggestObjects}
-          onChange={(event) => {
-            onSuggestObjectsChange(event.target.checked);
-          }}
+      <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 border-y border-border py-3">
+        <label className="flex min-h-11 max-w-[55ch] items-center gap-2 text-sm text-fg-muted">
+          <input
+            type="checkbox"
+            checked={suggestObjects}
+            onChange={(event) => {
+              onSuggestObjectsChange(event.target.checked);
+            }}
+          />
+          Suggest objects and relationships from new uploads for approval
+        </label>
+        <NewItemVisibilityPicker
+          visibility={visibility}
+          visibilityUserIds={visibilityUserIds}
+          members={members}
+          onVisibilityChange={onVisibilityChange}
+          onVisibilityUserIdsChange={onVisibilityUserIdsChange}
         />
-        Suggest objects and relationships from new uploads for approval
-      </label>
-      <NewItemVisibilityPicker
-        visibility={visibility}
-        visibilityUserIds={visibilityUserIds}
-        members={members}
-        onVisibilityChange={onVisibilityChange}
-        onVisibilityUserIdsChange={onVisibilityUserIdsChange}
-      />
+      </div>
       <DocumentDropZone
         folders={folders}
         documents={documents}
@@ -794,7 +796,7 @@ function NewItemVisibilityPicker({
 
   const selectedMemberIds = new Set(visibilityUserIds);
   return (
-    <fieldset className="flex flex-wrap items-center gap-3 py-3 text-sm">
+    <fieldset className="flex flex-wrap items-center gap-3 text-sm">
       <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
       <label className="sr-only" htmlFor={visibilityId}>
         Default visibility for new documents and folders
@@ -805,7 +807,7 @@ function NewItemVisibilityPicker({
         onChange={(e) => {
           onVisibilityChange(e.target.value as Props['defaultVisibility']);
         }}
-        className="h-8 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="h-11 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
@@ -1258,12 +1260,15 @@ function fileKindDetails(
 ): { icon: LucideIcon; label: string } {
   const lowerName = name.toLowerCase();
   if (contentType?.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|avif)$/.test(lowerName)) {
-    return { icon: ImageIcon, label: contentType ?? 'image' };
+    return { icon: ImageIcon, label: 'Image' };
   }
   if (contentType === 'application/pdf' || lowerName.endsWith('.pdf')) {
     return { icon: FileText, label: 'PDF' };
   }
-  return { icon: FileText, label: contentType ?? 'document' };
+  if (contentType?.startsWith('text/') || /\.(md|txt|csv)$/.test(lowerName)) {
+    return { icon: FileText, label: 'Text document' };
+  }
+  return { icon: FileText, label: 'Document' };
 }
 
 function normalizeDocumentSummary(

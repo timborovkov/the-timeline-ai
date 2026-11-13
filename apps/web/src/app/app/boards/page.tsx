@@ -11,7 +11,6 @@ import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { visibleBoardDescription } from '@/lib/board-description';
@@ -48,7 +47,6 @@ export default async function BoardsIndexPage() {
         srLabel={`${boards.length} ${boards.length === 1 ? 'board' : 'boards'}`}
         trailing={boards.length > 0 ? BOARD_CREATE_DIALOG : undefined}
       />
-      <WorkSubnav current="/app/boards" />
 
       {boards.length === 0 ? (
         <EmptyState
@@ -78,13 +76,21 @@ export default async function BoardsIndexPage() {
                   </CollectionRow.Context>
                   <CollectionRow.Metadata>
                     <>
-                      <span className="capitalize">{board.templateKind.replaceAll('_', ' ')}</span>
-                      <time dateTime={board.updatedAt.toISOString()}>
+                      {description ? (
+                        <span className="text-xs capitalize text-fg-dim">
+                          {board.templateKind.replaceAll('_', ' ')}
+                        </span>
+                      ) : null}
+                      <time
+                        className="text-xs text-fg-dim"
+                        dateTime={board.updatedAt.toISOString()}
+                      >
+                        Updated{' '}
                         {formatDisplayDate(board.updatedAt, {
                           timezone: calendarSettings.defaultTimezone,
                         })}
                       </time>
-                      <span className="font-mono tabular-nums text-fg-dim">
+                      <span className="text-xs tabular-nums text-fg-dim">
                         {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
                       </span>
                     </>

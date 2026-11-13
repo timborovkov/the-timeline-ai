@@ -33,14 +33,22 @@ export function SettingsNav({
   const activeItemRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
-    activeItemRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const revealActive = () => {
+      activeItemRef.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    };
+    revealActive();
+    const nav = activeItemRef.current?.closest('nav');
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(revealActive);
+    if (nav) observer?.observe(nav);
+    return () => observer?.disconnect();
   }, [activeSection]);
 
   return (
     <div className={cn('space-y-2', className)}>
       <nav
         aria-label="Team settings"
-        className="w-full max-w-full snap-x snap-mandatory overflow-x-auto scroll-px-3 border-b border-border lg:w-52 lg:shrink-0 lg:snap-none lg:overflow-visible lg:border-r lg:border-b-0 lg:pr-4"
+        className="w-full max-w-full overflow-x-auto scroll-px-3 border-b border-border lg:w-52 lg:shrink-0 lg:overflow-visible lg:border-r lg:border-b-0 lg:pr-4"
       >
         <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
           {visibleItems.map((item) => {
@@ -52,7 +60,7 @@ export function SettingsNav({
                 href={`${basePath}?section=${encodeURIComponent(item.value)}`}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex min-h-10 shrink-0 snap-start touch-manipulation items-center gap-2 rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:min-h-8',
+                  'flex min-h-11 shrink-0 touch-manipulation items-center gap-2 rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:min-h-8',
                   active &&
                     'bg-surface-2 font-medium text-fg lg:shadow-[inset_2px_0_0_var(--color-signal)]',
                 )}

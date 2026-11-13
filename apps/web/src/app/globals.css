@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './app-motion.css';
 
 [data-task-categories-enabled='false'] .task-category-ui {
   display: none !important;
@@ -132,7 +133,14 @@
 
 #main:has(> .app-page-container > [data-app-width='collection']) {
   container-type: inline-size;
+  padding-top: 0;
   --app-page-gutter: 1rem;
+}
+
+/* Collection titles and their tabs share one compact navigation band. */
+[data-app-width='collection'] > header:has(+ [data-slot='collection-tabs']),
+[data-app-width='collection'] > header:has(+ div > [data-slot='collection-tabs']:first-child) {
+  margin-block-end: 0;
 }
 
 @media (min-width: 48rem) {
@@ -350,4 +358,32 @@ dialog#floating-agent-chat-panel::backdrop {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
+}
+
+/* Overviews compose work and supporting context; they are not full-bleed indexes. */
+.app-page-container:has(> [data-app-width='overview']) {
+  max-width: 80rem;
+  margin-inline: 0;
+}
+.work-overview [data-slot='collection-group-header'] {
+  background: transparent;
+  padding-inline: 0;
+  border-bottom: 1px solid var(--border);
+}
+.work-overview [data-slot='collection-group-header'] button {
+  font-size: 0.875rem;
+}
+.work-overview aside [data-slot='collection-row'] {
+  padding-inline: 0;
+}
+.home-overview aside {
+  font-size: 0.875rem;
+}
+
+/* Work uses one shell-owned tab strip and a consistent canvas gutter. */
+.app-page-container[data-work-page] {
+  max-width: none;
+}
+#main:has(> .app-page-container[data-work-page]):not(:has([data-app-layout='full-bleed'])) {
+  padding-top: 1.5rem;
 }

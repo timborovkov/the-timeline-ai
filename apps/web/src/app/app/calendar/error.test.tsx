@@ -54,9 +54,7 @@ describe('CalendarError', () => {
     render(<CalendarError error={new Error('offline')} reset={fakes.reset} />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Calendar' })).toBeTruthy();
-    expect(screen.getByRole('navigation', { name: 'Work navigation' }).textContent).toContain(
-      '/app/calendar',
-    );
+
     expect(screen.getByRole('heading', { level: 2, name: 'Unable to load calendar' })).toBeTruthy();
     expect(
       screen.getByText(

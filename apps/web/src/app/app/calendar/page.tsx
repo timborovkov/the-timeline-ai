@@ -10,7 +10,6 @@ import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
@@ -60,7 +59,6 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         title="Calendar"
         subtitle="Track deadlines, meetings, and follow-ups."
       />
-      <WorkSubnav current="/app/calendar" spacing="comfortable" />
 
       <CalendarView
         events={serialized}

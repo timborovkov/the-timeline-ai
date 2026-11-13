@@ -4,7 +4,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-export function FirstRunHomeCapture({ failed }: { failed: boolean }) {
+export function FirstRunHomeCapture({
+  failed,
+  emailWaiting = false,
+}: {
+  failed: boolean;
+  emailWaiting?: boolean;
+}) {
   const router = useRouter();
   useEffect(() => {
     if (failed) return;
@@ -19,7 +25,11 @@ export function FirstRunHomeCapture({ failed }: { failed: boolean }) {
   return (
     <div className="rounded-md border border-border bg-surface p-4">
       <p className="text-sm font-medium">
-        {failed ? 'We could not finish that capture' : 'Still reading what you brought'}
+        {failed
+          ? 'We could not finish that capture'
+          : emailWaiting
+            ? 'Waiting for your email'
+            : 'Still reading what you brought'}
       </p>
       <p className="mt-1 text-sm leading-6 text-fg-muted">
         {failed

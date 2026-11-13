@@ -1,5 +1,6 @@
 'use client';
 
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -60,6 +61,13 @@ export function HelpShell({ children }: HelpShellProps) {
     <PublicShell footerLabel="The Timeline help" currentSection="help">
       <div className="mx-auto grid max-w-6xl min-w-0 gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[15rem_1fr]">
         <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+          <Link
+            href="/app"
+            className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-sm text-sm text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            Back to workspace
+          </Link>
           <nav
             ref={guideNavRef}
             aria-label="Help guides"
@@ -74,7 +82,7 @@ export function HelpShell({ children }: HelpShellProps) {
                   key={href}
                   href={href}
                   className={cn(
-                    'inline-flex h-9 shrink-0 items-center gap-2 rounded-sm px-3 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg lg:flex',
+                    'inline-flex min-h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:flex',
                     active && 'bg-surface-2 text-fg',
                   )}
                   aria-current={active ? 'page' : undefined}

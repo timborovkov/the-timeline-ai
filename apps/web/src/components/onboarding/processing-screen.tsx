@@ -55,7 +55,7 @@ export function ProcessingScreen({
               'Set a rule in Gmail or Outlook later, on the Go live step. This is not a Gmail connection.',
             ],
           ].map(([label, detail]) => (
-            <div key={label} className="flex flex-wrap gap-2 py-1.5">
+            <div key={label} className="flex flex-col gap-1 py-1.5 sm:flex-row sm:gap-2">
               <span className="w-[7.5rem] text-sm font-medium">{label}</span>
               <span className="min-w-0 flex-1 text-sm text-fg-muted">{detail}</span>
             </div>
@@ -65,7 +65,10 @@ export function ProcessingScreen({
           <span className="size-2 rounded-full bg-review" />
           <span className="text-sm text-fg-muted">Nothing has arrived yet.</span>
         </div>
-        <div className="mt-5">
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={onHome}>
+            Go to Home and wait there
+          </Button>
           <Button type="button" variant="outline" onClick={onSwitch}>
             Choose another way
           </Button>

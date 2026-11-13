@@ -9,12 +9,10 @@ import {
   PageHeaderSkeleton,
 } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function WorkLoading() {
   const searchParams = useSearchParams();
   const isPinned = searchParams.get('view') === 'pinned';
-  const current = isPinned ? '/app/work?view=pinned' : '/app/work';
 
   return (
     <>
@@ -22,19 +20,20 @@ export default function WorkLoading() {
         Loading work
       </output>
       <div
-        data-app-width="collection"
-        className="space-y-6"
+        data-app-width={isPinned ? 'collection' : 'overview'}
+        className={isPinned ? 'space-y-6' : 'work-overview space-y-6'}
         aria-busy="true"
         aria-label="Loading work"
       >
         <h1 className="sr-only">Work</h1>
         <div aria-hidden="true">
-          <PageHeaderSkeleton variant="collection" />
+          <PageHeaderSkeleton variant={isPinned ? 'collection' : undefined} />
         </div>
-        <WorkSubnav current={current} />
         <div
           aria-hidden="true"
-          className={isPinned ? 'space-y-0' : 'space-y-7'}
+          className={
+            isPinned ? 'space-y-0' : 'grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]'
+          }
           data-work-loading-view={isPinned ? 'pinned' : 'overview'}
         >
           {isPinned ? (
@@ -55,8 +54,9 @@ export default function WorkLoading() {
           ) : (
             <>
               <CollectionGroupSkeleton groups={1} rows={3} leading />
-              <CollectionGroupSkeleton groups={1} rows={3} leading={false} />
-              <CollectionGroupSkeleton groups={1} rows={4} leading={false} />
+              <div className="space-y-6 border-t border-border pt-6 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+                <CollectionGroupSkeleton groups={1} rows={3} leading={false} />
+              </div>
             </>
           )}
         </div>

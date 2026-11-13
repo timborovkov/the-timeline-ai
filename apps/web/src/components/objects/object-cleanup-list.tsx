@@ -363,7 +363,6 @@ export function ObjectCleanupList({
                       return (
                         <ObjectCollectionItem
                           object={object}
-                          typeLabel={typeLabels[object.type] ?? object.type}
                           timezone={timezone}
                           returnTo={returnTo}
                           selecting={selecting}
@@ -423,7 +422,6 @@ function sameObjectFieldValue(left: ObjectEditableValue, right: ObjectEditableVa
 
 function ObjectCollectionItem({
   object,
-  typeLabel,
   timezone,
   returnTo,
   selecting,
@@ -432,7 +430,6 @@ function ObjectCollectionItem({
   onToggle,
 }: {
   object: PinnableObjectRow;
-  typeLabel: string;
   timezone: string;
   returnTo: string;
   selecting: boolean;
@@ -546,7 +543,6 @@ function ObjectCollectionItem({
           </Link>
           <DiscussionCountBadge count={object.commentCount} className="ml-2 shrink-0" />
         </CollectionRow.Title>
-        <CollectionRow.Context>{typeLabel}</CollectionRow.Context>
         <CollectionRow.Metadata>
           <>
             {object.type === 'task' ? (
@@ -601,38 +597,40 @@ function ObjectCollectionItem({
                 </select>
               </EditableMetadata.Editor>
             </EditableMetadata>
-            <EditableMetadata
-              label={`Priority for ${displayText(object.canonicalName)}`}
-              pending={saving === 'priority'}
-            >
-              <EditableMetadata.Value>
-                <CollectionStatus
-                  value={priority ? `p${priority}` : 'none'}
-                  tone={priorityTone(priority)}
-                  label={priority ? `P${priority}` : 'No priority'}
-                />
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <select
-                  aria-label="Priority"
-                  value={priority ?? ''}
-                  onChange={(event) => {
-                    save(
-                      'priority',
-                      event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                    );
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  <option value="">None</option>
-                  {[1, 2, 3, 4].map((value) => (
-                    <option key={value} value={value}>
-                      P{value}
-                    </option>
-                  ))}
-                </select>
-              </EditableMetadata.Editor>
-            </EditableMetadata>
+            {priority !== null || isSchedulableObjectType(object.type) ? (
+              <EditableMetadata
+                label={`Priority for ${displayText(object.canonicalName)}`}
+                pending={saving === 'priority'}
+              >
+                <EditableMetadata.Value>
+                  <CollectionStatus
+                    value={priority ? `p${priority}` : 'none'}
+                    tone={priorityTone(priority)}
+                    label={priority ? `P${priority}` : 'No priority'}
+                  />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    aria-label="Priority"
+                    value={priority ?? ''}
+                    onChange={(event) => {
+                      save(
+                        'priority',
+                        event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                      );
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  >
+                    <option value="">None</option>
+                    {[1, 2, 3, 4].map((value) => (
+                      <option key={value} value={value}>
+                        P{value}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            ) : null}
             {isSchedulableObjectType(object.type) ? (
               <EditableMetadata
                 label={`Due date for ${displayText(object.canonicalName)}`}

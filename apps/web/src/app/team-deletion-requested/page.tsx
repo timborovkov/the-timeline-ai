@@ -7,6 +7,8 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { getSupportEmail } from '@/lib/support-email';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Deletion requested',
   robots: { index: false, follow: false },

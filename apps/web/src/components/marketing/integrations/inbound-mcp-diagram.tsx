@@ -22,8 +22,7 @@ export function InboundMcpDiagram() {
         </span>
       </figcaption>
       <p className={styles.lede}>
-        The Timeline Agent can call connected MCP tools during a question. That is a live lookup,
-        not background sync, and not the path external agents use to read Timeline.
+        A question can reach beyond captured history to a tool you have connected.
       </p>
       <div className={styles.flow}>
         <section className={styles.column} aria-labelledby="inbound-mcp-agent">

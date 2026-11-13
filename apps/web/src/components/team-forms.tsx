@@ -501,7 +501,7 @@ export function TeamExportPanel({
       >
         <div className="min-w-0 space-y-1">
           <p className="text-sm text-fg-muted">
-            Builds a 24-hour archive of team data you are already allowed to see.
+            Exports team data you are already allowed to see. The download expires after 24 hours.
           </p>
           <FormFeedback
             toastId="team-export"

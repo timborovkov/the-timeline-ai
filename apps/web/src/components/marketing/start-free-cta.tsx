@@ -70,12 +70,10 @@ function CtaMicrocopy({
 }
 
 export function MarketingCtaBand({
-  kicker = 'Start free',
   title,
   body,
   firstRun = false,
 }: {
-  kicker?: string;
   title: string;
   body: string;
   firstRun?: boolean;
@@ -85,12 +83,9 @@ export function MarketingCtaBand({
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className={styles.ctaPanel}>
           <div className="max-w-2xl">
-            <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-              {kicker}
-            </p>
             <h2
               id="cta-title"
-              className="mt-5 text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
+              className="text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
             >
               {title}
             </h2>

@@ -1,0 +1,357 @@
+.page a:focus-visible,
+.page summary:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 4px;
+}
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 5rem);
+  padding-block: clamp(3rem, 5vw, 4.5rem) 2.5rem;
+}
+.hero h1 {
+  max-width: 13ch;
+  font-size: clamp(2.75rem, 5vw, 4.5rem);
+  font-weight: 500;
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.hero p {
+  max-width: 46ch;
+  font-size: 1.125rem;
+  line-height: 1.65;
+  color: var(--fg-muted);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+.textLink {
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+.plans {
+  padding-bottom: clamp(3rem, 5vw, 4rem);
+}
+.planHeading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem 2rem;
+  margin-bottom: 1.5rem;
+}
+.planHeading h2 {
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.planHeading p {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+.planGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-block: 1px solid var(--border);
+}
+.plan {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.5rem;
+  border-right: 1px solid var(--border);
+}
+.plan:last-child {
+  border-right: 0;
+}
+.plan[data-pricing-plan='free'] {
+  background: var(--surface);
+}
+.plan h3 {
+  font-size: 1.5rem;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.planPurpose {
+  margin-top: 0.5rem;
+  min-height: 3rem;
+  color: var(--fg-muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.price {
+  margin-top: 1.5rem;
+  font-size: 2.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.price span {
+  margin-left: 0.15rem;
+  font-size: 0.9375rem;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.priceNote {
+  min-height: 3rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.plan ul {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.5rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.plan > [data-public-session] {
+  margin-top: auto;
+}
+.planAction {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.plan[data-pricing-plan='free'] .planAction {
+  background: var(--signal);
+  color: var(--signal-fg);
+  border-color: var(--signal);
+}
+.planAction:hover {
+  filter: brightness(0.95);
+}
+.firstRun {
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.firstRun summary {
+  cursor: pointer;
+  font-size: 0.9375rem;
+}
+.firstRun > div {
+  margin-top: 1rem;
+}
+.allowances {
+  margin-top: 2rem;
+}
+.allowances h3 {
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+.allowances dl {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 2rem;
+  row-gap: 1rem;
+  margin-block: 1rem;
+}
+.allowances dl > div {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.allowances dt {
+  color: var(--fg-muted);
+  order: 1;
+  font-size: 0.9375rem;
+}
+.allowances dd {
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+.allowances p {
+  max-width: 85ch;
+  font-size: 0.875rem;
+  color: var(--fg-muted);
+  line-height: 1.65;
+}
+.section {
+  padding-block: clamp(3rem, 5vw, 4.5rem);
+  border-top: 1px solid var(--border);
+  scroll-margin-top: 5rem;
+}
+.sectionHeading {
+  max-width: 45rem;
+}
+.section h2 {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.sectionHeading > p {
+  margin-top: 1rem;
+  color: var(--fg-muted);
+  line-height: 1.65;
+}
+.billing {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(2rem, 5vw, 5rem);
+}
+.billing ul {
+  display: grid;
+  gap: 1.25rem;
+  line-height: 1.7;
+  color: var(--fg-muted);
+}
+.billing a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.mobileEstimate {
+  display: none;
+}
+.scrollHint {
+  margin-bottom: 0.75rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+}
+.tableRegion {
+  overflow-x: auto;
+  border-block: 1px solid var(--border);
+  scroll-margin-top: 6rem;
+}
+.tableRegion:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 4px;
+}
+.table {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 0.9375rem;
+}
+.table th,
+.table td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.5;
+}
+.table thead th {
+  background: var(--surface);
+  font-weight: 600;
+}
+.table tbody th {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.table tr:last-child > * {
+  border-bottom: 0;
+}
+@media (min-width: 48rem) {
+  .scrollHint {
+    display: none;
+  }
+}
+@media (max-width: 63.99rem) {
+  .planGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .plan:nth-child(2) {
+    border-right: 0;
+  }
+  .plan:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+  .hero {
+    gap: 2rem;
+  }
+}
+@media (max-width: 48rem) {
+  .hero,
+  .billing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hero h1 {
+    max-width: 14ch;
+  }
+  .table th:first-child {
+    position: sticky;
+    left: 0;
+    min-width: 9rem;
+    max-width: 11rem;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+  }
+  .table thead th:first-child {
+    background: var(--surface);
+  }
+}
+@media (max-width: 40rem) {
+  .planGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .plan {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem 1rem;
+  }
+  .plan:last-child {
+    border-bottom: 0;
+  }
+  .planPurpose,
+  .priceNote {
+    min-height: 0;
+  }
+  .plan ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 79.99rem) {
+  .mobileEstimate {
+    position: sticky;
+    top: 4rem;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    background: var(--bg);
+    border-block: 1px solid var(--border-strong);
+  }
+  .mobileEstimate p {
+    color: var(--fg-muted);
+    font-size: 0.875rem;
+  }
+  .mobileEstimate strong {
+    color: var(--fg);
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .mobileEstimate a {
+    font-size: 0.875rem;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+}
+
+@media (max-width: 44rem) {
+  .mobileEstimate {
+    top: 3.5rem;
+  }
+}
