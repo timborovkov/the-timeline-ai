@@ -717,6 +717,7 @@ describe('getEnv', () => {
 
   it('accepts non-secret runtime variables injected by Bun and Railway', () => {
     setExtractProductionEnv({
+      ANTHROPIC_OPEN_TELEMETRY: 'false',
       CI: 'true',
       BUN_INSTALL_BIN: '/usr/local/bin',
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: '/tmp/bun-cache',
@@ -773,6 +774,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('MISE_DATA_DIR')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('__MISE_SHIM')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('CI')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('ANTHROPIC_OPEN_TELEMETRY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('BUN_INSTALL_BIN')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('BUN_RUNTIME_TRANSPILER_CACHE_PATH')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);
