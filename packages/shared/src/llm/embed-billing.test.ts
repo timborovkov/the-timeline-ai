@@ -62,7 +62,7 @@ describe('embedding billing operation ids', () => {
     await pg.close();
   });
 
-  // Search must remain affordable while Ask holds its own one-euro reservation.
+  // Preserve the original search regression even with an explicitly larger Ask hold.
   it('admits a search embedding with 99.4 cents used and an active Ask reservation', async () => {
     const billing = createBillingScope({
       db,
@@ -81,6 +81,7 @@ describe('embedding billing operation ids', () => {
         await reserveAskAi(billing, {
           operationId: 'ask:web:search',
           deliverySurface: 'web',
+          reservedChargeCents: 100,
         })
       ).ok,
     ).toBe(true);
@@ -105,7 +106,11 @@ describe('embedding billing operation ids', () => {
       nativeUnits: 99.4,
       customerChargeCents: 99,
     });
-    await reserveAskAi(billing, { operationId: 'ask:web:batch', deliverySurface: 'web' });
+    await reserveAskAi(billing, {
+      operationId: 'ask:web:batch',
+      deliverySurface: 'web',
+      reservedChargeCents: 100,
+    });
     const model = new MockEmbeddingModelV3({
       doEmbed: (({ values }: { values: string[] }) =>
         Promise.resolve({

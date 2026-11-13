@@ -320,8 +320,8 @@ export const MEETING_MAX_DURATION_MINUTES_BY_PLAN: Record<BillingPlanId, number>
   enterprise: 360,
 };
 
-/** Customer AI charge reserved before an Ask / web chat turn (€1). */
-export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
+/** Small admission hold (0.1 cent), not a worst-case turn cost. Settle actual usage. */
+export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 0.1;
 
 /** Conservative admission budget for the pinned embedding model, not settlement pricing. */
 export const EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS = 0.1;
