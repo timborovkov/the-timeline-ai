@@ -29,9 +29,11 @@ export function HomeAttention({ groups, title }: { groups: AttentionGroup[]; tit
             <Link
               key={group.href}
               href={group.href}
-              className="group flex items-center gap-3 py-3 transition-colors hover:bg-surface sm:px-3"
+              className="group flex items-center gap-3 py-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
             >
-              <span className={`[&>svg]:size-4 ${group.danger ? 'text-danger' : 'text-fg-muted'}`}>
+              <span
+                className={`shrink-0 [&>svg]:size-4 ${group.danger ? 'text-danger' : 'text-fg-muted'}`}
+              >
                 {group.icon}
               </span>
               <span className="min-w-0 flex-1">
@@ -47,7 +49,7 @@ export function HomeAttention({ groups, title }: { groups: AttentionGroup[]; tit
               <span className="hidden text-xs text-fg-muted sm:block">{group.action}</span>
               <ArrowRight
                 aria-hidden="true"
-                className="size-4 text-fg-dim transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none"
+                className="size-4 shrink-0 text-fg-dim transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none"
               />
             </Link>
           ))}

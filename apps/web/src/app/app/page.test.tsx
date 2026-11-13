@@ -363,9 +363,9 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('href="/app/team/jobs"');
     expect(html).toContain('href="/app/connections"');
     expect(html).toContain('pending approvals');
-    expect(html).toContain('work needing attention');
-    expect(html).toContain('recoverable jobs');
-    expect(html).toContain('connection issues');
+    expect(html).toContain('items needing attention');
+    expect(html).toContain('items need');
+    expect(html).toContain('Review connections');
     expect(fakes.captureVisibility).toBe('private');
   });
 
@@ -385,7 +385,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('open tasks');
     expect(html).toContain('href="/app/objects"');
     expect(html).toContain('open objects');
-    expect(html).toContain('People, companies, projects, and more');
+    expect(html).toContain('Browse objects');
     expect(html).not.toContain('href="/app/objects?type=person"');
     expect(html).not.toContain('open people');
     expect(html).not.toContain('open companies');
@@ -412,7 +412,7 @@ describe('HomeDashboardPage', () => {
     expect(html).not.toContain('>Recent moments<');
     expect(html).toContain('aria-label="Recent moments"');
     expect(html).toContain('href="/app/timeline"');
-    expect(html).toContain('Go to the full timeline');
+    expect(html).toContain('View timeline');
   });
 
   it('keeps email in workspace context after the primary work content', async () => {

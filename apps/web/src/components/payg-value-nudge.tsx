@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useState, useSyncExternalStore } from 'react';
 
+import { Button } from '@/components/ui/button';
+
 function subscribe(listener: () => void) {
   window.addEventListener('storage', listener);
   return () => {
@@ -37,12 +39,13 @@ export function PaygValueNudge({ storageKey }: { storageKey: string }) {
           under a €25 monthly default cap; extra members and tax may add charges.
         </p>
       </div>
-      <Link href="/app/team?section=billing&plan=payg#change-plan" className="text-xs underline underline-offset-4">
-        Explore Pay as you go
-      </Link>
-      <button
+      <Button asChild variant="outline" size="sm">
+        <Link href="/app/team?section=billing&plan=payg#change-plan">Explore Pay as you go</Link>
+      </Button>
+      <Button
         type="button"
-        className="text-xs text-fg-muted underline underline-offset-4"
+        variant="ghost"
+        size="sm"
         onClick={() => {
           setDismissed(true);
           try {
@@ -54,7 +57,7 @@ export function PaygValueNudge({ storageKey }: { storageKey: string }) {
         }}
       >
         Not now
-      </button>
+      </Button>
     </aside>
   );
 }

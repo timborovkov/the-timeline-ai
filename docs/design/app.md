@@ -14,10 +14,11 @@ queue. The empty Boards explanation and Create board action stay together.
 ### Home
 
 Home leads with the active workspace’s actual name as its heading and a Capture action, beside a compact Ask
-composer on wide screens. Prompt suggestions are quiet text actions. Attention
+composer on wide screens. Prompt suggestions use compact bordered buttons. Attention
 and recent activity form the primary column; three pinned shortcuts and workspace
-utilities support them in the secondary column. Email and processing tools use
-explicit disclosures; processing retains a visible issue count respecting admin access.
+utilities support them in the secondary column. Email capture stays visible with copy and settings actions. Processing issues use a
+stacked notice with explicit review actions; job counts remain admin-only. Healthy
+processing adds no notice.
 Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
 four moments; the full timeline remains one click away. The latest digest follows
 activity with a bounded summary preview and an expandable full body.

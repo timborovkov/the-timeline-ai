@@ -324,7 +324,8 @@ export default async function HomeDashboardPage() {
               },
               {
                 href: '/app/work',
-                label: 'Work needing attention',
+                label: 'Items needing attention',
+                singularLabel: 'Item needing attention',
                 count: urgentWorkCount,
                 action: 'Open work queue',
                 icon: <CircleAlert aria-hidden="true" />,
@@ -343,7 +344,7 @@ export default async function HomeDashboardPage() {
                 label: 'Open objects',
                 singularLabel: 'Open object',
                 count: openObjectTotal,
-                action: 'People, companies, projects, and more',
+                action: 'Browse objects',
                 icon: <Boxes aria-hidden="true" />,
               },
             ]}
@@ -352,7 +353,10 @@ export default async function HomeDashboardPage() {
           <section className="space-y-4 border-t border-border pt-6" aria-label="Recent moments">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">Recent activity</h2>
-              <Link href="/app/timeline" className="text-sm text-fg-muted hover:text-fg">
+              <Link
+                href="/app/timeline"
+                className="inline-flex min-h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 View timeline →
               </Link>
             </div>
@@ -391,14 +395,6 @@ export default async function HomeDashboardPage() {
                 body: emptyTimeline.actionBody,
               }}
             />
-            <p>
-              <Link
-                href="/app/timeline"
-                className="text-xs text-fg-dim transition-colors hover:text-fg"
-              >
-                Go to the full timeline
-              </Link>
-            </p>
           </section>
           <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
         </div>
@@ -408,28 +404,12 @@ export default async function HomeDashboardPage() {
         >
           <PinnedWorkspacePreview initialItems={pinnedPage.items.slice(0, 3)} />
           <ConnectAgentOnboardingCard initialData={initialChecklist} />
-          <details className="group border-b border-border pb-5">
-            <summary className="cursor-pointer text-sm font-medium">Capture by email</summary>
-            <div className="pt-4">
-              <HomeTeamEmail inboundEmail={inboundEmail} />
-            </div>
-          </details>
-
-          <details>
-            <summary className="cursor-pointer text-sm font-medium">
-              Connections & processing
-              {(isAdmin ? recoverableJobs.length : 0) + connectionAttention.length > 0 ? (
-                <span className="ml-2 text-xs text-danger">
-                  {(isAdmin ? recoverableJobs.length : 0) + connectionAttention.length} issues
-                </span>
-              ) : null}
-            </summary>
-            <HomeProcessingAttention
-              isAdmin={isAdmin}
-              recoverableJobs={recoverableJobs.length}
-              connectionIssues={connectionAttention.length}
-            />
-          </details>
+          <HomeTeamEmail inboundEmail={inboundEmail} />
+          <HomeProcessingAttention
+            isAdmin={isAdmin}
+            recoverableJobs={recoverableJobs.length}
+            connectionIssues={connectionAttention.length}
+          />
           {isAdmin && billingDashboard?.nudge ? (
             <BillingUpgradeNudge nudge={billingDashboard.nudge} />
           ) : null}

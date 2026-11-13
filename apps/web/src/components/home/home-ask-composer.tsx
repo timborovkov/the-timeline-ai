@@ -102,12 +102,12 @@ export function HomeAskComposer({
           {error}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-x-5 gap-y-1">
+      <div className="flex flex-wrap gap-2">
         {(hasSources ? SUGGESTIONS : []).map((suggestion) => (
           <button
             key={suggestion}
             type="button"
-            className="rounded-sm px-0 py-1 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="min-h-9 rounded-sm border border-border px-3 py-1 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               submit(suggestion);
             }}
