@@ -538,7 +538,9 @@ stays pending. Merge proposals still offer `Review merge` for survivor
 choices and also open this preview.
 
 Approval rows lead with a wrapping title, then wrapping proposed-change metadata.
-Evidence, warnings and dependency context align with that reading column. Relationship proposals show resolved endpoint names once, as From/To lines with the relationship kind in supporting metadata; unresolved endpoints retain the original title rather than guessing from its wording.
+Evidence, warnings and dependency context align with that reading column. A single
+proposal’s explanation sits inside its row boundary; shared bundle evidence follows
+the group heading, before its proposals. Disclosure focus outlines fit their labels. Relationship proposals show resolved endpoint names once, as From/To lines with the relationship kind in supporting metadata; unresolved endpoints retain the original title rather than guessing from its wording.
 Related proposals share a clear heading, labeled change count, and subordinate source/time
 inside a bounded group. Dependencies already named in From/To use a short requirement note. The approval queue
 does not use full-bleed collection row or group backgrounds. Checkboxes remain

@@ -1326,11 +1326,6 @@ function ApprovalBundleRow({
           }}
         />
       ))}
-      {bundle.evidence.length > 0 || bundle.reason ? (
-        <div className="pb-3 pl-9 pr-3 pt-1">
-          <ApprovalEvidence bundle={bundle} timezone={timezone} />
-        </div>
-      ) : null}
     </>
   );
   if (bundle.items.length === 1) {
@@ -1367,6 +1362,11 @@ function ApprovalBundleRow({
           ) : undefined
         }
       >
+        {bundle.evidence.length > 0 || bundle.reason ? (
+          <div className="pb-3 pl-9 pr-3">
+            <ApprovalEvidence bundle={bundle} timezone={timezone} />
+          </div>
+        ) : null}
         {items}
       </CollectionGroup>
     </article>
@@ -1489,6 +1489,11 @@ function ApprovalItemRow({
       <ApprovalCalendarHint item={item} timezone={timezone} />
       <ApprovalItemDependency item={item} bundle={bundle} />
       <ApprovalItemEvidence item={item} timezone={timezone} />
+      {bundle.items.length === 1 && (bundle.evidence.length > 0 || bundle.reason) ? (
+        <div className="pb-3 pl-9 pr-3">
+          <ApprovalEvidence bundle={bundle} timezone={timezone} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1713,7 +1718,7 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
   }
   return (
     <details className="pb-3 pl-9 pr-3 text-xs">
-      <summary className="cursor-pointer text-fg-dim hover:text-fg">
+      <summary className="w-fit max-w-full cursor-pointer text-fg-muted hover:text-fg">
         Why · {evidenceBySurface.size} {evidenceBySurface.size === 1 ? 'source' : 'sources'}
       </summary>
       <div className="mt-2 grid gap-2">
@@ -1755,7 +1760,7 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
   if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
     <details className="pb-2 text-xs">
-      <summary className="cursor-pointer text-fg-dim hover:text-fg">
+      <summary className="w-fit max-w-full cursor-pointer text-fg-muted hover:text-fg">
         Why this was suggested
         {bundle.evidence.length > 0
           ? ` · ${bundle.evidence.length} ${bundle.evidence.length === 1 ? 'source' : 'sources'}`
