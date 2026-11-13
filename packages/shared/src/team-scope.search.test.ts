@@ -4,6 +4,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { generateAndStoreTimelineMomentPresentation } from '#src/timeline-moments/generation.js';
@@ -22,7 +23,6 @@ import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { ZodType } from 'zod';
 
-import { enrichEvidenceContext } from '#src/retrieval/context.js';
 // These tests protect the semantic retrieval contract the agent depends on:
 // query text is embedded once, vector hits are only a first pass, and Postgres
 // hydration still enforces team/visibility boundaries before evidence reaches

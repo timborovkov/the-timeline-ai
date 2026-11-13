@@ -16,6 +16,10 @@ import { eventSource, type Db } from '@timeline/db';
 import { z } from 'zod';
 
 import * as agent from '#src/agent/index.js';
+import {
+  retrieveWorkspaceContextInput,
+  type RetrievalExecutionContext,
+} from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { askBillingUserMessage } from '#src/billing/admission.js';
 import {
@@ -25,11 +29,16 @@ import {
   type ArtifactRef,
 } from '#src/citation.js';
 import { TIMELINE_EVENT_CLASSES } from '#src/event-class.js';
+import {
+  type AcceptIngestWebhookEvidenceResult,
+  type IngestEvidenceEnqueue,
+} from '#src/ingest-webhooks/accept.js';
 import { childLogger } from '#src/logger.js';
 import { type McpAuthPrincipal, resolveMcpBearer } from '#src/mcp-server/oauth.js';
 import * as objects from '#src/objects/index.js';
 import { serializeObjectRowsWithProjects } from '#src/objects/tool-serialization.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
@@ -39,25 +48,15 @@ import {
   type TimelineMoment,
   type TimelineMomentEvent,
 } from '#src/timeline-moments/index.js';
-
-import type * as boards from '#src/boards/index.js';
-import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
-
-import {
-  retrieveWorkspaceContextInput,
-  type RetrievalExecutionContext,
-} from '#src/agent/retrieval-contract.js';
-import {
-  type AcceptIngestWebhookEvidenceResult,
-  type IngestEvidenceEnqueue,
-} from '#src/ingest-webhooks/accept.js';
-import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
 import { startWebsiteScan, normalizeWebsiteUrl } from '#src/websites/index.js';
+
+import type * as boards from '#src/boards/index.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('mcp-server');
 

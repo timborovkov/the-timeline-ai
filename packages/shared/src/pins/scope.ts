@@ -13,7 +13,10 @@ import {
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
+import { documentVisibleToUser } from '#src/documents/visibility.js';
 import { childLogger } from '#src/logger.js';
+import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import {
   buildTimelineMoments,
   timelineMomentAnchorId,
@@ -23,10 +26,6 @@ import {
 import type { CalendarScope } from '#src/calendar/scope.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 import type { TimelineMomentEvent } from '#src/timeline-moments/index.js';
-
-import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
-import { documentVisibleToUser } from '#src/documents/visibility.js';
-import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 
 export const PIN_TARGET_KINDS = pinTargetKind.enumValues;
 
