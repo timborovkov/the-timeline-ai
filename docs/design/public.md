@@ -128,7 +128,12 @@ and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
 in the mobile menu. Expandable rows show a down chevron when collapsed and an up
 chevron when expanded; the mobile Menu overlay must not invert those icons.
 Escape closes the focused dropdown and returns focus to its own summary. In the
-mobile menu, dismiss a nested dropdown before dismissing the outer menu.
+mobile menu, dismiss a nested dropdown before dismissing the outer menu. Both
+levels dismiss on outside pointer interaction, focus departure, and navigation,
+including selecting the current route. Only one sibling group opens at a time.
+Dropdown destinations use two columns, with an emphasized overview and a named
+Agent tools group. Active child links identify the exact current page. The
+homepage scroll progress bar remains above the sticky header.
 Second-level nav popups use a hairline border, compact padding, and a short
 black-based shadow in light and dark mode rather than a large foreground glow.
 The Integrations dropdown is the hub, then Slack · Native sync and Telegram ·
@@ -139,9 +144,14 @@ product names. The menu does not list Jira or Notion as if they were native
 integrations. Coming-soon tools stay on the integrations directory and their
 pages, not in the header dropdown or footer Integrations column. How it works,
 Help, Trust, and head-to-head Compare pages remain in the footer. The footer is
-columnar: Product, Use cases, Integrations, Compare, and Legal. The shared public footer
-uses sentence-case Switzer labels and two columns on phones, with 44px-tall link
-and cookie-setting targets. Mobile homepage scenes keep 48px vertical padding;
+shared by the homepage and public shell: an official wordmark and short brand
+statement, followed by Product, Use cases, Integrations, and Resources columns.
+Resources contains help, contact, trust, the comparison hub, and a disclosure
+for individual comparisons. Product tour lives under Product. GitHub and the
+session-aware account action sit in the brand row; copyright, Terms, Privacy,
+Cookies, and Cookie settings have their own bottom rail. Auth-neutral shells
+omit account actions. The footer uses sentence-case Switzer labels and two
+columns on phones, with 44px-tall link and cookie-setting targets. Mobile homepage scenes keep 48px vertical padding;
 the hero starts at 40px and stacks its evidence example below the opening copy.
 `/compare` is a
 thin hub for head-to-head pages versus Day AI, Folk, Glean, Geekbot, Suda,
@@ -258,7 +268,7 @@ the browser's page-sized focus outline; interactive controls retain their focus 
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
 and Pricing (`/pricing`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and the columnar footer repeats them plus How it works, Help, Compare, and Legal. The
+menu disclosure, and the shared footer repeats them alongside How it works, Resources, and a legal/privacy rail. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
 theme controls move into the disclosure instead of disappearing, and the
 disclosure closes after link activation or a persisted-layout route change.

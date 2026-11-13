@@ -19,7 +19,6 @@ import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
-import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
@@ -45,9 +44,8 @@ import { MarketingProductScreenshot } from '@/components/marketing/product-scree
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
-import { CookieSettingsButton } from '@/components/public-analytics';
+import { PublicFooter } from '@/components/public-footer';
 import { PublicHeader } from '@/components/public-header';
-import { PublicFooterColumns } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import {
@@ -61,7 +59,6 @@ import { DEFAULT_SUPPORT_EMAIL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
-const CONTACT_HREF = '/help/support';
 const HERO_INTRO = PRODUCT_POSITIONING.hero;
 const HOME_INTAKE_SURFACES = [
   ...CAPTURE_SURFACES.map((surface) => ({
@@ -148,7 +145,7 @@ export default function LandingPage() {
         <AudienceScene />
         <CtaScene />
       </main>
-      <Footer />
+      <PublicFooter currentSection="product" />
     </div>
   );
 }
@@ -722,68 +719,5 @@ function SceneHeading({ id, title, copy }: { id: string; title: ReactNode; copy:
         <p>{copy}</p>
       </div>
     </header>
-  );
-}
-
-function Footer() {
-  const year = new Date().getFullYear();
-  return (
-    <footer className={styles.footer}>
-      <div className={styles.footerBrandRow}>
-        <span className={styles.footerBrand}>
-          <Logo ariaHidden /> The Timeline
-        </span>
-        <span>© {year}</span>
-      </div>
-      <nav aria-label="Explore The Timeline">
-        <PublicFooterColumns
-          currentSection="product"
-          className={styles.footerColumns}
-          headingClassName={styles.footerColumnTitle}
-          activeItemClassName={styles.footerLinkActive}
-          legalItems={
-            <>
-              <li>
-                <GitHubSourceLink appearance="inline" label="GitHub" />
-              </li>
-              <li>
-                <Link href="/trust">Trust</Link>
-              </li>
-              <li>
-                <Link href="/terms">Terms</Link>
-              </li>
-              <li>
-                <Link href="/privacy">Privacy</Link>
-              </li>
-              <li>
-                <Link href="/cookies">Cookies</Link>
-              </li>
-              <li>
-                <CookieSettingsButton className={styles.footerSettings} />
-              </li>
-              <li>
-                <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
-                  Contact
-                </Link>
-              </li>
-              <li>
-                <PublicSessionBranch
-                  signedOut={
-                    <Link href="/sign-in" data-public-analytics-cta="sign_in">
-                      Sign in
-                    </Link>
-                  }
-                  signedIn={
-                    <Link href="/app" data-public-analytics-cta="open_dashboard">
-                      Dashboard
-                    </Link>
-                  }
-                />
-              </li>
-            </>
-          }
-        />
-      </nav>
-    </footer>
   );
 }

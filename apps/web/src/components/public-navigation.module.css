@@ -168,3 +168,93 @@ details[open] > summary .dropdownChevron {
     text-align: left;
   }
 }
+
+/* The overview anchors the menu; destinations share a readable two-column rhythm. */
+.dropdownPanel {
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32rem;
+  padding: 0.75rem;
+}
+.dropdownList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.overviewRow,
+.dropdownRule,
+.groupLabel {
+  grid-column: 1 / -1;
+}
+.dropdownOverview {
+  justify-content: space-between;
+}
+
+.groupLabel {
+  padding: 0.75rem 0.7rem 0.25rem;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+.mobilePanel {
+  position: fixed;
+  top: 4.5rem;
+  right: 1rem;
+  left: 1rem;
+  z-index: 60;
+  max-height: calc(100dvh - 5.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  padding: 0.5rem;
+  box-shadow: 0 12px 24px color-mix(in oklch, black 15%, transparent);
+}
+.mobileDropdown .dropdownPanel {
+  width: auto;
+  transform: none;
+}
+.mobileDropdown .dropdownList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-inline-start: 0;
+  padding-inline-start: 0;
+  border: 0;
+}
+.mobileDropdown .dropdownLink {
+  font-size: 0.8125rem;
+}
+.footerColumns {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.footerColumnList {
+  gap: 0;
+}
+.footerCompare summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.75rem;
+  cursor: pointer;
+  list-style: none;
+  gap: 0.5rem;
+}
+.footerCompare summary::-webkit-details-marker {
+  display: none;
+}
+.footerCompare > ul {
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 64rem) {
+  .footerColumns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 44rem) {
+  .mobilePanel {
+    top: 4rem;
+    right: 0.75rem;
+    left: 0.75rem;
+    max-height: calc(100dvh - 4.75rem);
+  }
+}
