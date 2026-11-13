@@ -126,6 +126,8 @@ it('stays on the record when saving progress fails', async () => {
     />,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Ask about it' }));
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('Please try again.'); });
+  await waitFor(() => {
+    expect(screen.getByRole('alert').textContent).toBe('Please try again.');
+  });
   expect(fakes.push).not.toHaveBeenCalled();
 });

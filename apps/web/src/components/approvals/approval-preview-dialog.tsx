@@ -4,6 +4,8 @@ import { Check, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import type { ComponentProps } from 'react';
+
 import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
 
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
@@ -136,43 +138,17 @@ export function ApprovalPreviewDialog({
   });
   const evidence = item.evidence ?? [];
 
-  const actions = isActionableSuggestionStatus(item.status) ? (
-    <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
-      {mergeHref ? (
-        <Button asChild size="sm" variant="ghost" disabled={pending}>
-          <Link href={mergeHref}>
-            <GitMerge className="size-4" />
-            Review merge
-          </Link>
-        </Button>
-      ) : (
-        <>
-          <Button
-            type="button"
-            size="sm"
-            variant={presentation === 'dialog' ? 'ghost' : 'default'}
-            disabled={pending || busy || acceptDisabled}
-            onClick={onAccept}
-          >
-            <Check className="size-4" />
-            Accept
-          </Button>
-          <SuggestionChangeDialog
-            itemId={item.id}
-            title={displayText(item.title)}
-            disabled={pending || busy || acceptDisabled}
-          />
-        </>
-      )}
-      <Button type="button" size="sm" variant="ghost" disabled={pending || busy} onClick={onReject}>
-        <X className="size-4" />
-        Reject
-      </Button>
-    </ItemActionGroup>
-  ) : (
-    <p className="text-sm capitalize text-fg-muted">
-      {item.status.replaceAll('_', ' ')} · Read-only
-    </p>
+  const actions = (
+    <PreviewDecisionActions
+      item={item}
+      mergeHref={mergeHref}
+      pending={pending}
+      busy={busy}
+      acceptDisabled={acceptDisabled}
+      presentation={presentation}
+      onAccept={onAccept}
+      onReject={onReject}
+    />
   );
   const content = (
     <>
@@ -253,6 +229,66 @@ export function ApprovalPreviewDialog({
   );
 }
 
+function PreviewDecisionActions({
+  item,
+  mergeHref,
+  pending,
+  busy,
+  acceptDisabled,
+  presentation,
+  onAccept,
+  onReject,
+}: Pick<
+  ComponentProps<typeof ApprovalPreviewDialog>,
+  | 'item'
+  | 'mergeHref'
+  | 'pending'
+  | 'busy'
+  | 'acceptDisabled'
+  | 'presentation'
+  | 'onAccept'
+  | 'onReject'
+>) {
+  return isActionableSuggestionStatus(item.status) ? (
+    <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
+      {mergeHref ? (
+        <Button asChild size="sm" variant="ghost" disabled={pending}>
+          <Link href={mergeHref}>
+            <GitMerge className="size-4" />
+            Review merge
+          </Link>
+        </Button>
+      ) : (
+        <>
+          <Button
+            type="button"
+            size="sm"
+            variant={presentation === 'dialog' ? 'ghost' : 'default'}
+            disabled={pending || busy || acceptDisabled}
+            onClick={onAccept}
+          >
+            <Check className="size-4" />
+            Accept
+          </Button>
+          <SuggestionChangeDialog
+            itemId={item.id}
+            title={displayText(item.title)}
+            disabled={pending || busy || acceptDisabled}
+          />
+        </>
+      )}
+      <Button type="button" size="sm" variant="ghost" disabled={pending || busy} onClick={onReject}>
+        <X className="size-4" />
+        Reject
+      </Button>
+    </ItemActionGroup>
+  ) : (
+    <p className="text-sm capitalize text-fg-muted">
+      {item.status.replaceAll('_', ' ')} · Read-only
+    </p>
+  );
+}
+
 function ApprovalPreviewContent({
   bounded = true,
   loadingSnapshot,
@@ -292,17 +328,7 @@ function ApprovalPreviewContent({
           <PreviewFieldRow field={field} key={field.key} />
         ))}
       </dl>
-      {timestamps.createdAt || timestamps.updatedAt ? (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
-          {timestamps.createdAt ? (
-            <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
-          ) : null}
-          {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
-          {timestamps.updatedAt ? (
-            <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
-          ) : null}
-        </p>
-      ) : null}
+      <PreviewTimestamps timestamps={timestamps} />
       {item.description ? (
         <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
       ) : null}
@@ -375,6 +401,25 @@ function ApprovalPreviewContent({
     </div>
   );
 }
+function PreviewTimestamps({ timestamps }: { timestamps: ApprovalPreviewTimestamps }) {
+  return (
+    <>
+      {' '}
+      {timestamps.createdAt || timestamps.updatedAt ? (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
+          {timestamps.createdAt ? (
+            <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
+          ) : null}
+          {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
+          {timestamps.updatedAt ? (
+            <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
+          ) : null}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function PreviewFieldRow({ field }: { field: ApprovalPreviewField }) {
   const proposed = field.proposed ?? '—';
   return (

@@ -1,7 +1,16 @@
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 // Test environment: happy-dom
+
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => '/trust',
+  }),
+  () => import('next/navigation'),
+);
 
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
@@ -62,7 +71,7 @@ describe('Trust page', () => {
     for (const link of links) {
       const href = link.getAttribute('href');
       expect(href).toBeTruthy();
-      const section = href ? document.querySelector(href) : null;
+      const section = href ? document.getElementById(href.slice(1)) : null;
       expect(section?.tagName).toBe('SECTION');
       expect(section?.getAttribute('tabindex')).toBe('-1');
     }
@@ -84,7 +93,9 @@ describe('Trust page', () => {
     setPublicSessionCache({ status: 'signed-in' });
     render(<TrustPage />);
 
-    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    for (const link of screen.getAllByRole('link', { name: 'Dashboard' })) {
+      expect(link.getAttribute('href')).toBe('/app');
+    }
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
   });
 });

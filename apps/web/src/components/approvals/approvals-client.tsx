@@ -883,18 +883,7 @@ export function ApprovalsClient({
   );
 
   if (loadedSuggestions.length === 0 && pageCursor === null) {
-    return (
-      <EmptyState
-        icon={Inbox}
-        title={emptyState?.title ?? 'No proposals to review'}
-        body={
-          emptyState?.body ??
-          'The timeline is collecting events. Proposals will appear here when something needs a decision.'
-        }
-        href={emptyState?.href ?? '/app/timeline'}
-        action={emptyState?.action ?? 'Open timeline'}
-      />
-    );
+    return <EmptyApprovals emptyState={emptyState} />;
   }
 
   const body = (
@@ -939,49 +928,16 @@ export function ApprovalsClient({
           />
         </div>
         {activePreview ? (
-          <ApprovalPreviewDialog
-            presentation={inbox ? (desktopReview ? 'panel' : 'sheet') : 'dialog'}
-            reason={[
-              activePreview.bundle.reason,
-              approvalDependencyText(activePreview.item, activePreview.bundle),
-            ]
-              .filter(Boolean)
-              .join('\n')}
+          <ActiveApprovalPreview
+            activePreview={activePreview}
+            inbox={inbox}
+            desktopReview={desktopReview}
             returnFocusTo={previewTriggerRef.current}
-            open
-            onOpenChange={(open) => {
-              if (!open) dispatch({ type: 'closePreview' });
-            }}
-            item={{
-              ...activePreview.item,
-              evidence: activePreview.item.evidence?.length
-                ? activePreview.item.evidence
-                : activePreview.bundle.evidence,
-            }}
+            onClose={() => dispatch({ type: 'closePreview' })}
             timezone={resolvedTimezone}
-            actionLabel={itemActionLabel(activePreview.item)}
-            acceptDisabled={activePreview.item.evidenceStatus === 'stale'}
-            busy={inbox ? busyItemIds.size > 0 : busyItemIds.has(activePreview.item.id)}
+            busyItemIds={busyItemIds}
             pending={pending}
-            mergeHref={
-              activePreview.item.targetKind === 'object_merge'
-                ? objectMergeHref(activePreview.item)
-                : null
-            }
-            onAccept={() => {
-              run(
-                () => acceptSuggestionItemAction({ itemId: activePreview.item.id }),
-                [activePreview.item.id],
-                decisionMessages('accept', 1, activePreview.item.title, activePreview.item.id),
-              );
-            }}
-            onReject={() => {
-              run(
-                () => rejectSuggestionItemAction({ itemId: activePreview.item.id }),
-                [activePreview.item.id],
-                decisionMessages('reject', 1, activePreview.item.title, activePreview.item.id),
-              );
-            }}
+            run={run}
           />
         ) : null}
       </div>
@@ -995,6 +951,90 @@ export function ApprovalsClient({
       folded={folded}
       visiblePendingItemCount={visiblePendingItemCount}
       body={body}
+    />
+  );
+}
+
+function EmptyApprovals({ emptyState }: Pick<Props, 'emptyState'>) {
+  return (
+    <EmptyState
+      icon={Inbox}
+      title={emptyState?.title ?? 'No proposals to review'}
+      body={
+        emptyState?.body ??
+        'The timeline is collecting events. Proposals will appear here when something needs a decision.'
+      }
+      href={emptyState?.href ?? '/app/timeline'}
+      action={emptyState?.action ?? 'Open timeline'}
+    />
+  );
+}
+
+function ActiveApprovalPreview({
+  activePreview,
+  inbox,
+  desktopReview,
+  returnFocusTo,
+  onClose,
+  timezone,
+  busyItemIds,
+  pending,
+  run,
+}: {
+  activePreview: { bundle: SuggestionBundle; item: SuggestionItem };
+  inbox: boolean;
+  desktopReview: boolean;
+  returnFocusTo: HTMLElement | null;
+  onClose: () => void;
+  timezone: string;
+  busyItemIds: Set<string>;
+  pending: boolean;
+  run: ApprovalAction;
+}) {
+  return (
+    <ApprovalPreviewDialog
+      presentation={inbox ? (desktopReview ? 'panel' : 'sheet') : 'dialog'}
+      reason={[
+        activePreview.bundle.reason,
+        approvalDependencyText(activePreview.item, activePreview.bundle),
+      ]
+        .filter(Boolean)
+        .join('\n')}
+      returnFocusTo={returnFocusTo}
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      item={{
+        ...activePreview.item,
+        evidence: activePreview.item.evidence?.length
+          ? activePreview.item.evidence
+          : activePreview.bundle.evidence,
+      }}
+      timezone={timezone}
+      actionLabel={itemActionLabel(activePreview.item)}
+      acceptDisabled={activePreview.item.evidenceStatus === 'stale'}
+      busy={inbox ? busyItemIds.size > 0 : busyItemIds.has(activePreview.item.id)}
+      pending={pending}
+      mergeHref={
+        activePreview.item.targetKind === 'object_merge'
+          ? objectMergeHref(activePreview.item)
+          : null
+      }
+      onAccept={() => {
+        run(
+          () => acceptSuggestionItemAction({ itemId: activePreview.item.id }),
+          [activePreview.item.id],
+          decisionMessages('accept', 1, activePreview.item.title, activePreview.item.id),
+        );
+      }}
+      onReject={() => {
+        run(
+          () => rejectSuggestionItemAction({ itemId: activePreview.item.id }),
+          [activePreview.item.id],
+          decisionMessages('reject', 1, activePreview.item.title, activePreview.item.id),
+        );
+      }}
     />
   );
 }
@@ -1480,55 +1520,18 @@ function ApprovalItemRow({
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   if (inbox.enabled)
     return (
-      <div
-        className={`flex items-start gap-3 border-b border-border/60 px-3 py-4 transition-colors last:border-0 ${inbox.activeId === item.id ? 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]' : 'hover:bg-surface'}`}
-      >
-        {selectable && isActionableSuggestionStatus(item.status) ? (
-          <input
-            type="checkbox"
-            className="mt-1 size-4 shrink-0 accent-signal"
-            checked={selected}
-            aria-label={`Select ${title}`}
-            onChange={(event) => {
-              onSelectedChange(event.currentTarget.checked);
-            }}
-          />
-        ) : null}
-        <button
-          type="button"
-          aria-label={`Preview ${title}`}
-          aria-current={inbox.activeId === item.id ? 'true' : undefined}
-          onClick={onPreview}
-          className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
-        >
-          <span className="block text-sm font-medium leading-6">
-            {relationship ? (
-              <>
-                Link {relationship.from} with {relationship.to}
-              </>
-            ) : (
-              title
-            )}
-          </span>
-          <span className="mt-1 block text-xs leading-5 text-fg-muted">{context}</span>
-          {!isActionableSuggestionStatus(item.status) ? (
-            <span className="mt-1 block text-xs capitalize text-fg-dim">
-              {itemStatusLabel(item.status)}
-            </span>
-          ) : null}
-          {item.status === 'failed' || actionFailed ? (
-            <span className="mt-1 block text-xs text-danger">
-              {actionFailureReason ?? item.failureReason ?? 'Needs attention'}
-            </span>
-          ) : null}
-          {item.evidenceStatus === 'stale' ? (
-            <span className="mt-1 block text-xs text-danger">
-              Source changed · regenerate before accepting
-            </span>
-          ) : null}
-        </button>
-        <ArrowRight aria-hidden="true" className="mt-1 size-4 shrink-0 text-fg-dim" />
-      </div>
+      <ApprovalInboxRow
+        item={item}
+        title={title}
+        context={context}
+        relationship={relationship}
+        actionFailed={actionFailed}
+        actionFailureReason={actionFailureReason}
+        selectable={selectable}
+        selected={selected}
+        onPreview={onPreview}
+        onSelectedChange={onSelectedChange}
+      />
     );
   return (
     <div className="border-b border-border/60 last:border-b-0">
@@ -1600,6 +1603,33 @@ function ApprovalItemRow({
           )}
         </CollectionRow.Actions>
       </CollectionRow>
+      <ApprovalRowDetails
+        actionFailureReason={actionFailureReason}
+        actionFailed={actionFailed}
+        item={item}
+        bundle={bundle}
+        timezone={timezone}
+      />
+    </div>
+  );
+}
+
+function ApprovalRowDetails({
+  actionFailureReason,
+  actionFailed,
+  item,
+  bundle,
+  timezone,
+}: {
+  actionFailureReason: string | null;
+  actionFailed: boolean;
+  item: SuggestionItem;
+  bundle: SuggestionBundle;
+  timezone: string;
+}) {
+  return (
+    <>
+      {' '}
       {actionFailureReason ? (
         <p className="pb-2 pl-9 pr-3 text-xs text-danger">{actionFailureReason}</p>
       ) : actionFailed ? (
@@ -1616,6 +1646,83 @@ function ApprovalItemRow({
           <ApprovalEvidence bundle={bundle} timezone={timezone} />
         </div>
       ) : null}
+    </>
+  );
+}
+
+function ApprovalInboxRow({
+  item,
+  title,
+  context,
+  relationship,
+  actionFailed,
+  actionFailureReason,
+  selectable,
+  selected,
+  onPreview,
+  onSelectedChange,
+}: {
+  item: SuggestionItem;
+  title: string;
+  context: string;
+  relationship: ReturnType<typeof relationshipEndpoints>;
+  actionFailed: boolean;
+  actionFailureReason: string | null;
+  selectable: boolean;
+  selected: boolean;
+  onPreview: () => void;
+  onSelectedChange: (checked: boolean) => void;
+}) {
+  const inbox = useContext(InboxContext);
+  return (
+    <div
+      className={`flex items-start gap-3 border-b border-border/60 px-3 py-4 transition-colors last:border-0 ${inbox.activeId === item.id ? 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]' : 'hover:bg-surface'}`}
+    >
+      {selectable && isActionableSuggestionStatus(item.status) ? (
+        <input
+          type="checkbox"
+          className="mt-1 size-4 shrink-0 accent-signal"
+          checked={selected}
+          aria-label={`Select ${title}`}
+          onChange={(event) => {
+            onSelectedChange(event.currentTarget.checked);
+          }}
+        />
+      ) : null}
+      <button
+        type="button"
+        aria-label={`Preview ${title}`}
+        aria-current={inbox.activeId === item.id ? 'true' : undefined}
+        onClick={onPreview}
+        className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+      >
+        <span className="block text-sm font-medium leading-6">
+          {relationship ? (
+            <>
+              Link {relationship.from} with {relationship.to}
+            </>
+          ) : (
+            title
+          )}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-fg-muted">{context}</span>
+        {!isActionableSuggestionStatus(item.status) ? (
+          <span className="mt-1 block text-xs capitalize text-fg-dim">
+            {itemStatusLabel(item.status)}
+          </span>
+        ) : null}
+        {item.status === 'failed' || actionFailed ? (
+          <span className="mt-1 block text-xs text-danger">
+            {actionFailureReason ?? item.failureReason ?? 'Needs attention'}
+          </span>
+        ) : null}
+        {item.evidenceStatus === 'stale' ? (
+          <span className="mt-1 block text-xs text-danger">
+            Source changed · regenerate before accepting
+          </span>
+        ) : null}
+      </button>
+      <ArrowRight aria-hidden="true" className="mt-1 size-4 shrink-0 text-fg-dim" />
     </div>
   );
 }
