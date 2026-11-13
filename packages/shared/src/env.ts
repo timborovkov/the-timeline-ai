@@ -161,6 +161,9 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
   'OLDPWD',
   'COLORTERM',
   'CI',
+  // Non-secret platform telemetry toggle injected into some runtimes even
+  // when it is absent from the service's configured Railway variables.
+  'ANTHROPIC_OPEN_TELEMETRY',
   // Exact, non-secret runtime paths injected by the pinned Bun container.
   'BUN_INSTALL_BIN',
   'BUN_RUNTIME_TRANSPILER_CACHE_PATH',

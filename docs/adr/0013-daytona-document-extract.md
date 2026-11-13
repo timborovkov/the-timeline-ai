@@ -78,7 +78,10 @@ authored by a trusted teammate.
    enforces an allowlist against raw `process.env` so copied Railway vars
    (including unparsed secrets like `SLACK_CANARY_*`,
    `MCP_PREREGISTERED_*_CLIENT_SECRET`, `LANGSMITH_API_KEY`) cannot remain
-   readable in the extract process.
+   readable in the extract process. The exact non-secret
+   `ANTHROPIC_OPEN_TELEMETRY` platform toggle is allowed because some runtimes
+   inject it even when it is absent from the service's configured variables;
+   other `ANTHROPIC_*` variables remain rejected.
 6. **Local escape hatch.** Binary formats fail closed without Daytona unless
    `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` (or `1`; dev only — rejected when
    `NODE_ENV=production`). The hatch uses mammoth for DOCX and empty-PDF→vision;
