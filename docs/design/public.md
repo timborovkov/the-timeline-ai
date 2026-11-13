@@ -398,19 +398,33 @@ not public page scaffolding; retain functional breadcrumbs and source metadata.
 Do not add numeric section rails when
 sequence does not explain the work.
 
-Use-case details pair introductory copy with the first screenshot, then real
-process steps, a walkthrough and supporting captures. Feature and related-use-case
-content uses open rows with a single separating rule instead of repeated nested
-card shells. Preserve every page's facts, native FAQ disclosures, complete
-screenshot frames and theme matching. Requirements remain beside the example;
-FAQs pair their heading with the question list. Sections use 2–3.5rem vertical
-spacing and stack at narrow widths. The work-record detail explicitly separates
-the Acme chronology example from the Northstar product capture. Do not inflate
-short copy into full-width standalone sections.
+Use-case details pair a clear outcome and acquisition action with a readable,
+semantic example of the work: chronology, daily update, agreement, customer,
+proposed task or handoff. Examples are labelled illustrative and never imitate
+clickable product controls. Preserve approval and visibility boundaries in the
+example; CRM explicitly distinguishes Timeline records from planned external
+CRM sync. A full-width, theme-matched product capture follows the explanation,
+with further captures and FAQs supporting the specific use case. Keep complete
+screenshot frames. The fictional Acme examples and Northstar product captures
+remain separate. Source entries may arrive once with a brief transform/opacity
+sequence; content is visible by default and reduced motion is static.
+
+Integration details use short benefit headlines, explicit capability labels and
+provider-specific evidence previews. Native sync, deliberate capture, live MCP
+lookup and planned integrations must be distinguishable in the first viewport.
+Provider setup and recovery belong in anchored sections after the value and
+example; do not duplicate raw errors or OAuth prerequisites in the hero.
+Native pages preserve captured-record lists, provider ownership, permissions,
+limits, recipes and FAQ content. Questions are one way to use the work record,
+not the whole pitch. Planned integrations show Today and Planned alongside the
+introduction and link to available sources, never an unavailable connect flow.
+MCP introduces live lookup beside the hero and keeps inbound tools separate
+from external agents reading Timeline. Websites shows capture history before
+its concrete scan price. Related tools use compact rows with readable status.
 
 Agents pairs its introduction with setup; MCP reading instructions sit beside
-the product screenshot. Native connector pages use split introductions with
-local section links. Integration directory, Telegram, MCP guides, works-with
+the product screenshot. Native connector pages retain local section links.
+Integration directory, Telegram, MCP guides, works-with
 pages and Trust keep a compact reading rhythm. Keep one idea per paragraph and
 avoid repeating capture, approval and citation explanations. Policy detail uses
 closed-by-default `MarketingDisclosure` elements: keyboard-accessible summaries

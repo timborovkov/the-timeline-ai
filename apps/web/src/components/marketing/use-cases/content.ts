@@ -76,7 +76,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     title: 'A work record that keeps itself current.',
     summary: 'Find the decisions, promises and handoffs behind a project’s current state.',
     howItWorks: [
-      'Link a Slack channel or Telegram group, forward email, or add calls. Each item joins the timeline with its source, time and visibility.',
+      'Connect selected sources, capture an update or add a document. Each item joins the timeline with its source, time and visibility.',
       'Lasting record changes are proposed for your approval. Captured evidence stays unchanged.',
     ],
     example: {

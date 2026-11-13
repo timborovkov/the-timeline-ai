@@ -146,7 +146,7 @@ describe('public integration routes', () => {
     expect(html).toContain('bg-white');
     expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('scroll-mt-24');
-    expect(html).toContain('connectorTitle');
+    expect(html).toContain('Illustrative example');
     expect(html).not.toContain('7.5vw');
     expect(html).not.toContain('--record-index');
     expect(html).not.toContain('--marker-index');
@@ -174,10 +174,10 @@ describe('public integration routes', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(text).toContain('All integrations');
-    expect(text).toContain('Before you connect');
+    expect(text).toContain('You choose the sources.');
     expect(text).toContain('What Timeline keeps, and what stays in GitHub');
-    expect(text).not.toMatch(/Last reviewed|Native integration|Capability truth/u);
-    expect(html).not.toContain('<time');
+    expect(text).not.toMatch(/Last reviewed|Capability truth/u);
+    expect(text).toContain('Native integration');
     expect(html).not.toMatch(/font-mono[^>]*>06 native integrations/u);
     expect(html).not.toMatch(/font-mono[^>]*>Last reviewed/u);
     expect(html).toContain('Timeline captures');
@@ -191,7 +191,7 @@ describe('public integration routes', () => {
       expect(html).toContain(`href="#${id}"`);
       expect(html).toContain(`id="${id}"`);
     }
-    expect(html.indexOf('Before you connect')).toBeLessThan(html.indexOf('id="how-it-works"'));
+    expect(html.indexOf('id="how-it-works"')).toBeLessThan(html.indexOf('id="setup"'));
     expect(text).toContain('Have a team admin activate the shared sources.');
     expect(html).toContain('bg-white');
     expect(html).toContain('PR #482');
@@ -227,10 +227,10 @@ describe('public integration routes', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain(`data-works-with-route="${tool.route}"`);
-    expect(html).toContain(tool.title);
+    expect(text).toContain(tool.name);
     expect(text).toContain(tool.statusLabel);
-    expect(text).toContain('Just getting started? You may not need one yet');
-    expect(text).toContain(`When ${tool.name} alone is the better pick`);
+    expect(text).toContain('Start with the work you need to keep.');
+    expect(text).toContain(`When ${tool.name} is enough.`);
     expect(html).toContain('Start free');
     if (tool.status === 'mcp-lookup') {
       expect(html).toContain('href="/integrations/mcp"');
@@ -267,8 +267,8 @@ describe('public integration routes', () => {
     const text = visibleText(html);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(text).toContain('Just getting started? You may not need one yet');
-    expect(text).toContain('When Linear alone is the better pick');
+    expect(text).toContain('Start with the work you need to keep.');
+    expect(text).toContain('When Linear is enough.');
     expect(text).toContain(linear.gettingStarted);
   });
 });

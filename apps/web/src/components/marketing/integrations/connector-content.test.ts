@@ -283,7 +283,7 @@ describe('connector content manifest', () => {
     const publicClaims = JSON.stringify(drive);
 
     expect(drive.slug).toBe('google-drive');
-    expect(drive.lastReviewed).toBe('2026-11-07');
+    expect(drive.lastReviewed).toBe('2026-11-12');
     expect(publicClaims).toContain('My Drive');
     expect(publicClaims).toContain('shared drives');
     expect(publicClaims).toContain('changes.watch');

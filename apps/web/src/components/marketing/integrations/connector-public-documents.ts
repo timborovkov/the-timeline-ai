@@ -112,7 +112,7 @@ export const TELEGRAM_PUBLIC_DOCUMENT = {
   title: TELEGRAM_PAGE.seoTitle,
   description: TELEGRAM_PAGE.seoDescription,
   indexability: 'index',
-  dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+  dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.8 },
   structuredData: [
@@ -147,7 +147,7 @@ export const WEBSITES_PUBLIC_DOCUMENT = {
     'Capture public website pages as cited evidence, preserve version history, and refresh them manually or on a schedule.',
   structuredData: [],
   indexability: 'index',
-  dates: { modified: '2026-11-11', reviewed: '2026-11-11' },
+  dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   llms: {

@@ -5,7 +5,7 @@ import { EditorialBreadcrumb } from '@/components/marketing/editorial/editorial-
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
+import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import {
   findUseCaseByRoute,
   USE_CASE_HUB,
@@ -13,8 +13,18 @@ import {
 } from '@/components/marketing/use-cases/content';
 import { findUseCasePublicDocument } from '@/components/marketing/use-cases/public-documents';
 import styles from '@/components/marketing/use-cases/use-case-page.module.css';
+import { UseCasePreview } from '@/components/marketing/use-cases/use-case-preview';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
+
+const processHeadings: Record<UseCaseContent['slug'], string> = {
+  'work-record': 'The history and the current state.',
+  'team-daily-log': 'Keep the team in the loop.',
+  'communication-trail': 'Follow the agreement back to its source.',
+  crm: 'Keep the relationship in context.',
+  'task-board': 'From commitment to next step.',
+  'onboarding-and-repeat-questions': 'Give the next person a head start.',
+};
 
 export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
   const related = useCase.relatedRoutes.map(findUseCaseByRoute);
@@ -66,23 +76,23 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
               <div className={styles.heroCopy}>
                 <h1 className={styles.title}>{useCase.title}</h1>
                 <p className={styles.summary}>{useCase.summary}</p>
+                {useCase.slug === 'crm' ? (
+                  <p className={styles.problem}>
+                    Timeline keeps its own customer records. External CRM sync is planned, not
+                    available today.
+                  </p>
+                ) : null}
                 {useCase.problemLine ? (
                   <p className={styles.problem}>{useCase.problemLine}</p>
                 ) : null}
+                <div className={styles.actions}>
+                  <StartFreeLink className={styles.primaryAction} />
+                  <a href="#product-view" className={styles.textAction}>
+                    See it in the product <ArrowRight size={16} aria-hidden="true" />
+                  </a>
+                </div>
               </div>
-              <div className={styles.heroMedia}>
-                {afterSubhead.map((shot) => (
-                  <MarketingProductScreenshot
-                    key={shot.file}
-                    file={shot.file}
-                    alt={shot.alt}
-                    caption={shot.caption}
-                    reshoot={shot.reshoot}
-                    callouts={shot.callouts}
-                    priority
-                  />
-                ))}
-              </div>
+              <UseCasePreview useCase={useCase} />
             </div>
           </MarketingContainer>
         </header>
@@ -92,7 +102,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
             <MarketingContainer className={styles.process}>
               <div>
                 <h2 id="how-it-works-title" className="text-2xl font-medium tracking-[-0.025em]">
-                  From conversation to current record.
+                  {processHeadings[useCase.slug]}
                 </h2>
               </div>
               <ol className={styles.steps}>
@@ -106,6 +116,25 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
             </MarketingContainer>
           </section>
         ) : null}
+
+        <section id="product-view" className={styles.productView} aria-label="Inside The Timeline">
+          <MarketingContainer className={styles.section}>
+            <div className={styles.sectionIntro}>
+              <h2>See the work, with its context.</h2>
+              <p>Inside The Timeline · {useCase.navLabel}</p>
+            </div>
+            {afterSubhead.map((shot) => (
+              <MarketingProductScreenshot
+                key={shot.file}
+                file={shot.file}
+                alt={shot.alt}
+                caption={shot.caption}
+                reshoot={shot.reshoot}
+                callouts={shot.callouts}
+              />
+            ))}
+          </MarketingContainer>
+        </section>
 
         {useCase.blocks ? (
           <section>
@@ -126,7 +155,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
           <MarketingContainer className={styles.walkthrough}>
             <div>
               <h2 className="text-2xl font-medium tracking-[-0.025em]">
-                {useCase.slug === 'work-record' ? 'The Acme rollout, in order.' : 'A walk-through.'}
+                {useCase.slug === 'work-record' ? 'The Acme rollout, in order.' : 'Put it to work.'}
               </h2>
               {afterHowItWorks.length > 0 ? (
                 <div className={styles.exampleBelow}>{exampleCard}</div>
@@ -149,7 +178,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
               ) : null}
               {useCase.boundary ? (
                 <div className={styles.contextItem}>
-                  <h3 className="text-lg font-semibold tracking-[-0.02em]">Boundary</h3>
+                  <h3 className="text-lg font-semibold tracking-[-0.02em]">What to know</h3>
                   <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
                     {useCase.boundary}
                   </p>
@@ -231,8 +260,8 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
         </section>
 
         <MarketingCtaBand
-          title="Link one channel. Watch the record fill in."
-          body="Start with one Slack channel or Telegram group."
+          title="Start with the work you want to keep."
+          body="Start with a source your team already uses. Keep the context, review proposed changes and build from there."
         />
       </article>
     </main>

@@ -87,7 +87,7 @@ export interface ConnectorRouteSummary {
 
 // Shared default for connectors last checked together. Drive lastReviewed is
 // set per-connector when that page is re-audited against product truth.
-const LAST_REVIEWED = '2026-11-03' as const;
+const LAST_REVIEWED = '2026-11-12' as const;
 const DEMO_CONNECTORS = PUBLIC_DEMO_STORY.connectors;
 
 export const CONNECTORS: readonly ConnectorContent[] = [
@@ -96,15 +96,15 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'slack',
     name: 'Slack',
     eyebrow: 'Conversation becomes chronology',
-    hero: 'Turn selected Slack channels into an up-to-date work record.',
+    hero: 'Keep the decisions beyond the thread.',
     intro: 'Bring selected Slack conversations into the work record alongside your other sources.',
-    seoTitle: 'Slack integration for cited team answers',
+    seoTitle: 'Slack integration for a connected work record',
     seoDescription:
-      'Sync selected Slack channels, threads, file-share metadata, reactions, and edits into The Timeline, then ask questions with citations back to the conversation.',
+      'Sync selected Slack messages, threads and file-share metadata into a shared work record. Keep decisions and commitments connected to their sources.',
     logo: '/connectors/slack.svg',
     lightLogoTileInDarkMode: true,
     capability: 'Native integration',
-    lastReviewed: '2026-11-07',
+    lastReviewed: LAST_REVIEWED,
     captureStatement:
       'Timeline captures history from selected channels as immutable, citable events. Its separate Slack conversation mode handles direct agent chats, explicit capture, /ask, and @Timeline replies.',
     providerStatement:
@@ -199,7 +199,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'github',
     name: 'GitHub',
     eyebrow: 'Code activity becomes release history',
-    hero: 'Connect the plan, review, merge, release, and CI evidence.',
+    hero: 'Connect what shipped to why it mattered.',
     intro:
       'Follow work from issue through review and release, alongside the conversations behind it.',
     seoTitle: 'GitHub integration for cited release history',
@@ -305,7 +305,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'linear',
     name: 'Linear',
     eyebrow: 'Issue movement becomes a work narrative',
-    hero: 'See why work moved, not only which status changed.',
+    hero: 'Keep the reason behind the status.',
     intro: 'Connect selected Linear activity to the conversations and code that explain it.',
     seoTitle: 'Linear integration for cited project history',
     seoDescription:
@@ -404,16 +404,16 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'google_drive',
     name: 'Google Drive',
     eyebrow: 'File change becomes durable evidence',
-    hero: 'Turn selected Drive changes into cited timeline evidence.',
+    hero: 'Keep the context behind the document.',
     intro:
-      'Timeline watches the folders and files you pick, then records CRM-relevant Docs, Sheets, Slides, PDF, and Word changes as cited timeline events. Nothing outside that selection is read. Selecting My Drive does not admit Shared with me.',
+      'Bring relevant changes from selected Google Drive files into the work record, alongside the conversations and decisions they inform.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
       'Capture selected Google Drive Docs, Sheets, Slides, PDF, and Word changes in The Timeline as cited evidence, using Drive push notifications and a quiet-window debounce.',
     logo: '/connectors/google-drive.svg',
     lightLogoTileInDarkMode: false,
     capability: 'Native integration',
-    lastReviewed: '2026-11-07',
+    lastReviewed: LAST_REVIEWED,
     captureStatement:
       'Timeline records selected Drive changes as cited events after a quiet editing window. It keeps the latest extracted text to detect later edits, then deletes that text on disconnect or when the file leaves the selection. It does not copy Drive files into the document drive.',
     providerStatement:
@@ -504,7 +504,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'monday',
     name: 'Monday.com',
     eyebrow: 'Board activity becomes an evidence trail',
-    hero: 'Follow records, subitems, updates, columns, and WorkDocs as one chronology.',
+    hero: 'See the work beyond the board.',
     intro:
       'See how selected boards and WorkDocs changed, with the conversations behind each update.',
     seoTitle: 'Monday.com integration for cited board history',
@@ -604,9 +604,9 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'sentry',
     name: 'Sentry',
     eyebrow: 'Issue lifecycle becomes incident context',
-    hero: 'Trace what broke, what changed, and how the fix was confirmed.',
+    hero: 'Follow the incident through the fix.',
     intro:
-      'Timeline turns selected Sentry issues, alerts, and releases into incident evidence you can connect to code and team discussion. Project selection applies to scheduled history checks; after one matching webhook, later webhook events from another project in the same Sentry installation may also be captured.',
+      'Timeline turns selected Sentry issues, alerts, and releases into incident evidence you can connect to code and team discussion.',
     seoTitle: 'Sentry integration for cited incident history',
     seoDescription:
       'Sync Sentry issue lifecycle, alerts, and releases into The Timeline, with explicit project-scope and recovery limits for cited incident answers.',
@@ -615,7 +615,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline checks selected Sentry organizations or projects and connects captured issue and release evidence to cited incidents. After it receives a matching webhook, a later webhook from an unselected project in the same Sentry installation may also be captured.',
+      'Timeline checks selected Sentry organizations or projects and connects captured issue and release evidence to cited incidents. Project selection applies to scheduled history checks; after one matching webhook, later webhook events from another project in the same Sentry installation may also be captured.',
     providerStatement:
       'Sentry remains the monitoring and error-diagnostics system. Timeline does not collect application telemetry on Sentry’s behalf or replace Sentry alerting, traces, performance views, or issue management.',
     diagram: DEMO_CONNECTORS.sentry.diagram,

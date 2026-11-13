@@ -1,15 +1,15 @@
 .page {
-  --section-space: clamp(2rem, 4vw, 3.5rem);
+  --section-space: clamp(3rem, 6vw, 5rem);
 }
 .hero {
   padding-block: 2rem var(--section-space);
 }
 .heroGrid {
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: clamp(1.5rem, 4vw, 3rem);
-  margin-top: 1.5rem;
+  margin-top: 2.5rem;
 }
 .heroCopy,
 .heroMedia {
@@ -18,9 +18,9 @@
 .title {
   margin: 0 0 1rem;
   max-width: 20ch;
-  font-size: clamp(2rem, 3.4vw, 3.25rem);
+  font-size: clamp(2.5rem, 4.8vw, 4.5rem);
   font-weight: 500;
-  line-height: 1.12;
+  line-height: 1.04;
   letter-spacing: -0.03em;
   text-wrap: balance;
 }
@@ -188,4 +188,57 @@
 
 .page [aria-labelledby='cta-title'] h2 {
   font-size: clamp(1.5rem, 2.5vw, 2rem);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+.primaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 3rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--signal);
+  color: var(--signal-fg);
+  font-weight: 600;
+  border-radius: 4px;
+}
+.textAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.actions a:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 4px;
+}
+.productView {
+  scroll-margin-top: 6rem;
+  background: var(--surface);
+}
+.sectionIntro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.sectionIntro h2 {
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  letter-spacing: -0.025em;
+  font-weight: 500;
+}
+.sectionIntro p {
+  color: var(--fg-muted);
+  font-size: 0.875rem;
 }

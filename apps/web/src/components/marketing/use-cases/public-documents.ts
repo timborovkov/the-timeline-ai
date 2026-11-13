@@ -8,7 +8,7 @@ import {
 } from '@/components/marketing/use-cases/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-07' as const;
+const REVIEW_DATE = '2026-11-12' as const;
 const PRODUCT_TOUR_REVIEW_DATE = '2026-11-12' as const;
 
 function useCaseLlmsSections(useCase: UseCaseContent): readonly PublicLlmsContentSection[] {
@@ -79,8 +79,8 @@ export const USE_CASE_PUBLIC_DOCUMENTS = definePublicDocuments('use-cases', [
     description: useCase.seoDescription,
     indexability: 'index',
     dates: {
-      modified: useCase.route === '/use-cases/work-record' ? '2026-11-12' : REVIEW_DATE,
-      reviewed: useCase.route === '/use-cases/work-record' ? '2026-11-12' : REVIEW_DATE,
+      modified: REVIEW_DATE,
+      reviewed: REVIEW_DATE,
     },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'monthly', priority: 0.8 },

@@ -5,8 +5,9 @@ import {
   findConnector,
   type ConnectorContent,
 } from '@/components/marketing/integrations/connector-content';
+import { ConnectorPreview } from '@/components/marketing/integrations/connector-preview';
 import { ConnectorStructuredData } from '@/components/marketing/integrations/connector-seo';
-import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import detailStyles from '@/components/marketing/integrations/integration-detail.module.css';
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { WorksWithGuidance } from '@/components/marketing/integrations/works-with-sections';
 import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
@@ -27,10 +28,23 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
         <MarketingContainer>
           <TruthBoundary connector={connector} />
           <ConnectorWorksWithGuidance slug={connector.slug} />
-          <Questions connector={connector} />
           <WorkedScenario connector={connector} />
+          {connector.screenshot ? (
+            <section
+              className={detailStyles.section}
+              aria-label={`${connector.name} in The Timeline`}
+            >
+              <MarketingProductScreenshot
+                file={connector.screenshot.file}
+                alt={connector.screenshot.alt}
+                caption={connector.screenshot.caption}
+              />
+            </section>
+          ) : null}
+
           <CapturedRecords connector={connector} />
           <Recipes connector={connector} />
+          <Questions connector={connector} />
           <SetupAndPrivacy connector={connector} />
           <Limitations connector={connector} />
           <Faq connector={connector} />
@@ -50,29 +64,20 @@ function ConnectorWorksWithGuidance({ slug }: { slug: string }) {
 
 function ConnectorHero({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="overflow-hidden border-b border-border bg-bg">
-      <MarketingContainer className="py-10 sm:py-14">
-        <Link
-          href="/integrations"
-          className="mb-6 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        >
+    <section>
+      <MarketingContainer className={detailStyles.hero}>
+        <Link href="/integrations" className={detailStyles.back}>
           All integrations
         </Link>
-        <div className={publicStyles.heroGrid}>
+        <div className={detailStyles.heroGrid}>
           <div>
-            <div className="mb-7 flex items-center gap-4">
-              <ProviderLogo src={connector.logo} size="lg" />
-              <div>
-                <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
-              </div>
+            <div className={detailStyles.identity}>
+              <ProviderLogo src={connector.logo} size="md" />
+              <span>{connector.name} · Native integration</span>
             </div>
-            <h1 className={publicStyles.connectorTitle}>{connector.hero}</h1>
-          </div>
-          <div className="max-w-[70ch]">
-            <p className="max-w-[46ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              {connector.intro}
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
+            <h1 className={detailStyles.title}>{connector.hero}</h1>
+            <p className={detailStyles.intro}>{connector.intro}</p>
+            <div className={detailStyles.actions}>
               <PublicSessionBranch
                 signedOut={
                   <Button asChild size="lg">
@@ -85,58 +90,28 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 signedIn={
                   <Button asChild size="lg">
                     <Link href="/app/connections">
-                      {`Connect ${connector.name}`}
+                      Connect {connector.name}
                       <ArrowRight aria-hidden="true" />
                     </Link>
                   </Button>
                 }
               />
-              <Button asChild size="lg" variant="outline">
-                <Link href="#how-it-works">See the evidence flow</Link>
-              </Button>
-            </div>
-            <div className="mt-6 max-w-[65ch] text-sm leading-relaxed">
-              <h2 className="font-semibold">Before you connect</h2>
-              <p className="mt-2 text-fg-muted">{connector.setup[1]}</p>
-              <p className="mt-2 text-fg-muted">{connector.setup[2]}</p>
-              <Link href="#setup" className="mt-3 inline-block underline underline-offset-4">
-                Review setup and permissions
-              </Link>
-              <Link href="#limitations" className="ml-4 inline-block underline underline-offset-4">
-                Check capture limits
+              <Link href="#how-it-works" className="underline underline-offset-4 py-3">
+                See how it fits
               </Link>
             </div>
+            <p className={detailStyles.note}>
+              You choose the sources. {connector.name} stays where your team works.
+            </p>
           </div>
+          <ConnectorPreview connector={connector} />
         </div>
-        <nav
-          aria-label="On this integration page"
-          className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-y border-border py-3 text-sm"
-        >
-          <a href="#truth-boundary" className="py-2 underline underline-offset-4">
-            Capture
-          </a>
-          <a href="#how-it-works" className="py-2 underline underline-offset-4">
-            Evidence
-          </a>
-          <a href="#setup" className="py-2 underline underline-offset-4">
-            Setup
-          </a>
-          <a href="#limitations" className="py-2 underline underline-offset-4">
-            Limits
-          </a>
+        <nav aria-label="On this integration page" className={detailStyles.nav}>
+          <a href="#truth-boundary">What comes in</a>
+          <a href="#how-it-works">In practice</a>
+          <a href="#setup">Setup & permissions</a>
+          <a href="#limitations">Limits</a>
         </nav>
-        <div className="mt-8 scroll-mt-24" id="how-it-works">
-          <RecordsToAnswer connector={connector} compact />
-          {connector.screenshot ? (
-            <div className="mt-10">
-              <MarketingProductScreenshot
-                file={connector.screenshot.file}
-                alt={connector.screenshot.alt}
-                caption={connector.screenshot.caption}
-              />
-            </div>
-          ) : null}
-        </div>
       </MarketingContainer>
     </section>
   );
@@ -144,62 +119,55 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
 
 function TruthBoundary({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="truth-boundary">
-      <MarketingSectionGrid>
-        <div>
-          <div className="border-b border-border pb-6">
-            <h2
-              id="truth-boundary"
-              className="scroll-mt-24 text-3xl font-semibold tracking-tight sm:text-4xl"
-            >
-              What Timeline keeps, and what stays in {connector.name}.
-            </h2>
+    <section className={detailStyles.section} aria-labelledby="truth-boundary">
+      <div className={detailStyles.split}>
+        <h2 id="truth-boundary" className="scroll-mt-24">
+          What Timeline keeps, and what stays in {connector.name}.
+        </h2>
+        <div className={detailStyles.status}>
+          <div>
+            <h3 className="text-lg font-medium">Timeline captures</h3>
+            <p>{connector.captureStatement}</p>
           </div>
-          <div className="grid gap-px border border-border bg-border sm:grid-cols-2">
-            <article className="bg-bg p-6 sm:p-8">
-              <span className="text-sm font-medium text-fg-dim">Timeline captures</span>
-              <p className="mt-4 text-base leading-relaxed text-fg">{connector.captureStatement}</p>
-            </article>
-            <article className="bg-surface p-6 sm:p-8">
-              <span className="text-sm font-medium text-fg-dim">{connector.name} remains</span>
-              <p className="mt-4 text-base leading-relaxed text-fg-muted">
-                {connector.providerStatement}
-              </p>
-            </article>
+          <div>
+            <h3 className="text-lg font-medium">{connector.name} remains</h3>
+            <p>{connector.providerStatement}</p>
           </div>
         </div>
-      </MarketingSectionGrid>
+      </div>
     </section>
   );
 }
 
 function Questions({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="questions">
-      <MarketingSectionGrid>
-        <div>
-          <h2
-            id="questions"
-            className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl"
-          >
-            Ask the operating question, not a search query.
-          </h2>
-          <ol className="mt-10 border-t border-border">
-            {connector.exampleQuestions.map((question) => (
-              <li key={question} className="border-b border-border py-5">
-                <span className="text-lg font-medium text-fg sm:text-xl">{question}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </MarketingSectionGrid>
+    <section className="border-b border-border py-8" aria-labelledby="questions">
+      <details>
+        <summary
+          id="questions"
+          className="cursor-pointer rounded-sm py-3 text-lg font-medium focus-visible:outline-2"
+        >
+          Questions you can explore with {connector.name} evidence
+        </summary>
+        <ul className="mt-4 grid gap-x-8 sm:grid-cols-2">
+          {connector.exampleQuestions.map((question) => (
+            <li key={question} className="border-t border-border py-4 leading-7 text-fg-muted">
+              {question}
+            </li>
+          ))}
+        </ul>
+      </details>
     </section>
   );
 }
 
 function WorkedScenario({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="scenario">
+    <section
+      id="how-it-works"
+      className="border-b border-border py-10 sm:py-14"
+      aria-labelledby="scenario"
+    >
       <MarketingSectionGrid>
         <div className="grid gap-8 grid-cols-[minmax(0,1fr)]">
           <div>
@@ -240,9 +208,9 @@ function CapturedRecords({ connector }: { connector: ConnectorContent }) {
           <h2 id="records" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             What enters the Timeline
           </h2>
-          <div className="mt-6 grid gap-px border border-border bg-border sm:grid-cols-2">
+          <div className="mt-6 grid gap-x-8 sm:grid-cols-2">
             {connector.capturedRecords.map((record) => (
-              <div key={record} className="flex min-h-24 gap-4 bg-bg p-5">
+              <div key={record} className="border-t border-border py-5">
                 <p className="font-medium text-fg">{record}</p>
               </div>
             ))}
@@ -259,17 +227,20 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
       <MarketingSectionGrid>
         <div>
           <h2 id="recipes" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Better when the silos meet
+            Connect it to the rest of the work
           </h2>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="mt-8 divide-y divide-border">
             {connector.recipes.map((recipe) => (
               <article
                 key={recipe.title}
-                className="flex flex-col rounded-md border border-border bg-surface p-5"
+                className="grid gap-4 py-6 sm:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)]"
               >
                 <h3 className="text-lg font-semibold text-fg">{recipe.title}</h3>
-                <p className="mt-3 grow text-sm leading-relaxed text-fg-muted">{recipe.summary}</p>
-                <div className="mt-8 flex flex-wrap items-center gap-2" aria-label="Recipe sources">
+                <p className="text-base leading-relaxed text-fg-muted">{recipe.summary}</p>
+                <div
+                  className="sm:col-start-2 flex flex-wrap items-center gap-2"
+                  aria-label="Recipe sources"
+                >
                   {recipe.sources.map((source, index) => (
                     <span key={source} className="contents">
                       {index > 0 ? (
@@ -408,12 +379,12 @@ function Related({ connector }: { connector: ConnectorContent }) {
           <h2 id="related" className="text-2xl font-semibold tracking-tight">
             Continue across the work
           </h2>
-          <div className="mt-7 grid gap-3 sm:grid-cols-3">
+          <div className="mt-7 divide-y divide-border">
             {related.map((item) => (
               <Link
                 key={item.slug}
                 href={`/integrations/${item.slug}`}
-                className="group flex min-h-28 flex-col justify-between rounded-md border border-border bg-bg p-4 outline-none transition-colors hover:border-border-strong hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                className="group flex min-h-20 flex-wrap items-center justify-between gap-4 py-4 outline-none transition-colors hover:text-signal focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="text-base font-semibold text-fg">{item.name}</span>
                 <span className="flex items-center gap-2 text-sm text-fg-muted group-hover:text-fg">
@@ -434,11 +405,11 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
       <div className={publicStyles.ctaPanel}>
         <div>
           <h2 id="cta" className="max-w-[24ch]">
-            Try one real {connector.name} question.
+            Bring {connector.name} into the picture.
           </h2>
           <p className="mt-6 max-w-[54ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-            Choose the sources your team trusts. Let the work form a chronology. Inspect the
-            evidence behind every answer.
+            Start with the sources your team uses. Keep their history together, with the evidence
+            behind the work.
           </p>
         </div>
         <div className={publicStyles.ctaAction}>

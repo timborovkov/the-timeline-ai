@@ -32,7 +32,8 @@ describe('InboundMcpDiagram', () => {
     expect(styles).toContain('@media (prefers-reduced-motion: no-preference)');
     expect(styles).toContain('transform: scaleX(0)');
     expect(styles).toContain('transform: scaleY(0)');
-    expect(styles).toContain('opacity: 0.72');
+    expect(styles).toContain('opacity: 1');
+    expect(styles).not.toContain('infinite');
     expect(styles).not.toMatch(/@keyframes[\s\S]*box-shadow:/u);
   });
 });
