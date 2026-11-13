@@ -1,16 +1,16 @@
-import { expect, vi } from '@timeline/test-support';
-import { beforeEach, it } from 'bun:test';
-import { UnrecoverableError } from 'bullmq';
 import { BillingAdmissionError } from '@timeline/shared/billing';
+import { expect, vi } from '@timeline/test-support';
+import { UnrecoverableError } from 'bullmq';
+import { beforeEach, it } from 'bun:test';
 
-const failRequest = vi.fn(async () => undefined);
-const billing = vi.fn(async () => undefined);
+const failRequest = vi.fn(() => Promise.resolve());
+const billing = vi.fn(() => Promise.resolve());
 let processor: () => Promise<void>;
 
 await vi.mock(
   import.meta.resolve('@timeline/shared'),
   () => ({
-    queue: { getRedisConnection: () => ({ set: async () => 'OK' }) },
+    queue: { getRedisConnection: () => ({ set: () => Promise.resolve('OK') }) },
   }),
   () => import('@timeline/shared'),
 );
@@ -18,7 +18,7 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
-      boardQualification: { failRequest, processRequest: async () => undefined },
+      boardQualification: { failRequest, processRequest: () => Promise.resolve() },
     }),
   }),
   () => import('@timeline/shared/team-scope'),
@@ -40,9 +40,8 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('#src/workers/boardQualification-discovery.js'),
   () => ({
-    discoverBoardQualificationRequests: async () => [
-      { id: 'request', teamId: 'team', userId: 'user', version: 3 },
-    ],
+    discoverBoardQualificationRequests: () =>
+      Promise.resolve([{ id: 'request', teamId: 'team', userId: 'user', version: 3 }]),
   }),
   () => import('#src/workers/boardQualification-discovery.js'),
 );
