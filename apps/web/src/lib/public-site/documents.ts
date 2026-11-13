@@ -24,6 +24,7 @@ import {
   TIMELINE_SKILL_INSTALL_PROMPT,
 } from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
 import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-claims';
 
@@ -69,7 +70,7 @@ const AGENT_INSTALL_LLM_SECTIONS = [
 const LANDING_SECTIONS = [
   {
     title: 'What The Timeline does',
-    body: 'The Timeline is an auto-updating work record. It turns what is said in Slack, Telegram, email and calls into current client, deal, task and decision records, with the source for every line and human approval before anything changes.',
+    body: PRODUCT_POSITIONING.hero,
   },
   {
     title: 'Best-fit teams',
@@ -171,11 +172,10 @@ const coreDocuments = definePublicDocuments('public-core', [
   {
     canonicalPath: '/',
     kind: 'landing',
-    title: "Your team's work, written down for you",
-    description:
-      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+    title: PRODUCT_POSITIONING.title,
+    description: PRODUCT_POSITIONING.description,
     indexability: 'index',
-    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -186,7 +186,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         features: [
-          'Auto-updating work record from Slack, Telegram, email and calls',
+          'Connected clients, projects, tasks and decisions from selected tools and sources',
           'Deliberate Telegram, Slack, email, meeting transcript, and webhook capture',
           'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -199,9 +199,9 @@ const coreDocuments = definePublicDocuments('public-core', [
       section: 'primary',
       order: 10,
       label: 'Landing page',
-      summary:
-        'Editorial product overview, cited evidence narrative, capture surfaces, and trust model.',
-      fullSummary: 'Product overview and cited evidence narrative.',
+      summary: PRODUCT_POSITIONING.description,
+      fullSummary:
+        'A living work record with connected objects, attached sources and approval-backed changes.',
       sections: LANDING_SECTIONS,
     },
   },
@@ -210,9 +210,9 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'guide-index',
     title: 'Help',
     description:
-      'Guides for The Timeline: capture Slack, Telegram, email and calls, keep records current, and trace every answer to its source.',
+      'Guides to connecting sources, capturing work, managing lasting records and tracing answers to their evidence in The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.8 },
     structuredData: [{ type: 'collection-page' }],
@@ -232,7 +232,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Compare monthly estimates from the same usage. Prices in EUR, excluding VAT.',
     indexability: 'index',
-    dates: { modified: '2026-11-04', reviewed: '2026-11-04' },
+    dates: { modified: '2026-11-13', reviewed: '2026-11-13' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [

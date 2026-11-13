@@ -10,7 +10,7 @@ export const TELEGRAM_PAGE = {
   seoTitle: 'Telegram integration: keep your work record from group chats',
   seoDescription:
     'Link a Telegram group or DM to The Timeline. Messages, files and voice memos join your work record with their source, and you can ask questions right in Telegram.',
-  title: 'Run your work in Telegram. Keep the record in The Timeline.',
+  title: 'Keep the work beyond the chat.',
   summary:
     'Link a Telegram group or DM. Group messages, files, images and voice memos join your work record with their source. Ask The Timeline questions without leaving the chat.',
   captured: telegram.captured,

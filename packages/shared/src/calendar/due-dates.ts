@@ -434,7 +434,7 @@ export async function syncObjectDueDateCalendarEvent(
 
 export async function tombstoneObjectDueDateCalendarEventsForEntities(
   db: DbOrTx,
-  args: { teamId: string; entityIds: string[] },
+  args: { teamId: string; entityIds: string[]; includeBoardItems?: boolean },
 ): Promise<DueDateCalendarSyncResult> {
   if (args.entityIds.length === 0) return EMPTY_SYNC_RESULT;
   const rows = await db
@@ -448,7 +448,9 @@ export async function tombstoneObjectDueDateCalendarEventsForEntities(
       and(
         eq(calendarEvents.teamId, args.teamId),
         sql`${calendarEvents.metadata} ->> 'kind' = 'due_date'`,
-        sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
+        args.includeBoardItems
+          ? sql`${calendarEvents.metadata} ->> 'source' IN ('object','board_item')`
+          : sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
         sql`${calendarEvents.metadata} ->> 'entity_id' IN (${sql.join(
           args.entityIds.map((id) => sql`${id}`),
           sql`, `,

@@ -10,12 +10,12 @@ describe('BillingCompNotice', () => {
       <BillingCompNotice
         planName="Team"
         expired={false}
-        reason="Tim internal"
+        reason="Taylor internal"
         expiresOn="2026-12-31"
       />,
     );
     expect(html).toContain('Comped through 2026-12-31. No charge.');
-    expect(html).not.toContain('Tim internal');
+    expect(html).not.toContain('Taylor internal');
     expect(html).not.toContain('Polar');
   });
 

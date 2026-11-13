@@ -11,6 +11,7 @@ import {
 import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
+import { timelineEventMatchesGroup } from '#src/timeline-moments/index.js';
 import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 import type {
@@ -599,6 +600,8 @@ export function createTimelineReadScope({
         return sql`${rawEvents.sourceMetadata} ->> 'thread_root_id' = ${value}`;
       case 'calendar_event_id':
         return sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${value}`;
+      case 'websiteScanId':
+        return sql`${rawEvents.sourceMetadata} ->> 'websiteScanId' = ${value}`;
       case 'document_id':
         return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'document_id', ${rawEvents.sourceMetadata} ->> 'documentId') = ${value}`;
       case 'action':
@@ -650,6 +653,27 @@ export function createTimelineReadScope({
     plan: TimelineMomentLookupPlan,
     includeUserVisibility: boolean,
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    const { preferredGroupKey, ...fallbackPlan } = plan;
+    if (preferredGroupKey) {
+      // A legacy calendar ID can also be the current occurrence ID. Fetch that
+      // canonical group before capped notice history so every caller resolves it.
+      const [canonical, fallback] = await Promise.all([
+        listEventsForMomentLookupBase(
+          {
+            ...fallbackPlan,
+            matchingGroupKey: preferredGroupKey,
+            matchGroupAliases: false,
+            limit: 1,
+          },
+          includeUserVisibility,
+        ),
+        listEventsForMomentLookupBase(fallbackPlan, includeUserVisibility),
+      ]);
+      return [...new Map([...canonical, ...fallback].map((row) => [row.id, row])).values()].slice(
+        0,
+        plan.limit,
+      );
+    }
     const conditions = [
       eq(rawEvents.teamId, teamId),
       activeRawEventFilter,
@@ -671,6 +695,32 @@ export function createTimelineReadScope({
         if (condition) conditions.push(condition);
       }
     }
+    if (plan.matchingGroupKey) {
+      const matches: (typeof rawEvents.$inferSelect)[] = [];
+      let cursor: typeof rawEvents.$inferSelect | undefined;
+      for (;;) {
+        const rows: (typeof rawEvents.$inferSelect)[] = await db
+          .select()
+          .from(rawEvents)
+          .where(
+            and(
+              ...conditions,
+              cursor
+                ? sql`(${rawEvents.occurredAt}, ${rawEvents.id}) < (${cursor.occurredAt}, ${cursor.id})`
+                : undefined,
+            ),
+          )
+          .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+          .limit(300);
+        matches.push(
+          ...rows.filter((event) =>
+            timelineEventMatchesGroup(event, plan.matchingGroupKey ?? '', plan.matchGroupAliases),
+          ),
+        );
+        if (matches.length >= plan.limit || rows.length < 300) return matches.slice(0, plan.limit);
+        cursor = rows.at(-1);
+      }
+    }
     return db
       .select()
       .from(rawEvents)
@@ -684,6 +734,12 @@ export function createTimelineReadScope({
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
     await ensureMember();
     if (plans.length === 0) return [];
+    if (plans.some((plan) => plan.matchingGroupKey ?? plan.preferredGroupKey)) {
+      const rows = await Promise.all(
+        plans.map((plan) => listEventsForMomentLookupBase(plan, true)),
+      );
+      return [...new Map(rows.flat().map((row) => [row.id, row])).values()];
+    }
     const planConditions = plans.map((plan) => {
       const conditions = [eq(rawEvents.source, plan.source)];
       if (plan.from) conditions.push(gte(rawEvents.occurredAt, plan.from));

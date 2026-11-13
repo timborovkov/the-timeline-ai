@@ -76,10 +76,7 @@ export default async function BoardDetailPage({
     filterParams,
   } = await loadBoardDetailPage({ params, searchParams });
   return (
-    <div
-      data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
-    >
+    <div data-app-layout="full-bleed" className="flex h-full min-h-0 min-w-0 flex-col">
       {categoryFilterBaseline ? (
         <TaskCategoryFilterRefresh
           surface="board"
@@ -92,6 +89,12 @@ export default async function BoardDetailPage({
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}
+        qualification={{
+          qualificationEnabled: board.qualificationEnabled ?? false,
+          qualificationInstructions: board.qualificationInstructions ?? '',
+          strictObjectTypes: board.strictObjectTypes,
+          recommendedObjectTypes: board.recommendedObjectTypes,
+        }}
         pinned={board.pinned}
         itemCount={board.itemCount}
         view={view}

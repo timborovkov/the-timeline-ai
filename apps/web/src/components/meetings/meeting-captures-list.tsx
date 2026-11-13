@@ -137,7 +137,7 @@ export function MeetingCapturesList({
             <CollectionRow.Title>
               <Link
                 href={`/app/meetings/${meeting.id}`}
-                className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+                className="block whitespace-normal [overflow-wrap:anywhere] rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               >
                 {displayMeetingLabel(meeting)}
               </Link>

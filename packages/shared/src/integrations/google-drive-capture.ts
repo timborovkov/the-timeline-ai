@@ -44,6 +44,7 @@ import {
   driveScopeFromSelections,
   pickMostSpecificDriveAncestor,
 } from '#src/integrations/google-drive-scope.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import {
   checkRateLimit,
   RATE_LIMITS,
@@ -308,6 +309,7 @@ export async function adminListTeamIdsWithDriveExtractCursors(
     .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSyncState.integrationId))
     .where(
       and(
+        activeWorkspaceCondition(integrationsTable.teamId),
         sql`${integrationSyncState.resourceType} LIKE 'drive.extract.%'`,
         driveExtractCursorPopulatedSql(),
         ...(input.orphanOnly ? [driveExtractCursorOrphanSql(now)] : []),

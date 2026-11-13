@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
 
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
+
 const SITE_NAME = 'The Timeline';
 const OG_IMAGE = {
   url: '/opengraph-image',
   width: 1200,
   height: 630,
-  alt: "The Timeline — your team's work, written down for you",
+  alt: PRODUCT_POSITIONING.socialAlt,
 };
 
 interface PublicMetadataInput {

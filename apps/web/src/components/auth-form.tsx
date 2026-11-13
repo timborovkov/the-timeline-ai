@@ -6,6 +6,7 @@ import { useFormStatus } from 'react-dom';
 
 import { signInAction, signUpAction, type SignInState, type SignUpState } from '@/app/actions/auth';
 import { LastUsedBadge } from '@/components/last-used-badge';
+import { SupportMailto } from '@/components/support-email-provider';
 import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,16 +38,27 @@ export function SignInForm({
           <Label htmlFor="email">Email</Label>
           {lastUsed ? <LastUsedBadge /> : null}
         </div>
-        <Input id="email" name="email" type="email" autoComplete="email" required />
+        <Input
+          className="text-base sm:text-sm"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+        />
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="password">Password</Label>
-          <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+          <Link
+            href="/forgot-password"
+            className="text-sm text-primary underline underline-offset-4"
+          >
             Forgot password?
           </Link>
         </div>
         <Input
+          className="text-base sm:text-sm"
           id="password"
           name="password"
           type="password"
@@ -104,6 +116,7 @@ export function SignUpForm({
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input
+          className="text-base sm:text-sm"
           id="name"
           name="name"
           autoComplete="name"
@@ -120,6 +133,7 @@ export function SignUpForm({
           {lastUsed ? <LastUsedBadge /> : null}
         </div>
         <Input
+          className="text-base sm:text-sm"
           id="email"
           name="email"
           type="email"
@@ -134,6 +148,7 @@ export function SignUpForm({
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
         <Input
+          className="text-base sm:text-sm"
           id="password"
           name="password"
           type="password"
@@ -155,11 +170,11 @@ export function SignUpForm({
         />
         <span>
           I agree to the{' '}
-          <Link href="/terms" className="text-primary hover:underline">
+          <Link href="/terms" className="text-primary underline underline-offset-4">
             Terms of Use
           </Link>{' '}
           and acknowledge the{' '}
-          <Link href="/privacy" className="text-primary hover:underline">
+          <Link href="/privacy" className="text-primary underline underline-offset-4">
             Privacy Policy
           </Link>
           .
@@ -169,7 +184,8 @@ export function SignUpForm({
         <TurnstileWidget action="signup" siteKey={turnstileSiteKey} />
       ) : requiresTurnstile ? (
         <p role="alert" className="text-sm text-destructive">
-          Account creation protection is not configured.
+          Account creation is temporarily unavailable. Try again later or email{' '}
+          <SupportMailto className="underline underline-offset-4" /> for help.
         </p>
       ) : null}
       {state.error ? (

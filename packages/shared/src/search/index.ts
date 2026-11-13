@@ -18,6 +18,8 @@ export interface GlobalSearchScoreParts {
   title?: number;
   intent?: number;
   recency?: number;
+  /** Already-bounded evidence freshness; do not apply generic recency again. */
+  evidenceFreshness?: number;
   navigation?: number;
 }
 
@@ -472,6 +474,7 @@ export function scoreFromParts(parts: GlobalSearchScoreParts): number {
       (parts.title ?? 0) * TITLE_WEIGHT +
       (parts.intent ?? 0) * INTENT_WEIGHT +
       (parts.recency ?? 0) * RECENCY_WEIGHT +
+      (parts.evidenceFreshness ?? 0) +
       (parts.navigation ?? 0) * NAVIGATION_WEIGHT
     ).toFixed(6),
   );

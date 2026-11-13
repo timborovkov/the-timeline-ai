@@ -49,3 +49,4 @@ export * from '#src/schema/agent-provisioning.js';
 export type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 export * from '#src/schema/website-sources.js';
 export * from '#src/schema/websites.js';
+export * from '#src/schema/engine-maintenance.js';

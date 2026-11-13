@@ -7,7 +7,6 @@ import {
 } from '@/components/marketing/compare/content';
 import { findComparePublicDocument } from '@/components/marketing/compare/public-documents';
 import { EditorialBreadcrumb } from '@/components/marketing/editorial/editorial-breadcrumb';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -32,8 +31,7 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
               { label: page.navLabel },
             ]}
           />
-          <EditorialKicker>Head to head</EditorialKicker>
-          <h1 className={`${styles.guideTitle} mt-6`}>{page.title}</h1>
+          <h1 className={styles.guideTitle}>{page.title}</h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
             {page.summary}
           </p>
@@ -42,7 +40,6 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
         <section className="border-y border-border bg-surface/45">
           <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.42fr_1fr]">
             <EditorialSectionHeading
-              index="Cite"
               title={`What ${page.name} publishes.`}
               intro={`Every ${page.name} fact below links to ${page.name}'s own site.`}
             />
@@ -67,11 +64,7 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
           <div className="grid gap-10 lg:grid-cols-[0.42fr_1fr]">
-            <EditorialSectionHeading
-              index="Timeline"
-              title="What The Timeline is."
-              intro={page.timelineSide}
-            />
+            <EditorialSectionHeading title="What The Timeline is." intro={page.timelineSide} />
             <div>
               <h2 className="text-xl font-semibold tracking-[-0.025em]">
                 When {page.name} is the better pick
@@ -93,7 +86,7 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
 
         <section className="border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-            <EditorialSectionHeading index="Also" title="Other comparisons." />
+            <EditorialSectionHeading title="Other comparisons." />
             <div className="mt-10 grid gap-px bg-border sm:grid-cols-2 sm:[&>:last-child:nth-child(odd)]:col-span-2">
               {related.map((item) => (
                 <Link

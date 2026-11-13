@@ -7,7 +7,6 @@ import type {
   MarketingScreenshotSlot,
 } from '@/components/marketing/screenshot-slot';
 
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 import { ThemedScreenshotImage } from '@/components/marketing/themed-screenshot-image';
 import { cn } from '@/lib/utils';
@@ -29,6 +28,7 @@ export function MarketingProductScreenshot({
   priority = false,
   frame = 'landscape',
   callouts,
+  chrome = 'full',
 }: {
   file: string;
   alt: string;
@@ -37,6 +37,7 @@ export function MarketingProductScreenshot({
   priority?: boolean;
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
+  chrome?: 'full' | 'media';
 }) {
   const present = Object.values(marketingScreenshotVariants(file)).every(
     marketingScreenshotFileExists,
@@ -63,9 +64,7 @@ export function MarketingProductScreenshot({
               aria-hidden="true"
               className="absolute inset-0 grid place-items-center px-6 text-center"
             >
-              <p className="font-mono text-[0.65rem] tracking-[0.14em] text-fg-muted uppercase">
-                Loading screenshot
-              </p>
+              <p className="text-xs text-fg-muted">Loading screenshot</p>
             </div>
             <ThemedScreenshotImage file={file} alt={alt} portrait={portrait} priority={priority} />
           </>
@@ -88,27 +87,24 @@ export function MarketingProductScreenshot({
           </div>
         )}
       </div>
-      {callouts && callouts.length > 0 ? (
+      {chrome === 'full' && callouts && callouts.length > 0 ? (
         <ol
           className="grid gap-4 border-t border-border px-5 py-4 sm:grid-cols-3 sm:px-6"
           data-screenshot-callouts
         >
           {callouts.map((callout) => (
             <li key={callout.label} className="min-w-0">
-              <p className="font-mono text-[0.62rem] tracking-[0.12em] text-signal uppercase">
-                {callout.label}
-              </p>
+              <p className="text-sm font-medium text-fg">{callout.label}</p>
               <p className="mt-2 text-sm leading-6 text-fg">{callout.detail}</p>
             </li>
           ))}
         </ol>
       ) : null}
-      <figcaption className="space-y-2 border-t border-border px-5 py-4 sm:px-6">
-        <p className="text-sm leading-6 text-fg-muted">{caption}</p>
-        <p className="font-mono text-[0.62rem] tracking-[0.12em] text-fg-dim uppercase">
-          {FICTIONAL_EXAMPLE_LABEL}
-        </p>
-      </figcaption>
+      {chrome === 'full' ? (
+        <figcaption className="space-y-2 border-t border-border px-5 py-4 sm:px-6">
+          <p className="text-sm leading-6 text-fg-muted">{caption}</p>
+        </figcaption>
+      ) : null}
     </figure>
   );
 }

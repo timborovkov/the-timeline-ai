@@ -235,7 +235,7 @@ describe('suggestion reconciliation projection', () => {
         title: 'Human-revised Acme implementation follow-up',
         proposedPayload: {
           canonicalName: 'Human-revised Acme implementation follow-up',
-          ownerName: 'Miku',
+          ownerName: 'Casey',
         },
         metadata: {
           proposal_edited_by_user_id: USER_ID,
@@ -257,7 +257,7 @@ describe('suggestion reconciliation projection', () => {
       title: 'Human-revised Acme implementation follow-up',
       proposedPayload: {
         canonicalName: 'Human-revised Acme implementation follow-up',
-        ownerName: 'Miku',
+        ownerName: 'Casey',
       },
     });
     const outboxRows = await db.select().from(reconciliationProjectionOutbox);

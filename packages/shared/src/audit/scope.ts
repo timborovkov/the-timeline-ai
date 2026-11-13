@@ -131,7 +131,7 @@ export function createAuditScope(deps: {
     });
   }
 
-  async function list(limit = 200): Promise<AuditListRow[]> {
+  async function list(limit = 200, offset = 0): Promise<AuditListRow[]> {
     await ensureMember('admin');
     const rows = await db
       .select({
@@ -151,8 +151,9 @@ export function createAuditScope(deps: {
       .from(auditLog)
       .leftJoin(users, eq(users.id, auditLog.actorUserId))
       .where(eq(auditLog.teamId, teamId))
-      .orderBy(desc(auditLog.createdAt))
-      .limit(limit);
+      .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+      .limit(limit)
+      .offset(offset);
 
     const idsByType = new Map<string, string[]>();
     for (const row of rows) {

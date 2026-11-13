@@ -136,7 +136,7 @@ function makeDb(input: {
       },
     ],
     input.existing ?? [],
-    [{ name: 'Tim', email: 'tim@example.test' }],
+    [{ name: 'Taylor', email: 'taylor@example.test' }],
     input.newMembers ?? [],
     input.changedObjects ?? [],
     input.createdObjects ?? [],

@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 export function CollectionGroup({
   title,
   count,
+  countLabel,
   tone = 'neutral',
   icon,
   actions,
@@ -20,6 +21,7 @@ export function CollectionGroup({
 }: {
   title: ReactNode;
   count: number;
+  countLabel?: string;
   tone?: StatusTone;
   icon?: ReactNode;
   actions?: ReactNode;
@@ -52,13 +54,22 @@ export function CollectionGroup({
             )}
           />
           <span className={statusToneClass(tone)}>{icon}</span>
-          <span className="truncate">{title}</span>
-          <span className="font-mono tabular-nums text-fg-dim">{count}</span>
+          <span className="min-w-0 whitespace-normal py-2 [overflow-wrap:anywhere]">{title}</span>
+          <span className="font-mono tabular-nums text-fg-dim">
+            {count}
+            {countLabel ? ` ${countLabel}` : ''}
+          </span>
         </button>
         {actions ? <div className="flex min-h-10 items-center">{actions}</div> : null}
       </div>
-      <div id={contentId} hidden={!open}>
-        {children}
+      <div
+        id={contentId}
+        className="collection-disclosure"
+        data-state={open ? 'open' : 'closed'}
+        aria-hidden={!open}
+        inert={!open}
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
       </div>
     </section>
   );

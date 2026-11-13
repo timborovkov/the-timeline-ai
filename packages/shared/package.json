@@ -645,6 +645,12 @@
       "development": "./src/websites/usage.ts",
       "import": "./dist/websites/usage.js",
       "default": "./dist/websites/usage.js"
+    },
+    "./boards/templates": {
+      "types": "./src/boards/templates.ts",
+      "development": "./src/boards/templates.ts",
+      "import": "./dist/boards/templates.js",
+      "default": "./dist/boards/templates.js"
     }
   },
   "main": "./dist/index.js",

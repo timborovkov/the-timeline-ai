@@ -8,7 +8,7 @@ export default function ChatLoading() {
       </output>
       <div
         data-app-layout="full-bleed"
-        className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] motion-reduce:[&_.animate-pulse]:animate-none md:-mx-8 md:-my-8"
+        className="flex h-full motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading Ask"
       >

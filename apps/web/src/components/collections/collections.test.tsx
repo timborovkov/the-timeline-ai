@@ -47,7 +47,7 @@ describe('collection primitives', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     await user.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByText('Group contents').closest('[hidden]')).toBeTruthy();
+    expect(screen.getByText('Group contents').closest('[inert]')).toBeTruthy();
   });
 
   it('can start a group collapsed', () => {
@@ -60,7 +60,7 @@ describe('collection primitives', () => {
     expect(screen.getByRole('button', { name: /Advanced 4/ }).getAttribute('aria-expanded')).toBe(
       'false',
     );
-    expect(screen.getByText('Folded tools').closest('[hidden]')).toBeTruthy();
+    expect(screen.getByText('Folded tools').closest('[inert]')).toBeTruthy();
   });
 
   it('shows selection chrome only while items are selected', () => {
@@ -89,7 +89,7 @@ describe('collection primitives', () => {
         <CollectionRow.Subtitle>Call the buyer</CollectionRow.Subtitle>
       </CollectionRow>,
     );
-    expect(screen.getByText('Call the buyer').className).toContain('text-[11px]');
+    expect(screen.getByText('Call the buyer').className).toContain('text-xs');
   });
 
   it('exposes an optional title hover hint without replacing the subtitle', () => {
@@ -119,7 +119,7 @@ describe('collection primitives', () => {
     );
   });
 
-  it('uses a 44px desktop row with a two-line responsive content structure', () => {
+  it('keeps compact minimum height while allowing titles and metadata to wrap', () => {
     const { container } = render(
       <CollectionRow>
         <CollectionRow.Title>Launch plan</CollectionRow.Title>
@@ -134,8 +134,9 @@ describe('collection primitives', () => {
     expect(row?.className).toContain('border-b');
     expect(row?.className).not.toContain('last:border-b-0');
     expect(row?.className).not.toContain('border-x');
-    expect(row?.querySelector('.sm\\:flex-row')).toBeTruthy();
-    expect(screen.getAllByText('Acme')).toHaveLength(2);
+    expect(screen.getByText('Launch plan').className).toContain('whitespace-normal');
+    expect(screen.getByText('Launch plan').className).not.toContain('truncate');
+    expect(screen.getAllByText('Acme')).toHaveLength(1);
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
@@ -148,7 +149,7 @@ describe('collection primitives', () => {
     );
 
     const hints = screen.getAllByTitle('Job ID: job-1');
-    expect(hints).toHaveLength(3);
+    expect(hints).toHaveLength(2);
     expect(hints[0]?.textContent).toBe('Audio extract');
   });
 

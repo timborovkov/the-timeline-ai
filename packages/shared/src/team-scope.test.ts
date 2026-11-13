@@ -914,7 +914,7 @@ describe('withTeam namespaced port', () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_A },
     });
 
@@ -927,16 +927,16 @@ describe('withTeam namespaced port', () => {
       id: eventId,
       authorUserId: null,
       text: 'telegram from prefixed username',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
       tgUserId: 12345,
     });
     const scope = withTeam(db as never, TEAM_A, USER_A);
 
     await expect(
-      scope.timeline.listEvents({ source: 'telegram', senderHandle: '@mikaelrintala' }),
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: '@cameronvale' }),
     ).resolves.toMatchObject([{ id: eventId }]);
     await expect(
-      scope.timeline.listEvents({ source: 'telegram', senderHandle: 'mikaelrintala' }),
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: 'cameronvale' }),
     ).resolves.toMatchObject([{ id: eventId }]);
   });
 
@@ -946,19 +946,19 @@ describe('withTeam namespaced port', () => {
       id: eventId,
       authorUserId: null,
       text: 'telegram from linked person',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
       tgUserId: 12345,
     });
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_A },
     });
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'telegram',
-      value: '@mikaelrintala',
+      value: '@cameronvale',
       actor: { kind: 'user', userId: USER_A },
     });
 
@@ -978,26 +978,26 @@ describe('withTeam namespaced port', () => {
       [
         fromEmailId,
         TEAM_A,
-        JSON.stringify({ from_email: 'Mikael@Example.com' }),
+        JSON.stringify({ from_email: 'Cameron@Example.com' }),
         senderEmailId,
-        JSON.stringify({ sender_email: 'mikael@example.com' }),
+        JSON.stringify({ sender_email: 'cameron@example.com' }),
       ],
     );
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_A },
     });
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'email',
-      value: 'mikael@example.com',
+      value: 'cameron@example.com',
       actor: { kind: 'user', userId: USER_A },
     });
 
     await expect(
-      scope.timeline.listEvents({ senderSource: 'email', senderHandle: 'mikael@example.com' }),
+      scope.timeline.listEvents({ senderSource: 'email', senderHandle: 'cameron@example.com' }),
     ).resolves.toMatchObject([{ id: senderEmailId }, { id: fromEmailId }]);
     await expect(
       scope.timeline.listEvents({ senderSource: 'email', personObjectId: person.id }),
@@ -1011,12 +1011,12 @@ describe('withTeam namespaced port', () => {
       id: telegramId,
       authorUserId: null,
       text: 'telegram sender source event',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
     });
     await pg.query(
       `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
        VALUES ($1, $2, NULL, 'email', 'email sender source event', now(), $3::jsonb)`,
-      [emailId, TEAM_A, JSON.stringify({ from: { email: 'mikael@example.com' } })],
+      [emailId, TEAM_A, JSON.stringify({ from: { email: 'cameron@example.com' } })],
     );
     const scope = withTeam(db as never, TEAM_A, USER_A);
 
@@ -1035,7 +1035,7 @@ describe('withTeam namespaced port', () => {
       id: matchingId,
       authorUserId: null,
       text: 'matching sender search event',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
     });
     await insertTelegramEvent(pg, {
       id: otherId,
@@ -1084,7 +1084,7 @@ describe('withTeam namespaced port', () => {
     await expect(
       scope.timeline.searchEvents({
         query: 'sender search',
-        senderHandle: '@mikaelrintala',
+        senderHandle: '@cameronvale',
       }),
     ).resolves.toHaveLength(1);
 
@@ -1331,7 +1331,7 @@ describe('withTeam namespaced port', () => {
         id,
         authorUserId: null,
         text: `batched sender search ${id}`,
-        username: '@mikaelrintala',
+        username: '@cameronvale',
       });
     }
     const qdrantSearch = vi.fn(
@@ -1357,7 +1357,8 @@ describe('withTeam namespaced port', () => {
     await expect(
       scope.timeline.searchEvents({
         query: 'sender search all batches',
-        senderHandle: '@mikaelrintala',
+        ranking: 'relevance',
+        senderHandle: '@cameronvale',
         limit: 1,
       }),
     ).resolves.toMatchObject([{ eventId: thirdId }]);
@@ -1378,7 +1379,7 @@ describe('withTeam namespaced port', () => {
       id: eventId,
       authorUserId: null,
       text: 'telegram source-only search event',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
     });
     const qdrantSearch = vi.fn().mockResolvedValue([
       {
@@ -1921,7 +1922,7 @@ describe('withTeam namespaced port', () => {
     const event = await scope.timeline.createEvent({
       authorUserId: USER_A,
       source: 'telegram',
-      contentText: 'Miku handles customer follow-up.',
+      contentText: 'Casey handles customer follow-up.',
       visibility: 'team',
     });
     const object = await scope.objects.createObject({
@@ -1943,7 +1944,7 @@ describe('withTeam namespaced port', () => {
           dedupeKey: 'impact-object-note:item',
           proposedPayload: {
             entityId: object.id,
-            body: 'Miku handles customer follow-up.',
+            body: 'Casey handles customer follow-up.',
           },
         },
       ],
@@ -2134,7 +2135,7 @@ describe('withTeam namespaced port', () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Tim Borovkov',
+      canonicalName: 'Taylor Bennett',
       aliases: ['Timbo'],
       actor: { kind: 'user', userId: USER_A },
     });
@@ -2149,14 +2150,14 @@ describe('withTeam namespaced port', () => {
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'telegram',
-      value: '@timbo0',
+      value: '@taylo0',
       externalId: '12345',
       actor: { kind: 'user', userId: USER_A },
     });
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'email',
-      value: 'tim@example.com',
+      value: 'taylor@example.com',
       actor: { kind: 'user', userId: USER_A },
     });
 
@@ -2164,14 +2165,14 @@ describe('withTeam namespaced port', () => {
 
     expect(context.person).toMatchObject({
       id: person.id,
-      canonicalName: 'Tim Borovkov',
+      canonicalName: 'Taylor Bennett',
       aliases: ['Timbo'],
     });
     expect(context.facets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'timeline_user', value: USER_A }),
-        expect.objectContaining({ kind: 'telegram', value: '@timbo0', externalId: '12345' }),
-        expect.objectContaining({ kind: 'email', value: 'tim@example.com' }),
+        expect.objectContaining({ kind: 'telegram', value: '@taylo0', externalId: '12345' }),
+        expect.objectContaining({ kind: 'email', value: 'taylor@example.com' }),
       ]),
     );
     expect(context.facets).toHaveLength(3);
@@ -2179,10 +2180,10 @@ describe('withTeam namespaced port', () => {
     await db
       .update(objectIdentityFacets)
       .set({ status: 'archived' })
-      .where(eq(objectIdentityFacets.value, '@timbo0'));
+      .where(eq(objectIdentityFacets.value, '@taylo0'));
 
     const archivedContext = await scope.timeline.currentUserIdentityContext();
-    expect(archivedContext.facets.some((facet) => facet.value === '@timbo0')).toBe(false);
+    expect(archivedContext.facets.some((facet) => facet.value === '@taylo0')).toBe(false);
   });
 
   it('rejects visibility edits for ownerless legacy events with a clear error', async () => {

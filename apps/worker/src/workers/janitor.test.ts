@@ -110,6 +110,28 @@ afterEach(async () => {
 });
 
 describe('processJanitorTick — document_versions sweep', () => {
+  it('leaves disabled workspace recovery records untouched and enqueues nothing', async () => {
+    const id = 'dddddddd-dddd-dddd-dddd-dddddddddd01';
+    await seedVersion(db as unknown as Db, {
+      id,
+      version: 1,
+      status: 'extracting',
+      ageMinutes: 60,
+    });
+    await pg.exec(`UPDATE teams SET disabled_at = now() WHERE id = '${TEAM_ID}'`);
+    const enqueue = vi.fn();
+    const result = await processJanitorTick({
+      db: db as unknown as Db,
+      enqueueDocumentExtractJob: enqueue,
+      enqueueMeetingFinalizeJob: enqueue,
+      taskCategoryEnabled: false,
+    });
+    expect(result.documentVersionsRequeued).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    const [row] = await db.select().from(documentVersions).where(eq(documentVersions.id, id));
+    expect(row?.processingStatus).toBe('extracting');
+  });
+
   it('re-enqueues a pending version older than the threshold', async () => {
     await seedVersion(db as never, {
       id: 'dddddddd-dddd-dddd-dddd-dddddddddd01',

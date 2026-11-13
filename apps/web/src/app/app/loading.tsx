@@ -7,10 +7,15 @@ export default function HomeLoading() {
       <output className="sr-only" aria-live="polite">
         Loading Home
       </output>
-      <div className="space-y-8" aria-busy="true" aria-label="Loading Home">
+      <div
+        data-app-width="overview"
+        className="home-overview space-y-8"
+        aria-busy="true"
+        aria-label="Loading Home"
+      >
         <h1 className="sr-only">Home</h1>
         <section aria-label="Home loading placeholder" className="space-y-8">
-          <div className="space-y-3">
+          <div className="max-w-4xl space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-2">
                 <Skeleton className="h-5 w-36 max-w-full" />
@@ -27,36 +32,40 @@ export default function HomeLoading() {
               <Skeleton className="h-8 w-44 rounded-sm" />
             </div>
           </div>
-          <div className="divide-y divide-border">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="flex items-center gap-3 py-3 sm:px-3">
-                <Skeleton className="size-4 shrink-0" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-3/5 max-w-full" />
-                  <Skeleton className="h-3 w-2/3 max-w-full sm:hidden" />
-                </div>
-                <Skeleton className="hidden h-3 w-28 shrink-0 sm:block" />
-                <Skeleton className="size-4 shrink-0" />
+          <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="min-w-0 space-y-8">
+              <div className="divide-y divide-border">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="flex items-center gap-3 py-3 sm:px-3">
+                    <Skeleton className="size-4 shrink-0" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <Skeleton className="h-4 w-3/5 max-w-full" />
+                      <Skeleton className="h-3 w-2/3 max-w-full sm:hidden" />
+                    </div>
+                    <Skeleton className="hidden h-3 w-28 shrink-0 sm:block" />
+                    <Skeleton className="size-4 shrink-0" />
+                  </div>
+                ))}
               </div>
-            ))}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-4 w-16" />
+                </div>
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <CollectionRowSkeleton key={index} leading metadata={2} />
+                ))}
+              </section>
+              <TimelineFeedSkeleton count={5} />
+            </div>
+            <section className="space-y-3 border-t border-border py-4 xl:border-l xl:border-t-0 xl:pl-6">
+              <div className="flex items-baseline justify-between gap-2">
+                <Skeleton className="h-5 w-28" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-4 w-24" />
+            </section>
           </div>
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <Skeleton className="h-5 w-28" />
-              <Skeleton className="h-4 w-16" />
-            </div>
-            {Array.from({ length: 3 }).map((_, index) => (
-              <CollectionRowSkeleton key={index} leading metadata={2} />
-            ))}
-          </section>
-          <section className="space-y-3 py-4">
-            <div className="flex items-baseline justify-between gap-2">
-              <Skeleton className="h-5 w-28" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-            <Skeleton className="h-4 w-24" />
-          </section>
-          <TimelineFeedSkeleton count={5} />
         </section>
       </div>
     </>

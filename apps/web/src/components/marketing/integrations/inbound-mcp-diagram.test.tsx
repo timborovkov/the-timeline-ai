@@ -4,7 +4,6 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import { InboundMcpDiagram } from '@/components/marketing/integrations/inbound-mcp-diagram';
 import { MCP_GUIDE_HOSTED_TOOL_NAMES } from '@/components/marketing/integrations/mcp-guide-content';
 
@@ -18,7 +17,7 @@ describe('InboundMcpDiagram', () => {
     expect(html).toContain('The Timeline Agent');
     expect(html).toContain('Live lookup');
     expect(html).toContain('Connected MCP tools');
-    expect(html).toContain(FICTIONAL_EXAMPLE_LABEL);
+    expect(html).not.toContain('Fictional example');
     for (const name of MCP_GUIDE_HOSTED_TOOL_NAMES) {
       expect(html).toContain(name);
     }
@@ -33,7 +32,8 @@ describe('InboundMcpDiagram', () => {
     expect(styles).toContain('@media (prefers-reduced-motion: no-preference)');
     expect(styles).toContain('transform: scaleX(0)');
     expect(styles).toContain('transform: scaleY(0)');
-    expect(styles).toContain('opacity: 0.72');
+    expect(styles).toContain('opacity: 1');
+    expect(styles).not.toContain('infinite');
     expect(styles).not.toMatch(/@keyframes[\s\S]*box-shadow:/u);
   });
 });

@@ -73,6 +73,7 @@ import {
 } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
@@ -2185,7 +2186,7 @@ export function createIntegrationScope(deps: {
     });
   }
 
-  async function listAudit(integrationId?: string | null, limit = 100) {
+  async function listAudit(integrationId?: string | null, limit = 100, offset = 0) {
     // Defense in depth: the /app/team/integrations/audit page admin-gates
     // before calling, but a future caller might forget. Audit rows
     // contain provider metadata + sync error payloads that the rest of
@@ -2199,8 +2200,9 @@ export function createIntegrationScope(deps: {
       .select()
       .from(integrationAuditLog)
       .where(and(...conditions))
-      .orderBy(desc(integrationAuditLog.createdAt))
-      .limit(limit);
+      .orderBy(desc(integrationAuditLog.createdAt), desc(integrationAuditLog.id))
+      .limit(limit)
+      .offset(offset);
   }
 
   /**
@@ -2531,7 +2533,12 @@ export async function adminLoadIntegration(
 }
 
 export async function adminListEnabledIntegrations(db: Db): Promise<IntegrationRow[]> {
-  return db.select().from(integrationsTable).where(eq(integrationsTable.enabled, true));
+  return db
+    .select()
+    .from(integrationsTable)
+    .where(
+      and(eq(integrationsTable.enabled, true), activeWorkspaceCondition(integrationsTable.teamId)),
+    );
 }
 
 export function adminDecryptTokens(row: IntegrationRow): Record<string, unknown> | null {
@@ -3874,6 +3881,7 @@ export async function adminReconcileExpiringWebhookSubscriptions(
     )
     .where(
       and(
+        or(isNull(integrationsTable.id), activeWorkspaceCondition(integrationsTable.teamId)),
         eq(integrationWebhookSubscriptions.status, 'active'),
         isNotNull(integrationWebhookSubscriptions.expiresAt),
         lte(integrationWebhookSubscriptions.expiresAt, threshold),

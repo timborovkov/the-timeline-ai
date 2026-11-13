@@ -1,5 +1,8 @@
 const LABELS: Record<string, string> = {
   active: 'Active',
+  chunked: 'Awaiting indexing',
+  embedded: 'Searchable',
+  uploading: 'Uploading',
   blocked: 'Blocked',
   cancelled: 'Cancelled',
   complete: 'Complete',

@@ -3,7 +3,7 @@ import { getConnectorCapabilityTiers } from '@/components/marketing/integrations
 export const MCP_GUIDE_ROUTE = '/integrations/mcp' as const;
 export const MCP_GUIDE_NAV_LABEL = 'Connect MCP tools';
 
-const REVIEW_DATE = '2026-11-07' as const;
+const REVIEW_DATE = '2026-11-12' as const;
 
 /** Hosted Agent-tools catalog labels; keep in lockstep with listCatalog `mcp_available`. */
 export const MCP_GUIDE_HOSTED_TOOL_NAMES = ['Notion', 'Jira', 'Confluence', 'Stripe'] as const;
@@ -30,9 +30,8 @@ export const MCP_GUIDE_PAGE = {
   route: MCP_GUIDE_ROUTE,
   navLabel: MCP_GUIDE_NAV_LABEL,
   kicker: 'Agent tools',
-  title: 'Connect MCP tools to The Timeline Agent.',
-  summary:
-    'Third-party MCP servers add live tools The Timeline Agent can call when you ask. They are not native ongoing sync or capture, and they are not the same as connecting an external agent to Timeline.',
+  title: 'Let your agent look beyond the record.',
+  summary: 'Give The Timeline Agent live access to tools you connect.',
   seoTitle: 'Connect MCP tools to The Timeline Agent',
   seoDescription:
     'Connect third-party MCP servers so The Timeline Agent can call live tools. This is distinct from native Slack, Telegram, Drive, GitHub, Linear, Monday.com, and Sentry sync, and from external agents that consume Timeline over MCP.',
@@ -40,8 +39,7 @@ export const MCP_GUIDE_PAGE = {
   screenshot: {
     file: '19-agent-tools-dark.png',
     alt: 'Connections Agent tools listing Agent MCP servers the Timeline Agent can call.',
-    caption:
-      'Owners and admins connect third-party MCP servers under Connections → Agent tools. That inbound path is live lookup for The Timeline Agent, not native history, and not the Agents page outbound endpoint.',
+    caption: 'Manage third-party servers under Connections → Agent tools.',
   },
   distinction: {
     title: 'Two different MCP directions',
@@ -50,12 +48,11 @@ export const MCP_GUIDE_PAGE = {
       'Live lookups, not background sync. A successful team-shared call can be captured as evidence; connecting a server does not import its history.',
     outboundTitle: 'Other agents calling Timeline',
     outboundBody:
-      'External agents such as Claude, Cursor, or Codex can read a Timeline team through Timeline’s own MCP endpoint. That setup lives on the Agents page. It does not add third-party tools to The Timeline Agent.',
+      'Connect Claude, Cursor or Codex to Timeline’s own endpoint from the Agents page. This does not add tools to The Timeline Agent.',
   },
   setup: {
     title: 'Where teams connect servers today',
-    intro:
-      'Connecting MCP servers is self-serve in the product. It is not an operator-only env-file setup for customers.',
+    intro: 'Connect and manage MCP servers in the product.',
     teamTitle: 'Team-shared servers',
     teamBody:
       'Owners and admins open Connections, then Agent tools, then Agent MCP servers. From there they can connect a catalog tool or add a custom server for the team. Live lookups, not background sync: a successful team-shared call can be captured as evidence; connecting a server does not import its history.',

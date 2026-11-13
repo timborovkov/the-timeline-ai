@@ -108,7 +108,19 @@ Each object page write a row to `object_views` when the current user opens it. T
 
 ## Persisted chat sessions
 
-`/api/chat` accepts an optional `sessionId` in the request body. If absent, the endpoint auto-creates a session (optionally pinned to an object via `pinnedEntityId`, and with a capped `contextTrail` of dashboard views) and returns the new id via the `x-tl-session-id` response header. On stream finalize, the endpoint persists the latest user turn and the assistant turn (text + tool calls + finish reason + usage + prompt version) into `chat_messages` — the delta only, since `useChat` re-sends the whole transcript on every request. The session's `context_trail` is merged on later turns so full Ask can show what the conversation was looking at.
+`/api/chat` accepts an optional `sessionId`. Requests with `startNewSession` create a session and return its ID in `x-tl-session-id`; bare requests remain unpersisted. Sessions may be pinned to an object and retain a capped dashboard `contextTrail`.
+
+Stream completion stores a versioned, ordered assistant UI message, including tool inputs, outputs, safe errors and approval decisions. Stable UI message IDs deduplicate user turns and update the same assistant turn during approval continuations under the owner-scoped session lock. Usage, prompt version and tool observability remain separate metadata. Deterministic responses use the same persistence operation with unique per-turn IDs.
+
+Approval continuations claim the saved pending action before execution. The server verifies tool identity, inputs and approval IDs; already-claimed or mismatched actions cannot be replayed. Only the latest assistant turn can be approved; sending a new question makes older approval cards inactive. A claim interrupted before its outcome is saved is shown as interrupted and must be checked against current workspace state before any new action is proposed. Missing legacy tool results display **Result unavailable**, never fabricated success or an indefinitely running spinner. Historical incomplete calls are display-only data, excluded from model tool-call conversion. Old transcript JSON remains readable; no production backfill reconstructs discarded results.
+
+### Direct chat workspace actions
+
+The web agent can create boards, rename/configure them (including lanes and membership settings), archive boards, restore archived objects, create/edit/delete notes, and add/remove relationships, alongside existing object, board-card and calendar mutations. Each direct canonical mutation requires in-chat approval and uses the same team-scoped domain services as the UI. Read-only and proposal-only agent surfaces do not receive these mutation tools. Incidental memory continues through proposals.
+
+Board creation uses shared template defaults (pipeline for CRM), with membership suggestions off unless explicitly requested. `get_board` provides lane IDs and the current settings revision. Board settings/archive, note edits/deletion and restoration reject stale approved state under the mutation lock. Lane edits preserve retained IDs; removing a lane unassigns its cards without deleting objects. Board archiving preserves objects. Private boards remain limited to their creator. Note edits/deletes remain authors-only even when executed by the agent on the user's behalf; audit records retain the agent actor and the real user ID.
+
+Object reads expose note revisions and relationship IDs/endpoints; `get_object_note` supports targeted lookup beyond bounded summaries. Note bodies returned to the model are fenced as source content; approved note edits preserve comparison against the original stored body and revision. Approval previews show effective defaults, before/after values and relationship direction. Successful mutations refresh the workspace views. Tool selection includes common plural/action phrases, bounded short-follow-up context and pending approval tools without enabling every external integration.
 
 Sessions without a title get a short title from the first user turn on stream finalize, including retry attempts on later turns if the first title write failed. The title generator uses the shared LLM wrapper, falls back to a sanitized first-message snippet if the model call fails, and appends a numeric suffix under the chat-session write lock when another visible session already has the same title. Automatic title writes do not bump the session's activity timestamp; only persisted turns should affect sidebar recency.
 
@@ -126,3 +138,97 @@ Persistence failures are warn-logged, not surfaced to the user — the assistant
 
 
 Current access and mutation boundaries are owned by `scope.objects`, `scope.boards` and the approval services. Use [domain ownership](architecture/ownership.md); do not infer current tools/routes from old migration inventories.
+
+
+## Automatic membership suggestions
+
+Boards remain curated work surfaces. **Suggest board changes** is opt-in in board
+creation and settings; existing boards default to off. Board purpose explains why
+the board exists, membership criteria explain what belongs and when it should
+leave, and stages describe progress after joining. Guided examples help users write
+inclusion and exclusion criteria. Every suggested addition or removal requires its
+own approval, separate from the object change that triggered evaluation. Direct
+manual membership edits are themselves the human decision.
+
+**Restrict allowed object types** is independent of qualification. When enabled it
+requires at least one type and applies to manual add, quick create, agent proposals
+and approval acceptance. Recommended types without strict mode only rank discovery.
+Changing restrictions does not evict existing items; an existing member that fails
+the restriction can receive a removal proposal. Removal archives the specific board
+membership, preserving the object and board history. Removal proposal identities
+include the membership version and source dependency, so an explicit source-free
+rescan can replace a proposal whose source became unavailable or one made
+stale by a board-item edit. Approval locks the membership before its entity and board,
+matching manual item edits. Membership approval target locks fail fast when busy,
+so board-first lane removal and item-first manual edits cannot form a blocking
+cycle with approval; the user can retry once the other edit completes. Transactional qualification checks also hold shared
+locks on supplied note/identity/relationship rows and all referenced objects through
+application, including currently inactive neighbors. Busy dependencies fail fast
+for retry rather than introducing a reversed lock-order wait. Addition identities also include the latest manual
+membership decision, allowing a later explicit scan to replace a superseded
+proposal after a manual add/remove cycle.
+
+Committed object creates/updates, notes, identity facets and relationship changes
+persist qualification requests in the canonical write transaction. Relationship
+changes request both endpoints. Company/project replacement stores old and new
+endpoint IDs on the already-locked child request; workers enqueue those endpoints
+after commit, without making the edit acquire old-parent locks. Object updates persist a neighbor-expansion flag in the same transaction. The
+worker expands relationships in durable batches of 50, acquiring entity key locks
+before inbox locks. Busy entity keys abort the expansion for durable retry instead
+of waiting against canonical relationship lock order, so related names/statuses are reevaluated without locking
+neighboring entities during the originating object edit. Pending or rejected object proposals do not trigger
+qualification. The durable inbox coalesces per member/object, uses leases and
+version-checked completion, and retries failures with bounded backoff. Queue outages
+cannot lose committed requests. Derived endpoint work retains the originating request
+time; coalescing preserves newer requests and their source/operator attribution, so
+a delayed expansion cannot override a newer manual membership decision. An explicit
+scan replaces an older pending source dependency and uses the scanning actor's
+operator attribution, so unavailable sources or expired earlier sessions cannot
+swallow the requested recheck. Scan enqueueing and cache invalidation share one
+transaction. Proposal publication, semantic supersession, no-action records and
+evaluation cache writes share a transaction that locks parent entity/board keys
+before rechecking the inbox version. An older worker cannot supersede a newer
+scan's proposal or repopulate its cleared cache. Busy parent keys fail fast to
+avoid blocking canonical writes in reverse lock order. Generic
+relationship endpoints enqueue in entity-ID order, matching worker inbox locks. The worker excludes suspended users before selecting each workspace's next request. It discovers routing metadata globally and
+uses the originating member's `withTeam` scope for workspace reads and proposals;
+service-principal writes do not borrow a member's authority. Impersonated requests
+retain their operator session through coalescing and discovery; the worker restores
+real-actor attribution and rejects expired or revoked sessions before qualification.
+
+Qualification applies deterministic type eligibility before shared-model inference.
+It reads bounded committed object facts, notes, identities and relationships. Explicit
+exclusion can support removal; missing information cannot. Model evidence keys must
+refer to supplied facts. Proposals retain the criteria revision and fact snapshot,
+use the existing reconciliation-backed suggestion lifecycle, and remain private to
+the originating member. Source visibility is checked again by the approval engine.
+No-action outcomes also appear in reconciliation diagnostics.
+
+Accepting a proposal rechecks current criteria, object facts, membership and type
+restrictions within the same transaction as the membership mutation. Source-backed
+items retain explicit evidence dependencies and lock available sources during acceptance.
+Revising proposal wording preserves the original qualification and membership-version guards. Newer manual membership decisions take precedence. A removal for a
+previous membership cannot remove a later re-added membership. Evaluated fact/policy
+fingerprints suppress repeated decisions, including declined proposals. Evaluation
+caches and private proposal identities include the originating member, preserving
+private edits and review history when another member scans the same board. Relevant
+fact or criteria changes allow reevaluation. Disabling suggestions invalidates pending
+automatic proposals during review, stops new qualification and retains current members.
+
+The board's **Membership suggestions** disclosure offers a read-only preview of up
+to three recent objects and an explicit **Check existing objects** action. Existing
+objects are queued in batches of 50, with continuation shown to the user. This also
+provides an explicit recheck of previously evaluated objects. Matching proposals are
+reviewed through the board-filtered Approvals page; there is no second approval store.
+Saving criteria alone does not scan historical objects.
+
+Discovery excludes inactive workspaces and selects at most one due request per workspace before applying its global
+batch limit, so a bulk scan cannot occupy every discovery slot.
+
+Operational bounds: at most five boards per request pass, one pass per team per 30
+seconds, 30-second model timeout, 1,000 output tokens and a 48,000-character facts
+budget. Oversized or incomplete facts require manual review. Failed requests retain
+a safe failure code and retry time in `board_qualification_requests`; no model or
+customer content is logged. New object writes reset failed work for their current
+version. Apply the board qualification migration before running the updated app or
+worker. Deployment is a separate operation.

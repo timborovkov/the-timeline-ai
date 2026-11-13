@@ -64,7 +64,7 @@ describe('Legal route states', () => {
     },
   ])(
     'preserves $title context and lets keyboard users retry an unexpected error',
-    async ({ errorDescription, ErrorComponent, footerLabel, title }) => {
+    async ({ errorDescription, ErrorComponent, title }) => {
       const user = userEvent.setup();
       const reset = vi.fn();
 
@@ -75,7 +75,7 @@ describe('Legal route states', () => {
       expect(heading.className).toContain('text-3xl');
       expect(heading.className).toContain('sm:text-4xl');
       expect(screen.getByText(errorDescription)).toBeTruthy();
-      expect(screen.getByText(footerLabel)).toBeTruthy();
+      expect(screen.getByRole('navigation', { name: 'Legal and privacy' })).toBeTruthy();
       expect(
         screen.getByRole('heading', { level: 2, name: `Unable to load ${title}` }),
       ).toBeTruthy();

@@ -27,7 +27,7 @@ export async function requestTeamDeletionAction(data: FormData) {
     await withTeam(db, teamId, session.user.id).lifecycle.requestDeletion(
       z.string().parse(data.get('confirmation')),
     );
-    redirect('/app');
+    redirect('/team-deletion-requested');
   });
 }
 

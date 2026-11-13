@@ -7,6 +7,7 @@ import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 
 import { setFirstRunPhaseAction } from '@/app/actions/first-run';
 import { Button } from '@/components/ui/button';
+import { notifyAction } from '@/lib/notify';
 
 export function GuidedContinue({
   phase,
@@ -27,10 +28,15 @@ export function GuidedContinue({
         type="button"
         disabled={pending}
         onClick={() => {
-          startTransition(() => {
-            void setFirstRunPhaseAction(phase).then(() => {
-              router.push(href);
+          startTransition(async () => {
+            const result = await notifyAction({
+              id: 'onboarding:continue',
+              loading: 'Saving progress…',
+              success: 'Progress saved',
+              error: 'Could not save progress.',
+              run: () => setFirstRunPhaseAction(phase),
             });
+            if (!result.error && 'ok' in result && result.ok) router.push(href);
           });
         }}
       >

@@ -46,7 +46,7 @@ import {
 import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
-import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
+import { activeWorkspaceCondition, assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import {
   enqueueDocumentExtractJob,
   enqueueEmbedJob,
@@ -856,6 +856,7 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
       .from(rawEvents)
       .where(
         and(
+          activeWorkspaceCondition(rawEvents.teamId),
           sql`${rawEvents.source} <> 'email'`,
           sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,
           sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
@@ -1092,6 +1093,7 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
       .from(rawEvents)
       .where(
         and(
+          activeWorkspaceCondition(rawEvents.teamId),
           sql`${rawEvents.sourceMetadata}->>'transcription_deferred' = 'true'`,
           isNotNull(rawEvents.contentAudioUrl),
           sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,

@@ -78,7 +78,7 @@ describe('generateDailyDigest conflict handling', () => {
           chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
         )
         .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
-        .mockReturnValueOnce(chainResult([{ name: 'Tim', email: 'tim@example.test' }]))
+        .mockReturnValueOnce(chainResult([{ name: 'Taylor', email: 'taylor@example.test' }]))
         .mockReturnValueOnce(chainResult([]))
         .mockReturnValueOnce(chainResult([])),
       insert: vi.fn(() => insertConflict()),
@@ -141,7 +141,7 @@ describe('generateDailyDigest conflict handling', () => {
         .mockReturnValueOnce(chainResult([]))
         .mockReturnValueOnce(chainResult([{ defaultTimezone: 'Europe/Helsinki' }]))
         .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
-        .mockReturnValueOnce(chainResult([{ name: 'Tim', email: 'tim@example.test' }]))
+        .mockReturnValueOnce(chainResult([{ name: 'Taylor', email: 'taylor@example.test' }]))
         .mockReturnValueOnce(chainResult([]))
         .mockReturnValueOnce(chainResult([])),
       insert: vi.fn(() => insertConflict()),
@@ -243,7 +243,7 @@ describe('generateDailyDigest conflict handling', () => {
           chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
         )
         .mockReturnValueOnce(chainResult([{ id: 'digest-1', status: 'skipped', payload: {} }]))
-        .mockReturnValueOnce(chainResult([{ name: 'Tim', email: 'tim@example.test' }]))
+        .mockReturnValueOnce(chainResult([{ name: 'Taylor', email: 'taylor@example.test' }]))
         .mockReturnValueOnce(chainResult([]))
         .mockReturnValueOnce(chainResult([]))
         .mockReturnValueOnce(

@@ -1,0 +1,35 @@
+.content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.label {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.label > span {
+  grid-area: 1 / 1;
+}
+
+.reserve {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .confirmed {
+    animation: confirmed 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes confirmed {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

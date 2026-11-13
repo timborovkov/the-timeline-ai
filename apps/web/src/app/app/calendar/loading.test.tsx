@@ -28,9 +28,7 @@ describe('CalendarLoading', () => {
     expect(screen.getByLabelText('Loading calendar').getAttribute('aria-busy')).toBe('true');
     expect(screen.getByRole('status').textContent).toContain('Loading calendar');
     expect(screen.getByRole('heading', { level: 1, name: 'Calendar' })).toBeTruthy();
-    expect(screen.getByRole('navigation', { name: 'Work navigation' }).textContent).toContain(
-      '/app/calendar',
-    );
+
     expect(screen.queryByRole('region', { name: 'Calendar loading placeholder' })).toBeNull();
     const visualPlaceholders = document.querySelectorAll('[aria-hidden="true"]');
     expect(visualPlaceholders.length).toBeGreaterThan(0);

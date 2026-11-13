@@ -32,15 +32,19 @@ await vi.mock(
   () => import('@/components/team-forms'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen, within, waitFor } =
+  await import('@testing-library/react');
 const { TeamMembersSettings } = await import('@/components/team-members-settings');
+const { TeamListPagination } = await import('@/components/team-list-pagination');
+const { PendingInvitesCard } = await import('@/components/pending-invites-card');
+const { RemovedMembersCard } = await import('@/components/removed-members-card');
 
 afterEach(() => {
   cleanup();
 });
 
 const users = new Map([
-  ['owner-1', { id: 'owner-1', name: 'Tim', email: 'tim@example.com' }],
+  ['owner-1', { id: 'owner-1', name: 'Taylor', email: 'taylor@example.com' }],
   ['member-1', { id: 'member-1', name: 'Ada Lovelace', email: 'ada@example.com' }],
 ]);
 
@@ -133,4 +137,200 @@ describe('TeamMembersSettings', () => {
       '#invite',
     );
   });
+});
+
+describe('member identity and pagination', () => {
+  function view(count: number) {
+    return (
+      <TeamMembersSettings
+        members={Array.from({ length: count }, (_, index) => ({
+          userId: `member-${index}`,
+          role: 'member',
+        }))}
+        userMap={
+          new Map(
+            Array.from({ length: count }, (_, index) => [
+              `member-${index}`,
+              { id: `member-${index}`, name: null, email: `member.${index}@example.com` },
+            ]),
+          )
+        }
+        isAdmin={false}
+        isOwner={false}
+        currentUserId="member-0"
+        invites={[]}
+        removedMembers={[]}
+      />
+    );
+  }
+
+  it('renders an email fallback once and keeps all 51 members reachable across pages', () => {
+    const { rerender } = render(view(50));
+    expect(screen.getAllByRole('listitem')).toHaveLength(50);
+    expect(screen.queryByRole('navigation', { name: 'Member pages' })).toBeNull();
+    rerender(view(51));
+    expect(screen.getAllByText('member.0@example.com')).toHaveLength(1);
+    expect(screen.getAllByRole('listitem')).toHaveLength(50);
+    expect(screen.queryByText('member.50@example.com')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Previous' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('member.50@example.com')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('list', { name: 'Members' }));
+    expect(screen.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(screen.getByText('member.0@example.com')).toBeTruthy();
+  });
+
+  it('clamps the page after removal and does not resurrect a stale page when members return', () => {
+    function renderView(count: number) {
+      return (
+        <>
+          <button type="button">Outside list</button>
+          {view(count)}
+        </>
+      );
+    }
+    const { rerender } = render(renderView(51));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    const outside = screen.getByRole('button', { name: 'Outside list' });
+    outside.focus();
+    rerender(renderView(50));
+    expect(document.activeElement).toBe(outside);
+    expect(screen.getAllByRole('listitem')).toHaveLength(50);
+    rerender(renderView(51));
+    expect(screen.getByText('member.0@example.com')).toBeTruthy();
+    expect(screen.queryByText('member.50@example.com')).toBeNull();
+    rerender(renderView(0));
+    expect(screen.getByText('No members are available right now')).toBeTruthy();
+  });
+});
+
+describe('adjacent team lists', () => {
+  function relatedMemberFixtures(count: number) {
+    const profiles = Array.from({ length: count }, (_, index) => ({
+      id: `member-${index}`,
+      name: '   ',
+      email:
+        index === 11 ? 'ops@sub.department.region.example.co.uk' : `member.${index}@example.com`,
+    }));
+    return {
+      userMap: new Map(profiles.map((profile) => [profile.id, profile])),
+      invites: profiles.map((profile, index) => ({
+        id: `invite-${index}`,
+        email: profile.email,
+        role: 'member',
+        token: `test-token-${index}`,
+        expiresAt: new Date('2026-11-24T12:00:00Z'),
+        lastSentAt: null,
+        sendStatus: 'pending',
+        sendError: null,
+        invitedByUserId: profile.id,
+      })),
+      removedMembers: profiles.map((profile) => ({
+        userId: profile.id,
+        role: 'member',
+        removedAt: null,
+      })),
+    };
+  }
+
+  it('falls back from blank inviter names and omits duplicate removed-member emails', () => {
+    const fixture = relatedMemberFixtures(12);
+    render(
+      <>
+        <PendingInvitesCard
+          siteUrl="https://preview.example.com"
+          invites={fixture.invites.slice(11, 12)}
+          userMap={fixture.userMap}
+        />
+        <RemovedMembersCard
+          removedMembers={fixture.removedMembers.slice(11, 12)}
+          userMap={fixture.userMap}
+        />
+      </>,
+    );
+    const pending = within(
+      screen.getByRole('heading', { name: 'Pending invites' }).closest('section') ?? document.body,
+    );
+    expect(
+      pending.getByText('member · invited by ops@sub.department.region.example.co.uk'),
+    ).toBeTruthy();
+    expect(
+      pending.getByText('https://preview.example.com/accept-invite/test-token-11'),
+    ).toBeTruthy();
+    const removed = within(
+      screen.getByRole('heading', { name: 'Removed members' }).closest('section') ?? document.body,
+    );
+    expect(removed.getAllByText('ops@sub.department.region.example.co.uk')).toHaveLength(1);
+  });
+
+  it('paginates invitations and removed members independently and clamps after removal', () => {
+    const fixture = relatedMemberFixtures(51);
+    function view(count: number) {
+      return (
+        <>
+          <PendingInvitesCard
+            siteUrl="https://preview.example.com"
+            invites={fixture.invites.slice(0, count)}
+            userMap={fixture.userMap}
+          />
+          <RemovedMembersCard
+            removedMembers={fixture.removedMembers.slice(0, count)}
+            userMap={fixture.userMap}
+          />
+        </>
+      );
+    }
+    const { rerender } = render(view(50));
+    expect(screen.queryByRole('navigation')).toBeNull();
+    rerender(view(51));
+    const pending = within(
+      screen.getByRole('heading', { name: 'Pending invites' }).closest('section') ?? document.body,
+    );
+    const removed = within(
+      screen.getByRole('heading', { name: 'Removed members' }).closest('section') ?? document.body,
+    );
+    expect(pending.getAllByRole('listitem')).toHaveLength(50);
+    expect(removed.getAllByRole('listitem')).toHaveLength(50);
+    fireEvent.click(pending.getByRole('button', { name: 'Next' }));
+    expect(pending.getAllByRole('listitem')).toHaveLength(1);
+    expect(document.activeElement).toBe(pending.getByRole('list', { name: 'Pending invites' }));
+    expect(removed.getAllByRole('listitem')).toHaveLength(50);
+    expect(pending.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(removed.getByRole('button', { name: 'Next' }));
+    expect(removed.getAllByRole('listitem')).toHaveLength(1);
+    expect(document.activeElement).toBe(removed.getByRole('list', { name: 'Removed members' }));
+    rerender(view(50));
+    expect(pending.getAllByRole('listitem')).toHaveLength(50);
+    expect(removed.getAllByRole('listitem')).toHaveLength(50);
+    rerender(view(0));
+    expect(screen.getByText('No pending invites')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Removed members' })).toBeNull();
+  });
+});
+
+it('formats pagination for the browser language and follows language changes', async () => {
+  const original = Object.getOwnPropertyDescriptor(navigator, 'language');
+  try {
+    Object.defineProperty(navigator, 'language', { configurable: true, value: 'de-DE' });
+    render(
+      <TeamListPagination
+        page={0}
+        total={1284}
+        label="Member pages"
+        noun="members"
+        onPageChange={() => undefined}
+      />,
+    );
+    expect(screen.getByText('1–50 of 1.284 members')).toBeTruthy();
+    Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });
+    fireEvent(window, new Event('languagechange'));
+    await waitFor(() => {
+      expect(screen.getByText('1–50 of 1,284 members')).toBeTruthy();
+    });
+  } finally {
+    if (original) Object.defineProperty(navigator, 'language', original);
+    else Reflect.deleteProperty(navigator, 'language');
+  }
 });

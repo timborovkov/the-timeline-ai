@@ -2,9 +2,9 @@ import { ArrowDown, ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 
 import { Logo } from '@/components/brand/logo';
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import styles from '@/components/marketing/integrations/inbound-mcp-diagram.module.css';
 import { MCP_GUIDE_HOSTED_TOOL_NAMES } from '@/components/marketing/integrations/mcp-guide-content';
+import { MotionFigure } from '@/components/marketing/motion-figure';
 
 const TOOL_MARKS: Record<(typeof MCP_GUIDE_HOSTED_TOOL_NAMES)[number], string> = {
   Notion: '/connectors/notion.svg',
@@ -15,16 +15,14 @@ const TOOL_MARKS: Record<(typeof MCP_GUIDE_HOSTED_TOOL_NAMES)[number], string> =
 
 export function InboundMcpDiagram() {
   return (
-    <figure className={styles.figure} data-inbound-mcp aria-labelledby="inbound-mcp-title">
+    <MotionFigure className={styles.figure} data-inbound-mcp aria-labelledby="inbound-mcp-title">
       <figcaption className={styles.caption}>
         <span id="inbound-mcp-title" className={styles.kicker}>
           Live lookup
         </span>
-        <span className={styles.disclosure}>{FICTIONAL_EXAMPLE_LABEL}</span>
       </figcaption>
       <p className={styles.lede}>
-        The Timeline Agent can call connected MCP tools during a question. That is a live lookup,
-        not background sync, and not the path external agents use to read Timeline.
+        A question can reach beyond captured history to a tool you have connected.
       </p>
       <div className={styles.flow}>
         <section className={styles.column} aria-labelledby="inbound-mcp-agent">
@@ -61,6 +59,6 @@ export function InboundMcpDiagram() {
           </ul>
         </section>
       </div>
-    </figure>
+    </MotionFigure>
   );
 }

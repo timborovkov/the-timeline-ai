@@ -24,8 +24,11 @@ describe('pricing blocks', () => {
     expect(html).not.toContain('data-pricing-plan="enterprise"');
     expect(html).toContain('data-pricing-enterprise-nudge');
     expect(html).toContain('Pay as you go');
-    expect(html).toContain('Start here');
-    expect(html).toContain('Create an account to add payment');
+    expect(html).toContain('Platform fee + usage beyond your allowance.');
+    expect(html).toContain('Included monthly on Free and Pay as you go');
+    expect(html).toContain('Up to €60 usage credit / month');
+    expect(html).toContain('Up to €250 usage credit / month');
+    expect(html).toContain('Add payment');
     expect(html).toContain('data-first-run="compact"');
     expect(html).not.toContain('Recommended');
     expect(html).not.toContain('Add payment method');
@@ -47,6 +50,10 @@ describe('pricing blocks', () => {
     expect(html).toContain('€199/mo');
     expect(html).toContain('data-pricing-infrastructure');
     expect(html).toContain('Infrastructure limits');
+    expect(html).toContain('Scroll to compare all plans.');
+    expect(html).toContain('role="region"');
+    expect(html).toContain('scope="col"');
+    expect(html).toContain('scope="row"');
     expect(html).not.toMatch(/<details[^>]*\sopen/);
     expect(html).toContain('Ask turns / month');
     expect(html).toContain('Concurrent meeting notetakers');

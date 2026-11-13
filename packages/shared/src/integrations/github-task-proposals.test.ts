@@ -29,6 +29,7 @@ const {
 } = await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
+const { withTeam } = await import('#src/team-scope.js');
 const { writeIntegrationEvents } = await import('#src/integrations/event-writer.js');
 const {
   capturedWorkItemFromIntegrationEvent,
@@ -58,7 +59,7 @@ function githubPrWorkItem(overrides: Record<string, unknown> = {}) {
     externalObjectId: 'timborovkov/audit-ai#10',
     eventType: 'pr.merged',
     occurredAt: new Date('2026-06-01T12:00:00Z'),
-    actor: { externalId: 'timborovkov', name: 'timborovkov' },
+    actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
     contentText:
       'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
     extra: {
@@ -85,21 +86,21 @@ function githubPrWorkItem(overrides: Record<string, unknown> = {}) {
 
 describe('GitHub task proposal matching', () => {
   it('parses GitHub connection display names into logins', () => {
-    expect(githubLoginFromConnectionDisplayName('GitHub — timborovkov')).toBe('timborovkov');
+    expect(githubLoginFromConnectionDisplayName('GitHub — taylorbennett')).toBe('taylorbennett');
     expect(githubLoginFromConnectionDisplayName('GitHub - octocat')).toBe('octocat');
     expect(githubLoginFromConnectionDisplayName('GitHub')).toBeNull();
   });
 
   it('maps GitHub logins through connection ownership before name compaction', () => {
     const members = [
-      { userId: USER_ID, name: 'Tim Borovkov' },
+      { userId: USER_ID, name: 'Taylor Bennett' },
       { userId: OTHER_USER_ID, name: 'Other Person' },
     ];
     expect(
-      resolveGithubLoginToUserId('timborovkov', members, new Map([[USER_ID, ['timborovkov']]])),
+      resolveGithubLoginToUserId('taylorbennett', members, new Map([[USER_ID, ['taylorbennett']]])),
     ).toBe(USER_ID);
-    expect(resolveGithubLoginToUserId('timborovkov', members, new Map())).toBe(USER_ID);
-    expect(compactGithubPersonKey('Tim Borovkov')).toBe('timborovkov');
+    expect(resolveGithubLoginToUserId('taylorbennett', members, new Map())).toBe(USER_ID);
+    expect(compactGithubPersonKey('Taylor Bennett')).toBe('taylorbennett');
     expect(
       resolveGithubLoginToUserId(
         'octocat',
@@ -118,8 +119,8 @@ describe('GitHub task proposal matching', () => {
     expect(
       resolveGithubLoginToUserId(
         workItem?.actorLogin ?? '',
-        [{ userId: USER_ID, name: 'Tim Borovkov' }],
-        new Map([[USER_ID, ['timborovkov']]]),
+        [{ userId: USER_ID, name: 'Taylor Bennett' }],
+        new Map([[USER_ID, ['taylorbennett']]]),
       ),
     ).toBeNull();
   });
@@ -154,6 +155,24 @@ describe('GitHub task proposal matching', () => {
     expect(matchOpenTasksToGithubWorkItem(workItem, [titleTask])).toEqual([
       { task: titleTask, match: 'title' },
     ]);
+  });
+
+  it('does not treat repository-local PR numbers as globally unique aliases', () => {
+    const work = githubPrWorkItem();
+    if (!work) throw new Error('missing work item');
+    expect(
+      matchOpenTasksToGithubWorkItem(work, [
+        {
+          id: USER_ID,
+          canonicalName: 'Unrelated change',
+          aliases: ['example/another-repo#10', 'PR #10'],
+          metadata: {},
+          status: 'done',
+          ownerUserId: null,
+          assigneeUserId: null,
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it('does not fuzzy-match when multiple title candidates exist', () => {
@@ -224,7 +243,7 @@ describe('GitHub task proposal matching', () => {
       externalObjectId: 'timborovkov/audit-ai#11',
       eventType: 'pr.closed',
       occurredAt: new Date('2026-06-01T12:00:00Z'),
-      actor: { externalId: 'timborovkov', name: 'timborovkov' },
+      actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
       contentText: 'GitHub PR timborovkov/audit-ai#11 — Abandoned experiment',
       extra: {
         github: {
@@ -272,7 +291,7 @@ describe('GitHub task proposal matching', () => {
           provider: 'github',
           event_type: 'issue_comment.created',
           external_object_id: 'timborovkov/audit-ai#10:comment:99',
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           github: {
             type: 'issue_comment',
             repo: 'timborovkov/audit-ai',
@@ -289,7 +308,7 @@ describe('GitHub task proposal matching', () => {
         externalObjectId: 'timborovkov/audit-ai#10:review:1',
         eventType: 'pr.review.approved',
         occurredAt: new Date('2026-06-01T12:00:00Z'),
-        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
         contentText: 'Approved',
         extra: {
           github: {
@@ -411,13 +430,13 @@ describe('GitHub task proposal matching', () => {
         provider: 'github',
         event_type: 'pr.merged',
         external_object_id: 'timborovkov/audit-ai#88',
-        actor: { externalId: 'timborovkov', name: 'timborovkov' },
+        actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
         github: {
           type: 'pull_request',
           repo: 'timborovkov/audit-ai',
           number: 88,
           merged_at: '2026-06-02T09:00:00Z',
-          assignees: [{ login: 'timborovkov' }],
+          assignees: [{ login: 'taylorbennett' }],
         },
       },
       'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
@@ -426,8 +445,8 @@ describe('GitHub task proposal matching', () => {
       kind: 'pull_request',
       number: 88,
       status: 'done',
-      actorLogin: 'timborovkov',
-      assigneeLogins: ['timborovkov'],
+      actorLogin: 'taylorbennett',
+      assigneeLogins: ['taylorbennett'],
     });
   });
 });
@@ -444,7 +463,7 @@ describe('GitHub task proposal persistence', () => {
     await pg.exec(`
       INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 'audit-ai', 'AuditAI');
       INSERT INTO users (id, email, name) VALUES
-        ('${USER_ID}', 'tim@example.com', 'Tim Borovkov'),
+        ('${USER_ID}', 'taylor@example.com', 'Taylor Bennett'),
         ('${OTHER_USER_ID}', 'other@example.com', 'Other Person');
       INSERT INTO team_members (team_id, user_id, role) VALUES
         ('${TEAM_ID}', '${USER_ID}', 'owner'),
@@ -456,6 +475,320 @@ describe('GitHub task proposal persistence', () => {
     await pg.close();
   });
 
+  // A merged owned PR is completed work even when no earlier conversation
+  // created a task. Proposals remain reviewable and replay must be idempotent.
+  it('reserves names across pending completed PR proposals so both approvals succeed', async () => {
+    for (const repo of ['alpha', 'beta']) {
+      await db.insert(entities).values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: repo,
+        aliases: [`example/${repo}`],
+        status: 'active',
+      });
+      const [event] = await db
+        .insert(rawEvents)
+        .values({
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'integration',
+          visibility: 'team',
+          occurredAt: new Date(),
+          contentText: 'Merged: Improve navigation',
+          sourceMetadata: {
+            provider: 'github',
+            signal_class: 'captured_work',
+            event_type: 'pr.merged',
+            external_object_id: `example/${repo}#42`,
+            github: {
+              type: 'pull_request',
+              repo: `example/${repo}`,
+              number: 42,
+              merged_at: new Date().toISOString(),
+              state: 'closed',
+            },
+            object_map: {
+              type: 'task',
+              canonicalName: 'Improve navigation',
+              externalId: `example/${repo}#42`,
+              status: 'done',
+            },
+          },
+        })
+        .returning();
+      if (!event) throw new Error('missing event');
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: event,
+      });
+    }
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(2);
+    expect(
+      new Set(items.map((item) => (item.proposedPayload as Record<string, unknown>).canonicalName))
+        .size,
+    ).toBe(2);
+    for (const item of items)
+      expect(
+        await withTeam(db as never, TEAM_ID, USER_ID).suggestions.acceptSuggestionItem(item.id),
+      ).toBe(true);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(2);
+  });
+
+  it('preserves distinct same-title PR approvals within one repository project', async () => {
+    const repo = 'alpha';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: repo,
+      aliases: [`example/${repo}`],
+      status: 'active',
+    });
+    for (const number of [42, 43]) {
+      const [event] = await db
+        .insert(rawEvents)
+        .values({
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'integration',
+          visibility: 'team',
+          occurredAt: new Date(),
+          contentText: 'Merged: Improve navigation',
+          sourceMetadata: {
+            provider: 'github',
+            signal_class: 'captured_work',
+            event_type: 'pr.merged',
+            external_object_id: `example/${repo}#${number}`,
+            github: {
+              type: 'pull_request',
+              repo: `example/${repo}`,
+              number,
+              merged_at: new Date().toISOString(),
+              state: 'closed',
+            },
+            object_map: {
+              type: 'task',
+              canonicalName: 'Improve navigation',
+              externalId: `example/${repo}#${number}`,
+              status: 'done',
+            },
+          },
+        })
+        .returning();
+      if (!event) throw new Error('missing event');
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: event,
+      });
+    }
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(2);
+    expect(items.every((item) => item.status === 'pending')).toBe(true);
+    expect(
+      new Set(items.map((item) => (item.proposedPayload as Record<string, unknown>).canonicalName))
+        .size,
+    ).toBe(2);
+    for (const item of items)
+      expect(
+        await withTeam(db as never, TEAM_ID, USER_ID).suggestions.acceptSuggestionItem(item.id),
+      ).toBe(true);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(2);
+  });
+
+  it('proposes a completed task under the uniquely named repository project', async () => {
+    const [project] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar',
+        aliases: ['northstar-frontend'],
+        status: 'active',
+      })
+      .returning();
+    if (!project) throw new Error('missing project');
+    await db.insert(entities).values(
+      Array.from({ length: 501 }, (_, index) => ({
+        teamId: TEAM_ID,
+        type: 'task' as const,
+        canonicalName: `northstar-frontend historical work ${index}`,
+        status: 'done',
+      })),
+    );
+
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        visibility: 'team',
+        occurredAt: new Date('2026-07-01T12:00:00Z'),
+        contentText:
+          'Merged PR: Add keyboard navigation to the client portal. The menu now supports arrow keys and Escape.',
+        sourceMetadata: {
+          provider: 'github',
+          signal_class: 'captured_work',
+          event_type: 'pr.merged',
+          external_object_id: 'example/northstar-frontend#42',
+          github: {
+            type: 'pull_request',
+            repo: 'example/northstar-frontend',
+            number: 42,
+            merged_at: '2026-07-01T12:00:00Z',
+            state: 'closed',
+          },
+          object_map: {
+            type: 'task',
+            canonicalName: 'Add keyboard navigation for the client portal '.repeat(6),
+            externalId: 'example/northstar-frontend#42',
+            status: 'done',
+          },
+        },
+      })
+      .returning();
+    if (!event) throw new Error('missing event');
+    const [competingProject] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar mobile',
+        aliases: ['northstar-frontend'],
+        status: 'active',
+      })
+      .returning();
+    if (!competingProject) throw new Error('missing competing project');
+    expect(
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: event,
+      }),
+    ).toBe(0);
+    await db.delete(entities).where(eq(entities.id, competingProject.id));
+    const unmerged = {
+      ...event,
+      sourceMetadata: {
+        ...(event.sourceMetadata as Record<string, unknown>),
+        event_type: 'pr.closed',
+        github: {
+          type: 'pull_request',
+          repo: 'example/northstar-frontend',
+          number: 42,
+          state: 'closed',
+        },
+        object_map: {
+          type: 'task',
+          canonicalName: 'Add keyboard navigation',
+          externalId: 'example/northstar-frontend#42',
+          status: 'cancelled',
+        },
+      },
+    };
+    expect(
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: unmerged,
+      }),
+    ).toBe(0);
+    expect(
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: { ...event, visibility: 'private' },
+      }),
+    ).toBe(0);
+    // Neither an unrelated title nor an archived task may collide on approval.
+    const longTitle = 'Add keyboard navigation for the client portal '.repeat(6).trim();
+    const clip = (value: string, length: number) =>
+      value.length <= length ? value : `${value.slice(0, length - 1).trimEnd()}…`;
+    const suffix = ' (example/northstar-frontend#42)';
+    const baseName = clip(longTitle, 200);
+    const qualifiedName = `${clip(longTitle, 200 - suffix.length)}${suffix}`;
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: baseName,
+        status: 'done',
+        aliases: ['unrelated/work#98'],
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: qualifiedName,
+        status: 'done',
+        archivedAt: new Date(),
+        aliases: ['unrelated/work#99'],
+      },
+    ]);
+    await proposeGithubTaskUpdatesFromRawEvent({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEvent: event,
+    });
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      proposedPayload: { status: 'done', parentObjectId: project.id },
+    });
+    const item = items[0];
+    if (!item) throw new Error('missing task proposal');
+    expect((item.proposedPayload as Record<string, unknown>).aliases).toContain(
+      'example/northstar-frontend#42',
+    );
+    expect(await db.select().from(agentSuggestionEvidence)).toHaveLength(1);
+    await proposeGithubTaskUpdatesFromRawEvent({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEvent: event,
+    });
+    expect(await db.select().from(agentSuggestionItems)).toHaveLength(1);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(
+      503,
+    );
+    await withTeam(db as never, TEAM_ID, USER_ID).suggestions.acceptSuggestionItem(item.id);
+    expect(
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: event,
+      }),
+    ).toBe(0);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(
+      504,
+    );
+    const [acceptedTask] = (await db.select().from(entities)).filter(
+      (row) =>
+        row.type === 'task' &&
+        row.aliases &&
+        JSON.stringify(row.aliases).includes('example/northstar-frontend#42'),
+    );
+    expect(acceptedTask?.canonicalName).not.toBe(baseName);
+    expect(acceptedTask?.canonicalName).not.toBe(qualifiedName);
+    expect(acceptedTask?.canonicalName).toContain('example/northstar-frontend#42; 2');
+    expect(acceptedTask?.canonicalName.length).toBeLessThanOrEqual(200);
+    if (!acceptedTask) throw new Error('missing accepted task');
+    await withTeam(db as never, TEAM_ID, USER_ID).objects.archiveObject(acceptedTask.id, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: event,
+      }),
+    ).toBe(0);
+    expect(await db.select().from(agentSuggestionItems)).toHaveLength(1);
+  });
+
   it('proposes done and assignee for a merged GitHub PR that already has a Timeline task', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -463,12 +796,22 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
       .returning();
     if (!integration) throw new Error('integration insert failed');
+
+    // Closed repository history must not crowd an open task out of recall.
+    await db.insert(entities).values(
+      Array.from({ length: 500 }, (_, index) => ({
+        teamId: TEAM_ID,
+        type: 'task' as const,
+        canonicalName: `audit-ai historical work ${index}`,
+        status: 'done',
+      })),
+    );
 
     const [task] = await db
       .insert(entities)
@@ -491,7 +834,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-01T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -560,7 +903,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -626,7 +969,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -643,7 +986,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#88',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-02T09:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#88 — Fix command palette Engagements route 404',
           extra: {
@@ -739,7 +1082,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-01T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -799,7 +1142,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -827,7 +1170,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.opened',
           occurredAt: new Date('2026-06-01T11:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -867,7 +1210,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#10',
           eventType: 'pr.merged',
           occurredAt: new Date('2026-06-01T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText:
             'GitHub PR timborovkov/audit-ai#10 — Fix theme system detection broken until page reload',
           extra: {
@@ -911,7 +1254,7 @@ describe('GitHub task proposal persistence', () => {
         teamId: TEAM_ID,
         connectedByUserId: USER_ID,
         provider: 'github',
-        displayName: 'GitHub — timborovkov',
+        displayName: 'GitHub — taylorbennett',
         externalAccountId: '42',
         visibilityDefault: 'team',
       })
@@ -939,7 +1282,7 @@ describe('GitHub task proposal persistence', () => {
           externalObjectId: 'timborovkov/audit-ai#issue:22',
           eventType: 'issue.closed',
           occurredAt: new Date('2026-06-03T12:00:00Z'),
-          actor: { externalId: 'timborovkov', name: 'timborovkov' },
+          actor: { externalId: 'taylorbennett', name: 'taylorbennett' },
           contentText: 'GitHub Issue timborovkov/audit-ai#22 — Document the audit seed contract',
           extra: {
             github: {

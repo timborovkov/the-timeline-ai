@@ -29,6 +29,25 @@ describe('landing route group', () => {
     }
   });
 
+  it('keeps content visible instead of starting scroll entrance animations', () => {
+    const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
+    const motion = readFileSync(
+      new URL('../../components/marketing/home/home-motion.tsx', import.meta.url),
+      'utf8',
+    );
+    for (const entrance of [
+      'diagramItemIn',
+      'answerPanelIn',
+      'citationResolve',
+      '[data-home-reveal]',
+    ]) {
+      expect(styles).not.toContain(entrance);
+    }
+    expect(motion).not.toContain('revealObserver');
+    expect(styles).not.toContain('animation: evidencePath');
+    expect(motion).toContain('pauseAnimations()');
+  });
+
   it('keeps public-page preferences, metadata, and motion usable', () => {
     const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
     const agentSetupStyles = readFileSync(
@@ -56,7 +75,7 @@ describe('landing route group', () => {
 
     expect(narrowViewportStyles).toContain('.signInLink');
     expect(narrowViewportStyles).toContain('.themeToggle');
-    expect(headerStyles).toContain('grid-template-columns: 1fr auto 1fr');
+    expect(headerStyles).toContain('grid-template-columns: auto minmax(0, 1fr) auto');
     expect(headerStyles).toContain('min-height: 4rem');
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');
@@ -65,7 +84,7 @@ describe('landing route group', () => {
     expect(styles).toMatch(/\.slackMeta span\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).toMatch(/\.mcpCalls code\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).not.toContain('translateX(0.35rem)');
-    expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
+    expect(styles).not.toContain('animation: evidencePath 4.8s linear infinite both');
     expect(styles).toContain('.observatory');
     expect(styles).not.toContain('--diagram-size');
     expect(styles).toContain('animation: flowPacketAcross 8s linear infinite');
@@ -82,8 +101,9 @@ describe('landing route group', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.flowPacketRunner\s*\{[\s\S]*display: none !important;/u,
     );
     expect(styles).toContain('animation: chronologyDraw 1.25s');
-    expect(styles).toMatch(/\.timelineList li:nth-child\(5\)\s*\{\s*animation-delay: 820ms;/u);
-    expect(styles).toContain('animation: answerPanelIn 680ms');
+    expect(styles).not.toContain('answerPanelIn');
+    expect(styles).not.toContain('diagramItemIn');
+    expect(styles).not.toContain('citationResolve');
     expect(styles).toContain('animation: trustPathDraw 1.15s');
     expect(styles).not.toContain('ambientSweep');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
@@ -93,10 +113,11 @@ describe('landing route group', () => {
     expect(styles).toMatch(
       /@media \(max-width: 44rem\)[\s\S]*\.orbitSourceTime\s*\{\s*display:\s*none;/u,
     );
-    expect(styles).toContain('stroke-dashoffset');
+    expect(styles).not.toContain('stroke-dashoffset');
     expect(styles).not.toContain(':not(.visible)');
     expect(styles).not.toContain('.motionReady [data-home-diagram] {');
-    expect(styles).toContain('.motionReady [data-home-reveal].visible {');
+    expect(styles).not.toContain('[data-home-reveal]');
+    expect(motion).not.toContain('revealObserver');
     expect(motion).toContain("'[data-home-diagram]'");
     expect(motion).not.toContain('data-home-ambient');
     expect(motion).toContain('classList.toggle(visibleClass, entry.isIntersecting)');
@@ -107,25 +128,12 @@ describe('landing route group', () => {
     expect(motion).toContain('unpauseAnimations()');
     expect(motion).toContain("'[data-flow-motion]'");
     expect(styles).not.toContain('.ambientTrace');
-    expect(styles).toMatch(
-      /\.page::before\s*\{[^}]*opacity:\s*0\.055;[^}]*mix-blend-mode:\s*multiply;/s,
-    );
-    expect(styles).toMatch(
-      /:global\(\.dark\) \.page::before\s*\{[^}]*opacity:\s*0\.035;[^}]*mix-blend-mode:\s*normal;/s,
-    );
+    expect(styles).not.toContain('fractalNoise');
+    expect(styles).not.toContain('mix-blend-mode');
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
-    expect(styles).toMatch(/\.footerGithub\s*\{[^}]*border: 0 !important;/s);
-    expect(styles).toMatch(/\.proofStage\s*\{[^}]*margin-top:\s*2\.75rem;/s);
-    expect(styles).toMatch(/\.ledgerInspect\s*\{[^}]*padding:\s*0 1rem 0\.85rem;/s);
-    expect(styles).toMatch(
-      /\.ledgerInspect summary\s*\{[^}]*width:\s*fit-content;[^}]*list-style:\s*none;/s,
-    );
-    expect(styles).toContain('.ledgerInspect summary::-webkit-details-marker');
-    expect(styles).toContain('.ledgerInspect summary:focus-visible');
-    expect(styles).toMatch(
-      /\.ledgerInspect\[open\]\s*>\s*summary::before\s*\{[^}]*transform:\s*rotate\(45deg\);/s,
-    );
-    expect(styles).toMatch(/\.ledgerInspectBody p\s*\{[^}]*font-size:\s*0\.86rem;/s);
+    expect(styles).toMatch(/\.footerSettings\s*\{[^}]*border: 0;[^}]*background: none;/s);
+    expect(styles).toMatch(/\.proofStage\s*\{[^}]*margin-top:\s*2\.25rem;/s);
+    expect(styles).toMatch(/\.sourceCard p\s*\{[^}]*font-size:\s*0\.875rem;/s);
   });
 });

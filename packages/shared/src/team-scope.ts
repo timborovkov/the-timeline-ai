@@ -39,6 +39,7 @@ import { createBillingOperatorScope } from '#src/billing/operator-store.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
+import { createBoardQualificationScope } from '#src/boards/qualification.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
 import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
@@ -86,10 +87,21 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import {
+  eventEvidenceDate,
+  rankingSummary,
+  balancedRanking,
+  compareEvidence,
+  evidenceRanking,
+  FRESHNESS_CANDIDATE_LIMIT,
+  type RankingInput,
+  type RankingMetadata,
+} from '#src/retrieval/ranking.js';
+import {
   createSuggestionAcceptanceUnitOfWork,
   type SuggestionAcceptanceTransaction,
 } from '#src/suggestions/acceptance-transaction.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import { createEngineMaintenanceScope } from '#src/suggestions/maintenance-scope.js';
 import { createTeamLifecycleScope } from '#src/team-lifecycle/scope.js';
 import { createTelegramScope } from '#src/telegram/scope.js';
 import { createTimelineReadScope } from '#src/timeline/read-scope.js';
@@ -262,7 +274,7 @@ export interface CreateEmailEventResult {
   deduplicated: boolean;
 }
 
-export interface SearchEventsInput {
+export interface SearchEventsInput extends RankingInput {
   operation?: QdrantOperationContext;
   query: string;
   /** Reuse a previously embedded query when scanning multiple semantic pages. */
@@ -311,6 +323,7 @@ export type {
 } from '#src/timeline/types.js';
 
 export interface SearchEventResult {
+  ranking?: RankingMetadata;
   eventId: string;
   factIds: string[];
   score: number;
@@ -911,6 +924,71 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       accessibleEvents.map((event) => event.id),
     );
     return Object.fromEntries(clusterByEventId);
+  }
+
+  async function resolveEvidenceObjectIds(
+    rawEventIds: string[],
+  ): Promise<{ objectIds: string[]; truncated: boolean }> {
+    await ensureMember();
+    const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
+    if (!ids.length) return { objectIds: [], truncated: false };
+    const associationRawEventId = sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`;
+    const rows = await db
+      .select({ id: entities.id })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, teamId),
+        ),
+      )
+      .innerJoin(
+        rawEvents,
+        and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+      )
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.id, artifactClusters.canonicalEntityId),
+          eq(entities.teamId, teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactEvidenceAssociations.teamId, teamId),
+          inArray(rawEvents.id, ids.slice(0, 20)),
+          visibilityFilter,
+          activeRawEventFilter,
+          isNull(artifactClusters.archivedAt),
+          ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+          ne(artifactEvidenceAssociations.strength, 'semantic'),
+          visibilityEnvelopeVisibleToUser({
+            visibility: artifactEvidenceAssociations.visibility,
+            visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
+            visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+            authorUserId: rawEvents.authorUserId,
+          }),
+          visibilityEnvelopeVisibleToUser({
+            visibility: artifactEvidenceAssociations.visibilityFloor,
+            visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
+            visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+            authorUserId: rawEvents.authorUserId,
+          }),
+        ),
+      )
+      .groupBy(entities.id)
+      .orderBy(asc(entities.id))
+      .limit(6);
+    return { objectIds: rows.map((row) => row.id), truncated: ids.length > 20 || rows.length > 5 };
   }
 
   async function listEvidencePackArtifactClusters(
@@ -2334,6 +2412,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listArtifactClusters: listTimelineArtifactClusters,
 
       listEvidencePackArtifactClusters,
+      resolveEvidenceObjectIds,
 
       async rankEvidencePackSupportByStoredVectors(
         anchorRawEventIds: string[],
@@ -3071,6 +3150,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       async searchEvents(input: SearchEventsInput): Promise<SearchEventResult[]> {
         await ensureMember();
+        const balanced = balancedRanking(input, input.eventIds !== undefined);
+        const rankingNow = input.rankingNow ?? new Date();
         const embedFn = deps.embed ?? defaultEmbed;
         const searchFn =
           deps.qdrantSearch ??
@@ -3089,11 +3170,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
         const searchOpts: SearchOpts = {
           operation: input.operation ?? {},
-          limit: input.limit ?? 20,
+          limit: balanced ? FRESHNESS_CANDIDATE_LIMIT : (input.limit ?? 20),
         };
         if (!input.from && !input.to && !input.eventIds)
           searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
-        if (input.offset) searchOpts.offset = input.offset;
+        if (input.offset && !balanced) searchOpts.offset = input.offset;
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
         const sourceFilter = input.source ?? input.senderSource;
@@ -3109,13 +3190,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           searchOpts.fileKinds = ['captured'];
         }
 
-        const { hits, usedSqlSenderFilter } = await searchSenderFilteredHits({
+        const { hits: candidateHits, usedSqlSenderFilter } = await searchSenderFilteredHits({
           searchInput: input,
           vector,
           searchOpts,
           searchFn,
         });
+        const hits = balanced
+          ? candidateHits
+              .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+              .slice(0, FRESHNESS_CANDIDATE_LIMIT)
+          : candidateHits;
         input.onCandidateCount?.(hits.length);
+        input.onRanking?.(rankingSummary(balanced, candidateHits.length));
 
         // Dedupe by event_id. Keep highest score; collect fact_ids; merge
         // entity_ids across event-level + fact-level points on the same event.
@@ -3302,10 +3389,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             (meetingSnippet ? meetingSnippet.slice(0, 240) : '') ||
             (docSnippet ? docSnippet.slice(0, 240) : '') ||
             (ev.contentText ? ev.contentText.slice(0, 240) : '[audio event — no transcript]');
+          const evidenceDate = eventEvidenceDate(ev.source, ev.occurredAt, ev.sourceMetadata);
           results.push({
             eventId: ev.id,
             factIds: verifiedFactIds,
             score: row.score,
+            ranking: evidenceRanking(
+              row.score,
+              evidenceDate.date,
+              evidenceDate.basis,
+              rankingNow,
+              balanced,
+              balanced && hits.length >= FRESHNESS_CANDIDATE_LIMIT,
+            ),
             occurredAt: ev.occurredAt.toISOString(),
             source: ev.source,
             authorUserId: ev.authorUserId,
@@ -3316,7 +3412,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             snippet,
             artifactCluster: clusterByEventId.get(ev.id) ?? null,
           });
-          if (results.length >= (input.limit ?? 20)) break;
+          if (!balanced && results.length >= (input.limit ?? 20)) break;
+        }
+        if (balanced) {
+          results.sort((a, b) =>
+            compareEvidence(
+              { ...a, id: a.eventId, ranking: a.ranking },
+              { ...b, id: b.eventId, ranking: b.ranking },
+            ),
+          );
+          return results.slice(input.offset ?? 0, (input.offset ?? 0) + (input.limit ?? 20));
         }
         return results;
       },
@@ -3468,8 +3573,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     conversations: conversationSurfaceScope,
     boards: boardScope,
+    boardQualification: createBoardQualificationScope(
+      db,
+      core,
+      (transactionDb): ReturnType<typeof createSuggestionScope> =>
+        withTeam(transactionDb, teamId, userId, deps).suggestions,
+    ),
     pins: pinScope,
     suggestions: suggestionScope,
+    engineMaintenance: createEngineMaintenanceScope(db, core),
     reconciliation: createReconciliationScope({ db, scope: core }),
     integrations: integrationScope,
     mcp: mcpScope,

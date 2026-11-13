@@ -1,18 +1,26 @@
 import { signOut } from 'next-auth/react';
 
 import { clearAllFloatingChatSessionIds } from '@/lib/floating-chat-session-storage';
+import { safeSameOriginPath } from '@/lib/safe-redirect';
 
 export async function signOutAfterClearingLocalSession(
-  storage: Storage = window.localStorage,
+  storage?: Storage,
   assign: (url: string) => void = (url) => {
     window.location.assign(url);
   },
+  callbackUrl?: string,
 ): Promise<void> {
   try {
-    clearAllFloatingChatSessionIds(storage);
+    clearAllFloatingChatSessionIds(storage ?? window.localStorage);
   } catch {
     // Private mode and some browser policies throw on Storage access.
   }
-  await signOut({ redirect: false, redirectTo: '/sign-in' });
-  assign('/sign-in');
+  const continuation = safeSameOriginPath(callbackUrl, '', {
+    blockedPaths: ['/sign-in', '/sign-up'],
+  });
+  const destination = continuation
+    ? `/sign-in?callbackUrl=${encodeURIComponent(continuation)}`
+    : '/sign-in';
+  await signOut({ redirect: false, redirectTo: destination });
+  assign(destination);
 }

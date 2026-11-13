@@ -32,6 +32,21 @@ export default async function UsagePage() {
     return (
       <div className="space-y-5">
         <PageHeader variant="collection" title="Usage" />
+        <section className="space-y-2 text-sm" aria-labelledby="member-usage-heading">
+          <h2 id="member-usage-heading" className="font-semibold">
+            Your workspace usage
+          </h2>
+          <p className="max-w-prose text-fg-muted">
+            Usage reports and billing controls are available to workspace owners and admins. Contact
+            a workspace admin if you need a usage report or a plan change.
+          </p>
+          <Link
+            href="/app/team"
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
+            View your team
+          </Link>
+        </section>
         {dashboard.restrictionReason ? (
           <BillingRestrictionNotice reason={dashboard.restrictionReason} />
         ) : memberNotice ? (

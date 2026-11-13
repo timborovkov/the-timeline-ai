@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import type { FirstRunSource, FirstRunSuggestion } from '@timeline/shared/onboarding/first-run';
 
@@ -27,18 +27,32 @@ export function FirstRecordScreen({
   suggestions: FirstRunSuggestion[];
 }) {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function go(href: string, phase: 'ask' | 'approve') {
-    startTransition(() => {
-      void setFirstRunPhaseAction(phase).then(() => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await setFirstRunPhaseAction(phase);
+        if (!result.ok) {
+          setError(result.error ?? 'Could not save progress.');
+          return;
+        }
         router.push(href);
-      });
+      } catch {
+        setError('Could not save progress. Please try again.');
+      }
     });
   }
 
   return (
     <div className="max-w-3xl">
+      {error ? (
+        <p role="alert" className="mb-4 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
       <p className="text-xs text-fg-dim">Your first record</p>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
       {meta ? <p className="mt-1 font-mono text-xs text-fg-dim">{meta}</p> : null}

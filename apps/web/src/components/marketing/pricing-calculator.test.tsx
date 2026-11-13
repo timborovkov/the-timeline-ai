@@ -29,7 +29,7 @@ describe('pricing calculator', () => {
     expect(view.getByRole('heading', { name: 'Team breakdown' })).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: 'Reset example' }));
     expect(ai.value).toBe('20');
-    expect(view.getByRole('heading', { name: 'Team breakdown' })).toBeTruthy();
+    expect(view.getByRole('heading', { name: 'Pay as you go breakdown' })).toBeTruthy();
   });
   it('includes optional website usage once and resets it with the example', () => {
     const view = render(<PricingCalculator />);
@@ -44,6 +44,19 @@ describe('pricing calculator', () => {
     expect((websites as HTMLInputElement).value).toBe('0');
     expect(view.container.textContent).toContain('€40.18');
     expect(view.container.textContent).not.toContain('9,000 source units');
+  });
+  it('resets the selected plan and keeps the mobile estimate in sync', () => {
+    const view = render(<PricingCalculator />);
+    fireEvent.click(view.getByRole('radio', { name: 'Team' }));
+    expect(view.getByText('Team estimate')).toBeTruthy();
+    fireEvent.change(view.getByLabelText('Active members'), { target: { value: '' } });
+    expect(view.getByText('Check your usage fields to see an estimate.')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Reset example' }));
+    expect((view.getByRole('radio', { name: 'Pay as you go' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect(view.getByText('Pay as you go estimate')).toBeTruthy();
+    expect((view.getByLabelText('Active members') as HTMLInputElement).value).toBe('5');
   });
   it('shows zero credit without a negative-zero amount', () => {
     const view = render(<PricingCalculator />);
