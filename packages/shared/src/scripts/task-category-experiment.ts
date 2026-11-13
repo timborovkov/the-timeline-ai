@@ -154,6 +154,7 @@ if (!values.sync) {
             id: example.id,
             dataset_id: dataset.id,
             created_at: example.created_at,
+            modified_at: example.modified_at ?? example.created_at,
             inputs: { caseId: testCase.id },
             outputs: { category: testCase.expected },
             metadata: { synthetic: true, corpusHash },
