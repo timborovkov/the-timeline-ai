@@ -65,12 +65,10 @@ test('reloaded chat shows terminal states and restores a pending board approval'
   await page.setViewportSize({ width: 1440, height: 1200 });
   await page.goto(`/app/chat?session=${session.id}`);
   for (let pass = 0; pass < 2; pass++) {
-    const statuses = page
-      .locator('output > span[aria-hidden="true"]')
-      .filter({
-        hasText:
-          /^(Completed|Unable to complete|Denied|Interrupted|Result unavailable|Approval needed)$/,
-      });
+    const statuses = page.locator('output > span[aria-hidden="true"]').filter({
+      hasText:
+        /^(Completed|Unable to complete|Denied|Interrupted|Result unavailable|Approval needed)$/,
+    });
     await expect(statuses).toHaveCount(6);
     await expect(statuses.nth(0)).toContainText('Completed');
     await expect(statuses.nth(1)).toContainText('Unable to complete');
