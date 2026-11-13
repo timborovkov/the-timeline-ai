@@ -815,6 +815,47 @@ describe('TimelineList evidence-owned actions', () => {
 });
 
 describe('TimelineList inspector source caps', () => {
+  it('keeps authored MCP notes readable even when the event is a compact pulse', () => {
+    const event = timelineEvent({
+      id: '19191919-1919-4191-8191-191919191919',
+      occurredAt: '2026-11-12T10:00:00Z',
+      source: 'ingest_webhook',
+      authorUserId: null,
+      contentText: 'Ingest webhook: MCP remember',
+      sourceMetadata: {
+        ingest_webhook_name: 'MCP remember',
+        source_snapshot: {
+          body: JSON.stringify({
+            source: 'mcp_remember',
+            title: 'Launch review',
+            text: 'Keep the pilot limited until Maya approves the checklist.',
+          }),
+        },
+      },
+    });
+    render(
+      createElement(TimelineList, {
+        events: [event],
+        authorMap: new Map(),
+        currentUserId: 'user-1',
+        isAdmin: false,
+        mode: 'events',
+        focusEventId: event.id,
+      }),
+    );
+    expect(fakes.showInspector).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Launch review' }),
+    );
+    renderLastInspectorContent();
+    expect(screen.getByRole('heading', { name: 'Source evidence' })).toBeTruthy();
+    const note = screen.getByText('Keep the pilot limited until Maya approves the checklist.');
+    expect(note.tagName).toBe('P');
+    expect(note.className).toContain('whitespace-pre-wrap');
+    expect(screen.getByText('MCP remember payload').closest('details')?.hasAttribute('open')).toBe(
+      false,
+    );
+  });
+
   it('reveals older source evidence in batches without exposing orphaned controls', () => {
     const events = Array.from({ length: 9 }, (_, index) =>
       timelineEvent({

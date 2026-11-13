@@ -9,6 +9,7 @@ import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
+import { AppPageTransition } from '@/components/app-page-transition';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
 import { ChatViewProvider } from '@/components/chat/chat-view-context';
 import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
@@ -163,12 +164,7 @@ export function AppShell({
                 className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
               >
                 <AppMainScrollRestoration />
-                <div
-                  data-slot="app-page-container"
-                  className="app-page-container mx-auto w-full min-w-0 max-w-6xl"
-                >
-                  {children}
-                </div>
+                <AppPageTransition>{children}</AppPageTransition>
               </main>
             </div>
 

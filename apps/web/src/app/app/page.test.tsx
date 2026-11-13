@@ -401,8 +401,7 @@ describe('HomeDashboardPage', () => {
       compact: true,
       live: false,
       maxMoments: 8,
-      emptyLabel:
-        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+      emptyLabel: 'Your timeline starts with a source',
     });
     expect(html).not.toContain('>Attention<');
     expect(html).not.toContain('>Recent moments<');
@@ -411,7 +410,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('Go to the full timeline');
   });
 
-  it('shows the copyable team email below pinned work', async () => {
+  it('keeps email in workspace context after the primary work content', async () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(fakes.homeTeamEmail).toBe('acme@inbound.timeline.dev');
@@ -419,9 +418,10 @@ describe('HomeDashboardPage', () => {
     expect(html.indexOf('data-testid="home-pins"')).toBeLessThan(
       html.indexOf('data-testid="home-team-email"'),
     );
-    expect(html.indexOf('data-testid="home-team-email"')).toBeLessThan(
-      html.indexOf('aria-label="Recent moments"'),
+    expect(html.indexOf('aria-label="Recent moments"')).toBeLessThan(
+      html.indexOf('data-testid="home-team-email"'),
     );
+    expect(html).toContain('aria-label="Workspace context"');
   });
 
   it('still renders Home when the inbound address is not configured', async () => {

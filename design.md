@@ -170,12 +170,13 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   on wide screens, stacking on mobile. Empty collections use `EmptyState`;
   grants use `CollectionRow` with readable expiry dates and explicit status.
 - The shell owns consistent page gutters: 16px on mobile and 32px on desktop,
-  with a centered `max-w-6xl` content container. Collection indexes (Work and
-  its tabs, Timeline, Documents, Meetings) mark their frame with
+  with a centered `max-w-6xl` content container. Collection indexes (Work tabs, Timeline, Documents, Meetings) mark their frame with
   `data-app-width="collection"`. Their section bands and row separators extend
   to the main pane edges while labels, controls, and row content retain the
   bounded inner width. Empty and loading states retain the same content width.
-  Forms, settings, and reading views keep the default cap without decorative bleed.
+  Home and Work overview use `data-app-width="overview"`: a left-aligned 80rem
+  cap with primary work and a narrow context column at wide widths, stacked on
+  smaller screens. Forms, settings, and reading views keep the default cap without decorative bleed.
 - Full-canvas chat and boards may opt into full bleed. The shell supplies their
   available height, including banners; routes do not subtract a fixed header
   height from the viewport or cancel shell gutters with negative margins.
@@ -231,8 +232,12 @@ strip or loaded-count heading.
   dim icon, and an action only when the person can create or recover.
 - All screens work at 320px, tablet, desktop, dark mode, and 200% zoom without
   document-level horizontal scrolling.
-- Authenticated-product motion is minimal-functional: 80ms hover, 120ms overlay
-  transitions, and no page transitions. Public acquisition motion follows the
+- Authenticated-product motion connects state changes: 120ms popovers, 180ms
+  dialogs, 220ms drawer entry and 150ms exit, and 220ms group disclosures.
+  Route replacement uses a brief 120ms opacity change without remounting page
+  content. Reduced motion removes spatial travel and route animation, using
+  short opacity changes for overlays. Shared state selectors in `app-motion.css`
+  own entry and exit, including retained Radix close states. Public acquisition motion follows the
   transform/opacity and reduced-motion contract in
   [public pages](docs/design/public.md).
 

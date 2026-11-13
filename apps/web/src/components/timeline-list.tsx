@@ -52,6 +52,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
 import {
   buildTimelineMoments,
@@ -362,12 +363,13 @@ function shouldCapSourceEvidenceBody(body: string): boolean {
 }
 
 function inspectorTitle(moment: TimelineMoment): string {
-  return displayMomentTitle(moment);
+  const event = moment.rawEvents.length === 1 ? moment.rawEvents[0] : undefined;
+  return (event ? authoredCaptureFromEvent(event)?.title : null) ?? displayMomentTitle(moment);
 }
 
 function rawEventBody(event: TimelineEvent, timezone: string): string {
   const meta = metaObject(event.sourceMetadata);
-  const content = event.contentText?.trim();
+  const content = authoredCaptureFromEvent(event)?.text ?? event.contentText?.trim();
   if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption, { timezone });
@@ -608,6 +610,7 @@ function InspectorBody({
     moment.visualWeight === 'pulse' &&
     !moment.rawEvents.some(
       (event) =>
+        authoredCaptureFromEvent(event) !== null ||
         canEditVisibility(event, currentUserId) ||
         canRemoveConversational(event, currentUserId, isAdmin),
     );
@@ -919,6 +922,7 @@ function SourceEvidenceCard({
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
+  const authored = authoredCaptureFromEvent(event);
   const body = rawEventBody(event, timezone);
   const capBody = shouldCapSourceEvidenceBody(body);
   const metaLine = [
@@ -937,7 +941,7 @@ function SourceEvidenceCard({
           {actorLabel.toLowerCase() !== formatSourceLabel(event.source).toLowerCase() ? (
             <span>{formatSourceLabel(event.source)}</span>
           ) : null}
-          {context ? <span>{context}</span> : null}
+          {context && context !== actorLabel ? <span>{context}</span> : null}
           <time
             data-visual-dynamic="timeline-timestamp"
             dateTime={event.occurredAt}
@@ -978,6 +982,9 @@ function SourceEvidenceCard({
             <CapturedFileEvidence key={file.id} file={file} />
           ))}
         </div>
+      ) : null}
+      {authored?.title ? (
+        <h4 className="mt-3 text-sm font-medium text-fg">{authored.title}</h4>
       ) : null}
       <p
         className={cn(

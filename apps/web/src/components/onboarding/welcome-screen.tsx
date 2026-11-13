@@ -24,10 +24,12 @@ export function WelcomeScreen({
 
   function submit(next: TeamWorkStyle | null) {
     setError(null);
-    startTransition(() => {
-      void onContinue(next).catch((err: unknown) => {
+    startTransition(async () => {
+      try {
+        await onContinue(next);
+      } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Could not continue.');
-      });
+      }
     });
   }
 
@@ -59,6 +61,7 @@ export function WelcomeScreen({
             <button
               key={option.id}
               aria-pressed={selected}
+              disabled={pending}
               type="button"
               onClick={() => {
                 setWorkStyle(selected ? null : option.id);

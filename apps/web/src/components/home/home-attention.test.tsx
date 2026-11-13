@@ -27,6 +27,18 @@ describe('HomeAttention', () => {
     expect(screen.queryByText(/jobs/)).toBeNull();
   });
 
+  it('uses singular copy for one item and names the work section', () => {
+    render(
+      <HomeAttention
+        title="Your work"
+        groups={[{ ...group('open tasks', 1), singularLabel: 'open task' }]}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Your work' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /1 open task/ })).toBeTruthy();
+    expect(screen.queryByText('open tasks')).toBeNull();
+  });
+
   it('renders multiple actionable groups', () => {
     render(<HomeAttention groups={[group('Approvals', 2), group('Jobs', 1)]} />);
     expect(screen.getAllByRole('link')).toHaveLength(2);

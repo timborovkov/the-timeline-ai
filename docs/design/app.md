@@ -7,8 +7,9 @@ and secondary context belong in disclosures with clear ways to open them.
 
 Collection indexes keep a bounded inner content width and shared responsive
 gutters. Section backgrounds and row separators extend to the main pane edges.
-Work’s empty Boards group is a compact inline prompt with Create board. It follows
-the work queue, keeping actionable work first.
+Work overview places the queue in the primary column and boards and personal
+pins in a narrow supporting column. At smaller widths they stack after the
+queue. The empty Boards explanation and Create board action stay together.
 
 ### Home
 
@@ -26,6 +27,10 @@ panel until the member hides it or every step is done. The account menu also
 reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
 work surface.
+
+Setup actions stay disabled until saving finishes, and failed saves retain the current
+step with an inline retryable error. Email capture can wait in the background while
+the member continues to Home.
 
 New teams start in a focused setup shell for Welcome and Bring something real
 (processing and failed website-scan stay in that shell). After the first capture,
@@ -53,19 +58,15 @@ and CTA remain visible independently of the next incomplete product step; it nev
 blocks product onboarding progression. Restricted
 Free teams see the specific verification or grant issue with its resolution action.
 
-Attention has no visible heading; the region is named for
-assistive tech only.
-It shows only non-zero groups: pending approvals, overdue work, open tasks,
-open objects, recoverable jobs, and connection issues. Overdue work stays the
-danger row into the work queue. Open tasks stay their own row into Tasks. Open
-objects is one generic count for people, companies, projects, deals, and
-follow-ups, linking to the Objects list rather than typed filters or dumping
-those records onto Home. “You’re caught up” replaces empty dashboard grids
-when every group is zero. Pinned work, the team inbound email as one readonly
-copyable field (`#team-email`) with a quiet link to Team → Email settings,
-digest, and a dense recent-moments scan follow as full-width sections without
-duplicating Timeline or Connections. These sections use spacing between groups and hairlines between dense rows,
-following the boundary rules in [the design system](../../design.md#core-rules).
+Home’s **Your work** section shows non-zero pending approvals, overdue work,
+open tasks, and open objects, using singular labels for one item. Overdue work
+links to the work queue; tasks and objects link to their respective indexes.
+“You’re caught up” replaces an empty work summary. Personal pins and recent
+moments follow in the primary column. A supporting column holds the team inbound
+email (`#team-email`), agent connection onboarding, latest digest, and
+**Connections & processing** issues. Actual billing restrictions remain prominent;
+upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
+smaller screens. No synthetic records or empty metric cards fill spare space.
 
 The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
@@ -99,7 +100,7 @@ rows with a type icon, title, one context line, and overflow menu. Hidden,
 archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
 opens Work → Pinned. Work overview repeats that same mixed preview (heading
-**Pinned**, omitted when empty) after the work queue, followed by a separate **Boards** list of team boards. Overview board rows use the same overflow **Pin to Home**
+**Pinned**, omitted when empty) in the supporting column above a separate **Boards** list of team boards. Overview board rows use the same overflow **Pin to Home**
 control and quiet pin glyph as the Boards index. Pins are personal shortcuts, not a team-shared board set.
 
 Home recent moments have no visible heading. They show up to eight dense rows
@@ -199,7 +200,7 @@ side effects, and human-reviewed proposals.
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Work → Digests is the day-by-day archive of those briefings. Work overview
-leads with the work queue, then mixed personal pins (same rows as Home) and team boards. Tasks default to the grouped list; the list table
+leads with the work queue, with mixed personal pins (same rows as Home) and team boards in the supporting column. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
 filters, not on a second strip. Board kanban/list uses the same toolbar
@@ -735,3 +736,12 @@ the readable day view. Approval actions stack beneath their context on phones.
 Work relevance badges do not duplicate the canonical Blocked status, and normal
 pending approval uses the signal tone rather than danger. Narrow object property
 values wrap so dates remain complete. Website polling skips overlapping requests, so slow responses can settle.
+
+### Global search palette
+
+The header search opens a panel capped at 44rem and the available viewport
+width. Quick destinations use compact single rows with destination-specific
+icons; content results retain their context and due dates. Arrow navigation,
+Enter, Escape, active-descendant semantics, and row actions keep their existing
+linear order. Opening and closing use the shared popover transition; closing
+returns focus to the search input.

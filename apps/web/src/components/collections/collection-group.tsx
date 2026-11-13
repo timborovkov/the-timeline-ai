@@ -57,8 +57,14 @@ export function CollectionGroup({
         </button>
         {actions ? <div className="flex min-h-10 items-center">{actions}</div> : null}
       </div>
-      <div id={contentId} hidden={!open}>
-        {children}
+      <div
+        id={contentId}
+        className="collection-disclosure"
+        data-state={open ? 'open' : 'closed'}
+        aria-hidden={!open}
+        inert={!open}
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
       </div>
     </section>
   );

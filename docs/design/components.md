@@ -90,8 +90,10 @@ blocked/failed/overdue use danger. P1 uses danger, P2 amber, and P3/P4 neutral.
 Lime remains reserved for the primary action, active route, and citation
 signal.
 
-Collection transitions last 150–200ms and are limited to background, border,
-opacity, and transform. They honor reduced motion. No collection introduces a
+Collection feedback uses background, border, opacity, and transform. Group
+expansion animates grid height for 220ms; collapsed contents are inert and hidden
+from assistive technology immediately. Reduced motion removes height travel.
+Shared surface timing follows [the design system](../../design.md#states-and-responsive-behavior). No collection introduces a
 new global keyboard shortcut; existing inspectors, drag handles, infinite
 scroll with virtualization, evidence links, and URL state remain the interaction
 contract. Collection inventories use `24 of 847` when a filter is on and `847`
@@ -262,7 +264,10 @@ meetings read as stories; pull requests, issues, and other named records read
 as compact work records; CI, telemetry, and webhook chatter read as one-line
 pulses. Opening a row shows a human source summary first. Original source
 (full message, email HTML, transcript, or webhook/JSON payload) sits in a
-collapsed inspector disclosure with a readable preview: HTML in a sandboxed
+collapsed inspector disclosure. Recognized MCP remember captures preview their
+authored title and text instead of the transport envelope; the complete stored
+payload remains available in that disclosure. Other source formats retain their
+existing fallback. Original previews render HTML in a sandboxed
 frame, text as prose, JSON in Commit Mono. Attached documents link to the
 document drive. Exact timestamps, ownership/visibility internals, source IDs,
 and other implementation keys stay inside `TechnicalDetails`. Ask answers and

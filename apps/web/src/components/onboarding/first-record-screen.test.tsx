@@ -3,22 +3,26 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
-const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  push: vi.fn(),
+  save: vi.fn(() => Promise.resolve({ ok: true, error: undefined as string | undefined })),
+}));
 
 await vi.mock(
   import.meta.resolve('next/navigation'),
   () => ({
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: fakes.refresh }),
+    useRouter: () => ({ push: fakes.push, replace: vi.fn(), refresh: fakes.refresh }),
   }),
   () => import('next/navigation'),
 );
 await vi.mock(
   import.meta.resolve('@/app/actions/first-run'),
-  () => ({ setFirstRunPhaseAction: vi.fn(() => Promise.resolve({ ok: true })) }),
+  () => ({ setFirstRunPhaseAction: fakes.save }),
   () => import('@/app/actions/first-run'),
 );
 
-const { cleanup, render, screen, fireEvent } = await import('@testing-library/react');
+const { cleanup, render, screen, fireEvent, waitFor } = await import('@testing-library/react');
 const { FirstRecordScreen } = await import('./first-record-screen.js');
 
 afterEach(() => {
@@ -106,4 +110,22 @@ it('lets users check for suggestions after the starter record arrives', () => {
   );
   fireEvent.click(screen.getByRole('button', { name: 'Check for suggestions' }));
   expect(fakes.refresh).toHaveBeenCalledTimes(1);
+});
+
+it('stays on the record when saving progress fails', async () => {
+  fakes.push.mockClear();
+  fakes.save.mockResolvedValueOnce({ ok: false, error: 'Please try again.' });
+  render(
+    <FirstRecordScreen
+      title="Starter email"
+      meta="Email"
+      summary="A pilot update"
+      note=""
+      sources={[]}
+      suggestions={[]}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Ask about it' }));
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('Please try again.'); });
+  expect(fakes.push).not.toHaveBeenCalled();
 });

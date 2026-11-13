@@ -45,20 +45,18 @@ export function HomeAskComposer({
   }
 
   return (
-    <section aria-labelledby="home-ask-title" className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 id="home-ask-title" className="text-base font-semibold text-fg">
-            Ask the timeline
-          </h2>
-          <p className="mt-1 max-w-[65ch] text-sm leading-6 text-fg-muted">
-            {hasSources
-              ? 'Find a decision, check what changed, or work through a next step—with sources you can open.'
-              : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
-          </p>
-        </div>
+    <section aria-labelledby="home-ask-title" className="max-w-4xl space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="home-ask-title" className="text-2xl font-semibold tracking-tight text-fg">
+          Ask the timeline
+        </h2>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
+      <p className="max-w-[65ch] text-sm leading-6 text-fg-muted">
+        {hasSources
+          ? 'Find a decision, check what changed, or work through a next step—with sources you can open.'
+          : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
+      </p>
       {!hasSources ? (
         <Link href="/app/documents" className="inline-block text-sm underline">
           Upload your first document

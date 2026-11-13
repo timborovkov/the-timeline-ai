@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './app-motion.css';
 
 [data-task-categories-enabled='false'] .task-category-ui {
   display: none !important;
@@ -357,4 +358,24 @@ dialog#floating-agent-chat-panel::backdrop {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
+}
+
+/* Overviews compose work and supporting context; they are not full-bleed indexes. */
+.app-page-container:has(> [data-app-width='overview']) {
+  max-width: 80rem;
+  margin-inline: 0;
+}
+.work-overview [data-slot='collection-group-header'] {
+  background: transparent;
+  padding-inline: 0;
+  border-bottom: 1px solid var(--border);
+}
+.work-overview [data-slot='collection-group-header'] button {
+  font-size: 0.875rem;
+}
+.work-overview aside [data-slot='collection-row'] {
+  padding-inline: 0;
+}
+.home-overview aside {
+  font-size: 0.875rem;
 }
