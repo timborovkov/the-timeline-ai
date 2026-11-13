@@ -138,9 +138,9 @@ describe('ApprovalsClient', () => {
       const review = screen.getByRole('region', { name: 'Review proposal' });
       expect(within(review).getByText(`${status} · Read-only`)).toBeTruthy();
       expect(screen.getByText(status)).toBeTruthy();
-      expect(within(review).queryByRole('button', { name: 'Accept', exact: true })).toBeNull();
-      expect(within(review).queryByRole('button', { name: 'Reject', exact: true })).toBeNull();
-      expect(within(review).queryByRole('button', { name: 'Change', exact: true })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Accept' })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Reject' })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Change' })).toBeNull();
     },
   );
 
@@ -152,10 +152,10 @@ describe('ApprovalsClient', () => {
         suggestions={[inboxBundle('pending', ['First proposal', 'Second proposal'])]}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Accept', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     const review = screen.getByRole('region', { name: 'Review proposal' });
     expect(within(review).getByRole('heading', { name: 'Second proposal' })).toBeTruthy();
-    const accept = within(review).getByRole('button', { name: 'Accept', exact: true });
+    const accept = within(review).getByRole('button', { name: 'Accept' });
     expect(accept.hasAttribute('disabled')).toBe(true);
     fireEvent.click(accept);
     await waitFor(() => {
