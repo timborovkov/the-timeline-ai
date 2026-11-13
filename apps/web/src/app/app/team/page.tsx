@@ -20,6 +20,7 @@ import { listTeamDigestDestinations, getDigestPreference } from '@timeline/share
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { TeamDigestDestination } from '@timeline/shared/messaging';
@@ -27,7 +28,6 @@ import type { TeamWorkStyle } from '@timeline/shared/onboarding';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-import { ActionChip } from '@/components/action-chip';
 import { BillingSettingsPanel } from '@/components/billing-settings-panel';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import {
@@ -427,12 +427,43 @@ function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
 function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 py-1.5">
-      <ActionChip href="/app/team/jobs" label="Job recovery" />
-      <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
-      <ActionChip href="/app/team/audit" label="Audit" />
-      <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
-    </div>
+    <SettingsSection title="Workspace maintenance">
+      <div className="divide-y divide-border">
+        {[
+          {
+            href: '/app/team/jobs',
+            label: 'Job recovery',
+            description: 'Review failed processing and retry recoverable jobs.',
+          },
+          {
+            href: '/app/team/reconciliation',
+            label: 'Reconciliation',
+            description: 'Inspect how sources connect to records and preview repairs.',
+          },
+          {
+            href: '/app/team/audit',
+            label: 'Audit',
+            description: 'Review changes to your team and its records.',
+          },
+          {
+            href: '/app/team/integrations/audit',
+            label: 'Integration audit',
+            description: 'Trace connection activity and synchronization issues.',
+          },
+        ].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="block rounded-sm py-3 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="text-sm font-medium underline-offset-4 hover:underline">
+              {item.label}
+            </span>
+            <span className="mt-1 block text-sm text-fg-muted">{item.description}</span>
+          </Link>
+        ))}
+      </div>
+    </SettingsSection>
   );
 }
 
@@ -638,7 +669,8 @@ async function loadTeamSettingsPage({
     const u = userMap.get(m.userId);
     return { id: m.userId, label: displayMemberLabel(u) };
   });
-  const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
+  const destinationOptions =
+    isAdmin && section === 'preferences' ? await digestDestinationOptions(active.teamId) : [];
   const billingDashboard = isAdmin
     ? await scope.billing.getDashboard({ canManageBilling: true })
     : null;

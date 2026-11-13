@@ -10,7 +10,7 @@ import {
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 
 import {
   finalizeDocumentVersionAction,
@@ -82,6 +82,19 @@ function processingTitle(status: FirstRunStatusPayload): string {
 
 export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayload }) {
   const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function recover(action: () => Promise<void>) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await action();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Could not continue. Please try again.');
+      }
+    });
+  }
   const firstRun = initialStatus.firstRun;
   const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
 
@@ -167,13 +180,13 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
         host={firstRun?.websiteHost ?? null}
         reason={(firstRun?.scanFailureReason as FirstRunScanFailureReason | null) ?? null}
         onUpload={() => {
-          void returnToChooser();
+          recover(returnToChooser);
         }}
         onEmail={() => {
-          void pickEmail();
+          recover(pickEmail);
         }}
         onBack={() => {
-          void returnToChooser();
+          recover(returnToChooser);
         }}
       />
     );
@@ -190,7 +203,7 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
         inboundEmail={initialStatus.inboundEmail}
         emailWaiting={firstRun?.starterPath === 'email' && !initialStatus.record?.emailArrived}
         onSwitch={() => {
-          void returnToChooser();
+          recover(returnToChooser);
         }}
         onHome={() => {
           router.push('/app');
@@ -199,5 +212,16 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     );
   }
 
-  return <SetupShell progress={setupProgressLabel(phase)}>{body}</SetupShell>;
+  return (
+    <SetupShell progress={setupProgressLabel(phase)}>
+      {error ? (
+        <p role="alert" className="mb-4 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+      <fieldset disabled={pending} aria-busy={pending} className="min-w-0">
+        {body}
+      </fieldset>
+    </SetupShell>
+  );
 }

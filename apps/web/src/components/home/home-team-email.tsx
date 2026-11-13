@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { CopyableTextField } from '@/components/copyable-text-field';
+import { Button } from '@/components/ui/button';
 
 export const HOME_TEAM_EMAIL_SECTION_ID = 'team-email';
 
@@ -9,16 +10,13 @@ export function HomeTeamEmail({ inboundEmail }: { inboundEmail: string | null })
     <section
       id={HOME_TEAM_EMAIL_SECTION_ID}
       aria-label="Team email"
-      className="space-y-3 py-4 sm:px-1 scroll-mt-14"
+      className="space-y-3 scroll-mt-14"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="text-sm font-medium text-fg">Team email</p>
-        <Link
-          href="/app/team?section=email"
-          className="text-xs text-fg-dim transition-colors hover:text-fg"
-        >
-          Email settings
-        </Link>
+        <h2 className="text-sm font-semibold text-fg">Capture by email</h2>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/app/team?section=email">Email settings</Link>
+        </Button>
       </div>
       <CopyableTextField
         id="home-team-email"

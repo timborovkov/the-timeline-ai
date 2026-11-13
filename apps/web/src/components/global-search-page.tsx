@@ -530,7 +530,9 @@ export function GlobalSearchPage({
               : []),
           ]}
         >
-          <CollectionToolbar.Count>{resultStatus}</CollectionToolbar.Count>
+          {hasSearchCriteria ? (
+            <CollectionToolbar.Count>{resultStatus}</CollectionToolbar.Count>
+          ) : null}
           <CollectionToolbar.Search>
             <div className="relative">
               <label htmlFor="global-search-query" className="sr-only">
@@ -653,12 +655,12 @@ function SearchResultsPanel({
 }) {
   return (
     <section aria-labelledby="search-results-heading" className="bg-bg">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <div className="sr-only">
         <h2 id="search-results-heading" className="sr-only">
           Search results
         </h2>
         <p aria-live="polite" className="text-xs text-fg-dim">
-          {resultStatus}
+          {hasSearchCriteria ? resultStatus : ''}
         </p>
         {loading ? (
           <Loader2

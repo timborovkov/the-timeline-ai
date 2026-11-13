@@ -156,7 +156,7 @@ function PageHeaderHeading({
     >
       <div
         className={cn(
-          'flex flex-col gap-1.5',
+          'min-w-0 flex-1 flex flex-col gap-1.5',
           variant === 'collection' && 'min-w-0 flex-row flex-wrap items-baseline gap-3',
         )}
       >
@@ -172,7 +172,12 @@ function PageHeaderHeading({
           {title}
         </h1>
         {subtitle ? (
-          <p className={cn('m-0 text-sm text-fg-muted', variant === 'collection' && 'sr-only')}>
+          <p
+            className={cn(
+              'm-0 max-w-[65ch] text-sm leading-6 text-fg-muted',
+              variant === 'collection' && 'sr-only',
+            )}
+          >
             {subtitle}
           </p>
         ) : null}
@@ -187,7 +192,9 @@ function PageHeaderHeading({
           </dl>
         ) : null}
       </div>
-      {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
+      {trailing ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">{trailing}</div>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -14,6 +14,13 @@ import {
   GUIDE_ROUTES,
 } from '@/components/marketing/editorial/content';
 import { EditorialShell } from '@/components/marketing/editorial/editorial-shell';
+const route = { pathname: '/how-it-works' };
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({ ...(await import('next/navigation')), usePathname: () => route.pathname }),
+  () => import('next/navigation'),
+);
+
 const GUIDE_PAGES = [
   {
     guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive),
@@ -85,17 +92,14 @@ describe('how-it-works and guide routes', () => {
     expect(legacyRoute).not.toContain('<main');
   });
 
-  it('uses the shared tactile public canvas without decorative background motion', () => {
+  it('uses the shared public canvas without decorative texture or background motion', () => {
     const styles = readFileSync(
       new URL('../../components/public-site.module.css', import.meta.url),
       'utf8',
     );
 
-    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*fractalNoise/s);
-    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*mix-blend-mode:\s*multiply;/s);
-    expect(styles).toMatch(
-      /:global\(\.dark\) \.canvas::before\s*\{[^}]*mix-blend-mode:\s*normal;/s,
-    );
+    expect(styles).not.toContain('fractalNoise');
+    expect(styles).not.toContain('mix-blend-mode');
     expect(styles).not.toMatch(/animation:/);
   });
 
@@ -118,7 +122,10 @@ describe('how-it-works and guide routes', () => {
         expect(html).toContain('data-screenshot-present="true"');
       }
       expect(html).toContain('Try this question');
-      expect(html).toContain('Source roles');
+      for (const boundary of guide.boundaries) {
+        expect(html).toContain(renderToStaticMarkup(<>{boundary.role}</>));
+        expect(html).toContain(renderToStaticMarkup(<>{boundary.boundary}</>));
+      }
       expect(html).not.toMatch(/Native \/|Prompt pattern|Source boundaries/u);
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-up"');
@@ -157,9 +164,13 @@ describe('how-it-works and guide routes', () => {
     expect(guideShell).not.toMatch(
       /href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u,
     );
-    expect(recordShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
-    expect(guideShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
-    expect(recordShell).toContain('aria-label="Support and legal"');
+    expect(
+      recordShell.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/how-it-works")[^>]*>/g),
+    ).not.toBeNull();
+    expect(
+      guideShell.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/how-it-works")[^>]*>/g),
+    ).not.toBeNull();
+    expect(recordShell).toContain('aria-label="Legal and privacy"');
     expect(recordShell).toContain('href="/help/support"');
     expect(recordShell).toContain('href="/trust"');
     expect(recordShell).toContain('href="/terms"');

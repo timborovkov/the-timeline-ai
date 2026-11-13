@@ -7,10 +7,7 @@ export function PricingEnterpriseNudge({ className }: { className?: string }) {
   return (
     <p
       data-pricing-enterprise-nudge
-      className={cn(
-        'border border-border bg-surface-2/80 px-4 py-3 text-sm leading-6 text-fg-muted',
-        className,
-      )}
+      className={cn('py-3 text-sm leading-6 text-fg-muted', className)}
     >
       Need governance, procurement, committed volume, or an SLA?{' '}
       <Link

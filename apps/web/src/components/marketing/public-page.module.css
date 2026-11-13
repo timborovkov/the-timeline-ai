@@ -16,7 +16,6 @@
 .agentSetup {
   padding: 1.25rem;
   border: 1px solid var(--border);
-  border-top: 2px solid var(--signal);
   background: var(--surface);
 }
 .agentSetup > :first-child {
@@ -35,6 +34,7 @@
   align-items: center;
 }
 .agentExample > p {
+  max-width: 68ch;
   color: var(--fg-muted);
   line-height: 1.65;
 }
@@ -60,13 +60,10 @@
   grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.6fr);
   gap: 2rem;
   align-items: center;
-  padding: clamp(1.5rem, 3vw, 2.5rem);
-  border: 1px solid var(--border);
-  border-top: 2px solid var(--signal);
-  background: var(--surface);
+  padding-block: clamp(1.5rem, 3vw, 2.5rem);
 }
 .ctaPanel h2 {
-  margin-top: 0.75rem;
+  margin-top: 0;
   font-size: clamp(1.75rem, 2.8vw, 2.75rem);
   font-weight: 500;
   letter-spacing: -0.025em;
@@ -74,6 +71,7 @@
   text-wrap: balance;
 }
 .ctaPanel p {
+  max-width: 68ch;
   margin-top: 1rem;
   color: var(--fg-muted);
   line-height: 1.6;

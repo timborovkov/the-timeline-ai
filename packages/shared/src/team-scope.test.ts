@@ -1357,6 +1357,7 @@ describe('withTeam namespaced port', () => {
     await expect(
       scope.timeline.searchEvents({
         query: 'sender search all batches',
+        ranking: 'relevance',
         senderHandle: '@cameronvale',
         limit: 1,
       }),

@@ -119,17 +119,27 @@ export function WebsiteManager({
   }, []);
   useEffect(() => {
     let active = true;
-    const load = () => {
-      if (active)
-        void refresh().catch(() => {
-          if (active) {
-            setLoading(false);
-            setError('Could not refresh websites. Try again.');
-          }
-        });
+    let refreshing = false;
+    const handleLoadError = () => {
+      if (active) {
+        setLoading(false);
+        setError('Could not refresh websites. Try again.');
+      }
     };
-    load();
-    const timer = setInterval(load, 10_000);
+    const load = async () => {
+      if (!active || refreshing) return;
+      refreshing = true;
+      try {
+        await refresh();
+      } catch {
+        handleLoadError();
+      } finally {
+        refreshing = false;
+      }
+    };
+    void load();
+    // Slow responses must settle before another poll can supersede them.
+    const timer = setInterval(() => void load(), 10_000);
     return () => {
       active = false;
       clearInterval(timer);

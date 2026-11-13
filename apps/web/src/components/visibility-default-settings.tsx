@@ -92,46 +92,56 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
             {row.inherited ? 'Inherits fallback' : 'Explicit default'}
           </p>
         </div>
-        <label className="sr-only" htmlFor={`${fieldId}-visibility`}>
-          {SOURCE_LABEL[row.source]} visibility
-        </label>
-        <NativeSelect
-          id={`${fieldId}-visibility`}
-          disabled={pending}
-          name="visibility"
-          value={selectedVisibility}
-          onChange={(e) => {
-            setSelectedVisibility(e.currentTarget.value as Visibility);
-            if (e.currentTarget.value !== 'specific_users') {
+        <div className="flex min-w-32 flex-col gap-1">
+          <span aria-hidden="true" className="text-xs text-fg-muted">
+            Visibility
+          </span>
+          <label className="sr-only" htmlFor={`${fieldId}-visibility`}>
+            {SOURCE_LABEL[row.source]} visibility
+          </label>
+          <NativeSelect
+            id={`${fieldId}-visibility`}
+            disabled={pending}
+            name="visibility"
+            value={selectedVisibility}
+            onChange={(e) => {
+              setSelectedVisibility(e.currentTarget.value as Visibility);
+              if (e.currentTarget.value !== 'specific_users') {
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            className="h-11 w-full min-w-32 sm:h-9"
+          >
+            <option value="team">Team</option>
+            <option value="private">Private</option>
+            {specificAllowed ? <option value="specific_users">Specific users</option> : null}
+          </NativeSelect>
+        </div>
+        <div className="flex min-w-36 flex-col gap-1">
+          <span aria-hidden="true" className="text-xs text-fg-muted">
+            Source owner
+          </span>
+          <label className="sr-only" htmlFor={`${fieldId}-owner`}>
+            {SOURCE_LABEL[row.source]} source owner
+          </label>
+          <NativeSelect
+            id={`${fieldId}-owner`}
+            disabled={pending}
+            name="sourceOwnerUserId"
+            defaultValue={row.sourceOwnerUserId ?? ''}
+            className="h-11 w-full min-w-36 sm:h-9"
+            onChange={(e) => {
               e.currentTarget.form?.requestSubmit();
-            }
-          }}
-          className="h-8 w-auto min-w-32"
-        >
-          <option value="team">Team</option>
-          <option value="private">Private</option>
-          {specificAllowed ? <option value="specific_users">Specific users</option> : null}
-        </NativeSelect>
-        <label className="sr-only" htmlFor={`${fieldId}-owner`}>
-          {SOURCE_LABEL[row.source]} source owner
-        </label>
-        <NativeSelect
-          id={`${fieldId}-owner`}
-          disabled={pending}
-          name="sourceOwnerUserId"
-          defaultValue={row.sourceOwnerUserId ?? ''}
-          className="h-8 w-auto min-w-36"
-          onChange={(e) => {
-            e.currentTarget.form?.requestSubmit();
-          }}
-        >
-          <option value="">No source owner</option>
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </NativeSelect>
+            }}
+          >
+            <option value="">No source owner</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
         {selectedVisibility === 'specific_users' ? (
           <Button type="submit" size="sm" variant="outline" disabled={pending}>
             {pending ? 'Saving' : 'Save'}

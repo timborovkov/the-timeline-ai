@@ -27,18 +27,27 @@ const COMPATIBLE_AGENTS = [
   { name: 'Hermes', src: '/connectors/hermes.png' },
 ] as const;
 
-export function AgentSetupCard({ className }: { className?: string }) {
+export function AgentSetupCard({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  compact?: boolean;
+}) {
   return (
-    <aside className={cn(styles.card, className)} data-agent-setup>
+    <aside className={cn(styles.card, compact && styles.compact, className)} data-agent-setup>
       <div className={styles.copy}>
-        <p className={styles.kicker}>{AGENT_SETUP_CARD.kicker}</p>
-        <p className={styles.title}>{AGENT_SETUP_CARD.title}</p>
-        <p className={styles.lede}>{AGENT_SETUP_CARD.body}</p>
+        <p className={styles.title}>
+          {compact ? 'Get started with your agent' : AGENT_SETUP_CARD.title}
+        </p>
+        <p className={styles.lede}>
+          {compact ? 'Paste this into your agent to set up The Timeline.' : AGENT_SETUP_CARD.body}
+        </p>
       </div>
       <ul className={styles.marks} aria-label="Compatible agents">
         {COMPATIBLE_AGENTS.map((agent) => (
           <li key={agent.name} className={styles.mark} title={agent.name}>
-            <ProviderLogo src={agent.src} />
+            <ProviderLogo src={agent.src} size={compact ? 'xs' : 'sm'} />
             <span className="sr-only">{agent.name}</span>
           </li>
         ))}

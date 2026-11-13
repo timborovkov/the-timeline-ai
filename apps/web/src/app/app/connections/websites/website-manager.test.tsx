@@ -287,3 +287,39 @@ it('keeps an accepted scan disabled when refreshing the list fails', async () =>
   expect((queued as HTMLButtonElement).disabled).toBe(true);
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
 });
+
+it('lets a slow initial response settle before starting another refresh', async () => {
+  let resolveResponse!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    resolveResponse = resolve;
+  });
+  const fetcher = vi.fn(() => response);
+  vi.stubGlobal('fetch', fetcher);
+  const nativeInterval = globalThis.setInterval;
+  let poll: (() => void) | undefined;
+  vi.stubGlobal('setInterval', (callback: () => void, delay?: number) => {
+    if (delay === 10_000) poll = callback;
+    return nativeInterval(callback, delay);
+  });
+  renderWithQueryClient(<WebsiteManager canManage timezone="UTC" schedulesEnabled={false} />);
+  expect(screen.getByText('Loading websites…')).toBeTruthy();
+  expect(poll).toBeDefined();
+  act(() => {
+    poll?.();
+    poll?.();
+  });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolveResponse(Response.json({ websites: [] }));
+    await response;
+  });
+  await waitFor(() => {
+    expect(screen.queryByText('Loading websites…')).toBeNull();
+  });
+  fetcher.mockResolvedValue(Response.json({ websites: [] }));
+  await act(async () => {
+    poll?.();
+    await Promise.resolve();
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

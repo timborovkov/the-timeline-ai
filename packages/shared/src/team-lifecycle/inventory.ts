@@ -64,6 +64,7 @@ export const PURGED_TEAM_TABLES = [
   'document_chunks',
   'document_versions',
   'documents',
+  'engine_maintenance_runs',
   'entities',
   'entity_relationships',
   'facts',

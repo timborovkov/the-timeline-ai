@@ -52,6 +52,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
 import {
   buildTimelineMoments,
@@ -362,12 +363,13 @@ function shouldCapSourceEvidenceBody(body: string): boolean {
 }
 
 function inspectorTitle(moment: TimelineMoment): string {
-  return displayMomentTitle(moment);
+  const event = moment.rawEvents.length === 1 ? moment.rawEvents[0] : undefined;
+  return (event ? authoredCaptureFromEvent(event)?.title : null) ?? displayMomentTitle(moment);
 }
 
 function rawEventBody(event: TimelineEvent, timezone: string): string {
   const meta = metaObject(event.sourceMetadata);
-  const content = event.contentText?.trim();
+  const content = authoredCaptureFromEvent(event)?.text ?? event.contentText?.trim();
   if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption, { timezone });
@@ -608,6 +610,7 @@ function InspectorBody({
     moment.visualWeight === 'pulse' &&
     !moment.rawEvents.some(
       (event) =>
+        authoredCaptureFromEvent(event) !== null ||
         canEditVisibility(event, currentUserId) ||
         canRemoveConversational(event, currentUserId, isAdmin),
     );
@@ -919,6 +922,7 @@ function SourceEvidenceCard({
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
+  const authored = authoredCaptureFromEvent(event);
   const body = rawEventBody(event, timezone);
   const capBody = shouldCapSourceEvidenceBody(body);
   const metaLine = [
@@ -937,7 +941,7 @@ function SourceEvidenceCard({
           {actorLabel.toLowerCase() !== formatSourceLabel(event.source).toLowerCase() ? (
             <span>{formatSourceLabel(event.source)}</span>
           ) : null}
-          {context ? <span>{context}</span> : null}
+          {context && context !== actorLabel ? <span>{context}</span> : null}
           <time
             data-visual-dynamic="timeline-timestamp"
             dateTime={event.occurredAt}
@@ -978,6 +982,9 @@ function SourceEvidenceCard({
             <CapturedFileEvidence key={file.id} file={file} />
           ))}
         </div>
+      ) : null}
+      {authored?.title ? (
+        <h4 className="mt-3 text-sm font-medium text-fg">{authored.title}</h4>
       ) : null}
       <p
         className={cn(
@@ -1332,18 +1339,18 @@ function TimelineMomentRow({
         {selectedChatBinder}
         <Link
           href={compactTimelineMomentHref(moment)}
-          className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
+          className="grid min-h-9 min-w-0 grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 py-3 text-left sm:flex sm:gap-3 sm:py-1.5"
         >
           <span
             data-visual-dynamic="timeline-time"
-            className="w-[4.75rem] shrink-0 font-mono text-[11px] tabular-nums text-fg-dim"
+            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:w-[4.75rem] sm:text-[11px]"
           >
             {moment.timeLabel}
           </span>
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
+          <span className="order-first col-span-2 min-w-0 pr-6 text-sm leading-5 text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal sm:order-none sm:flex-1 sm:truncate sm:pr-0">
             {title}
           </span>
         </Link>
@@ -1633,10 +1640,7 @@ export function TimelineList({
                   isAdmin={isAdmin}
                   members={members}
                   capturedFilesByEventId={capturedFilesByEventId}
-                  focused={
-                    moment.id === focusMomentId ||
-                    moment.rawEvents.some((event) => event.id === focusEventId)
-                  }
+                  focused={moment.id === focusedMoment?.id}
                   compact={compact}
                   pinned={pinnedMomentIds.has(moment.id)}
                   timezone={resolvedTimezone}
@@ -1669,10 +1673,7 @@ export function TimelineList({
               isAdmin={isAdmin}
               members={members}
               capturedFilesByEventId={capturedFilesByEventId}
-              focused={
-                moment.id === focusMomentId ||
-                moment.rawEvents.some((event) => event.id === focusEventId)
-              }
+              focused={moment.id === focusedMoment?.id}
               compact={compact}
               pinned={pinnedMomentIds.has(moment.id)}
               timezone={resolvedTimezone}
@@ -1740,14 +1741,11 @@ function timelineVisibleMoments(
   maxMoments: number | undefined,
 ) {
   const moments = serverMoments ?? localMoments;
-  const focusedMoments =
-    focusEventId === null && focusMomentId === null
-      ? []
-      : moments.filter(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        );
+  const focusTarget =
+    moments.find((moment) => moment.id === focusMomentId) ??
+    moments.find((moment) => Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId))) ??
+    moments.find((moment) => moment.rawEvents.some((event) => event.id === focusEventId));
+  const focusedMoments = focusTarget ? [focusTarget] : [];
   const filteredMoments = mergeTimelineMoments(
     filterTimelineMomentsByImpact(moments, impactFilter),
     focusedMoments,
@@ -1756,14 +1754,7 @@ function timelineVisibleMoments(
     typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
   const dateGroups = groupedByDate(visibleMoments);
   const focusKey = focusMomentId ?? focusEventId;
-  const focusedMoment =
-    focusKey === null
-      ? null
-      : (visibleMoments.find(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        ) ?? null);
+  const focusedMoment = visibleMoments.find((moment) => moment.id === focusTarget?.id) ?? null;
   return { focusKey, focusedMoment, visibleMoments, dateGroups };
 }
 

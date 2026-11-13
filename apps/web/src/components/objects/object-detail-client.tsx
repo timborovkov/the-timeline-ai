@@ -1729,7 +1729,7 @@ function ObjectEditableFields({
       <ObjectRailRow label="Status">
         <EditableMetadata
           label={`Status for ${displayText(title)}`}
-          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
         >
           <EditableMetadata.Value>
             <CollectionStatus
@@ -1774,7 +1774,7 @@ function ObjectEditableFields({
         <ObjectRailRow label="Due">
           <EditableMetadata
             label={`Due date for ${displayText(title)}`}
-            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
           >
             <EditableMetadata.Value>
               <DueDateDisplay
@@ -1802,7 +1802,7 @@ function ObjectEditableFields({
         </p>
       ) : detail.type === 'task' ? (
         <>
-          <div className="px-2">
+          <ObjectRailRow label="Project">
             <TaskProjectSelect
               taskId={detail.id}
               projectId={primaryProject?.projectId ?? null}
@@ -1811,7 +1811,7 @@ function ObjectEditableFields({
               projects={projects}
               quiet
             />
-          </div>
+          </ObjectRailRow>
           {taskCategoriesEnabled ? (
             <div className="px-2">
               <TaskCategorySelect
@@ -1896,7 +1896,7 @@ function ObjectPriorityField({
     <ObjectRailRow label="Priority">
       <EditableMetadata
         label={`Priority for ${displayText(title)}`}
-        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
       >
         <EditableMetadata.Value>
           <CollectionStatus
@@ -1944,7 +1944,7 @@ function ObjectAssigneeField({
     <ObjectRailRow label="Assignee">
       <EditableMetadata
         label={`Assignee for ${displayText(title)}`}
-        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
       >
         <EditableMetadata.Value>
           <span className="text-sm font-normal leading-5 text-fg">

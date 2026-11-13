@@ -13,7 +13,6 @@ describe('AgentSetupCard', () => {
   it('renders official agent marks on white tiles in one nowrap row', () => {
     const html = renderToStaticMarkup(<AgentSetupCard />);
 
-    expect(html).toContain(AGENT_SETUP_CARD.kicker);
     expect(html).toContain(AGENT_SETUP_CARD.title);
     expect(html).toContain(AGENT_SETUP_CARD.body);
     expect(html).not.toContain('Give this to your agent');

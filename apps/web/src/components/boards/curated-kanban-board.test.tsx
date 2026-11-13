@@ -192,7 +192,7 @@ describe('CuratedKanbanBoard', () => {
     expect(within(boardColumns).getByRole('region', { name: 'Open, board column 2' })).toBeTruthy();
     expect(
       within(boardColumns).getByRole('region', { name: 'Open, board column 1' }).className,
-    ).toContain('flex-[1_1_12rem]');
+    ).toContain('flex-[1_0_16rem]');
   });
 
   it('wraps long card titles', () => {
@@ -420,7 +420,7 @@ describe('CuratedKanbanBoard', () => {
     expect(screen.queryByText('Saved')).toBeNull();
   });
 
-  it('aligns compact card metadata with the title on one non-wrapping row', () => {
+  it('keeps card metadata readable beneath the title with wrapping', () => {
     const item = boardItem('MyAuditor');
     item.object.type = 'company';
 
@@ -446,7 +446,7 @@ describe('CuratedKanbanBoard', () => {
     expect(metadataRow?.contains(due)).toBe(true);
     expect(metadataRow?.contains(priority)).toBe(true);
     expect(metadataRow?.className).toContain('items-center');
-    expect(metadataRow?.className).not.toContain('flex-wrap');
+    expect(metadataRow?.className).toContain('flex-wrap');
     expect(owner.className).toContain('min-h-7');
     expect(due.className).toContain('min-h-7');
     expect(priority.className).toContain('min-h-7');

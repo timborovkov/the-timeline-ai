@@ -204,7 +204,10 @@ function workQueueRowValues(
       ? uniqueStatuses([...TASK_STATUS_COLUMNS, displayStatus])
       : statusOptionsForType(item.objectType ?? '', status);
   const contextReasons = item.reasons.filter(
-    (reason) => reason !== 'overdue' && reason !== 'due_soon',
+    (reason) =>
+      reason !== 'overdue' &&
+      reason !== 'due_soon' &&
+      !(reason === 'blocked' && displayStatus === 'blocked'),
   );
   const context = item.subtitle ? displayText(item.subtitle) : undefined;
   return {

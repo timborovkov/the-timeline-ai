@@ -5,6 +5,7 @@ import {
   WEBSITE_SCAN_PAGE_CAP,
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
+import { FileUp, Globe, Mail, ArrowRight } from 'lucide-react';
 import { useRef, useState, useTransition, type DragEvent } from 'react';
 
 import { CopyableTextField } from '@/components/copyable-text-field';
@@ -25,6 +26,7 @@ export function ChooserScreen({
   onEmail: () => Promise<void>;
   onSkip: () => Promise<void>;
 }) {
+  const [source, setSource] = useState<'document' | 'website' | 'email'>('document');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [websiteSubject, setWebsiteSubject] = useState<WebsiteSubject>('own_team');
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
@@ -66,13 +68,45 @@ export function ChooserScreen({
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Bring something real</h1>
+      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Start with one source</h1>
       <p className="mt-2 text-sm leading-6 text-fg-muted">
-        Pick one thing your team already has. We turn it into a cited record you can ask about.
-        Nothing becomes a lasting record until you approve it.
+        A brief, a conversation, a company website. Bring in the context; review the people,
+        projects and tasks it suggests.
       </p>
-      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <article className="flex min-w-0 flex-col gap-2.5 rounded-md border border-border bg-surface p-4">
+      <div className="mt-8 flex border-b border-border" aria-label="Choose a source">
+        {(
+          [
+            { id: 'document', label: 'Document', icon: FileUp },
+            { id: 'email', label: 'Email', icon: Mail },
+            { id: 'website', label: 'Website', icon: Globe },
+          ] as const
+        ).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={source === item.id}
+            disabled={pending}
+            onClick={() => {
+              setSource(item.id);
+              setError(null);
+            }}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-4 text-sm transition-colors',
+              source === item.id
+                ? 'border-signal text-fg'
+                : 'border-transparent text-fg-muted hover:text-fg',
+            )}
+          >
+            <item.icon aria-hidden="true" className="size-4" />
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="py-8">
+        <article
+          hidden={source !== 'website'}
+          className="onboarding-source-panel min-w-0 space-y-5"
+        >
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold">Scan your website</h2>
@@ -146,8 +180,9 @@ export function ChooserScreen({
         </article>
 
         <article
+          hidden={source !== 'document'}
           className={cn(
-            'flex min-w-0 flex-col gap-2.5 rounded-md border bg-surface p-4',
+            'onboarding-source-panel min-w-0 space-y-6 border bg-surface px-6 py-10 text-center',
             dragging ? 'border-fg' : 'border-border',
           )}
           onDragOver={(event) => {
@@ -160,12 +195,13 @@ export function ChooserScreen({
           onDrop={onDrop}
         >
           <div>
-            <h2 className="text-sm font-semibold">Upload a document</h2>
+            <FileUp aria-hidden="true" className="mx-auto mb-4 size-8 text-signal" />
+            <h2 className="text-xl font-semibold">Upload a document</h2>
             <p className="mt-1 text-[13px] leading-5 text-fg-muted">
               A pitch deck, proposal or brief. PDF or Office, up to 25 MB.
             </p>
           </div>
-          <div className="mt-auto flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <input
               ref={fileRef}
               type="file"
@@ -190,7 +226,7 @@ export function ChooserScreen({
           </div>
         </article>
 
-        <article className="flex min-w-0 flex-col gap-2.5 rounded-md border border-border bg-surface p-4">
+        <article hidden={source !== 'email'} className="onboarding-source-panel min-w-0 space-y-5">
           <div>
             <h2 className="text-sm font-semibold">Forward an email</h2>
             <p className="mt-1 text-[13px] leading-5 text-fg-muted">
@@ -218,28 +254,21 @@ export function ChooserScreen({
             </Button>
           </div>
         </article>
-
-        <article className="flex min-w-0 flex-col gap-2.5 rounded-md border border-border bg-surface p-4">
-          <div>
-            <h2 className="text-sm font-semibold">Skip for now</h2>
-            <p className="mt-1 text-[13px] leading-5 text-fg-muted">
-              Open an empty Home. You can upload a document, forward email, or connect a channel
-              later.
-            </p>
-          </div>
-          <div className="mt-auto">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending}
-              onClick={() => {
-                run(onSkip);
-              }}
-            >
-              Skip to Home
-            </Button>
-          </div>
-        </article>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5">
+        <p className="max-w-sm text-xs leading-5 text-fg-muted">
+          Sources stay attached. You review suggestions before they become lasting records.
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={pending}
+          onClick={() => {
+            run(onSkip);
+          }}
+        >
+          Skip to Home <ArrowRight aria-hidden="true" className="ml-2 size-4" />
+        </Button>
       </div>
       {error ? (
         <p role="alert" className="mt-4 text-sm text-danger">

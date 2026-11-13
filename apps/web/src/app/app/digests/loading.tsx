@@ -1,5 +1,4 @@
 import { DigestTableSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function DigestsLoading() {
   return (
@@ -17,7 +16,6 @@ export default function DigestsLoading() {
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
           <PageHeaderSkeleton variant="collection" />
         </div>
-        <WorkSubnav current="/app/digests" />
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
           <DigestTableSkeleton />
         </div>

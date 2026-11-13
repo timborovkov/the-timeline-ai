@@ -52,7 +52,6 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       <section className="border-y border-border bg-surface/55">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="Evidence example"
             title="See the evidence path"
             intro="Follow the source records through to the answer."
           />
@@ -83,7 +82,6 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       <section className="border-y border-border bg-surface/45">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="Source roles"
             title="What each source contributes"
             intro="Each source contributes a different part of the answer. Timeline keeps those roles distinct instead of flattening everything into one activity feed."
           />

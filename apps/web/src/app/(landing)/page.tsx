@@ -19,7 +19,6 @@ import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
-import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
@@ -45,10 +44,10 @@ import { MarketingProductScreenshot } from '@/components/marketing/product-scree
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
-import { CookieSettingsButton } from '@/components/public-analytics';
+import { PublicFooter } from '@/components/public-footer';
 import { PublicHeader } from '@/components/public-header';
-import { PublicFooterColumns } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
   buildPublicStructuredData,
@@ -60,9 +59,7 @@ import { DEFAULT_SUPPORT_EMAIL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
-const CONTACT_HREF = '/help/support';
-const HERO_INTRO =
-  "Your team's work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.";
+const HERO_INTRO = PRODUCT_POSITIONING.hero;
 const HOME_INTAKE_SURFACES = [
   ...CAPTURE_SURFACES.map((surface) => ({
     id: surface.id,
@@ -117,14 +114,12 @@ function getHomeDocument() {
 
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
-const AUDIENCES = USE_CASES.map((useCase, index) => ({
-  index: String(index + 1).padStart(2, '0'),
+const AUDIENCES = USE_CASES.map((useCase) => ({
   name: useCase.cardTitle,
   outcome:
     useCase.slug === 'work-record'
       ? 'Every decision, promise and handoff on one timeline, with where it was said.'
       : useCase.cardBody,
-  result: useCase.navLabel,
   href: useCase.route,
 }));
 
@@ -150,7 +145,7 @@ export default function LandingPage() {
         <AudienceScene />
         <CtaScene />
       </main>
-      <Footer />
+      <PublicFooter currentSection="product" />
     </div>
   );
 }
@@ -210,61 +205,67 @@ function ClaimScene() {
       aria-labelledby="claim-title"
       data-scene="01-claim"
     >
-      <div className={styles.heroCopy}>
-        <SceneIndex number="01" label="The auto-updating work record" />
-        <h1 id="claim-title" className={styles.heroTitle}>
-          Your team's work, <em>written down</em> for you
-        </h1>
-        <p className={styles.heroIntro}>{HERO_INTRO}</p>
-        <div className={styles.heroActions}>
-          <PublicSessionBranch
-            signedOut={
-              <Link
-                href="/sign-up"
-                data-public-analytics-cta="start_free"
-                className={styles.primaryCta}
-              >
-                {START_FREE_LABEL} <span aria-hidden>→</span>
-              </Link>
-            }
-            signedIn={
-              <Link
-                href="/app"
-                data-public-analytics-cta="open_dashboard"
-                className={styles.primaryCta}
-              >
-                Go to dashboard <span aria-hidden>→</span>
-              </Link>
-            }
-          />
-          <Link href={SEE_IT_FIRST_HREF} className={styles.textLink}>
-            {SEE_IT_FIRST_LABEL}
-          </Link>
-        </div>
-        <PublicSessionBranch
-          signedOut={
-            <div className={styles.heroMeta}>
-              <p className={styles.ctaFinePrint}>
-                {CTA_MICROCOPY_LEAD}{' '}
-                <Link href="/pricing" className={styles.textLink}>
-                  See pricing
+      <div className={styles.heroOpening}>
+        <div className={styles.heroCopy}>
+          <h1 id="claim-title" className={styles.heroTitle}>
+            Know where the work stands.
+          </h1>
+          <div className={styles.heroSupporting}>
+            <p className={styles.heroIntro}>{HERO_INTRO}</p>
+            <div>
+              <div className={styles.heroActions}>
+                <PublicSessionBranch
+                  signedOut={
+                    <Link
+                      href="/sign-up"
+                      data-public-analytics-cta="start_free"
+                      className={styles.primaryCta}
+                    >
+                      {START_FREE_LABEL} <span aria-hidden>→</span>
+                    </Link>
+                  }
+                  signedIn={
+                    <Link
+                      href="/app"
+                      data-public-analytics-cta="open_dashboard"
+                      className={styles.primaryCta}
+                    >
+                      Go to dashboard <span aria-hidden>→</span>
+                    </Link>
+                  }
+                />
+                <Link href={SEE_IT_FIRST_HREF} className={styles.textLink}>
+                  {SEE_IT_FIRST_LABEL}
                 </Link>
-              </p>
-              <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+              </div>
+              <PublicSessionBranch
+                signedOut={
+                  <div className={styles.heroMeta}>
+                    <p className={styles.ctaFinePrint}>
+                      {CTA_MICROCOPY_LEAD}{' '}
+                      <Link href="/pricing" className={styles.textLink}>
+                        See pricing
+                      </Link>
+                    </p>
+                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+                  </div>
+                }
+                signedIn={
+                  <div className={styles.heroMeta}>
+                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+                  </div>
+                }
+              />
+              <AgentSetupCard compact className={styles.heroAgentSetup} />
             </div>
-          }
-          signedIn={
-            <div className={styles.heroMeta}>
-              <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
-            </div>
-          }
-        />
-        <div className={styles.heroAgentSetup}>
-          <AgentSetupCard />
+          </div>
         </div>
-      </div>
 
-      <TimelineFlowDiagram variant="hero" />
+        <TimelineFlowDiagram
+          variant="hero"
+          disclosure="Illustrative flow · Only sources your team selects or sends enter."
+        />
+      </div>
     </section>
   );
 }
@@ -276,25 +277,22 @@ function UseCaseOverview() {
       aria-labelledby="use-case-overview-title"
       data-use-case-overview
     >
-      <div className={styles.fitPanel} data-home-diagram>
-        <div className={styles.fitPanelIntro}>
-          <span className={styles.monoLabel}>Six ways teams use it</span>
-          <h2 id="use-case-overview-title">One record, kept current from your conversations.</h2>
-          <p>Choose the job you need below.</p>
-        </div>
-        <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
-          {AUDIENCES.map((audience) => (
-            <Link href={audience.href} key={audience.name}>
-              <span>{audience.index}</span>
-              <h3>{audience.name}</h3>
-              <p>{audience.outcome}</p>
-              <small>
-                {audience.result}
-                <span aria-hidden="true"> ↗</span>
-              </small>
-            </Link>
-          ))}
-        </div>
+      <h2 id="use-case-overview-title" className={styles.chooserHeading}>
+        Your team’s work, in one shared record.
+      </h2>
+      <p className={styles.overviewIntro}>
+        The Timeline brings selected conversations, calls and documents into a shared work record.
+        Your team can find what was decided, follow up on promises and ask questions with sources to
+        check. Use that record to keep track of the work that matters to you.
+      </p>
+      <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
+        {AUDIENCES.map((audience) => (
+          <Link href={audience.href} key={audience.name}>
+            <h3>{audience.name}</h3>
+            <p>{audience.outcome}</p>
+            <span aria-hidden="true">→</span>
+          </Link>
+        ))}
       </div>
     </section>
   );
@@ -309,14 +307,8 @@ function IntakeScene() {
       data-scene="02-intake"
     >
       <SceneHeading
-        number="02"
-        label="What goes in"
         id="intake-title"
-        title={
-          <>
-            Bring the work in. Keep the <em>context.</em>
-          </>
-        }
+        title={<>Bring the work in. Keep the context.</>}
         copy="Connect the tools you use, forward email, upload documents, or scan a public website."
       />
       <ul className={styles.intakeRow} aria-label="Ways to send work to Timeline">
@@ -329,6 +321,7 @@ function IntakeScene() {
           </li>
         ))}
       </ul>
+
       <HomeProof shot={HOME_VOICE_SHOT} align="copy-first" />
     </section>
   );
@@ -369,19 +362,13 @@ function TimelineScene() {
   return (
     <section className={styles.scene} aria-labelledby="timeline-title" data-scene="03-timeline">
       <SceneHeading
-        number="03"
-        label="One timeline"
         id="timeline-title"
-        title={
-          <>
-            Everything lands on one <em>timeline.</em>
-          </>
-        }
+        title={<>Everything lands on one timeline.</>}
         copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
-          <span>Acme rollout / Last 7 days</span>
+          <span>Acme rollout · Illustrative example / Last 7 days</span>
           <span>5 items</span>
         </div>
         <ol className={styles.timelineList}>
@@ -420,22 +407,14 @@ function AnswerScene() {
       data-scene="04-ask"
     >
       <SceneHeading
-        number="04"
-        label="Ask it"
         id="answer-title"
-        title={
-          <>
-            Status should not require an <em>investigation.</em>
-          </>
-        }
+        title={<>Status should not require an investigation.</>}
         copy="Get a status or handoff brief without retracing every conversation."
       />
       <CitedAnswer />
       <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
       <div className={styles.threadBlock} id="chat-to-answer">
-        <h2 className={styles.threadHeading}>
-          One <em>record</em> for chat and agents.
-        </h2>
+        <h2 className={styles.threadHeading}>One record for chat and agents.</h2>
         <p className={styles.threadLead}>
           Ask in a connected chat or through your agent. Both can find the answer and the sources
           behind it.
@@ -513,14 +492,8 @@ function OrganisedScene() {
   return (
     <section className={styles.scene} aria-labelledby="organised-title" data-scene="05-organised">
       <SceneHeading
-        number="05"
-        label="Connected records"
         id="organised-title"
-        title={
-          <>
-            Conversations become connected <em>records.</em>
-          </>
-        }
+        title={<>Conversations become connected records.</>}
         copy="Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place."
       />
       <div className={styles.recordShowcase} aria-label="Connected work records">
@@ -601,20 +574,13 @@ function AudienceScene() {
       data-scene="06-audience"
     >
       <SceneHeading
-        number="06"
-        label="For teams"
         id="trust-title"
-        title={
-          <>
-            Built for teams that run their work through <em>chat.</em>
-          </>
-        }
+        title={<>Built for teams that run their work through chat.</>}
         copy="For client delivery, product and operations work that happens in conversation."
       />
       <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
       <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
         <header>
-          <span className={styles.monoLabel}>How one answer stays trustworthy</span>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
           <div className={styles.trustIntro}>
             <p>
@@ -660,10 +626,7 @@ function CtaScene() {
     >
       <div className={styles.ctaInner}>
         <div className={styles.ctaCopy}>
-          <SceneIndex number="07" label="Start free" />
-          <h2 id="cta-title">
-            Link one channel. Watch the <em>record</em> fill in.
-          </h2>
+          <h2 id="cta-title">Link one channel. Watch the record fill in.</h2>
           <p>
             Bring in your first source, then read the daily update or approve the suggested updates.
           </p>
@@ -717,15 +680,6 @@ function CtaScene() {
   );
 }
 
-function SceneIndex({ number, label }: { number: string; label: string }) {
-  return (
-    <div className={styles.sceneIndex}>
-      <span>{number} / 07</span>
-      <span>{label}</span>
-    </div>
-  );
-}
-
 function HomeProof({
   shot,
   align,
@@ -741,7 +695,6 @@ function HomeProof({
       data-home-proof={shot.file}
     >
       <div className={styles.proofCopy}>
-        <span className={styles.monoLabel}>{shot.kicker}</span>
         <h3 className={styles.proofCaption}>{shot.caption}</h3>
         <p className={styles.proofBody}>{shot.body}</p>
         {children}
@@ -758,89 +711,13 @@ function HomeProof({
   );
 }
 
-function SceneHeading({
-  number,
-  label,
-  id,
-  title,
-  copy,
-}: {
-  number: string;
-  label: string;
-  id: string;
-  title: ReactNode;
-  copy: string;
-}) {
+function SceneHeading({ id, title, copy }: { id: string; title: ReactNode; copy: string }) {
   return (
     <header className={styles.sceneHeading}>
-      <SceneIndex number={number} label={label} />
       <div>
         <h2 id={id}>{title}</h2>
         <p>{copy}</p>
       </div>
     </header>
-  );
-}
-
-function Footer() {
-  const year = new Date().getFullYear();
-  return (
-    <footer className={styles.footer}>
-      <div className={styles.footerBrandRow}>
-        <span className={styles.footerBrand}>
-          <Logo ariaHidden /> The Timeline
-        </span>
-        <span>© {year}</span>
-      </div>
-      <nav aria-label="Explore The Timeline">
-        <PublicFooterColumns
-          currentSection="product"
-          className={styles.footerColumns}
-          headingClassName={styles.footerColumnTitle}
-          activeItemClassName={styles.footerLinkActive}
-          legalItems={
-            <>
-              <li>
-                <GitHubSourceLink appearance="inline" label="GitHub" />
-              </li>
-              <li>
-                <Link href="/trust">Trust</Link>
-              </li>
-              <li>
-                <Link href="/terms">Terms</Link>
-              </li>
-              <li>
-                <Link href="/privacy">Privacy</Link>
-              </li>
-              <li>
-                <Link href="/cookies">Cookies</Link>
-              </li>
-              <li>
-                <CookieSettingsButton className={styles.footerSettings} />
-              </li>
-              <li>
-                <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
-                  Contact
-                </Link>
-              </li>
-              <li>
-                <PublicSessionBranch
-                  signedOut={
-                    <Link href="/sign-in" data-public-analytics-cta="sign_in">
-                      Sign in
-                    </Link>
-                  }
-                  signedIn={
-                    <Link href="/app" data-public-analytics-cta="open_dashboard">
-                      Dashboard
-                    </Link>
-                  }
-                />
-              </li>
-            </>
-          }
-        />
-      </nav>
-    </footer>
   );
 }

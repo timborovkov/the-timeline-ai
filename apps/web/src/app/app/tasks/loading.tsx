@@ -8,7 +8,6 @@ import {
   CompactKanbanSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function TasksLoading() {
   const searchParams = useSearchParams();
@@ -30,9 +29,8 @@ export default function TasksLoading() {
         <div aria-hidden="true" inert className="shrink-0 px-4 md:px-8">
           <PageHeaderSkeleton variant="collection" />
         </div>
-        <WorkSubnav current="/app/tasks" className="shrink-0 px-4 md:px-8" />
         <div aria-hidden="true" inert className="shrink-0">
-          <CollectionToolbarSkeleton viewSegments={2} />
+          <CollectionToolbarSkeleton viewSegments={2} action />
         </div>
         <div
           aria-hidden="true"

@@ -1,0 +1,221 @@
+.hero {
+  padding-block: 2rem 4rem;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  font-size: 0.875rem;
+  color: var(--fg-muted);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 4rem);
+  margin-top: 2rem;
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+  color: var(--fg-muted);
+}
+.title {
+  font-size: clamp(2.5rem, 4.2vw, 3.75rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  font-weight: 500;
+  text-wrap: balance;
+  max-width: 17ch;
+}
+.intro {
+  margin-top: 1.5rem;
+  font-size: 1.125rem;
+  line-height: 1.65;
+  color: var(--fg-muted);
+  max-width: 48ch;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+.note {
+  margin-top: 1.25rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 2rem;
+  margin-top: 3rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+.nav a {
+  padding-block: 0.75rem;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.hero a:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 4px;
+}
+.preview {
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+}
+.previewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.previewHeader p {
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.previewHeader svg {
+  color: var(--signal);
+  flex-shrink: 0;
+}
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feed li {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+}
+.feed time {
+  font: 0.75rem var(--font-mono);
+  color: var(--fg-muted);
+  padding-top: 0.3rem;
+}
+.feed strong {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.feed p {
+  margin-top: 0.3rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.result {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-strong);
+}
+.result h2 {
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+}
+.result p {
+  color: var(--fg-muted);
+  line-height: 1.65;
+  font-size: 0.9375rem;
+}
+.preview figcaption {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  margin-top: 1.5rem;
+}
+.section {
+  padding-block: clamp(3rem, 6vw, 5rem);
+  border-top: 1px solid var(--border);
+  scroll-margin-top: 6rem;
+}
+.section h2 {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: 3rem;
+}
+.statement {
+  color: var(--fg-muted);
+  font-size: 1rem;
+  line-height: 1.75;
+  margin-top: 1.25rem;
+  max-width: 65ch;
+}
+.status {
+  display: grid;
+  gap: 1.5rem;
+}
+.status > div + div {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+.status h2 {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+.status p {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--fg-muted);
+  margin-top: 0.75rem;
+}
+@media (max-width: 56rem) {
+  .heroGrid,
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2rem;
+  }
+  .hero {
+    padding-bottom: 2.5rem;
+  }
+  .title {
+    max-width: 20ch;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .feed li {
+    animation: source-arrive 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .feed li:nth-child(2) {
+    animation-delay: 100ms;
+  }
+  .feed li:nth-child(3) {
+    animation-delay: 200ms;
+  }
+}
+@keyframes source-arrive {
+  from {
+    opacity: 0.6;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

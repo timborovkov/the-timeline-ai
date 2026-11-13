@@ -325,7 +325,7 @@ function KanbanColumn({
       ref={setNodeRef}
       aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
-        'flex h-full min-w-[min(12rem,calc(100vw-3rem))] flex-[1_1_12rem] flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
+        'flex h-full min-w-[min(16rem,calc(100vw-3rem))] flex-[1_0_16rem] flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
         isOver && 'bg-signal-soft',
       )}
     >
@@ -471,7 +471,7 @@ function KanbanCardMetadata({
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
 }) {
   return (
-    <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs leading-4">
       <span className="shrink-0 text-fg-dim">{statusLabel(item.object.type)}</span>
       {item.object.type === 'task' ? (
         <LiveTaskCategoryBadge

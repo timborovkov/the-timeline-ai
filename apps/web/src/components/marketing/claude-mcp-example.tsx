@@ -20,17 +20,17 @@ export function ClaudeMcpExample() {
       aria-label="Claude MCP example"
       className="border border-border bg-bg"
     >
-      <header className="flex justify-between gap-4 border-b border-border px-4 py-3 font-mono text-[0.68rem] tracking-[0.14em] text-fg-dim uppercase">
+      <header className="flex justify-between gap-4 border-b border-border px-4 py-3 text-sm text-fg-muted">
         <span>Claude</span>
         <span>MCP</span>
       </header>
       <p className="px-4 pt-4 text-base text-fg">What did we promise Northstar?</p>
       <ol className="mt-3 grid gap-2 px-4">
-        <li className="border border-dashed border-border bg-surface px-3 py-2">
+        <li className="border-b border-border px-0 py-2">
           <code className="font-mono text-xs text-signal">timeline.subject</code>
           <span className="mt-1 block text-sm text-fg-muted">subject: Northstar</span>
         </li>
-        <li className="border border-dashed border-border bg-surface px-3 py-2">
+        <li className="border-b border-border px-0 py-2">
           <code className="font-mono text-xs text-signal">timeline.get</code>
           <span className="mt-1 block text-sm text-fg-muted">
             name: Northstar pilot handoff review
@@ -43,7 +43,7 @@ export function ClaudeMcpExample() {
         and the team decided to use the CSV fallback
         <SourceLink n={2} label="Call transcript" />.
       </p>
-      <ol className="mx-4 mb-4 grid gap-2 border border-border bg-surface p-3">
+      <ol className="mx-4 mb-4 grid gap-3 border-t border-border pt-4">
         {SOURCES.map((source) => (
           <li key={source.id} id={source.id} className="text-sm">
             <span className="font-mono text-xs text-signal">[{source.n}]</span>{' '}

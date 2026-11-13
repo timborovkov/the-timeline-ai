@@ -31,7 +31,7 @@ export function HomeMotion() {
 
     const setFlowMotion = (diagram: HTMLElement, isActive: boolean, restart = false) => {
       for (const svg of diagram.querySelectorAll<SVGSVGElement>('[data-flow-motion]')) {
-        if (isActive) {
+        if (isActive && !document.hidden && diagram.dataset.motionPaused !== 'true') {
           if (restart && typeof svg.setCurrentTime === 'function') svg.setCurrentTime(0);
           if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
         } else if (typeof svg.pauseAnimations === 'function') {
@@ -63,6 +63,13 @@ export function HomeMotion() {
       { rootMargin: '-4% 0px -4% 0px', threshold: 0.06 },
     );
 
+    const onVisibilityChange = () => {
+      for (const node of activeNodes) {
+        setFlowMotion(node, node.classList.contains(visibleClass));
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     const progress = root.querySelector<HTMLElement>(`.${styles.progress} span`);
 
     let frame = 0;
@@ -86,6 +93,7 @@ export function HomeMotion() {
 
     return () => {
       activeObserver.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('scroll', requestProgress);
       window.removeEventListener('resize', requestProgress);
       if (frame) window.cancelAnimationFrame(frame);

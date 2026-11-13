@@ -64,9 +64,7 @@ export function MarketingProductScreenshot({
               aria-hidden="true"
               className="absolute inset-0 grid place-items-center px-6 text-center"
             >
-              <p className="font-mono text-[0.65rem] tracking-[0.14em] text-fg-muted uppercase">
-                Loading screenshot
-              </p>
+              <p className="text-xs text-fg-muted">Loading screenshot</p>
             </div>
             <ThemedScreenshotImage file={file} alt={alt} portrait={portrait} priority={priority} />
           </>
@@ -96,9 +94,7 @@ export function MarketingProductScreenshot({
         >
           {callouts.map((callout) => (
             <li key={callout.label} className="min-w-0">
-              <p className="font-mono text-[0.62rem] tracking-[0.12em] text-signal uppercase">
-                {callout.label}
-              </p>
+              <p className="text-sm font-medium text-fg">{callout.label}</p>
               <p className="mt-2 text-sm leading-6 text-fg">{callout.detail}</p>
             </li>
           ))}
