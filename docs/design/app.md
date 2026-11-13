@@ -167,7 +167,7 @@ multiline title and retains keyboard/focus behavior.
 
 Ask uses a standard sans header. Human/assistant role labels are quiet 12px
 text; inline citations are mono lime superscripts, not raw chips. Tool
-execution is collapsed. Ask object
+execution details are collapsed. Status badges distinguish running, approval needed, denied, completed, failed, interrupted, and unavailable historical results; only active calls spin. Approval previews show effective defaults and before/after values, including lane kinds and removal consequences. Only the latest assistant turn offers actionable approval controls. Ask object
 bindings always have a human label and read **About {name}**, not Pin. Prompts
 handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.

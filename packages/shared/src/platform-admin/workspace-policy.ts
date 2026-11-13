@@ -193,6 +193,8 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'objects.chatSessionTitleStatus': write,
   'objects.getChatSession': read,
   'objects.appendChatMessages': write,
+  'objects.persistChatTurn': write,
+  'objects.claimChatApprovals': write,
   'objects.setChatSessionTitle': write,
   'objects.setUniqueChatSessionTitle': write,
   'objects.linkChatSessionToObject': write,
