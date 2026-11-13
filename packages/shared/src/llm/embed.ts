@@ -20,10 +20,9 @@ import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { openRouterPrivateProviderRouting } from '#src/llm/privacy.js';
+import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
-
-import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 export interface EmbedInput {
   text: string;

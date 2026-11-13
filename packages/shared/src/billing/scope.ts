@@ -89,13 +89,12 @@ import {
   restoredPaidBillingStateAfterWalletOrCapRecovery,
   spendCapUtilization,
 } from '#src/billing/status.js';
+import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 
 import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
-
-import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
 
