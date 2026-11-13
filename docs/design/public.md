@@ -86,8 +86,7 @@ link; it does not imply certification.
 
 Secondary-page closing CTAs are open, compact copy-and-action rows, side by side on desktop and
 stacked on phones. Keep the action near the headline without repeated nested
-panels, decorative labels or first-run walkthroughs. The product tour and Free
-pricing card own the first-run path: create a team, connect one capture source,
+panels, decorative labels or first-run walkthroughs. The product tour and pricing signup disclosure own the first-run path: create a team, connect one capture source,
 then inspect a source-linked record or ask a question. Pricing leads with Start
 free and no card; its estimator is optional planning.
 The homepage closing action follows its heading and supporting paragraph in one
@@ -223,15 +222,16 @@ connection: native sync, live lookup, local-only access or coming later.
 Public copy explains the same truth through customer actions and constraints:
 what enters the record, what is looked up only on request, what requires local
 setup, and what cannot be connected yet.
-The integration directory is a chooser before a guide. Four local links lead
-to Conversations & capture, Native sync, Live lookup and Coming later. Telegram
+The integration directory is a chooser before a guide. Three prominent local
+links lead to capture, native sync and live lookup, with a subordinate link
+to planned integrations. Telegram
 and Slack conversation capture lead the compact capture rows; email forwarding,
 meeting transcripts, ingest webhooks and websites remain available with their
 existing boundaries. Capture details and limits stay in closed native
 disclosures. Six native provider connectors have descriptive rows with visible
 Native sync labels. Live lookup and planned integrations have distinct groups;
-local-desktop and complete provider lists use disclosures. A single source-to-answer
-example follows the chooser.
+Local-desktop and complete provider lists use disclosures. Provider detail pages
+supply the specific evidence examples; the directory prioritizes finding a source.
 
 Slack conversation capture and selected-channel history sync remain separate
 contracts. Generic ingest webhooks are evidence-only; meeting capture stores
@@ -362,11 +362,30 @@ at phone widths without changing shared private-app input density.
 
 Foundations and shared components: [design system](../../design.md).
 
+### Public pricing
+
+A compact no-card introduction leads directly to four catalog-backed plans.
+Distinguish the platform fee from usage charges at the price, show included
+members and pooled usage credit, and keep Free/PAYG monthly allowances visible
+below the plans. The plan grid uses four columns on wide screens, two on tablet
+and one on phones. No repeated plan-name eyebrows or recommended-plan badge.
+The optional signup walkthrough is a disclosure; Enterprise is a quiet contact
+line. Follow the estimator with complete comparison, spending boundaries,
+billing-focused questions and a final Start free action.
+
+Comparison tables have row/column scopes, a keyboard-focusable labelled scroll
+region, a mobile scroll hint and a sticky row-label column. Billing copy makes
+clear that spend caps exclude platform fees and tax, commitment credit is
+applied after the cap check, and capacity limits are separate.
+
 ### Public pricing calculator
 
 The pricing Usage section compares PAYG, Team and Business through paired native
 sliders and exact number fields. A labelled editable example renders on the server.
-Desktop inputs sit beside a single hairline results panel; mobile stacks them.
+Desktop inputs sit beside a single hairline results panel; mobile stacks them
+with a compact selected-plan estimate that stays visible while editing. Number
+inputs and slider targets are at least 44px high. Reset restores both the usage
+example and Pay as you go selection. Invalid inputs suppress all estimates.
 Plan totals share one border with the selected breakdown underneath — no nested
 cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
 and Business show a pooled usage-credit deduction. Capacity warnings exclude
@@ -422,10 +441,20 @@ MCP introduces live lookup beside the hero and keeps inbound tools separate
 from external agents reading Timeline. Websites shows capture history before
 its concrete scan price. Related tools use compact rows with readable status.
 
-Agents pairs its introduction with setup; MCP reading instructions sit beside
-the product screenshot. Native connector pages retain local section links.
-Integration directory, Telegram, MCP guides, works-with
-pages and Trust keep a compact reading rhythm. Keep one idea per paragraph and
+The use-case hub pairs its introduction with an illustrative shared record,
+then groups six distinct outcomes by the visitor’s job. The integrations hub
+leads with capture, native history and live-lookup choices, followed by a
+compact two-column directory that stacks on mobile. Planned support is
+subordinate and explicitly unavailable. Keep complete capture boundaries in
+native disclosures; do not use long connector introductions as directory copy.
+
+Agents keeps its copyable setup command visible beside the introduction and a
+read/contribute example. Notes add evidence, not canonical changes. The
+connection screenshot supports access instructions below; manual commands,
+scopes and key details belong in an optional disclosure. Keep the distinction
+between external agents reading Timeline and Timeline looking up external tools.
+Native connector pages retain local section links. Telegram, MCP guides,
+works-with pages and Trust keep a compact reading rhythm. Keep one idea per paragraph and
 avoid repeating capture, approval and citation explanations. Policy detail uses
 closed-by-default `MarketingDisclosure` elements: keyboard-accessible summaries
 and complete content in the DOM. Short summaries never strengthen the underlying

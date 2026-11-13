@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 
 import { SEE_IT_FIRST_HREF, SEE_IT_FIRST_LABEL } from '@/components/marketing/copy';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
-import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import {
   PricingComparisonTable,
   PricingEnterpriseNudge,
@@ -13,7 +13,8 @@ import {
 } from '@/components/marketing/pricing-blocks';
 import { PricingCalculator } from '@/components/marketing/pricing-calculator';
 import { PricingFaq } from '@/components/marketing/pricing-faq';
-import { StartFreeLink } from '@/components/marketing/start-free-cta';
+import styles from '@/components/marketing/pricing-page.module.css';
+import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
   buildPublicStructuredData,
@@ -22,9 +23,7 @@ import {
 import { getSiteUrl } from '@/lib/site-url';
 
 const PRICING_DOCUMENT = getPricingDocument();
-
 export const metadata: Metadata = metadataForPublicDocument(PRICING_DOCUMENT);
-
 function getPricingDocument() {
   const document = PUBLIC_DOCUMENT_REGISTRY.get('/pricing');
   if (!document) throw new Error('The public document registry is missing the pricing page');
@@ -33,132 +32,88 @@ function getPricingDocument() {
 
 export default function PricingPage() {
   return (
-    <main id="main" tabIndex={-1}>
+    <main id="main" tabIndex={-1} className={styles.page}>
       <EditorialStructuredData data={buildPublicStructuredData(PRICING_DOCUMENT, getSiteUrl())} />
-      <section className="border-b border-border">
-        <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <div className="grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
-            <h1 className="max-w-[14ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
-              Start Free, no card.
-            </h1>
-            <div className="max-w-[44ch] space-y-4 text-base leading-relaxed text-fg-muted sm:text-lg">
-              <p>
-                Start Free to try your first source. Add payment when you need more. Pay as you go
-                keeps the Free allowance and charges for usage beyond it. Choose Team or Business
-                for more included usage and members.
-              </p>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-                <StartFreeLink className="inline-flex min-h-11 items-center gap-2 rounded-sm bg-signal px-4 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-                <Link
-                  href="#estimate-usage"
-                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  Estimate paid usage
-                </Link>
-              </div>
-              <p>
-                Not sure yet?{' '}
-                <Link
-                  href={SEE_IT_FIRST_HREF}
-                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {SEE_IT_FIRST_LABEL}
-                </Link>
-              </p>
-            </div>
+      <MarketingContainer>
+        <header className={styles.hero}>
+          <h1>Start free. No card required.</h1>
+          <div>
+            <p>
+              Bring in your first source and try it with your team. Add payment for more usage, or
+              choose a monthly plan with more members and usage included.
+            </p>
+            <nav className={styles.actions} aria-label="Pricing options">
+              <a href="#estimate-usage" className={styles.textLink}>
+                Estimate paid usage
+              </a>
+              <Link href={SEE_IT_FIRST_HREF} className={styles.textLink}>
+                {SEE_IT_FIRST_LABEL}
+              </Link>
+            </nav>
           </div>
-        </MarketingContainer>
-      </section>
-
-      <section className="border-b border-border">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <div>
-              <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Start Free. Paid plans are optional.
-              </h2>
-              <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                All prices are in euros and exclude VAT. Free is the no-card entry. Paid usage and
-                committed plans are there when you need them.
-              </p>
-              <PricingPlanGrid className="mt-10" />
-              <PricingEnterpriseNudge className="mt-4" />
-            </div>
-          </MarketingSectionGrid>
-        </MarketingContainer>
-      </section>
-
-      <section id="estimate-usage" className="scroll-mt-24 border-b border-border bg-surface/45">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <div>
-              <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Estimate paid usage when you need it.
-              </h2>
-              <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                Optional planning. Compare Pay as you go, Team and Business using the same monthly
-                usage. You do not need these numbers to start Free. Adjust the example to see what
-                is included and what you would pay.
-              </p>
-              <PricingCalculator />
-              <PricingMetersExplainer className="mt-8" />
-            </div>
-          </MarketingSectionGrid>
-        </MarketingContainer>
-      </section>
-
-      <section className="border-b border-border">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <div>
-              <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Compare plans.
-              </h2>
-              <PricingComparisonTable className="mt-10" />
-            </div>
-          </MarketingSectionGrid>
-        </MarketingContainer>
-      </section>
-
-      <section>
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <div>
-              <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                How billing works.
-              </h2>
-              <ul className="mt-6 max-w-3xl list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
-                <li>
-                  Each plan includes an allowance. Check the comparison above for included usage,
-                  members, and any additional charges.
-                </li>
-                <li>
-                  Your spend cap limits usage charges. Separate capacity limits apply to features
-                  such as meeting notetakers, documents, and storage; see Infrastructure limits for
-                  the details.
-                </li>
-                <li>
-                  Reading, deletion, billing management, and export stay available when a spend cap
-                  or balance is exhausted.
-                </li>
-              </ul>
-            </div>
-          </MarketingSectionGrid>
-        </MarketingContainer>
-      </section>
-
-      <section className="border-t border-border bg-surface/45">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <div>
-              <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Common questions.
-              </h2>
-              <PricingFaq />
-            </div>
-          </MarketingSectionGrid>
-        </MarketingContainer>
-      </section>
+        </header>
+        <section className={styles.plans} aria-labelledby="pricing-plans-title">
+          <div className={styles.planHeading}>
+            <h2 id="pricing-plans-title">Choose how you pay.</h2>
+            <p>All prices are in euros and exclude VAT.</p>
+          </div>
+          <PricingPlanGrid />
+          <PricingEnterpriseNudge className="mt-4" />
+        </section>
+        <section id="estimate-usage" className={styles.section} aria-labelledby="estimate-title">
+          <div className={styles.sectionHeading}>
+            <h2 id="estimate-title">Put your usage into the picture.</h2>
+            <p>
+              Compare Pay as you go, Team and Business using the same monthly usage. You do not need
+              these numbers to start Free. This is an estimate, not a change to your billing.
+            </p>
+          </div>
+          <PricingCalculator />
+          <PricingMetersExplainer className="mt-8" />
+        </section>
+        <section className={styles.section} aria-labelledby="compare-plans-title">
+          <div className={styles.sectionHeading}>
+            <h2 id="compare-plans-title">The details, side by side.</h2>
+            <p>
+              Compare included members, usage and spending limits. Capacity limits are separate from
+              what you pay.
+            </p>
+          </div>
+          <PricingComparisonTable className="mt-8" />
+        </section>
+        <section className={`${styles.section} ${styles.billing}`} aria-labelledby="billing-title">
+          <h2 id="billing-title">Stay in control of spend.</h2>
+          <ul>
+            <li>
+              Your spend cap limits metered usage charges. Platform fees and tax are outside it. On
+              Team and Business, the cap is checked before included usage credit.
+            </li>
+            <li>
+              Separate <a href="#pricing-infrastructure">capacity limits</a> apply to meeting
+              notetakers, documents, storage and other features. Reaching a limit can pause an
+              action without charging extra.
+            </li>
+            <li>
+              Reading, deletion, billing management, and export stay available when a spend cap or
+              balance is exhausted.
+            </li>
+            <li>
+              <Link href="/help/billing">How billing, limits and cancellation work</Link>
+            </li>
+          </ul>
+        </section>
+        <section
+          className={`${styles.section} ${styles.billing}`}
+          aria-labelledby="pricing-faq-title"
+        >
+          <h2 id="pricing-faq-title">Before you get started.</h2>
+          <PricingFaq />
+        </section>
+      </MarketingContainer>
+      <MarketingCtaBand
+        title="Try it with your first source."
+        body="Start with the Free allowance. Add payment when you need more."
+      />
     </main>
   );
 }

@@ -11,14 +11,21 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import styles from '@/components/marketing/integrations/integration-directory.module.css';
-import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 import { MarketingContainer } from '@/components/marketing/marketing-layout';
-import publicStyles from '@/components/marketing/public-page.module.css';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
+
+const CONNECTOR_SUMMARIES: Record<string, string> = {
+  slack: 'Selected channel messages, threads and file-share metadata.',
+  github: 'Issues, pull requests, reviews, releases and commits.',
+  linear: 'Issues, projects and comments, with their history connected.',
+  'google-drive': 'Selected documents and their context, with supported file text.',
+  monday: 'Boards, items and updates connected to the surrounding work.',
+  sentry: 'Issues, alerts and releases alongside the code and discussion.',
+};
 
 const CAPTURE_ORDER = ['telegram', 'slack-chat', 'email', 'meetings', 'webhooks', 'websites'];
 const surfaces = [...CAPTURE_SURFACES].sort(
@@ -26,8 +33,6 @@ const surfaces = [...CAPTURE_SURFACES].sort(
 );
 
 export function IntegrationDirectory() {
-  const featuredConnector = CONNECTORS.find((connector) => connector.slug === 'slack');
-  if (!featuredConnector) throw new Error('Native Slack connector content is required');
   const tiers = getConnectorCapabilityTiers();
   return (
     <PublicShell width="wide" footerLabel="The Timeline integrations" currentSection="integrations">
@@ -35,40 +40,55 @@ export function IntegrationDirectory() {
       <main id="main" tabIndex={-1}>
         <MarketingContainer className={styles.directory}>
           <header className={styles.header}>
-            <h1 className={publicStyles.connectorTitle}>
-              Connect the places where the work already happens.
-            </h1>
-            <p>
-              Start with a Slack conversation or Telegram group. Add selected tool history or live
-              lookup when you need it.
-            </p>
-            <PublicSessionBranch
-              signedOut={
-                <Button asChild size="lg">
-                  <Link href="/sign-up">
-                    Start free
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                </Button>
-              }
-              signedIn={
-                <Button asChild size="lg">
-                  <Link href="/app/connections">
-                    Open connections
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                </Button>
-              }
-            />
+            <div>
+              <h1 className={styles.title}>Your tools. One work record.</h1>
+              <p>
+                Bring selected sources into a shared work record. Connect the tools you use, send
+                work in, or give Timeline access to live tools when you need them.
+              </p>
+              <PublicSessionBranch
+                signedOut={
+                  <Button asChild size="lg">
+                    <Link href="/sign-up">
+                      Start free
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                }
+                signedIn={
+                  <Button asChild size="lg">
+                    <Link href="/app/connections">
+                      Open connections
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                }
+              />
+            </div>
+            <nav className={styles.choices} aria-label="Integration categories">
+              <a href="#capture-surfaces">
+                <strong>Send work in</strong>
+                <span>Messages, files, calls and websites you choose to capture.</span>
+                <ArrowRight aria-hidden="true" size={20} />
+              </a>
+              <a href="#native">
+                <strong>Sync selected history</strong>
+                <span>Six native integrations, with source records kept together.</span>
+                <ArrowRight aria-hidden="true" size={20} />
+              </a>
+              <a href="#live-lookup">
+                <strong>Look up live tools</strong>
+                <span>Current information through MCP, without importing history.</span>
+                <ArrowRight aria-hidden="true" size={20} />
+              </a>
+              <a href="#planned" className={styles.plannedLink}>
+                See what’s planned <ArrowRight aria-hidden="true" size={16} />
+              </a>
+            </nav>
           </header>
-          <nav className={styles.jumpLinks} aria-label="Integration categories">
-            <a href="#capture-surfaces">Conversations & capture</a>
-            <a href="#native">Native sync</a>
-            <a href="#live-lookup">Live lookup</a>
-            <a href="#planned">Coming later</a>
-          </nav>
+
           <section className={styles.section} aria-labelledby="capture-surfaces">
-            <h2 id="capture-surfaces">Start where the conversation already happens.</h2>
+            <h2 id="capture-surfaces">Send work in. Keep the context.</h2>
             <p>Send work in deliberately. Each route explains what is saved and who can see it.</p>
             <div className={styles.rows}>
               {surfaces.map((surface) => (
@@ -91,7 +111,7 @@ export function IntegrationDirectory() {
                   <ProviderLogo src={connector.logo} size="md" />
                   <div>
                     <h3>{connector.name === 'Slack' ? 'Slack history' : connector.name}</h3>
-                    <p>{connector.intro}</p>
+                    <p>{CONNECTOR_SUMMARIES[connector.slug]}</p>
                   </div>
                   <span className={styles.status}>
                     Native sync
@@ -141,17 +161,6 @@ export function IntegrationDirectory() {
               <summary>All planned native integrations</summary>
               <p>{tiers.plannedProviders.join(', ')}</p>
             </details>
-          </section>
-          <section className={styles.section} aria-labelledby="evidence">
-            <h2 id="evidence">Every connector has a specific evidence story.</h2>
-            <p>
-              Timeline orders selected records by time, keeps their source attached, and cites the
-              evidence used in the answer. This Slack example shows that journey from conversation
-              to chronology.
-            </p>
-            <div className="mt-6">
-              <RecordsToAnswer connector={featuredConnector} compact />
-            </div>
           </section>
         </MarketingContainer>
       </main>

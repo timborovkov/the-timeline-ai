@@ -3,10 +3,15 @@ import Link from 'next/link';
 
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import { MarketingContainer } from '@/components/marketing/marketing-layout';
-import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
-import { findUseCase, USE_CASE_HUB } from '@/components/marketing/use-cases/content';
+import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
+import {
+  findUseCase,
+  findUseCaseByRoute,
+  USE_CASE_HUB,
+} from '@/components/marketing/use-cases/content';
 import { USE_CASE_PUBLIC_DOCUMENTS } from '@/components/marketing/use-cases/public-documents';
 import styles from '@/components/marketing/use-cases/use-case-hub.module.css';
+import { UseCasePreview } from '@/components/marketing/use-cases/use-case-preview';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -19,6 +24,15 @@ function getHubDocument() {
 }
 
 const hubDocument = getHubDocument();
+const record = findUseCaseByRoute('/use-cases/work-record');
+const JOB_OUTCOMES: Record<string, string> = {
+  'work-record': 'Catch up without retracing every source.',
+  'communication-trail': 'Find the promise. See where it was made.',
+  crm: 'Keep the customer context together.',
+  'task-board': 'Turn a commitment into a proposed task.',
+  'team-daily-log': 'See what moved, and what needs attention.',
+  'onboarding-and-repeat-questions': 'Give the next person a running start.',
+};
 const JOB_GROUPS = [
   { title: 'Understand what happened', slugs: ['work-record', 'communication-trail'] },
   { title: 'Keep work moving', slugs: ['crm', 'task-board'] },
@@ -31,22 +45,36 @@ export function UseCaseHubPage() {
       <EditorialStructuredData data={buildPublicStructuredData(hubDocument, getSiteUrl())} />
       <header>
         <MarketingContainer className={styles.intro}>
-          <h1 className={styles.title}>{USE_CASE_HUB.title}</h1>
-          <p className={styles.summary}>{USE_CASE_HUB.summary}</p>
+          <div>
+            <h1 className={styles.title}>{USE_CASE_HUB.title}</h1>
+            <p className={styles.summary}>{USE_CASE_HUB.summary}</p>
+            <div className={styles.actions}>
+              <StartFreeLink className={styles.primary} />
+              <a href="#choose-your-job" className={styles.textLink}>
+                Find your use case
+              </a>
+            </div>
+          </div>
+          <UseCasePreview useCase={record} />
         </MarketingContainer>
       </header>
 
       <MarketingContainer className={styles.directory}>
+        <div id="choose-your-job" className={styles.directoryHeading}>
+          <h2>What do you need to move forward?</h2>
+          <p>Start with the job. Each view keeps the evidence connected.</p>
+        </div>
         {JOB_GROUPS.map((group) => (
           <section key={group.title} className={styles.group} aria-label={group.title}>
-            <h2>{group.title}</h2>
+            <h3>{group.title}</h3>
             <div className={styles.jobs}>
               {group.slugs.map((slug) => {
                 const useCase = findUseCase(slug);
                 if (!useCase) throw new Error(`Missing use case: ${slug}`);
                 return (
                   <Link key={useCase.route} href={useCase.route} className={styles.job}>
-                    <h3>{useCase.cardTitle}</h3>
+                    <span className={styles.jobName}>{useCase.cardTitle}</span>
+                    <h4>{JOB_OUTCOMES[slug]}</h4>
                     <p>{useCase.cardBody}</p>
                     <ArrowRight aria-hidden="true" className="size-5" />
                   </Link>
@@ -62,8 +90,8 @@ export function UseCaseHubPage() {
       </MarketingContainer>
 
       <MarketingCtaBand
-        title="Link one channel. Watch the record fill in."
-        body="Start with one Slack channel or Telegram group. The Timeline keeps the work record current from those conversations."
+        title="Start with the work you want to keep."
+        body="Bring in a source, build the shared context, and review the changes that turn it into lasting work records."
       />
     </main>
   );

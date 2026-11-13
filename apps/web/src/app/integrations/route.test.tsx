@@ -29,8 +29,8 @@ describe('public integration routes', () => {
     const text = visibleText(html);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(text).toContain('Connect the places where the work already happens');
-    expect(html).toContain('Start where the conversation already happens');
+    expect(text).toContain('Your tools. One work record.');
+    expect(html).toContain('Send work in. Keep the context.');
     expect(text).toContain('Bring selected tool history into Timeline');
     expect(text).toContain('Send work in');
     expect(text).toContain('Connect your tools');
@@ -43,7 +43,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('Indexable');
     expect(html).not.toContain('Noindex');
     expect(html).not.toContain('Shared structure keeps the experience coherent');
-    expect(html).toContain('Slack example shows that journey from conversation to chronology');
+    expect(text).toContain('Current information through MCP, without importing history');
     expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('href="/integrations/slack"');
     expect(html).toContain('href="/integrations/telegram"');
@@ -70,9 +70,7 @@ describe('public integration routes', () => {
     expect(html).toContain('href="/integrations/pipedrive"');
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
     expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
-    expect(html).toContain('compact');
     expect(html).toContain('bg-white');
-    expect(html).toContain('connectorTitle');
     expect(html).not.toContain('7.5vw');
     expect(text).toContain('Send work in');
     for (const id of ['capture-surfaces', 'native', 'live-lookup', 'planned']) {
@@ -80,7 +78,6 @@ describe('public integration routes', () => {
       expect(html).toContain(`id="${id}"`);
     }
     expect(html.indexOf('<h3>Telegram')).toBeLessThan(html.indexOf('<h3>Websites'));
-    expect(html.indexOf('id="planned"')).toBeLessThan(html.indexOf('id="evidence"'));
     expect(html.match(/<h3>Linear<\/h3>/g)).toHaveLength(1);
     expect(text).toContain('They do not import or sync tool history into Timeline');
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
