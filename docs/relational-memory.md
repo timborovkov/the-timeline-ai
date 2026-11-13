@@ -319,6 +319,8 @@ object repair may prefer its selected object as the survivor.
 
 `engine_maintenance_runs` stores run kind, engine version, cursor, examined count,
 status, timestamps, proposal counts, billing-operation references and diagnostic metadata.
+These operational records are purged during permanent team deletion; financial
+ledger retention follows the separate team-lifecycle policy.
 Inference usage and actual charges remain in the existing billing ledger, joined
 through those operation references. Cleanup records its initial
 object count; the health surface retains the latest successful cleanup even when

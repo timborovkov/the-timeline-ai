@@ -3,6 +3,7 @@
   "packages/shared/src/objects/chat-turns.test.ts": { "group": "integration" },
   "apps/web/src/lib/chat-session.test.ts": { "group": "unit" },
   "apps/web/src/lib/kanban-keyboard.test.ts": { "group": "unit" },
+  "apps/worker/src/workers/boardQualification.test.ts": { "group": "unit" },
   "apps/worker/src/workers/boardQualification-discovery.test.ts": { "group": "integration" },
   "apps/web/src/app/workspace-suspended/page.test.tsx": {
     "group": "dom"

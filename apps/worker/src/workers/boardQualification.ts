@@ -1,8 +1,9 @@
 import type { Db } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { runGuardedJob } from '@timeline/shared/platform-admin/runtime';
 import { withTeam } from '@timeline/shared/team-scope';
-import { Queue, Worker } from 'bullmq';
+import { Queue, UnrecoverableError, Worker } from 'bullmq';
 
 import { withWorkerAiBilling } from '#src/billing-context.js';
 import { discoverBoardQualificationRequests } from '#src/workers/boardQualification-discovery.js';
@@ -37,7 +38,8 @@ export function startBoardQualificationWorker({ db }: { db: Db }) {
               ),
             db,
           );
-        } catch {
+        } catch (error) {
+          if (isBillingAdmissionError(error) || error instanceof UnrecoverableError) throw error;
           // Keep customer/model text out of operational logs. Durable retry state is inspectable.
           await scope.boardQualification
             .failRequest(request.id, request.version)

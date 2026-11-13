@@ -6749,7 +6749,8 @@ describe('processSuggestionJobForTests', () => {
       targetKind: 'object',
       targetId: null,
       proposedPayload: {
-        canonicalName: 'Dormant migration',
+        canonicalName: `Dormant migration (distinct scope ${suggestions.suggestionDedupeKey({}).slice(0, 12)})`,
+        aliases: ['Dormant migration'],
         status: 'blocked',
       },
     });

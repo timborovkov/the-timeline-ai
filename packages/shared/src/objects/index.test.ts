@@ -6122,6 +6122,10 @@ describe('object scope — merge cleanup', () => {
       })
       .returning({ id: documentVersions.id });
     if (!version) throw new Error('failed to insert version');
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, document.id));
     const [chunk] = await db
       .insert(documentChunks)
       .values({
