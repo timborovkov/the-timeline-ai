@@ -7,6 +7,7 @@ import {
   type ChatContextRef,
 } from '@timeline/shared/chat-context';
 import { numberCitations } from '@timeline/shared/citation';
+import { getToolName, isToolUIPart } from 'ai';
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -26,6 +27,7 @@ import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
+import { chatRequestMessages } from '@/lib/chat-session';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -125,6 +127,17 @@ function ChatSurfaceContent({
   const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
     transport,
     messages: initialMessages,
+    onFinish: ({ message }) => {
+      if (
+        message.parts.some(
+          (part) =>
+            isToolUIPart(part) &&
+            getToolName(part).startsWith('execute_') &&
+            part.state === 'output-available',
+        )
+      )
+        router.refresh();
+    },
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
@@ -288,6 +301,9 @@ function useChatSessionTransport({
     () =>
       new DefaultChatTransport({
         api: '/api/chat',
+        prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => ({
+          body: { ...body, id, trigger, messageId, messages: chatRequestMessages(messages) },
+        }),
         body: () => {
           const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
           if (askForNew) sessionCreateAttempted.current = true;
@@ -535,6 +551,8 @@ function MessageList({
         <ChatMessage
           key={message.id}
           message={message}
+          isActive={isStreaming && message.id === messages.at(-1)?.id}
+          canApprove={message.id === messages.at(-1)?.id}
           onToolApprovalResponse={onToolApprovalResponse}
         />
       ))}
@@ -549,9 +567,13 @@ function MessageList({
 
 function ChatMessage({
   message,
+  isActive,
+  canApprove,
   onToolApprovalResponse,
 }: {
   message: UIMessage;
+  isActive: boolean;
+  canApprove: boolean;
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   const isUser = message.role === 'user';
@@ -579,6 +601,8 @@ function ChatMessage({
               key={`${message.id}-${String(idx)}`}
               citationNumbers={citationNumbers}
               part={part}
+              isActive={isActive}
+              canApprove={canApprove}
               onToolApprovalResponse={onToolApprovalResponse}
             />
           ))}
@@ -590,32 +614,36 @@ function ChatMessage({
 
 function ChatMessagePart({
   citationNumbers,
+  isActive,
+  canApprove,
   part,
   onToolApprovalResponse,
 }: {
   citationNumbers: Map<string, number>;
   part: UIMessage['parts'][number];
+  isActive: boolean;
+  canApprove: boolean;
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   if (part.type === 'text') {
     return <CitationText numbers={citationNumbers} text={part.text} />;
   }
-  if (!part.type.startsWith('tool-')) return null;
-  const toolPart = part as unknown as {
-    type: string;
-    toolCallId: string;
-    state: string;
-    input?: unknown;
-    output?: unknown;
-    approval?: { id: string; approved?: boolean; reason?: string };
-  };
+  if (part.type === 'data-tool-history') {
+    const data = part.data as { name: string; state: string; input?: unknown };
+    return <ToolStep name={data.name} state={data.state} input={data.input} />;
+  }
+  if (!isToolUIPart(part)) return null;
   return (
     <ToolStep
-      name={toolPart.type.slice('tool-'.length)}
-      state={toolPart.state}
-      input={toolPart.input}
-      output={toolPart.output}
-      approval={toolPart.approval}
+      name={getToolName(part)}
+      state={
+        part.state === 'approval-requested' && !canApprove ? 'approval-unavailable' : part.state
+      }
+      input={part.input}
+      output={part.output}
+      errorText={part.errorText}
+      isActive={isActive}
+      approval={part.approval}
       onApprovalResponse={onToolApprovalResponse}
     />
   );

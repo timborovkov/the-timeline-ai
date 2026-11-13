@@ -93,6 +93,8 @@ import { getEnv } from '#src/env.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
+import { createChatTurnScope } from '#src/objects/chat-turns.js';
 import {
   normalizeIdentityFacet,
   objectSupportsIdentityFacets,
@@ -4427,6 +4429,7 @@ export async function createObject(
 type PostCommitEffect = () => void;
 
 interface ObjectMutationOptions {
+  expectedUpdatedAt?: string | undefined;
   transactionClient?: DbOrTx;
   postCommitEffects?: PostCommitEffect[];
   requireActive?: boolean;
@@ -4476,6 +4479,8 @@ export async function updateObject(
     const currentRow = currentRows[0];
     if (!currentRow) throw new Error('Object not found');
     const current: EntityRow = currentRow;
+    if (options?.expectedUpdatedAt && current.updatedAt.toISOString() !== options.expectedUpdatedAt)
+      throw new StaleWorkspaceStateError();
     if (options?.requireActive && current.archivedAt) throw new Error('Object is archived');
 
     const unchangedResult = () => ({
@@ -5133,8 +5138,11 @@ export async function unarchiveObject(
   scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
+  expectedUpdatedAt?: string,
 ): Promise<ObjectRow & { changedFields: string[] }> {
-  const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor);
+  const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor, {
+    expectedUpdatedAt,
+  });
   return { ...result.object, changedFields: result.changedFields };
 }
 
@@ -5725,9 +5733,9 @@ export async function addRelationship(
         ),
       )
       // Project mutations lock the project before linked tasks. Use the same
-      // order here, then UUID order for same-type/generic relationships.
+      // order here; employment updates lock company before person, then UUID within each type.
       .orderBy(
-        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 ELSE 2 END`,
+        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
         asc(entities.id),
       )
       .for('update');
@@ -6633,7 +6641,55 @@ export async function removeRelationship(
   scope: TeamScopeCore,
   relationshipId: string,
   actor: UpdateActor = { kind: 'user', userId: null },
+  expectedCurrent?: { fromEntityId: string; toEntityId: string; kind: string },
 ): Promise<{ removed: boolean; touchedIds: string[] }> {
+  if (expectedCurrent) {
+    await scope.requireMembership();
+    const effects: (() => void | Promise<void>)[] = [];
+    const result = await db.transaction(async (tx) => {
+      const endpoints = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, scope.teamId),
+            inArray(entities.id, [expectedCurrent.fromEntityId, expectedCurrent.toEntityId]),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .orderBy(
+          sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
+          asc(entities.id),
+        )
+        .for('update');
+      if (endpoints.length !== 2) throw new Error('Objects not found');
+      const [rel] = await tx
+        .select()
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.id, relationshipId),
+            eq(entityRelationships.teamId, scope.teamId),
+          ),
+        )
+        .for('update');
+      if (
+        rel?.fromEntityId !== expectedCurrent.fromEntityId ||
+        rel.toEntityId !== expectedCurrent.toEntityId ||
+        rel.kind !== expectedCurrent.kind
+      )
+        throw new StaleWorkspaceStateError();
+      return removeRelationship(
+        tx as unknown as Db,
+        { ...scope, postCommitEffects: effects, postCommitDb: scope.postCommitDb ?? db },
+        relationshipId,
+        actor,
+      );
+    });
+    if (scope.postCommitEffects) scope.postCommitEffects.push(...effects);
+    else for (const effect of effects) await effect();
+    return result;
+  }
   await scope.requireMembership();
   if (!UUID_RE.test(relationshipId)) return { removed: false, touchedIds: [] };
 
@@ -6808,14 +6864,16 @@ export async function removeRelationship(
   });
   if (!result) return { removed: false, touchedIds: [] };
   const touchedIds = [result.fromEntityId, result.toEntityId];
-  for (const objectId of touchedIds) {
-    void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
-      teamId: scope.teamId,
-      objectId,
-      relationshipId,
-      op: 'removeRelationship',
-    });
-  }
+  runOrDeferPostCommit(scope, () => {
+    for (const objectId of touchedIds) {
+      void fireAndForgetObjectSummaryRefresh(scope.postCommitDb ?? db, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        relationshipId,
+        op: 'removeRelationship',
+      });
+    }
+  });
   return { removed: true, touchedIds };
 }
 
@@ -7554,6 +7612,7 @@ export async function updateNote(
   db: Db,
   scope: TeamScopeCore,
   input: {
+    expectedCurrent?: { entityId: string; body: string; updatedAt: string };
     noteId: string;
     body: string;
     actorUserId: string | null;
@@ -7578,7 +7637,7 @@ export async function updateNote(
       eq(objectNotes.teamId, scope.teamId),
       isNull(objectNotes.deletedAt),
     ];
-    if (actor.kind === 'user') {
+    if (actor.kind === 'user' || input.expectedCurrent) {
       if (!input.actorUserId) return null;
       conditions.push(eq(objectNotes.authorUserId, input.actorUserId));
     }
@@ -7587,9 +7646,17 @@ export async function updateNote(
       .select()
       .from(objectNotes)
       .where(and(...conditions))
+      .for('update')
       .limit(1);
     const note = existing[0];
     if (!note) return null;
+    if (
+      input.expectedCurrent &&
+      (note.entityId !== input.expectedCurrent.entityId ||
+        note.body !== input.expectedCurrent.body ||
+        note.updatedAt.toISOString() !== input.expectedCurrent.updatedAt)
+    )
+      throw new StaleWorkspaceStateError();
     if (note.body === body) return { changed: false, entityId: note.entityId };
 
     await tx
@@ -7742,7 +7809,12 @@ export async function updateNote(
 export async function deleteNote(
   db: Db,
   scope: TeamScopeCore,
-  input: { noteId: string; actorUserId: string },
+  input: {
+    noteId: string;
+    actorUserId: string;
+    actor?: UpdateActor;
+    expectedCurrent?: { entityId: string; body: string; updatedAt: string };
+  },
 ): Promise<boolean> {
   await scope.requireMembership();
   if (!UUID_RE.test(input.noteId)) return false;
@@ -7761,9 +7833,17 @@ export async function deleteNote(
           isNull(objectNotes.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const note = existing[0];
     if (!note) return null;
+    if (
+      input.expectedCurrent &&
+      (note.entityId !== input.expectedCurrent.entityId ||
+        note.body !== input.expectedCurrent.body ||
+        note.updatedAt.toISOString() !== input.expectedCurrent.updatedAt)
+    )
+      throw new StaleWorkspaceStateError();
 
     await tx
       .update(objectNotes)
@@ -7792,7 +7872,7 @@ export async function deleteNote(
             entity_id: note.entityId,
             note_id: note.id,
             previous_body: note.body,
-            actor_kind: 'user',
+            actor_kind: input.actor?.kind ?? 'user',
             actor_user_id: input.actorUserId,
           },
         }),
@@ -7813,7 +7893,7 @@ export async function deleteNote(
       teamId: scope.teamId,
       entityId: note.entityId,
       actorUserId: input.actorUserId,
-      actorKind: 'user',
+      actorKind: input.actor?.kind ?? 'user',
       status: 'applied',
       field: '__note_delete__',
       previousValue: { note_id: note.id, body: note.body },
@@ -7826,7 +7906,7 @@ export async function deleteNote(
       userId: scope.userId,
       entityId: note.entityId,
       noteId: note.id,
-      actor: { kind: 'user', userId: input.actorUserId },
+      actor: input.actor ?? { kind: 'user', userId: input.actorUserId },
       sourceEventId,
       operation: 'archive_or_cancel',
       systemEventKind: 'object_note_delete',
@@ -8844,6 +8924,7 @@ export async function rejectObjectChange(
 
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
+    ...createChatTurnScope(db, scope),
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     listObjectsLinkedToIntegration: (input: { provider: string; ids: string[] }) =>
       listObjectsLinkedToIntegration(db, scope, input),
@@ -8895,8 +8976,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       actor: UpdateActor,
       options?: Parameters<typeof archiveSuggestionCreatedObjectIfUnadopted>[4],
     ) => archiveSuggestionCreatedObjectIfUnadopted(db, scope, suggestionItemId, actor, options),
-    unarchiveObject: (entityId: string, actor: UpdateActor) =>
-      unarchiveObject(db, scope, entityId, actor),
+    unarchiveObject: (entityId: string, actor: UpdateActor, expectedUpdatedAt?: string) =>
+      unarchiveObject(db, scope, entityId, actor, expectedUpdatedAt),
     mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),
     listPrimaryProjectsForTasks: (taskIds: string[]) =>
       listPrimaryProjectsForTasks(db, scope, taskIds),
@@ -8944,8 +9025,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     listIdentityFacets: (entityId: string) => listIdentityFacets(db, scope, entityId),
     listIdentityFacetsForUser: (linkedUserId: string) =>
       listIdentityFacetsForUser(db, scope, linkedUserId),
-    removeRelationship: (id: string, actor: UpdateActor) =>
-      removeRelationship(db, scope, id, actor),
+    removeRelationship: (
+      id: string,
+      actor: UpdateActor,
+      expectedCurrent?: Parameters<typeof removeRelationship>[4],
+    ) => removeRelationship(db, scope, id, actor, expectedCurrent),
     createNote: (input: Parameters<typeof createNote>[2]) => createNote(db, scope, input),
     updateNote: (input: Parameters<typeof updateNote>[2]) => updateNote(db, scope, input),
     deleteNote: (input: Parameters<typeof deleteNote>[2]) => deleteNote(db, scope, input),

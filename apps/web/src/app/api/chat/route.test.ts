@@ -39,7 +39,8 @@ const fakes = vi.hoisted(() => ({
   fakeCompressMessagesForContext: vi.fn(),
   fakeChatStructured: vi.fn(),
   fakeStreamChat: vi.fn(),
-  fakeAppendChatMessages: vi.fn(),
+  fakePersistChatTurn: vi.fn(),
+  fakeClaimChatApprovals: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
   fakeCreateUIMessageStreamResponse: vi.fn(),
   fakeToUIMessageStream: vi.fn(),
@@ -97,6 +98,8 @@ await vi.mock(
         currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
       },
       objects: {
+        persistChatTurn: fakes.fakePersistChatTurn,
+        claimChatApprovals: fakes.fakeClaimChatApprovals,
         chatSessionExists: fakes.fakeChatSessionExists,
         chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
         createChatSession: fakes.fakeCreateChatSession,
@@ -145,7 +148,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/objects'),
   () => ({
-    appendChatMessages: fakes.fakeAppendChatMessages,
+    appendChatMessages: fakes.fakePersistChatTurn,
   }),
   () => import('@timeline/shared/objects'),
 );
@@ -205,7 +208,8 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('ai'),
-  () => ({
+  async () => ({
+    ...(await import('ai')),
     convertToModelMessages: fakes.fakeConvertToModelMessages,
     createUIMessageStream: fakes.fakeCreateUIMessageStream,
     createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
@@ -230,6 +234,24 @@ const followUpMessage = {
   role: 'user',
   parts: [{ type: 'text', text: 'What changed since then?' }],
 };
+let capturedUiEnd:
+  | ((input: {
+      responseMessage: unknown;
+      isContinuation: boolean;
+      isAborted: boolean;
+    }) => Promise<void>)
+  | null = null;
+async function finishUi(text = 'Answer', parts: unknown[] = [], isContinuation = false) {
+  await capturedUiEnd?.({
+    responseMessage: {
+      id: 'assistant-1',
+      role: 'assistant',
+      parts: [...parts, { type: 'text', text }],
+    },
+    isContinuation,
+    isAborted: false,
+  });
+}
 let capturedOnFinish: ((event: Record<string, unknown>) => void | Promise<void>) | null = null;
 let capturedOnError: ((event: { error: unknown }) => void) | null = null;
 let capturedOnStepEnd: ((step: Record<string, unknown>) => void) | null = null;
@@ -275,6 +297,7 @@ function isStreamBody(value: unknown): value is { chunks: TestStreamChunk[] } {
 beforeEach(() => {
   vi.clearAllMocks();
   capturedOnFinish = null;
+  capturedUiEnd = null;
   capturedOnError = null;
   capturedOnStepEnd = null;
   capturedOnAbort = null;
@@ -385,7 +408,8 @@ beforeEach(() => {
       return { stream: { kind: 'chat' } };
     },
   );
-  fakes.fakeAppendChatMessages.mockResolvedValue(undefined);
+  fakes.fakePersistChatTurn.mockResolvedValue(undefined);
+  fakes.fakeClaimChatApprovals.mockRejectedValue(new Error('Approval no longer available'));
   fakes.fakeCreateUIMessageStream.mockImplementation(
     (input: { execute: (args: unknown) => void }) => {
       const chunks: unknown[] = [];
@@ -399,7 +423,10 @@ beforeEach(() => {
       return { chunks };
     },
   );
-  fakes.fakeToUIMessageStream.mockImplementation(() => ({ kind: 'ui-stream' }));
+  fakes.fakeToUIMessageStream.mockImplementation((input: { onEnd: typeof capturedUiEnd }) => {
+    capturedUiEnd = input.onEnd;
+    return { kind: 'ui-stream' };
+  });
   fakes.fakeCreateUIMessageStreamResponse.mockImplementation(
     ({ stream }: { stream: { chunks?: unknown[]; kind?: string } }) =>
       Array.isArray(stream.chunks)
@@ -409,6 +436,121 @@ beforeEach(() => {
 });
 
 describe('POST /api/chat', () => {
+  it('rejects historical decisions and unclaimed assistant continuations before inference', async () => {
+    fakes.fakeSafeValidateUIMessages.mockImplementation(({ messages }: { messages: unknown }) =>
+      Promise.resolve({ success: true, data: messages }),
+    );
+    const approved = {
+      id: 'prior-assistant',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-execute_board_create',
+          toolCallId: 'call-1',
+          state: 'approval-responded',
+          input: { name: 'CRM' },
+          approval: { id: 'approval-1', approved: true },
+        },
+      ],
+    };
+    const historical = await POST(
+      request(
+        validBody({
+          sessionId: SESSION_ID,
+          messages: [
+            approved,
+            {
+              id: 'empty-user',
+              role: 'user',
+              parts: [{ type: 'data-tool-history', data: { state: 'result-unavailable' } }],
+            },
+          ],
+        }),
+      ),
+    );
+    expect(historical.status).toBe(409);
+    const pending = structuredClone(approved);
+    Object.assign(required(pending.parts[0]), {
+      state: 'approval-requested',
+      approval: { id: 'approval-1' },
+    });
+    const replay = await POST(
+      request(validBody({ sessionId: SESSION_ID, messages: [userMessage, pending] })),
+    );
+    expect(replay.status).toBe(409);
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+  });
+
+  it('uses the claimed server call and does not append a duplicate user on approval continuation', async () => {
+    fakes.fakeSafeValidateUIMessages.mockImplementation(({ messages }: { messages: unknown }) =>
+      Promise.resolve({ success: true, data: messages }),
+    );
+    const decision = {
+      id: 'pending-assistant',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-execute_object_update',
+          toolCallId: 'call-1',
+          state: 'approval-responded',
+          input: {
+            entityId: PINNED_ID,
+            field: 'status',
+            expectedCurrentValue: 'open',
+            newValue: 'done',
+          },
+          approval: { id: 'approval-1', approved: true },
+        },
+      ],
+    };
+    fakes.fakeClaimChatApprovals.mockResolvedValue(decision);
+    const response = await POST(
+      request(validBody({ sessionId: SESSION_ID, messages: [userMessage, decision] })),
+    );
+    expect(response.status).toBe(200);
+    expect(fakes.fakeClaimChatApprovals).toHaveBeenCalledWith(SESSION_ID, decision);
+    await finishUi(
+      'Updated.',
+      [{ ...decision.parts[0], state: 'output-available', output: { ok: true } }],
+      true,
+    );
+    expect(fakes.fakePersistChatTurn).toHaveBeenCalledWith(
+      SESSION_ID,
+      matchingObject({
+        userMessage: null,
+        assistantMessage: matchingObject({
+          parts: matchingArray([
+            matchingObject({ state: 'output-available', output: { ok: true } }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('rejects stale approval claims instead of executing them', async () => {
+    fakes.fakeSafeValidateUIMessages.mockImplementation(({ messages }: { messages: unknown }) =>
+      Promise.resolve({ success: true, data: messages }),
+    );
+    const decision = {
+      id: 'pending-assistant',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-execute_board_create',
+          toolCallId: 'call-1',
+          state: 'approval-responded',
+          input: { name: 'CRM' },
+          approval: { id: 'approval-1', approved: true },
+        },
+      ],
+    };
+    const response = await POST(
+      request(validBody({ sessionId: SESSION_ID, messages: [userMessage, decision] })),
+    );
+    expect(response.status).toBe(409);
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+  });
+
   it('rejects unauthenticated users and unconfigured chat before parsing body', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
     const unauthenticated = await POST(request(validBody()));
@@ -494,7 +636,7 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeChatSessionTitleStatus).toHaveBeenCalledWith(SESSION_ID);
     expect(fakes.fakeWorkspaceTimeContext).toHaveBeenCalledWith('Europe/Tallinn', expect.any(Date));
     expect(fakes.fakeBuildSystemPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({
+      matchingObject({
         teamName: 'Team From Scope',
         userName: 'Taylor',
         presentation: 'web_rich',
@@ -510,7 +652,7 @@ describe('POST /api/chat', () => {
       }),
     );
     expect(fakes.fakeStreamChat).toHaveBeenCalledWith(
-      expect.objectContaining({
+      matchingObject({
         instructions: 'system prompt',
         messages: [{ role: 'user', content: 'What happened?' }],
         tools: {
@@ -545,12 +687,10 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeStreamChat).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
       [{ instructions?: string }] | undefined;
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('/app/objects/'));
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('object_id'));
-    expect(streamCall?.[0].instructions).toEqual(
-      expect.stringContaining('use tools before making claims'),
-    );
+    expect(streamCall?.[0].instructions).toEqual(matchingString('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('/app/objects/'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('object_id'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('use tools before making claims'));
   });
 
   it('prioritizes the current view in a persisted context trail', async () => {
@@ -586,16 +726,12 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeMergeChatSessionContextTrail).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
       [{ instructions?: string }] | undefined;
-    expect(streamCall?.[0].instructions).toEqual(
-      expect.stringContaining('CURRENT VIEW (priority)'),
-    );
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('Q3 contract'));
-    expect(streamCall?.[0].instructions).toEqual(
-      expect.stringContaining('EARLIER VIEWS (background)'),
-    );
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('Launch plan'));
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('query_params'));
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('notes'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('CURRENT VIEW (priority)'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('Q3 contract'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('EARLIER VIEWS (background)'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('Launch plan'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('query_params'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('notes'));
   });
 
   it('adds object tools when dashboard context points at an object', async () => {
@@ -832,7 +968,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
       [{ instructions?: string; tools?: Record<string, unknown> }] | undefined;
-    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].instructions).toEqual(matchingString('DASHBOARD CONTEXT:'));
     expect(streamCall?.[0].tools).toMatchObject({
       get_object: { type: 'native' },
       execute_object_update: { type: 'native' },
@@ -874,37 +1010,23 @@ describe('POST /api/chat', () => {
       mcpDiscoverySkipped: true,
     });
 
-    const appendCall = fakes.fakeAppendChatMessages.mock.calls.at(-1) as unknown as
-      | [
-          unknown,
-          unknown,
-          string,
-          [
-            { role: string; authorUserId?: string; content: unknown },
-            {
-              role: string;
-              content: {
-                text?: string | null;
-                tool_calls?: unknown[];
-                tool_observability?: { selection?: unknown };
-              };
-            },
-          ],
-        ]
-      | undefined;
-    expect(appendCall?.[2]).toBe(SESSION_ID);
-    expect(appendCall?.[3][0]).toEqual({
-      role: 'user',
-      authorUserId: USER_ID,
-      content: { ui_message: completionMessage },
-    });
-    expect(appendCall?.[3][1].content).toMatchObject({
-      text: 'I can update this once you confirm the exact status.',
-      tool_calls: [],
-    });
-    expect(appendCall?.[3][1].content.tool_observability?.selection).toMatchObject({
-      selectedToolGroups: ['core', 'guide', 'objects', 'objectMemory', 'actions'],
-    });
+    await finishUi('I can update this once you confirm the exact status.');
+    expect(fakes.fakePersistChatTurn).toHaveBeenCalledWith(
+      SESSION_ID,
+      matchingObject({
+        userMessage: completionMessage,
+        assistantMessage: matchingObject({
+          parts: [{ type: 'text', text: 'I can update this once you confirm the exact status.' }],
+        }),
+        metadata: matchingObject({
+          tool_observability: matchingObject({
+            selection: matchingObject({
+              selectedToolGroups: ['core', 'guide', 'objects', 'objectMemory', 'actions'],
+            }),
+          }),
+        }),
+      }),
+    );
   });
 
   it('keeps list_team_members and board update tools for assign-by-name turns', async () => {
@@ -1003,10 +1125,10 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeGetCalendarSettings).not.toHaveBeenCalled();
     expect(fakes.fakeBuildSystemPrompt).not.toHaveBeenCalled();
     expect(fakes.fakeListObjects).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'task', archived: false, limit: 50 }),
+      matchingObject({ type: 'task', archived: false, limit: 50 }),
     );
     expect(fakes.fakeListObjects).toHaveBeenCalledWith(
-      expect.objectContaining({ archived: false, limit: 50 }),
+      matchingObject({ archived: false, limit: 50 }),
     );
     const calendarCall = fakes.fakeListCalendarEvents.mock.calls.at(0) as unknown as
       [{ from: Date; to: Date; limit: number }] | undefined;
@@ -1035,33 +1157,26 @@ describe('POST /api/chat', () => {
         (chunk) => chunk.type === 'text-delta' && String(chunk.delta).includes('Durable object'),
       ),
     ).toBe(true);
-    const appendCall = fakes.fakeAppendChatMessages.mock.calls.at(-1) as unknown as
-      | [
-          unknown,
-          unknown,
-          string,
-          [
-            { role: string; authorUserId?: string; content: unknown },
-            {
-              role: string;
-              content: {
-                text?: string;
-                tool_calls?: { toolName?: string; output?: { count?: number } }[];
-              };
-            },
+    expect(fakes.fakePersistChatTurn).toHaveBeenCalledWith(
+      SESSION_ID,
+      matchingObject({
+        userMessage: durableMessage,
+        assistantMessage: matchingObject({
+          role: 'assistant',
+          parts: [
+            matchingObject({
+              type: 'tool-list_workspace_state',
+              state: 'output-available',
+              output: matchingObject({ count: 3 }),
+            }),
+            matchingObject({
+              type: 'text',
+              text: matchingString('Durable calendar event'),
+            }),
           ],
-        ]
-      | undefined;
-    expect(appendCall?.[2]).toBe(SESSION_ID);
-    expect(appendCall?.[3][0]).toEqual({
-      role: 'user',
-      authorUserId: USER_ID,
-      content: { ui_message: durableMessage },
-    });
-    expect(appendCall?.[3][1].role).toBe('assistant');
-    expect(appendCall?.[3][1].content.text).toContain('Durable calendar event');
-    expect(appendCall?.[3][1].content.tool_calls?.[0]?.toolName).toBe('list_workspace_state');
-    expect(appendCall?.[3][1].content.tool_calls?.[0]?.output?.count).toBe(3);
+        }),
+      }),
+    );
   });
 
   it('starts a new persisted session and returns its id header', async () => {
@@ -1095,7 +1210,7 @@ describe('POST /api/chat', () => {
       [{ schema?: unknown; model?: unknown; prompt?: unknown }] | undefined;
     expect(titleCall?.[0].schema).toBeDefined();
     expect(titleCall?.[0].model).toBeTypeOf('string');
-    expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
+    expect(titleCall?.[0].prompt).toEqual(matchingString('What happened?'));
     expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
       SESSION_ID,
       'Generated chat title',
@@ -1141,8 +1256,8 @@ describe('POST /api/chat', () => {
     });
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
       [{ prompt?: unknown }] | undefined;
-    expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
-    expect(titleCall?.[0].prompt).not.toEqual(expect.stringContaining('What changed since then?'));
+    expect(titleCall?.[0].prompt).toEqual(matchingString('What happened?'));
+    expect(titleCall?.[0].prompt).not.toEqual(matchingString('What changed since then?'));
   });
 
   it('titles from the first user message with text when an earlier user message has no text', async () => {
@@ -1177,7 +1292,7 @@ describe('POST /api/chat', () => {
     });
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
       [{ prompt?: unknown }] | undefined;
-    expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What changed since then?'));
+    expect(titleCall?.[0].prompt).toEqual(matchingString('What changed since then?'));
   });
 
   it('falls back to a sanitized first-message title when title generation fails', async () => {
@@ -1232,7 +1347,7 @@ describe('POST /api/chat', () => {
   });
 
   it('still titles a new session when persisting the first turn fails', async () => {
-    fakes.fakeAppendChatMessages.mockRejectedValue(new Error('append failed'));
+    fakes.fakePersistChatTurn.mockRejectedValue(new Error('append failed'));
 
     const response = await POST(request(validBody({ startNewSession: true })));
 
@@ -1243,9 +1358,14 @@ describe('POST /api/chat', () => {
       finishReason: 'stop',
       usage: { inputTokens: 10, outputTokens: 5 },
     });
+    await finishUi();
     await vi.waitFor(() => {
       expect(fakes.fakeLoggerWarn).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: SESSION_ID, teamId: TEAM_ID, userId: USER_ID }),
+        matchingObject({
+          sessionId: SESSION_ID,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+        }),
         'chat session append failed',
       );
     });
@@ -1283,13 +1403,13 @@ describe('POST /api/chat', () => {
     )?.[0] as { err?: unknown } | undefined;
     expect(createSessionWarning?.err).toBeInstanceOf(Error);
     expect(fakes.fakeLoggerWarn).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: TEAM_ID }),
+      matchingObject({ teamId: TEAM_ID }),
       'mcp tool discovery failed; chat continues with native tools only',
     );
   });
 
   it('persists latest user turn and assistant turn on finish, logging append failures without changing response', async () => {
-    fakes.fakeAppendChatMessages.mockRejectedValue(new Error('append failed'));
+    fakes.fakePersistChatTurn.mockRejectedValue(new Error('append failed'));
     const expectedObservability = {
       toolObservations: [
         {
@@ -1339,23 +1459,34 @@ describe('POST /api/chat', () => {
     });
     await Promise.resolve();
 
-    expect(fakes.fakeAppendChatMessages).toHaveBeenCalledWith({}, expect.anything(), SESSION_ID, [
-      { role: 'user', authorUserId: USER_ID, content: { ui_message: userMessage } },
-      {
-        role: 'assistant',
-        content: {
-          text: 'Answer',
-          tool_calls: [{ toolName: 'search_timeline' }],
+    const toolPart = {
+      type: 'tool-search_timeline',
+      toolCallId: 'call-1',
+      state: 'output-available',
+      input: { query: 'work' },
+      output: { count: 1 },
+    };
+    await finishUi('Answer', [toolPart]);
+    expect(fakes.fakePersistChatTurn).toHaveBeenCalledWith(
+      SESSION_ID,
+      matchingObject({
+        userMessage,
+        assistantMessage: matchingObject({
+          parts: [toolPart, { type: 'text', text: 'Answer' }],
+        }),
+        metadata: matchingObject({
           tool_observability: expectedObservability,
-          finish_reason: 'stop',
           usage: { inputTokens: 10, outputTokens: 5 },
-          prompt_version: 'test-prompt-v1',
-        },
-      },
-    ]);
+        }),
+      }),
+    );
     await Promise.resolve();
     expect(fakes.fakeLoggerWarn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: SESSION_ID, teamId: TEAM_ID, userId: USER_ID }),
+      matchingObject({
+        sessionId: SESSION_ID,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+      }),
       'chat session append failed',
     );
   });
@@ -1412,8 +1543,8 @@ describe('POST /api/chat', () => {
     await capturedOnAbort?.({ steps: [] });
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
-        expect.objectContaining({}),
-        expect.objectContaining({ openRouterUsd: 0 }),
+        matchingObject({}),
+        matchingObject({ openRouterUsd: 0 }),
       );
     });
     expect(releaseBillingReservation).not.toHaveBeenCalled();
@@ -1569,8 +1700,8 @@ describe('POST /api/chat', () => {
     await capturedOnAbort?.({ steps: [] });
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
-        expect.objectContaining({}),
-        expect.objectContaining({ openRouterUsd: 0 }),
+        matchingObject({}),
+        matchingObject({ openRouterUsd: 0 }),
       );
     });
     expect(releaseBillingReservation).not.toHaveBeenCalled();
@@ -1598,6 +1729,22 @@ it('waits for SDK abort completion and charges the final completed step only onc
   expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledTimes(1);
   expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
     expect.anything(),
-    expect.objectContaining({ openRouterUsd: 0.12, providerUsageIncomplete: true }),
+    matchingObject({ openRouterUsd: 0.12, providerUsageIncomplete: true }),
   );
 });
+
+function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error('Required test fixture missing');
+  return value;
+}
+
+function matchingObject(value: object): unknown {
+  return expect.objectContaining(value);
+}
+
+function matchingArray(value: unknown[]): unknown {
+  return expect.arrayContaining(value);
+}
+function matchingString(value: string): unknown {
+  return expect.stringContaining(value);
+}

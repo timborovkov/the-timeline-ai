@@ -570,6 +570,15 @@ describe('buildAgentTools — team isolation', () => {
     });
     const expected = Object.fromEntries(
       [
+        'execute_board_create',
+        'execute_board_update',
+        'execute_board_archive',
+        'execute_object_restore',
+        'execute_object_note_create',
+        'execute_object_note_update',
+        'execute_object_note_delete',
+        'execute_object_relationship_add',
+        'execute_object_relationship_remove',
         'execute_object_create',
         'execute_object_update',
         'execute_object_archive',
@@ -759,6 +768,8 @@ describe('buildAgentTools — team isolation', () => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: true,
+      updatedAt: new Date(),
+      relationships: [],
       archivedAt: null,
       notes: [],
       recentChanges: [],
