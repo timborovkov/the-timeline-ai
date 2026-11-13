@@ -1015,11 +1015,10 @@ async function executeReadCapability(
       }));
       const moments = await serializeMcpTimelineMoments(scope, hits, events);
       const expanded = input.momentId
-        ? moments.find(
-            (moment) =>
-              moment.moment_id === input.momentId ||
-              Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
-          )
+        ? (moments.find((moment) => moment.moment_id === input.momentId) ??
+          moments.find((moment) =>
+            Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
+          ))
         : moments[0];
       if (!expanded) {
         return {

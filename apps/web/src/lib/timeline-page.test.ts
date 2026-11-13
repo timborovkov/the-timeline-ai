@@ -362,6 +362,25 @@ describe('collectTimelinePage', () => {
     expect(page.items.map((item) => item.id)).toEqual(['newest', 'message-a', 'message-b']);
   });
 
+  it('hydrates an exact calendar occurrence before a notice alias', async () => {
+    const notice = event('notice', '2026-06-28T12:00:00.000Z', {
+      source: 'calendar',
+      sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+    });
+    const occurrence = event('occurrence', '2026-06-27T12:00:00.000Z', {
+      source: 'calendar',
+      sourceMetadata: { action: 'event', calendar_event_id: 'calendar-a' },
+    });
+    const page = await collectTimelinePage({
+      focusMomentId: 'moment:calendar:calendar-a',
+      timezone: 'UTC',
+      fetchPage: () => Promise.resolve({ items: [notice], nextCursor: null }),
+      fetchEventsForMoment: () => Promise.resolve([notice, occurrence]),
+      hydrateImpact: (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, []]))),
+    });
+    expect(page.items.map((item) => item.id)).toContain('occurrence');
+  });
+
   it('does not hydrate focused moment siblings in source event mode', async () => {
     const page = await collectTimelinePage({
       mode: 'events',

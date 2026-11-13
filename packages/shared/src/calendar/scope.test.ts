@@ -97,7 +97,7 @@ describe('calendar scope', () => {
     vi.setSystemTime();
   });
 
-  it('preserves renamed notice links and controls legacy pins through the current moment', async () => {
+  it('preserves renamed notice links and keeps occurrence pins independent', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({
       title: 'Daily digest',
@@ -110,23 +110,33 @@ describe('calendar scope', () => {
     const rows = await scope.timeline.getEventsByIds([event.scheduledRawEventId]);
     const original = buildTimelineMoments(rows, new Map())[0];
     if (!original) throw new Error('Expected moment');
-    // Model a pre-upgrade pin: it must be recognized without inserting a duplicate.
-    const legacy = `moment:calendar:${event.id}`;
-    await db.insert(userPins).values({
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      targetKind: 'timeline_moment',
-      targetKey: legacy,
-      sortKey: 0n,
-    });
-    expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: original.id })).toBe(true);
+    const scheduledRow = rows[0];
+    if (!scheduledRow) throw new Error('Expected scheduling row');
+    // Newer notices must not hide the independent occurrence behind a lookup cap.
+    await db.insert(rawEvents).values(
+      Array.from({ length: 105 }, (_, index) => ({
+        ...scheduledRow,
+        id: crypto.randomUUID(),
+        contentText: `Updated: Digest ${index}`,
+        occurredAt: new Date(`2026-07-17T09:00:00Z`),
+        sourceMetadata: { action: 'updated', calendar_event_id: event.id },
+      })),
+    );
+    const occurrenceRef = { kind: 'timeline_moment' as const, key: `moment:calendar:${event.id}` };
+    const occurrencePlan = timelineMomentLookupPlan(occurrenceRef.key);
+    if (!occurrencePlan) throw new Error('Expected occurrence lookup');
+    expect(
+      (await scope.timeline.listEventsForMomentLookup(occurrencePlan)).map((row) => row.id),
+    ).toContain(event.startAtRawEventId);
+    await scope.pins.pin(occurrenceRef);
+    expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: original.id })).toBe(false);
     expect(await scope.pins.isPinnedMany([{ kind: 'timeline_moment', key: original.id }])).toEqual({
-      [`timeline_moment:${original.id}`]: true,
+      [`timeline_moment:${original.id}`]: false,
     });
+    expect(await scope.pins.unpin({ kind: 'timeline_moment', key: original.id })).toBe(false);
+    expect(await scope.pins.isPinned(occurrenceRef)).toBe(true);
     await scope.pins.pin({ kind: 'timeline_moment', key: original.id });
-    expect(await db.select().from(userPins)).toHaveLength(1);
-    // Also exercise a saved hash-format pin, not just the pre-upgrade alias.
-    await db.update(userPins).set({ targetKey: original.id });
+    expect(await db.select().from(userPins)).toHaveLength(2);
     await scope.calendar.updateCalendarEvent(event.id, { title: 'Renamed digest' });
     const plan = timelineMomentLookupPlan(original.id);
     if (!plan) throw new Error('Expected lookup');
@@ -137,7 +147,7 @@ describe('calendar scope', () => {
     expect(current.id).not.toBe(original.id);
     expect(current.legacyIds).toContain(original.id);
     expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: current.id })).toBe(true);
-    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect((await scope.pins.list()).items).toHaveLength(2);
     expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
     const teammate = withTeam(db as never, TEAM_ID, USER_B_ID);
     await scope.calendar.updateCalendarEvent(event.id, { visibility: 'team' });
@@ -145,11 +155,12 @@ describe('calendar scope', () => {
     expect(await teammate.timeline.listEventsForMomentLookup(plan)).toHaveLength(1);
     await scope.calendar.updateCalendarEvent(event.id, { visibility: 'private' });
     expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
-    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect((await scope.pins.list()).items).toHaveLength(2);
     expect(await teammate.timeline.listEventsForMomentLookup(plan)).toEqual([]);
     expect(await teammate.pins.isPinned({ kind: 'timeline_moment', key: current.id })).toBe(false);
     expect(await scope.pins.unpin({ kind: 'timeline_moment', key: current.id })).toBe(true);
-    expect(await db.select().from(userPins)).toHaveLength(0);
+    expect(await db.select().from(userPins)).toHaveLength(1);
+    expect(await scope.pins.isPinned(occurrenceRef)).toBe(true);
   });
 
   it('defaults missing team calendar settings to Helsinki workspace time', async () => {

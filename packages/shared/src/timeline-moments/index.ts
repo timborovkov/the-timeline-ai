@@ -150,6 +150,8 @@ export interface TimelineMomentLookupPlan {
   to?: Date | undefined;
   limit: number;
   matchingGroupKey?: string;
+  preferredGroupKey?: string;
+  matchGroupAliases?: boolean;
   metadataPredicates?: TimelineMomentMetadataPredicate[] | undefined;
   metadataPredicateGroups?: TimelineMomentMetadataPredicate[][] | undefined;
 }
@@ -512,8 +514,15 @@ function calendarNoticeAliases(event: TimelineEvent): string[] {
     : [];
 }
 
-export function timelineEventMatchesGroup(event: TimelineEvent, key: string): boolean {
-  return timelineGroupKey(event) === key || calendarNoticeAliases(event).includes(`moment:${key}`);
+export function timelineEventMatchesGroup(
+  event: TimelineEvent,
+  key: string,
+  includeAliases = true,
+): boolean {
+  return (
+    timelineGroupKey(event) === key ||
+    (includeAliases && calendarNoticeAliases(event).includes(`moment:${key}`))
+  );
 }
 
 export function timelineGroupKey(event: TimelineEvent, timezone?: string): string {
@@ -691,7 +700,10 @@ export function timelineMomentLookupPlan(momentId: string): TimelineMomentLookup
   if (family === 'calendar') {
     const calendarEventId = parts.slice(1).join(':');
     return calendarEventId
-      ? metadataLookupPlan('calendar', [[['calendar_event_id'], calendarEventId]], 100)
+      ? {
+          ...metadataLookupPlan('calendar', [[['calendar_event_id'], calendarEventId]], 100),
+          preferredGroupKey: key,
+        }
       : null;
   }
   if (family === 'integration' && parts[1] === 'github' && parts[2] === 'workflow_run') {

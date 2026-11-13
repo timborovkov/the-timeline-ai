@@ -242,21 +242,47 @@ export function createPinScope(deps: PinScopeDeps) {
   }
 
   async function equivalentTargetKeysMany(refs: PinTargetRef[]): Promise<Map<string, string[]>> {
-    const plans = refs.flatMap((ref) => {
-      const plan = ref.kind === 'timeline_moment' ? timelineMomentLookupPlan(ref.key) : null;
-      return plan ? [plan] : [];
-    });
+    const plans = refs.flatMap((ref) =>
+      ref.kind === 'timeline_moment'
+        ? [timelineMomentLookupPlan(ref.key)].filter((plan) => plan !== null)
+        : [],
+    );
     const moments =
       plans.length > 0
         ? buildTimelineMoments(await listEventsForMomentLookups(plans), new Map(), {
             timezone: await getTimezone(),
           })
         : [];
+    // An alias may still be the canonical ID of a separately displayed moment.
+    // Only obsolete references are equivalent for pin-state checks and mutations.
+    const aliasPlans = unique(moments.flatMap((moment) => moment.legacyIds ?? [])).flatMap((id) => {
+      const lookupPlan = timelineMomentLookupPlan(id);
+      if (!lookupPlan) return [];
+      const { preferredGroupKey: _preferredGroupKey, ...plan } = lookupPlan;
+      return [
+        {
+          ...plan,
+          matchingGroupKey: id.slice('moment:'.length),
+          matchGroupAliases: false,
+          limit: 1,
+        },
+      ];
+    });
+    const currentAliasIds = new Set(
+      aliasPlans.length > 0
+        ? buildTimelineMoments(await listEventsForMomentLookups(aliasPlans), new Map(), {
+            timezone: await getTimezone(),
+          }).map((moment) => moment.id)
+        : [],
+    );
     return new Map(
       refs.map((ref) => {
         const moment =
           ref.kind === 'timeline_moment' ? moments.find((item) => item.id === ref.key) : undefined;
-        return [`${ref.kind}:${ref.key}`, unique([ref.key, ...(moment?.legacyIds ?? [])])];
+        return [
+          `${ref.kind}:${ref.key}`,
+          unique([ref.key, ...(moment?.legacyIds ?? []).filter((id) => !currentAliasIds.has(id))]),
+        ];
       }),
     );
   }

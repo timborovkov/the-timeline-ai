@@ -169,6 +169,33 @@ describe('withTeam timeline semantic search', () => {
     expect(historical.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
   });
 
+  it('controls an obsolete calendar pin through its current notice without duplicates', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='calendar', content_text='Scheduled: Digest', source_metadata='{"action":"scheduled","calendar_event_id":"calendar-a"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    const legacy = 'moment:calendar:calendar-a';
+    await pg.query(
+      `INSERT INTO user_pins (team_id,user_id,target_kind,target_key,sort_key) VALUES ($1,$2,'timeline_moment',$3,0)`,
+      [TEAM_A, OWNER, legacy],
+    );
+    const scope = scopeFor(OWNER);
+    const current = buildTimelineMoments(
+      await scope.timeline.getEventsByIds([TEAM_EVENT]),
+      new Map(),
+    )[0];
+    if (!current) throw new Error('Expected notice');
+    const ref = { kind: 'timeline_moment' as const, key: current.id };
+    expect(await scope.pins.isPinned(ref)).toBe(true);
+    expect(await scope.pins.isPinnedMany([ref])).toEqual({
+      [`timeline_moment:${current.id}`]: true,
+    });
+    await scope.pins.pin(ref);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.unpin(ref)).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(0);
+  });
+
   it('finds and preserves a pinned notice beyond unrelated lookup candidates', async () => {
     await pg.query(
       `UPDATE raw_events SET source='system', content_text='Completed task', occurred_at='2026-06-27T18:00:00Z', source_metadata='{"kind":"object_update","entity_id":"target"}'::jsonb WHERE id=$1`,

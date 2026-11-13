@@ -653,6 +653,27 @@ export function createTimelineReadScope({
     plan: TimelineMomentLookupPlan,
     includeUserVisibility: boolean,
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    const { preferredGroupKey, ...fallbackPlan } = plan;
+    if (preferredGroupKey) {
+      // A legacy calendar ID can also be the current occurrence ID. Fetch that
+      // canonical group before capped notice history so every caller resolves it.
+      const [canonical, fallback] = await Promise.all([
+        listEventsForMomentLookupBase(
+          {
+            ...fallbackPlan,
+            matchingGroupKey: preferredGroupKey,
+            matchGroupAliases: false,
+            limit: 1,
+          },
+          includeUserVisibility,
+        ),
+        listEventsForMomentLookupBase(fallbackPlan, includeUserVisibility),
+      ]);
+      return [...new Map([...canonical, ...fallback].map((row) => [row.id, row])).values()].slice(
+        0,
+        plan.limit,
+      );
+    }
     const conditions = [
       eq(rawEvents.teamId, teamId),
       activeRawEventFilter,
@@ -692,7 +713,9 @@ export function createTimelineReadScope({
           .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
           .limit(300);
         matches.push(
-          ...rows.filter((event) => timelineEventMatchesGroup(event, plan.matchingGroupKey ?? '')),
+          ...rows.filter((event) =>
+            timelineEventMatchesGroup(event, plan.matchingGroupKey ?? '', plan.matchGroupAliases),
+          ),
         );
         if (matches.length >= plan.limit || rows.length < 300) return matches.slice(0, plan.limit);
         cursor = rows.at(-1);
@@ -711,7 +734,7 @@ export function createTimelineReadScope({
   ): Promise<(typeof rawEvents.$inferSelect)[]> {
     await ensureMember();
     if (plans.length === 0) return [];
-    if (plans.some((plan) => plan.matchingGroupKey)) {
+    if (plans.some((plan) => plan.matchingGroupKey ?? plan.preferredGroupKey)) {
       const rows = await Promise.all(
         plans.map((plan) => listEventsForMomentLookupBase(plan, true)),
       );
