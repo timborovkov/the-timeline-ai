@@ -15,6 +15,8 @@ import {
 } from '#src/calendar/locking.js';
 import {
   buildCalendarSourcePayloadMetadata,
+  calendarRawEventMetadataPatch,
+  updateCalendarRawEventVisibility,
   buildCalendarTimelineText,
   insertCalendarRawEvents,
   normalizeCalendarRawEventIds,
@@ -90,7 +92,7 @@ async function updateCalendarRawEventContent(
   },
 ): Promise<void> {
   const [existing] = await tx
-    .select({ sourceMetadata: rawEvents.sourceMetadata })
+    .select()
     .from(rawEvents)
     .where(and(eq(rawEvents.id, args.rawEventId), eq(rawEvents.teamId, args.teamId)))
     .limit(1);
@@ -103,7 +105,7 @@ async function updateCalendarRawEventContent(
       sourceMetadata: sourceMetadataReplacingLinks(
         existing.sourceMetadata,
         args.contentText,
-        args.sourceMetadataPatch,
+        calendarRawEventMetadataPatch(existing, args.contentText, args.sourceMetadataPatch),
       ),
     })
     .where(eq(rawEvents.id, args.rawEventId));
@@ -1249,14 +1251,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         );
         const changedRawEventIds = new Set<string>();
         if (hasVisibilityChange && linkedRawEventIds.length > 0) {
-          const rawPatch: Record<string, unknown> = {
-            visibility: newVis,
-            visibilityUserIds: newVisUserIds,
-          };
-          for (const rid of linkedRawEventIds) {
-            await tx.update(rawEvents).set(rawPatch).where(eq(rawEvents.id, rid));
-            changedRawEventIds.add(rid);
-          }
+          await updateCalendarRawEventVisibility(
+            tx,
+            teamId,
+            linkedRawEventIds,
+            newVis,
+            newVisUserIds,
+          );
+          for (const rid of linkedRawEventIds) changedRawEventIds.add(rid);
         }
 
         const hasOccurrenceContentChange = [

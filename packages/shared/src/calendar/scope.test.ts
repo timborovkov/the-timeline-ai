@@ -43,10 +43,13 @@ const {
   calendarEvents,
   entities,
   rawEvents,
+  userPins,
   reconciliationEvidence,
 } = await import('@timeline/db');
 const { eq, inArray } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
+const { buildTimelineMoments, timelineMomentLookupPlan } =
+  await import('#src/timeline-moments/index.js');
 const { withTeam } = await import('#src/team-scope.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
 
@@ -92,6 +95,61 @@ describe('calendar scope', () => {
   afterEach(async () => {
     await pg.close();
     vi.setSystemTime();
+  });
+
+  it('preserves renamed notice links and controls legacy pins through the current moment', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Daily digest',
+      startAt: new Date('2026-07-16T09:00:00Z'),
+      endAt: new Date('2026-07-16T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+    });
+    if (!event.scheduledRawEventId) throw new Error('Expected notice');
+    const rows = await scope.timeline.getEventsByIds([event.scheduledRawEventId]);
+    const original = buildTimelineMoments(rows, new Map())[0];
+    if (!original) throw new Error('Expected moment');
+    // Model a pre-upgrade pin: it must be recognized without inserting a duplicate.
+    const legacy = `moment:calendar:${event.id}`;
+    await db.insert(userPins).values({
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      targetKind: 'timeline_moment',
+      targetKey: legacy,
+      sortKey: 0n,
+    });
+    expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: original.id })).toBe(true);
+    expect(await scope.pins.isPinnedMany([{ kind: 'timeline_moment', key: original.id }])).toEqual({
+      [`timeline_moment:${original.id}`]: true,
+    });
+    await scope.pins.pin({ kind: 'timeline_moment', key: original.id });
+    expect(await db.select().from(userPins)).toHaveLength(1);
+    // Also exercise a saved hash-format pin, not just the pre-upgrade alias.
+    await db.update(userPins).set({ targetKey: original.id });
+    await scope.calendar.updateCalendarEvent(event.id, { title: 'Renamed digest' });
+    const plan = timelineMomentLookupPlan(original.id);
+    if (!plan) throw new Error('Expected lookup');
+    const renamedRows = await scope.timeline.listEventsForMomentLookup(plan);
+    expect(renamedRows.map((row) => row.id)).toEqual([event.scheduledRawEventId]);
+    const current = buildTimelineMoments(renamedRows, new Map())[0];
+    if (!current) throw new Error('Expected renamed moment');
+    expect(current.id).not.toBe(original.id);
+    expect(current.legacyIds).toContain(original.id);
+    expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: current.id })).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
+    const teammate = withTeam(db as never, TEAM_ID, USER_B_ID);
+    await scope.calendar.updateCalendarEvent(event.id, { visibility: 'team' });
+    expect(await scope.timeline.listEventsForMomentLookup(plan)).toHaveLength(1);
+    expect(await teammate.timeline.listEventsForMomentLookup(plan)).toHaveLength(1);
+    await scope.calendar.updateCalendarEvent(event.id, { visibility: 'private' });
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await teammate.timeline.listEventsForMomentLookup(plan)).toEqual([]);
+    expect(await teammate.pins.isPinned({ kind: 'timeline_moment', key: current.id })).toBe(false);
+    expect(await scope.pins.unpin({ kind: 'timeline_moment', key: current.id })).toBe(true);
+    expect(await db.select().from(userPins)).toHaveLength(0);
   });
 
   it('defaults missing team calendar settings to Helsinki workspace time', async () => {

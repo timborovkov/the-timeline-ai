@@ -89,14 +89,16 @@ describe('shared timeline moments projection', () => {
       sourceMetadata: {
         kind: 'object_update',
         entity_id: 'task-a',
-        source_snapshot: { status: 'done' },
+        source_snapshot_kind: 'system_direct_write_event',
+        source_snapshot: { raw_event_id: 'system-a', status: 'done' },
       },
     });
     const retry = {
       ...base,
       id: 'system-b',
       sourceMetadata: {
-        source_snapshot: { status: 'done' },
+        source_snapshot_kind: 'system_direct_write_event',
+        source_snapshot: { raw_event_id: 'system-b', status: 'done' },
         entity_id: 'task-a',
         kind: 'object_update',
         source_payload_ref: 'inline://retry',

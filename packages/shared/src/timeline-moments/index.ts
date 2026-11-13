@@ -480,7 +480,7 @@ function systemNoticeContext(meta: Record<string, unknown>): Record<string, unkn
   )
     return null;
   // Source snapshots are immutable; enrichment timestamps must not change IDs.
-  return selectedMetadata(meta, [
+  const context = selectedMetadata(meta, [
     ...subjects,
     'kind',
     'event_type',
@@ -493,6 +493,27 @@ function systemNoticeContext(meta: Record<string, unknown>): Record<string, unkn
     'status',
     'state',
   ]);
+  if (meta.source_snapshot_kind === 'system_direct_write_event') {
+    const snapshot = { ...nestedRecord(meta, 'source_snapshot') };
+    delete snapshot.raw_event_id;
+    context.source_snapshot = snapshot;
+  }
+  return context;
+}
+
+function calendarNoticeAliases(event: TimelineEvent): string[] {
+  if (event.source !== 'calendar') return [];
+  const aliases = metaObject(event.sourceMetadata).timeline_notice_group_aliases;
+  return Array.isArray(aliases)
+    ? aliases.filter(
+        (value): value is string =>
+          typeof value === 'string' && /^moment:notice:calendar:-?\d+:[a-f0-9]{32}$/.test(value),
+      )
+    : [];
+}
+
+export function timelineEventMatchesGroup(event: TimelineEvent, key: string): boolean {
+  return timelineGroupKey(event) === key || calendarNoticeAliases(event).includes(`moment:${key}`);
 }
 
 export function timelineGroupKey(event: TimelineEvent, timezone?: string): string {
@@ -1763,7 +1784,10 @@ export function buildTimelineMoments<
                 legacyIds: [
                   ...new Set(
                     sorted
-                      .map((event) => legacyMomentId(event, timezone))
+                      .flatMap((event) => [
+                        legacyMomentId(event, timezone),
+                        ...calendarNoticeAliases(event),
+                      ])
                       .filter((id): id is string => Boolean(id)),
                   ),
                 ],

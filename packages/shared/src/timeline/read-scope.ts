@@ -11,7 +11,7 @@ import {
 import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
-import { timelineGroupKey } from '#src/timeline-moments/index.js';
+import { timelineEventMatchesGroup } from '#src/timeline-moments/index.js';
 import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 import type {
@@ -691,7 +691,9 @@ export function createTimelineReadScope({
           )
           .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
           .limit(300);
-        matches.push(...rows.filter((event) => timelineGroupKey(event) === plan.matchingGroupKey));
+        matches.push(
+          ...rows.filter((event) => timelineEventMatchesGroup(event, plan.matchingGroupKey ?? '')),
+        );
         if (matches.length >= plan.limit || rows.length < 300) return matches.slice(0, plan.limit);
         cursor = rows.at(-1);
       }

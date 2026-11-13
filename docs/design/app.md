@@ -136,7 +136,7 @@ source event. The labels and the row density should make the difference
 obvious without a lecture. Timeline has no inventory chip; Moments versus All
 events is the page mode. Repeated system notices for the same operation and integration status pulses for the same record/action collapse within a minute when their content, source actor, connection, and access scope match. Stable source metadata determines identity; delivery IDs and processing timestamps do not. Unknown system operations stay separate. Generic webhook moments require the same webhook and matching payload text instead of grouping all payloads in a time window. GitHub workflow lifecycle updates group by run identity and connection; separate runs remain separate even on the same day. Calendar notice grouping follows the [calendar contract](../calendar.md#manual-editing).
 
-Grouping preserves the source events in the inspector and All events. Saved moment links and pins retain legacy aliases; an older broad group that now splits resolves to a matching current moment. Notice lookups scan the bounded minute for the exact group before applying the evidence limit, so unrelated traffic cannot hide a valid pin.
+Grouping preserves the source events in the inspector and All events. Saved moment links and pins retain legacy aliases, including pin-state checks and pin/unpin controls; an older broad group that now splits resolves to a matching current moment. Notice lookups scan the bounded minute for the exact group before applying the evidence limit, so unrelated traffic cannot hide a valid pin.
 
 Each Moments row is a Linear-style collection row: time, one source icon, a
 title of up to two lines, and at most one muted source/actor/context line.
