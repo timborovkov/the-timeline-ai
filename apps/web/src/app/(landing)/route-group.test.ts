@@ -75,7 +75,7 @@ describe('landing route group', () => {
 
     expect(narrowViewportStyles).toContain('.signInLink');
     expect(narrowViewportStyles).toContain('.themeToggle');
-    expect(headerStyles).toContain('grid-template-columns: 1fr auto 1fr');
+    expect(headerStyles).toContain('grid-template-columns: auto minmax(0, 1fr) auto');
     expect(headerStyles).toContain('min-height: 4rem');
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');

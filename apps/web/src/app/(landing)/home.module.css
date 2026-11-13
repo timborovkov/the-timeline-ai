@@ -3181,14 +3181,14 @@
     padding: 0.4rem;
   }
   .heroOpening .orbitSourceTime {
-    font-size: 0.625rem;
+    font-size: 0.75rem;
     letter-spacing: 0;
   }
   .heroOpening .orbitSourceIdentity {
     gap: 0.25rem;
   }
   .heroOpening .orbitSource strong {
-    font-size: 0.625rem;
+    font-size: 0.75rem;
   }
 
   .heroOpening .heroOutcome {
@@ -3225,10 +3225,10 @@
     gap: 0.3rem;
   }
   .heroOpening .heroOutcome strong {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
   }
   .heroOpening .heroOutcome small {
-    font-size: 0.625rem;
+    font-size: 0.75rem;
     gap: 0.2rem;
   }
 }

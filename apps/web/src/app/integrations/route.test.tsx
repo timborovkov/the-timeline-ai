@@ -1,5 +1,12 @@
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+const route = { pathname: '/integrations' };
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({ ...(await import('next/navigation')), usePathname: () => route.pathname }),
+  () => import('next/navigation'),
+);
 // Test environment: happy-dom
 
 function visibleText(html: string): string {
@@ -59,7 +66,7 @@ describe('public integration routes', () => {
     expect(text).toContain('separate from the Slack history connector below');
     expect(text).toContain('Start with Telegram');
     expect(text).toContain('Start with Meeting transcripts');
-    expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
+    expect(html).toMatch(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/integrations")[^>]*>/u);
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('href="/integrations/mcp"');
     expect(html).toContain('Connect MCP tools');

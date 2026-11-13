@@ -383,7 +383,7 @@ describe('GlobalSearchPage', () => {
     render(<GlobalSearchPage initialQuery="review" />);
 
     expect(await screen.findByText('No due date')).toBeTruthy();
-    expect(screen.getAllByText('todo · launch')).toHaveLength(2);
+    expect(screen.getAllByText('todo · launch')).toHaveLength(1);
     expect(screen.getAllByText('No due date')).toHaveLength(1);
   });
 

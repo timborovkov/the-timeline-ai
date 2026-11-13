@@ -402,7 +402,7 @@ describe('BoardDetailClient', () => {
     const heading = screen.getByRole('heading', { level: 1, name: 'Pilot board' });
     expect(heading.className).not.toContain('uppercase');
     expect(heading.parentElement?.textContent).toContain('Track pilots');
-    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByRole('navigation', { name: 'Work' })).toBeNull();
     const search = screen.getByLabelText('Search');
     const view = screen.getByRole('navigation', { name: 'Board view' });
     const addItem = screen.getByRole('button', { name: 'Add item' });

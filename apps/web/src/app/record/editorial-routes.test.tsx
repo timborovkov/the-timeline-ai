@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -14,6 +14,13 @@ import {
   GUIDE_ROUTES,
 } from '@/components/marketing/editorial/content';
 import { EditorialShell } from '@/components/marketing/editorial/editorial-shell';
+const route = { pathname: '/how-it-works' };
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({ ...(await import('next/navigation')), usePathname: () => route.pathname }),
+  () => import('next/navigation'),
+);
+
 const GUIDE_PAGES = [
   {
     guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive),
@@ -157,9 +164,13 @@ describe('how-it-works and guide routes', () => {
     expect(guideShell).not.toMatch(
       /href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u,
     );
-    expect(recordShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
-    expect(guideShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
-    expect(recordShell).toContain('aria-label="Support and legal"');
+    expect(
+      recordShell.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/how-it-works")[^>]*>/g),
+    ).not.toBeNull();
+    expect(
+      guideShell.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/how-it-works")[^>]*>/g),
+    ).not.toBeNull();
+    expect(recordShell).toContain('aria-label="Legal and privacy"');
     expect(recordShell).toContain('href="/help/support"');
     expect(recordShell).toContain('href="/trust"');
     expect(recordShell).toContain('href="/terms"');
