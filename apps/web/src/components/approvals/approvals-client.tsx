@@ -933,7 +933,9 @@ export function ApprovalsClient({
             inbox={inbox}
             desktopReview={desktopReview}
             returnFocusTo={previewTriggerRef.current}
-            onClose={() => dispatch({ type: 'closePreview' })}
+            onClose={() => {
+              dispatch({ type: 'closePreview' });
+            }}
             timezone={resolvedTimezone}
             busyItemIds={busyItemIds}
             pending={pending}

@@ -940,9 +940,6 @@
   "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
-    "group": "unit"
-  },
   "apps/web/src/components/marketing/integrations/works-with-content.test.ts": {
     "group": "unit"
   },
