@@ -2,14 +2,13 @@ import Link from 'next/link';
 
 import { AgentLoopDiagram } from '@/components/marketing/agents/agent-loop-diagram';
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
+import styles from '@/components/marketing/agents/agents-hub.module.css';
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENTS_HUB_DOCUMENT } from '@/components/marketing/agents/public-documents';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
+import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
-import styles from '@/components/marketing/editorial/editorial.module.css';
-import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import { buildPublicStructuredData } from '@/lib/public-site';
@@ -17,140 +16,103 @@ import { getSiteUrl } from '@/lib/site-url';
 
 export function AgentsHubPage() {
   return (
-    <main id="main" tabIndex={-1} data-agents-hub>
+    <main id="main" tabIndex={-1} data-agents-hub className={styles.page}>
       <EditorialStructuredData
         data={buildPublicStructuredData(AGENTS_HUB_DOCUMENT, getSiteUrl())}
       />
-      <header className="border-b border-border">
-        <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <EditorialKicker>{AGENTS_HUB.kicker}</EditorialKicker>
-          <h1 className={`${styles.displayTitle} mt-6`}>{AGENTS_HUB.title}</h1>
-          <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-            {AGENTS_HUB.summary}
-          </p>
-          <div className="mt-10 max-w-3xl">
-            <AgentSetupCard />
-            <div className="mt-5 max-w-2xl" data-agent-setup-prerequisites>
-              <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                {AGENTS_HUB.setupPrerequisite.title}
-              </p>
-              <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
-                {AGENTS_HUB.setupPrerequisite.body}
-              </p>
-              <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
+      <MarketingContainer>
+        <header className={styles.hero}>
+          <div>
+            <h1>{AGENTS_HUB.title}</h1>
+            <p className={styles.summary}>{AGENTS_HUB.summary}</p>
+            <AgentSetupCard compact className={styles.setup} />
+            <p className={styles.setupNote}>
+              Sign in or create an account, choose your team, and approve access in the browser.
+            </p>
+            <a href="#agent-access" className={styles.textLink}>
+              How access works
+            </a>
+          </div>
+          <AgentLoopDiagram />
+        </header>
+
+        <section className={styles.proof} aria-labelledby="agent-proof-title">
+          <div>
+            <h2 id="agent-proof-title">The context is already there.</h2>
+            <p>
+              Your agent can find decisions, owners and commitments in the same record your team
+              uses. The sources come with it.
+            </p>
+            <p>
+              This illustrative Claude exchange follows a customer commitment back to its email and
+              call transcript.
+            </p>
+          </div>
+          <ClaudeMcpExample />
+        </section>
+
+        <section className={styles.contribute} aria-labelledby="report-in-title">
+          <div>
+            <h2 id="report-in-title">{AGENTS_HUB.reportIn.title}</h2>
+            <p>{AGENTS_HUB.reportIn.body}</p>
+            <dl className={styles.paths}>
+              {AGENTS_HUB.reportIn.paths.map((path) => (
+                <div key={path.name}>
+                  <dt>{path.name.includes('.') ? <code>{path.name}</code> : path.name}</dt>
+                  <dd>{path.body}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <aside className={styles.note} aria-label={AGENTS_HUB.example.label}>
+            <h3>{AGENTS_HUB.example.title}</h3>
+            <blockquote>
+              “The migration callback is ready for review. I’ve left the checklist with Priya.”
+            </blockquote>
+            <p>{AGENTS_HUB.example.body}</p>
+            <p className={styles.boundary}>{AGENTS_HUB.example.boundary}</p>
+          </aside>
+        </section>
+
+        <section id="agent-access" className={styles.access} aria-labelledby="read-out-title">
+          <div className={styles.accessHeading}>
+            <h2 id="read-out-title">{AGENTS_HUB.readOut.title}</h2>
+            <div data-agent-setup-prerequisites>
+              <h3>{AGENTS_HUB.setupPrerequisite.title}</h3>
+              <p>{AGENTS_HUB.setupPrerequisite.body}</p>
+              <p>
                 {AGENTS_HUB.setupPrerequisite.distinction}{' '}
-                <Link
-                  href={AGENTS_HUB.setupPrerequisite.mcpHref}
-                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
-                >
+                <Link href={AGENTS_HUB.setupPrerequisite.mcpHref}>
                   {AGENTS_HUB.setupPrerequisite.mcpLabel}
                 </Link>
                 .
               </p>
             </div>
           </div>
-          <div className="mt-12">
-            <AgentLoopDiagram />
-          </div>
-        </MarketingContainer>
-      </header>
-
-      <section className="border-b border-border" aria-labelledby="report-in-title">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <MarketingSectionIndex
-              index={AGENTS_HUB.reportIn.index}
-              label={AGENTS_HUB.reportIn.label}
-            />
-            <div className="max-w-3xl">
-              <h2
-                id="report-in-title"
-                className="text-3xl font-semibold tracking-tight sm:text-4xl"
-              >
-                {AGENTS_HUB.reportIn.title}
-              </h2>
-              <p className="mt-4 text-base leading-7 text-fg-muted">{AGENTS_HUB.reportIn.body}</p>
-              <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
-                {AGENTS_HUB.reportIn.paths.map((path) => (
-                  <li key={path.name}>
-                    {path.name.includes('.') ? (
-                      <code className="font-mono text-sm text-fg">{path.name}</code>
-                    ) : (
-                      <span className="font-medium text-fg">{path.name}</span>
-                    )}
-                    {` ${path.body}`}
-                  </li>
-                ))}
-              </ul>
-              <aside
-                className={`${styles.promptBlock} mt-10 rounded-md p-6 sm:p-8`}
-                aria-label={AGENTS_HUB.example.label}
-              >
-                <div className="relative z-10">
-                  <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                    {AGENTS_HUB.example.label}
-                  </p>
-                  <h3 className="mt-4 text-xl font-semibold tracking-[-0.025em] sm:text-2xl">
-                    {AGENTS_HUB.example.title}
-                  </h3>
-                  <p className="mt-4 text-sm leading-7 text-fg-muted sm:text-base">
-                    {AGENTS_HUB.example.body}
-                  </p>
-                  <p className="mt-6 border-t border-border pt-5 font-mono text-[0.65rem] leading-5 text-fg-muted">
-                    {AGENTS_HUB.example.boundary}
-                  </p>
-                </div>
-              </aside>
-            </div>
-          </MarketingSectionGrid>
-        </MarketingContainer>
-      </section>
-
-      <section className="border-b border-border" aria-labelledby="read-out-title">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <MarketingSectionIndex
-              index={AGENTS_HUB.readOut.index}
-              label={AGENTS_HUB.readOut.label}
-            />
-            <div className="max-w-3xl">
-              <h2 id="read-out-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                {AGENTS_HUB.readOut.title}
-              </h2>
-              <p className="mt-4 text-base leading-7 text-fg-muted">
-                Compatible clients open{' '}
-                <code className="font-mono text-sm text-fg">{AGENTS_HUB.readOut.endpoint}</code>.{' '}
-                {AGENTS_HUB.readOut.body}
-              </p>
-              <pre className="mt-6 overflow-x-auto rounded-md border border-border bg-surface p-4 font-mono text-xs leading-6">
-                {TIMELINE_MCP_COMMAND}
-              </pre>
-              <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
-                <li>{AGENTS_HUB.readOut.toolsIntro}</li>
-                {AGENTS_HUB.readOut.facts.map((fact) => (
-                  <li key={fact}>{fact}</li>
-                ))}
-              </ul>
-              <p className="mt-6">
-                <Link
-                  href={AGENTS_HUB.installGuide.href}
-                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {AGENTS_HUB.installGuide.label}
-                </Link>
-              </p>
-            </div>
-          </MarketingSectionGrid>
-          <div className="mt-12">
-            <MarketingProductScreenshot
-              file={AGENTS_HUB.screenshot.file}
-              alt={AGENTS_HUB.screenshot.alt}
-              caption={AGENTS_HUB.screenshot.caption}
-            />
-          </div>
-        </MarketingContainer>
-      </section>
-
+          <MarketingProductScreenshot
+            file={AGENTS_HUB.screenshot.file}
+            alt={AGENTS_HUB.screenshot.alt}
+            caption={AGENTS_HUB.screenshot.caption}
+          />
+          <details className={styles.technical}>
+            <summary>Manual connection, tools and permissions</summary>
+            <p>
+              Compatible clients open <code>{AGENTS_HUB.readOut.endpoint}</code>.{' '}
+              {AGENTS_HUB.readOut.body}
+            </p>
+            <pre>{TIMELINE_MCP_COMMAND}</pre>
+            <ul>
+              <li>{AGENTS_HUB.readOut.toolsIntro}</li>
+              {AGENTS_HUB.readOut.facts.map((fact) => (
+                <li key={fact}>{fact}</li>
+              ))}
+            </ul>
+          </details>
+          <Link className={styles.textLink} href={AGENTS_HUB.installGuide.href}>
+            {AGENTS_HUB.installGuide.label}
+          </Link>
+        </section>
+      </MarketingContainer>
       <MarketingCtaBand title={AGENTS_HUB.cta.title} body={AGENTS_HUB.cta.body} />
     </main>
   );

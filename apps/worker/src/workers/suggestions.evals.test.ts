@@ -207,7 +207,7 @@ describe('background proposal evals', () => {
     expect(suggestion?.metadata).toMatchObject({
       conversation_review_id: REVIEW_ID,
       conversation_key: CONVERSATION_KEY,
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
   });
 });

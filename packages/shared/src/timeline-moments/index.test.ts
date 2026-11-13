@@ -25,6 +25,299 @@ function event(input: Partial<TimelineMomentEvent> & Pick<TimelineMomentEvent, '
 }
 
 describe('shared timeline moments projection', () => {
+  // Recurrence materialization can emit many identical scheduling notices at once.
+  // Keep their evidence, but show a single moment rather than flooding the feed.
+  it('merges fifty identical calendar scheduling notices into one moment', () => {
+    const notices = Array.from({ length: 50 }, (_, index) =>
+      event({
+        id: `notice-${index}`,
+        source: 'calendar',
+        contentText: 'Scheduled: Daily digest',
+        occurredAt: `2026-06-27T18:00:${String(index).padStart(2, '0')}.000Z`,
+        sourceMetadata: { action: 'scheduled', calendar_event_id: `occurrence-${index}` },
+      }),
+    );
+    const moments = buildTimelineMoments(notices, new Map());
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.rawEvents).toHaveLength(50);
+    expect(buildTimelineMoments(notices, new Map(), { groupingMode: 'events' })).toHaveLength(50);
+  });
+
+  it('keeps different notices, actors, access scopes, minutes and occurrences separate', () => {
+    const base = event({
+      id: 'notice',
+      source: 'calendar',
+      contentText: 'Scheduled: Daily digest',
+      sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+    });
+    const variants: TimelineMomentEvent[] = [
+      { ...base, id: 'title', contentText: 'Scheduled: Weekly digest' },
+      { ...base, id: 'actor', authorUserId: 'other-user' },
+      { ...base, id: 'team', teamId: 'team-b' },
+      { ...base, id: 'private', visibility: 'private' },
+      { ...base, id: 'owner', visibilityOwnerUserId: 'other-owner' },
+      { ...base, id: 'recipient', visibilityUserIds: ['other-user'] },
+      { ...base, id: 'later', occurredAt: '2026-06-27T18:01:00.000Z' },
+      {
+        ...base,
+        id: 'occurrence-a',
+        sourceMetadata: { action: 'event', calendar_event_id: 'calendar-a' },
+      },
+      {
+        ...base,
+        id: 'occurrence-b',
+        sourceMetadata: { action: 'event', calendar_event_id: 'calendar-b' },
+      },
+    ];
+    expect(buildTimelineMoments([base, ...variants], new Map())).toHaveLength(10);
+    const moment = buildTimelineMoments([base], new Map())[0];
+    if (!moment) throw new Error('Expected a scheduling moment');
+    expect(moment.id).not.toContain('Daily');
+    expect(buildTimelineMoments([base], new Map())[0]?.id).toBe(moment.id);
+    expect(timelineMomentLookupPlan(moment.id)).toMatchObject({
+      source: 'calendar',
+      from: new Date('2026-06-27T18:00:00.000Z'),
+      to: new Date('2026-06-27T18:01:00.000Z'),
+    });
+  });
+
+  it('groups repeated system operations without merging different records or changes', () => {
+    const base = event({
+      id: 'system-a',
+      source: 'system',
+      contentText: 'Updated task',
+      sourceMetadata: {
+        kind: 'object_update',
+        entity_id: 'task-a',
+        source_snapshot_kind: 'system_direct_write_event',
+        source_snapshot: { raw_event_id: 'system-a', status: 'done' },
+      },
+    });
+    const retry = {
+      ...base,
+      id: 'system-b',
+      sourceMetadata: {
+        source_snapshot_kind: 'system_direct_write_event',
+        source_snapshot: { raw_event_id: 'system-b', status: 'done' },
+        entity_id: 'task-a',
+        kind: 'object_update',
+        source_payload_ref: 'inline://retry',
+      },
+    };
+    const other = {
+      ...base,
+      id: 'other',
+      sourceMetadata: {
+        kind: 'object_update',
+        entity_id: 'task-b',
+        source_snapshot: { status: 'done' },
+      },
+    };
+    const changed = {
+      ...base,
+      id: 'changed',
+      sourceMetadata: {
+        kind: 'object_update',
+        entity_id: 'task-a',
+        source_snapshot: { status: 'open' },
+      },
+    };
+    const moments = buildTimelineMoments([base, retry, other, changed], new Map());
+    expect(moments).toHaveLength(3);
+    expect(
+      moments.find((moment) => moment.rawEvents.length === 2)?.rawEvents.map((raw) => raw.id),
+    ).toEqual(['system-a', 'system-b']);
+  });
+
+  it('groups repeated integration pulses but preserves resource, state, actor and connection boundaries', () => {
+    const metadata = {
+      provider: 'monitor',
+      integration_id: 'connection-a',
+      external_object_id: 'job-a',
+      event_type: 'job.completed',
+      actor: { id: 'bot-a' },
+      content: { status: 'success' },
+    };
+    const base = event({
+      id: 'pulse-a',
+      source: 'integration',
+      contentText: 'Job completed',
+      sourceMetadata: metadata,
+    });
+    const variants = [
+      { external_event_id: 'delivery-b', sync_at: 'later' },
+      { external_object_id: 'job-b' },
+      { content: { status: 'failure' } },
+      { actor: { id: 'bot-b' } },
+      { integration_id: 'connection-b' },
+    ].map((patch, index) => ({
+      ...base,
+      id: `pulse-${index}`,
+      sourceMetadata: { ...metadata, ...patch },
+    }));
+    const moments = buildTimelineMoments([base, ...variants], new Map());
+    expect(moments).toHaveLength(5);
+    expect(moments.filter((moment) => moment.rawEvents.length === 2)).toHaveLength(1);
+  });
+
+  it('keeps unrelated webhook payloads separate while grouping identical deliveries', () => {
+    const base = event({
+      id: 'hook-a',
+      source: 'ingest_webhook',
+      contentText: '{"status":"up"}',
+      sourceMetadata: { ingest_webhook_id: 'hook' },
+    });
+    const moments = buildTimelineMoments(
+      [
+        base,
+        { ...base, id: 'hook-b' },
+        { ...base, id: 'hook-c', contentText: '{"status":"down"}' },
+        { ...base, id: 'hook-d', sourceMetadata: { ingest_webhook_id: 'other-hook' } },
+      ],
+      new Map(),
+    );
+    expect(moments).toHaveLength(3);
+    expect(moments[0]?.rawEvents).toHaveLength(2);
+  });
+
+  it('groups calendar update and cancellation notices independently', () => {
+    const events = ['updated', 'cancelled'].flatMap((action) =>
+      [0, 1].map((index) =>
+        event({
+          id: `${action}-${index}`,
+          source: 'calendar',
+          contentText: `${action}: Daily digest`,
+          sourceMetadata: { action, calendar_event_id: `calendar-${index}` },
+        }),
+      ),
+    );
+    const moments = buildTimelineMoments(events, new Map());
+    expect(moments).toHaveLength(2);
+    expect(moments.every((moment) => moment.rawEvents.length === 2)).toBe(true);
+    expect(
+      moments.every(
+        (moment) =>
+          new Set(moment.rawEvents.map((raw) => (raw.sourceMetadata as { action: string }).action))
+            .size === 1,
+      ),
+    ).toBe(true);
+    expect(
+      moments.every((moment) => timelineMomentLookupPlan(moment.id)?.source === 'calendar'),
+    ).toBe(true);
+  });
+
+  it('groups one CI run across lifecycle transitions but separates runs and connections', () => {
+    const metadata = {
+      provider: 'github',
+      integration_id: 'connection-a',
+      external_object_id: 'repo#workflow_run:1',
+      github: { type: 'workflow_run', repo: 'repo' },
+    };
+    const base = event({
+      id: 'run-start',
+      source: 'integration',
+      contentText: 'Running',
+      sourceMetadata: metadata,
+    });
+    const moments = buildTimelineMoments(
+      [
+        base,
+        {
+          ...base,
+          id: 'run-finish',
+          contentText: 'Failed',
+          occurredAt: '2026-06-27T18:30:00.000Z',
+        },
+        {
+          ...base,
+          id: 'other-run',
+          sourceMetadata: { ...metadata, external_object_id: 'repo#workflow_run:2' },
+        },
+        {
+          ...base,
+          id: 'other-connection',
+          sourceMetadata: { ...metadata, integration_id: 'connection-b' },
+        },
+      ],
+      new Map(),
+    );
+    expect(moments).toHaveLength(3);
+    expect(moments[0]?.rawEvents.map((raw) => raw.id)).toEqual(['run-finish', 'run-start']);
+    expect(timelineMomentLookupPlan(moments[0]?.id ?? '')).toMatchObject({
+      source: 'integration',
+      metadataPredicates: [
+        { path: ['provider'], equals: 'github' },
+        { path: ['external_object_id'], equals: 'repo#workflow_run:1' },
+      ],
+    });
+  });
+
+  it('keeps notice identities stable across delivery envelopes and enrichment', () => {
+    const metadata = {
+      provider: 'monitor',
+      integration_id: 'a',
+      external_object_id: 'job-a',
+      event_type: 'job.completed',
+      source_snapshot_kind: 'normalized_integration_event',
+    };
+    const snapshot = {
+      provider: 'monitor',
+      externalObjectId: 'job-a',
+      eventType: 'job.completed',
+      contentText: 'Done',
+      actor: { externalId: 'bot' },
+      extra: { status: 'success' },
+    };
+    const notices = ['a', 'b'].map((id) =>
+      event({
+        id,
+        source: 'integration',
+        contentText: 'Done',
+        sourceMetadata: {
+          ...metadata,
+          external_event_id: id,
+          dedup_key: id,
+          embedded_at: id,
+          extracted_at: id,
+          source_snapshot: { ...snapshot, dedupKey: id, externalEventId: id, occurredAt: id },
+        },
+      }),
+    );
+    const first = notices[0];
+    if (!first) throw new Error('Expected notice');
+    const before = buildTimelineMoments([first], new Map())[0];
+    const merged = buildTimelineMoments(notices, new Map());
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe(before?.id);
+    const system = event({
+      id: 'system',
+      source: 'system',
+      contentText: 'Done',
+      sourceMetadata: {
+        kind: 'object_update',
+        entity_id: 'task',
+        source_snapshot: { status: 'done' },
+      },
+    });
+    expect(
+      buildTimelineMoments(
+        [
+          system,
+          {
+            ...system,
+            id: 'enriched',
+            sourceMetadata: {
+              ...system.sourceMetadata,
+              embedded_at: 'later',
+              extracted_at: 'later',
+            },
+          },
+        ],
+        new Map(),
+      ),
+    ).toHaveLength(1);
+  });
+
   it('creates bounded lookup plans for moment ids with source and time context', () => {
     const workflow = timelineMomentLookupPlan(
       'moment:integration:github:workflow_run:timborovkov/audit-ai:CI:main:2026-06-27',
@@ -135,7 +428,7 @@ describe('shared timeline moments projection', () => {
     });
   });
 
-  it('bundles GitHub workflow bursts into one deterministic CI moment', () => {
+  it('keeps GitHub workflow events without run identity separate', () => {
     const moments = buildTimelineMoments(
       [
         event({
@@ -173,7 +466,7 @@ describe('shared timeline moments projection', () => {
       { now: new Date('2026-06-27T19:00:00.000Z'), timezone: 'UTC' },
     );
 
-    expect(moments).toHaveLength(1);
+    expect(moments).toHaveLength(2);
     expect(moments[0]).toMatchObject({
       version: 'timeline_moment.v1',
       kind: 'ci_deploy',
@@ -181,14 +474,11 @@ describe('shared timeline moments projection', () => {
       visualWeight: 'pulse',
       sourceLabel: 'GitHub',
       title: 'CI passed on timborovkov/audit-ai · main',
-      evidenceSummary: { rawEventCount: 2 },
-      grouping: { strategy: 'provider_workflow_window' },
+      evidenceSummary: { rawEventCount: 1 },
+      grouping: { strategy: 'identical_notice_window' },
     });
-    expect(moments[0]?.anchorId).toMatch(/^tm-moment_3Aintegration_3Agithub/);
-    expect(moments[0]?.rawEvents.map((rawEvent) => rawEvent.id)).toEqual([
-      'workflow-a',
-      'workflow-b',
-    ]);
+    expect(moments[0]?.anchorId).toMatch(/^tm-moment_3Anotice_3Aintegration/);
+    expect(moments[0]?.rawEvents.map((rawEvent) => rawEvent.id)).toEqual(['workflow-a']);
     expect(moments[0]?.impactItems).toEqual([]);
   });
 
@@ -669,9 +959,10 @@ describe('shared timeline moments projection', () => {
       'Linear comment updated · TL-101',
       'Linear project active · Timeline redesign',
       'Monday.com status changed · Acme renewal',
+      'Monday.com update created · Acme renewal',
       'Sentry release created · web@1.2.4',
     ]);
-    expect(moments[2]).toMatchObject({ evidenceSummary: { rawEventCount: 2 } });
+    expect(moments[2]).toMatchObject({ evidenceSummary: { rawEventCount: 1 } });
     expect(timelineMomentDiagnostics(providerEvents)).toEqual([]);
   });
 
@@ -773,7 +1064,7 @@ describe('shared timeline moments projection', () => {
         provider: 'github',
         eventId: 'weak-workflow',
         missingFields: ['github.repo', 'github.head_branch', 'github.workflow_name'],
-        groupingStrategy: 'provider_workflow_window',
+        groupingStrategy: 'identical_notice_window',
       }),
     ]);
   });

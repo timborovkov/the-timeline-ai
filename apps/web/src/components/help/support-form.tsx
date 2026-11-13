@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 
 import type { SupportSurface } from '@/lib/support-context';
 
@@ -99,19 +99,50 @@ function useSupportFormProtection({
 function SupportRequestReceived({
   requestReference,
   warning,
+  animate,
 }: {
   requestReference: string;
   warning?: string;
+  animate: boolean;
 }) {
+  const confirmation = useRef<HTMLDivElement>(null);
+  const message = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    confirmation.current?.focus();
+    if (!animate) return;
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (preference.matches) return;
+    const animation = message.current?.animate([{ opacity: 0 }, { opacity: 1 }], {
+      duration: 160,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    });
+    const stop = () => {
+      if (preference.matches) animation?.cancel();
+    };
+    preference.addEventListener('change', stop);
+    return () => {
+      animation?.cancel();
+      preference.removeEventListener('change', stop);
+    };
+  }, [animate]);
   return (
-    <output className="block space-y-3 border-l-2 border-signal pl-4 text-sm">
-      <p className="font-semibold text-fg">Request received</p>
-      <p className="text-fg-muted">
-        Keep this reference if you need to follow up:{' '}
-        <code className="font-mono text-xs text-fg">{requestReference}</code>
+    <div
+      role="status"
+      ref={confirmation}
+      tabIndex={-1}
+      aria-live="polite"
+      aria-atomic="true"
+      className="block space-y-3 border-l-2 border-signal pl-4 text-sm"
+    >
+      <div ref={message} className="space-y-3">
+        <p className="font-semibold text-fg">Request received</p>
+        <p className="text-fg-muted">Keep this reference if you need to follow up:</p>
+      </div>
+      <p>
+        <code className="select-text break-all font-mono text-xs text-fg">{requestReference}</code>
       </p>
       {warning ? <p className="text-fg-muted">{warning}</p> : null}
-    </output>
+    </div>
   );
 }
 
@@ -147,8 +178,10 @@ function SupportFormFields({
   defaultEmail,
   defaultSurface,
   defaultErrorReference,
+  onSubmitIntent,
 }: {
   action: (payload: FormData) => void;
+  onSubmitIntent: (pointer: boolean) => void;
   pending: boolean;
   state: SupportFormState;
   protection: { siteKey?: string; unavailable: boolean; pending: boolean };
@@ -190,6 +223,7 @@ function SupportFormFields({
         <div className="space-y-2">
           <Label htmlFor="support-name">Name</Label>
           <Input
+            className="text-base sm:text-sm"
             ref={nameRef}
             id="support-name"
             name="name"
@@ -202,6 +236,7 @@ function SupportFormFields({
         <div className="space-y-2">
           <Label htmlFor="support-email">Email</Label>
           <Input
+            className="text-base sm:text-sm"
             ref={emailRef}
             id="support-email"
             name="email"
@@ -221,7 +256,7 @@ function SupportFormFields({
           id="support-request-type"
           name="requestType"
           required
-          className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="h-10 w-full rounded-sm border border-input bg-background px-3 text-base sm:text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           defaultValue="technical_support"
         >
           <option value="technical_support">Technical support</option>
@@ -235,6 +270,7 @@ function SupportFormFields({
       <div className="space-y-2">
         <Label htmlFor="support-message">Message</Label>
         <Textarea
+          className="text-base sm:text-sm"
           id="support-message"
           name="message"
           required
@@ -260,6 +296,9 @@ function SupportFormFields({
 
       <Button
         type="submit"
+        onClick={(event) => {
+          onSubmitIntent(event.detail > 0);
+        }}
         disabled={pending || protection.pending || protection.unavailable}
         aria-describedby={protection.unavailable ? protectionErrorId : undefined}
       >
@@ -278,18 +317,24 @@ export function SupportForm({
   requiresTurnstile,
 }: SupportFormProps) {
   const supportEmail = useSupportEmail();
+  const [pointerSubmission, setPointerSubmission] = useState(false);
   const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
   const protection = useSupportFormProtection({ turnstileSiteKey, requiresTurnstile });
 
   if (state.ok && state.requestReference) {
     return (
-      <SupportRequestReceived requestReference={state.requestReference} warning={state.warning} />
+      <SupportRequestReceived
+        requestReference={state.requestReference}
+        warning={state.warning}
+        animate={pointerSubmission}
+      />
     );
   }
 
   return (
     <SupportFormFields
       action={action}
+      onSubmitIntent={setPointerSubmission}
       pending={pending}
       state={state}
       protection={protection}

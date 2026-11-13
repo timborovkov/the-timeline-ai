@@ -542,3 +542,22 @@ export const EDITORIAL_MACHINE_SUMMARIES = [
 ] as const;
 
 export const EDITORIAL_CANONICAL_ROUTES = EDITORIAL_MACHINE_SUMMARIES.map((entry) => entry.route);
+
+/** Shared visible FAQ, structured data, and machine-readable explanation. */
+export const EVIDENCE_FRESHNESS_FAQS = [
+  {
+    question: 'What happens when sources disagree?',
+    answer:
+      'The Timeline can surface disagreements in retrieved or linked evidence with citations. It distinguishes the current record from proposed changes awaiting review. Search is bounded: it does not guarantee detection of every contradiction.',
+  },
+  {
+    question: 'Does the newest message always win?',
+    answer:
+      'No. Search balances relevance and freshness across conversations, email, meetings, integrations and documents. A recent Telegram correction can help explain an older email, but dates alone do not establish truth. Undated uploads and website observations receive a smaller freshness boost.',
+  },
+  {
+    question: 'Do pending changes affect the accepted record?',
+    answer:
+      'No. Answers can mention a pending proposal, clearly labelled as pending, while showing the current record. Approval-backed changes take effect only after acceptance; existing provider-owned field rules still apply.',
+  },
+] as const;

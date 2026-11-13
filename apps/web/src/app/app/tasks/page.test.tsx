@@ -148,17 +148,20 @@ await vi.mock(
       totalCount,
       projects = [],
       viewControls,
+      actions,
     }: {
       resultCount: number;
       totalCount: number;
       projects?: { label: string }[];
       viewControls?: ReactNode;
+      actions?: ReactNode;
     }) => {
       fakes.filterProjects = projects;
       return (
         <div data-testid="work-filter-bar">
           {resultCount}/{totalCount}
           {viewControls}
+          {actions}
         </div>
       );
     },
@@ -367,7 +370,7 @@ describe('TasksPage', () => {
     expect(html).toContain('Capture a follow-up');
     expect(html).toContain('href="/app#capture"');
     expect(html).not.toContain('Pending task proposals');
-    expect(html).not.toContain('data-app-layout="full-bleed"');
+    expect(html).toContain('data-app-layout="full-bleed"');
   });
 
   it('keeps a filtered empty task archive reassuring and preserves list view when filters clear', async () => {
@@ -379,7 +382,7 @@ describe('TasksPage', () => {
     );
     expect(html).toContain('Clear filters');
     expect(html).toContain('href="/app/tasks?view=list"');
-    expect(html).not.toContain('data-app-layout="full-bleed"');
+    expect(html).toContain('data-app-layout="full-bleed"');
   });
 
   it('watches the full task result set while a category filter is active', async () => {
@@ -560,6 +563,8 @@ describe('TasksPage', () => {
     const html = renderToStaticMarkup(await TasksPage(pageProps({ view: 'list' })));
 
     expect(html).toContain('view list');
+    expect(html).toContain('New task');
+    expect(html).toContain('/app/objects/new?returnTo=%2Fapp%2Ftasks');
   });
 
   it('defaults to the grouped list when view is absent', async () => {

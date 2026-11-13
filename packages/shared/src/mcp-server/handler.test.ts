@@ -580,6 +580,34 @@ describe('handleMcpRequest', () => {
     expect(getResult.event.source_metadata).toContain('"instruction"');
   });
 
+  it('reports integration candidate exhaustion after deduplication', async () => {
+    await db.insert(rawEvents).values({
+      id: GITHUB_SEARCH_EVENT,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub launch',
+      occurredAt: new Date('2026-06-21'),
+      sourceMetadata: { provider: 'github' },
+    });
+    semanticSearchFakes.search.mockResolvedValue(
+      Array.from({ length: 200 }, () => ({
+        ...integrationSearchHit(GITHUB_SEARCH_EVENT, 0.9),
+        id: randomUUID(),
+      })),
+    );
+    const result = await callTool(db, 'timeline.search', {
+      surface: 'integrations',
+      query: 'launch',
+      provider: 'github',
+      limit: 1,
+    });
+    expect(result).toMatchObject({
+      count: 1,
+      truncated: true,
+      retrieval: { mode: 'balanced', candidateLimit: 200, candidateLimitReached: true },
+    });
+  });
+
   it('applies provider filtering before the semantic result limit', async () => {
     await db.insert(rawEvents).values([
       {
@@ -640,7 +668,7 @@ describe('handleMcpRequest', () => {
       [0.11, 0.22, 0.33],
       expect.objectContaining({
         eventIds: [SENTRY_SEARCH_EVENT],
-        limit: 1,
+        limit: 200,
         source: 'integration',
       }),
     );
@@ -714,7 +742,7 @@ describe('handleMcpRequest', () => {
       [0.11, 0.22, 0.33],
       expect.objectContaining({
         eventIds: [GITHUB_SEARCH_EVENT],
-        limit: 10,
+        limit: 200,
         source: 'integration',
       }),
     );
@@ -3740,7 +3768,7 @@ describe('advertised MCP parameters', () => {
 
     it('limit', async () => {
       await callTool(db, 'timeline.subject', { subject: 'Project Alpha', limit: 1 });
-      expect(searchCalls().some((opts) => opts.limit === 1)).toBe(true);
+      expect(searchCalls().some((opts) => opts.limit === 200)).toBe(true);
     });
   });
 

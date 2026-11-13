@@ -31,6 +31,11 @@ import {
 } from 'drizzle-orm';
 
 import {
+  assertBoardObjectType,
+  boardQualificationPolicySchema,
+} from '#src/boards/qualification-policy.js';
+import { defaultBoardLanes, defaultBoardRecommendedTypes } from '#src/boards/templates.js';
+import {
   dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
   notifyBoardItemDueDate,
@@ -39,6 +44,7 @@ import {
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { childLogger } from '#src/logger.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
 import {
@@ -106,6 +112,9 @@ export interface BoardRow {
   recommendedObjectTypes: ObjectType[];
   strictObjectTypes: boolean;
   candidateFilter: Record<string, unknown>;
+  qualificationEnabled?: boolean;
+  qualificationInstructions?: string;
+  qualificationRevision?: number;
   isShared: boolean;
   archivedAt: Date | null;
   createdBy: string | null;
@@ -214,6 +223,8 @@ export interface CreateBoardInput {
   recommendedObjectTypes?: ObjectType[];
   strictObjectTypes?: boolean;
   candidateFilter?: Record<string, unknown>;
+  qualificationEnabled?: boolean;
+  qualificationInstructions?: string;
   lanes: BoardLaneInput[];
   isShared?: boolean;
 }
@@ -224,6 +235,11 @@ export interface RenameBoardInput {
 }
 
 export interface UpdateBoardSettingsInput {
+  expectedUpdatedAt?: string;
+  qualificationEnabled?: boolean;
+  qualificationInstructions?: string;
+  strictObjectTypes?: boolean;
+  recommendedObjectTypes?: ObjectType[];
   id: string;
   name?: string;
   purpose?: string;
@@ -394,6 +410,9 @@ function toBoardRow(
     recommendedObjectTypes: jsonStringArray(row.recommendedObjectTypes),
     strictObjectTypes: row.strictObjectTypes,
     candidateFilter: jsonObject(row.candidateFilter),
+    qualificationEnabled: row.qualificationEnabled,
+    qualificationInstructions: row.qualificationInstructions,
+    qualificationRevision: row.qualificationRevision,
     isShared: row.isShared,
     archivedAt: row.archivedAt,
     createdBy: row.createdBy,
@@ -906,51 +925,6 @@ function isBoardItemPatchField(
   );
 }
 
-export function defaultBoardRecommendedTypes(template: BoardTemplateKind): ObjectType[] {
-  if (template === 'pipeline') return ['company', 'deal', 'person', 'project'];
-  if (template === 'task_board') return ['task', 'follow_up'];
-  if (template === 'catalog') return ['project', 'document', 'vendor', 'other'];
-  return [];
-}
-
-export function defaultBoardLanes(template: BoardTemplateKind): BoardLaneInput[] {
-  if (template === 'task_board') {
-    return [
-      { name: 'Backlog', kind: 'active' },
-      { name: 'Ready', kind: 'active' },
-      { name: 'Doing', kind: 'active' },
-      { name: 'Review', kind: 'active' },
-      { name: 'Done', kind: 'done' },
-      { name: 'Blocked', kind: 'blocked' },
-    ];
-  }
-  if (template === 'pipeline') {
-    return [
-      { name: 'New', kind: 'active' },
-      { name: 'Qualified', kind: 'active' },
-      { name: 'Scoping', kind: 'active' },
-      { name: 'Proposal', kind: 'active' },
-      { name: 'Committed', kind: 'done' },
-      { name: 'Active', kind: 'active' },
-      { name: 'Won', kind: 'terminal' },
-      { name: 'Lost', kind: 'lost' },
-    ];
-  }
-  if (template === 'catalog') {
-    return [
-      { name: 'Idea', kind: 'active' },
-      { name: 'Evaluating', kind: 'active' },
-      { name: 'Active', kind: 'active' },
-      { name: 'Deprecated', kind: 'terminal' },
-    ];
-  }
-  return [
-    { name: 'Todo', kind: 'active' },
-    { name: 'Doing', kind: 'active' },
-    { name: 'Done', kind: 'done' },
-  ];
-}
-
 export function createBoardScope({
   db,
   scope,
@@ -971,7 +945,8 @@ export function createBoardScope({
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new Error('Board not found');
+    if (!row || (!row.isShared && row.createdBy !== scope.userId))
+      throw new Error('Board not found');
     return row;
   }
 
@@ -1058,7 +1033,14 @@ export function createBoardScope({
       .select({ item: boardItems, object: entities })
       .from(boardItems)
       .innerJoin(entities, eq(boardItems.entityId, entities.id))
-      .where(and(eq(boardItems.id, itemId), eq(boardItems.teamId, scope.teamId)))
+      .innerJoin(boards, eq(boardItems.boardId, boards.id))
+      .where(
+        and(
+          eq(boardItems.id, itemId),
+          eq(boardItems.teamId, scope.teamId),
+          or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     return row ? toItemRow(row.item, row.object) : null;
@@ -1284,7 +1266,13 @@ export function createBoardScope({
         db
           .select()
           .from(boards)
-          .where(and(eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)))
+          .where(
+            and(
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+              or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
+            ),
+          )
           .orderBy(desc(boards.updatedAt)),
         db
           .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
@@ -1324,7 +1312,7 @@ export function createBoardScope({
         )
         .limit(1);
       const board = boardRows[0];
-      if (!board) return null;
+      if (!board || (!board.isShared && board.createdBy !== scope.userId)) return null;
       const itemFilterConditions = boardItemFilterConditions(options.itemFilter);
       const itemsQuery = db
         .select({ item: boardItems, object: entities })
@@ -1436,6 +1424,7 @@ export function createBoardScope({
 
     async createBoard(input: CreateBoardInput): Promise<BoardDetail> {
       await scope.requireMembership();
+      boardQualificationPolicySchema.parse(input);
       const name = normalizeName(input.name, 'Board name');
       const templateKind = BOARD_TEMPLATES.includes(input.templateKind)
         ? input.templateKind
@@ -1460,6 +1449,8 @@ export function createBoardScope({
               input.recommendedObjectTypes ?? defaultBoardRecommendedTypes(templateKind),
             strictObjectTypes: input.strictObjectTypes ?? false,
             candidateFilter: input.candidateFilter ?? {},
+            qualificationEnabled: input.qualificationEnabled ?? false,
+            qualificationInstructions: input.qualificationInstructions?.trim() ?? '',
             isShared: input.isShared ?? true,
           })
           .returning();
@@ -1485,10 +1476,21 @@ export function createBoardScope({
       });
     },
 
-    async archiveBoard(boardId: string): Promise<boolean> {
+    async archiveBoard(boardId: string, expectedUpdatedAt?: string): Promise<boolean> {
       await requireBoard(boardId);
       const now = new Date();
       const txResult = await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+          )
+          .for('update');
+        if (!current || (!current.isShared && current.createdBy !== scope.userId))
+          throw new Error('Board not found');
+        if (expectedUpdatedAt && current.updatedAt.toISOString() !== expectedUpdatedAt)
+          throw new StaleWorkspaceStateError();
         const updatedRows = await tx
           .update(boards)
           .set({ archivedAt: now, updatedAt: now })
@@ -1561,32 +1563,70 @@ export function createBoardScope({
       if (nextLanes?.length === 0) throw new Error('At least one lane is required');
       if (nextLanes && nextLanes.length > 16) throw new Error('Too many lanes');
 
-      const currentLanes = nextLanes
-        ? await db
-            .select()
-            .from(boardLanes)
-            .where(
-              and(
-                eq(boardLanes.boardId, input.id),
-                eq(boardLanes.teamId, scope.teamId),
-                isNull(boardLanes.archivedAt),
-              ),
-            )
-        : [];
-      const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
-      const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
-      for (const lane of nextLanes ?? []) {
-        if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
-      }
-      const removedLaneIds = currentLanes
-        .map((lane) => lane.id)
-        .filter((laneId) => !keptLaneIds.has(laneId));
-
       const dueDateCalendarSync = await db.transaction(async (tx) => {
+        const [currentBoard] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(
+              eq(boards.id, input.id),
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+            ),
+          )
+          .for('update');
+        if (!currentBoard) throw new Error('Board not found');
+        if (!currentBoard.isShared && currentBoard.createdBy !== scope.userId)
+          throw new Error('Board not found');
+        if (
+          input.expectedUpdatedAt &&
+          currentBoard.updatedAt.toISOString() !== input.expectedUpdatedAt
+        )
+          throw new StaleWorkspaceStateError();
+        const currentLanes = nextLanes
+          ? await tx
+              .select()
+              .from(boardLanes)
+              .where(
+                and(
+                  eq(boardLanes.boardId, input.id),
+                  eq(boardLanes.teamId, scope.teamId),
+                  isNull(boardLanes.archivedAt),
+                ),
+              )
+          : [];
+        const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
+        const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
+        for (const lane of nextLanes ?? []) {
+          if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
+        }
+        const removedLaneIds = currentLanes
+          .map((lane) => lane.id)
+          .filter((laneId) => !keptLaneIds.has(laneId));
+
+        const policy = boardQualificationPolicySchema.parse({ ...currentBoard, ...input });
         const now = new Date();
         const boardPatch: Partial<typeof boards.$inferInsert> = { updatedAt: now };
         if (input.name !== undefined) boardPatch.name = normalizeName(input.name, 'Board name');
         if (input.purpose !== undefined) boardPatch.purpose = input.purpose.trim();
+        if (input.qualificationEnabled !== undefined)
+          boardPatch.qualificationEnabled = policy.qualificationEnabled;
+        if (input.qualificationInstructions !== undefined)
+          boardPatch.qualificationInstructions = policy.qualificationInstructions;
+        if (input.strictObjectTypes !== undefined)
+          boardPatch.strictObjectTypes = policy.strictObjectTypes;
+        if (input.recommendedObjectTypes !== undefined)
+          boardPatch.recommendedObjectTypes = policy.recommendedObjectTypes;
+        if (
+          policy.qualificationEnabled !== currentBoard.qualificationEnabled ||
+          policy.qualificationInstructions !== currentBoard.qualificationInstructions ||
+          policy.strictObjectTypes !== currentBoard.strictObjectTypes ||
+          !stableEqual(policy.recommendedObjectTypes, currentBoard.recommendedObjectTypes) ||
+          (input.purpose !== undefined && input.purpose.trim() !== currentBoard.purpose)
+        ) {
+          boardPatch.qualificationRevision =
+            sql`${boards.qualificationRevision} + 1` as unknown as number;
+        }
         const [updatedBoard] = await tx
           .update(boards)
           .set(boardPatch)
@@ -1683,6 +1723,15 @@ export function createBoardScope({
           throw new Error('Archived suggested projects cannot be added to boards');
         }
         if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
+        const [lockedBoard] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+          )
+          .for('update');
+        if (!lockedBoard) throw new Error('Board not found');
+        assertBoardObjectType(lockedBoard, object.type);
         const rows = await tx
           .insert(boardItems)
           .values({
@@ -1772,7 +1821,8 @@ export function createBoardScope({
         actor: { kind: ActorKind; userId?: string | null };
       },
     ): Promise<BoardItemRow> {
-      await requireBoard(boardId);
+      const board = await requireBoard(boardId);
+      assertBoardObjectType(board, objectInput.type);
       await requireLane(boardId, itemInput.laneId);
       const created = await objects.createObject({ ...objectInput, actor: itemInput.actor });
       return api.addBoardItem(boardId, { ...itemInput, entityId: created.id });
@@ -1897,6 +1947,7 @@ export function createBoardScope({
     async removeBoardItem(
       itemId: string,
       actor: { kind: ActorKind; userId?: string | null },
+      approval?: { expectedUpdatedAt: string; suggestionItemId: string },
     ): Promise<BoardItemRow | null> {
       if (!UUID_RE.test(itemId)) return null;
       const current = await itemWithObject(itemId);
@@ -1912,6 +1963,9 @@ export function createBoardScope({
               eq(boardItems.id, itemId),
               eq(boardItems.teamId, scope.teamId),
               isNull(boardItems.archivedAt),
+              approval
+                ? sql`date_trunc('milliseconds', ${boardItems.updatedAt}) = ${approval.expectedUpdatedAt}::timestamptz`
+                : undefined,
             ),
           )
           .returning({ id: boardItems.id });
@@ -1923,6 +1977,7 @@ export function createBoardScope({
           entityId: current.entityId,
           actor,
           field: '__remove__',
+          suggestionItemId: approval?.suggestionItemId ?? null,
           previousValue: { boardId: current.boardId, laneId: current.laneId },
         });
         const sourceEventId = await createBoardSystemRawEvent({
@@ -1995,6 +2050,7 @@ export function createBoardScope({
             eq(boardItems.entityId, entityId),
             isNull(boardItems.archivedAt),
             isNull(boards.archivedAt),
+            or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
           ),
         )
         .orderBy(desc(boardItems.updatedAt));
@@ -2191,8 +2247,9 @@ export function createBoardScope({
       suggestionItemId?: string | null;
       note?: string | null;
     }): Promise<BoardItemChangeRow> {
-      await requireBoard(input.boardId);
-      await requireObject(input.entityId);
+      const board = await requireBoard(input.boardId);
+      const object = await requireObject(input.entityId);
+      assertBoardObjectType(board, object.type);
       await requireLane(input.boardId, input.laneId);
       return writeChange({
         boardId: input.boardId,
@@ -2208,6 +2265,35 @@ export function createBoardScope({
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       });
+    },
+
+    async acceptMembershipRemoval(input: {
+      boardId: string;
+      entityId: string;
+      boardItemId: string;
+      expectedUpdatedAt: string;
+      suggestionItemId: string;
+    }) {
+      await requireBoard(input.boardId);
+      const current = await itemWithObject(input.boardItemId);
+      if (
+        !current ||
+        current.archivedAt ||
+        current.boardId !== input.boardId ||
+        current.entityId !== input.entityId ||
+        current.updatedAt.toISOString() !== input.expectedUpdatedAt
+      ) {
+        throw new Error('Board membership changed; review a fresh suggestion.');
+      }
+      // The suggestion acceptance unit of work supplies the outer transaction.
+      const removed = await api.removeBoardItem(
+        current.id,
+        { kind: 'agent', userId: scope.userId },
+        input,
+      );
+      if (!removed) throw new Error('Board item no longer active');
+
+      return current.id;
     },
 
     async proposeBoardItemUpdate(input: {
@@ -2299,6 +2385,19 @@ export function createBoardScope({
             throw new Error('Archived suggested projects cannot be added to boards');
           }
           if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
+          const [lockedBoard] = await tx
+            .select()
+            .from(boards)
+            .where(
+              and(
+                eq(boards.id, claimedChange.boardId),
+                eq(boards.teamId, scope.teamId),
+                isNull(boards.archivedAt),
+              ),
+            )
+            .for('update');
+          if (!lockedBoard) throw new Error('Board not found');
+          assertBoardObjectType(lockedBoard, object.type);
           const existing = await tx
             .select({ id: boardItems.id })
             .from(boardItems)
@@ -2415,3 +2514,5 @@ export function createBoardScope({
 }
 
 export type BoardScope = ReturnType<typeof createBoardScope>;
+
+export { defaultBoardLanes, defaultBoardRecommendedTypes } from '#src/boards/templates.js';

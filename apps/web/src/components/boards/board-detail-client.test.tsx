@@ -18,6 +18,8 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/app/actions/boards'),
   () => ({
+    previewBoardMatchesAction: vi.fn(() => Promise.resolve({ matches: [] })),
+    scanBoardMatchesAction: vi.fn(() => Promise.resolve({ count: 0, nextCursor: null })),
     updateBoardItemAction: vi.fn(() => Promise.resolve({ ok: true })),
   }),
   () => import('@/app/actions/boards'),
@@ -381,7 +383,7 @@ describe('BoardDetailClient', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Alpha')).toBeNull();
-      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Beta', hidden: true })).toBeTruthy();
     });
   });
 
@@ -400,7 +402,7 @@ describe('BoardDetailClient', () => {
     const heading = screen.getByRole('heading', { level: 1, name: 'Pilot board' });
     expect(heading.className).not.toContain('uppercase');
     expect(heading.parentElement?.textContent).toContain('Track pilots');
-    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByRole('navigation', { name: 'Work' })).toBeNull();
     const search = screen.getByLabelText('Search');
     const view = screen.getByRole('navigation', { name: 'Board view' });
     const addItem = screen.getByRole('button', { name: 'Add item' });
@@ -458,7 +460,7 @@ describe('BoardDetailClient', () => {
     await user.click(screen.getByRole('button', { name: 'Fake committed add' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Beta', hidden: true })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Remove local item' })).toBeTruthy();
     });
 
@@ -506,9 +508,9 @@ describe('BoardDetailClient', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set P1' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Priority for Alpha' }).textContent).toContain(
-        'P1',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Priority for Alpha', hidden: true }).textContent,
+      ).toContain('P1');
     });
 
     rerender(
@@ -527,9 +529,9 @@ describe('BoardDetailClient', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Priority for Alpha' }).textContent).toContain(
-        'P1',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Priority for Alpha', hidden: true }).textContent,
+      ).toContain('P1');
     });
 
     rerender(
@@ -548,9 +550,9 @@ describe('BoardDetailClient', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Priority for Alpha' }).textContent).toContain(
-        'P2',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Priority for Alpha', hidden: true }).textContent,
+      ).toContain('P2');
     });
   });
 

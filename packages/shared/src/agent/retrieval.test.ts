@@ -32,6 +32,8 @@ function makeScope() {
         },
       ]),
       getObject: vi.fn().mockResolvedValue({
+        updatedAt: new Date('2026-11-11'),
+        provenance: { whyThisExists: [], whatChangedIt: [] },
         id: OBJECT_ID,
         type: 'person',
         canonicalName: 'Otto Silventola',
@@ -75,6 +77,7 @@ function makeScope() {
       }),
     },
     timeline: {
+      listEventsForMomentLookup: vi.fn().mockResolvedValue([]),
       listMembers: vi.fn().mockResolvedValue([
         {
           userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -106,15 +109,15 @@ function makeScope() {
           source: 'slack',
           sender: {
             source: 'slack',
-            displayName: 'Miku',
+            displayName: 'Casey',
             handle: 'U-MIKU',
             externalId: 'U-MIKU',
             provider: 'auditai',
           },
           resolvedSenderObject: {
             id: '12121212-1212-4121-8121-121212121212',
-            canonicalName: 'Mikael',
-            aliases: ['Miku'],
+            canonicalName: 'Cameron',
+            aliases: ['Casey'],
             linkedUserId: null,
           },
           senderResolutionStatus: 'resolved',
@@ -133,7 +136,7 @@ function makeScope() {
           authorUserId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           sourceMetadata: {
             slack_sender_id: 'U-MIKU',
-            slack_sender_name: 'Miku',
+            slack_sender_name: 'Casey',
             slack_channel_name: 'pilot-delivery',
           },
           visibility: 'team',
@@ -169,6 +172,79 @@ function makeScope() {
 }
 
 describe('retrieveWorkspaceContext', () => {
+  it('discloses expanded conversations exceeding the core evidence budget', async () => {
+    const scope = makeScope();
+    const rows = Array.from({ length: 25 }, (_, index) => ({
+      id: index === 0 ? EVENT_ID : crypto.randomUUID(),
+      source: 'telegram',
+      contentText: `Reply ${index}`,
+      occurredAt: new Date('2026-06-14T09:00:00Z'),
+      authorUserId: OBJECT_ID,
+      sourceMetadata: { tg_chat_id: 'review-room' },
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+    }));
+    scope.timeline.getEventsByIds.mockImplementation((ids: string[]) =>
+      rows.filter((row) => ids.includes(row.id)),
+    );
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue(rows);
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'Otto',
+      recipe: 'document_knowledge',
+    });
+    expect(result.evidencePack).toMatchObject({ status: 'complete', metrics: { truncated: true } });
+  });
+
+  it('expands the source conversation for a document-only match', async () => {
+    const scope = makeScope();
+    scope.timeline.searchEvents.mockResolvedValue([]);
+    scope.documents.searchDocumentChunks.mockResolvedValue([
+      {
+        documentId: OBJECT_ID,
+        documentVersionId: OBJECT_ID,
+        documentChunkId: NOTE_ID,
+        sourceEvidenceEventId: EVENT_ID,
+        sourceRawEventId: null,
+        documentName: 'Attachment',
+        documentDisplayTitle: 'Attachment',
+        text: 'Otto follow-up',
+        score: 0.8,
+        createdAt: new Date('2026-11-11'),
+      },
+    ]);
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'Attachment',
+      recipe: 'document_knowledge',
+    });
+    expect(result.evidencePack).toMatchObject({ items: [{ rawEventId: EVENT_ID }] });
+  });
+
+  it('does not anchor inaccessible document source IDs alongside visible timeline evidence', async () => {
+    const scope = makeScope();
+    scope.documents.searchDocumentChunks.mockResolvedValue([
+      {
+        documentId: OBJECT_ID,
+        documentChunkId: NOTE_ID,
+        documentVersionId: OBJECT_ID,
+        sourceEvidenceEventId: null,
+        sourceRawEventId: SUPPORT_EVENT_ID,
+        text: 'Shared document',
+        documentName: 'Shared document',
+        createdAt: new Date('2026-11-11'),
+        score: 0.8,
+      },
+    ]);
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'Otto',
+      includeDocuments: true,
+    });
+    expect(result.evidencePack?.status).toBe('complete');
+    expect(scope.timeline.getEventsByIds.mock.calls.flat()).not.toContainEqual(
+      expect.arrayContaining([SUPPORT_EVENT_ID]),
+    );
+  });
+
   it('validates one retrieval contract while preserving explicit false flags', () => {
     expect(
       retrieveWorkspaceContextInput.parse({
@@ -215,14 +291,11 @@ describe('retrieveWorkspaceContext', () => {
 
     const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
       query: 'What do we know about Otto Silventola?',
+      objectId: OBJECT_ID,
       limit: 5,
     });
 
-    expect(scope.objects.searchObjects).toHaveBeenCalledWith({
-      query: 'What do we know about Otto Silventola?',
-      limit: 5,
-      archived: false,
-    });
+    expect(scope.objects.searchObjects).not.toHaveBeenCalled();
     expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ entityIds: [OBJECT_ID], limit: 5 }),
     );
@@ -248,7 +321,7 @@ describe('retrieveWorkspaceContext', () => {
     });
     expect(
       (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
-    ).toContain('"senderName":"Miku"');
+    ).toContain('"senderName":"Casey"');
     expect(
       (result.evidencePack as { items: { senderContext: string }[] }).items[0]?.senderContext,
     ).toContain('"timelineAuthorUserId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"');
@@ -290,8 +363,8 @@ describe('retrieveWorkspaceContext', () => {
     );
     expect(retrievedEvent).toMatchObject({
       citation: `[ev:${EVENT_ID}]`,
-      sender: { displayName: 'Miku' },
-      resolved_sender_object: { canonicalName: 'Mikael' },
+      sender: { displayName: 'Casey' },
+      resolved_sender_object: { canonicalName: 'Cameron' },
       sender_resolution_status: 'resolved',
     });
     expect(result.events).toEqual(

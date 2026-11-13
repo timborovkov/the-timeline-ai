@@ -11,10 +11,12 @@ import {
   type CapabilityTool,
   type AgentToolMode,
 } from '#src/agent/tool-policy.js';
+import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import * as objects from '#src/objects/index.js';
 import {
   serializeObjectRow,
@@ -24,6 +26,7 @@ import { OBJECT_TYPES } from '#src/objects/types.js';
 import { PIN_TARGET_KINDS } from '#src/pins/index.js';
 import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
   enrichTaskProposalCategories,
@@ -52,6 +55,7 @@ import {
 } from '#src/timeline-moments/presentation-contract.js';
 
 import type * as boards from '#src/boards/index.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('agent:tools');
 
@@ -147,6 +151,7 @@ const movePinInputSchema = z
   );
 
 const searchTimelineInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
@@ -168,6 +173,7 @@ const searchTimelineInput = z.object({
 type TimelineSearchInput = z.infer<typeof searchTimelineInput>;
 
 interface SearchHitForMoment {
+  ranking?: { rankingScore: number };
   eventId: string;
   factIds: string[];
   score: number;
@@ -354,6 +360,7 @@ const getTimelineMomentInput = z.object({
 });
 
 const searchDocumentsInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500),
   documentId: z.string().regex(UUID_RE).optional(),
   folderIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
@@ -628,6 +635,7 @@ function searchArgsFromTimelineInput(
   input: TimelineSearchInput,
 ): Parameters<TeamScope['timeline']['searchEvents']>[0] {
   const args: Parameters<TeamScope['timeline']['searchEvents']>[0] = { query: input.query };
+  if (input.ranking) args.ranking = input.ranking;
   if (input.from) args.from = new Date(input.from);
   if (input.to) args.to = new Date(input.to);
   if (input.source) args.source = input.source;
@@ -727,6 +735,7 @@ async function buildAgentTimelineMoments(
       ];
       return {
         moment_id: moment.id,
+        legacy_moment_ids: moment.legacyIds ?? [],
         pin_target: { kind: 'timeline_moment' as const, key: moment.id },
         version: moment.version,
         anchor_id: moment.anchorId,
@@ -745,6 +754,14 @@ async function buildAgentTimelineMoments(
           artifactRefCitation({ kind: 'timeline_event', id: event.id }),
         ),
         score: topScore,
+        rankingScore: Math.max(
+          ...sorted.map(
+            (event) =>
+              hitByEventId.get(event.id)?.ranking?.rankingScore ??
+              hitByEventId.get(event.id)?.score ??
+              0,
+          ),
+        ),
         entity_ids: entityIds,
         fact_ids: factIds,
         evidence: sorted.map((event) => {
@@ -768,7 +785,9 @@ async function buildAgentTimelineMoments(
       };
     })
     .sort(
-      (a, b) => b.score - a.score || String(b.occurred_at).localeCompare(String(a.occurred_at)),
+      (a, b) =>
+        b.rankingScore - a.rankingScore ||
+        String(b.occurred_at).localeCompare(String(a.occurred_at)),
     );
 }
 
@@ -780,6 +799,9 @@ function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
     purpose: row.purpose,
     template_kind: row.templateKind,
     recommended_object_types: row.recommendedObjectTypes,
+    strict_object_types: row.strictObjectTypes,
+    qualification_enabled: row.qualificationEnabled ?? false,
+    qualification_instructions: row.qualificationInstructions ?? '',
     item_count: row.itemCount,
     due_soon_count: row.dueSoonCount,
     overdue_count: row.overdueCount,
@@ -842,6 +864,7 @@ async function safe<T>(
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof StaleWorkspaceStateError) return { error: `stale_state: ${err.message}` };
     if (err instanceof QdrantUnavailableError) {
       return {
         error: err.outcomeUnknown
@@ -1271,6 +1294,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       options.sanitizeError,
     );
   const tools: Record<string, CapabilityTool> = {
+    ...buildWorkspaceTools(scope, runSafe),
     list_pins: capabilityTool({
       capability: 'pin_read',
       description:
@@ -1777,7 +1801,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         runSafe('search_timeline', async () => {
           const input = searchTimelineInput.parse(raw);
           const args = searchArgsFromTimelineInput(input);
-          const results = await scope.timeline.searchEvents(args);
+          let retrieval: SearchRankingSummary | null = null;
+          const results = await scope.timeline.searchEvents({
+            ...args,
+            rankingNow: executionContext.currentDate,
+            onRanking: (value) => {
+              retrieval = value;
+            },
+          });
           // Fence the snippet so a malicious search hit cannot smuggle a
           // prompt-injection past the Rule 8 framing.
           const fenced = results.map((r) => ({
@@ -1786,7 +1817,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             snippet:
               fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
           }));
-          return { count: fenced.length, results: fenced };
+          return {
+            count: fenced.length,
+            results: fenced,
+            retrieval,
+            context: await enrichEvidenceContext(scope, {
+              eventIds: results.map((hit) => hit.eventId),
+            }),
+          };
         }),
     }),
 
@@ -1798,7 +1836,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       execute: async (raw) =>
         runSafe('search_timeline_moments', async () => {
           const input = searchTimelineInput.parse(raw);
-          const hits = await scope.timeline.searchEvents(searchArgsFromTimelineInput(input));
+          let retrieval: SearchRankingSummary | null = null;
+          const hits = await scope.timeline.searchEvents({
+            ...searchArgsFromTimelineInput(input),
+            rankingNow: executionContext.currentDate,
+            onRanking: (value) => {
+              retrieval = value;
+            },
+          });
           const eventIds = hits.map((hit) => hit.eventId);
           const rows = await scope.timeline.getEventsByIds(eventIds);
           const events = await hydrateCompleteMomentEvents(
@@ -1806,7 +1851,12 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             rows.map(timelineMomentEventFromScopeRow),
           );
           const moments = await buildAgentTimelineMoments(scope, hits, events);
-          return { count: moments.length, moments };
+          return {
+            count: moments.length,
+            moments,
+            retrieval,
+            context: await enrichEvidenceContext(scope, { eventIds }),
+          };
         }),
     }),
 
@@ -1850,7 +1900,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           }));
           const moments = await buildAgentTimelineMoments(scope, hits, events);
           const expanded = input.momentId
-            ? moments.find((moment) => moment.moment_id === input.momentId)
+            ? (moments.find((moment) => moment.moment_id === input.momentId) ??
+              moments.find((moment) =>
+                Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
+              ))
             : moments[0];
           if (!expanded) {
             return {
@@ -2030,10 +2083,21 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 }
               : null,
             archived: result.archivedAt !== null,
+            updatedAt: result.updatedAt.toISOString(),
+            relationships: result.relationships.map((r) => ({
+              id: r.id,
+              kind: r.kind,
+              otherName: r.otherName,
+              fromEntityId: r.direction === 'out' ? result.id : r.otherId,
+              toEntityId: r.direction === 'out' ? r.otherId : result.id,
+            })),
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,
               citation: artifactRefCitation({ kind: 'object_note', id: n.id }),
-              body: n.body,
+              body: fenceExternalContent(n.body, { source: 'object_note', eventId: n.id }),
+              entityId: result.id,
+              authorUserId: n.authorUserId,
+              updatedAt: n.updatedAt.toISOString(),
             })),
             recent_changes: result.recentChanges.slice(0, 20).map((c) => ({
               id: c.id,
@@ -2906,10 +2970,18 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const args: Parameters<typeof scope.documents.searchDocumentChunks>[0] = {
             query: input.query,
           };
+          args.rankingNow = executionContext.currentDate;
+          if (input.ranking) args.ranking = input.ranking;
           if (input.documentId) args.documentId = input.documentId;
           if (input.folderIds) args.folderIds = input.folderIds;
           if (input.limit) args.limit = input.limit;
-          const hits = await scope.documents.searchDocumentChunks(args);
+          let retrieval: SearchRankingSummary | null = null;
+          const hits = await scope.documents.searchDocumentChunks({
+            ...args,
+            onRanking: (value) => {
+              retrieval = value;
+            },
+          });
           // Fence the chunk text so a prompt-injection embedded in an
           // uploaded document cannot escape into the agent's instructions.
           // Use the chunk id as the fence event_id attribute so the marker
@@ -2935,13 +3007,23 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             folder_id: h.folderId,
             source_raw_event_id: h.sourceRawEventId,
             score: h.score,
+            ranking: h.ranking,
             snippet:
               fenceExternalContent(h.summary ?? h.text.slice(0, 800), {
                 source: 'document',
                 eventId: h.documentChunkId,
               }) ?? '',
           }));
-          return { count: fenced.length, results: fenced };
+          return {
+            count: fenced.length,
+            results: fenced,
+            retrieval,
+            context: await enrichEvidenceContext(scope, {
+              eventIds: hits.flatMap((hit) =>
+                [hit.sourceEvidenceEventId].filter((id): id is string => Boolean(id)),
+              ),
+            }),
+          };
         }),
     }),
 
@@ -3095,19 +3177,32 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             mondayDocIds: [...selectedDocIds],
             limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
           });
+          let retrieval: SearchRankingSummary | null = null;
           const filtered = await scope.timeline.searchEvents({
             query: parsed.query,
+            ranking: 'balanced',
+            rankingNow: executionContext.currentDate,
+            onRanking: (value) => {
+              retrieval = value;
+            },
             source: 'integration',
             eventIds: candidates.eventIds,
             limit: requestedLimit,
           });
           return {
+            context: await enrichEvidenceContext(scope, {
+              eventIds: filtered.map((hit) => hit.eventId),
+            }),
             count: filtered.length,
-            truncated: candidates.truncated,
+            truncated:
+              candidates.truncated ||
+              Boolean((retrieval as SearchRankingSummary | null)?.candidateLimitReached),
+            retrieval,
             results: filtered.map((r) => ({
               event_id: r.eventId,
               occurred_at: r.occurredAt,
               score: r.score,
+              ranking: r.ranking,
               snippet:
                 fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
             })),

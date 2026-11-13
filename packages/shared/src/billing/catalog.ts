@@ -86,7 +86,7 @@ export const PLAN_CATALOG: Record<BillingPlanId, PlanCommercial> = {
   free: {
     id: 'free',
     name: 'Free',
-    tagline: 'Useful for a real 1–3 person team. No card.',
+    tagline: 'Enough to try it with one channel.',
     platformFeeCents: 0,
     includedActiveMembers: 3,
     additionalMemberCents: null,
@@ -320,10 +320,13 @@ export const MEETING_MAX_DURATION_MINUTES_BY_PLAN: Record<BillingPlanId, number>
   enterprise: 360,
 };
 
-/** Customer AI charge reserved before an Ask / web chat turn (€1). */
-export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
+/** Small admission hold (0.1 cent), not a worst-case turn cost. Settle actual usage. */
+export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 0.1;
 
-/** Worst-case reservation for background LLM (extract, embed, digest, vision). */
+/** Conservative admission budget for the pinned embedding model, not settlement pricing. */
+export const EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS = 0.1;
+
+/** Worst-case reservation for background LLM (extract, digest, vision). */
 export const BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
 
 /** Reservation TTL for Ask turns (covers long tool loops + presentation pass). */

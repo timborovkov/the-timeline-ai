@@ -11,7 +11,6 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { GuidedContinue } from '@/components/onboarding/guided-continue';
 import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
@@ -55,7 +54,7 @@ const EMPTY_STATES: Record<
 };
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; boardId?: string }>;
 }
 
 const GUIDED_APPROVAL_PHASES = new Set(['ask', 'approve', 'record']);
@@ -108,6 +107,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     scope.suggestions.withCalendarResolutionHints(
       await scope.suggestions.listSuggestions({
         status,
+        boardId: params.boardId,
         itemIds,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: null,
@@ -122,6 +122,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   }));
   const visibleSuggestions = page.items.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
+      if (params.boardId && item.proposedPayload.boardId !== params.boardId) return false;
       if (status === 'pending') return item.status === 'pending';
       if (status === 'failed') return item.status === 'failed';
       if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
@@ -130,54 +131,71 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
   const inventoryCount =
-    status === 'pending' || status === 'failed' ? approvalCounts[status] : null;
+    !params.boardId && (status === 'pending' || status === 'failed')
+      ? approvalCounts[status]
+      : null;
 
   return (
-    <div data-app-width="collection" className="space-y-6">
+    <div data-app-width="overview" className="space-y-4">
       <PageHeader
-        variant="collection"
+        variant="default"
+
         title="Approvals"
-        subtitle={approvalsSubtitle(guidedApprovals)}
+        subtitle={
+          params.boardId
+            ? 'Membership changes for this board. Each decision is separate from object approval.'
+            : approvalsSubtitle(guidedApprovals)
+        }
         metadata={[
-          { label: 'Filter', value: status.replaceAll('_', ' ') },
           ...(inventoryCount !== null
-            ? [{ label: 'Items', value: inventoryCount, mono: true }]
+            ? [
+                {
+                  label: status === 'pending' ? 'To review' : 'Needs attention',
+                  value: inventoryCount,
+                  mono: true,
+                },
+              ]
             : []),
         ]}
       />
-      <WorkSubnav current="/app/approvals" />
-      <CollectionToolbar>
-        <CollectionToolbar.View>
-          <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
-            {STATUS_FILTERS.map((filter) => (
-              <Link
-                key={filter}
-                href={`/app/approvals?status=${filter}`}
-                aria-current={status === filter ? 'page' : undefined}
-                className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
-                  status === filter
-                    ? 'bg-signal-soft text-signal'
-                    : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
-                }`}
-              >
-                {filter}
-                {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
-              </Link>
-            ))}
-          </nav>
-        </CollectionToolbar.View>
-      </CollectionToolbar>
-      <GuidedApprovalsChrome enabled={guidedApprovals} />
-      <ApprovalsClient
-        key={status}
-        suggestions={visibleSuggestions}
-        nextCursor={page.nextCursor}
-        status={status}
-        guided={guidedApprovals}
-        timezone={calendarSettings.defaultTimezone}
-        taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
-        emptyState={EMPTY_STATES[status]}
-      />
+      <div>
+        <CollectionToolbar>
+          <CollectionToolbar.Search>
+            <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
+              {STATUS_FILTERS.map((filter) => (
+                <Link
+                  key={filter}
+                  href={`/app/approvals?status=${filter}${params.boardId ? `&boardId=${encodeURIComponent(params.boardId)}` : ''}`}
+                  aria-current={status === filter ? 'page' : undefined}
+                  className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
+                    status === filter
+                      ? 'bg-signal-soft text-signal'
+                      : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+                  }`}
+                >
+                  {filter}
+                  {!params.boardId && (filter === 'pending' || filter === 'failed')
+                    ? ` ${approvalCounts[filter]}`
+                    : ''}
+                </Link>
+              ))}
+            </nav>
+          </CollectionToolbar.Search>
+        </CollectionToolbar>
+        <GuidedApprovalsChrome enabled={guidedApprovals} />
+        <ApprovalsClient
+          layout="inbox"
+          key={`${status}:${params.boardId ?? 'all'}`}
+          boardId={params.boardId}
+          suggestions={visibleSuggestions}
+          nextCursor={page.nextCursor}
+          status={status}
+          guided={guidedApprovals}
+          timezone={calendarSettings.defaultTimezone}
+          taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+          emptyState={EMPTY_STATES[status]}
+        />
+      </div>
       {guidedApprovals && visibleSuggestions.length === 0 ? <RefreshSuggestions /> : null}
       <GuidedApprovalsContinue enabled={guidedApprovals} />
     </div>

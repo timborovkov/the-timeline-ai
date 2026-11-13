@@ -1,6 +1,7 @@
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
-import { ListTodo } from 'lucide-react';
+import { ListTodo, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { TaskRowsPage } from '@/lib/task-page';
@@ -13,8 +14,8 @@ import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { TaskViewToggle } from '@/components/tasks/task-view-toggle';
+import { Button } from '@/components/ui/button';
 import { WorkFilterBar } from '@/components/work-filter-bar';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -76,12 +77,8 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
   return (
     <div
       data-app-width="collection"
-      data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
-      className={
-        rows.length > 0
-          ? '-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
-          : 'space-y-5'
-      }
+      data-app-layout="full-bleed"
+      className="flex h-full min-h-0 min-w-0 flex-col"
     >
       <PageHeader
         variant="collection"
@@ -115,14 +112,18 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
               ]
             : []),
         ]}
-        className={rows.length > 0 ? 'w-full shrink-0 px-4 md:px-8' : 'shrink-0'}
-      />
-      <WorkSubnav
-        current="/app/tasks"
-        className={rows.length > 0 ? 'shrink-0 px-4 md:px-8' : undefined}
+        className="w-full shrink-0 px-4 md:px-8"
       />
 
       <WorkFilterBar
+        actions={
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/app/objects/new?returnTo=%2Fapp%2Ftasks">
+              <Plus aria-hidden="true" className="size-4" />
+              New task
+            </Link>
+          </Button>
+        }
         mode="tasks"
         basePath="/app/tasks"
         filters={filters}
@@ -151,11 +152,13 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       ) : null}
 
       {rows.length === 0 ? (
-        <TasksEmptyState
-          activeFilters={activeFilters}
-          pendingTaskItems={pendingTaskItems}
-          view={view}
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <TasksEmptyState
+            activeFilters={activeFilters}
+            pendingTaskItems={pendingTaskItems}
+            view={view}
+          />
+        </div>
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {
@@ -187,6 +190,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
           taskCategoriesEnabled={taskCategoriesEnabled}
           folded={{
             title: 'Task approvals',
+            summaryClassName: 'min-h-12 cursor-pointer list-none pr-16 pb-3',
             summary: {
               singular: 'pending task proposal',
               plural: 'pending task proposals',

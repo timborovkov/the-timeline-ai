@@ -86,6 +86,12 @@ and evidence; never treat an offline CI pass as live promotion evidence.
   `bun run test:reconciliation-eval:live` when prompts or live-model
   reconciliation behavior changed and the required env vars are available.
 
+Board qualification has a focused synthetic live suite:
+`BOARD_QUALIFICATION_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/boards/qualification.live-eval.test.ts --live`.
+It needs the normal runtime environment and `OPENROUTER_API_KEY`; it calls the shared
+model without creating board items or approvals. Cases cover inclusion, affirmative
+removal, uncertainty and hostile source text.
+
 Use `bun` only. Do not use `pnpm`, `npm`, or `yarn`.
 
 Offline test execution is declared in `scripts/testing/manifest.json`: each file
@@ -118,3 +124,23 @@ pending Company proposals, and absence of canonical objects. Worker dispatch is
 inline; Redis/browser transport and vector indexing are outside this test.
 Local S3 defaults follow Compose; override with `WEBSITE_SCAN_LIVE_S3_ENDPOINT`,
 `WEBSITE_SCAN_LIVE_S3_ACCESS_KEY_ID`, and `WEBSITE_SCAN_LIVE_S3_SECRET_ACCESS_KEY`.
+
+## Freshness and conflict-context verification
+
+Changes to evidence ranking require deterministic source-date, weak upload-date,
+historical-query, pagination and visibility regressions plus `bun run test:eval`.
+The live agent suite's supplied vector hits do not verify actual retrieval:
+exercise real embeddings and isolated Qdrant points with `bun run test:freshness-eval:live` (`OPENROUTER_API_KEY`, local `QDRANT_URL` and its API key, plus local `FRESHNESS_EVAL_DATABASE_URL` or `DATABASE_URL` with permission to create disposable databases). Set `FRESHNESS_EVAL_REPORT` to save the synthetic evidence report. Use synthetic
+cross-source examples, including Telegram corrections, and clean up the unique
+fixture collection and PostgreSQL database afterwards. Latency comparisons use PostgreSQL, the application’s SQL engine, rather than in-process PGlite. The harness indexes conversation, meeting, website,
+integration and native-note events plus source-backed, undated and private document
+chunks. It checks accepted/rejected proposal context without deleting source history.
+Record baseline/candidate recall and p95 across
+30 repeated queries after three warmups per mode, without concurrent validation jobs; the release target is no required-evidence loss and no more
+than 25% p95 retrieval regression. Repeat each critical live answer scenario
+three times and require correct citations and current/pending distinctions.
+
+Browser verification covers approval evidence links, revision/acceptance and the
+subsequent answer, plus Help/FAQ navigation and responsive themes. Missing live
+prerequisites or a failed quality/latency gate remain unverified release evidence;
+offline tests and screenshots do not substitute for them.

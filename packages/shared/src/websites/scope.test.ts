@@ -83,6 +83,37 @@ describe('persistent website scope', () => {
     ).rejects.toThrow();
     expect((await scope.history(website.id)).length).toBe(1);
   });
+  it('lists the latest scan summary without losing unscanned sources or crossing teams', async () => {
+    const website = await source();
+    const scope = withTeam(db, TEAM, MEMBER).websites;
+    expect((await scope.list())[0]?.latestRun).toBeNull();
+    const run = await scope.admit({
+      websiteId: website.id,
+      idempotencyKey: 'summary',
+      trigger: 'manual',
+    });
+    await db.insert(websiteRuns).values({
+      teamId: TEAM,
+      websiteId: website.id,
+      requestedBy: MEMBER,
+      idempotencyKey: 'older',
+      trigger: 'manual',
+      status: 'completed',
+      createdAt: new Date('2020-01-01'),
+    });
+    expect((await scope.list())[0]?.latestRun).toEqual(
+      expect.objectContaining({ id: run.id, status: 'queued', finishedAt: null }),
+    );
+    expect(await withTeam(db, OTHER, OWNER).websites.list()).toEqual([]);
+    const finishedAt = new Date();
+    await db
+      .update(websiteRuns)
+      .set({ status: 'completed', finishedAt, changedCount: 2 })
+      .where(eq(websiteRuns.id, run.id));
+    expect((await scope.list())[0]?.latestRun).toEqual(
+      expect.objectContaining({ id: run.id, status: 'completed', finishedAt, changedCount: 2 }),
+    );
+  });
   it('does not grant a second provider lease for the same run', async () => {
     const website = await source();
     const scope = withTeam(db, TEAM, MEMBER).websites;

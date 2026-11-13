@@ -1,7 +1,7 @@
 'use client';
 
 import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
-import { Newspaper } from 'lucide-react';
+import { ChevronDown, Newspaper } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { EmptyState } from '@/components/empty-state';
@@ -49,7 +49,7 @@ export function DigestHistoryTable({
 
   return (
     <div>
-      <div className="grid grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 border-b border-border text-xs text-fg-dim">
+      <div className="hidden md:grid grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 border-b border-border text-xs text-fg-dim">
         <div className="py-2 font-medium">Day</div>
         <div className="py-2 font-medium">Summary</div>
         <div className="py-2 font-medium">Status</div>
@@ -61,7 +61,7 @@ export function DigestHistoryTable({
           <details
             key={digest.id}
             id={digest.id}
-            className="border-b border-border"
+            className="group border-b border-border"
             open={open || undefined}
             onToggle={(event) => {
               const nextOpen = event.currentTarget.open;
@@ -73,19 +73,22 @@ export function DigestHistoryTable({
           >
             <summary
               aria-expanded={open}
-              className="grid min-h-11 cursor-pointer grid-cols-[8rem_minmax(0,1fr)_6rem] items-center gap-4 py-2 text-sm"
+              className="grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[8rem_minmax(0,1fr)_6rem] items-center gap-x-4 gap-y-2 py-3 text-sm [&::-webkit-details-marker]:hidden"
             >
               <span className="font-mono text-xs text-fg-dim">
                 {formatDigestDate(digest.windowEnd, timezone)}
               </span>
-              <span className="min-w-0 truncate text-fg">{digest.summary || 'No summary'}</span>
+              <span className="col-span-2 row-start-2 min-w-0 text-fg md:col-span-1 md:row-start-auto md:truncate">
+                {digest.summary || 'No summary'}
+              </span>
               <span
                 className={cn(
-                  'font-mono text-xs capitalize text-fg-dim',
+                  'col-start-2 row-start-1 inline-flex items-center justify-end gap-2 font-mono text-xs capitalize text-fg-dim md:col-start-3',
                   digest.status === 'sent' && 'text-signal',
                 )}
               >
                 {digest.status}
+                <ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" />
               </span>
             </summary>
             <div id={`digest-panel-${digest.id}`} className="px-1 pb-5 pt-1">

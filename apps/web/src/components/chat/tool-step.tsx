@@ -1,5 +1,6 @@
 'use client';
 
+import { defaultBoardLanes, defaultBoardRecommendedTypes } from '@timeline/shared/boards/templates';
 import { Check, CircleAlert, CircleCheck, CirclePause, LoaderCircle, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useState, useTransition } from 'react';
@@ -10,6 +11,10 @@ import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import {
+  workspaceMutationPreviews,
+  type dedicatedMutationPreviews,
+} from '@/lib/chat-approval-previews';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
 import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
@@ -19,6 +24,8 @@ interface Props {
   state: string;
   input?: unknown;
   output?: unknown;
+  errorText?: string | undefined;
+  isActive?: boolean;
   approval?: { id: string; approved?: boolean; reason?: string };
   onApprovalResponse?: (input: { id: string; approved: boolean; reason?: string }) => void;
 }
@@ -99,6 +106,28 @@ function calendarToolSummary(name: string, input: unknown): string | null {
 
 function summarize(name: string, input: unknown, output: unknown, state: string): string {
   const inp = (input ?? {}) as Record<string, unknown>;
+  if (workspaceMutationPreviews.includes(name)) {
+    const message = stringValue(inputRecord(output), 'message');
+    if (message) return message;
+    const labels: Record<string, string> = {
+      execute_board_create: 'Create board',
+      execute_board_update: 'Update board',
+      execute_board_archive: 'Archive board',
+      execute_board_add_item: 'Add board card',
+      execute_board_update_item: 'Update board card',
+      execute_board_remove_item: 'Remove board card',
+      execute_object_restore: 'Restore object',
+      execute_object_note_create: 'Add note',
+      execute_object_note_update: 'Edit note',
+      execute_object_note_delete: 'Delete note',
+      execute_object_relationship_add: 'Link objects',
+      execute_object_relationship_remove: 'Unlink objects',
+    };
+    const targetName =
+      stringValue(inp, 'name') ?? stringValue(nestedRecord(inp, 'expectedCurrent'), 'name');
+    return `${labels[name]}${targetName ? `: ${targetName}` : ''}`;
+  }
+
   if (name === 'search_timeline') {
     const q = typeof inp.query === 'string' ? inp.query : '';
     const out = output as { count?: number } | undefined;
@@ -571,6 +600,7 @@ function ToolApprovalCard({
       <p className="text-xs font-medium text-fg">Approval needed</p>
       {
         <ApprovalDetails
+          name={name}
           record={record}
           reason={reason}
           timezone={timezone}
@@ -640,7 +670,21 @@ function ToolDetails({
   );
 }
 
-export function ToolStep({ name, state, input, output, approval, onApprovalResponse }: Props) {
+export function ToolStep({
+  name,
+  state: rawState,
+  input,
+  output,
+  errorText,
+  isActive = false,
+  approval,
+  onApprovalResponse,
+}: Props) {
+  const state =
+    !isActive &&
+    ['input-streaming', 'input-available', 'partial-call', 'approval-responded'].includes(rawState)
+      ? 'interrupted'
+      : rawState;
   const {
     StateIcon,
     isRunning,
@@ -684,12 +728,14 @@ export function ToolStep({ name, state, input, output, approval, onApprovalRespo
         />
       ) : null}
       {suggestion ? <InlineApprovalCard suggestion={suggestion} /> : null}
+      {errorText ? <p className="mt-2 text-xs text-danger">{errorText}</p> : null}
       <ToolDetails name={name} state={state} input={input} output={output} />
     </div>
   );
 }
 
 interface ApprovalDetailsProps {
+  name: string;
   record: Record<string, unknown>;
   reason: string | null;
   timezone: string;
@@ -710,7 +756,10 @@ function toolStepPresentation(
     ((input: { id: string; approved: boolean; reason?: string }) => void) | undefined,
 ) {
   const isRunning =
-    state === 'input-streaming' || state === 'input-available' || state === 'partial-call';
+    state === 'input-streaming' ||
+    state === 'input-available' ||
+    state === 'partial-call' ||
+    state === 'approval-responded';
   const isApprovalPending = state === 'approval-requested';
   const out =
     output &&
@@ -732,20 +781,36 @@ function toolStepPresentation(
   const needsApproval =
     state === 'approval-requested' && approval && onApprovalResponse ? approval : null;
   const approvalResponse = needsApproval && onApprovalResponse ? onApprovalResponse : null;
-  const toolStateLabel = isApprovalPending
-    ? 'Approval needed'
-    : isRunning
-      ? 'Running'
-      : isError
-        ? 'Unable to complete'
-        : 'Completed';
-  const StateIcon = isApprovalPending
+  const toolStateLabel =
+    state === 'output-denied'
+      ? 'Denied'
+      : state === 'approval-unavailable'
+        ? 'Approval no longer active'
+        : state === 'interrupted'
+          ? 'Interrupted'
+          : state === 'result-unavailable'
+            ? 'Result unavailable'
+            : isApprovalPending
+              ? 'Approval needed'
+              : isRunning
+                ? 'Running'
+                : isError
+                  ? 'Unable to complete'
+                  : 'Completed';
+  const StateIcon = [
+    'output-denied',
+    'interrupted',
+    'result-unavailable',
+    'approval-unavailable',
+  ].includes(state)
     ? CirclePause
-    : isRunning
-      ? LoaderCircle
-      : isError
-        ? CircleAlert
-        : CircleCheck;
+    : isApprovalPending
+      ? CirclePause
+      : isRunning
+        ? LoaderCircle
+        : isError
+          ? CircleAlert
+          : CircleCheck;
   const stateClassName = isError ? 'text-danger' : 'text-fg-muted';
   return {
     StateIcon,
@@ -761,23 +826,162 @@ function toolStepPresentation(
   };
 }
 
+const approvalComponents: Record<
+  (typeof dedicatedMutationPreviews)[number],
+  (props: ApprovalDetailsProps) => ReactNode
+> = {
+  execute_object_create: ObjectCreateApproval,
+  execute_object_update: ObjectFieldApproval,
+  execute_calendar_create: CalendarCreateApproval,
+  execute_calendar_update: CalendarUpdateApproval,
+  execute_calendar_cancel: CalendarCancelApproval,
+  execute_object_archive: ObjectArchiveApproval,
+  execute_object_merge: ObjectMergeApproval,
+};
+
 function approvalDetailsComponent(name: string) {
-  switch (name) {
-    case 'execute_object_create':
-      return ObjectCreateApproval;
-    case 'execute_calendar_create':
-      return CalendarCreateApproval;
-    case 'execute_calendar_update':
-      return CalendarUpdateApproval;
-    case 'execute_calendar_cancel':
-      return CalendarCancelApproval;
-    case 'execute_object_archive':
-      return ObjectArchiveApproval;
-    case 'execute_object_merge':
-      return ObjectMergeApproval;
-    default:
-      return ObjectFieldApproval;
+  return workspaceMutationPreviews.includes(name)
+    ? WorkspaceMutationApproval
+    : Object.hasOwn(approvalComponents, name)
+      ? approvalComponents[name as keyof typeof approvalComponents]
+      : ObjectFieldApproval;
+}
+
+const workspaceFieldLabels: Record<string, string> = {
+  name: 'Name',
+  purpose: 'Purpose',
+  templateKind: 'Template',
+  lanes: 'Lanes',
+  qualificationEnabled: 'Suggest membership changes',
+  qualificationInstructions: 'Membership criteria',
+  strictObjectTypes: 'Restrict object types',
+  recommendedObjectTypes: 'Object types',
+  body: 'Note',
+  kind: 'Relationship',
+  laneId: 'Lane',
+  nextStep: 'Next step',
+  notes: 'Notes',
+  dueAt: 'Due date',
+  priority: 'Priority',
+  responsibleUserId: 'Responsible teammate',
+  position: 'Position',
+  customFields: 'Custom fields',
+};
+
+function workspaceApprovalData(name: string, record: Record<string, unknown>) {
+  const expected = nestedRecord(record, 'expectedCurrent');
+  const patch = nestedRecord(record, 'patch');
+  const template = record.templateKind;
+  const isTemplate =
+    template === 'pipeline' ||
+    template === 'task_board' ||
+    template === 'catalog' ||
+    template === 'custom';
+  const effective: Record<string, unknown> =
+    name === 'execute_board_create' && isTemplate
+      ? {
+          ...record,
+          lanes: record.lanes ?? defaultBoardLanes(template),
+          recommendedObjectTypes:
+            record.recommendedObjectTypes ?? defaultBoardRecommendedTypes(template),
+          qualificationEnabled: record.qualificationEnabled ?? false,
+          strictObjectTypes: record.strictObjectTypes ?? false,
+        }
+      : { ...record, ...patch };
+  const references = { ...expected, ...record };
+  const fields = Object.entries(workspaceFieldLabels).filter(
+    ([key]) => key in effective || key in expected,
+  );
+  return { expected, patch, effective, references, fields };
+}
+
+function WorkspaceMutationApproval({ name, record, reason }: ApprovalDetailsProps) {
+  const { expected, patch, effective, references, fields } = workspaceApprovalData(name, record);
+  return (
+    <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
+      <WorkspaceApprovalReferences references={references} />
+      {fields.map(([key, label]) => (
+        <ApprovalRow key={key} label={label}>
+          {key in expected && key in effective ? (
+            <>
+              <WorkspaceApprovalValue value={expected[key]} /> →{' '}
+            </>
+          ) : null}
+          <WorkspaceApprovalValue value={key in effective ? effective[key] : expected[key]} />
+        </ApprovalRow>
+      ))}
+      {name === 'execute_board_update' && 'lanes' in patch ? (
+        <ApprovalRow label="Removed lanes">
+          Cards in removed lanes become unassigned. Objects are preserved.
+        </ApprovalRow>
+      ) : null}
+      {name === 'execute_board_archive' ? (
+        <ApprovalRow label="Effect">Archive the board; keep its objects.</ApprovalRow>
+      ) : null}
+      {name === 'execute_object_restore' ? (
+        <ApprovalRow label="Status">Archived → Active</ApprovalRow>
+      ) : null}
+      {name === 'execute_object_note_delete' ? (
+        <ApprovalRow label="Effect">Delete this note.</ApprovalRow>
+      ) : null}
+      {name === 'execute_object_relationship_remove' ? (
+        <ApprovalRow label="Effect">Remove this relationship; keep both objects.</ApprovalRow>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function WorkspaceApprovalReferences({ references }: { references: Record<string, unknown> }) {
+  return (
+    <>
+      {' '}
+      {['boardId', 'entityId', 'fromEntityId', 'toEntityId'].map((key) =>
+        typeof references[key] === 'string' ? (
+          <ApprovalRow
+            key={key}
+            label={
+              key === 'fromEntityId'
+                ? 'From'
+                : key === 'toEntityId'
+                  ? 'To'
+                  : key === 'boardId'
+                    ? 'Board'
+                    : 'Object'
+            }
+          >
+            <ArtifactReferenceChip
+              refValue={{
+                kind: key === 'boardId' ? 'board' : 'object',
+                id: references[key],
+              }}
+            />
+          </ApprovalRow>
+        ) : null,
+      )}
+    </>
+  );
+}
+
+function WorkspaceApprovalValue({ value }: { value: unknown }) {
+  if (typeof value === 'string' && value.startsWith('<external_content source="object_note" ')) {
+    const contentStart = value.indexOf('>') + 1;
+    return <>{value.slice(contentStart).replace(/<\/external_content>$/, '')}</>;
   }
+  if (typeof value === 'boolean') return <>{value ? 'On' : 'Off'}</>;
+  if (Array.isArray(value))
+    return (
+      <>
+        {value
+          .map((item: unknown) =>
+            typeof item === 'object' && item !== null && 'name' in item
+              ? `${String(item.name)}${'kind' in item && typeof item.kind === 'string' && item.kind ? ` (${item.kind})` : ''}`
+              : String(item),
+          )
+          .join(' → ') || 'None'}
+      </>
+    );
+  return <>{formatApprovalValue(value)}</>;
 }
 
 function ObjectCreateApproval({ record, reason, timezone }: ApprovalDetailsProps) {

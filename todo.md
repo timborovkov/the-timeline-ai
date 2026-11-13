@@ -8,7 +8,7 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | --- | --- | --- |
 | R1 | Verify release configuration and migration lineage for each deployment. | Confirm deployed revision/branch and migrations using [Railway](docs/railway.md) and [migration lineage](docs/migrations/coworker-drive-order.md); do not assume historical branch observations are current. |
 | R2 | Complete task-category production readiness. | [ADR 0011](docs/adr/0011-task-category-is-reversible-derived-state.md): live classifier/eval, staging backfill/query plans, and pilot latency/correction/project-link thresholds. |
-| R3 | Promote evidence packs per adapter. | [Rollout gates](docs/cross-source-evidence.md): remaining adapters, shadow sample, safety/quality/cost/latency evidence, monitoring and explicit enforcement. |
+| R3 | Promote evidence packs per adapter. | [Rollout gates](docs/relational-memory.md#cross-source-evidence-rollout): remaining adapters, shadow sample, safety/quality/cost/latency evidence, monitoring and explicit enforcement. |
 | R4 | Verify hosted MCP and publish the intended directories. | [Publication runbook](docs/marketplace-submissions.md): real-host OAuth/tool smoke tests, reviewer/support readiness, approval and visible listing; coworker client acceptance remains separately evidenced. |
 | R5 | Close security/privacy and legal evidence gaps. | The sole gap register is [security gaps](docs/security-gaps.md), including license/DPA/legal review, exact-text acceptance, analytics/legacy Convex, provider controls, staff access, backups and deletion. Do not duplicate individual gaps here. |
 | R6 | Complete billing production acceptance before enabling charges. | [Polar setup](docs/setup/polar.md): real webhook, shadow reconciliation period and invoice/member-access verification. Resolve or explicitly retain the provider's legacy customer-email limitation. No wallet/auto-reload flow is planned. |
@@ -24,8 +24,8 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P1 | Add per-team vision-spend budgets and visibility. | Bound paid OCR spend before work starts and show deferred/budget state; retain existing extraction admission limits. |
 | P2 | Recover terminal failed/no-show meeting captures. | Expose final failure in operations with an explicit retry/rejoin path; existing in-window retry is not full recovery. |
 | P3 | Complete remaining timeline moment coverage. | Non-integration source moment IDs, provider live-payload fixtures and handoff/update DTOs; current Moments UI is not a pending redesign. |
-| P4 | Improve board-agent workflows after dogfooding. | Board-scoped cited answers distinguish accepted state from proposals; extend only the missing direct operations. |
-| P5 | Extend high-risk in-chat approval workflows. | Persist prepared action IDs for multi-step actions and add missing task/board create/archive/pin operations with authorization and retry safety. |
+| P4 | Extend remaining direct workspace actions in chat. | Add approved document/folder organization, identity-facet editing, and dedicated task category/project/company-field operations through their existing domain services. See [direct chat workspace actions](docs/objects.md#direct-chat-workspace-actions); administrative actions require a separate scope. |
+| P5 | Extend multi-step in-chat action recovery. | Add durable workflow-level recovery for multi-step operations; interrupted approval claims must never silently replay a mutation. See [persisted chat sessions](docs/objects.md#persisted-chat-sessions). |
 | P6 | Add retrieval/index health by source kind. | Surface stale/missing indexes and recovery for object/calendar/document/board changes without leaking hidden data. |
 | P7 | Extend shared agent evaluation to remaining journeys. | Measure gaps in real dashboard/external-chat/background-proposal/summary/action paths using the existing harness; do not build a second harness. |
 | P8 | Add external calendar import. | Person-owned encrypted credentials, selected calendars, incremental Google sync/push and CalDAV polling, dedupe, private-source visibility and deletion tombstones. |
@@ -33,6 +33,8 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P10 | Add targeted file inspection and correction. | Second-pass original-file inspection, audited representation corrections, and captured-file sender/bulk triage; preserve [file semantics](docs/captured-files.md). |
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
+
+| P13 | Verify pre-launch engine against restricted representative Railway events. | Confirm deployed scheduler/worker health and measure labeled identity/relationship precision and recall on real events; synthetic evidence does not close this operational gate. See [engine evaluation](docs/relational-memory.md#evaluation-and-operational-diagnosis). |
 
 ## Conditional work
 

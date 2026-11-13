@@ -36,9 +36,11 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { kanbanKeyboardCoordinates } from '@/lib/kanban-keyboard';
 import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
+import { useReducedMotion } from '@/lib/use-reduced-motion';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -64,11 +66,15 @@ export function CuratedKanbanBoard({
   members,
   filterParams = EMPTY_FILTER_PARAMS,
 }: Props) {
+  const reducedMotion = useReducedMotion();
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: kanbanKeyboardCoordinates,
+      scrollBehavior: 'auto',
+    }),
   );
   const [optimisticItems, moveOptimistic] = useOptimistic(
     items,
@@ -270,7 +276,17 @@ export function CuratedKanbanBoard({
           ))}
         </section>
       </div>
-      <DragOverlay>
+      <DragOverlay
+        dropAnimation={reducedMotion ? null : undefined}
+        transition={
+          reducedMotion
+            ? () => undefined
+            : (event) =>
+                event instanceof KeyboardEvent
+                  ? 'transform 120ms cubic-bezier(0.23, 1, 0.32, 1)'
+                  : undefined
+        }
+      >
         {activeDragItem ? (
           <div className="rounded-sm border border-signal bg-bg px-2.5 py-2 text-sm shadow-md">
             {displayText(displayObjectTitle(activeDragItem.object))}
@@ -309,7 +325,7 @@ function KanbanColumn({
       ref={setNodeRef}
       aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
-        'flex h-full min-w-[min(12rem,calc(100vw-3rem))] flex-[1_1_12rem] flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
+        'flex h-full min-w-[min(16rem,calc(100vw-3rem))] flex-[1_0_16rem] flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
         isOver && 'bg-signal-soft',
       )}
     >
@@ -455,7 +471,7 @@ function KanbanCardMetadata({
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
 }) {
   return (
-    <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs leading-4">
       <span className="shrink-0 text-fg-dim">{statusLabel(item.object.type)}</span>
       {item.object.type === 'task' ? (
         <LiveTaskCategoryBadge
@@ -500,7 +516,7 @@ function KanbanCardMetadata({
         density="compact"
       >
         <EditableMetadata.Value>
-          <DueDateDisplay value={item.dueAt} variant="compact" />
+          <DueDateDisplay workStatus={item.object.status} value={item.dueAt} variant="compact" />
         </EditableMetadata.Value>
         <EditableMetadata.Editor>
           <MetadataDateEditor

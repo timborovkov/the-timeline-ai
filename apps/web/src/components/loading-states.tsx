@@ -20,12 +20,16 @@ export function PageHeaderSkeleton({
         aria-busy="true"
         aria-label="Loading"
       >
-        <Skeleton className="h-7 w-36" />
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="h-3 w-12" />
-          {action ? <Skeleton className="h-9 w-24 shrink-0" /> : null}
+        <div className="flex min-w-0 items-center gap-3">
+          <Skeleton className="h-5 w-24" />
+          {showMetadata ? (
+            <div className="hidden items-center gap-3 sm:flex">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-12" />
+            </div>
+          ) : null}
         </div>
+        {action ? <Skeleton className="h-9 w-24 shrink-0" /> : null}
       </div>
     );
   }
@@ -73,12 +77,14 @@ export function CollectionToolbarSkeleton({
   search = true,
   count = true,
   filters = true,
+  secondaryAction = false,
 }: {
   viewSegments?: number;
   action?: boolean;
   search?: boolean;
   count?: boolean;
   filters?: boolean;
+  secondaryAction?: boolean;
 }) {
   return (
     <div
@@ -105,6 +111,7 @@ export function CollectionToolbarSkeleton({
         ) : null}
         {action ? (
           <div className={cn('flex min-h-10 items-center', viewSegments === 0 && 'ml-auto')}>
+            {secondaryAction ? <Skeleton className="mr-2 h-8 w-20" /> : null}
             <Skeleton className="h-9 w-20" />
           </div>
         ) : null}

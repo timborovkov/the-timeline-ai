@@ -10,6 +10,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import { generateAndStoreObjectSummary } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -47,6 +48,179 @@ maybeDescribe('live suggestion worker evals', () => {
   afterEach(async () => {
     await pg.close();
   });
+
+  // Recall gate: tentative but concrete requests must survive missing optional fields.
+  // Real model + migrated persistence, synthetic evidence only; no canonical writes before approval.
+  for (let repeat = 0; repeat < 3; repeat++) {
+    it(`keeps a concrete tentative request without inventing owner or deadline (${repeat + 1})`, async () => {
+      await db
+        .update(rawEvents)
+        .set({
+          contentText:
+            'For Northstar rollout: could someone prepare an access review checklist? We need that checklist for rollout. We have not chosen an assignee or a deadline yet.',
+        })
+        .where(eq(rawEvents.id, RAW_EVENT_ID));
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID },
+        { getEnv: liveEnv },
+      );
+      const bundles = await withTeam(
+        db as never,
+        TEAM_ID,
+        USER_ID,
+      ).suggestions.listPendingSuggestions();
+      const tasks = bundles
+        .flatMap((bundle) => bundle.items)
+        .filter((item) => item.targetKind === 'task' && item.operation === 'create');
+      expect(tasks.some((item) => /checklist/i.test(item.title))).toBe(true);
+      for (const task of tasks) {
+        expect(task.proposedPayload.assigneeUserId ?? null).toBeNull();
+        expect(task.proposedPayload.assigneeName ?? null).toBeNull();
+        expect(task.proposedPayload.dueAt ?? null).toBeNull();
+        expect(['done', 'doing'].includes(String(task.proposedPayload.status))).toBe(false);
+      }
+      expect(await db.select().from(entities)).toHaveLength(2);
+      console.log(
+        JSON.stringify({
+          recallCase: 'tentative-request-missing-fields',
+          repeat: repeat + 1,
+          usefulOpportunityFound: tasks.some((item) => /checklist/i.test(item.title)),
+          taskProposals: tasks.length,
+        }),
+      );
+    }, 240_000);
+    it(`does not turn an explicit non-request into invented work (${repeat + 1})`, async () => {
+      await db
+        .update(rawEvents)
+        .set({
+          contentText:
+            'Northstar status note: we talked about access checklists as an example. No one is requesting a checklist, no work is planned, and no task was completed.',
+        })
+        .where(eq(rawEvents.id, RAW_EVENT_ID));
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID },
+        { getEnv: liveEnv },
+      );
+      const bundles = await withTeam(
+        db as never,
+        TEAM_ID,
+        USER_ID,
+      ).suggestions.listPendingSuggestions();
+      expect(
+        bundles.flatMap((bundle) => bundle.items).filter((item) => item.targetKind === 'task'),
+      ).toHaveLength(0);
+      expect(await db.select().from(entities)).toHaveLength(2);
+    }, 240_000);
+  }
+
+  it('writes a cited explanation of completed work from accepted source evidence with the live summary model', async () => {
+    await db
+      .update(rawEvents)
+      .set({
+        contentText:
+          'The Northstar onboarding checklist documents account setup, access review and launch verification. Sarah published the checklist and verified all steps. The onboarding checklist is complete.',
+      })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Publish onboarding checklist',
+      dedupeKey: 'live-summary-completed-work',
+      evidence: [{ rawEventId: RAW_EVENT_ID }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Publish onboarding checklist',
+          dedupeKey: 'live-summary-completed-work:item',
+          proposedPayload: {
+            canonicalName: 'Publish onboarding checklist',
+            status: 'done',
+            parentObjectId: PROJECT_ID,
+          },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    if (!item) throw new Error('missing summary fixture proposal');
+    await scope.suggestions.acceptSuggestionItem(item.id);
+    const [task] = await scope.objects.listObjects({ type: 'task' });
+    if (!task) throw new Error('missing accepted task');
+    expect(
+      await generateAndStoreObjectSummary(
+        db as never,
+        scope,
+        task.id,
+        { trigger: 'manual' },
+        {
+          // Exercise real generation and persistence; vector queue delivery is a
+          // separate boundary and this suite has no Redis/Qdrant fixture.
+          enqueueObjectEmbedJob: () => Promise.resolve(),
+        },
+      ),
+    ).toMatchObject({ status: 'ready' });
+    const summary = await scope.objects.getObjectSummary(task.id);
+    expect(summary?.plainText).toMatch(/checklist/i);
+    expect(summary?.plainText).toMatch(/published|complete|done|verified/i);
+    expect(
+      summary?.sourceRefs.some((ref) => ref.kind === 'timeline_event' && ref.id === RAW_EVENT_ID),
+    ).toBe(true);
+  }, 240_000);
+
+  // Real provider + worker + persistence: final outcomes and explicit fields must
+  // survive extraction. Synthetic evidence only; no production stores are used.
+  it('keeps the final completed outcome when work starts and finishes in one meeting', async () => {
+    await db
+      .update(rawEvents)
+      .set({
+        source: 'web',
+        contentText:
+          'Northstar rollout meeting, 1 July 2026. 10:00 Sarah: I will update the onboarding checklist now. 10:20 Sarah: I updated the onboarding checklist, published it and verified it. This task is complete; there is no remaining checklist work.',
+      })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+    const items = (
+      await withTeam(db as never, TEAM_ID, USER_ID).suggestions.listPendingSuggestions()
+    ).flatMap((bundle) => bundle.items);
+    const tasks = items.filter((item) => item.targetKind === 'task');
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.every((item) => item.proposedPayload.status === 'done')).toBe(true);
+    expect(tasks.some((item) => item.proposedPayload.parentObjectId === PROJECT_ID)).toBe(true);
+  }, 240_000);
+
+  it('retains an explicit assignee, urgent priority and absolute task deadline', async () => {
+    await db
+      .update(rawEvents)
+      .set({
+        contentText:
+          'For the Northstar rollout: assign Sarah the task to deliver the onboarding checklist. This is urgent, P0, blocking launch. The task deadline is 2026-07-03 at 17:00 UTC. Sarah is responsible for delivery.',
+      })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+    const items = (
+      await withTeam(db as never, TEAM_ID, USER_ID).suggestions.listPendingSuggestions()
+    ).flatMap((bundle) => bundle.items);
+    const task = items.find((item) => item.targetKind === 'task' && item.operation === 'create');
+    expect(task).toBeDefined();
+    expect(task?.proposedPayload).toMatchObject({
+      parentObjectId: PROJECT_ID,
+      assigneeUserId: USER_ID,
+      priority: 1,
+    });
+    expect(new Date(String(task?.proposedPayload.dueAt)).toISOString()).toBe(
+      '2026-07-03T17:00:00.000Z',
+    );
+  }, 240_000);
 
   it('extracts customer follow-up proposals through the real model and projection path', async () => {
     await processSuggestionJobForTests(
@@ -106,7 +280,16 @@ maybeDescribe('live suggestion worker evals', () => {
       ),
     ).toBe(true);
 
-    const outputs = await db.select().from(reconciliationOutputs);
+    const allOutputs = await db.select().from(reconciliationOutputs);
+    // A model may produce overlapping proposals which the worker supersedes.
+    // Validate the outputs backing the actual pending items, not audit history.
+    const pendingOutputIds = new Set(
+      itemRows.map((item) =>
+        isRecord(item.metadata) ? item.metadata.reconciliation_output_id : null,
+      ),
+    );
+    const outputs = allOutputs.filter((output) => pendingOutputIds.has(output.id));
+    expect(outputs).toHaveLength(items.length);
     expect(outputs.length).toBeGreaterThanOrEqual(items.length);
     expect(
       outputs.every(
@@ -140,7 +323,9 @@ maybeDescribe('live suggestion worker evals', () => {
     const sourceMetadata = rawEvent?.sourceMetadata;
     expect(isRecord(sourceMetadata)).toBe(true);
     if (!isRecord(sourceMetadata)) throw new Error('expected raw event source metadata');
-    expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(/@2026-08-a$/);
+    expect(sourceMetadata.suggestion_pre_extract_model_version).toMatch(
+      /@2026-11-engine-v3-recall$/,
+    );
     expect(typeof sourceMetadata.suggestions_pre_extracted_at).toBe('string');
   }, 240_000);
 });

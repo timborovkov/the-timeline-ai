@@ -62,7 +62,7 @@ function fakeDeliveryDb(
                       metadata: opts.metadata ?? {
                         email_payload: {
                           from: 'hello@example.test',
-                          to: ['tim@example.test'],
+                          to: ['taylor@example.test'],
                           subject: 'Stored email',
                           text: 'Stored text',
                           html: '<p>Stored text</p>',
@@ -98,13 +98,19 @@ function fakeDeliveryDb(
 }
 
 function fakeDailyDigestDbWithPendingDelivery(
-  recipientState: { suspendedAt?: Date; securityState?: string } = {},
+  recipientState: {
+    suspendedAt?: Date;
+    securityState?: string;
+    disabledAt?: Date;
+    deletionStartedAt?: Date;
+    deletedAt?: Date;
+  } = {},
 ) {
   let selectCount = 0;
   const updates: unknown[] = [];
   const payload = {
     teamName: 'Timeline',
-    userName: 'Tim',
+    userName: 'Taylor',
     windowStart: '2026-06-13T12:00:00.000Z',
     windowEnd: '2026-06-14T12:00:00.000Z',
     summary: 'Quiet day. One decision and no blockers.',
@@ -147,6 +153,14 @@ function fakeDailyDigestDbWithPendingDelivery(
                   ? [
                       {
                         id: 'digest-1',
+                        workspaceActive: !(
+                          Boolean(
+                            recipientState.disabledAt ??
+                            recipientState.deletionStartedAt ??
+                            recipientState.deletedAt,
+                          ) ||
+                          ['suspended', 'terminated'].includes(recipientState.securityState ?? '')
+                        ),
                         teamId: 'team-1',
                         userId: 'user-1',
                         windowEnd: new Date('2026-06-14T12:00:00.000Z'),
@@ -212,7 +226,7 @@ describe('Resend messaging adapter', () => {
     process.env.RESEND_API_KEY = 're_test';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
     const original = {
-      to: 'tim@example.test',
+      to: 'taylor@example.test',
       verificationUrl: 'https://timeline.test/verify-email/secret-token',
       expiresAt: new Date('2026-11-01T10:00:00Z'),
     };
@@ -264,7 +278,7 @@ describe('Resend messaging adapter', () => {
       'team_invite',
       {
         to: original.to,
-        inviterName: 'Tim',
+        inviterName: 'Taylor',
         teamName: 'Team',
         role: 'member',
         inviteUrl: 'https://timeline.test/invite/invite-secret',
@@ -279,7 +293,7 @@ describe('Resend messaging adapter', () => {
     process.env.RESEND_API_KEY = 're_test';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
     const original = {
-      to: 'tim@example.test',
+      to: 'taylor@example.test',
       resetUrl: 'https://timeline.test/reset-password?token=secret-token',
       expiresAt: new Date('2026-11-01T10:00:00Z'),
     };
@@ -338,7 +352,7 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'email_verification',
         {
-          to: 'tim@example.test',
+          to: 'taylor@example.test',
           verificationUrl: 'https://timeline.test/verify-email/secret-token',
           expiresAt: new Date('2026-11-01T10:00:00Z'),
         },
@@ -354,8 +368,8 @@ describe('Resend messaging adapter', () => {
     delete process.env.TRANSACTIONAL_EMAIL_FROM;
 
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -372,8 +386,8 @@ describe('Resend messaging adapter', () => {
     delete process.env.TRANSACTIONAL_EMAIL_FROM;
     const fetchMock = vi.fn();
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -397,8 +411,8 @@ describe('Resend messaging adapter', () => {
       ),
     );
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -422,8 +436,8 @@ describe('Resend messaging adapter', () => {
       ),
     );
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -439,7 +453,7 @@ describe('Resend messaging adapter', () => {
     process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const inactiveMessage =
-      'You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: tim@example.test. Inactive recipients are ones that have generated a hard bounce, a spam complaint, or a manual suppression.';
+      'You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: taylor@example.test. Inactive recipients are ones that have generated a hard bounce, a spam complaint, or a manual suppression.';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         new Response(JSON.stringify({ name: 'validation_error', message: inactiveMessage }), {
@@ -450,8 +464,8 @@ describe('Resend messaging adapter', () => {
       ),
     );
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -482,8 +496,8 @@ describe('Resend messaging adapter', () => {
       ),
     );
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -511,8 +525,8 @@ describe('Resend messaging adapter', () => {
       ),
     );
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -531,8 +545,8 @@ describe('Resend messaging adapter', () => {
       Promise.resolve(Response.json({ id: 'sent' })),
     );
     const message = renderMessage('welcome', {
-      to: 'tim@example.test',
-      name: 'Tim',
+      to: 'taylor@example.test',
+      name: 'Taylor',
       teamName: 'Timeline',
       dashboardUrl: 'https://timeline.test/app',
     });
@@ -547,7 +561,7 @@ describe('Resend messaging adapter', () => {
     expect(first?.headers).toEqual(request.mock.calls[1]?.[1]?.headers);
     expect(JSON.parse(first?.body as string)).toMatchObject({
       from: 'hello@example.test',
-      to: ['tim@example.test'],
+      to: ['taylor@example.test'],
       reply_to: 'support@example.test',
       tags: [{ name: 'message_intent', value: 'welcome' }],
     });
@@ -575,8 +589,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -613,8 +627,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -656,8 +670,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -693,8 +707,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -726,8 +740,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -766,8 +780,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -797,8 +811,8 @@ describe('Resend messaging adapter', () => {
       sendMessage(
         'welcome',
         {
-          to: 'tim@example.test',
-          name: 'Tim',
+          to: 'taylor@example.test',
+          name: 'Taylor',
           teamName: 'Timeline',
           dashboardUrl: 'https://timeline.test/app',
         },
@@ -823,6 +837,9 @@ describe('Resend messaging adapter', () => {
     { suspendedAt: new Date(), error: 'Recipient is suspended.' },
     { securityState: 'suspended', error: 'Workspace is suspended.' },
     { securityState: 'terminated', error: 'Workspace is suspended.' },
+    { disabledAt: new Date(), error: 'Workspace is disabled.' },
+    { deletionStartedAt: new Date(), error: 'Workspace deletion started.' },
+    { deletedAt: new Date(), error: 'Workspace deleted.' },
   ])('blocks an already generated digest after suspension: $error', async (state) => {
     const { db, updates } = fakeDailyDigestDbWithPendingDelivery(state);
     const fetchMock = vi.fn();
@@ -830,15 +847,17 @@ describe('Resend messaging adapter', () => {
       sendDailyDigest({
         db: db as never,
         digestId: 'digest-1',
-        to: 'tim@example.test',
+        to: 'taylor@example.test',
         digestUrl: 'https://timeline.test/app',
         fetch: fetchMock,
       }),
     ).resolves.toMatchObject({ ok: true, skipped: true });
-    expect(updates).toContainEqual({ status: 'skipped', error: state.error });
+    if ('suspendedAt' in state)
+      expect(updates).toContainEqual({ status: 'skipped', error: state.error });
+    else expect(updates).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
-    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.select).toHaveBeenCalledTimes('suspendedAt' in state ? 2 : 1);
   });
 
   it('does not mark a digest sent when its delivery is skipped because another send is pending', async () => {
@@ -851,7 +870,7 @@ describe('Resend messaging adapter', () => {
       sendDailyDigest({
         db: db as never,
         digestId: 'digest-1',
-        to: 'tim@example.test',
+        to: 'taylor@example.test',
         digestUrl: 'https://timeline.test/app',
         fetch: fetchMock,
         now: new Date('2026-06-14T12:05:00Z'),
@@ -884,6 +903,7 @@ describe('Resend messaging adapter', () => {
                 limit: vi.fn().mockResolvedValue([
                   {
                     id: 'digest-1',
+                    workspaceActive: true,
                     teamId: 'team-1',
                     userId: 'user-1',
                     payload: {
@@ -955,7 +975,7 @@ describe('Resend messaging adapter', () => {
             where: vi.fn(() => ({
               limit: vi.fn().mockResolvedValue([
                 {
-                  email: 'tim@example.test',
+                  email: 'taylor@example.test',
                   removedAt: null,
                   dailyDigestEnabled: true,
                 },
@@ -972,6 +992,7 @@ describe('Resend messaging adapter', () => {
                   ? [
                       {
                         id: 'digest-1',
+                        workspaceActive: true,
                         teamId: 'team-1',
                         userId: 'user-1',
                         windowEnd: new Date('2026-06-14T12:00:00.000Z'),
@@ -996,7 +1017,7 @@ describe('Resend messaging adapter', () => {
       sendDailyDigest({
         db: db as never,
         digestId: 'digest-1',
-        to: 'tim@example.test',
+        to: 'taylor@example.test',
         digestUrl: 'https://timeline.test/app',
         fetch: fetchMock,
         now: new Date('2026-06-15T13:00:00Z'),

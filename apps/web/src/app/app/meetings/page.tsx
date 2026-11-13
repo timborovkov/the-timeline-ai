@@ -458,7 +458,7 @@ function MeetingCapturesSection({
         id="meeting-captures-heading"
         className={meetings.length === 0 ? 'sr-only' : undefined}
       >
-        Recent captures
+        Scheduled and captured
       </SectionHeading>
       <MeetingCapturesList
         clearHref={clearHref}

@@ -90,10 +90,15 @@ describe('team lifecycle', () => {
       confirmation: 'First',
       reason: 'Legacy entity fixture',
     });
+    await db
+      .insert(schema.engineMaintenanceRuns)
+      .values([TEAM, OTHER].map((teamId) => ({ teamId, kind: 'cleanup', engineVersion: 'test' })));
     let done = false;
     for (let tick = 0; tick < 8 && !done; tick++) done = await purgeTeamRows(db, TEAM);
     expect(done).toBe(true);
     await verifyTeamRows(db, TEAM);
+    const maintenance = await db.select().from(schema.engineMaintenanceRuns);
+    expect(maintenance.map((row) => row.teamId)).toEqual([OTHER]);
   });
   it('erases legacy board and object history without revalidating old provenance', async () => {
     const scope = withTeam(db, TEAM, OWNER);

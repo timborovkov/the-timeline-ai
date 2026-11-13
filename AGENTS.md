@@ -4,6 +4,8 @@ This is the repository operating contract. Explicit user instructions take prece
 
 ## Validation and delivery
 
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) for human-owned branches, simple PR titles/descriptions, and the required Codex review loop.
+
 - Shared compiler options live in `tsconfig.base.json`. Preserve `erasableSyntaxOnly`: no enums, value namespaces, constructor parameter properties, or `import =` / `export =`. Keep existing target/lib versions; add `verbatimModuleSyntax` only for a demonstrated need. TypeScript 7 compilation uses `@typescript/native`; compiler-API consumers use the TypeScript 6 compatibility package.
 - Use Bun pinned by `.bun-version`; no npm, pnpm or yarn. Install with `bun run deps`.
 - Scope local checks to changed behavior. Prose-only work needs changed-file formatting, links and diff review, not application suites. Follow [testing policy](docs/testing/README.md) for change-specific tests and live evaluations.
@@ -30,7 +32,7 @@ This is the repository operating contract. Explicit user instructions take prece
 - Encrypt integration/OAuth secrets through `crypto/secrets.ts`. Validate external URLs through the MCP SSRF guard. Never place secrets or customer content in logs, fixtures or docs.
 - Before changing providers, data flows, telemetry, retention, access or legal/trust claims, apply [the security standard](docs/security-privacy-trust.md). Public claims cannot exceed evidenced controls.
 - Follow [domain ownership](docs/architecture/ownership.md) for lifecycle/transaction boundaries and [the memory engine](docs/relational-memory.md) for signal/authority rules.
-- Follow [design.md](design.md) for UI. Intentional design changes update that owner in the same change.
+- Follow [design.md](design.md) and its relevant component/screen references for UI. Intentional design changes update that owner in the same change.
 - Production vector copies, schema upgrades, deletion and snapshot cleanup follow their runbooks; never delete a volume or bypass a deployment inventory to repair startup.
 - Use `@/` for web source imports, `#src/` inside worker/shared/db packages, and exported `@timeline/*` subpaths across packages.
 

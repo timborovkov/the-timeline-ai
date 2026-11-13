@@ -19,6 +19,10 @@ import {
 import { RECOVERY_STALE_AFTER_MS } from '@timeline/shared/job-recovery/policy';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
 import { prunePlatformAdminRecords } from '@timeline/shared/platform-admin/retention';
+import {
+  activeWorkspaceCondition,
+  isInactiveWorkspaceError,
+} from '@timeline/shared/platform-admin/runtime';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -157,7 +161,9 @@ async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
   const teamsWithPins = await db
     .select({ teamId: userPins.teamId })
     .from(userPins)
-    .where(eq(userPins.targetKind, 'timeline_moment'))
+    .where(
+      and(eq(userPins.targetKind, 'timeline_moment'), activeWorkspaceCondition(userPins.teamId)),
+    )
     .groupBy(userPins.teamId)
     .orderBy(asc(userPins.teamId));
   let deleted = 0;
@@ -165,7 +171,11 @@ async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
     const scope = withTeam(db, row.teamId, MCP_TEAM_ACTOR_USER_ID, {
       skipMembershipCheck: true,
     });
-    deleted += await scope.pins.pruneDeletedTimelineMomentPins(PAGE_SIZE);
+    try {
+      deleted += await scope.pins.pruneDeletedTimelineMomentPins(PAGE_SIZE);
+    } catch (error) {
+      if (!isInactiveWorkspaceError(error)) throw error;
+    }
   }
   return deleted;
 }
@@ -177,6 +187,7 @@ async function sweepTaskCategoryProjectInvalidations(
   const rows = await db
     .select()
     .from(taskCategoryProjectInvalidations)
+    .where(activeWorkspaceCondition(taskCategoryProjectInvalidations.teamId))
     .orderBy(
       asc(taskCategoryProjectInvalidations.createdAt),
       asc(taskCategoryProjectInvalidations.id),
@@ -228,6 +239,7 @@ async function sweepTaskCategories(
       .from(pendingTasks)
       .where(
         and(
+          activeWorkspaceCondition(pendingTasks.teamId),
           eq(pendingTasks.type, 'task'),
           eq(pendingTasks.taskCategoryMode, 'automatic'),
           eq(pendingTasks.taskCategoryStatus, 'pending'),
@@ -295,6 +307,7 @@ async function sweepDocumentVersions(
       .from(documentVersions)
       .where(
         and(
+          activeWorkspaceCondition(documentVersions.teamId),
           isNotNull(documentVersions.byteSize),
           or(
             and(
@@ -329,6 +342,7 @@ async function sweepDocumentVersions(
         .set({ processingStatus: 'pending', processingError: null })
         .where(
           and(
+            activeWorkspaceCondition(documentVersions.teamId),
             inArray(documentVersions.id, extractingIds),
             eq(documentVersions.processingStatus, 'extracting'),
           ),
@@ -381,6 +395,7 @@ async function sweepMeetings(
       .from(meetings)
       .where(
         and(
+          activeWorkspaceCondition(meetings.teamId),
           eq(meetings.status, 'processing'),
           sql`${meetings.updatedAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.meetingProcessing / 1000})`,
           cursor ? gt(meetings.id, cursor) : undefined,

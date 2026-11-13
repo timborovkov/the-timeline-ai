@@ -5,7 +5,6 @@ import type { EditorialGuide } from '@/components/marketing/editorial/content';
 
 import { HOW_IT_WORKS_ROUTE } from '@/components/marketing/editorial/content';
 import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
 import { GuideMethodSections } from '@/components/marketing/editorial/guide-method-sections';
@@ -48,8 +47,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
           </nav>
           <div className={styles.heroGrid}>
             <div>
-              <EditorialKicker>Walkthrough</EditorialKicker>
-              <h1 className={`${styles.guideTitle} mt-6`}>{guide.title}</h1>
+              <h1 className={styles.guideTitle}>{guide.title}</h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
                 {guide.summary}
               </p>

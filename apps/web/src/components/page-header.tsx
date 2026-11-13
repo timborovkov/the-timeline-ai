@@ -156,8 +156,8 @@ function PageHeaderHeading({
     >
       <div
         className={cn(
-          'flex flex-col gap-1.5',
-          variant === 'collection' && 'min-w-0 flex-row items-baseline gap-3',
+          'min-w-0 flex-1 flex flex-col gap-1.5',
+          variant === 'collection' && 'min-w-0 flex-row flex-wrap items-baseline gap-3',
         )}
       >
         {leading ? <div className="text-fg-dim">{leading}</div> : null}
@@ -165,13 +165,19 @@ function PageHeaderHeading({
           id={titleId}
           className={cn(
             'm-0 text-2xl font-semibold tracking-tight text-fg',
-            variant === 'collection' && 'truncate text-lg leading-7',
+            variant === 'collection' &&
+              'min-w-0 whitespace-normal text-lg leading-7 [overflow-wrap:anywhere]',
           )}
         >
           {title}
         </h1>
         {subtitle ? (
-          <p className={cn('m-0 text-sm text-fg-muted', variant === 'collection' && 'sr-only')}>
+          <p
+            className={cn(
+              'm-0 max-w-[65ch] text-sm leading-6 text-fg-muted',
+              variant === 'collection' && 'sr-only',
+            )}
+          >
             {subtitle}
           </p>
         ) : null}
@@ -186,7 +192,9 @@ function PageHeaderHeading({
           </dl>
         ) : null}
       </div>
-      {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
+      {trailing ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">{trailing}</div>
+      ) : null}
     </div>
   );
 }
@@ -216,15 +224,21 @@ function HeaderMetadata({
           seg.danger && 'text-danger',
         )}
       >
-        {seg.value}
+        {seg.href ? (
+          <Link
+            href={seg.href}
+            aria-label={seg.ariaLabel}
+            className={cn(
+              'inline-flex items-center rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              compact ? 'min-h-8' : 'min-h-10 min-w-10',
+            )}
+          >
+            {seg.value}
+          </Link>
+        ) : (
+          seg.value
+        )}
       </dd>
-      {seg.href ? (
-        <Link
-          href={seg.href}
-          aria-label={seg.ariaLabel}
-          className="absolute inset-0 rounded-sm outline-none hover:bg-surface/50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-        />
-      ) : null}
     </div>
   );
 }

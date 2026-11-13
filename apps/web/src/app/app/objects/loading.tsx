@@ -3,7 +3,6 @@ import {
   CollectionToolbarSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function ObjectsLoading() {
   return (
@@ -13,18 +12,18 @@ export default function ObjectsLoading() {
       </output>
       <div
         data-app-width="collection"
-        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        data-app-layout="full-bleed"
+        className="flex h-full min-w-0 flex-col motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading objects"
       >
         <h1 className="sr-only">Objects</h1>
-        <div aria-hidden="true" inert>
+        <div aria-hidden="true" inert className="px-4 md:px-8">
           <PageHeaderSkeleton variant="collection" />
         </div>
-        <WorkSubnav current="/app/objects" />
         <div aria-hidden="true" inert className="space-y-0">
-          <CollectionToolbarSkeleton action />
-          <CollectionGroupSkeleton groups={2} rows={4} />
+          <CollectionToolbarSkeleton action secondaryAction />
+          <CollectionGroupSkeleton groups={2} rows={4} leading={false} />
         </div>
       </div>
     </>

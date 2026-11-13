@@ -446,41 +446,7 @@ function TimelineFilterPanel({
             </Link>
           </div>
         </CollectionToolbar.Filters>
-        <CollectionToolbar.Actions>
-          <nav
-            aria-label="Timeline presets"
-            className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto"
-          >
-            <Link
-              href={upcomingHref}
-              aria-current={upcomingActive ? 'page' : undefined}
-              className={upcomingClassName}
-            >
-              Upcoming · {TIMELINE_UPCOMING_DAYS} days
-            </Link>
-            {TIMELINE_PRESETS.map((preset) => {
-              const href =
-                'all' in preset
-                  ? timelineHref(baseParams, { source: null, origin: null, impact: null })
-                  : timelineHref(baseParams, { source: preset.source, origin: null, impact: null });
-              const active = isTimelinePresetActive(preset, {
-                sourceFilters,
-                impactCount: impactFilters.length,
-                hasOriginFilter,
-              });
-              return (
-                <Link
-                  key={preset.label}
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs font-medium transition-colors ${active ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`}
-                >
-                  {preset.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </CollectionToolbar.Actions>
+
         <CollectionToolbar.View>
           <nav aria-label="Timeline view" className="flex rounded-sm bg-surface p-0.5">
             {(
@@ -510,6 +476,39 @@ function TimelineFilterPanel({
           </nav>
         </CollectionToolbar.View>
       </CollectionToolbar>
+      <nav
+        aria-label="Timeline presets"
+        className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto border-b border-border py-1"
+      >
+        <Link
+          href={upcomingHref}
+          aria-current={upcomingActive ? 'page' : undefined}
+          className={upcomingClassName}
+        >
+          Upcoming · {TIMELINE_UPCOMING_DAYS} days
+        </Link>
+        {TIMELINE_PRESETS.map((preset) => {
+          const href =
+            'all' in preset
+              ? timelineHref(baseParams, { source: null, origin: null, impact: null })
+              : timelineHref(baseParams, { source: preset.source, origin: null, impact: null });
+          const active = isTimelinePresetActive(preset, {
+            sourceFilters,
+            impactCount: impactFilters.length,
+            hasOriginFilter,
+          });
+          return (
+            <Link
+              key={preset.label}
+              href={href}
+              aria-current={active ? 'page' : undefined}
+              className={`inline-flex min-h-11 items-center sm:min-h-9 rounded-sm px-2.5 text-xs font-medium transition-colors ${active ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`}
+            >
+              {preset.label}
+            </Link>
+          );
+        })}
+      </nav>
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

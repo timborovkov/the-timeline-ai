@@ -9,6 +9,7 @@ import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
+import { AppPageTransition } from '@/components/app-page-transition';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
 import { ChatViewProvider } from '@/components/chat/chat-view-context';
 import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
@@ -25,6 +26,7 @@ import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
+import { WorkNavigation } from '@/components/work-subnav';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
 
@@ -79,7 +81,7 @@ export function AppShell({
         <InspectorProvider>
           <AppDocumentScrollLock />
           <SkipLink />
-          <div className="flex h-dvh w-full overflow-hidden bg-bg">
+          <div className="dashboard-shell flex h-dvh w-full overflow-hidden bg-bg">
             {/* ── Left rail (desktop) ─────────────────────────────────── */}
             <TooltipProvider>
               <DesktopSidebar
@@ -130,7 +132,7 @@ export function AppShell({
                   <Link
                     href="/app/search"
                     aria-label="Open search"
-                    className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
+                    className="grid size-11 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
                   >
                     <Search aria-hidden="true" className="size-4" />
                   </Link>
@@ -139,16 +141,24 @@ export function AppShell({
                   <InspectorToggle />
                   <ThemeToggle />
                   {platformAdmin && (
-                    <Link href="/app/admin" className="px-2 py-3 text-sm hover:underline">
+                    <Link
+                      href="/app/admin"
+                      className="hidden px-2 py-3 text-sm hover:underline md:block"
+                    >
                       Platform admin
                     </Link>
                   )}
-                  <UserMenu user={user} impersonating={Boolean(impersonation)} />
+                  <UserMenu
+                    platformAdmin={platformAdmin}
+                    user={user}
+                    impersonating={Boolean(impersonation)}
+                  />
                 </div>
               </header>
               {gettingStarted ? (
                 <GettingStartedStrip phase={gettingStarted.phase} hidden={gettingStarted.hidden} />
               ) : null}
+              <WorkNavigation />
               {/* The shell owns a bounded content column. Collection bands can
               bleed to pane edges without stretching their inner content. */}
               <main
@@ -156,12 +166,7 @@ export function AppShell({
                 className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
               >
                 <AppMainScrollRestoration />
-                <div
-                  data-slot="app-page-container"
-                  className="app-page-container mx-auto w-full min-w-0 max-w-6xl"
-                >
-                  {children}
-                </div>
+                <AppPageTransition>{children}</AppPageTransition>
               </main>
             </div>
 

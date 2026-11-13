@@ -71,7 +71,7 @@ function solutionLlmsSections(solution: SolutionContent): readonly PublicLlmsCon
       items: solution.questions,
     },
     {
-      title: 'Illustrative answer',
+      title: 'Example answer',
       body: `${solution.example.title} ${solution.example.body}`,
       items: [...solution.example.claims, solution.example.note],
     },

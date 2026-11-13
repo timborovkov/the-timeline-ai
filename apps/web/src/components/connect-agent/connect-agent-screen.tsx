@@ -1,6 +1,9 @@
 import { Download } from 'lucide-react';
 import Link from 'next/link';
 
+import type { ComponentProps } from 'react';
+
+import { AgentReportingSettings } from '@/components/agent-reporting-settings';
 import {
   ConnectAgentAdvanced,
   type ConnectAgentKey,
@@ -12,12 +15,14 @@ import {
 import { ConnectAgentDisclosure } from '@/components/connect-agent/connect-agent-disclosure';
 import { ConnectAgentMemory } from '@/components/connect-agent/connect-agent-memory';
 import { ConnectAgentTabs } from '@/components/connect-agent/connect-agent-tabs';
+import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { Button } from '@/components/ui/button';
 import { CONNECT_AGENT_SKILL_HREF, TIMELINE_MCP_TOOLS } from '@/lib/connect-agent-content';
 
 export function ConnectAgentScreen({
   teamId,
+  reporting,
   mcpUrl,
   origin,
   isAdmin,
@@ -31,6 +36,7 @@ export function ConnectAgentScreen({
   revokeError,
 }: {
   teamId: string;
+  reporting?: Omit<ComponentProps<typeof AgentReportingSettings>, 'teamId'> | null;
   mcpUrl: string;
   origin: string;
   isAdmin: boolean;
@@ -60,8 +66,11 @@ export function ConnectAgentScreen({
             : null
         }
       />
-      <ConnectAgentTabs mcpUrl={mcpUrl} teamEmail={teamEmail} />
+      <AgentSetupCard />
       <div className="divide-y divide-border">
+        <ConnectAgentDisclosure title="Client-specific setup">
+          <ConnectAgentTabs mcpUrl={mcpUrl} teamEmail={teamEmail} />
+        </ConnectAgentDisclosure>
         <ConnectAgentDisclosure
           title={
             <>
@@ -75,6 +84,11 @@ export function ConnectAgentScreen({
         >
           <ConnectAgentAgents grants={grants} teamId={teamId} isAdmin={isAdmin} />
         </ConnectAgentDisclosure>
+        {reporting ? (
+          <ConnectAgentDisclosure title="Reporting preferences">
+            <AgentReportingSettings teamId={teamId} {...reporting} />
+          </ConnectAgentDisclosure>
+        ) : null}
         <ConnectAgentDisclosure title="Add memory">
           <ConnectAgentMemory
             origin={origin}

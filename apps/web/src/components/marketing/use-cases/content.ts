@@ -43,7 +43,7 @@ export interface UseCaseContent {
   eyebrow: string;
   title: string;
   summary: string;
-  howItWorks?: string;
+  howItWorks?: readonly string[];
   example: {
     label: string;
     title?: string;
@@ -71,15 +71,16 @@ export const USE_CASES: readonly UseCaseContent[] = [
     cardBody: 'Every decision, promise and handoff in order, with where it was said.',
     seoTitle: 'An auto-updating work record',
     seoDescription:
-      'Every decision, promise and handoff in order, with where it was said. The Timeline keeps it current from Slack, Telegram, email and calls.',
+      'Keep decisions, promises and handoffs in one searchable work record, built from selected tools and sources with their evidence attached.',
     eyebrow: 'Use case · Work record',
     title: 'A work record that keeps itself current.',
-    summary:
-      'Every decision, promise and handoff in order, with where it was said. Ask what happened on any project and trace each line to its source.',
-    howItWorks:
-      'Link a Slack channel or Telegram group, forward email, and add calls. The Timeline places each message, call and document on one timeline with its source, time and visibility. When something points to a lasting change, like a new owner, a decision or a deal stage, The Timeline proposes the update to the record and a person approves it. Captured evidence is never rewritten.',
+    summary: 'Find the decisions, promises and handoffs behind a project’s current state.',
+    howItWorks: [
+      'Connect selected sources, capture an update or add a document. Each item joins the timeline with its source, time and visibility.',
+      'Lasting record changes are proposed for your approval. Captured evidence stays unchanged.',
+    ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'Mon 08:46 Telegram · Acme launch group: “Customer update promised”.',
         'Mon 09:14 Slack · #acme-rollout: “Onboarding copy approved”.',
@@ -87,8 +88,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         'Wed 15:22 GitHub · PR #482: “Migration callback merged”.',
       ],
     },
-    needs:
-      'One linked chat to start. Email, calls, documents and tools like GitHub, Linear, Google Drive, Monday.com and Sentry can be added as needed.',
+    needs: 'Start with one linked chat. Add documents and connected tools when you need them.',
     faqs: [
       {
         question: 'Does it read our whole Slack?',
@@ -132,10 +132,12 @@ export const USE_CASES: readonly UseCaseContent[] = [
     title: 'Who did what yesterday, without a standup.',
     summary:
       'A daily update for the workspace, written from what the team actually said and shipped, with links to each source.',
-    howItWorks:
-      'The Timeline writes one daily update for the workspace from the latest captured threads, calls, email and synced tools. Send it to every member by email, or post it to a Slack channel or Telegram group. Need more detail on one client, project or topic? Ask, and get an update for any time window.',
+    howItWorks: [
+      'Send the workspace update by email, Slack or Telegram.',
+      'For a specific client, project or time window, ask for a focused update.',
+    ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'SHIPPED: Migration callback merged (GitHub · PR #482).',
         'DECIDED: Onboarding copy approved (Slack · #acme-rollout).',
@@ -157,8 +159,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         file: '33-digest-dark.png',
         alt: 'Daily workspace update with highlights, status, follow-ups, new tasks and upcoming calendar.',
-        caption:
-          'The daily update: highlights, status, follow-ups, new tasks and what’s coming up, written from captured conversations, with links to tasks and calendar items.',
+        caption: 'Highlights, follow-ups and upcoming work, with linked tasks and calendar items.',
         reshoot: `${RESHOOT_CITATION_SEED} Capture from the top of the page.`,
         placement: 'after-subhead',
         callouts: [
@@ -195,15 +196,16 @@ export const USE_CASES: readonly UseCaseContent[] = [
     cardBody: 'Find what was agreed, by whom and where, across chat, email and calls.',
     seoTitle: 'A communication trail across chat, email and calls',
     seoDescription:
-      'Find what was agreed, by whom and where, across Telegram, Slack, email and calls, without scrolling four apps or messaging three people.',
+      'Find an agreement across chat, email and calls without retracing every conversation.',
     eyebrow: 'Use case · Communication trail',
     title: 'Every promise, traceable.',
-    summary:
-      'Find what was agreed, by whom and where, across Telegram, Slack, email and calls, without scrolling four apps or messaging three people.',
-    howItWorks:
-      'Ask in the web app, in Slack (/ask or @Timeline) or in a Telegram chat with The Timeline. The answer quotes the record and links each line to the message, email or call it came from. People only see sources they are allowed to see.',
+    summary: 'Find an agreement across chat, email and calls without retracing every conversation.',
+    howItWorks: [
+      'Ask in the web app, Slack (/ask or @Timeline), or Telegram.',
+      'Each answer links to the original message, email or call. Access follows the source’s visibility.',
+    ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       title: 'What did we promise Acme, and where?',
       lines: [
         'You: “What did we promise Acme, and where?”',
@@ -232,8 +234,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         file: '31-ask-status-dark.png',
         alt: 'Ask answer about what was agreed, with each claim linked to its source.',
-        caption:
-          'A stored example from the fictional Acme Labs demo: what was agreed, with each claim linked to its source.',
+        caption: 'What was agreed, with each claim linked to its source.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-how-it-works',
       },
@@ -253,24 +254,25 @@ export const USE_CASES: readonly UseCaseContent[] = [
     title: 'Customer context, filled in from the conversation.',
     summary:
       'People, companies, deals and follow-ups stay tied to the calls, emails and chats where they came up, and every update waits for your approval.',
-    problemLine:
-      'Even a well-kept Pipedrive misses what was said on the call, in the group chat or in the email thread. The opposite failure is an agent that updates records from weak signals without showing its evidence.',
-    howItWorks:
-      'The Timeline keeps people, companies, deals and follow-ups tied to the calls, emails and chats where they came up. Each update is proposed with its source, and a person approves it.',
+    problemLine: 'A well-kept Pipedrive can still miss what was said on a call or in a group chat.',
+    howItWorks: [
+      'Review suggested changes beside the conversation that prompted them.',
+      'Keep people, companies, deals and follow-ups together in the work record.',
+    ],
     blocks: [
       {
         title: 'People and companies',
-        body: 'Who you spoke to and what was said, each line linked to its source.',
+        body: 'Keep contacts and conversation history together.',
       },
       {
         title: 'Deals and follow-ups',
-        body: 'Commitments from calls and email become proposed updates that a person approves.',
+        body: 'Track commitments and the next follow-up.',
       },
     ],
     boundary:
       'The Timeline keeps its own people, company and deal records. It doesn’t sync to Pipedrive, HubSpot or Salesforce today (listed as coming later).',
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'Stakeholder: Maya Chen owns the technical evaluation [meeting].',
         'Interest: the customer requested a two-region expansion option [email].',
@@ -281,13 +283,12 @@ export const USE_CASES: readonly UseCaseContent[] = [
     faqs: [
       {
         question: 'Does The Timeline update Pipedrive, HubSpot or Salesforce automatically?',
-        answer:
-          'No. Those tools are listed as coming later. The Timeline keeps its own people, company and deal records, and inferred changes stay proposals until a person approves them.',
+        answer: 'No. Native sync with those tools is planned, not available today.',
       },
       {
         question: 'Can an internal Slack comment become customer fact?',
         answer:
-          'It can be preserved as an internal statement, not silently promoted to customer-confirmed fact. A good answer labels the source and distinguishes direct customer evidence from internal interpretation.',
+          'It stays an internal statement. Answers distinguish it from direct customer evidence.',
       },
     ],
     screenshots: [
@@ -322,10 +323,12 @@ export const USE_CASES: readonly UseCaseContent[] = [
     title: 'Task boards that keep up.',
     summary:
       'Owners, due dates and status changes said in chat become proposed task updates, applied once a person approves.',
-    howItWorks:
-      'The Timeline spots task changes in Slack, Telegram, email and calls and proposes them with the source attached. You approve, edit or reject. Boards show kanban and list views over the same tasks, people, companies, deals and projects. GitHub, Linear and Monday.com records can sync in alongside.',
+    howItWorks: [
+      'Review suggested changes, then approve, edit or reject them.',
+      'Kanban and list views use the same records. GitHub, Linear and Monday.com activity can sync in alongside them.',
+    ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'Slack · #acme-rollout: “Priya will own the migration checklist. Review on the 14th.”',
         'Proposed change, waiting for approval: Migration checklist, owner Priya Shah, due 14th.',
@@ -374,14 +377,15 @@ export const USE_CASES: readonly UseCaseContent[] = [
       'New teammates and frontline staff ask The Timeline and get the earlier answer back from the chat where it was given, with its source.',
     eyebrow: 'Use case · Onboarding and repeat questions',
     title: 'Answer it once. New people find it.',
-    summary:
-      'Questions that were already answered get the earlier answer back, with its source. Handoff briefs bring a new teammate up to speed on decisions, owners and open items.',
-    howItWorks:
-      'Staff ask in Telegram, Slack or the web app. The Timeline answers from the captured record and cites the message, call or document where it was settled. For a new owner, ask for a handoff brief: decisions, current state, blockers, commitments and owners, each with its source.',
+    summary: 'Give new teammates the earlier answer, with the source where it was settled.',
+    howItWorks: [
+      'Ask in Telegram, Slack or the web app.',
+      'Request a handoff brief for a new owner: decisions, current state, blockers and commitments.',
+    ],
     whoItsFor:
       'Frontline staff on Telegram, client teams at agencies and consultancies, and anyone joining a project mid-flight.',
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'New teammate: “How do we handle a refund request?”',
         'The Timeline: “Use the process the team agreed in the support channel [01].”',
@@ -397,8 +401,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         file: '32-ask-handoff-dark.png',
         alt: 'A handoff brief in Ask, with account, current state, commitments and open gaps cited.',
-        caption:
-          'A stored example from the fictional Acme Labs demo: account, current state, commitments and open gaps, each with its source.',
+        caption: 'Account, current state, commitments and open gaps, each with its source.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-subhead',
       },
@@ -418,10 +421,10 @@ export const USE_CASE_HUB = {
   route: '/use-cases' as const satisfies PublicCanonicalPath,
   seoTitle: 'Use cases',
   seoDescription:
-    'One work record kept current from Slack, Telegram, email and calls. It powers a work record, a team daily log, a communication trail, a CRM, a task board, and onboarding and repeat questions.',
+    'Turn connected sources into a work record, daily updates, customer context and task boards. Explore six ways teams use The Timeline.',
   title: 'One record. Six ways teams use it.',
   summary:
-    'The Timeline keeps your work record current from the conversations your team already has. Here’s what teams do with it.',
+    'The Timeline turns context from your tools and sources into a connected work record. Here’s what teams do with it.',
 } as const;
 
 export const USE_CASE_CANONICAL_ROUTES = USE_CASES.map((useCase) => useCase.route);

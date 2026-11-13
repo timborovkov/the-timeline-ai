@@ -27,6 +27,7 @@ import {
   type RefObject,
   type SetStateAction,
   useId,
+  useState,
   useMemo,
   useReducer,
   useRef,
@@ -40,6 +41,7 @@ import {
   deleteFolderAction,
   finalizeDocumentVersionAction,
   requestDocumentUploadAction,
+  suggestDocumentObjectsAction,
 } from '@/app/actions/documents';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
@@ -238,6 +240,7 @@ function mergeVisibleFolders(
 }
 
 function useDocumentDriveFileActions({
+  suggestObjects,
   currentFolderId,
   visibility,
   visibilityUserIds,
@@ -245,6 +248,7 @@ function useDocumentDriveFileActions({
   router,
   dispatchDriveUi,
 }: {
+  suggestObjects: boolean;
   currentFolderId: string | null;
   visibility: Props['defaultVisibility'];
   visibilityUserIds: string[];
@@ -372,7 +376,10 @@ function useDocumentDriveFileActions({
             return { error: message };
           }
           updateUpload(uploadId, { phase: 'finalizing' });
-          const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
+          const fin = await finalizeDocumentVersionAction({
+            versionId: req.versionId,
+            suggestObjects,
+          });
           if (!fin.ok) {
             if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
             const message = fin.error ?? 'Couldn’t finish upload';
@@ -415,6 +422,7 @@ export function DocumentDrive({
   const dialog = useAppDialog();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  const [suggestObjects, setSuggestObjects] = useState(true);
   const [
     { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
     dispatchDriveUi,
@@ -438,6 +446,7 @@ export function DocumentDrive({
   const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
   const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
   const driveActions = useDocumentDriveFileActions({
+    suggestObjects,
     currentFolderId,
     visibility,
     visibilityUserIds,
@@ -546,6 +555,8 @@ export function DocumentDrive({
 
   return (
     <DocumentDriveChrome
+      suggestObjects={suggestObjects}
+      onSuggestObjectsChange={setSuggestObjects}
       breadcrumbs={breadcrumbs}
       pending={pending}
       uploadButtonLabel={uploadButtonLabel}
@@ -574,6 +585,8 @@ export function DocumentDrive({
 }
 
 function DocumentDriveChrome({
+  suggestObjects,
+  onSuggestObjectsChange,
   breadcrumbs,
   pending,
   uploadButtonLabel,
@@ -594,6 +607,8 @@ function DocumentDriveChrome({
   onDrop,
   onDeleteFolder,
 }: {
+  suggestObjects: boolean;
+  onSuggestObjectsChange: (enabled: boolean) => void;
   breadcrumbs: Crumb[];
   pending: boolean;
   uploadButtonLabel: string;
@@ -626,13 +641,25 @@ function DocumentDriveChrome({
         onFileChange={onFileChange}
       />
       <UploadStatusList uploads={uploads} />
-      <NewItemVisibilityPicker
-        visibility={visibility}
-        visibilityUserIds={visibilityUserIds}
-        members={members}
-        onVisibilityChange={onVisibilityChange}
-        onVisibilityUserIdsChange={onVisibilityUserIdsChange}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 border-y border-border py-3">
+        <label className="flex min-h-11 max-w-[55ch] items-center gap-2 text-sm text-fg-muted">
+          <input
+            type="checkbox"
+            checked={suggestObjects}
+            onChange={(event) => {
+              onSuggestObjectsChange(event.target.checked);
+            }}
+          />
+          Suggest objects and relationships from new uploads for approval
+        </label>
+        <NewItemVisibilityPicker
+          visibility={visibility}
+          visibilityUserIds={visibilityUserIds}
+          members={members}
+          onVisibilityChange={onVisibilityChange}
+          onVisibilityUserIdsChange={onVisibilityUserIdsChange}
+        />
+      </div>
       <DocumentDropZone
         folders={folders}
         documents={documents}
@@ -769,7 +796,7 @@ function NewItemVisibilityPicker({
 
   const selectedMemberIds = new Set(visibilityUserIds);
   return (
-    <fieldset className="flex flex-wrap items-center gap-3 py-3 text-sm">
+    <fieldset className="flex flex-wrap items-center gap-3 text-sm">
       <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
       <label className="sr-only" htmlFor={visibilityId}>
         Default visibility for new documents and folders
@@ -780,7 +807,7 @@ function NewItemVisibilityPicker({
         onChange={(e) => {
           onVisibilityChange(e.target.value as Props['defaultVisibility']);
         }}
-        className="h-8 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="h-11 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
@@ -903,7 +930,7 @@ function FolderList({
                 ) : (
                   <Link
                     href={`/app/documents?folder=${f.id}`}
-                    className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="block whitespace-normal [overflow-wrap:anywhere] rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {f.name}
                   </Link>
@@ -1008,6 +1035,28 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>
+            {document.currentVersion && document.visibility === 'team' && !document.optimistic ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void notifyAction({
+                    id: `document:suggestions:${document.id}`,
+                    loading: 'Reviewing document…',
+                    success: 'Document queued for suggestions',
+                    error: 'Couldn’t queue document',
+                    run: async () => {
+                      if (!document.currentVersion)
+                        return { error: 'Document version unavailable' };
+                      const result = await suggestDocumentObjectsAction(document.currentVersion.id);
+                      return result.ok ? {} : { error: result.error ?? 'Couldn’t queue document' };
+                    },
+                  });
+                }}
+              >
+                Find objects
+              </Button>
+            ) : null}
             {sourceEventId ? (
               <EvidenceLink
                 eventId={sourceEventId}
@@ -1096,7 +1145,10 @@ function DocumentTitleRow({
         <Icon className="size-4" />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-foreground" title={title}>
+        <span
+          className="block whitespace-normal text-sm font-semibold text-foreground [overflow-wrap:anywhere]"
+          title={title}
+        >
           {title}
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-fg-dim">
@@ -1208,12 +1260,15 @@ function fileKindDetails(
 ): { icon: LucideIcon; label: string } {
   const lowerName = name.toLowerCase();
   if (contentType?.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|avif)$/.test(lowerName)) {
-    return { icon: ImageIcon, label: contentType ?? 'image' };
+    return { icon: ImageIcon, label: 'Image' };
   }
   if (contentType === 'application/pdf' || lowerName.endsWith('.pdf')) {
     return { icon: FileText, label: 'PDF' };
   }
-  return { icon: FileText, label: contentType ?? 'document' };
+  if (contentType?.startsWith('text/') || /\.(md|txt|csv)$/.test(lowerName)) {
+    return { icon: FileText, label: 'Text document' };
+  }
+  return { icon: FileText, label: 'Document' };
 }
 
 function normalizeDocumentSummary(

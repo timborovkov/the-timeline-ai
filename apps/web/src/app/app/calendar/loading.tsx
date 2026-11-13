@@ -4,7 +4,6 @@ import {
   PageHeaderSkeleton,
 } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function CalendarLoading() {
   return (
@@ -20,13 +19,12 @@ export default function CalendarLoading() {
       >
         <h1 className="sr-only">Calendar</h1>
         <div aria-hidden="true" inert>
-          <PageHeaderSkeleton variant="collection" />
+          <PageHeaderSkeleton variant="collection" showMetadata={false} />
         </div>
-        <WorkSubnav current="/app/calendar" />
         <div aria-hidden="true" inert>
           <div className="space-y-4">
             <section className="space-y-4" aria-label="Calendar loading placeholder">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-h-11 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-2">
                   <Skeleton className="h-5 w-44 motion-reduce:animate-none" />
                   <Skeleton className="h-3 w-28 motion-reduce:animate-none" />
@@ -37,18 +35,19 @@ export default function CalendarLoading() {
                     <Skeleton className="h-8 w-14 rounded-none motion-reduce:animate-none" />
                     <Skeleton className="h-8 w-12 rounded-none motion-reduce:animate-none" />
                   </div>
-                  <Skeleton className="h-8 w-20 motion-reduce:animate-none" />
+                  <Skeleton className="h-8 w-36 motion-reduce:animate-none" />
+                  <Skeleton className="h-8 w-28 motion-reduce:animate-none" />
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <div className="grid min-w-[38rem] grid-cols-[3rem_repeat(7,minmax(4.5rem,1fr))] gap-px border border-border bg-border sm:min-w-0">
-                  {Array.from({ length: 48 }).map((_, index) => (
+                <div className="grid grid-cols-7 gap-px overflow-hidden rounded-sm border border-border bg-border sm:grid-cols-[3rem_repeat(7,minmax(0,1fr))]">
+                  {Array.from({ length: 56 }).map((_, index) => (
                     <div
                       key={index}
-                      className={index < 8 ? 'h-8 bg-muted/40' : 'min-h-28 bg-background p-2'}
+                      className={`${index % 8 === 0 ? 'hidden sm:block ' : ''}${index < 8 ? 'h-6 bg-surface-2 sm:h-8' : 'min-h-7 bg-bg p-1 sm:min-h-28 sm:p-2'}`}
                     >
                       {index >= 8 ? (
-                        <Skeleton className="h-3 w-3/5 motion-reduce:animate-none" />
+                        <Skeleton className="h-3 w-3 motion-reduce:animate-none" />
                       ) : null}
                     </div>
                   ))}

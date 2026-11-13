@@ -3,7 +3,7 @@
 Canonical engine narrative:
 [`docs/relational-memory.md`](../relational-memory.md). This ADR records the
 pack-builder decision. Pack rollout gates live in
-[`cross-source-evidence.md`](../cross-source-evidence.md).
+[engine rollout contract](../relational-memory.md#cross-source-evidence-rollout).
 
 ## Status
 
@@ -224,7 +224,7 @@ identifiers, or provider payloads.
 
 ### Rollout
 
-Promotion gates and rollback thresholds have one owner: [evidence rollout](../cross-source-evidence.md).
+Promotion gates and rollback thresholds have one owner: [evidence rollout](../relational-memory.md#cross-source-evidence-rollout).
 
 ## Consequences
 
@@ -296,7 +296,7 @@ retaining the same visibility and citation primitives.
 ## Related documents
 
 - [Operating memory engine](../relational-memory.md)
-- [Evidence-pack rollout](../cross-source-evidence.md)
+- [Evidence-pack rollout](../relational-memory.md#cross-source-evidence-rollout)
 - [ADR 0004](./0004-conversation-reviews-drive-conversational-proposals.md)
 - [ADR 0005](./0005-workspace-reconciliation-is-artifact-centered-and-approval-backed.md)
 - [ADR 0009](./0009-ingest-webhooks-are-evidence-only.md)

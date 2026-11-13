@@ -1,6 +1,9 @@
 import { type Db, mcpServers } from '@timeline/db';
 import { childLogger, mcp, queue } from '@timeline/shared';
-import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
+import {
+  activeWorkspaceCondition,
+  principalIsActive,
+} from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
 import { and, eq, isNull, lte, or } from 'drizzle-orm';
 
@@ -111,6 +114,7 @@ export async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResu
     .from(mcpServers)
     .where(
       and(
+        activeWorkspaceCondition(mcpServers.teamId),
         eq(mcpServers.enabled, true),
         or(isNull(mcpServers.nextHealthCheckAt), lte(mcpServers.nextHealthCheckAt, new Date())),
       ),

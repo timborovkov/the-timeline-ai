@@ -1,9 +1,9 @@
 'use client';
 
-import { ChevronDown, Menu } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 
 import {
   COMPARE_NAV_ITEMS,
@@ -58,7 +58,7 @@ const FOOTER_PRODUCT_ITEMS = [
     section: 'agents' as const,
     analyticsCta: 'view_agents',
   },
-  { href: '/help', label: 'Help', section: 'help' as const },
+  { href: '/product-tour', label: 'Product tour', section: 'help' as const },
 ] as const;
 
 export type PublicNavigationSection =
@@ -170,20 +170,37 @@ function NavDropdown({
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !node.open) return;
+      event.preventDefault();
+      event.stopPropagation();
       node.open = false;
+      node.querySelector('summary')?.focus();
     };
 
     document.addEventListener('pointerdown', closeIfOutside);
-    document.addEventListener('keydown', closeOnEscape);
+    node.addEventListener('keydown', closeOnEscape);
     return () => {
       document.removeEventListener('pointerdown', closeIfOutside);
-      document.removeEventListener('keydown', closeOnEscape);
+      node.removeEventListener('keydown', closeOnEscape);
     };
   }, []);
 
+  const closeDropdown = () => {
+    if (detailsRef.current) detailsRef.current.open = false;
+    onNavigate?.();
+  };
   return (
     <li className={nested ? styles.mobileDropdown : styles.dropdown}>
-      <details ref={detailsRef}>
+      <details
+        ref={detailsRef}
+        name={nested ? 'public-mobile-group' : 'public-desktop-group'}
+        onBlur={(event) => {
+          if (
+            event.relatedTarget instanceof Node &&
+            !event.currentTarget.contains(event.relatedTarget)
+          )
+            event.currentTarget.open = false;
+        }}
+      >
         <summary
           className={cn(styles.dropdownSummary, itemClassName, active && activeItemClassName)}
         >
@@ -192,15 +209,16 @@ function NavDropdown({
         </summary>
         <div className={styles.dropdownPanel}>
           <ul className={styles.dropdownList}>
-            <li>
+            <li className={styles.overviewRow}>
               <Link
                 href={href}
                 aria-current={pathname === href ? 'page' : undefined}
                 className={cn(styles.dropdownLink, styles.dropdownOverview, itemClassName)}
                 data-public-analytics-cta={analyticsCta}
-                onClick={onNavigate}
+                onClick={closeDropdown}
               >
                 {overviewLabel}
+                <ArrowUpRight aria-hidden="true" size={16} />
               </Link>
             </li>
             <li role="separator" className={styles.dropdownRule} />
@@ -209,19 +227,22 @@ function NavDropdown({
               const items = [];
               if (child.group && child.group !== previous?.group) {
                 items.push(
-                  <li
-                    key={`${child.href}-rule`}
-                    role="separator"
-                    className={styles.dropdownRule}
-                  />,
+                  <li key={`${child.href}-rule`} className={styles.groupLabel}>
+                    Agent tools
+                  </li>,
                 );
               }
               items.push(
                 <li key={child.href}>
                   <Link
                     href={child.href}
-                    className={cn(styles.dropdownLink, itemClassName)}
-                    onClick={onNavigate}
+                    aria-current={pathname === child.href ? 'page' : undefined}
+                    className={cn(
+                      styles.dropdownLink,
+                      itemClassName,
+                      pathname === child.href && activeItemClassName,
+                    )}
+                    onClick={closeDropdown}
                   >
                     {publicNavItemLabel(child)}
                   </Link>
@@ -242,14 +263,12 @@ export function PublicFooterColumns({
   headingClassName,
   itemClassName,
   activeItemClassName,
-  legalItems,
 }: {
   currentSection?: PublicNavigationSection;
   className?: string;
   headingClassName?: string;
   itemClassName?: string;
   activeItemClassName?: string;
-  legalItems: ReactNode;
 }) {
   return (
     <div className={cn(styles.footerColumns, className)}>
@@ -283,7 +302,7 @@ export function PublicFooterColumns({
               analyticsCta="view_use_cases"
             />
           </li>
-          {USE_CASE_NAV_ITEMS.map((item) => (
+          {USE_CASE_NAV_ITEMS.filter((item) => item.href !== '/product-tour').map((item) => (
             <li key={item.href}>
               <FooterNavLink
                 href={item.href}
@@ -320,34 +339,44 @@ export function PublicFooterColumns({
           ))}
         </ul>
       </section>
-      <section aria-label="Compare">
-        <p className={cn(styles.footerColumnTitle, headingClassName)}>Compare</p>
+      <section aria-label="Resources">
+        <p className={cn(styles.footerColumnTitle, headingClassName)}>Resources</p>
         <ul className={styles.footerColumnList}>
-          <li>
-            <FooterNavLink
-              href="/compare"
-              label="Compare hub"
-              active={currentSection === 'compare'}
-              itemClassName={itemClassName}
-              activeItemClassName={activeItemClassName}
-              analyticsCta="view_compare"
-            />
-          </li>
-          {COMPARE_NAV_ITEMS.map((item) => (
+          {[
+            { href: '/help', label: 'Help' },
+            { href: '/help/support', label: 'Contact and support' },
+            { href: '/trust', label: 'Trust' },
+            { href: '/compare', label: 'Compare' },
+          ].map((item) => (
             <li key={item.href}>
               <FooterNavLink
-                href={item.href}
-                label={item.label}
+                {...item}
                 itemClassName={itemClassName}
                 activeItemClassName={activeItemClassName}
               />
             </li>
           ))}
+          <li>
+            <details className={styles.footerCompare}>
+              <summary>
+                Compare products{' '}
+                <ChevronDown aria-hidden="true" className={styles.dropdownChevron} />
+              </summary>
+              <ul className={styles.footerColumnList}>
+                {COMPARE_NAV_ITEMS.map((item) => (
+                  <li key={item.href}>
+                    <FooterNavLink
+                      href={item.href}
+                      label={item.label.replace('The Timeline vs ', 'vs ')}
+                      itemClassName={itemClassName}
+                      activeItemClassName={activeItemClassName}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </li>
         </ul>
-      </section>
-      <section aria-label="Support and legal">
-        <p className={cn(styles.footerColumnTitle, headingClassName)}>Legal</p>
-        <ul className={styles.footerColumnList}>{legalItems}</ul>
       </section>
     </div>
   );
@@ -356,7 +385,6 @@ export function PublicFooterColumns({
 function FooterNavLink({
   href,
   label,
-  active = false,
   itemClassName,
   activeItemClassName,
   analyticsCta,
@@ -368,12 +396,15 @@ function FooterNavLink({
   activeItemClassName?: string;
   analyticsCta?: string;
 }) {
+  const active = usePathname() === href;
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
       className={cn(itemClassName, active && activeItemClassName)}
-      data-public-analytics-cta={analyticsCta}
+      data-public-analytics-cta={
+        analyticsCta ?? (href === '/help/support' ? 'contact_support' : undefined)
+      }
     >
       {label}
     </Link>
@@ -396,19 +427,46 @@ export function PublicNavigationDisclosure({
   };
 
   useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      const disclosure = disclosureRef.current;
+      if (event.key !== 'Escape' || !disclosure?.open) return;
+      disclosure.open = false;
+      disclosure.querySelector('summary')?.focus();
+    };
+    const closeOutside = (event: PointerEvent) => {
+      const node = disclosureRef.current;
+      if (node?.open && event.target instanceof Node && !node.contains(event.target))
+        node.open = false;
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.removeEventListener('pointerdown', closeOutside);
+    };
+  }, []);
+
+  useEffect(() => {
     if (disclosureRef.current) disclosureRef.current.open = false;
   }, [pathname]);
 
   return (
-    <details ref={disclosureRef} className={cn('relative', className)}>
+    <details
+      ref={disclosureRef}
+      className={cn('relative', className)}
+      onBlur={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          event.currentTarget.open = false;
+      }}
+    >
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm border border-border bg-bg px-3 text-sm font-medium text-fg outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-details-marker]:hidden">
         <Menu aria-hidden="true" className="size-4" />
         <span>Menu</span>
       </summary>
-      <nav
-        aria-label="Public navigation menu"
-        className="fixed top-16 right-4 z-50 max-h-[calc(100dvh-5rem)] w-[min(18rem,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border bg-bg p-2 shadow-lg"
-      >
+      <nav aria-label="Public navigation menu" className={styles.mobilePanel}>
         <MobileNavigationItems currentSection={currentSection} onNavigate={closeDisclosure} />
         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border px-3 pt-2">
           {showAccountActions ? (

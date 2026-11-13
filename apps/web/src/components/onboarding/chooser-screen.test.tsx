@@ -21,14 +21,17 @@ describe('ChooserScreen', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Bring something real' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Start with one source' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Website' }));
     expect(screen.getByRole('heading', { name: 'Scan your website' })).toBeTruthy();
     expect(screen.queryByText('Coming soon')).toBeNull();
     expect(screen.getByLabelText<HTMLInputElement>('Our team or company').checked).toBe(true);
     expect(screen.getByRole('button', { name: 'Scan' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Document' }));
     expect(screen.getByRole('heading', { name: 'Upload a document' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Email' }));
     expect(screen.getByRole('heading', { name: 'Forward an email' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Skip for now' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Skip to Home' })).toBeTruthy();
     expect(screen.getByDisplayValue('northwind-studio@inbound.test')).toBeTruthy();
     expect(screen.queryByText(/sample workspace/i)).toBeNull();
   });
@@ -55,9 +58,7 @@ describe('ChooserScreen', () => {
         true,
       );
     });
-    expect(screen.getByRole('button', { name: 'I’m sending one' }).hasAttribute('disabled')).toBe(
-      true,
-    );
+    expect(screen.getByRole('button', { name: 'Email' }).hasAttribute('disabled')).toBe(true);
     release?.();
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Skip to Home' }).hasAttribute('disabled')).toBe(

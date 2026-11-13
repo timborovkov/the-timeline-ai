@@ -132,9 +132,6 @@ export default async function MeetingDetailPage({ params }: Props) {
         ]}
         trailing={headerActions}
       />
-      <TechnicalDetails
-        items={[{ label: 'Meeting ID', value: meeting.id, copyValue: meeting.id }]}
-      />
 
       {summary ? (
         <section className="space-y-2 py-4">
@@ -152,7 +149,7 @@ export default async function MeetingDetailPage({ params }: Props) {
             title={
               meeting.status === 'pending' || meeting.status === 'joining'
                 ? 'Waiting for the notetaker to join'
-                : 'No transcript chunks captured'
+                : 'No transcript captured'
             }
             body={
               meeting.status === 'pending' || meeting.status === 'joining'
@@ -176,6 +173,9 @@ export default async function MeetingDetailPage({ params }: Props) {
           </ol>
         )}
       </section>
+      <TechnicalDetails
+        items={[{ label: 'Meeting ID', value: meeting.id, copyValue: meeting.id }]}
+      />
     </div>
   );
 }

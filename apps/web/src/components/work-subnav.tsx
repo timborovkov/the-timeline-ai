@@ -1,10 +1,13 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
 const WORK_LINKS = [
   { label: 'Overview', href: '/app/work' },
-  { label: 'Pinned', href: '/app/work?view=pinned' },
   { label: 'Objects', href: '/app/objects' },
   { label: 'Tasks', href: '/app/tasks' },
   { label: 'Boards', href: '/app/boards' },
@@ -13,10 +16,44 @@ const WORK_LINKS = [
   { label: 'Approvals', href: '/app/approvals' },
 ] as const;
 
-export function WorkSubnav({ current, className }: { current: string; className?: string }) {
+export function WorkSubnav({
+  current,
+  className,
+  spacing = 'flush',
+}: {
+  current: string;
+  className?: string;
+  spacing?: 'flush' | 'comfortable';
+}) {
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !active) return;
+    const revealActive = () => {
+      const offset = active.getBoundingClientRect().left - nav.getBoundingClientRect().left;
+      nav.scrollLeft += offset - (nav.clientWidth - active.offsetWidth) / 2;
+    };
+    revealActive();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(revealActive);
+    observer?.observe(nav);
+    return () => observer?.disconnect();
+  }, [current]);
   return (
-    <div data-slot="collection-tabs" className="min-w-0 shrink-0">
-      <nav aria-label="Work" className={cn('overflow-x-auto border-b border-border', className)}>
+    <div
+      data-slot="collection-tabs"
+      className={cn(
+        'min-w-0 shrink-0',
+        spacing === 'flush' && !current.includes('/new') && !current.includes('/merge') && 'mb-0!',
+        spacing === 'comfortable' && 'mb-6!',
+      )}
+    >
+      <nav
+        ref={navRef}
+        aria-label="Work"
+        className={cn('overflow-x-auto border-b border-border', className)}
+      >
         <div className="flex min-w-max gap-1">
           {WORK_LINKS.map((item) => {
             const active = item.href.includes('?')
@@ -30,7 +67,7 @@ export function WorkSubnav({ current, className }: { current: string; className?
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                  'inline-flex min-h-11 items-center border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
                   active && 'border-signal text-fg',
                 )}
               >
@@ -40,6 +77,22 @@ export function WorkSubnav({ current, className }: { current: string; className?
           })}
         </div>
       </nav>
+      <p aria-hidden="true" className="py-1 text-xs text-fg-dim md:hidden">
+        Swipe or scroll for more work views.
+      </p>
+    </div>
+  );
+}
+
+/** Shell-owned navigation stays in place while Work routes replace their content. */
+export function WorkNavigation() {
+  const pathname = usePathname();
+  if (!pathname) return null;
+  if (!WORK_LINKS.some(({ href }) => pathname === href || pathname.startsWith(`${href}/`)))
+    return null;
+  return (
+    <div className="shrink-0 border-b border-border bg-bg px-4 md:px-8" data-slot="work-navigation">
+      <WorkSubnav current={pathname} className="border-b-0" />
     </div>
   );
 }

@@ -38,7 +38,8 @@
     "start:extract": "WORKER_MODE=document-extract bun --bun --no-env-file dist/extract-main.js",
     "lint": "bun x --bun --no-install eslint src",
     "test": "bun ../../scripts/testing/run.ts apps/worker",
-    "typecheck": "bun x --bun --no-install tsc -p tsconfig.json --noEmit"
+    "typecheck": "bun x --bun --no-install tsc -p tsconfig.json --noEmit",
+    "reset:objects": "bun --conditions=development src/scripts/reset-objects.ts"
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.227.3",

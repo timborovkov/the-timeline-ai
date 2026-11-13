@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import {
+  EVIDENCE_FRESHNESS_FAQS,
   EDITORIAL_GUIDES,
   findEditorialGuideByRoute,
   GUIDE_ROUTES,
@@ -18,8 +19,8 @@ import {
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { PreservesStrip } from '@/components/marketing/preserves-strip';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 
 export const metadata: Metadata = createHowItWorksMetadata();
 
@@ -31,8 +32,7 @@ export default function HowItWorksPage() {
       <EditorialStructuredData data={buildHowItWorksStructuredData()} />
       <section data-how-it-works-hero className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <p className="text-sm font-medium text-fg-muted">How it works</p>
-          <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               From conversation to current record.
             </h1>
@@ -55,13 +55,15 @@ export default function HowItWorksPage() {
               caption={HOW_IT_WORKS_FLOW_SHOT.caption}
             />
           </div>
+          <div className="mt-12">
+            <PreservesStrip />
+          </div>
         </MarketingContainer>
       </div>
 
       <section data-how-it-works-evidence className="border-b border-border bg-surface/45">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="02" label="Evidence path" />
             <div>
               <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 Trace one answer to its evidence.
@@ -87,7 +89,6 @@ export default function HowItWorksPage() {
       <section>
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="03" label="Practical walkthroughs" />
             <div>
               <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 Start with a question your team already knows how to verify.
@@ -166,6 +167,24 @@ export default function HowItWorksPage() {
               className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
               Read the first walkthrough
+            </Link>
+          </div>
+        </MarketingContainer>
+      </section>
+      <section className="border-t border-border" aria-labelledby="evidence-faq">
+        <MarketingContainer className="py-16 sm:py-20">
+          <h2 id="evidence-faq" className="text-3xl font-semibold tracking-tight">
+            When evidence changes
+          </h2>
+          <div className="mt-8 max-w-3xl">
+            {EVIDENCE_FRESHNESS_FAQS.map((faq) => (
+              <details key={faq.question} className="border-b border-border py-5">
+                <summary className="cursor-pointer font-medium">{faq.question}</summary>
+                <p className="mt-3 leading-relaxed text-fg-muted">{faq.answer}</p>
+              </details>
+            ))}
+            <Link href="/help/capture" className="mt-6 inline-flex underline underline-offset-4">
+              How answers handle newer and conflicting evidence
             </Link>
           </div>
         </MarketingContainer>

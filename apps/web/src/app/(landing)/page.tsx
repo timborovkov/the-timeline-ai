@@ -1,5 +1,16 @@
-import * as integrationsLib from '@timeline/shared/integrations/registry';
-import { Mail, Video, Webhook } from 'lucide-react';
+import {
+  Building2,
+  CheckSquare,
+  FileText,
+  Folder,
+  Globe,
+  Handshake,
+  Mail,
+  ShieldCheck,
+  UserRound,
+  Video,
+  Webhook,
+} from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -8,29 +19,35 @@ import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
-import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
   CTA_MICROCOPY_LEAD,
-  FICTIONAL_EXAMPLE_LABEL,
   SEE_IT_FIRST_HREF,
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
-import { FirstRunPath } from '@/components/marketing/first-run-path';
+import { CitedAnswer } from '@/components/marketing/home/cited-answer';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
-import { HOME_PROOF_SHOTS } from '@/components/marketing/home/proof';
+import {
+  HOME_ASK_SHOT,
+  HOME_CLIENT_SHOT,
+  HOME_DIGEST_SHOT,
+  HOME_TIMELINE_SHOT,
+  HOME_VOICE_SHOT,
+  type HomeProofShot,
+} from '@/components/marketing/home/proof';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
-import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
+import { CONNECTORS } from '@/components/marketing/integrations/connector-content';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
-import { CookieSettingsButton } from '@/components/public-analytics';
+import { PublicFooter } from '@/components/public-footer';
 import { PublicHeader } from '@/components/public-header';
-import { PublicFooterColumns } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
   buildPublicStructuredData,
@@ -42,9 +59,33 @@ import { DEFAULT_SUPPORT_EMAIL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
-const CONTACT_HREF = '/help/support';
-const HERO_INTRO =
-  "The Timeline updates itself from your team's Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what's next, always current.";
+const HERO_INTRO = PRODUCT_POSITIONING.hero;
+const HOME_INTAKE_SURFACES = [
+  ...CAPTURE_SURFACES.map((surface) => ({
+    id: surface.id,
+    name: surface.id === 'slack-chat' ? 'Slack' : surface.name,
+    icon: surface.icon,
+    logo:
+      surface.icon === 'telegram' || surface.icon === 'slack'
+        ? `/connectors/${surface.icon}.svg`
+        : undefined,
+    href: 'publicHref' in surface ? surface.publicHref : '/integrations#capture-surfaces',
+  })),
+  {
+    id: 'documents',
+    name: 'Documents',
+    icon: 'file' as const,
+    logo: undefined,
+    href: '/help/documents',
+  },
+  ...CONNECTORS.filter((connector) => connector.slug !== 'slack').map((connector) => ({
+    id: connector.slug,
+    name: connector.name,
+    icon: 'file' as const,
+    logo: connector.logo,
+    href: `/integrations/${connector.slug}`,
+  })),
+];
 const HOME_DOCUMENT = getHomeDocument();
 
 export const metadata: Metadata = {
@@ -53,7 +94,7 @@ export const metadata: Metadata = {
     'work record',
     'auto-updating work record',
     'team daily log',
-    'cited answers',
+    'linked answers',
     'Slack and Telegram work record',
     'meeting transcript search',
     'project status AI',
@@ -73,69 +114,16 @@ function getHomeDocument() {
 
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
-const AUDIENCES = USE_CASES.map((useCase, index) => ({
-  index: String(index + 1).padStart(2, '0'),
+const AUDIENCES = USE_CASES.map((useCase) => ({
   name: useCase.cardTitle,
-  outcome: useCase.cardBody,
-  result: useCase.navLabel,
+  outcome:
+    useCase.slug === 'work-record'
+      ? 'Every decision, promise and handoff on one timeline, with where it was said.'
+      : useCase.cardBody,
   href: useCase.route,
 }));
 
-const TRUST_STEPS = [
-  {
-    index: '01',
-    title: 'Evidence arrives',
-    detail: 'Telegram / linked launch group',
-  },
-  {
-    index: '02',
-    title: 'Original stays intact',
-    detail: 'Captured source / immutable',
-  },
-  {
-    index: '03',
-    title: 'Access is checked',
-    detail: 'Team + event visibility',
-  },
-  {
-    index: '04',
-    title: 'Suggested changes wait',
-    detail: 'Human approval required',
-  },
-] as const;
-
-interface NativeConnector {
-  label: string;
-  logo: string;
-  state: 'available' | 'setup-required';
-  href?: `/integrations/${string}`;
-}
-
 export default function LandingPage() {
-  const nativeConnectors: NativeConnector[] = [];
-  for (const connector of integrationsLib.listCatalog()) {
-    if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
-    const publicConnector = findConnectorByName(connector.label);
-    const href = publicConnector ? (`/integrations/${publicConnector.slug}` as const) : undefined;
-    if (!publicConnector) continue;
-    if (connector.status === 'native_available') {
-      nativeConnectors.push({
-        label: connector.label,
-        logo: publicConnector.logo,
-        state: 'available',
-        href,
-      });
-    }
-    if (connector.status === 'native_unconfigured') {
-      nativeConnectors.push({
-        label: connector.label,
-        logo: publicConnector.logo,
-        state: 'setup-required',
-        href,
-      });
-    }
-  }
-
   return (
     <div className={styles.page} data-home-root>
       <StructuredData />
@@ -149,13 +137,15 @@ export default function LandingPage() {
       <PublicHeader currentSection="product" />
       <main id="main" tabIndex={-1}>
         <ClaimScene />
-        <ChronologyScene nativeConnectors={nativeConnectors} />
+        <UseCaseOverview />
+        <IntakeScene />
+        <TimelineScene />
         <AnswerScene />
-        <ThreadScene />
-        <TrustScene />
+        <OrganisedScene />
+        <AudienceScene />
         <CtaScene />
       </main>
-      <Footer />
+      <PublicFooter currentSection="product" />
     </div>
   );
 }
@@ -215,84 +205,171 @@ function ClaimScene() {
       aria-labelledby="claim-title"
       data-scene="01-claim"
     >
-      <div className={styles.heroCopy}>
-        <SceneIndex number="01" label="The auto-updating work record" />
-        <h1 id="claim-title" className={styles.heroTitle}>
-          Your team's work, <em>written down for you</em>
-        </h1>
-        <p className={styles.heroIntro}>{HERO_INTRO}</p>
-        <div className={styles.heroActions}>
-          <PublicSessionBranch
-            signedOut={
-              <Link
-                href="/sign-up"
-                data-public-analytics-cta="start_free"
-                className={styles.primaryCta}
-              >
-                {START_FREE_LABEL} <span aria-hidden>→</span>
-              </Link>
-            }
-            signedIn={
-              <Link
-                href="/app"
-                data-public-analytics-cta="open_dashboard"
-                className={styles.primaryCta}
-              >
-                Go to dashboard <span aria-hidden>→</span>
-              </Link>
-            }
-          />
-          <Link href={SEE_IT_FIRST_HREF} className={styles.textLink}>
-            {SEE_IT_FIRST_LABEL}
-          </Link>
+      <div className={styles.heroOpening}>
+        <div className={styles.heroCopy}>
+          <h1 id="claim-title" className={styles.heroTitle}>
+            Know where the work stands.
+          </h1>
+          <div className={styles.heroSupporting}>
+            <p className={styles.heroIntro}>{HERO_INTRO}</p>
+            <div>
+              <div className={styles.heroActions}>
+                <PublicSessionBranch
+                  signedOut={
+                    <Link
+                      href="/sign-up"
+                      data-public-analytics-cta="start_free"
+                      className={styles.primaryCta}
+                    >
+                      {START_FREE_LABEL} <span aria-hidden>→</span>
+                    </Link>
+                  }
+                  signedIn={
+                    <Link
+                      href="/app"
+                      data-public-analytics-cta="open_dashboard"
+                      className={styles.primaryCta}
+                    >
+                      Go to dashboard <span aria-hidden>→</span>
+                    </Link>
+                  }
+                />
+                <Link href={SEE_IT_FIRST_HREF} className={styles.textLink}>
+                  {SEE_IT_FIRST_LABEL}
+                </Link>
+              </div>
+              <PublicSessionBranch
+                signedOut={
+                  <div className={styles.heroMeta}>
+                    <p className={styles.ctaFinePrint}>
+                      {CTA_MICROCOPY_LEAD}{' '}
+                      <Link href="/pricing" className={styles.textLink}>
+                        See pricing
+                      </Link>
+                    </p>
+                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+                  </div>
+                }
+                signedIn={
+                  <div className={styles.heroMeta}>
+                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+                  </div>
+                }
+              />
+              <AgentSetupCard compact className={styles.heroAgentSetup} />
+            </div>
+          </div>
         </div>
-        <PublicSessionBranch
-          signedOut={
-            <p className={styles.ctaFinePrint}>
-              {CTA_MICROCOPY_LEAD}{' '}
-              <Link href="/pricing" className={styles.textLink}>
-                See pricing
-              </Link>
-            </p>
-          }
-          signedIn={null}
-        />
-        <div className={styles.heroSourceLink}>
-          <GitHubSourceLink />
-        </div>
-        <div className={styles.heroAgentSetup}>
-          <AgentSetupCard />
-        </div>
-      </div>
 
-      <TimelineFlowDiagram variant="hero" />
+        <TimelineFlowDiagram
+          variant="hero"
+          disclosure="Illustrative flow · Only sources your team selects or sends enter."
+        />
+      </div>
     </section>
   );
 }
 
-function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnector[] }) {
+function UseCaseOverview() {
+  return (
+    <section
+      className={styles.scene}
+      aria-labelledby="use-case-overview-title"
+      data-use-case-overview
+    >
+      <h2 id="use-case-overview-title" className={styles.chooserHeading}>
+        Your team’s work, in one shared record.
+      </h2>
+      <p className={styles.overviewIntro}>
+        The Timeline brings selected conversations, calls and documents into a shared work record.
+        Your team can find what was decided, follow up on promises and ask questions with sources to
+        check. Use that record to keep track of the work that matters to you.
+      </p>
+      <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
+        {AUDIENCES.map((audience) => (
+          <Link href={audience.href} key={audience.name}>
+            <h3>{audience.name}</h3>
+            <p>{audience.outcome}</p>
+            <span aria-hidden="true">→</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IntakeScene() {
   return (
     <section
       id="sources"
       className={styles.scene}
-      aria-labelledby="chronology-title"
-      data-scene="02-chronology"
+      aria-labelledby="intake-title"
+      data-scene="02-intake"
     >
       <SceneHeading
-        number="02"
-        label="Evidence → chronology"
-        id="chronology-title"
-        title={
-          <>
-            Status should not require an <em>investigation.</em>
-          </>
-        }
-        copy="Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents. Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong. The Timeline keeps the record current from those conversations, with the source, time and visibility of every line."
+        id="intake-title"
+        title={<>Bring the work in. Keep the context.</>}
+        copy="Connect the tools you use, forward email, upload documents, or scan a public website."
+      />
+      <ul className={styles.intakeRow} aria-label="Ways to send work to Timeline">
+        {HOME_INTAKE_SURFACES.map((surface) => (
+          <li key={surface.id}>
+            <Link href={surface.href}>
+              <HomeCaptureSurfaceIcon icon={surface.icon} logo={surface.logo} />
+              <span>{surface.name}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+
+      <HomeProof shot={HOME_VOICE_SHOT} align="copy-first" />
+    </section>
+  );
+}
+
+function HomeCaptureSurfaceIcon({
+  icon,
+  logo,
+}: {
+  icon: (typeof HOME_INTAKE_SURFACES)[number]['icon'];
+  logo?: string;
+}) {
+  if (logo) {
+    return (
+      <span className={cn(styles.captureSurfaceIcon, styles.captureSurfaceIconBrand)}>
+        <Image src={logo} alt="" width={18} height={18} />
+      </span>
+    );
+  }
+  const Icon =
+    icon === 'mail'
+      ? Mail
+      : icon === 'video'
+        ? Video
+        : icon === 'globe'
+          ? Globe
+          : icon === 'file'
+            ? FileText
+            : Webhook;
+  return (
+    <span className={styles.captureSurfaceIcon}>
+      <Icon aria-hidden="true" size={16} strokeWidth={1.6} />
+    </span>
+  );
+}
+
+function TimelineScene() {
+  return (
+    <section className={styles.scene} aria-labelledby="timeline-title" data-scene="03-timeline">
+      <SceneHeading
+        id="timeline-title"
+        title={<>Everything lands on one timeline.</>}
+        copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
-          <span>Acme rollout / Last 7 days</span>
-          <span>5 evidence items</span>
+          <span>Acme rollout · Illustrative example / Last 7 days</span>
+          <span>5 items</span>
         </div>
         <ol className={styles.timelineList}>
           {ACME_EVENTS.map((event) => (
@@ -315,114 +392,9 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
             </li>
           ))}
         </ol>
-        <aside className={styles.chronologyContract} aria-label="Source handling">
-          <span className={styles.monoLabel}>What Timeline preserves</span>
-          <dl>
-            <div>
-              <dt>Content</dt>
-              <dd>Kept as received</dd>
-            </div>
-            <div>
-              <dt>Time</dt>
-              <dd>Placed on one chronology</dd>
-            </div>
-            <div>
-              <dt>Visibility</dt>
-              <dd>Carried into every answer</dd>
-            </div>
-          </dl>
-        </aside>
       </div>
-      <ConnectorRail nativeConnectors={nativeConnectors} />
-      <HomeProof shot={HOME_PROOF_SHOTS[0]} />
+      <HomeProof shot={HOME_TIMELINE_SHOT} align="shot-first" />
     </section>
-  );
-}
-
-function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector[] }) {
-  return (
-    <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="connector-title">
-      <header>
-        <span className={styles.monoLabel}>Where evidence enters</span>
-        <div>
-          <h3 id="connector-title">Two ways in. One cited record.</h3>
-          <p>
-            Link a Slack channel or Telegram group, forward email, and add calls, or sync selected
-            records from the tools that already hold them. Either way, the source stays attached.
-          </p>
-        </div>
-      </header>
-      <div className={styles.connectorPaths}>
-        <article className={styles.connectorPath}>
-          <span className={styles.monoLabel}>Messages and files</span>
-          <h4>Send the work to Timeline.</h4>
-          <p>
-            Link a Telegram group or Slack channel, forward mail, add a meeting transcript or file,
-            or post an authenticated webhook event. A direct chat asks the agent; it is not passive
-            history capture.
-          </p>
-          <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
-            {CAPTURE_SURFACES.map((surface) => (
-              <li key={surface.id}>
-                <HomeCaptureSurfaceIcon icon={surface.icon} />
-                <span>{surface.name}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-        <article className={styles.connectorPath}>
-          <span className={styles.monoLabel}>Connected tools</span>
-          <h4>Sync selected records.</h4>
-          <p>
-            Choose which provider records belong in Timeline. The original tool remains the source,
-            and every captured event links back to it.
-          </p>
-          {nativeConnectors.length > 0 ? (
-            <ul className={styles.nativeConnectorList} aria-label="Native provider connectors">
-              {nativeConnectors.map((connector) => (
-                <li key={connector.label}>
-                  <Link href={connector.href ?? '/integrations'}>
-                    <span className={cn(styles.connectorLogoTile, styles.connectorLogoTileLight)}>
-                      <Image src={connector.logo} alt="" width={20} height={20} />
-                    </span>
-                    <span>{connector.label}</span>
-                    <small>Setup and supported data</small>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.connectorEmpty}>No native OAuth connectors are configured.</p>
-          )}
-        </article>
-      </div>
-      <div className={styles.connectorFooter}>
-        <p>
-          Timeline can also use enabled custom MCP tools when you ask a question without adding
-          their history to the record. Some local and upcoming connections are not available in the
-          hosted app yet.
-        </p>
-        <Link href="/integrations" className={styles.textLink}>
-          Explore integrations <span aria-hidden="true">→</span>
-        </Link>
-      </div>
-    </aside>
-  );
-}
-
-function HomeCaptureSurfaceIcon({ icon }: { icon: (typeof CAPTURE_SURFACES)[number]['icon'] }) {
-  if (icon === 'telegram' || icon === 'slack') {
-    return (
-      <span className={cn(styles.captureSurfaceIcon, styles.captureSurfaceIconBrand)}>
-        <Image src={`/connectors/${icon}.svg`} alt="" width={18} height={18} />
-      </span>
-    );
-  }
-  const Icon = icon === 'mail' ? Mail : icon === 'video' ? Video : Webhook;
-  return (
-    <span className={styles.captureSurfaceIcon}>
-      <Icon aria-hidden="true" size={16} strokeWidth={1.6} />
-    </span>
   );
 }
 
@@ -432,178 +404,74 @@ function AnswerScene() {
       id="answer"
       className={styles.scene}
       aria-labelledby="answer-title"
-      data-scene="03-answer"
+      data-scene="04-ask"
     >
       <SceneHeading
-        number="03"
-        label="Cited answer"
         id="answer-title"
-        title={
-          <>
-            Ask the record. The receipts <em>come with the answer.</em>
-          </>
-        }
-        copy="Ask the question you normally answer by searching four tools and messaging three people."
+        title={<>Status should not require an investigation.</>}
+        copy="Get a status or handoff brief without retracing every conversation."
       />
-      <div className={styles.answerLayout} data-home-diagram>
-        <article className={styles.answerWindow}>
-          <div className={styles.answerBar}>
-            <span>/ask / Acme rollout</span>
-            <span>5 sources linked</span>
-          </div>
-          <div className={styles.question}>
-            <span>You</span>
-            <p>Give me the current status, handoff, blockers, and customer commitments.</p>
-          </div>
-          <div className={styles.answerBody}>
-            <span>Timeline</span>
-            <h3>SSO blocks launch. Friday’s customer update is still due.</h3>
-            <p>
-              The customer expects an update by Friday{' '}
-              <Citation id="01" label="Telegram group message" />. Onboarding copy was approved{' '}
-              <Citation id="02" label="Slack approval" /> and the migration callback merged{' '}
-              <Citation id="04" label="GitHub pull request" />. SSO remains the launch blocker{' '}
-              <Citation id="03" label="launch review meeting" />. Priya Shah owns the migration
-              checklist and its Friday review{' '}
-              <Citation id="05" label="Timeline Document Drive checklist" />.
-            </p>
-          </div>
-          <div className={styles.answerFooter}>
-            <span>Draft answer / cited</span>
-            <span>Visibility checked</span>
-            <span>Every claim inspectable</span>
-          </div>
-        </article>
-
-        <aside className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
-          <div className={styles.ledgerTitle}>
-            <span id="receipt-ledger-title">Evidence behind this answer</span>
-            <span>5 / 5</span>
-          </div>
-          <ol>
-            {ACME_EVENTS.map((event) => (
-              <li key={event.id}>
-                <a href={`#acme-source-${event.id}`}>
-                  <span>[{event.id}]</span>
-                  <strong>{event.title}</strong>
-                  <small>
-                    {event.shortSource} / {event.day} {event.time}
-                  </small>
-                </a>
-                <details className={styles.ledgerInspect}>
-                  <summary>Inspect example source</summary>
-                  <div className={styles.ledgerInspectBody}>
-                    <p>{event.detail}</p>
-                    <p>Fictional Acme example, not customer data.</p>
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ol>
-        </aside>
-      </div>
-      <HomeProof shot={HOME_PROOF_SHOTS[1]} />
-    </section>
-  );
-}
-
-function ThreadScene() {
-  return (
-    <section
-      id="chat-to-answer"
-      className={styles.scene}
-      aria-labelledby="thread-title"
-      data-scene="04-thread"
-    >
-      <SceneHeading
-        number="04"
-        label="Chat to cited answer"
-        id="thread-title"
-        title={
-          <>
-            Ask in Slack. An agent can ask <em>the same record.</em>
-          </>
-        }
-        copy="Someone asks @Timeline in Slack. The bot answers with numbered citations back to the call and the email. Claude can retrieve the same Northstar evidence over MCP."
-      />
-      <div className={styles.threadLayout} data-home-diagram data-chat-to-answer>
-        <article className={styles.slackThread} aria-label="Slack example">
-          <header className={styles.slackBar}>
-            <span>#northstar-pilot</span>
-            <span>Slack</span>
-          </header>
-          <div className={styles.slackMessage}>
-            <span className={styles.slackAvatar} aria-hidden="true">
-              M
-            </span>
-            <div>
-              <p className={styles.slackMeta}>
-                <strong>Casey Novak</strong>
-                <time dateTime="2026-07-08T16:12:00.000Z">16:12</time>
-              </p>
-              <p>
-                <span className={styles.slackMention}>@Timeline</span> what did we promise Northstar
-                on Tuesday's call?
-              </p>
-            </div>
-          </div>
-          <div className={styles.slackMessage}>
-            <span className={styles.slackBotAvatar} aria-hidden="true">
-              T
-            </span>
-            <div>
-              <p className={styles.slackMeta}>
-                <strong>Timeline</strong>
-                <span>APP</span>
-                <time dateTime="2026-07-08T16:12:08.000Z">16:12</time>
-              </p>
-              <p>
-                Northstar Works committed to send the final sample export by July 8
-                <ThreadCitation n={1} label="Email from Elena Park" />. On the Northstar pilot
-                handoff review, Avery handed export validation to Mika and the team decided to use
-                the CSV fallback
-                <ThreadCitation n={2} label="Call transcript" />.
-              </p>
-              <ol className={styles.threadSources}>
-                <li id="thread-source-1">
-                  <span>[1]</span>
-                  <strong>Email from Elena Park</strong>
-                  <small>Northstar pilot export commitment</small>
-                </li>
-                <li id="thread-source-2">
-                  <span>[2]</span>
-                  <strong>Call transcript</strong>
-                  <small>Northstar pilot handoff review</small>
-                </li>
-              </ol>
-            </div>
-          </div>
-        </article>
-
-        <article className={styles.mcpThread} aria-label="Claude MCP example">
-          <header className={styles.mcpBar}>
-            <span>Claude</span>
-            <span>MCP</span>
-          </header>
-          <p className={styles.mcpPrompt}>What did we promise Northstar?</p>
-          <ol className={styles.mcpCalls}>
-            <li>
-              <code>timeline.subject</code>
-              <span>subject: Northstar</span>
-            </li>
-            <li>
-              <code>timeline.get</code>
-              <span>name: Northstar pilot handoff review</span>
-            </li>
-          </ol>
-          <p className={styles.mcpAnswer}>
-            Northstar Works committed to send the final sample export by July 8
-            <ThreadCitation n={1} label="Email from Elena Park" />. Avery handed export validation
-            to Mika, and the team decided to use the CSV fallback
-            <ThreadCitation n={2} label="Call transcript" />.
-          </p>
-        </article>
-        <p className={styles.threadDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
+      <CitedAnswer />
+      <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
+      <div className={styles.threadBlock} id="chat-to-answer">
+        <h2 className={styles.threadHeading}>One record for chat and agents.</h2>
+        <p className={styles.threadLead}>
+          Ask in a connected chat or through your agent. Both can find the answer and the sources
+          behind it.
+        </p>
+        <div className={styles.threadLayout} data-chat-to-answer>
+          {(['Chat', 'Agent'] as const).map((surface) => (
+            <article
+              key={surface}
+              className={styles.slackThread}
+              aria-label={`${surface} conversation`}
+            >
+              <header className={styles.slackBar}>
+                <strong>{surface}</strong>
+                <span>{surface === 'Chat' ? 'With your team' : 'With your assistant'}</span>
+              </header>
+              <div className={styles.slackMessage}>
+                <span className={styles.slackAvatar} aria-hidden="true">
+                  Y
+                </span>
+                <div>
+                  <p className={styles.slackMeta}>
+                    <strong>You</strong>
+                  </p>
+                  <p>What did we promise Northstar?</p>
+                </div>
+              </div>
+              <div className={styles.slackMessage}>
+                <span className={styles.slackBotAvatar} aria-hidden="true">
+                  {surface === 'Chat' ? 'T' : 'A'}
+                </span>
+                <div>
+                  <p className={styles.slackMeta}>
+                    <strong>{surface === 'Chat' ? 'The Timeline' : 'Your agent'}</strong>
+                  </p>
+                  <p>
+                    The final sample export is due July 8
+                    <ThreadCitation n={1} label="Email from Elena Park" />. Mika owns export
+                    validation, using the CSV fallback
+                    <ThreadCitation n={2} label="Call transcript" />.
+                  </p>
+                  <ol className={styles.threadSources} aria-label="Answer sources">
+                    <li>
+                      <span>[1]</span>
+                      <strong>Email from Elena Park</strong>
+                      <small>Export commitment</small>
+                    </li>
+                    <li>
+                      <span>[2]</span>
+                      <strong>Call transcript</strong>
+                      <small>Handoff and next steps</small>
+                    </li>
+                  </ol>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -611,81 +479,138 @@ function ThreadScene() {
 
 function ThreadCitation({ n, label }: { n: number; label: string }) {
   return (
-    <a href={`#thread-source-${n}`} className={styles.superCitation}>
+    <span className={styles.superCitation}>
       <sup aria-hidden="true">[{n}]</sup>
       <span className="sr-only">
         Source {n}: {label}
       </span>
-    </a>
+    </span>
   );
 }
 
-function TrustScene() {
+function OrganisedScene() {
+  return (
+    <section className={styles.scene} aria-labelledby="organised-title" data-scene="05-organised">
+      <SceneHeading
+        id="organised-title"
+        title={<>Conversations become connected records.</>}
+        copy="Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place."
+      />
+      <div className={styles.recordShowcase} aria-label="Connected work records">
+        <div className={styles.recordFlow}>
+          <span>Conversations</span>
+          <span aria-hidden="true">→</span>
+          <span>Suggested changes</span>
+          <span aria-hidden="true">→</span>
+          <span>Your approval</span>
+          <span aria-hidden="true">→</span>
+          <strong>Connected records</strong>
+        </div>
+        <ul className={styles.recordGrid}>
+          {[
+            {
+              type: 'Tasks',
+              icon: CheckSquare,
+              description: 'What needs doing, who owns it and when it’s due.',
+              links: ['Owner → Person', 'Work → Project'],
+            },
+            {
+              type: 'People',
+              icon: UserRound,
+              description: 'The people involved, with their conversations and commitments.',
+              links: ['Works with → Company', 'Owns → Tasks'],
+            },
+            {
+              type: 'Projects',
+              icon: Folder,
+              description: 'The work in progress, its decisions, blockers and next steps.',
+              links: ['Includes → Tasks', 'Involves → People'],
+            },
+            {
+              type: 'Companies',
+              icon: Building2,
+              description:
+                'The relationship in one place, from first conversation to ongoing work.',
+              links: ['Contacts → People', 'Work → Projects'],
+            },
+            {
+              type: 'Deals',
+              icon: Handshake,
+              description: 'The opportunity, its stage and the next follow-up.',
+              links: ['Customer → Company', 'Follow-up → Task'],
+            },
+          ].map(({ type, icon: Icon, description, links }) => (
+            <li key={type} className={styles.recordCard}>
+              <Icon size={24} aria-hidden="true" />
+              <h3>{type}</h3>
+              <p>{description}</p>
+              <ul aria-label={`${type} relationships`}>
+                {links.map((link) => (
+                  <li key={link}>{link}</li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+        <p className={styles.recordNote}>
+          Each record keeps the evidence behind it. Related work stays connected.
+        </p>
+      </div>
+      <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first">
+        <p className={styles.approvalLine}>
+          <strong>Suggested changes wait.</strong> A person approves each one.
+        </p>
+      </HomeProof>
+    </section>
+  );
+}
+
+function AudienceScene() {
   return (
     <section
       id="trust"
       className={styles.scene}
       aria-labelledby="trust-title"
-      data-scene="05-trust"
+      data-scene="06-audience"
     >
       <SceneHeading
-        number="05"
-        label="For teams"
         id="trust-title"
-        title={
-          <>
-            Built for teams that run their work <em>through chat.</em>
-          </>
-        }
-        copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
+        title={<>Built for teams that run their work through chat.</>}
+        copy="For client delivery, product and operations work that happens in conversation."
       />
-      <HomeProof shot={HOME_PROOF_SHOTS[2]} />
-      <div className={styles.fitPanel} data-home-diagram>
-        <div className={styles.fitPanelIntro}>
-          <span className={styles.monoLabel}>Six ways teams use it</span>
-          <h3>One record, kept current from your conversations.</h3>
-          <p>One record, kept current from your conversations, used for six jobs.</p>
-        </div>
-        <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
-          {AUDIENCES.map((audience) => (
-            <Link href={audience.href} key={audience.name}>
-              <span>{audience.index}</span>
-              <h4>{audience.name}</h4>
-              <p>{audience.outcome}</p>
-              <small>
-                {audience.result}
-                <span aria-hidden="true"> ↗</span>
-              </small>
-            </Link>
-          ))}
-        </div>
-      </div>
-
+      <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
       <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
         <header>
-          <span className={styles.monoLabel}>How one answer stays trustworthy</span>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
-          <p>
-            Timeline preserves source content, checks access at retrieval, and keeps citations
-            attached to the answer. If evidence suggests a lasting workspace change, Timeline
-            proposes it for human review instead of applying it on its own.
-          </p>
+          <div className={styles.trustIntro}>
+            <p>
+              Access is checked when a source is retrieved. The answer only uses evidence you can
+              see.
+            </p>
+            <Link href="/trust" className={styles.trustCta}>
+              Explore trust &amp; security <span aria-hidden="true">↗</span>
+            </Link>
+          </div>
         </header>
         <ol className={styles.trustFlow}>
-          {TRUST_STEPS.map((step) => (
-            <li key={step.index}>
-              <span>{step.index}</span>
-              <strong>{step.title}</strong>
-              <small>{step.detail}</small>
-            </li>
-          ))}
+          {TRUST_FLOW_STEPS.map((step, index) => {
+            const Icon = [Mail, FileText, ShieldCheck, CheckSquare][index] ?? FileText;
+            return (
+              <li key={step.index}>
+                <div className={styles.trustCardTop}>
+                  <Icon size={24} aria-hidden="true" />
+                  <span>{step.index}</span>
+                </div>
+                <strong>{step.title}</strong>
+                <small>{step.detail}</small>
+              </li>
+            );
+          })}
         </ol>
         <div className={styles.trustFlowProof} aria-label="Timeline evidence safeguards">
-          <span>Immutable raw evidence</span>
-          <span>Team isolation</span>
-          <span>Per-event privacy</span>
-          <span>Inspectable citations</span>
-          <span>Approval-backed suggestions</span>
+          {TRUST_FLOW_CHIPS.map((chip) => (
+            <span key={chip}>{chip}</span>
+          ))}
         </div>
       </div>
     </section>
@@ -697,55 +622,53 @@ function CtaScene() {
     <section
       className={cn(styles.scene, styles.ctaScene)}
       aria-labelledby="cta-title"
-      data-scene="06-cta"
+      data-scene="07-start"
     >
-      <div className={styles.ctaInner} data-home-reveal>
-        <SceneIndex number="06" label="Start free" />
-        <h2 id="cta-title">
-          Link one channel. <em>Watch the record fill in.</em>
-        </h2>
-        <p>
-          Link one Slack channel or Telegram group, forward a few emails and add a call. Read the
-          daily update, approve lasting record changes that The Timeline proposes, and ask what was
-          decided, with the source for every line.
-        </p>
-        <FirstRunPath />
-        <PublicSessionBranch
-          signedOut={
-            <Link
-              href="/sign-up"
-              data-public-analytics-cta="start_free"
-              className={styles.primaryCta}
-            >
-              {START_FREE_LABEL} <span aria-hidden>→</span>
-            </Link>
-          }
-          signedIn={
-            <Link
-              href="/app"
-              data-public-analytics-cta="open_dashboard"
-              className={styles.primaryCta}
-            >
-              Open your Timeline <span aria-hidden>→</span>
-            </Link>
-          }
-        />
-        <PublicSessionBranch
-          signedOut={
-            <>
-              <p className={styles.ctaFinePrint}>
-                {CTA_MICROCOPY_LEAD}{' '}
-                <Link href="/pricing" className={styles.textLink}>
-                  See pricing
-                </Link>
-              </p>
-              <span className={styles.ctaSignIn}>
-                Already have a Timeline? <Link href="/sign-in">Sign in</Link>
-              </span>
-            </>
-          }
-          signedIn={null}
-        />
+      <div className={styles.ctaInner}>
+        <div className={styles.ctaCopy}>
+          <h2 id="cta-title">Link one channel. Watch the record fill in.</h2>
+          <p>
+            Bring in your first source, then read the daily update or approve the suggested updates.
+          </p>
+        </div>
+        <div className={styles.ctaActions}>
+          <PublicSessionBranch
+            signedOut={
+              <Link
+                href="/sign-up"
+                data-public-analytics-cta="start_free"
+                className={styles.primaryCta}
+              >
+                {START_FREE_LABEL} <span aria-hidden>→</span>
+              </Link>
+            }
+            signedIn={
+              <Link
+                href="/app"
+                data-public-analytics-cta="open_dashboard"
+                className={styles.primaryCta}
+              >
+                Open your Timeline <span aria-hidden>→</span>
+              </Link>
+            }
+          />
+          <PublicSessionBranch
+            signedOut={
+              <>
+                <p className={styles.ctaFinePrint}>
+                  {CTA_MICROCOPY_LEAD}{' '}
+                  <Link href="/pricing" className={styles.textLink}>
+                    See pricing
+                  </Link>
+                </p>
+                <span className={styles.ctaSignIn}>
+                  Already have a Timeline? <Link href="/sign-in">Sign in</Link>
+                </span>
+              </>
+            }
+            signedIn={null}
+          />
+        </div>
         <div className={styles.ctaProof} aria-label="Timeline trust defaults">
           <span>Captured</span>
           <span>Chronological</span>
@@ -757,123 +680,44 @@ function CtaScene() {
   );
 }
 
-function SceneIndex({ number, label }: { number: string; label: string }) {
-  return (
-    <div className={styles.sceneIndex}>
-      <span>{number} / 06</span>
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function HomeProof({ shot }: { shot: (typeof HOME_PROOF_SHOTS)[number] }) {
-  return (
-    <div className={styles.proofStage} data-home-proof={shot.file}>
-      <span className={styles.monoLabel}>{shot.kicker}</span>
-      <MarketingProductScreenshot
-        file={shot.file}
-        alt={shot.alt}
-        caption={shot.caption}
-        callouts={shot.callouts}
-      />
-    </div>
-  );
-}
-
-function SceneHeading({
-  number,
-  label,
-  id,
-  title,
-  copy,
+function HomeProof({
+  shot,
+  align,
+  children,
 }: {
-  number: string;
-  label: string;
-  id: string;
-  title: ReactNode;
-  copy: string;
+  shot: HomeProofShot;
+  align: 'copy-first' | 'shot-first';
+  children?: ReactNode;
 }) {
   return (
-    <header className={styles.sceneHeading} data-home-reveal>
-      <SceneIndex number={number} label={label} />
+    <div
+      className={cn(styles.proofStage, align === 'shot-first' && styles.proofShotFirst)}
+      data-home-proof={shot.file}
+    >
+      <div className={styles.proofCopy}>
+        <h3 className={styles.proofCaption}>{shot.caption}</h3>
+        <p className={styles.proofBody}>{shot.body}</p>
+        {children}
+      </div>
+      <div className={styles.proofMedia}>
+        <MarketingProductScreenshot
+          file={shot.file}
+          alt={shot.alt}
+          caption={shot.caption}
+          chrome="media"
+        />
+      </div>
+    </div>
+  );
+}
+
+function SceneHeading({ id, title, copy }: { id: string; title: ReactNode; copy: string }) {
+  return (
+    <header className={styles.sceneHeading}>
       <div>
         <h2 id={id}>{title}</h2>
         <p>{copy}</p>
       </div>
     </header>
-  );
-}
-
-function Citation({ id, label }: { id: string; label: string }) {
-  return (
-    <a href={`#acme-source-${id}`} className={styles.citation}>
-      <span aria-hidden="true">[{id}]</span>
-      <span className="sr-only">
-        Source {id}: {label}
-      </span>
-    </a>
-  );
-}
-
-function Footer() {
-  const year = new Date().getFullYear();
-  return (
-    <footer className={styles.footer}>
-      <div className={styles.footerBrandRow}>
-        <span className={styles.footerBrand}>
-          <Logo ariaHidden /> The Timeline
-        </span>
-        <span>© {year}</span>
-      </div>
-      <nav aria-label="Explore The Timeline">
-        <PublicFooterColumns
-          currentSection="product"
-          className={styles.footerColumns}
-          headingClassName={styles.footerColumnTitle}
-          activeItemClassName={styles.footerLinkActive}
-          legalItems={
-            <>
-              <li>
-                <GitHubSourceLink compact className={styles.footerGithub} />
-              </li>
-              <li>
-                <Link href="/trust">Trust</Link>
-              </li>
-              <li>
-                <Link href="/terms">Terms</Link>
-              </li>
-              <li>
-                <Link href="/privacy">Privacy</Link>
-              </li>
-              <li>
-                <Link href="/cookies">Cookies</Link>
-              </li>
-              <li>
-                <CookieSettingsButton />
-              </li>
-              <li>
-                <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
-                  Contact
-                </Link>
-              </li>
-              <li>
-                <PublicSessionBranch
-                  signedOut={
-                    <Link href="/sign-in" data-public-analytics-cta="sign_in">
-                      Sign in
-                    </Link>
-                  }
-                  signedIn={
-                    <Link href="/app" data-public-analytics-cta="open_dashboard">
-                      Dashboard
-                    </Link>
-                  }
-                />
-              </li>
-            </>
-          }
-        />
-      </nav>
-    </footer>
   );
 }

@@ -62,6 +62,18 @@ describe('DueDateDisplay', () => {
     );
   });
 
+  it.each(['done', 'cancelled'])(
+    'does not mark %s work overdue when only the due date is known',
+    (workStatus) => {
+      const { container } = render(
+        <DueDateDisplay value="2026-07-19" now={NOW} timezone="UTC" workStatus={workStatus} />,
+      );
+      expect(container.textContent).not.toContain('Overdue');
+      expect(container.querySelector('.text-danger')).toBeNull();
+      expect(container.textContent).toContain('2026');
+    },
+  );
+
   it('uses the workspace timezone for non-midnight timestamps', () => {
     const { container } = renderDue('2026-07-21T02:00:00.000Z', 'inline');
     expect(container.textContent).toBe('Due today · Jul 20, 2026');
