@@ -148,17 +148,20 @@ await vi.mock(
       totalCount,
       projects = [],
       viewControls,
+      actions,
     }: {
       resultCount: number;
       totalCount: number;
       projects?: { label: string }[];
       viewControls?: ReactNode;
+      actions?: ReactNode;
     }) => {
       fakes.filterProjects = projects;
       return (
         <div data-testid="work-filter-bar">
           {resultCount}/{totalCount}
           {viewControls}
+          {actions}
         </div>
       );
     },
@@ -560,6 +563,8 @@ describe('TasksPage', () => {
     const html = renderToStaticMarkup(await TasksPage(pageProps({ view: 'list' })));
 
     expect(html).toContain('view list');
+    expect(html).toContain('New task');
+    expect(html).toContain('/app/objects/new?returnTo=%2Fapp%2Ftasks');
   });
 
   it('defaults to the grouped list when view is absent', async () => {

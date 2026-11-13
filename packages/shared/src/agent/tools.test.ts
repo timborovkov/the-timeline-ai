@@ -570,6 +570,15 @@ describe('buildAgentTools — team isolation', () => {
     });
     const expected = Object.fromEntries(
       [
+        'execute_board_create',
+        'execute_board_update',
+        'execute_board_archive',
+        'execute_object_restore',
+        'execute_object_note_create',
+        'execute_object_note_update',
+        'execute_object_note_delete',
+        'execute_object_relationship_add',
+        'execute_object_relationship_remove',
         'execute_object_create',
         'execute_object_update',
         'execute_object_archive',
@@ -759,6 +768,8 @@ describe('buildAgentTools — team isolation', () => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: true,
+      updatedAt: new Date(),
+      relationships: [],
       archivedAt: null,
       notes: [],
       recentChanges: [],
@@ -1707,7 +1718,7 @@ describe('buildAgentTools — team isolation', () => {
     );
   });
 
-  it('search_timeline_moments bundles integration noise while preserving raw citations', async () => {
+  it('search_timeline_moments groups one CI run while preserving raw citations', async () => {
     const scope = makeFakeScope();
     const eventA = '00000000-0000-0000-0000-0000000000a1';
     const eventB = '00000000-0000-0000-0000-0000000000b2';
@@ -1736,7 +1747,7 @@ describe('buildAgentTools — team isolation', () => {
         resolvedSenderObject: null,
         senderResolutionStatus: 'unresolved',
         entityIds: [],
-        snippet: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+        snippet: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
       },
     ]);
     scope.timeline.getEventsByIds.mockResolvedValue([
@@ -1749,6 +1760,7 @@ describe('buildAgentTools — team isolation', () => {
         occurredAt: new Date('2026-06-27T18:32:00.000Z'),
         sourceMetadata: {
           provider: 'github',
+          external_object_id: 'timborovkov/audit-ai#workflow_run:1603',
           event_type: 'workflow_run.success',
           github: {
             type: 'workflow_run',
@@ -1761,11 +1773,12 @@ describe('buildAgentTools — team isolation', () => {
         id: eventB,
         source: 'integration',
         authorUserId: null,
-        contentText: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+        contentText: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
         contentAudioUrl: null,
         occurredAt: new Date('2026-06-27T18:08:00.000Z'),
         sourceMetadata: {
           provider: 'github',
+          external_object_id: 'timborovkov/audit-ai#workflow_run:1603',
           event_type: 'workflow_run.success',
           github: {
             type: 'workflow_run',
@@ -1807,9 +1820,9 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.moments[0]?.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moments[0]?.title).toMatch(
-      /^<external_content source="timeline_moment" event_id="tm-moment_3Aintegration_3Agithub/,
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Aworkflow-run/,
     );
-    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
+    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aworkflow-run/);
     expect(result.moments[0]?.evidence[0]?.snippet).toContain(
       `<external_content source="integration" event_id="${eventA}">`,
     );
@@ -1833,6 +1846,7 @@ describe('buildAgentTools — team isolation', () => {
       visibilityOwnerUserId: null,
       sourceMetadata: {
         provider: 'github',
+        external_object_id: 'timborovkov/audit-ai#workflow_run:1603',
         event_type: 'workflow_run.success',
         github: {
           type: 'workflow_run',
@@ -1861,7 +1875,7 @@ describe('buildAgentTools — team isolation', () => {
     ]);
     scope.timeline.listEventsForMomentLookup.mockResolvedValue([
       workflowEvent(eventA, '1603', '2026-06-27T18:32:00.000Z'),
-      workflowEvent(eventB, '1602', '2026-06-27T18:08:00.000Z'),
+      workflowEvent(eventB, '1603', '2026-06-27T18:08:00.000Z'),
     ]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.search_timeline_moments?.execute as (
@@ -1884,8 +1898,7 @@ describe('buildAgentTools — team isolation', () => {
     expect(lookupPlan?.metadataPredicates).toEqual(
       expect.arrayContaining([
         { path: ['provider'], equals: 'github' },
-        { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
-        { path: ['github', 'head_branch'], equals: 'main' },
+        { path: ['external_object_id'], equals: 'timborovkov/audit-ai#workflow_run:1603' },
       ]),
     );
     expect(result.count).toBe(1);
@@ -2121,10 +2134,38 @@ describe('buildAgentTools — team isolation', () => {
     ]);
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      raw_event_ids: [eventA, eventB],
+      raw_event_ids: [eventA],
     });
     expect(result.moment.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
+  });
+
+  it('get_timeline_moment expands a saved calendar ID after notice regrouping', async () => {
+    const scope = makeFakeScope();
+    const id = '00000000-0000-0000-0000-0000000000a1';
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue([
+      {
+        id,
+        teamId: 'team-a',
+        source: 'calendar',
+        authorUserId: null,
+        contentText: 'Scheduled: Digest',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:32:00Z'),
+        createdAt: new Date('2026-06-27T18:32:00Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const result = await exec({ momentId: 'moment:calendar:calendar-a' }, {});
+    expect(result).toMatchObject({ found: true, moment: { raw_event_ids: [id] } });
   });
 
   it('get_timeline_moment can expand exact metadata moment ids without raw event ids', async () => {
@@ -2261,7 +2302,7 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      raw_event_ids: [eventA, eventB],
+      raw_event_ids: [eventA],
     });
     expect(result.moment.title).toContain('Webhook object updated · shared-key');
     expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);

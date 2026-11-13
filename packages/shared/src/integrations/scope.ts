@@ -2186,7 +2186,7 @@ export function createIntegrationScope(deps: {
     });
   }
 
-  async function listAudit(integrationId?: string | null, limit = 100) {
+  async function listAudit(integrationId?: string | null, limit = 100, offset = 0) {
     // Defense in depth: the /app/team/integrations/audit page admin-gates
     // before calling, but a future caller might forget. Audit rows
     // contain provider metadata + sync error payloads that the rest of
@@ -2200,8 +2200,9 @@ export function createIntegrationScope(deps: {
       .select()
       .from(integrationAuditLog)
       .where(and(...conditions))
-      .orderBy(desc(integrationAuditLog.createdAt))
-      .limit(limit);
+      .orderBy(desc(integrationAuditLog.createdAt), desc(integrationAuditLog.id))
+      .limit(limit)
+      .offset(offset);
   }
 
   /**

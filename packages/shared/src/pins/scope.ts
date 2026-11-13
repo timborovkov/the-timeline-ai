@@ -209,13 +209,74 @@ export function createPinScope(deps: PinScopeDeps) {
     const calendarKeys = normalized.flatMap((ref) =>
       ref?.kind === 'calendar_event' ? [ref.key] : [],
     );
-    if (calendarKeys.length === 0) return normalized;
-    const series = await calendar.resolveVisibleCalendarSeries(calendarKeys);
-    return normalized.map((ref) => {
-      if (ref?.kind !== 'calendar_event') return ref;
-      const key = series.get(ref.key);
-      return key ? { kind: 'calendar_event', key } : null;
+    const series =
+      calendarKeys.length > 0
+        ? await calendar.resolveVisibleCalendarSeries(calendarKeys)
+        : new Map<string, string>();
+    const momentRefs = normalized.filter(
+      (ref): ref is PinTargetRef => ref?.kind === 'timeline_moment',
+    );
+    const plans = momentRefs.flatMap((ref) => {
+      const plan = timelineMomentLookupPlan(ref.key);
+      return plan ? [plan] : [];
     });
+    const moments =
+      plans.length > 0
+        ? buildTimelineMoments(await listEventsForMomentLookups(plans), new Map(), {
+            timezone: await getTimezone(),
+          })
+        : [];
+    return normalized.map((ref) => {
+      if (ref?.kind === 'calendar_event') {
+        const key = series.get(ref.key);
+        return key ? { kind: 'calendar_event' as const, key } : null;
+      }
+      if (ref?.kind === 'timeline_moment') {
+        const moment =
+          moments.find((candidate) => candidate.id === ref.key) ??
+          moments.find((candidate) => candidate.legacyIds?.includes(ref.key));
+        return moment ? { kind: 'timeline_moment' as const, key: moment.id } : null;
+      }
+      return ref;
+    });
+  }
+
+  async function equivalentTargetKeysMany(refs: PinTargetRef[]): Promise<Map<string, string[]>> {
+    const plans = refs.flatMap((ref) =>
+      ref.kind === 'timeline_moment'
+        ? [timelineMomentLookupPlan(ref.key)].filter((plan) => plan !== null)
+        : [],
+    );
+    const moments =
+      plans.length > 0
+        ? buildTimelineMoments(await listEventsForMomentLookups(plans), new Map(), {
+            timezone: await getTimezone(),
+          })
+        : [];
+    // Resolve each old reference exactly as Home does. A split legacy group
+    // belongs to one current moment; it must not pin every resulting group.
+    const aliases = unique(moments.flatMap((moment) => moment.legacyIds ?? []));
+    const canonicalAliases = await canonicalizeMany(
+      aliases.map((key) => ({ kind: 'timeline_moment', key })),
+    );
+    const aliasTargets = new Map(aliases.map((id, index) => [id, canonicalAliases[index]?.key]));
+    return new Map(
+      refs.map((ref) => {
+        const moment =
+          ref.kind === 'timeline_moment' ? moments.find((item) => item.id === ref.key) : undefined;
+        return [
+          `${ref.kind}:${ref.key}`,
+          unique([
+            ref.key,
+            ...(moment?.legacyIds ?? []).filter((id) => aliasTargets.get(id) === ref.key),
+          ]),
+        ];
+      }),
+    );
+  }
+
+  async function equivalentStoredKeys(ref: PinTargetRef): Promise<string[]> {
+    return (await equivalentTargetKeysMany([ref])).get(`${ref.kind}:${ref.key}`) ?? [ref.key];
   }
 
   async function resolveRows(rows: PinRow[]): Promise<Map<string, PinnedItem>> {
@@ -434,12 +495,13 @@ export function createPinScope(deps: PinScopeDeps) {
             return plan ? [plan] : [];
           });
           const events = await listEventsForMomentLookups(plans);
-          const momentsById = new Map(
-            buildTimelineMoments(events, new Map(), { timezone }).map((moment) => [
-              moment.id,
-              moment,
-            ]),
-          );
+          const moments = buildTimelineMoments(events, new Map(), { timezone });
+          const momentsById = new Map(moments.map((moment) => [moment.id, moment]));
+          for (const moment of moments) {
+            for (const legacyId of moment.legacyIds ?? []) {
+              if (!momentsById.has(legacyId)) momentsById.set(legacyId, moment);
+            }
+          }
           for (const pin of momentPinRows) {
             const moment = momentsById.get(pin.targetKey);
             if (!moment) continue;
@@ -517,6 +579,7 @@ export function createPinScope(deps: PinScopeDeps) {
     const canonical = await canonicalize(ref);
     const target = await resolveTarget(canonical);
     if (!target) throw new Error('Pinned item not available');
+    const keys = await equivalentStoredKeys(canonical);
     const row = await db.transaction(async (tx) => {
       await lockUserPins(tx, scope);
       const [existing] = await tx
@@ -527,7 +590,7 @@ export function createPinScope(deps: PinScopeDeps) {
             eq(userPins.teamId, scope.teamId),
             eq(userPins.userId, scope.userId),
             eq(userPins.targetKind, canonical.kind),
-            eq(userPins.targetKey, canonical.key),
+            inArray(userPins.targetKey, keys),
           ),
         )
         .limit(1);
@@ -577,6 +640,7 @@ export function createPinScope(deps: PinScopeDeps) {
       assertRef(ref);
       canonical = normalizeRef(ref);
     }
+    const keys = await equivalentStoredKeys(canonical);
     const rows = await db
       .delete(userPins)
       .where(
@@ -584,7 +648,7 @@ export function createPinScope(deps: PinScopeDeps) {
           eq(userPins.teamId, scope.teamId),
           eq(userPins.userId, scope.userId),
           eq(userPins.targetKind, canonical.kind),
-          eq(userPins.targetKey, canonical.key),
+          inArray(userPins.targetKey, keys),
         ),
       )
       .returning({ id: userPins.id });
@@ -599,6 +663,7 @@ export function createPinScope(deps: PinScopeDeps) {
     } catch {
       return false;
     }
+    const keys = await equivalentStoredKeys(canonical);
     const [row] = await db
       .select({ id: userPins.id })
       .from(userPins)
@@ -607,7 +672,7 @@ export function createPinScope(deps: PinScopeDeps) {
           eq(userPins.teamId, scope.teamId),
           eq(userPins.userId, scope.userId),
           eq(userPins.targetKind, canonical.kind),
-          eq(userPins.targetKey, canonical.key),
+          inArray(userPins.targetKey, keys),
         ),
       )
       .limit(1);
@@ -619,8 +684,12 @@ export function createPinScope(deps: PinScopeDeps) {
     const canonical = await canonicalizeMany(refs);
     const valid = canonical.filter((ref): ref is PinTargetRef => ref !== null);
     if (valid.length === 0) return {};
+    const aliases = await equivalentTargetKeysMany(valid);
     const conditions = valid.map((ref) =>
-      and(eq(userPins.targetKind, ref.kind), eq(userPins.targetKey, ref.key)),
+      and(
+        eq(userPins.targetKind, ref.kind),
+        inArray(userPins.targetKey, aliases.get(`${ref.kind}:${ref.key}`) ?? [ref.key]),
+      ),
     );
     const rows = await db
       .select({ kind: userPins.targetKind, key: userPins.targetKey })
@@ -638,7 +707,11 @@ export function createPinScope(deps: PinScopeDeps) {
         const normalized = canonical[index];
         return [
           `${ref.kind}:${ref.key}`,
-          normalized ? pinned.has(`${normalized.kind}:${normalized.key}`) : false,
+          normalized
+            ? (aliases.get(`${normalized.kind}:${normalized.key}`) ?? [normalized.key]).some(
+                (key) => pinned.has(`${normalized.kind}:${key}`),
+              )
+            : false,
         ];
       }),
     );
@@ -836,7 +909,7 @@ export function createPinScope(deps: PinScopeDeps) {
         if (!plan) continue;
         const events = await listTeamEventsForMomentLookup(plan);
         const stillExists = buildTimelineMoments(events, new Map(), { timezone }).some(
-          (moment) => moment.id === row.key,
+          (moment) => moment.id === row.key || Boolean(moment.legacyIds?.includes(row.key)),
         );
         if (!stillExists) {
           deleted += await deleteForTarget({ kind: 'timeline_moment', key: row.key });

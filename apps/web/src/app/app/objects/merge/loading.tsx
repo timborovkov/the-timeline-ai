@@ -1,7 +1,6 @@
 import { HistoryBackLinkSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { MergeObjectRowsSkeleton } from '@/components/objects/merge-object-rows-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function MergeObjectsLoading() {
   return (
@@ -19,7 +18,6 @@ export default function MergeObjectsLoading() {
           <HistoryBackLinkSkeleton />
           <PageHeaderSkeleton />
         </div>
-        <WorkSubnav current="/app/objects/merge" />
         <div aria-hidden="true" inert>
           <section className="space-y-6">
             <MergeObjectRowsSkeleton />

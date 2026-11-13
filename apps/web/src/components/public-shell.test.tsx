@@ -1,15 +1,23 @@
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { PublicShell } from '@/components/public-shell';
 import { resetPublicSessionCache, setPublicSessionCache } from '@/lib/public-session';
+const route = { pathname: '/' };
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({ ...(await import('next/navigation')), usePathname: () => route.pathname }),
+  () => import('next/navigation'),
+);
+const { PublicShell } = await import('@/components/public-shell');
+
 // Test environment: happy-dom
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 
 afterEach(() => {
   cleanup();
+  route.pathname = '/';
   resetPublicSessionCache();
 });
 
@@ -31,7 +39,7 @@ describe('PublicShell', () => {
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).not.toContain('>Source on GitHub<');
     expect(html).toContain('href="/sign-in"');
-    expect(html.match(/href="\/sign-in"/g)).toHaveLength(2);
+    expect(html.match(/href="\/sign-in"/g)).toHaveLength(3);
     expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('>Start free</a>');
@@ -43,6 +51,7 @@ describe('PublicShell', () => {
   });
 
   it('keeps every public destination available in desktop, mobile, and footer navigation', () => {
+    route.pathname = '/agents';
     const html = renderToStaticMarkup(
       <PublicShell currentSection="agents">
         <main id="main">Public content</main>
@@ -70,9 +79,11 @@ describe('PublicShell', () => {
     expect(html).toContain('aria-label="Product"');
     expect(html).toContain('aria-label="Use cases"');
     expect(html).toContain('aria-label="Integrations"');
-    expect(html).toContain('aria-label="Compare"');
-    expect(html).toContain('aria-label="Support and legal"');
-    expect(html.match(/aria-current="page"[^>]*href="\/agents"/g)).toHaveLength(3);
+    expect(html).toContain('aria-label="Resources"');
+    expect(html).toContain('aria-label="Legal and privacy"');
+    expect(
+      html.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/agents")[^>]*>/g),
+    ).toHaveLength(3);
     expect(html).toContain('<summary');
     expect(html).toContain('>Menu</span>');
     expect(html).toContain('Slack · Native sync');
@@ -93,10 +104,10 @@ describe('PublicShell', () => {
     expect(html).not.toContain('MCP lookup');
     expect(html).not.toContain('href="/integrations/jira"');
     expect(html).not.toContain('href="/integrations/notion"');
-    expect(html).toContain('The Timeline vs Day AI');
-    expect(html).toContain('The Timeline vs Suda');
-    expect(html).toContain('The Timeline vs MemoryCrow');
-    expect(html).toContain('The Timeline vs Achiral');
+    expect(html).toContain('vs Day AI');
+    expect(html).toContain('vs Suda');
+    expect(html).toContain('vs MemoryCrow');
+    expect(html).toContain('vs Achiral');
     expect(html).not.toContain('HubSpot · Coming soon');
     expect(html).not.toContain('Attio · Coming soon');
     expect(html).not.toContain('Pipedrive · Coming soon');
@@ -104,6 +115,7 @@ describe('PublicShell', () => {
   });
 
   it('marks the Trust legal link as the current page', () => {
+    route.pathname = '/trust';
     const html = renderToStaticMarkup(
       <PublicShell currentSection="trust">
         <main id="main">Trust</main>
@@ -121,7 +133,9 @@ describe('PublicShell', () => {
       </PublicShell>,
     );
 
-    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    for (const link of screen.getAllByRole('link', { name: 'Dashboard' })) {
+      expect(link.getAttribute('href')).toBe('/app');
+    }
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open app' })).toBeNull();
@@ -141,5 +155,54 @@ describe('PublicShell', () => {
     expect(html).toContain('data-public-header="true"');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
+  });
+});
+
+describe('public dropdown keyboard dismissal', () => {
+  it('returns desktop focus to the dropdown summary', () => {
+    const { container } = render(
+      <PublicShell>
+        <main id="main">Content</main>
+      </PublicShell>,
+    );
+    const summary = Array.from(container.querySelectorAll('summary')).find(
+      (node) => node.textContent === 'Integrations',
+    );
+    const details = summary?.closest('details');
+    if (!details) throw new Error('Missing desktop dropdown');
+    details.open = true;
+    const link = details.querySelector('a');
+    if (!link) throw new Error('Missing dropdown link');
+    link.focus();
+    fireEvent.keyDown(link, { key: 'Escape' });
+    expect(details.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+  });
+
+  it('dismisses a nested dropdown before closing the mobile menu', () => {
+    const { container } = render(
+      <PublicShell>
+        <main id="main">Content</main>
+      </PublicShell>,
+    );
+    const menu = container
+      .querySelector('nav[aria-label="Public navigation menu"]')
+      ?.closest('details');
+    const nested = menu?.querySelector('details');
+    if (!menu || !nested) throw new Error('Missing mobile menu');
+    menu.open = true;
+    nested.open = true;
+    const link = nested.querySelector('a');
+    if (!link) throw new Error('Missing nested link');
+    link.focus();
+    fireEvent.keyDown(link, { key: 'Escape' });
+    expect(nested.open).toBe(false);
+    expect(menu.open).toBe(true);
+    expect(document.activeElement).toBe(nested.querySelector('summary'));
+    const focused = document.activeElement;
+    if (!focused) throw new Error('Missing focus');
+    fireEvent.keyDown(focused, { key: 'Escape' });
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(menu.querySelector('summary'));
   });
 });

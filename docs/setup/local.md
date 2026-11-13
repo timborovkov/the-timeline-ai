@@ -27,8 +27,11 @@ Open a new shell after installing Bun. For a checkout previously installed with 
 Fill in at minimum:
 
 - `AUTH_SECRET` — `openssl rand -base64 32`
-- `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features. Other third-party service keys can stay empty for the demo.
+- `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features.
+- `FIRECRAWL_API_KEY` — required before the web app or full worker boots. Get a key at [firecrawl.dev](https://firecrawl.dev); the free plan works.
 - `SECRETS_ENCRYPTION_KEY` — 32-byte base64 key required as soon as you connect any integration or custom MCP server. Generate with `openssl rand -base64 32`. See [integrations setup](integrations.md).
+
+Other third-party service keys can stay empty for the demo.
 
 The rest of the defaults already match `docker-compose.yml`. When you use `docker compose --profile app up`, Compose forwards `TELEGRAM_BOT_TOKEN` and `SECRETS_ENCRYPTION_KEY` to the worker so Telegram and Slack direct-agent replies use the production-parity external-chat profile.
 
@@ -47,7 +50,7 @@ Start infra:
     docker compose up -d
     docker compose ps           # all services should be "healthy"
 
-This brings up Postgres (5432), Redis (6379), Qdrant (6333/6334), RustFS (9000 S3 API, 9001 console). RustFS uses `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`, matching the app's local S3 credentials. The `rustfs-init` container uses the pinned `rustfs/rc:v0.1.36` client to create the required buckets, enable versioning, and allow direct browser document uploads from any local `localhost` or `127.0.0.1` port, including isolated worktree and E2E servers. Compose keeps Qdrant snapshots on the data volume (`QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots`) so snapshot create does not fail with overlayfs `EXDEV` / CrossesDevices on some Cloud Agent hosts. New collections store original vectors and payload on disk with scalar int8 quantization in RAM. An existing in-RAM `events` collection is not rewritten in place; copy it with `bun run --filter @timeline/worker qdrant-migrate-collection` (see [OpenRouter setup](../runbooks/reindex.md#qdrant-storage)) before expecting the lower memory footprint.
+This brings up Postgres (5432), Redis (6379), Qdrant (6333/6334), RustFS (9000 S3 API, 9001 console). RustFS uses `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`, matching the app's local S3 credentials. The `rustfs-init` container uses the pinned `rustfs/rc:v0.1.37` client to create the required buckets, enable versioning, and allow direct browser document uploads from any local `localhost` or `127.0.0.1` port, including isolated worktree and E2E servers. Compose keeps Qdrant snapshots on the data volume (`QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots`) so snapshot create does not fail with overlayfs `EXDEV` / CrossesDevices on some Cloud Agent hosts. New collections store original vectors and payload on disk with scalar int8 quantization in RAM. An existing in-RAM `events` collection is not rewritten in place; copy it with `bun run --filter @timeline/worker qdrant-migrate-collection` (see [OpenRouter setup](../runbooks/reindex.md#qdrant-storage)) before expecting the lower memory footprint.
 
 Install deps, run migrations, and optionally seed demo data:
 

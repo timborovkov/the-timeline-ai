@@ -1402,7 +1402,7 @@ describe('TaskBoard', () => {
       card?.firstElementChild?.contains(screen.getByRole('link', { name: 'Send proposal' })),
     ).toBe(true);
     expect(project.className).toContain('min-h-7');
-    expect(drag.className).toContain('size-6');
+    expect(drag.className).toContain('size-8');
   });
 
   it('bulk assigns selected tasks from list view', async () => {

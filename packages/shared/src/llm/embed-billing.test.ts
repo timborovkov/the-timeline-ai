@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { reserveAskAi } from '#src/billing/admission.js';
 import { runWorkerBilling } from '#src/billing/runtime.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { resetEnvForTests } from '#src/env.js';
-import { embedMany } from '#src/llm/embed.js';
+import { embed, embedMany } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -59,6 +61,210 @@ describe('embedding billing operation ids', () => {
     resetEnvForTests();
     await pg.close();
   });
+
+  // Preserve the original search regression even with an explicitly larger Ask hold.
+  it('admits a search embedding with 99.4 cents used and an active Ask reservation', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'prior-usage',
+      meterId: 'ai',
+      nativeUnits: 99.4,
+      customerChargeCents: 99,
+    });
+    expect(
+      (
+        await reserveAskAi(billing, {
+          operationId: 'ask:web:search',
+          deliverySurface: 'web',
+          reservedChargeCents: 100,
+        })
+      ).ok,
+    ).toBe(true);
+    const { model, calls } = modelForTexts();
+    const result = await runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+      embed({ text: 'alpha' }, { model }),
+    );
+    expect(result.vector[0]).toBe(1);
+    expect(calls).toEqual([['alpha']]);
+  });
+
+  it('admits a small embedding batch alongside Ask and charges reported provider cost', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'prior-usage',
+      meterId: 'ai',
+      nativeUnits: 99.4,
+      customerChargeCents: 99,
+    });
+    await reserveAskAi(billing, {
+      operationId: 'ask:web:batch',
+      deliverySurface: 'web',
+      reservedChargeCents: 100,
+    });
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (({ values }: { values: string[] }) =>
+        Promise.resolve({
+          embeddings: values.map(() => vector(1)),
+          response: { body: { usage: { cost: values.length * 0.00001 } } },
+        })) as never,
+    });
+    for (let search = 0; search < 2; search += 1) {
+      await runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+        embedMany({ texts: ['alpha', 'beta'] }, { model }),
+      );
+    }
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.filter((row) => row.operationClass === 'embedding')).toHaveLength(2);
+    const embedding = ledger.find((row) => row.operationClass === 'embedding');
+    expect(embedding?.metadata.openrouter_usd).toBe(0.00002);
+    expect(Number(embedding?.nativeUnits)).toBeGreaterThan(0);
+    expect(Number(embedding?.nativeUnits)).toBeLessThan(1);
+  });
+
+  for (const scenario of [
+    { name: 'exhausted allowance', used: 200, texts: ['alpha'] },
+    { name: 'insufficient sub-cent allowance', used: 199.999999, texts: ['alpha'] },
+    {
+      name: 'batch exceeding the remaining budget',
+      used: 199,
+      texts: Array.from({ length: 10 }, () => 'word '.repeat(6000)),
+    },
+  ]) {
+    it(`rejects embeddings before provider execution for ${scenario.name}`, async () => {
+      const billing = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.settle({
+        operationId: 'prior-usage',
+        meterId: 'ai',
+        nativeUnits: scenario.used,
+        customerChargeCents: Math.floor(scenario.used),
+      });
+      const { model, calls } = modelForTexts();
+      await expect(
+        runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+          embedMany({ texts: scenario.texts }, { model }),
+        ),
+      ).rejects.toMatchObject({ code: 'free_allowance_reached' });
+      expect(calls).toEqual([]);
+    });
+  }
+
+  it('budgets truncated inputs and includes every allowed retry', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'prior-usage',
+      meterId: 'ai',
+      nativeUnits: 199.4,
+      customerChargeCents: 199,
+    });
+    const { model, calls } = modelForTexts();
+    const text = 'word '.repeat(100_000);
+    await expect(
+      runWorkerBilling(db, TEAM_ID, 'embedding', () => embed({ text }, { model, maxRetries: 2 })),
+    ).rejects.toMatchObject({ code: 'free_allowance_reached' });
+    expect(calls).toEqual([]);
+    // Truncation makes one attempt fit; budgeting the original text would reject it.
+    await expect(
+      runWorkerBilling(db, TEAM_ID, 'embedding', () => embed({ text }, { model, maxRetries: 0 })),
+    ).resolves.toMatchObject({ model: TIMELINE_MODELS.embedding.id });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('does not round a fractional embedding budget up against the Free allowance', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'prior-usage',
+      meterId: 'ai',
+      nativeUnits: 199.2,
+      customerChargeCents: 199,
+    });
+    const { model } = modelForTexts();
+    await expect(
+      runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+        embed({ text: 'word '.repeat(6000) }, { model }),
+      ),
+    ).resolves.toMatchObject({ model: TIMELINE_MODELS.embedding.id });
+  });
+
+  for (const { plan, discount } of [
+    { plan: 'team', discount: 0 },
+    { plan: 'payg', discount: 0 },
+    { plan: 'team', discount: 80 },
+    { plan: 'payg', discount: 80 },
+    { plan: 'team', discount: 99 },
+  ]) {
+    it(`keeps fractional embedding holds behind the ${plan} paid spend cap with ${discount}% discount`, async () => {
+      const billing = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.settle({
+        operationId: 'prior-usage',
+        meterId: 'ai',
+        nativeUnits: 200,
+        customerChargeCents: 200,
+      });
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      try {
+        await pg.exec(
+          `UPDATE team_billing_accounts SET plan_id = '${plan}', billing_state = '${plan}_active', shadow_billing = false, spend_cap_cents = 0, included_discount_remaining_cents = 0, price_override = '{"meteredDiscountPercent":${discount}}'::jsonb WHERE team_id = '${TEAM_ID}'`,
+        );
+        const { model, calls } = modelForTexts();
+        await expect(
+          runWorkerBilling(db, TEAM_ID, 'embedding', () => embed({ text: 'alpha' }, { model })),
+        ).rejects.toMatchObject({ code: 'spend_cap_reached' });
+        expect(calls).toEqual([]);
+        // Exact integer budgets must also retain a positive discounted hold.
+        expect(
+          await billing.reserve({
+            operationId: 'integer-budget',
+            meterId: 'ai',
+            reservedNativeUnits: 23,
+            reservedChargeCents: 23,
+          }),
+        ).toMatchObject({ ok: false, code: 'spend_cap_reached' });
+        await pg.exec(
+          `UPDATE team_billing_accounts SET spend_cap_cents = 100 WHERE team_id = '${TEAM_ID}'`,
+        );
+        await expect(
+          runWorkerBilling(db, TEAM_ID, 'embedding', () => embed({ text: 'alpha' }, { model })),
+        ).resolves.toMatchObject({ model: TIMELINE_MODELS.embedding.id });
+      } finally {
+        delete process.env.BILLING_CHARGES_ENABLED;
+        resetEnvForTests();
+      }
+    });
+  }
 
   it('bills each embedding sub-batch separately under one worker operation id', async () => {
     const { model, calls } = modelForTexts();

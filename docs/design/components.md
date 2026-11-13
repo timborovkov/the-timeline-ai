@@ -7,7 +7,8 @@ Screen specifications live in [app.md](app.md) and [public.md](public.md).
 
 The default route header. It owns the single sentence-case `<h1>`, an optional
 subtitle, leading/trailing actions, and a quiet wrapping 12px metadata row.
-Metadata is sans by default; individual values may opt into mono.
+Metadata is sans by default; individual values may opt into mono. Descriptions stay
+bounded to a readable measure; action groups wrap at narrow widths.
 
 The collection variant has compact spacing on desktop, without a bottom rule;
 long headings wrap and increase its height. It uses an 18px title,
@@ -38,7 +39,8 @@ table.
 - `CollectionRow` is at least 44px on desktop. Human titles wrap in full,
   including unbroken strings; never ellipsize or line-clamp the identifying title.
   Titles occupy their own line; context and metadata sit below at every width.
-  Row actions keep a stable trailing position rather than dropping below the row.
+  Row actions keep a stable trailing position by default. Team member and invitation
+  rows use the [narrow-container stacking contract](app.md) to preserve identity width.
   Previews overlay the workspace; opening one never changes the row width.
   Virtualized windows keep rendered rows in normal flow with spacers for unseen
   rows, so wrapping content cannot overlap before measurement.
@@ -88,8 +90,10 @@ blocked/failed/overdue use danger. P1 uses danger, P2 amber, and P3/P4 neutral.
 Lime remains reserved for the primary action, active route, and citation
 signal.
 
-Collection transitions last 150–200ms and are limited to background, border,
-opacity, and transform. They honor reduced motion. No collection introduces a
+Collection feedback uses background, border, opacity, and transform. Group
+expansion animates grid height for 220ms; collapsed contents are inert and hidden
+from assistive technology immediately. Reduced motion removes height travel.
+Shared surface timing follows [the design system](../../design.md#states-and-responsive-behavior). No collection introduces a
 new global keyboard shortcut; existing inspectors, drag handles, infinite
 scroll with virtualization, evidence links, and URL state remain the interaction
 contract. Collection inventories use `24 of 847` when a filter is on and `847`
@@ -158,7 +162,7 @@ Do not recreate route-local uppercase eyebrow headings.
 
 Controls are 36px high by default, with 40px allowed for mobile-critical
 actions. They use a 4px radius, explicit hover states, and a visible focus
-ring. Secondary buttons do not need a persistent filled background. Native
+ring. Editable controls use at least 16px text on mobile and retain compact desktop text. Secondary buttons do not need a persistent filled background. Native
 `<select>` controls use the shared `NativeSelect` (same height, radius, hover,
 and focus as `Input`). Do not restyle selects with one-off `h-10`,
 `rounded-md`, or unhovered gray boxes.
@@ -260,7 +264,10 @@ meetings read as stories; pull requests, issues, and other named records read
 as compact work records; CI, telemetry, and webhook chatter read as one-line
 pulses. Opening a row shows a human source summary first. Original source
 (full message, email HTML, transcript, or webhook/JSON payload) sits in a
-collapsed inspector disclosure with a readable preview: HTML in a sandboxed
+collapsed inspector disclosure. Recognized MCP remember captures preview their
+authored title and text instead of the transport envelope; the complete stored
+payload remains available in that disclosure. Other source formats retain their
+existing fallback. Original previews render HTML in a sandboxed
 frame, text as prose, JSON in Commit Mono. Attached documents link to the
 document drive. Exact timestamps, ownership/visibility internals, source IDs,
 and other implementation keys stay inside `TechnicalDetails`. Ask answers and
@@ -301,7 +308,7 @@ failures keep `InlineError` with a specific retry.
    with a spinner (`Updating status…`).
 3. The same toast morphs to success or error. Do not spawn a second toast.
 4. On error, roll back the optimistic state and restore focus to the control.
-5. Success lasts 2s. Error lasts 6s and is dismissible.
+5. Passive success lasts 2s. Success with Undo remains until dismissed or acted on, so keyboard users do not race a timer. Error lasts 6s and is dismissible.
 
 Native form actions must dismiss their loading toast when the form unmounts
 for a redirect, revalidation, or error boundary. Completed success/error toasts
@@ -340,3 +347,26 @@ the control with recovery copy. Do not invent a second clipboard helper.
 Copy the New York variant into `apps/web/src/components/ui/`, then retune it to
 this contract: 4px controls, 6px panels, no content shadow, lime only for the
 primary action, and imports through `@/components/ui/<name>`.
+
+
+## Confirmation dialogs
+
+Dialog content uses a constrained grid column and wraps unbroken identifiers.
+Long titles and descriptions must not push actions outside the viewport. Dialogs
+stay within the dynamic viewport height, with internal scrolling when needed;
+footer buttons wrap their text and remain reachable at 200% text size. Titles
+reserve space for the close icon. Shared application confirmations and alerts
+initially focus the heading so long content starts in view; input dialogs keep
+initial focus on the input. Enter used to commit IME composition does not submit
+the dialog; submission requires a subsequent non-composing Enter or the action
+button. Closing restores focus to the launcher, including
+Escape and Cancel.
+
+Clipboard failure messages wrap below their action group without pushing adjacent
+controls off-screen. Copy feedback belongs to the current value and latest copy
+attempt; value changes clear it, and late responses from older attempts cannot
+overwrite the current result.
+
+Item icon controls use 44px mobile targets and compact 32px desktop targets.
+Approval decisions stack below proposal context on phones, preserving readable
+source context and explicit Accept labels.

@@ -76,7 +76,7 @@ export function DesktopSidebar({
               aria-label="The Timeline home"
               className={cn(
                 'rounded-sm text-fg transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
                 expanded
                   ? 'flex h-9 min-w-0 items-center px-3'
                   : 'grid size-9 place-items-center hover:bg-surface-2',
@@ -99,7 +99,7 @@ export function DesktopSidebar({
               aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
               aria-expanded={expanded}
               onClick={toggleExpanded}
-              className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
+              className="grid size-9 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-bg"
             >
               {expanded ? (
                 <ChevronLeft aria-hidden="true" className="size-4" />
@@ -133,7 +133,7 @@ export function DesktopSidebar({
               aria-label="Open Help & support in a new tab"
               className={cn(
                 'rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
                 expanded
                   ? 'flex h-9 w-full items-center gap-3 px-3 text-sm'
                   : 'grid size-9 place-items-center',

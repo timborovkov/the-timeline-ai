@@ -34,6 +34,7 @@ import {
   memberDayChargeDelta,
   metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
+  paygOverageNativeUnits,
   pendingCapEligibleChargeCentsInPeriod,
   pendingDiscountReservedCentsInWindow,
   pendingNativeUnitsInPeriod,
@@ -1031,8 +1032,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
           },
           ym,
         );
+        // AI is instantaneous and its allowance uses fractional cents. Keep
+        // that precision here; payable holds are rounded in priceAdmission.
         const listThisMonth =
-          reservedUnits <= 0
+          input.meterId === 'ai' || reservedUnits <= 0
             ? Math.max(0, input.reservedChargeCents)
             : scaleChargeCents(input.reservedChargeCents, unitsThisMonth, reservedUnits);
 
@@ -1041,7 +1044,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
           if (allowance) {
             const next =
               allowance.unit === 'cents'
-                ? allowance.consumed + listThisMonth
+                ? // AI native units preserve sub-cent budgets; invoice rounding
+                  // must not admit a call that exceeds the remaining allowance.
+                  allowance.consumed + Math.max(listThisMonth, unitsThisMonth)
                 : allowance.consumed + unitsThisMonth;
             if (next > allowance.limit) {
               return { kind: 'reject' as const, code: 'free_allowance_reached' as const };
@@ -1049,8 +1054,20 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
         }
 
-        const priceAdmission = (nativeUnits: number, listChargeCents: number) =>
-          applyMeteredDiscountCents(
+        const priceAdmission = (nativeUnits: number, listChargeCents: number) => {
+          if (input.meterId === 'ai') {
+            // Keep fractional allowance units, but round payable holds up only
+            // after discounts so small calls cannot bypass a paid spend cap.
+            const billableUnits = paygOverageNativeUnits({
+              planId: entitlementsPlanId,
+              meterId: input.meterId,
+              nativeUnits: Math.max(nativeUnits, listChargeCents),
+              meters: metersForAdmission,
+            });
+            const discount = commercial.meteredDiscountPercent ?? 0;
+            return Math.ceil((billableUnits * (100 - discount)) / 100);
+          }
+          return applyMeteredDiscountCents(
             paygOverageCustomerChargeCents({
               planId: entitlementsPlanId,
               meterId: input.meterId,
@@ -1060,6 +1077,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             }),
             commercial.meteredDiscountPercent,
           );
+        };
         const billableChargeCents = priceAdmission(reservedUnits, input.reservedChargeCents);
         const billableThisMonth =
           unitsThisMonth >= reservedUnits

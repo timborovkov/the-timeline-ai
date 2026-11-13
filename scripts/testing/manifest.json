@@ -1,6 +1,24 @@
 {
+  "packages/shared/src/agent/workspace-tools.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/objects/chat-turns.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/lib/chat-session.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/kanban-keyboard.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/boardQualification.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/workers/boardQualification-discovery.test.ts": {
     "group": "integration"
+  },
+  "apps/web/src/app/workspace-suspended/page.test.tsx": {
+    "group": "dom"
   },
   "apps/web/src/components/agent-reporting-settings.test.tsx": {
     "group": "dom"
@@ -944,9 +962,6 @@
   "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
-    "group": "unit"
-  },
   "apps/web/src/components/marketing/integrations/works-with-content.test.ts": {
     "group": "unit"
   },
@@ -978,9 +993,6 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
-    "group": "unit"
-  },
-  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
@@ -1191,6 +1203,9 @@
     "group": "dom"
   },
   "apps/web/src/components/work-filter-bar.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/work-navigation.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/work-subnav.test.tsx": {

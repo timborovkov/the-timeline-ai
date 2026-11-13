@@ -241,7 +241,12 @@ export function ConnectionsAgentTools({
       ) : null}
 
       {visibleComingSoon.length > 0 ? (
-        <CollectionGroup count={visibleComingSoon.length} title="Coming soon">
+        <CollectionGroup
+          key={query.trim() ? 'search' : 'browse'}
+          count={visibleComingSoon.length}
+          title="Coming soon"
+          defaultOpen={Boolean(query.trim())}
+        >
           {visibleComingSoon.map((entry) => (
             <div key={entry.id} id={entry.id} className="scroll-mt-24">
               <CollectionRow className="opacity-80">

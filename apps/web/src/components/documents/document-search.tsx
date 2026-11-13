@@ -42,7 +42,7 @@ export function DocumentSearch() {
     <section className="space-y-3">
       <search className="relative block">
         <label className="sr-only" htmlFor={inputId}>
-          Search document chunks
+          Search document content
         </label>
         <Search
           aria-hidden="true"
@@ -59,14 +59,14 @@ export function DocumentSearch() {
           onKeyDown={(event) => {
             if (event.key === 'Enter') submitSearch();
           }}
-          placeholder="Search document chunks"
-          className="h-10 w-full rounded-sm border border-border bg-surface pl-9 pr-24 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
+          placeholder="Search document content"
+          className="h-11 w-full rounded-sm border border-border bg-surface pl-9 pr-24 text-base focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-sm"
         />
         <button
           type="button"
           onClick={submitSearch}
           disabled={!draft.trim() || search.isFetching}
-          className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-40"
+          className="absolute right-1 top-1/2 h-10 -translate-y-1/2 rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-40"
         >
           {search.isFetching ? 'Searching' : 'Search'}
         </button>

@@ -264,7 +264,7 @@ describe('timeline moment grouping', () => {
     expect(moments.every((moment) => moment.rawEvents.length === 1)).toBe(true);
   });
 
-  it('bundles GitHub workflow runs by repo, workflow, branch, and day', () => {
+  it('keeps distinct GitHub workflow runs separate on the same day', () => {
     const moments = buildTimelineMoments(
       [
         event({
@@ -304,11 +304,11 @@ describe('timeline moment grouping', () => {
       new Date('2026-05-28T12:00:00.000Z'),
     );
 
-    expect(moments).toHaveLength(1);
+    expect(moments).toHaveLength(2);
     expect(moments[0]?.kind).toBe('ci_deploy');
     expect(moments[0]?.title).toBe('CI passed on timborovkov/audit-ai · main');
-    expect(moments[0]?.subtitle).toBe('GitHub · workflow run success · 2 events');
-    expect(moments[0]?.grouping.strategy).toBe('provider_workflow_window');
+    expect(moments[0]?.subtitle).toBe('GitHub · workflow run success · 1 event');
+    expect(moments[0]?.grouping.strategy).toBe('provider_workflow_run');
   });
 
   it('truncates generated Telegram attachment filenames in moment summaries', () => {

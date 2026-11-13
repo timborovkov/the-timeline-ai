@@ -1733,7 +1733,7 @@ describe('handleMcpRequest', () => {
     expect((turnSignal?.reason as Error).message).toBe('client disconnected');
   });
 
-  it('lists bundled team-visible moments for outbound MCP callers', async () => {
+  it('lists distinct team-visible workflow runs for outbound MCP callers', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
         id,
@@ -1796,20 +1796,30 @@ describe('handleMcpRequest', () => {
       }[];
     };
 
-    expect(result.count).toBe(1);
+    expect(result.count).toBe(2);
     expect(result.moments[0]).toMatchObject({
       version: 'timeline_moment.v1',
-      evidence_count: 2,
-      raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
-      citations: [`[ev:${WORKFLOW_EVENT_A}]`, `[ev:${WORKFLOW_EVENT_B}]`],
+      evidence_count: 1,
+      raw_event_ids: [WORKFLOW_EVENT_A],
+      citations: [`[ev:${WORKFLOW_EVENT_A}]`],
+    });
+    expect(result.moments[1]).toMatchObject({
+      version: 'timeline_moment.v1',
+      evidence_count: 1,
+      raw_event_ids: [WORKFLOW_EVENT_B],
+      citations: [`[ev:${WORKFLOW_EVENT_B}]`],
     });
     expect(result.moments[0]?.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moments[0]?.title).toMatch(
-      /^<external_content source="timeline_moment" event_id="tm-moment_3Aintegration_3Agithub/,
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Anotice_3Aintegration/,
     );
-    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
-    expect(result.moments[0]?.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
-    const snippets = result.moments[0]?.evidence.map((entry) => entry.snippet) ?? [];
+    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Anotice_3Aintegration/);
+    expect(result.moments.flatMap((moment) => moment.raw_event_ids)).not.toContain(
+      WORKFLOW_PRIVATE_EVENT,
+    );
+    const snippets = result.moments.flatMap((moment) =>
+      moment.evidence.map((entry) => entry.snippet),
+    );
     expect(snippets[0]).toMatch(/^<external_content source="integration"/);
     expect(snippets.join('\n')).toContain('[fence-removed]');
     expect(snippets.join('\n')).not.toContain('</external_content>GitHub');
@@ -1818,14 +1828,13 @@ describe('handleMcpRequest', () => {
   it('scans past large raw-event groups when listing outbound MCP moments', async () => {
     const workflowRows = Array.from({ length: 50 }, (_, index) => {
       const id = `dddddddd-dddd-4ddd-8ddd-${String(index + 1).padStart(12, '0')}`;
-      const occurredAt = new Date(Date.UTC(2026, 5, 27, 18, 59 - index, 0)).toISOString();
       return `(
         '${id}',
         '${TEAM_ID}',
         '${USER_ID}',
         'integration',
-        'GitHub workflow "CI" #${1700 - index} on timborovkov/audit-ai success',
-        '${occurredAt}',
+        'GitHub workflow "CI" on timborovkov/audit-ai success',
+        '2026-06-27T18:59:00Z',
         'team',
         '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
       )`;
@@ -1869,7 +1878,7 @@ describe('handleMcpRequest', () => {
     expect(result.moments[1]?.raw_event_ids).toEqual([PR_EVENT_A]);
   });
 
-  it('expands only visible raw evidence for outbound MCP moments', async () => {
+  it('expands distinct visible raw evidence for outbound MCP moments', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
         id,
@@ -1926,24 +1935,29 @@ describe('handleMcpRequest', () => {
         raw_event_ids: string[];
         evidence: { event_id: string; snippet: string }[];
       };
+      related_moments: { raw_event_ids: string[] }[];
     };
 
     expect(result).toMatchObject({
       found: true,
       moment: {
         version: 'timeline_moment.v1',
-        evidence_count: 2,
-        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+        evidence_count: 1,
+        raw_event_ids: [WORKFLOW_EVENT_A],
       },
+      related_moments: [{ raw_event_ids: [WORKFLOW_EVENT_B] }],
     });
-    expect(result.moment.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
-    expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+    expect(result.moment.anchor_id).toMatch(/^tm-moment_3Anotice_3Aintegration/);
+    expect([
+      ...result.moment.raw_event_ids,
+      ...result.related_moments.flatMap((moment) => moment.raw_event_ids),
+    ]).not.toContain(WORKFLOW_PRIVATE_EVENT);
     expect(
       result.moment.evidence.every((entry) => entry.snippet.startsWith('<external_content')),
     ).toBe(true);
   });
 
-  it('expands partial raw-event ids into the complete visible outbound MCP moment', async () => {
+  it('keeps partial raw-event lookups scoped to the selected workflow run', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
         id,
@@ -1989,8 +2003,8 @@ describe('handleMcpRequest', () => {
     expect(result).toMatchObject({
       found: true,
       moment: {
-        evidence_count: 2,
-        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+        evidence_count: 1,
+        raw_event_ids: [WORKFLOW_EVENT_A],
       },
     });
   });
@@ -2049,17 +2063,22 @@ describe('handleMcpRequest', () => {
         title: string;
         raw_event_ids: string[];
       };
+      related_moments: { raw_event_ids: string[] }[];
     };
 
     expect(result).toMatchObject({
       found: true,
       moment: {
-        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+        raw_event_ids: [WORKFLOW_EVENT_A],
       },
+      related_moments: [{ raw_event_ids: [WORKFLOW_EVENT_B] }],
     });
     expect(result.moment.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
-    expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+    expect([
+      ...result.moment.raw_event_ids,
+      ...result.related_moments.flatMap((moment) => moment.raw_event_ids),
+    ]).not.toContain(WORKFLOW_PRIVATE_EVENT);
   });
 
   it('expands exact GitHub PR moment ids through team-visible metadata lookup', async () => {
@@ -3691,9 +3710,14 @@ describe('advertised MCP parameters', () => {
     it('rawEventIds', async () => {
       const result = (await callTool(db, 'timeline.get', {
         rawEventIds: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
-      })) as { found: boolean; moment: { raw_event_ids: string[] } };
+      })) as {
+        found: boolean;
+        moment: { raw_event_ids: string[] };
+        related_moments: { raw_event_ids: string[] }[];
+      };
       expect(result.found).toBe(true);
-      expect(result.moment.raw_event_ids).toEqual([WORKFLOW_EVENT_A, WORKFLOW_EVENT_B]);
+      expect(result.moment.raw_event_ids).toEqual([WORKFLOW_EVENT_A]);
+      expect(result.related_moments).toMatchObject([{ raw_event_ids: [WORKFLOW_EVENT_B] }]);
     });
   });
 

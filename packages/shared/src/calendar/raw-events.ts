@@ -9,6 +9,7 @@ import {
 import { childLogger } from '#src/logger.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import { timelineGroupKey } from '#src/timeline-moments/index.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -88,6 +89,57 @@ export function buildCalendarSourcePayloadMetadata(
   });
 }
 
+export function calendarRawEventMetadataPatch(
+  existing: typeof rawEvents.$inferSelect,
+  contentText: string | null,
+  patch: Record<string, unknown> = {},
+  visibilityPatch: Partial<
+    Pick<typeof rawEvents.$inferSelect, 'visibility' | 'visibilityUserIds'>
+  > = {},
+): Record<string, unknown> {
+  const metadata = recordFromUnknown(existing.sourceMetadata);
+  const previousKey = timelineGroupKey(existing);
+  const aliases = Array.isArray(metadata.timeline_notice_group_aliases)
+    ? metadata.timeline_notice_group_aliases.filter(
+        (value): value is string => typeof value === 'string',
+      )
+    : [];
+  const preserveNotice =
+    previousKey.startsWith('notice:calendar:') &&
+    previousKey !== timelineGroupKey({ ...existing, ...visibilityPatch, contentText });
+  return {
+    ...patch,
+    ...(preserveNotice
+      ? { timeline_notice_group_aliases: [...new Set([...aliases, `moment:${previousKey}`])] }
+      : {}),
+  };
+}
+
+export async function updateCalendarRawEventVisibility(
+  tx: DbOrTx,
+  teamId: string,
+  ids: string[],
+  visibility: CalendarRawVisibility,
+  visibilityUserIds: string[] | null,
+): Promise<void> {
+  if (ids.length === 0) return;
+  const rows = await tx
+    .select()
+    .from(rawEvents)
+    .where(and(eq(rawEvents.teamId, teamId), inArray(rawEvents.id, ids)));
+  const patch = { visibility, visibilityUserIds };
+  for (const existing of rows) {
+    const metadataPatch = calendarRawEventMetadataPatch(existing, existing.contentText, {}, patch);
+    await tx
+      .update(rawEvents)
+      .set({
+        ...patch,
+        sourceMetadata: { ...recordFromUnknown(existing.sourceMetadata), ...metadataPatch },
+      })
+      .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.id, existing.id)));
+  }
+}
+
 async function updateCalendarRawEventText(
   tx: DbOrTx,
   args: {
@@ -98,14 +150,16 @@ async function updateCalendarRawEventText(
   },
 ): Promise<void> {
   const [existing] = await tx
-    .select({
-      teamId: rawEvents.teamId,
-      sourceMetadata: rawEvents.sourceMetadata,
-    })
+    .select()
     .from(rawEvents)
     .where(eq(rawEvents.id, args.rawEventId))
     .limit(1);
   if (!existing) return;
+  const metadataPatch = calendarRawEventMetadataPatch(
+    existing,
+    args.contentText,
+    args.sourceMetadataPatch,
+  );
 
   await tx
     .update(rawEvents)
@@ -115,7 +169,7 @@ async function updateCalendarRawEventText(
       sourceMetadata: sourceMetadataReplacingConversationArtifacts(
         existing.sourceMetadata,
         args.contentText,
-        args.sourceMetadataPatch,
+        metadataPatch,
       ),
     })
     .where(eq(rawEvents.id, args.rawEventId));
@@ -267,15 +321,13 @@ export async function updateCalendarRawEvents(
   const linkedRawEventIds = [args.startAtRawEventId, args.scheduledRawEventId].filter(
     (id): id is string => id !== null && id.length > 0,
   );
-  if (linkedRawEventIds.length > 0) {
-    await tx
-      .update(rawEvents)
-      .set({
-        visibility: args.visibility,
-        visibilityUserIds: args.visibilityUserIds,
-      })
-      .where(inArray(rawEvents.id, linkedRawEventIds));
-  }
+  await updateCalendarRawEventVisibility(
+    tx,
+    args.teamId,
+    linkedRawEventIds,
+    args.visibility,
+    args.visibilityUserIds,
+  );
 
   if (args.startAtRawEventId) {
     await updateCalendarRawEventText(tx, {

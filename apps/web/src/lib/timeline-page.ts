@@ -529,16 +529,20 @@ async function focusedMomentIdTargetEvents({
   fetchEventsForMoment: CollectTimelinePageOptions['fetchEventsForMoment'];
 }): Promise<TimelineEvent[]> {
   if (!focusMomentId) return [];
-  const selectedMoment = buildTimelineMoments(selectedEvents, new Map(), { timezone }).find(
-    (moment) => moment.id === focusMomentId,
-  );
+  const selectedMoments = buildTimelineMoments(selectedEvents, new Map(), { timezone });
+  const selectedMoment = selectedMoments.find((moment) => moment.id === focusMomentId);
+
   if (selectedMoment) return selectedMoment.rawEvents;
-  if (!fetchEventsForMoment) return [];
+  if (!fetchEventsForMoment)
+    return (
+      selectedMoments.find((moment) => moment.legacyIds?.includes(focusMomentId))?.rawEvents ?? []
+    );
 
   const candidateEvents = await fetchEventsForMoment(focusMomentId);
-  const targetMoment = buildTimelineMoments(candidateEvents, new Map(), { timezone }).find(
-    (moment) => moment.id === focusMomentId,
-  );
+  const candidates = buildTimelineMoments(candidateEvents, new Map(), { timezone });
+  const targetMoment =
+    candidates.find((moment) => moment.id === focusMomentId) ??
+    candidates.find((moment) => moment.legacyIds?.includes(focusMomentId));
   return targetMoment?.rawEvents ?? [];
 }
 

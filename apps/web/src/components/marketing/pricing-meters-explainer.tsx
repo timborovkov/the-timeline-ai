@@ -37,7 +37,7 @@ export function PricingMetersExplainer({ className }: { className?: string }) {
       <summary className="cursor-pointer p-5 font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
         How this estimate works
       </summary>
-      <div className="grid gap-px bg-border sm:grid-cols-2">
+      <div className="grid gap-px bg-border sm:grid-cols-2 sm:[&>article:nth-last-child(2)]:col-span-2">
         {METER_COPY.map((meter) => (
           <article key={meter.name} className="bg-bg p-5 sm:p-6">
             <h3 className="text-lg font-semibold tracking-[-0.025em] text-fg">{meter.name}</h3>

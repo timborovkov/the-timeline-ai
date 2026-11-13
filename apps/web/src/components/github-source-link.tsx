@@ -5,10 +5,15 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/timborovkov/the-timeline-ai';
 export function GitHubSourceLink({
   className,
   compact = false,
+  appearance = 'button',
+  label = 'Source on GitHub',
 }: {
   className?: string;
   compact?: boolean;
+  appearance?: 'button' | 'inline';
+  label?: string;
 }) {
+  const inline = appearance === 'inline' && !compact;
   return (
     <a
       href={GITHUB_REPOSITORY_URL}
@@ -16,13 +21,15 @@ export function GitHubSourceLink({
       rel="noopener noreferrer"
       aria-label={compact ? 'The Timeline source code on GitHub' : undefined}
       className={cn(
-        'inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-border bg-bg px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted transition-[color,background-color,border-color,transform] duration-[80ms] ease-out hover:border-border-strong hover:bg-surface hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-reduce:transition-none motion-reduce:active:scale-100',
+        inline
+          ? 'inline-flex items-center rounded-sm underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring'
+          : 'inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-border bg-bg px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted transition-[color,background-color,border-color,transform] duration-[80ms] ease-out hover:border-border-strong hover:bg-surface hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-reduce:transition-none motion-reduce:active:scale-100',
         compact && 'size-10 px-0',
         className,
       )}
     >
-      <GitHubMark />
-      {compact ? null : <span>Source on GitHub</span>}
+      {inline ? null : <GitHubMark />}
+      {compact ? null : <span>{label}</span>}
     </a>
   );
 }

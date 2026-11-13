@@ -77,7 +77,8 @@ export async function notifyAction<T extends ActionResult>(
     }
     toast.success(message, {
       id: options.id,
-      duration: ACTION_TOAST_SUCCESS_MS,
+      duration: undo ? Infinity : ACTION_TOAST_SUCCESS_MS,
+      ...(undo ? { closeButton: true } : {}),
       action: undo
         ? createElement(UndoToastButton, {
             onClick: () => {

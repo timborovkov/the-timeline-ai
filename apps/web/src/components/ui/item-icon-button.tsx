@@ -19,7 +19,10 @@ export function ItemIconButton({
       size="icon"
       aria-label={label}
       title={label}
-      className={cn('size-8 shrink-0 text-fg-dim hover:bg-surface-2 hover:text-fg', className)}
+      className={cn(
+        'size-11 sm:size-8 shrink-0 text-fg-dim hover:bg-surface-2 hover:text-fg',
+        className,
+      )}
       {...props}
     />
   );

@@ -4,7 +4,7 @@ import { afterEach, describe, it } from 'bun:test';
 import type * as TimelineDb from '@timeline/db';
 // Test environment: happy-dom
 
-const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
+const fakes = vi.hoisted(() => ({ auth: vi.fn(), invites: vi.fn(), signOut: vi.fn() }));
 
 await vi.mock(
   import.meta.resolve('@/components/theme-toggle'),
@@ -27,7 +27,11 @@ await vi.mock(
   import.meta.resolve('@timeline/db'),
   async (importOriginal) => ({
     ...(await importOriginal<typeof TimelineDb>()),
-    getDb: () => ({}),
+    getDb: () => ({
+      select: () => ({
+        from: () => ({ innerJoin: () => ({ where: () => ({ limit: fakes.invites }) }) }),
+      }),
+    }),
   }),
   () => import('@timeline/db'),
 );
@@ -35,6 +39,12 @@ await vi.mock(
   import.meta.resolve('@/lib/auth'),
   () => ({ auth: fakes.auth }),
   () => import('@/lib/auth'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/lib/sign-out-session'),
+  () => ({ signOutAfterClearingLocalSession: fakes.signOut }),
+  () => import('@/lib/sign-out-session'),
 );
 
 const { cleanup, render, screen } = await import('@testing-library/react');
@@ -105,5 +115,75 @@ describe('AcceptInvite route states', () => {
     await user.keyboard('[Space]');
 
     expect(reset).toHaveBeenCalledTimes(2);
+  });
+  it('lets the wrong account switch while preserving the invitation', async () => {
+    fakes.auth.mockResolvedValue({ user: { email: 'wrong@example.test' } });
+    fakes.invites.mockResolvedValue([
+      {
+        email: 'invited@example.test',
+        role: 'member',
+        teamName: 'Example',
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
+    fakes.signOut.mockResolvedValue(undefined);
+    render(
+      await AcceptInvitePage({
+        params: Promise.resolve({ token: 'example-token' }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    expect(screen.getByRole('heading', { name: 'Wrong account' })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Switch account' }));
+    expect(fakes.signOut).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      '/accept-invite/example-token',
+    );
+  });
+
+  it('offers an honest deferral link without accepting or revoking the invitation', async () => {
+    fakes.auth.mockResolvedValue({ user: { email: 'invited@example.test' } });
+    fakes.invites.mockResolvedValue([
+      {
+        email: 'invited@example.test',
+        role: 'member',
+        teamName: 'Example',
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
+    render(
+      await AcceptInvitePage({
+        params: Promise.resolve({ token: 'example-token' }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    expect(screen.getByRole('link', { name: 'Not now' }).getAttribute('href')).toBe(
+      '/app/timeline',
+    );
+    expect(screen.queryByRole('link', { name: 'Decline' })).toBeNull();
+  });
+  it('keeps account switching retryable if sign-out fails', async () => {
+    fakes.auth.mockResolvedValue({ user: { email: 'wrong@example.test' } });
+    fakes.invites.mockResolvedValue([
+      {
+        email: 'invited@example.test',
+        role: 'member',
+        teamName: 'Example',
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
+    fakes.signOut.mockRejectedValueOnce(new Error('offline'));
+    render(
+      await AcceptInvitePage({
+        params: Promise.resolve({ token: 'example-token' }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Switch account' }));
+    expect(screen.getByRole('alert').textContent).toContain('Check your connection and try again');
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Switch account' }).disabled).toBe(
+      false,
+    );
   });
 });

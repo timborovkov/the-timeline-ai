@@ -62,14 +62,14 @@ describe('GlobalSearchPalette', () => {
 
     await user.keyboard('{Meta>}k{/Meta}');
 
-    expect(screen.getByRole('searchbox', { name: 'Search or jump' })).toBe(document.activeElement);
+    expect(screen.getByRole('combobox', { name: 'Search or jump' })).toBe(document.activeElement);
   });
 
   it('opens the full search page when Enter is pressed without a selected result', async () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('github{Enter}');
 
     expect(fakes.push).toHaveBeenCalledWith('/app/search?q=github');
@@ -102,7 +102,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('boards');
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Boards/ })).toBeTruthy();
@@ -139,7 +139,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('review');
 
     expect(await screen.findByText('Due Jul 4, 2099')).toBeTruthy();
@@ -183,7 +183,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('board');
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Project board/ })).toBeTruthy();
@@ -220,7 +220,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('boards');
     await waitFor(() => {
       expect(screen.getByText(/Search all results for/)).toBeTruthy();
@@ -260,7 +260,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('docs');
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Public help docs/ })).toBeTruthy();
@@ -280,7 +280,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('github');
 
     expect(await screen.findByText(/Search is cooling down/)).toBeTruthy();
@@ -315,7 +315,7 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('github');
 
     expect(await screen.findByRole('button', { name: /GitHub integration/ })).toBeTruthy();
@@ -341,10 +341,24 @@ describe('GlobalSearchPalette', () => {
     const user = userEvent.setup();
     render(<GlobalSearchPalette />);
 
-    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.click(screen.getByRole('combobox', { name: 'Search or jump' }));
     await user.keyboard('launch');
 
     expect(await screen.findByText('Document search is temporarily unavailable.')).toBeTruthy();
     expect(screen.queryByText('No matches.')).toBeNull();
   });
+});
+
+it('keeps an empty search selection attached to a rendered row', async () => {
+  const user = userEvent.setup();
+  render(<GlobalSearchPalette />);
+  const input = screen.getByRole('combobox', { name: 'Search or jump' });
+  await user.type(input, 'no-matches');
+  await screen.findByText('No matches.');
+  await user.keyboard('{ArrowDown}');
+  const active = input.getAttribute('aria-activedescendant');
+  expect(active).toBeTruthy();
+  expect(document.getElementById(active ?? '')?.textContent).toContain('Search all results');
+  await user.keyboard('{Enter}');
+  expect(fakes.push).toHaveBeenCalledWith('/app/search?q=no-matches');
 });

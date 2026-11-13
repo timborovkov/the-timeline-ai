@@ -16,8 +16,8 @@ import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manag
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { WorkOverviewHeader } from '@/components/work/work-overview-header';
 import { WorkQueueRow } from '@/components/work/work-queue-row';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -68,11 +68,14 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
     return (
       <div data-app-width="collection" className="space-y-6">
         <PageHeader
-          variant="collection"
-          title="Work"
+          leading={
+            <Link href="/app/work" className="text-sm text-fg-muted hover:text-fg">
+              ← Work overview
+            </Link>
+          }
+          title="Pinned work"
           subtitle="Personal shortcuts to the work and context you return to."
         />
-        <WorkSubnav current="/app/work?view=pinned" />
         <PinnedWorkspaceManager initialPage={page} filter={filter} />
       </div>
     );
@@ -133,127 +136,114 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   );
 
   return (
-    <div data-app-width="collection" className="space-y-6">
-      <PageHeader
-        variant="collection"
-        title="Work"
-        subtitle="Prioritized work that needs a decision, owner, or next action."
-        metadata={[
-          { label: 'Queue', value: queue.length, mono: true },
-          {
-            label: 'Overdue',
-            value: attention.overdueTasks,
-            mono: true,
-            danger: attention.overdueTasks > 0,
-            href: '/app/tasks?due=overdue',
-            ariaLabel: `${attention.overdueTasks} overdue tasks`,
-          },
-          {
-            label: 'Approvals',
-            value: attention.pendingApprovals,
-            mono: true,
-            danger: attention.pendingApprovals > 0,
-            href: '/app/approvals?status=pending',
-            ariaLabel: `${attention.pendingApprovals} pending approvals`,
-          },
-        ]}
+    <div data-app-width="overview" className="work-overview space-y-4">
+      <WorkOverviewHeader
+        queueCount={queue.length}
+        overdueCount={attention.overdueTasks}
+        approvalCount={attention.pendingApprovals}
       />
-      <WorkSubnav current="/app/work" />
 
-      <div className="space-y-7">
-        {mentionPings.length > 0 ? (
-          <CollectionGroup title="Unread mentions" count={mentionPings.length}>
-            <div>
-              {mentionPings.map((notification) => (
-                <CollectionRow key={notification.id}>
-                  <CollectionRow.Title>
-                    <Link
-                      href={notificationHref(notification)}
-                      className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
-                    >
-                      {notification.summary}
-                    </Link>
-                  </CollectionRow.Title>
-                </CollectionRow>
-              ))}
-            </div>
-          </CollectionGroup>
-        ) : null}
-
-        <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned" />
-
-        <CollectionGroup title="Boards" count={boards.length}>
-          {boards.length === 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-4">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm font-medium">No boards yet</p>
-                <p className="text-sm text-fg-muted">
-                  Start with a preset to organize your team’s work.
-                </p>
-              </div>
-              <BoardCreateDialog appearance="empty" />
-            </div>
-          ) : (
-            <div>
-              {boards.map((board) => (
-                <CollectionRow key={board.id}>
-                  <CollectionRow.Title>
-                    <Link
-                      href={`/app/boards/${board.id}`}
-                      className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
-                    >
-                      {board.name}
-                    </Link>
-                  </CollectionRow.Title>
-                  <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
-                  <CollectionRow.Metadata>
-                    <span className="px-2 text-xs tabular-nums text-fg-dim">
-                      {board.itemCount} items
-                    </span>
-                  </CollectionRow.Metadata>
-                  <CollectionRow.Actions>
-                    <ItemActionGroup label={`Actions for ${board.name}`}>
-                      <PinOverflowMenu
-                        target={{ kind: 'board', key: board.id }}
-                        title={board.name}
-                        initialPinned={board.pinned}
-                      />
-                    </ItemActionGroup>
-                  </CollectionRow.Actions>
-                </CollectionRow>
-              ))}
-            </div>
-          )}
-        </CollectionGroup>
-
-        <CollectionGroup title="Work queue" count={queue.length}>
-          {queue.length === 0 ? (
-            <EmptyState
-              icon={ListTodo}
-              size="inset"
-              title="Work queue is clear"
-              body="Assigned work, due team items, and pending approvals will appear here when they need attention."
-              href="/app/boards"
-              action="Open boards"
-            />
-          ) : (
-            <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
+      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-6">
+          {mentionPings.length > 0 ? (
+            <CollectionGroup title="Unread mentions" count={mentionPings.length}>
               <div>
-                {queue.map((item) => (
-                  <WorkQueueRow
-                    key={item.id}
-                    item={item}
-                    members={memberOptions}
-                    timezone={timezone}
-                    pinned={
-                      item.entityId ? (queuePinState[`object:${item.entityId}`] ?? false) : false
-                    }
-                  />
+                {mentionPings.map((notification) => (
+                  <CollectionRow key={notification.id}>
+                    <CollectionRow.Title>
+                      <Link
+                        href={notificationHref(notification)}
+                        className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
+                      >
+                        {notification.summary}
+                      </Link>
+                    </CollectionRow.Title>
+                  </CollectionRow>
                 ))}
               </div>
-            </TaskCategoryPollingProvider>
-          )}
-        </CollectionGroup>
+            </CollectionGroup>
+          ) : null}
+
+          <CollectionGroup title="Work queue" count={queue.length}>
+            {queue.length === 0 ? (
+              <EmptyState
+                icon={ListTodo}
+                size="inset"
+                title="Work queue is clear"
+                body="Assigned work, due team items, and pending approvals will appear here when they need attention."
+                href="/app/boards"
+                action="Open boards"
+              />
+            ) : (
+              <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
+                <div>
+                  {queue.map((item) => (
+                    <WorkQueueRow
+                      key={item.id}
+                      item={item}
+                      members={memberOptions}
+                      timezone={timezone}
+                      pinned={
+                        item.entityId ? (queuePinState[`object:${item.entityId}`] ?? false) : false
+                      }
+                    />
+                  ))}
+                </div>
+              </TaskCategoryPollingProvider>
+            )}
+          </CollectionGroup>
+        </div>
+        <aside
+          id="pinned-work"
+          aria-label="Boards and pinned work"
+          className="min-w-0 scroll-mt-4 space-y-8 border-t border-border pt-6 xl:border-t-0 xl:border-l xl:pl-6 xl:pt-0"
+        >
+          <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned work" showEmpty />
+
+          <CollectionGroup title="Boards" count={boards.length}>
+            {boards.length === 0 ? (
+              <div className="flex flex-col items-start gap-3 py-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium">No boards yet</p>
+                  <p className="text-sm text-fg-muted">
+                    Start with a preset to organize your team’s work.
+                  </p>
+                </div>
+                <BoardCreateDialog />
+              </div>
+            ) : (
+              <div>
+                {boards.map((board) => (
+                  <CollectionRow key={board.id}>
+                    <CollectionRow.Title>
+                      <Link
+                        href={`/app/boards/${board.id}`}
+                        className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
+                      >
+                        {board.name}
+                      </Link>
+                    </CollectionRow.Title>
+                    <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
+                    <CollectionRow.Metadata>
+                      <span className="px-2 text-xs tabular-nums text-fg-dim">
+                        {board.itemCount} items
+                      </span>
+                    </CollectionRow.Metadata>
+                    <CollectionRow.Actions>
+                      <ItemActionGroup label={`Actions for ${board.name}`}>
+                        <PinOverflowMenu
+                          target={{ kind: 'board', key: board.id }}
+                          title={board.name}
+                          initialPinned={board.pinned}
+                        />
+                      </ItemActionGroup>
+                    </CollectionRow.Actions>
+                  </CollectionRow>
+                ))}
+              </div>
+            )}
+          </CollectionGroup>
+        </aside>
       </div>
     </div>
   );

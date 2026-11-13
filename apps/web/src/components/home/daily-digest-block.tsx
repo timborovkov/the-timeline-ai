@@ -1,4 +1,8 @@
-import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
+import {
+  digestSummaryParagraphs,
+  formatDigestDate,
+  type DailyDigestPayload,
+} from '@timeline/shared/messaging/format';
 import Link from 'next/link';
 
 import { DigestBody } from '@/components/home/digest-body';
@@ -8,7 +12,10 @@ export function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | unde
   if (!digest?.summary) return null;
 
   return (
-    <section aria-labelledby="latest-digest-heading" className="space-y-3 py-4">
+    <section
+      aria-labelledby="latest-digest-heading"
+      className="space-y-4 border-t border-border py-6"
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SectionHeading id="latest-digest-heading">Latest digest</SectionHeading>
         <div className="flex flex-wrap items-baseline gap-3">
@@ -20,6 +27,9 @@ export function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | unde
           </Link>
         </div>
       </div>
+      <p className="max-w-3xl text-base leading-7 text-fg-muted line-clamp-3">
+        {digestSummaryParagraphs(digest.summary)[0]}
+      </p>
       <details className="text-sm">
         <summary className="cursor-pointer font-medium text-fg-muted hover:text-fg">
           Open digest

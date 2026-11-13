@@ -272,15 +272,15 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /Daily call/ }));
 
     expect(screen.getByLabelText('Show as')).toHaveProperty('value', 'tentative');
-    expect(screen.getByLabelText('RRULE')).toHaveProperty(
+    expect(screen.getByLabelText('Recurrence rule (RRULE)')).toHaveProperty(
       'value',
       'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
     );
     expect(screen.getByLabelText('Edit scope')).toHaveProperty('value', 'series');
 
     await user.selectOptions(screen.getByLabelText('Show as'), 'free');
-    await user.clear(screen.getByLabelText('RRULE'));
-    await user.type(screen.getByLabelText('RRULE'), 'FREQ=WEEKLY;BYDAY=MO');
+    await user.clear(screen.getByLabelText('Recurrence rule (RRULE)'));
+    await user.type(screen.getByLabelText('Recurrence rule (RRULE)'), 'FREQ=WEEKLY;BYDAY=MO');
     await user.selectOptions(screen.getByLabelText('Edit scope'), 'this_and_future');
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
@@ -315,7 +315,10 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /Weekly sync/ }));
 
     expect(screen.getByLabelText('Repeats')).toHaveProperty('value', 'weekly');
-    expect(screen.getByLabelText('RRULE')).toHaveProperty('value', 'RRULE:FREQ=WEEKLY');
+    expect(screen.getByLabelText('Recurrence rule (RRULE)')).toHaveProperty(
+      'value',
+      'RRULE:FREQ=WEEKLY',
+    );
   });
 
   it('forwards the selected recurrence scope when deleting from the edit dialog', async () => {
@@ -338,7 +341,10 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     expect(screen.getByLabelText('Edit scope')).toHaveProperty('value', 'single');
     await user.selectOptions(screen.getByLabelText('Edit scope'), 'series');
-    await user.click(screen.getByRole('button', { name: /Delete/ }));
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }));
+    expect(fakes.deleteCalendarEventAction).not.toHaveBeenCalled();
+    expect(screen.getByText(/The entire series will be permanently deleted/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Delete event' }));
 
     await waitFor(() => {
       expect(fakes.deleteCalendarEventAction).toHaveBeenCalledWith('event-1', {
@@ -678,7 +684,7 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     const eventControl = screen.getByRole('button', { name: new RegExp(title) });
     expect(eventControl.className).toContain('min-w-0');
-    expect(within(eventControl).getByText(new RegExp(title)).className).toContain('truncate');
+    expect(within(eventControl).getByText(new RegExp(title)).className).toContain('line-clamp-2');
     expect(screen.getByRole('status', { name: '1' }).textContent).toBe('1');
   });
 
@@ -746,5 +752,97 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(objectLink.getAttribute('href')).toBe(`/app/objects/${objectId}`);
     expect(within(dialog).getByText('Project')).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: /Open object/i })).toBeNull();
+  });
+});
+
+describe('calendar review regressions', () => {
+  it('cancels deletion without invoking the mutation', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [event('event-1', 'Keep this event')],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /Keep this event/ }));
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(fakes.deleteCalendarEventAction).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Edit event' })).toBeTruthy();
+  });
+
+  it('warns that deleting a recurring parent deletes the entire series', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [{ ...event('parent-1', 'Weekly planning'), rrule: 'FREQ=WEEKLY' }],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /Weekly planning/ }));
+    await user.selectOptions(screen.getByLabelText('Edit scope'), 'single');
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }));
+    expect(
+      screen.getByText('The entire series will be permanently deleted. This cannot be undone.'),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Delete event' }));
+    await waitFor(() => {
+      expect(fakes.deleteCalendarEventAction).toHaveBeenCalledWith('parent-1', {
+        recurrenceEditMode: 'series',
+      });
+    });
+  });
+
+  it('displays an inclusive last day and saves an exclusive boundary', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [
+          {
+            ...event('event-1', 'Two day workshop'),
+            allDay: true,
+            startAt: '2026-06-03T00:00:00Z',
+            endAt: '2026-06-05T00:00:00Z',
+          },
+        ],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+    const workshop = screen.getAllByRole('button', { name: /Two day workshop/ })[0];
+    if (!workshop) throw new Error('Workshop event is missing');
+    await user.click(workshop);
+    expect(screen.getByLabelText('Last day (included)')).toHaveProperty('value', '2026-06-04');
+    fireEvent.change(screen.getByLabelText('Last day (included)'), {
+      target: { value: '2026-06-06' },
+    });
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+    await waitFor(() => {
+      expect(fakes.updateCalendarEventAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startAt: '2026-06-03T00:00:00.000Z',
+          endAt: '2026-06-07T00:00:00.000Z',
+        }),
+      );
+    });
+  });
+
+  it('opens custom recurrence and keeps it open while typing a preset prefix', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [event('event-1', 'Custom repeat')],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /Custom repeat/ }));
+    await user.selectOptions(screen.getByLabelText('Repeats'), 'custom');
+    const rule = screen.getByLabelText('Recurrence rule (RRULE)');
+    await user.type(rule, 'FREQ=DAILY;COUNT=3');
+    expect(rule.closest('details')?.open).toBe(true);
+    expect(rule).toHaveProperty('value', 'FREQ=DAILY;COUNT=3');
   });
 });

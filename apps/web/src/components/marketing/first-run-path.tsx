@@ -6,9 +6,11 @@ import { cn } from '@/lib/utils';
 export function FirstRunPath({
   compact = false,
   className,
+  showNote = true,
 }: {
   compact?: boolean;
   className?: string;
+  showNote?: boolean;
 }) {
   return (
     <PublicSessionBranch
@@ -30,7 +32,7 @@ export function FirstRunPath({
               </li>
             ))}
           </ol>
-          <p className={styles.note}>{FIRST_RUN_NOTE}</p>
+          {showNote ? <p className={styles.note}>{FIRST_RUN_NOTE}</p> : null}
         </div>
       }
       signedIn={null}

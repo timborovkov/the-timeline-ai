@@ -284,7 +284,9 @@ beforeEach(() => {
   fakes.role = 'member';
   fakes.timelineFeedProps = null;
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Ada', email: 'ada@example.com' } });
-  fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
+  fakes.resolveActiveTeam.mockResolvedValue({
+    active: { teamId: 'team-1', teamName: 'Acme Labs' },
+  });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.getDashboard.mockResolvedValue({ nudge: null });
   fakes.hasCompletedChatAnswer.mockResolvedValue(false);
@@ -328,7 +330,7 @@ describe('HomeDashboardPage', () => {
   it('composes the caught-up state without zero-count attention links for a member', async () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).toContain('Acme Labs');
     expect(html).toContain('data-testid="home-onboarding"');
     expect(html.indexOf('data-testid="home-onboarding"')).toBeLessThan(
       html.indexOf('You’re caught up'),
@@ -361,9 +363,9 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('href="/app/team/jobs"');
     expect(html).toContain('href="/app/connections"');
     expect(html).toContain('pending approvals');
-    expect(html).toContain('work needing attention');
-    expect(html).toContain('recoverable jobs');
-    expect(html).toContain('connection issues');
+    expect(html).toContain('items needing attention');
+    expect(html).toContain('items need');
+    expect(html).toContain('Review connections');
     expect(fakes.captureVisibility).toBe('private');
   });
 
@@ -383,7 +385,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('open tasks');
     expect(html).toContain('href="/app/objects"');
     expect(html).toContain('open objects');
-    expect(html).toContain('People, companies, projects, and more');
+    expect(html).toContain('Browse objects');
     expect(html).not.toContain('href="/app/objects?type=person"');
     expect(html).not.toContain('open people');
     expect(html).not.toContain('open companies');
@@ -396,22 +398,24 @@ describe('HomeDashboardPage', () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(fakes.listPins).toHaveBeenCalledWith({ limit: 6 });
-    expect(fakes.listEventsPage).toHaveBeenCalledWith({ limit: 16 });
+    const eventFilters = fakes.listEventsPage.mock.calls[0]?.[0] as { limit: number; to: Date };
+    expect(eventFilters.limit).toBe(16);
+    expect(eventFilters.to).toBeInstanceOf(Date);
+    expect(eventFilters.to.getTime()).toBeLessThanOrEqual(Date.now());
     expect(fakes.timelineFeedProps).toMatchObject({
       compact: true,
       live: false,
-      maxMoments: 8,
-      emptyLabel:
-        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+      maxMoments: 4,
+      emptyLabel: 'Your timeline starts with a source',
     });
     expect(html).not.toContain('>Attention<');
     expect(html).not.toContain('>Recent moments<');
     expect(html).toContain('aria-label="Recent moments"');
     expect(html).toContain('href="/app/timeline"');
-    expect(html).toContain('Go to the full timeline');
+    expect(html).toContain('View timeline');
   });
 
-  it('shows the copyable team email below pinned work', async () => {
+  it('keeps email in workspace context after the primary work content', async () => {
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
     expect(fakes.homeTeamEmail).toBe('acme@inbound.timeline.dev');
@@ -419,9 +423,10 @@ describe('HomeDashboardPage', () => {
     expect(html.indexOf('data-testid="home-pins"')).toBeLessThan(
       html.indexOf('data-testid="home-team-email"'),
     );
-    expect(html.indexOf('data-testid="home-team-email"')).toBeLessThan(
-      html.indexOf('aria-label="Recent moments"'),
+    expect(html.indexOf('aria-label="Recent moments"')).toBeLessThan(
+      html.indexOf('data-testid="home-team-email"'),
     );
+    expect(html).toContain('aria-label="Workspace context"');
   });
 
   it('still renders Home when the inbound address is not configured', async () => {
@@ -510,7 +515,7 @@ describe('HomeDashboardPage', () => {
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).toContain('Acme Labs');
     expect(html).not.toContain('data-billing-nudge');
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
       surface: 'render',
@@ -575,7 +580,7 @@ it('keeps Home usable when optional PAYG eligibility cannot be loaded', async ()
   });
   fakes.hasCompletedChatAnswer.mockRejectedValue(new Error('lookup unavailable'));
   const html = renderToStaticMarkup(await HomeDashboardPage());
-  expect(html).toContain('<h1 class="sr-only">Home</h1>');
+  expect(html).toContain('Acme Labs');
   expect(html).not.toContain('Optional PAYG suggestion');
   expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
     surface: 'render',

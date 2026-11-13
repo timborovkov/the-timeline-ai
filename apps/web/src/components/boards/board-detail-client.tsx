@@ -24,7 +24,6 @@ import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { WorkFilterBar } from '@/components/work-filter-bar';
-import { WorkSubnav } from '@/components/work-subnav';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { boardViewHref } from '@/lib/board-links';
 import { displayObjectTitle } from '@/lib/object-title';
@@ -303,7 +302,6 @@ export function BoardDetailClient({
           className="w-full shrink-0 px-4 md:px-8"
           trailing={boardHeaderTrailing}
         />
-        <WorkSubnav current={`/app/boards/${boardId}`} className="shrink-0 px-4 md:px-8" />
 
         <WorkFilterBar
           mode="board"

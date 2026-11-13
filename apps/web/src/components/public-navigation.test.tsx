@@ -62,6 +62,16 @@ describe('PublicNavigationDisclosure', () => {
     expect(disclosure?.open).toBe(false);
   });
 
+  it('closes with Escape and returns focus to the menu trigger', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<PublicNavigationDisclosure currentSection="help" />);
+    await user.click(screen.getByText('Menu'));
+    screen.getByRole('link', { name: 'Pricing' }).focus();
+    await user.keyboard('{Escape}');
+    expect(container.querySelector('details')?.open).toBe(false);
+    expect(document.activeElement).toBe(container.querySelector('summary'));
+  });
+
   it('closes when a persistent layout observes a pathname change', async () => {
     const user = userEvent.setup();
     const { container, rerender } = render(<PublicNavigationDisclosure currentSection="help" />);
@@ -245,7 +255,7 @@ describe('Header navigation', () => {
     expect(integrations).toBeTruthy();
     await user.click(screen.getByText('Integrations'));
     expect(integrations?.open).toBe(true);
-    expect(integrations?.querySelectorAll('[role="separator"]').length).toBe(2);
+    expect(integrations?.querySelectorAll('[role="separator"]').length).toBe(1);
     expect(screen.getByRole('link', { name: 'Connect MCP tools' }).className).toContain(
       navStyles.dropdownLink,
     );
@@ -270,7 +280,7 @@ describe('Header navigation', () => {
 
 describe('PublicFooterColumns', () => {
   it('lists Slack and Telegram in the Integrations column ahead of works-with pages', () => {
-    render(<PublicFooterColumns legalItems={<li>Legal</li>} />);
+    render(<PublicFooterColumns />);
 
     const column = screen.getByRole('region', { name: 'Integrations' });
     const links = within(column)
@@ -294,4 +304,38 @@ describe('PublicFooterColumns', () => {
     expect(links.map((link) => link.href)).not.toContain('/integrations/jira');
     expect(links.map((link) => link.href)).not.toContain('/integrations/hubspot');
   });
+});
+
+it('dismisses the mobile menu on outside click and focus departure', async () => {
+  const user = userEvent.setup();
+  const { container } = render(
+    <>
+      <PublicNavigationDisclosure />
+      <button>Outside</button>
+    </>,
+  );
+  await user.click(screen.getByText('Menu'));
+  await user.click(screen.getByRole('button', { name: 'Outside' }));
+  expect(container.querySelector('details')?.open).toBe(false);
+  await user.click(screen.getByText('Menu'));
+  screen.getByRole('button', { name: 'Outside' }).focus();
+  expect(container.querySelector('details')?.open).toBe(false);
+});
+it('marks the exact child route and closes same-route dropdown links', async () => {
+  route.pathname = '/integrations/slack';
+  const user = userEvent.setup();
+  const { container } = render(<PublicNavigationItems currentSection="integrations" />);
+  await user.click(screen.getByText('Integrations'));
+  const link = screen.getByRole('link', { name: 'Slack · Native sync' });
+  expect(link.getAttribute('aria-current')).toBe('page');
+  await user.click(link);
+  expect(container.querySelector('details[open]')).toBeNull();
+  cleanup();
+  render(<PublicFooterColumns currentSection="integrations" />);
+  expect(
+    screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('aria-current'),
+  ).toBeNull();
+  expect(
+    screen.getByRole('link', { name: 'Slack · Native sync' }).getAttribute('aria-current'),
+  ).toBe('page');
 });

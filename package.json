@@ -61,27 +61,27 @@
     "eval:compare": "bun --conditions=development packages/shared/src/scripts/task-category-experiment.ts"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "3.1161.0",
+    "@aws-sdk/client-s3": "3.1165.0",
     "@happy-dom/global-registrator": "21.0.4",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.0",
     "@sentry/cli": "3.8.2",
     "@testing-library/react": "^16.3.3",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "@types/bun": "1.4.4",
-    "@typescript-eslint/eslint-plugin": "^8.72.1",
-    "bullmq": "6.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.72.2",
+    "bullmq": "6.7.3",
     "drizzle-orm": "^0.45.4",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-import-x": "^4.18.1",
     "eslint-plugin-unused-imports": "^4.4.1",
-    "knip": "^6.44.1",
+    "knip": "^6.45.0",
     "prettier": "^3.9.10",
     "react-doctor": "^0.9.22",
     "turbo": "^2.11.9",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.72.1"
+    "typescript-eslint": "^8.72.2"
   },
   "engines": {
     "bun": "1.4.4"
