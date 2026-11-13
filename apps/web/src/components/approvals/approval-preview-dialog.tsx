@@ -41,6 +41,7 @@ interface PreviewEvidence {
 }
 
 export function ApprovalPreviewDialog({
+  returnFocusTo,
   open,
   onOpenChange,
   item,
@@ -53,6 +54,7 @@ export function ApprovalPreviewDialog({
   onAccept,
   onReject,
 }: {
+  returnFocusTo?: HTMLElement | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: {
@@ -124,7 +126,15 @@ export function ApprovalPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-bg sm:max-w-2xl">
+      <DialogContent
+        className="border-border bg-bg sm:max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          if (returnFocusTo?.isConnected) {
+            event.preventDefault();
+            returnFocusTo.focus();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="pr-8">{displayText(item.title, { timezone })}</DialogTitle>
           <DialogDescription>

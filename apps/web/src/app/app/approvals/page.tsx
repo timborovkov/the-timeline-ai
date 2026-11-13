@@ -137,7 +137,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
       : null;
 
   return (
-    <div data-app-width="collection" className="space-y-6">
+    <div data-app-width="overview" className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         variant="default"
         className="pt-6"

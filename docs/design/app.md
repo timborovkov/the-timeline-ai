@@ -538,15 +538,17 @@ stays pending. Merge proposals still offer `Review merge` for survivor
 choices and also open this preview.
 
 Approval rows lead with a wrapping title, then wrapping proposed-change metadata.
-Evidence, warnings and dependency context align with that reading column. Related
-proposals share a source/time header and an inset group boundary. Checkboxes remain
+Evidence, warnings and dependency context align with that reading column. Relationship proposals show resolved endpoint names once, as From/To lines with the relationship kind in supporting metadata; unresolved endpoints retain the original title rather than guessing from its wording.
+Related proposals share a clear heading, labeled change count, and subordinate source/time
+inside a bounded group. Dependencies already named in From/To use a short requirement note. The approval queue
+does not use full-bleed collection row or group backgrounds. Checkboxes remain
 visible. Selected rows use a neutral background; bulk Accept carries lime emphasis.
 Status filters align with the queue below the Work tabs.
 
 Individual actions have no enclosing control box. Accept has a distinct outline;
-Preview is visibly labeled Review. Change and Reject retain accessible names and
-tooltips. Actions move beneath the content below the large-screen breakpoint so
-long titles have room. The full row still opens the preview.
+Preview is visibly labeled Review. Change and Reject are available inside Review,
+while bulk rejection remains available after selection. Actions move beneath the content below the large-screen breakpoint so
+long titles have room. The full row still opens the preview. Closing it restores focus to the invoking control.
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.

@@ -964,8 +964,10 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html).toContain('create person');
-    expect(html).toContain('Jonne Granqvist ↔ DFK · related');
-    expect(html).toContain('Depends on Jonne Granqvist in this bundle.');
+    expect(html).toContain('<span>Jonne Granqvist</span>');
+    expect(html).toContain('<span>DFK</span>');
+    expect(html).toContain('related');
+    expect(html).toContain('Requires the referenced record in this group.');
     expect(html).toContain('Jonne Granqvist from DFK discussed the pilot scope.');
   });
 
@@ -2597,7 +2599,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('John Doe ↔ Acme Corporation · related');
+    expect(html).toContain('<span>John Doe</span>');
+    expect(html).toContain('<span>Acme Corporation</span>');
+    expect(html).toContain('related');
     expect(html).toContain('create relationship');
     expect(html).not.toContain('fromRef');
     expect(html).not.toContain('localRef');
@@ -2641,7 +2645,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Research and Development ↔ Sales and Ops · related');
+    expect(html).toContain('<span>Research and Development</span>');
+    expect(html).toContain('<span>Sales and Ops</span>');
+    expect(html).toContain('related');
     expect(html).not.toContain('existing object ↔ existing object');
   });
 
@@ -2681,7 +2687,48 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Relate Research and Development and Sales and Ops · related');
+    expect(html).toContain('Relate Research and Development and Sales and Ops');
+    expect(html).not.toContain('Research ↔ Development and Sales and Ops');
+  });
+
+  it('retains the descriptive title after a referenced proposal leaves the bundle', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-existing-relationship',
+            source: 'background',
+            status: 'pending',
+            title: 'Remember Research and Development and Sales and Ops',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-existing-relationship',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object_relationship',
+                targetId: null,
+                title: 'Relate Research and Development and Sales and Ops',
+                description: null,
+                proposedPayload: {
+                  fromRef: 'accepted-person',
+                  toRef: 'pending-project',
+                  kind: 'related',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('>Relate Research and Development and Sales and Ops</div>');
+    expect(html).not.toContain('<span>accepted-person</span>');
     expect(html).not.toContain('Research ↔ Development and Sales and Ops');
   });
 

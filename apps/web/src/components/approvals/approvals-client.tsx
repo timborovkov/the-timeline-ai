@@ -2,7 +2,7 @@
 
 import { taskCategoryLabel, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import { Check, ExternalLink, Eye, GitMerge, Inbox, X } from 'lucide-react';
+import { ArrowRight, Check, ExternalLink, GitMerge, Inbox, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
@@ -17,7 +17,6 @@ import {
   rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
 import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-dialog';
-import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
@@ -625,11 +624,19 @@ function localRefLabel(bundle: SuggestionBundle, ref: string): string {
     : displayText(item.title);
 }
 
-function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBundle): string | null {
+function relationshipEndpoints(item: SuggestionItem, bundle: SuggestionBundle) {
   if (item.targetKind !== 'object_relationship') return null;
+  const resolveRef = (ref: string) =>
+    bundle.items.some(
+      (candidate) =>
+        typeof candidate.proposedPayload.localRef === 'string' &&
+        candidate.proposedPayload.localRef.trim().toLowerCase() === ref.trim().toLowerCase(),
+    )
+      ? localRefLabel(bundle, ref)
+      : null;
   const from =
     typeof item.proposedPayload.fromRef === 'string'
-      ? localRefLabel(bundle, item.proposedPayload.fromRef)
+      ? resolveRef(item.proposedPayload.fromRef)
       : typeof item.proposedPayload.fromDisplayName === 'string'
         ? displayText(item.proposedPayload.fromDisplayName)
         : typeof item.proposedPayload.fromName === 'string'
@@ -637,7 +644,7 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
           : null;
   const to =
     typeof item.proposedPayload.toRef === 'string'
-      ? localRefLabel(bundle, item.proposedPayload.toRef)
+      ? resolveRef(item.proposedPayload.toRef)
       : typeof item.proposedPayload.toDisplayName === 'string'
         ? displayText(item.proposedPayload.toDisplayName)
         : typeof item.proposedPayload.toName === 'string'
@@ -645,8 +652,7 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
           : null;
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
-  if (!from || !to) return displayText(`${item.title} · ${kind}`);
-  return displayText(`${from} ↔ ${to} · ${kind}`);
+  return from && to ? { from, to, kind: displayText(kind) } : null;
 }
 
 function approvalDependencyText(item: SuggestionItem, bundle: SuggestionBundle): string | null {
@@ -661,6 +667,10 @@ function approvalDependencyText(item: SuggestionItem, bundle: SuggestionBundle):
   }
   const uniqueDependencyLabels = uniqueStrings(dependencyLabels);
   if (uniqueDependencyLabels.length === 0) return null;
+  if (relationshipEndpoints(item, bundle))
+    return uniqueDependencyLabels.length === 1
+      ? 'Requires the referenced record in this group.'
+      : 'Requires both referenced records in this group.';
   return `Depends on ${uniqueDependencyLabels.join(' and ')} in this bundle.`;
 }
 
@@ -684,6 +694,7 @@ export function ApprovalsClient({
   emptyState,
   folded,
 }: Props) {
+  const previewTriggerRef = useRef<HTMLElement | null>(null);
   const workspaceTimezone = useWorkspaceTimezone();
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
@@ -859,6 +870,8 @@ export function ApprovalsClient({
         taskCategoriesEnabled={taskCategoriesEnabled}
         visibleSuggestions={visibleSuggestions}
         onPreview={(bundle, item) => {
+          previewTriggerRef.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
           dispatch({ type: 'openPreview', bundle, item });
         }}
         onSelectedChange={(itemId, checked) => {
@@ -873,6 +886,7 @@ export function ApprovalsClient({
       />
       {previewItem ? (
         <ApprovalPreviewDialog
+          returnFocusTo={previewTriggerRef.current}
           open
           onOpenChange={(open) => {
             if (!open) dispatch({ type: 'closePreview' });
@@ -1320,16 +1334,18 @@ function ApprovalBundleRow({
     </>
   );
   if (bundle.items.length === 1) {
-    return <article className="approval-bundle border-b border-border py-1">{items}</article>;
+    return <article className="approval-bundle border-b border-border py-2">{items}</article>;
   }
   const bundleTitle = displayText(bundle.title, { timezone });
   return (
-    <article className="approval-bundle my-4 border-l-2 border-border-strong pl-3 sm:pl-4">
+    <article className="approval-bundle my-5 rounded-sm border border-border p-3 sm:p-4">
       <CollectionGroup
+        className="[&>[data-slot=collection-group-header]]:bg-transparent"
         count={bundle.items.length}
+        countLabel={bundle.items.length === 1 ? 'change' : 'changes'}
         title={
-          <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
-            <span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
+          <span className="flex min-w-0 flex-col gap-1 py-2">
+            <span className="min-w-0 whitespace-normal text-base font-semibold [overflow-wrap:anywhere]">
               {bundleTitle}
             </span>
             <span className="text-xs font-normal text-fg-dim">
@@ -1390,9 +1406,10 @@ function ApprovalItemRow({
     bundle.items.length === 1
       ? `${itemActionLabel(item)} · ${source} · ${formatDisplayDateTime(bundle.createdAt, { timezone })}`
       : itemActionLabel(item);
+  const relationship = relationshipEndpoints(item, bundle);
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
-    <div>
+    <div className="border-b border-border/60 last:border-b-0">
       <CollectionRow
         className={`min-h-16 border-b-0 items-start [&_[data-slot=collection-row-title]]:text-base [&_[data-slot=collection-row-title]]:leading-6 [&>[data-slot=collection-row-leading]]:pt-4 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:[&>[data-slot=collection-row-actions]]:col-start-2 max-lg:[&>[data-slot=collection-row-actions]]:pb-2 max-lg:[&>[data-slot=collection-row-actions]]:pt-0 ${selected ? 'bg-surface-2 shadow-none' : ''}`}
         selected={selected}
@@ -1415,11 +1432,23 @@ function ApprovalItemRow({
             <span className="size-4" aria-hidden="true" />
           )}
         </CollectionRow.Leading>
-        <CollectionRow.Title title={title}>{title}</CollectionRow.Title>
+        <CollectionRow.Title title={title}>
+          {relationship ? (
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
+              <span className="text-xs font-normal text-fg-muted">From</span>
+              <span>{relationship.from}</span>
+              <span className="text-xs font-normal text-fg-muted">To</span>
+              <span>{relationship.to}</span>
+            </div>
+          ) : (
+            title
+          )}
+        </CollectionRow.Title>
         <CollectionRow.Subtitle>
           <span className="mt-2 flex min-w-0 flex-wrap items-baseline gap-y-1 text-xs">
             <span className="first-letter:uppercase" title={context}>
               {context}
+              {relationship ? ` · ${relationship.kind.replaceAll('_', ' ')}` : ''}
             </span>
             <ApprovalRowMetadata
               bundle={bundle}
@@ -1475,15 +1504,16 @@ function ApprovalRowMetadata({
   timezone: string;
   taskCategoriesEnabled: boolean;
 }) {
-  const relationship = relationshipPayloadSummary(item, bundle);
-  if (relationship) {
-    return (
-      <span className="ml-2 border-l border-border pl-2 text-xs text-fg-dim">{relationship}</span>
-    );
-  }
+  if (relationshipEndpoints(item, bundle)) return null;
   const fields = formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation)
     .filter((field) => {
       if (field.key === 'description' || field.key === 'notes') return false;
+      if (
+        item.operation === 'create' &&
+        ['name', 'title', 'canonicalName'].includes(field.key) &&
+        item.proposedPayload[field.key] === item.title
+      )
+        return false;
       if (
         item.targetKind === 'calendar_event' &&
         (field.key === 'startAt' ||
@@ -1624,6 +1654,15 @@ function ApprovalItemActions({
   const title = displayText(item.title);
   return (
     <ItemActionGroup label={`Decision actions for ${title}`} className="w-auto flex-wrap gap-1">
+      <ItemIconButton
+        label={`Preview ${title}`}
+        className="w-auto gap-1.5 px-2 sm:w-auto"
+        disabled={busy}
+        onClick={onPreview}
+      >
+        <span>Review</span>
+        <ArrowRight />
+      </ItemIconButton>
       {item.targetKind === 'object_merge' ? (
         <ItemIconButton asChild label={`Review merge for ${title}`} disabled={pending}>
           <Link href={objectMergeHref(item)}>
@@ -1647,37 +1686,8 @@ function ApprovalItemActions({
             <Check />
             <span>Accept</span>
           </ItemIconButton>
-          <SuggestionChangeDialog
-            compact
-            itemId={item.id}
-            title={title}
-            disabled={busy || acceptDisabled}
-          />
         </>
       )}
-      <ItemIconButton
-        label={`Preview ${title}`}
-        className="w-auto gap-1.5 px-2 sm:w-auto"
-        disabled={busy}
-        onClick={onPreview}
-      >
-        <Eye />
-        <span>Review</span>
-      </ItemIconButton>
-      <ItemIconButton
-        label={`Reject ${title}`}
-        className="hover:text-danger"
-        disabled={busy}
-        onClick={() => {
-          run(
-            () => rejectSuggestionItemAction({ itemId: item.id }),
-            [item.id],
-            decisionMessages('reject', 1, item.title, item.id),
-          );
-        }}
-      >
-        <X />
-      </ItemIconButton>
     </ItemActionGroup>
   );
 }
@@ -1685,7 +1695,7 @@ function ApprovalItemActions({
 function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezone: string }) {
   if (item.evidenceStatus === 'stale') {
     return (
-      <p className="md:col-span-3 text-xs text-danger" role="status">
+      <p className="pb-2 pl-9 pr-3 text-xs text-danger" role="status">
         Required source evidence changed after this proposal was created. Regenerate the proposal
         before accepting this change.
       </p>
