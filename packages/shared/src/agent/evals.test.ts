@@ -282,9 +282,9 @@ describe('agent tool evals', () => {
     expect(evalRun.answer).toContain(`[event:${TEAM_EVENT}]`);
   });
 
-  it('bundles integration-heavy timeline answers into cited moments', async () => {
-    // Product behavior: chat should not read a burst of workflow webhooks as
-    // separate user-facing facts when provider metadata shows one work moment.
+  it('keeps separate CI runs independently cited in timeline answers', async () => {
+    // Product behavior: separate CI runs remain independently visible and cited,
+    // even when their workflow, branch, and day match.
     const evalRun = await runToolEval(
       db,
       OWNER,
@@ -309,7 +309,8 @@ describe('agent tool evals', () => {
       }),
     ]);
     expect(evalRun.answer).toContain('CI passed on timborovkov/audit-ai');
-    expect(evalRun.answer).toContain('(2 events)');
+    expect(evalRun.output).toMatchObject({ count: 2 });
+    expect(evalRun.answer).toContain('(1 events)');
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_A}]`);
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
   });

@@ -1640,10 +1640,7 @@ export function TimelineList({
                   isAdmin={isAdmin}
                   members={members}
                   capturedFilesByEventId={capturedFilesByEventId}
-                  focused={
-                    moment.id === focusMomentId ||
-                    moment.rawEvents.some((event) => event.id === focusEventId)
-                  }
+                  focused={moment.id === focusedMoment?.id}
                   compact={compact}
                   pinned={pinnedMomentIds.has(moment.id)}
                   timezone={resolvedTimezone}
@@ -1676,10 +1673,7 @@ export function TimelineList({
               isAdmin={isAdmin}
               members={members}
               capturedFilesByEventId={capturedFilesByEventId}
-              focused={
-                moment.id === focusMomentId ||
-                moment.rawEvents.some((event) => event.id === focusEventId)
-              }
+              focused={moment.id === focusedMoment?.id}
               compact={compact}
               pinned={pinnedMomentIds.has(moment.id)}
               timezone={resolvedTimezone}
@@ -1747,14 +1741,11 @@ function timelineVisibleMoments(
   maxMoments: number | undefined,
 ) {
   const moments = serverMoments ?? localMoments;
-  const focusedMoments =
-    focusEventId === null && focusMomentId === null
-      ? []
-      : moments.filter(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        );
+  const focusTarget =
+    moments.find((moment) => moment.id === focusMomentId) ??
+    moments.find((moment) => Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId))) ??
+    moments.find((moment) => moment.rawEvents.some((event) => event.id === focusEventId));
+  const focusedMoments = focusTarget ? [focusTarget] : [];
   const filteredMoments = mergeTimelineMoments(
     filterTimelineMomentsByImpact(moments, impactFilter),
     focusedMoments,
@@ -1763,14 +1754,7 @@ function timelineVisibleMoments(
     typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
   const dateGroups = groupedByDate(visibleMoments);
   const focusKey = focusMomentId ?? focusEventId;
-  const focusedMoment =
-    focusKey === null
-      ? null
-      : (visibleMoments.find(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        ) ?? null);
+  const focusedMoment = visibleMoments.find((moment) => moment.id === focusTarget?.id) ?? null;
   return { focusKey, focusedMoment, visibleMoments, dateGroups };
 }
 

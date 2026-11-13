@@ -22,6 +22,7 @@ import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { ZodType } from 'zod';
+
 // These tests protect the semantic retrieval contract the agent depends on:
 // query text is embedded once, vector hits are only a first pass, and Postgres
 // hydration still enforces team/visibility boundaries before evidence reaches
@@ -166,6 +167,111 @@ describe('withTeam timeline semantic search', () => {
       ranking: 'relevance',
     });
     expect(historical.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
+  });
+
+  it('controls an obsolete calendar pin through its current notice without duplicates', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='calendar', content_text='Scheduled: Digest', source_metadata='{"action":"scheduled","calendar_event_id":"calendar-a"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    const legacy = 'moment:calendar:calendar-a';
+    await pg.query(
+      `INSERT INTO user_pins (team_id,user_id,target_kind,target_key,sort_key) VALUES ($1,$2,'timeline_moment',$3,0)`,
+      [TEAM_A, OWNER, legacy],
+    );
+    const scope = scopeFor(OWNER);
+    const current = buildTimelineMoments(
+      await scope.timeline.getEventsByIds([TEAM_EVENT]),
+      new Map(),
+    )[0];
+    if (!current) throw new Error('Expected notice');
+    const ref = { kind: 'timeline_moment' as const, key: current.id };
+    expect(await scope.pins.isPinned(ref)).toBe(true);
+    expect(await scope.pins.isPinnedMany([ref])).toEqual({
+      [`timeline_moment:${current.id}`]: true,
+    });
+    await scope.pins.pin(ref);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.unpin(ref)).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(0);
+  });
+
+  it('assigns a split legacy workflow pin to only the run displayed on Home', async () => {
+    for (const [id, run, time] of [
+      [TEAM_EVENT, 'run-a', '2026-06-27T18:00:00Z'],
+      [RELATED_EVENT, 'run-b', '2026-06-27T18:05:00Z'],
+    ]) {
+      await pg.query(
+        `UPDATE raw_events SET source='integration', content_text='Workflow CI succeeded', occurred_at=$2, source_metadata=$3::jsonb WHERE id=$1`,
+        [
+          id,
+          time,
+          JSON.stringify({
+            provider: 'github',
+            external_object_id: run,
+            github: {
+              type: 'workflow_run',
+              repo: 'fixture/repo',
+              workflow_name: 'CI',
+              head_branch: 'main',
+            },
+          }),
+        ],
+      );
+    }
+    const scope = scopeFor(OWNER);
+    const moments = buildTimelineMoments(
+      await scope.timeline.getEventsByIds([TEAM_EVENT, RELATED_EVENT]),
+      new Map(),
+    );
+    const current = moments[0];
+    const other = moments[1];
+    const legacy = current?.legacyIds?.find((id) => other?.legacyIds?.includes(id));
+    if (!current || !other || !legacy) throw new Error('Expected split legacy workflow group');
+    await pg.query(
+      `INSERT INTO user_pins (team_id,user_id,target_kind,target_key,sort_key) VALUES ($1,$2,'timeline_moment',$3,0)`,
+      [TEAM_A, OWNER, legacy],
+    );
+    expect((await scope.pins.list()).items[0]?.href).toContain(encodeURIComponent(current.id));
+    const currentRef = { kind: 'timeline_moment' as const, key: current.id };
+    const otherRef = { kind: 'timeline_moment' as const, key: other.id };
+    expect(await scope.pins.isPinnedMany([currentRef, otherRef])).toEqual({
+      [`timeline_moment:${current.id}`]: true,
+      [`timeline_moment:${other.id}`]: false,
+    });
+    expect(await scope.pins.isPinned(otherRef)).toBe(false);
+    expect(await scope.pins.unpin(otherRef)).toBe(false);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    await scope.pins.pin(otherRef);
+    expect((await scope.pins.list()).items).toHaveLength(2);
+    expect(await scope.pins.unpin(otherRef)).toBe(true);
+    expect(await scope.pins.isPinned(currentRef)).toBe(true);
+    expect(await scope.pins.unpin(currentRef)).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(0);
+  });
+
+  it('finds and preserves a pinned notice beyond unrelated lookup candidates', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='system', content_text='Completed task', occurred_at='2026-06-27T18:00:00Z', source_metadata='{"kind":"object_update","entity_id":"target"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    await pg.query(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT $1::uuid, $2::uuid, 'system', 'Unrelated ' || n, '2026-06-27T18:00:30Z', 'team', jsonb_build_object('kind','object_update','entity_id','unrelated-' || n) FROM generate_series(1, 305) n`,
+      [TEAM_A, OWNER],
+    );
+    const scope = scopeFor(OWNER);
+    const target = await scope.timeline.getEventsByIds([TEAM_EVENT]);
+    const moment = buildTimelineMoments(target, new Map())[0];
+    if (!moment) throw new Error('Expected notice');
+    const plan = timelineMomentLookupPlan(moment.id);
+    if (!plan) throw new Error('Expected lookup plan');
+    expect((await scope.timeline.listEventsForMomentLookup(plan)).map((row) => row.id)).toEqual([
+      TEAM_EVENT,
+    ]);
+    await scope.pins.pin({ kind: 'timeline_moment', key: moment.id });
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
   });
 
   it('expands website scan moments through the scoped metadata predicate', async () => {

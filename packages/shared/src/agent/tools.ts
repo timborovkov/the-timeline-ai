@@ -735,6 +735,7 @@ async function buildAgentTimelineMoments(
       ];
       return {
         moment_id: moment.id,
+        legacy_moment_ids: moment.legacyIds ?? [],
         pin_target: { kind: 'timeline_moment' as const, key: moment.id },
         version: moment.version,
         anchor_id: moment.anchorId,
@@ -1899,7 +1900,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           }));
           const moments = await buildAgentTimelineMoments(scope, hits, events);
           const expanded = input.momentId
-            ? moments.find((moment) => moment.moment_id === input.momentId)
+            ? (moments.find((moment) => moment.moment_id === input.momentId) ??
+              moments.find((moment) =>
+                Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
+              ))
             : moments[0];
           if (!expanded) {
             return {

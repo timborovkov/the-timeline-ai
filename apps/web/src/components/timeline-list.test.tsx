@@ -243,6 +243,47 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain('shadow-[inset_2px_0_0_var(--signal)]');
   });
 
+  it('keeps a saved calendar link focused after notice grouping changes', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: 'notice',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+          source: 'calendar',
+          contentText: 'Scheduled: Digest',
+          sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+        }),
+      ],
+      { focusMomentId: 'moment:calendar:calendar-a' },
+    );
+    expect(html).toContain('aria-current="true"');
+    expect(html).toContain('Scheduled: Digest');
+  });
+
+  it('focuses only the current calendar occurrence when a notice shares its legacy ID', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: 'notice',
+          occurredAt: '2026-06-03T13:04:00.000Z',
+          source: 'calendar',
+          contentText: 'Scheduled: Digest',
+          sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+        }),
+        timelineEvent({
+          id: 'occurrence',
+          occurredAt: '2026-06-02T13:04:00.000Z',
+          source: 'calendar',
+          contentText: 'Digest occurrence',
+          sourceMetadata: { action: 'event', calendar_event_id: 'calendar-a' },
+        }),
+      ],
+      { focusMomentId: 'moment:calendar:calendar-a' },
+    );
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+    expect(html).toContain('Digest occurrence');
+  });
+
   it('keeps a focused moment visible through impact filters', () => {
     const focusedEventId = '66666666-6666-4666-8666-666666666666';
     const taskEventId = '77777777-7777-4777-8777-777777777777';
