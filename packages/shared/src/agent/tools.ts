@@ -11,10 +11,12 @@ import {
   type CapabilityTool,
   type AgentToolMode,
 } from '#src/agent/tool-policy.js';
+import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import * as objects from '#src/objects/index.js';
 import {
   serializeObjectRow,
@@ -861,6 +863,7 @@ async function safe<T>(
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof StaleWorkspaceStateError) return { error: `stale_state: ${err.message}` };
     if (err instanceof QdrantUnavailableError) {
       return {
         error: err.outcomeUnknown
@@ -1290,6 +1293,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       options.sanitizeError,
     );
   const tools: Record<string, CapabilityTool> = {
+    ...buildWorkspaceTools(scope, runSafe),
     list_pins: capabilityTool({
       capability: 'pin_read',
       description:
@@ -2075,10 +2079,21 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 }
               : null,
             archived: result.archivedAt !== null,
+            updatedAt: result.updatedAt.toISOString(),
+            relationships: result.relationships.map((r) => ({
+              id: r.id,
+              kind: r.kind,
+              otherName: r.otherName,
+              fromEntityId: r.direction === 'out' ? result.id : r.otherId,
+              toEntityId: r.direction === 'out' ? r.otherId : result.id,
+            })),
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,
               citation: artifactRefCitation({ kind: 'object_note', id: n.id }),
               body: n.body,
+              entityId: result.id,
+              authorUserId: n.authorUserId,
+              updatedAt: n.updatedAt.toISOString(),
             })),
             recent_changes: result.recentChanges.slice(0, 20).map((c) => ({
               id: c.id,

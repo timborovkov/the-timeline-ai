@@ -34,6 +34,7 @@ import {
   assertBoardObjectType,
   boardQualificationPolicySchema,
 } from '#src/boards/qualification-policy.js';
+import { defaultBoardLanes, defaultBoardRecommendedTypes } from '#src/boards/templates.js';
 import {
   dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
@@ -43,6 +44,7 @@ import {
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { childLogger } from '#src/logger.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
 import {
@@ -233,6 +235,7 @@ export interface RenameBoardInput {
 }
 
 export interface UpdateBoardSettingsInput {
+  expectedUpdatedAt?: string;
   qualificationEnabled?: boolean;
   qualificationInstructions?: string;
   strictObjectTypes?: boolean;
@@ -922,51 +925,6 @@ function isBoardItemPatchField(
   );
 }
 
-export function defaultBoardRecommendedTypes(template: BoardTemplateKind): ObjectType[] {
-  if (template === 'pipeline') return ['company', 'deal', 'person', 'project'];
-  if (template === 'task_board') return ['task', 'follow_up'];
-  if (template === 'catalog') return ['project', 'document', 'vendor', 'other'];
-  return [];
-}
-
-export function defaultBoardLanes(template: BoardTemplateKind): BoardLaneInput[] {
-  if (template === 'task_board') {
-    return [
-      { name: 'Backlog', kind: 'active' },
-      { name: 'Ready', kind: 'active' },
-      { name: 'Doing', kind: 'active' },
-      { name: 'Review', kind: 'active' },
-      { name: 'Done', kind: 'done' },
-      { name: 'Blocked', kind: 'blocked' },
-    ];
-  }
-  if (template === 'pipeline') {
-    return [
-      { name: 'New', kind: 'active' },
-      { name: 'Qualified', kind: 'active' },
-      { name: 'Scoping', kind: 'active' },
-      { name: 'Proposal', kind: 'active' },
-      { name: 'Committed', kind: 'done' },
-      { name: 'Active', kind: 'active' },
-      { name: 'Won', kind: 'terminal' },
-      { name: 'Lost', kind: 'lost' },
-    ];
-  }
-  if (template === 'catalog') {
-    return [
-      { name: 'Idea', kind: 'active' },
-      { name: 'Evaluating', kind: 'active' },
-      { name: 'Active', kind: 'active' },
-      { name: 'Deprecated', kind: 'terminal' },
-    ];
-  }
-  return [
-    { name: 'Todo', kind: 'active' },
-    { name: 'Doing', kind: 'active' },
-    { name: 'Done', kind: 'done' },
-  ];
-}
-
 export function createBoardScope({
   db,
   scope,
@@ -987,7 +945,8 @@ export function createBoardScope({
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new Error('Board not found');
+    if (!row || (!row.isShared && row.createdBy !== scope.userId))
+      throw new Error('Board not found');
     return row;
   }
 
@@ -1074,7 +1033,14 @@ export function createBoardScope({
       .select({ item: boardItems, object: entities })
       .from(boardItems)
       .innerJoin(entities, eq(boardItems.entityId, entities.id))
-      .where(and(eq(boardItems.id, itemId), eq(boardItems.teamId, scope.teamId)))
+      .innerJoin(boards, eq(boardItems.boardId, boards.id))
+      .where(
+        and(
+          eq(boardItems.id, itemId),
+          eq(boardItems.teamId, scope.teamId),
+          or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     return row ? toItemRow(row.item, row.object) : null;
@@ -1300,7 +1266,13 @@ export function createBoardScope({
         db
           .select()
           .from(boards)
-          .where(and(eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)))
+          .where(
+            and(
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+              or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
+            ),
+          )
           .orderBy(desc(boards.updatedAt)),
         db
           .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
@@ -1340,7 +1312,7 @@ export function createBoardScope({
         )
         .limit(1);
       const board = boardRows[0];
-      if (!board) return null;
+      if (!board || (!board.isShared && board.createdBy !== scope.userId)) return null;
       const itemFilterConditions = boardItemFilterConditions(options.itemFilter);
       const itemsQuery = db
         .select({ item: boardItems, object: entities })
@@ -1504,10 +1476,21 @@ export function createBoardScope({
       });
     },
 
-    async archiveBoard(boardId: string): Promise<boolean> {
+    async archiveBoard(boardId: string, expectedUpdatedAt?: string): Promise<boolean> {
       await requireBoard(boardId);
       const now = new Date();
       const txResult = await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+          )
+          .for('update');
+        if (!current || (!current.isShared && current.createdBy !== scope.userId))
+          throw new Error('Board not found');
+        if (expectedUpdatedAt && current.updatedAt.toISOString() !== expectedUpdatedAt)
+          throw new StaleWorkspaceStateError();
         const updatedRows = await tx
           .update(boards)
           .set({ archivedAt: now, updatedAt: now })
@@ -1580,27 +1563,6 @@ export function createBoardScope({
       if (nextLanes?.length === 0) throw new Error('At least one lane is required');
       if (nextLanes && nextLanes.length > 16) throw new Error('Too many lanes');
 
-      const currentLanes = nextLanes
-        ? await db
-            .select()
-            .from(boardLanes)
-            .where(
-              and(
-                eq(boardLanes.boardId, input.id),
-                eq(boardLanes.teamId, scope.teamId),
-                isNull(boardLanes.archivedAt),
-              ),
-            )
-        : [];
-      const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
-      const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
-      for (const lane of nextLanes ?? []) {
-        if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
-      }
-      const removedLaneIds = currentLanes
-        .map((lane) => lane.id)
-        .filter((laneId) => !keptLaneIds.has(laneId));
-
       const dueDateCalendarSync = await db.transaction(async (tx) => {
         const [currentBoard] = await tx
           .select()
@@ -1614,6 +1576,34 @@ export function createBoardScope({
           )
           .for('update');
         if (!currentBoard) throw new Error('Board not found');
+        if (!currentBoard.isShared && currentBoard.createdBy !== scope.userId)
+          throw new Error('Board not found');
+        if (
+          input.expectedUpdatedAt &&
+          currentBoard.updatedAt.toISOString() !== input.expectedUpdatedAt
+        )
+          throw new StaleWorkspaceStateError();
+        const currentLanes = nextLanes
+          ? await tx
+              .select()
+              .from(boardLanes)
+              .where(
+                and(
+                  eq(boardLanes.boardId, input.id),
+                  eq(boardLanes.teamId, scope.teamId),
+                  isNull(boardLanes.archivedAt),
+                ),
+              )
+          : [];
+        const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
+        const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
+        for (const lane of nextLanes ?? []) {
+          if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
+        }
+        const removedLaneIds = currentLanes
+          .map((lane) => lane.id)
+          .filter((laneId) => !keptLaneIds.has(laneId));
+
         const policy = boardQualificationPolicySchema.parse({ ...currentBoard, ...input });
         const now = new Date();
         const boardPatch: Partial<typeof boards.$inferInsert> = { updatedAt: now };
@@ -2060,6 +2050,7 @@ export function createBoardScope({
             eq(boardItems.entityId, entityId),
             isNull(boardItems.archivedAt),
             isNull(boards.archivedAt),
+            or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
           ),
         )
         .orderBy(desc(boardItems.updatedAt));
@@ -2523,3 +2514,5 @@ export function createBoardScope({
 }
 
 export type BoardScope = ReturnType<typeof createBoardScope>;
+
+export { defaultBoardLanes, defaultBoardRecommendedTypes } from '#src/boards/templates.js';
