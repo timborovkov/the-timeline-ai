@@ -1083,7 +1083,6 @@ function ApprovalListBody({
               run={run}
               selectable={selectable}
               selectedIds={selectedIds}
-              selectionActive={selectedItems.length > 0}
               timezone={timezone}
               taskCategoriesEnabled={taskCategoriesEnabled}
               onPreview={onPreview}
@@ -1265,7 +1264,6 @@ function ApprovalBundleRow({
   run,
   selectable,
   selectedIds,
-  selectionActive,
   timezone,
   taskCategoriesEnabled,
   onPreview,
@@ -1279,7 +1277,6 @@ function ApprovalBundleRow({
   run: ApprovalAction;
   selectable: boolean;
   selectedIds: Set<string>;
-  selectionActive: boolean;
   timezone: string;
   taskCategoriesEnabled: boolean;
   onPreview: (bundle: SuggestionBundle, item: SuggestionItem) => void;
@@ -1305,7 +1302,6 @@ function ApprovalBundleRow({
           run={run}
           selectable={selectable}
           selected={selectedIds.has(item.id)}
-          selectionActive={selectionActive}
           timezone={timezone}
           taskCategoriesEnabled={taskCategoriesEnabled}
           onPreview={() => {
@@ -1317,18 +1313,18 @@ function ApprovalBundleRow({
         />
       ))}
       {bundle.evidence.length > 0 || bundle.reason ? (
-        <div className="px-3 py-3">
+        <div className="pb-3 pl-9 pr-3 pt-1">
           <ApprovalEvidence bundle={bundle} timezone={timezone} />
         </div>
       ) : null}
     </>
   );
   if (bundle.items.length === 1) {
-    return <article>{items}</article>;
+    return <article className="approval-bundle border-b border-border py-1">{items}</article>;
   }
   const bundleTitle = displayText(bundle.title, { timezone });
   return (
-    <article>
+    <article className="approval-bundle my-4 border-l-2 border-border-strong pl-3 sm:pl-4">
       <CollectionGroup
         count={bundle.items.length}
         title={
@@ -1370,7 +1366,6 @@ function ApprovalItemRow({
   run,
   selectable,
   selected,
-  selectionActive,
   timezone,
   taskCategoriesEnabled,
   onPreview,
@@ -1384,7 +1379,6 @@ function ApprovalItemRow({
   run: ApprovalAction;
   selectable: boolean;
   selected: boolean;
-  selectionActive: boolean;
   timezone: string;
   taskCategoriesEnabled: boolean;
   onPreview: () => void;
@@ -1400,7 +1394,7 @@ function ApprovalItemRow({
   return (
     <div>
       <CollectionRow
-        className={`min-h-16 max-sm:grid-cols-[auto_minmax(0,1fr)] max-sm:[&>[data-slot=collection-row-actions]]:col-start-2 max-sm:[&>[data-slot=collection-row-actions]]:pb-2 max-sm:[&>[data-slot=collection-row-actions]]:pt-0 ${selected ? 'bg-surface-2 shadow-none' : ''}`}
+        className={`min-h-16 border-b-0 items-start [&_[data-slot=collection-row-title]]:text-base [&_[data-slot=collection-row-title]]:leading-6 [&>[data-slot=collection-row-leading]]:pt-4 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:[&>[data-slot=collection-row-actions]]:col-start-2 max-lg:[&>[data-slot=collection-row-actions]]:pb-2 max-lg:[&>[data-slot=collection-row-actions]]:pt-0 ${selected ? 'bg-surface-2 shadow-none' : ''}`}
         selected={selected}
         onActivate={onPreview}
         activateLabel={`Open ${title}`}
@@ -1412,11 +1406,7 @@ function ApprovalItemRow({
               checked={selected}
               aria-label={`Select ${title}`}
               data-row-ignore=""
-              className={`size-4 accent-signal ${
-                selected || selectionActive
-                  ? 'opacity-100'
-                  : 'opacity-100 sm:opacity-0 sm:group-hover/collection-row:opacity-100 sm:group-focus-within/collection-row:opacity-100'
-              }`}
+              className="size-4 accent-signal"
               onChange={(event) => {
                 onSelectedChange(event.currentTarget.checked);
               }}
@@ -1427,7 +1417,7 @@ function ApprovalItemRow({
         </CollectionRow.Leading>
         <CollectionRow.Title title={title}>{title}</CollectionRow.Title>
         <CollectionRow.Subtitle>
-          <span className="mt-1 block min-w-0 text-xs sm:truncate">
+          <span className="mt-2 flex min-w-0 flex-wrap items-baseline gap-y-1 text-xs">
             <span className="first-letter:uppercase" title={context}>
               {context}
             </span>
@@ -1460,12 +1450,12 @@ function ApprovalItemRow({
         </CollectionRow.Actions>
       </CollectionRow>
       {actionFailureReason ? (
-        <p className="px-3 pb-2 text-xs text-danger">{actionFailureReason}</p>
+        <p className="pb-2 pl-9 pr-3 text-xs text-danger">{actionFailureReason}</p>
       ) : actionFailed ? (
-        <p className="px-3 pb-2 text-xs text-danger">Needs attention</p>
+        <p className="pb-2 pl-9 pr-3 text-xs text-danger">Needs attention</p>
       ) : null}
       {item.failureReason ? (
-        <p className="px-3 pb-2 text-xs text-danger">{displayText(item.failureReason)}</p>
+        <p className="pb-2 pl-9 pr-3 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
       <ApprovalCalendarHint item={item} timezone={timezone} />
       <ApprovalItemDependency item={item} bundle={bundle} />
@@ -1547,7 +1537,7 @@ function ApprovalItemDependency({
   bundle: SuggestionBundle;
 }) {
   const dependency = approvalDependencyText(item, bundle);
-  return dependency ? <p className="mt-2 text-xs text-fg-dim">{dependency}</p> : null;
+  return dependency ? <p className="pb-2 pl-9 pr-3 text-xs text-fg-muted">{dependency}</p> : null;
 }
 
 function CalendarResolutionLine({
@@ -1610,7 +1600,7 @@ function ApprovalCalendarHint({ item, timezone }: { item: SuggestionItem; timezo
   if (item.targetKind !== 'calendar_event') return null;
   const proposedRange = proposedCalendarRange(item, timezone);
   return (
-    <div className="px-3 pb-2 text-xs text-fg-dim">
+    <div className="pb-2 pl-9 pr-3 text-xs text-fg-dim">
       <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
     </div>
   );
@@ -1633,10 +1623,7 @@ function ApprovalItemActions({
 }) {
   const title = displayText(item.title);
   return (
-    <ItemActionGroup
-      label={`Decision actions for ${title}`}
-      className="w-auto gap-1 rounded-sm border border-border bg-bg p-0.5"
-    >
+    <ItemActionGroup label={`Decision actions for ${title}`} className="w-auto flex-wrap gap-1">
       {item.targetKind === 'object_merge' ? (
         <ItemIconButton asChild label={`Review merge for ${title}`} disabled={pending}>
           <Link href={objectMergeHref(item)}>
@@ -1647,7 +1634,7 @@ function ApprovalItemActions({
         <>
           <ItemIconButton
             label={`Accept ${title}`}
-            className="w-auto gap-1.5 px-2.5 text-fg sm:w-auto"
+            className="w-auto gap-1.5 rounded-sm border border-border-strong px-3 text-fg hover:bg-signal-soft sm:w-auto"
             disabled={busy || acceptDisabled}
             onClick={() => {
               run(
@@ -1668,8 +1655,14 @@ function ApprovalItemActions({
           />
         </>
       )}
-      <ItemIconButton label={`Preview ${title}`} disabled={busy} onClick={onPreview}>
+      <ItemIconButton
+        label={`Preview ${title}`}
+        className="w-auto gap-1.5 px-2 sm:w-auto"
+        disabled={busy}
+        onClick={onPreview}
+      >
         <Eye />
+        <span>Review</span>
       </ItemIconButton>
       <ItemIconButton
         label={`Reject ${title}`}
@@ -1709,7 +1702,7 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
     evidenceBySurface.set(label, [...(evidenceBySurface.get(label) ?? []), evidence]);
   }
   return (
-    <details className="px-3 pb-2 text-xs">
+    <details className="pb-3 pl-9 pr-3 text-xs">
       <summary className="cursor-pointer text-fg-dim hover:text-fg">
         Why · {evidenceBySurface.size} {evidenceBySurface.size === 1 ? 'source' : 'sources'}
       </summary>

@@ -139,7 +139,8 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   return (
     <div data-app-width="collection" className="space-y-6">
       <PageHeader
-        variant="collection"
+        variant="default"
+        className="pt-6"
         title="Approvals"
         subtitle={
           params.boardId

@@ -19,7 +19,7 @@ export default function ApprovalsLoading() {
       >
         <h1 className="sr-only">Approvals</h1>
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
-          <PageHeaderSkeleton variant="collection" />
+          <PageHeaderSkeleton />
         </div>
         <div>
           <WorkSubnav current="/app/approvals" />

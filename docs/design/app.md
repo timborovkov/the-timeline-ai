@@ -537,15 +537,16 @@ what is wrong, Timeline rewrites the same unresolved proposal, and the row
 stays pending. Merge proposals still offer `Review merge` for survivor
 choices and also open this preview.
 
-Approval rows show the full, wrapping title above a compact, truncated detail line, with
-separated payload fields and aligned actions. Multi-item bundles show source
-and capture time once in their header. Selection uses a neutral background;
-the bulk Accept button carries the lime emphasis. Status filters align with
-the left edge of the queue, directly below the Work tabs.
+Approval rows lead with a wrapping title, then wrapping proposed-change metadata.
+Evidence, warnings and dependency context align with that reading column. Related
+proposals share a source/time header and an inset group boundary. Checkboxes remain
+visible. Selected rows use a neutral background; bulk Accept carries lime emphasis.
+Status filters align with the queue below the Work tabs.
 
-Actionable rows group ghost icon `Accept`, `Change`, `Preview`, and `Reject`
-in a quiet outlined control strip aligned to the trailing edge, including when
-controls wrap below the title. Each icon retains its accessible name and tooltip.
+Individual actions have no enclosing control box. Accept has a distinct outline;
+Preview is visibly labeled Review. Change and Reject retain accessible names and
+tooltips. Actions move beneath the content below the large-screen breakpoint so
+long titles have room. The full row still opens the preview.
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.

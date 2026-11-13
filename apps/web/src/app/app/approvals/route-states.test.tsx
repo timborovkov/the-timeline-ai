@@ -66,7 +66,7 @@ describe('Approvals route states', () => {
     expect(screen.queryByRole('region')).toBeNull();
 
     const visualPlaceholders = container.querySelectorAll(
-      '[aria-busy="true"] > [aria-hidden="true"]',
+      '[aria-busy="true"] [aria-hidden="true"]',
     );
     expect(visualPlaceholders.length).toBeGreaterThan(0);
     for (const visualPlaceholder of visualPlaceholders) {
