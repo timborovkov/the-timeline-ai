@@ -152,7 +152,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             label: 'Approvals',
             value: attention.pendingApprovals,
             mono: true,
-            danger: attention.pendingApprovals > 0,
+            signal: attention.pendingApprovals > 0,
             href: '/app/approvals?status=pending',
             ariaLabel: `${attention.pendingApprovals} pending approvals`,
           },
@@ -179,6 +179,35 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             </div>
           </CollectionGroup>
         ) : null}
+
+        <CollectionGroup title="Work queue" count={queue.length}>
+          {queue.length === 0 ? (
+            <EmptyState
+              icon={ListTodo}
+              size="inset"
+              title="Work queue is clear"
+              body="Assigned work, due team items, and pending approvals will appear here when they need attention."
+              href="/app/boards"
+              action="Open boards"
+            />
+          ) : (
+            <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
+              <div>
+                {queue.map((item) => (
+                  <WorkQueueRow
+                    key={item.id}
+                    item={item}
+                    members={memberOptions}
+                    timezone={timezone}
+                    pinned={
+                      item.entityId ? (queuePinState[`object:${item.entityId}`] ?? false) : false
+                    }
+                  />
+                ))}
+              </div>
+            </TaskCategoryPollingProvider>
+          )}
+        </CollectionGroup>
 
         <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned" />
 
@@ -223,35 +252,6 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                 </CollectionRow>
               ))}
             </div>
-          )}
-        </CollectionGroup>
-
-        <CollectionGroup title="Work queue" count={queue.length}>
-          {queue.length === 0 ? (
-            <EmptyState
-              icon={ListTodo}
-              size="inset"
-              title="Work queue is clear"
-              body="Assigned work, due team items, and pending approvals will appear here when they need attention."
-              href="/app/boards"
-              action="Open boards"
-            />
-          ) : (
-            <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-              <div>
-                {queue.map((item) => (
-                  <WorkQueueRow
-                    key={item.id}
-                    item={item}
-                    members={memberOptions}
-                    timezone={timezone}
-                    pinned={
-                      item.entityId ? (queuePinState[`object:${item.entityId}`] ?? false) : false
-                    }
-                  />
-                ))}
-              </div>
-            </TaskCategoryPollingProvider>
           )}
         </CollectionGroup>
       </div>

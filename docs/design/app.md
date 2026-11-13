@@ -6,8 +6,9 @@ settings group related controls with short supporting text. Full source material
 and secondary context belong in disclosures with clear ways to open them.
 
 Collection indexes keep a bounded inner content width and shared responsive
-gutters. Section backgrounds and row separators extend to the main pane edges. Work’s empty Boards group is a compact inline prompt with Create board,
-so the work queue remains near the top even before a team creates its first board.
+gutters. Section backgrounds and row separators extend to the main pane edges.
+Work’s empty Boards group is a compact inline prompt with Create board. It follows
+the work queue, keeping actionable work first.
 
 ### Home
 
@@ -98,8 +99,7 @@ rows with a type icon, title, one context line, and overflow menu. Hidden,
 archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
 opens Work → Pinned. Work overview repeats that same mixed preview (heading
-**Pinned**, omitted when empty) above a separate **Boards** list of team boards
-and the work queue. Overview board rows use the same overflow **Pin to Home**
+**Pinned**, omitted when empty) after the work queue, followed by a separate **Boards** list of team boards. Overview board rows use the same overflow **Pin to Home**
 control and quiet pin glyph as the Boards index. Pins are personal shortcuts, not a team-shared board set.
 
 Home recent moments have no visible heading. They show up to eight dense rows
@@ -114,7 +114,7 @@ rest of the archive.
 Timeline is the strongest archive expression. Chrome is a sticky
 `CollectionToolbar` under the 48px shell header. The row includes **Search
 timeline**, a Filters trigger (source, origin, author, impact, and dates),
-source presets, and **Moments** / **All events** as the view control. Search
+and **Moments** / **All events** as the view control. Source presets occupy a separate horizontally scrollable row beneath the toolbar. Search
 submits on Enter and opens global search with the current source and date
 filters. Moments group related activity and give rows
 different visual weight. All events is a uniform compact log of every captured
@@ -199,8 +199,7 @@ side effects, and human-reviewed proposals.
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Work → Digests is the day-by-day archive of those briefings. Work overview
-leads with mixed personal pins (same rows as Home), then team boards, then the
-work queue so saved work stays in reach before due and assigned items. Tasks default to the grouped list; the list table
+leads with the work queue, then mixed personal pins (same rows as Home) and team boards. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
 filters, not on a second strip. Board kanban/list uses the same toolbar
@@ -699,3 +698,40 @@ Platform directories expose copyable identifiers, lifecycle status, disabled tim
 Website source management follows [the application patterns](../../docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.
 
 Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Trust audit redaction remains in force on every page.
+
+### Dashboard clarity and responsive controls
+
+Collection title bands begin at the top of the canvas; adjacent section tabs do
+not add a second top gutter. Header descriptions have a readable line length and
+actions wrap when space is limited. Home keeps Capture beside its introductory
+copy, while empty Ask suggestions sit near the composer. Inactive attention
+counts use neutral styling; errors and consequential states retain their semantics.
+
+Board lanes keep a 16rem minimum width (bounded by the viewport) and scroll
+horizontally. Card metadata wraps instead of truncating every editable field.
+Objects already grouped by type do not repeat that type in every row. New record
+forms place the required name before optional project context.
+
+Document content search is named explicitly. Processing labels distinguish
+Awaiting indexing from Searchable. Detail context uses flat Summary, Source,
+Search status and Content excerpts sections; extracted prose uses the UI face.
+User-facing counts say passages, with indexing identifiers retained in technical
+details. Meeting transcripts precede technical identifiers.
+
+Approval actions use plain record/contact-detail/note labels and a visible Accept
+action. Mobile item icon controls have 44px targets. Planned agent tools start
+collapsed and open when searching, keeping available connections first.
+
+Team visibility controls have visible column labels as well as accessible names.
+Advanced settings group administration links under Workspace maintenance. Export
+copy describes the download's 24-hour expiry, not the archive's data range.
+Slack destination choices load only for Preferences. Editable member roles do not
+repeat their current role in a second badge.
+
+Work and Team tab strips reveal the active destination after navigation and
+resize, without mandatory snap points. Mobile Work navigation includes a scroll
+hint. Calendar month cells use day event counts on phones; opening a count shows
+the readable day view. Approval actions stack beneath their context on phones.
+Work relevance badges do not duplicate the canonical Blocked status, and normal
+pending approval uses the signal tone rather than danger. Narrow object property
+values wrap so dates remain complete. Website polling skips overlapping requests, so slow responses can settle.

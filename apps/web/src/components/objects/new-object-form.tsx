@@ -92,27 +92,12 @@ export function NewObjectForm({
         >
           {TYPES.map((t) => (
             <option key={t} value={t}>
-              {t}
+              {t.charAt(0).toUpperCase() + t.slice(1).replaceAll('_', ' ')}
             </option>
           ))}
         </select>
       </label>
-      {type === 'task' ? (
-        <div>
-          <span className="mb-1 block text-xs text-fg-muted">Project (optional)</span>
-          <ProjectPicker
-            value={projectId || null}
-            selectedLabel={projectLabel}
-            projects={projects}
-            onValueChange={(project) => {
-              updateForm({
-                projectId: project?.id ?? '',
-                projectLabel: project?.label ?? '',
-              });
-            }}
-          />
-        </div>
-      ) : null}
+
       <div>
         <label className="block" htmlFor="object-name">
           <span className="mb-1 block text-xs text-fg-muted">
@@ -143,6 +128,22 @@ export function NewObjectForm({
           </p>
         ) : null}
       </div>
+      {type === 'task' ? (
+        <div>
+          <span className="mb-1 block text-xs text-fg-muted">Project (optional)</span>
+          <ProjectPicker
+            value={projectId || null}
+            selectedLabel={projectLabel}
+            projects={projects}
+            onValueChange={(project) => {
+              updateForm({
+                projectId: project?.id ?? '',
+                projectLabel: project?.label ?? '',
+              });
+            }}
+          />
+        </div>
+      ) : null}
       {isSchedulableObjectType(type) ? (
         <label className="block" htmlFor="object-due-at">
           <span className="mb-1 block text-xs text-fg-muted">Due date (optional)</span>

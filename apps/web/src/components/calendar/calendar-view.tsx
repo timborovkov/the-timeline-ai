@@ -1816,7 +1816,20 @@ function DayCell({
           {day.day}
         </button>
       </div>
-      <div className="space-y-0.5">
+      {mode === 'month' && events.length > 0 ? (
+        <button
+          type="button"
+          aria-label={`${events.length} ${events.length === 1 ? 'event' : 'events'} on ${dayLabel}; open day`}
+          onClick={() => {
+            onOpenDay(day);
+          }}
+          className="flex min-h-11 w-full flex-col items-center justify-center rounded-sm bg-signal-soft text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:hidden"
+        >
+          <span className="text-sm font-medium">{events.length}</span>
+          <span className="text-[10px]">{events.length === 1 ? 'event' : 'events'}</span>
+        </button>
+      ) : null}
+      <div className={mode === 'month' ? 'hidden space-y-0.5 sm:block' : 'space-y-0.5'}>
         {visibleEvents.map((event) => {
           const title = event.redacted ? 'Busy' : event.title;
           const selected = editingId === event.id;

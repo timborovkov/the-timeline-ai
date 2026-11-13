@@ -201,7 +201,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Folders keep documents browsable without hiding them from search.',
           'Every upload creates a version, so old files stay inspectable.',
-          'Agent answers cite document chunks back to the source version.',
+          'Agent answers cite document passages back to the source version.',
         ],
         appLink: { href: '/app/documents', label: 'Open document drive' },
       },
@@ -253,18 +253,6 @@ export const HELP_PAGES: HelpPage[] = [
     updatedAt: '2026-11-09',
     sections: [
       {
-        title: 'Request deletion of captured data',
-        resourceLinks: [{ href: '/help/support', label: 'Request deletion through support' }],
-        body: 'Team owners can request permanent team deletion from Team settings → Advanced. Export data you can access first. The request immediately disables access for all members, stops new usage accrual, and requests subscription renewal cancellation. Platform admins review and perform deletion. Only platform admins can restore access before permanent deletion starts. For narrower deletion requests, use /help/support. Disconnecting alone does not erase history.',
-        items: [
-          'Tell us the workspace name, the connected provider, and whether you want all captured data from that source or a narrower set removed. Identify files by name or link only when needed; do not send passwords, tokens, or copies of private documents.',
-          'We verify your identity and workspace authority and confirm the scope. For team-controlled data, we may need the workspace administrator’s instructions; individual rights requests are reviewed separately.',
-          'We coordinate stopping affected capture before removal so background work does not recreate the data. Removing a shared personal connection can stop capture in other workspaces, so tell us if only one team is in scope.',
-          'We review retained records and derived data, including search indexes, and handle removal manually. We explain any backup expiry, provider follow-up, or justified retention and confirm completed and outstanding work. We do not promise instant removal from every retained copy.',
-          'Disconnecting Timeline does not delete the original files in Google Drive.',
-        ],
-      },
-      {
         title: 'Connected sources',
         body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. MCP is not passive provider sync.',
         items: [
@@ -312,6 +300,18 @@ export const HELP_PAGES: HelpPage[] = [
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code',
             label: 'Install in Claude Code',
           },
+        ],
+      },
+      {
+        title: 'Request deletion of captured data',
+        resourceLinks: [{ href: '/help/support', label: 'Request deletion through support' }],
+        body: 'Team owners can request permanent team deletion from Team settings → Advanced. Export data you can access first. The request immediately disables access for all members, stops new usage accrual, and requests subscription renewal cancellation. Platform admins review and perform deletion. Only platform admins can restore access before permanent deletion starts. For narrower deletion requests, use /help/support. Disconnecting alone does not erase history.',
+        items: [
+          'Tell us the workspace name, the connected provider, and whether you want all captured data from that source or a narrower set removed. Identify files by name or link only when needed; do not send passwords, tokens, or copies of private documents.',
+          'We verify your identity and workspace authority and confirm the scope. For team-controlled data, we may need the workspace administrator’s instructions; individual rights requests are reviewed separately.',
+          'We coordinate stopping affected capture before removal so background work does not recreate the data. Removing a shared personal connection can stop capture in other workspaces, so tell us if only one team is in scope.',
+          'We review retained records and derived data, including search indexes, and handle removal manually. We explain any backup expiry, provider follow-up, or justified retention and confirm completed and outstanding work. We do not promise instant removal from every retained copy.',
+          'Disconnecting Timeline does not delete the original files in Google Drive.',
         ],
       },
     ],

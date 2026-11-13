@@ -132,7 +132,14 @@
 
 #main:has(> .app-page-container > [data-app-width='collection']) {
   container-type: inline-size;
+  padding-top: 0;
   --app-page-gutter: 1rem;
+}
+
+/* Collection titles and their tabs share one compact navigation band. */
+[data-app-width='collection'] > header:has(+ [data-slot='collection-tabs']),
+[data-app-width='collection'] > header:has(+ div > [data-slot='collection-tabs']:first-child) {
+  margin-block-end: 0;
 }
 
 @media (min-width: 48rem) {

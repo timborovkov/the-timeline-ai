@@ -415,7 +415,10 @@ function humanizeToken(value: string): string {
 }
 
 function itemActionLabel(item: SuggestionItem): string {
-  const operation = item.operation.replace(/_/g, ' ');
+  const operation =
+    item.operation === 'archive_or_cancel'
+      ? 'archive or cancel'
+      : item.operation.replace(/_/g, ' ');
   if (item.targetKind === 'object') {
     const type = payloadString(item.proposedPayload, 'type');
     if (type === 'person') return `${operation} person`;
@@ -430,7 +433,9 @@ function itemKindLabel(kind: string): string {
   if (kind === 'calendar_event') return 'calendar event';
   if (kind === 'object_merge') return 'duplicate records';
   if (kind === 'object_relationship') return 'relationship';
-  if (kind === 'object') return 'workspace memory';
+  if (kind === 'object') return 'record';
+  if (kind === 'identity_facet') return 'contact detail';
+  if (kind === 'object_note') return 'note';
   if (kind === 'document') return 'document record';
   return kind.replace(/_/g, ' ');
 }
@@ -1395,7 +1400,7 @@ function ApprovalItemRow({
   return (
     <div>
       <CollectionRow
-        className={`min-h-18 py-2 ${selected ? 'bg-surface-2 shadow-none' : ''}`}
+        className={`min-h-16 max-sm:grid-cols-[auto_minmax(0,1fr)] max-sm:[&>[data-slot=collection-row-actions]]:col-start-2 max-sm:[&>[data-slot=collection-row-actions]]:pb-2 max-sm:[&>[data-slot=collection-row-actions]]:pt-0 ${selected ? 'bg-surface-2 shadow-none' : ''}`}
         selected={selected}
         onActivate={onPreview}
         activateLabel={`Open ${title}`}
@@ -1422,8 +1427,8 @@ function ApprovalItemRow({
         </CollectionRow.Leading>
         <CollectionRow.Title title={title}>{title}</CollectionRow.Title>
         <CollectionRow.Subtitle>
-          <span className="mt-1 block min-w-0 truncate text-xs">
-            <span className="capitalize" title={context}>
+          <span className="mt-1 block min-w-0 text-xs sm:truncate">
+            <span className="first-letter:uppercase" title={context}>
               {context}
             </span>
             <ApprovalRowMetadata
@@ -1630,7 +1635,7 @@ function ApprovalItemActions({
   return (
     <ItemActionGroup
       label={`Decision actions for ${title}`}
-      className="ms-auto w-auto gap-1 rounded-sm border border-border bg-bg p-0.5"
+      className="w-auto gap-1 rounded-sm border border-border bg-bg p-0.5"
     >
       {item.targetKind === 'object_merge' ? (
         <ItemIconButton asChild label={`Review merge for ${title}`} disabled={pending}>
@@ -1642,6 +1647,7 @@ function ApprovalItemActions({
         <>
           <ItemIconButton
             label={`Accept ${title}`}
+            className="w-auto gap-1.5 px-2.5 text-fg sm:w-auto"
             disabled={busy || acceptDisabled}
             onClick={() => {
               run(
@@ -1652,6 +1658,7 @@ function ApprovalItemActions({
             }}
           >
             <Check />
+            <span>Accept</span>
           </ItemIconButton>
           <SuggestionChangeDialog
             compact

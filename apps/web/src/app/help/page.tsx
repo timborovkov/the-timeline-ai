@@ -24,7 +24,6 @@ export default function HelpIndexPage() {
   return (
     <article className="space-y-12">
       <header className="max-w-[70ch] space-y-4">
-        <p className="font-mono text-xs tracking-wide text-fg-dim">HELP / PUBLIC GUIDES</p>
         <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           Find the guide for the work in front of you.
         </h1>

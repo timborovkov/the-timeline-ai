@@ -213,7 +213,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   [billing presentation contract](docs/design/app.md#billing-benefits-and-recorded-charges).
 
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
-  Visibility, Email, Exports, and admin-only Advanced.
+  Visibility, Email, Exports, and admin-only Billing and Advanced.
 
 The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
 a sticky collection toolbar under the 48px shell header instead of an index

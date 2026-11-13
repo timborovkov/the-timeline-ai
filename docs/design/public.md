@@ -283,7 +283,10 @@ Public pricing copy explains plans, usage costs, and billing terms in customer l
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
-provide a visible route back to all guides; article bodies may optionally
+provide a visible route back to all guides, and the help navigation includes
+Back to workspace. Guide icons identify subjects without arbitrary directory
+numbers. Integration setup guidance precedes deletion guidance, whose full
+retention caveats remain intact. Article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
 Agent setup guides may use a bespoke copy-ready pattern: one recommended install
 prompt first, narrower skill-only and MCP-only fallbacks, then numbered setup,

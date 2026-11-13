@@ -2148,7 +2148,7 @@ function TaskCard({
           />
         </ItemActionGroup>
       </div>
-      <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs leading-4">
         {taskCategoriesEnabled ? (
           <EditableMetadata label={`Category for ${displayText(title)}`} density="compact">
             <EditableMetadata.Value>

@@ -30,8 +30,15 @@ export function WorkSubnav({
     const nav = navRef.current;
     const active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
     if (!nav || !active) return;
-    const offset = active.getBoundingClientRect().left - nav.getBoundingClientRect().left;
-    nav.scrollLeft += offset - (nav.clientWidth - active.offsetWidth) / 2;
+    const revealActive = () => {
+      const offset = active.getBoundingClientRect().left - nav.getBoundingClientRect().left;
+      nav.scrollLeft += offset - (nav.clientWidth - active.offsetWidth) / 2;
+    };
+    revealActive();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(revealActive);
+    observer?.observe(nav);
+    return () => observer?.disconnect();
   }, [current]);
   return (
     <div
@@ -60,7 +67,7 @@ export function WorkSubnav({
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                  'inline-flex min-h-11 items-center border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
                   active && 'border-signal text-fg',
                 )}
               >
@@ -70,6 +77,9 @@ export function WorkSubnav({
           })}
         </div>
       </nav>
+      <p aria-hidden="true" className="py-1 text-xs text-fg-dim md:hidden">
+        Swipe or scroll for more work views.
+      </p>
     </div>
   );
 }

@@ -446,7 +446,13 @@ function ChatTranscript({
   teamName: string;
 }) {
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+    <div
+      ref={scrollRef}
+      className={cn(
+        'min-h-0 flex-1 overflow-y-auto',
+        messages.length === 0 && !compact && 'flex flex-col justify-end',
+      )}
+    >
       {messages.length === 0 ? (
         <ChatEmptyState
           compact={compact}
@@ -492,10 +498,9 @@ function ChatEmptyState({
     );
   }
   return (
-    <div className="flex flex-col gap-6 pt-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-8 sm:py-12">
       <div>
-        <p className="text-xs font-medium text-fg-muted">Try asking</p>
-        <h2 className="mt-2 text-xl font-medium tracking-tight text-fg">
+        <h2 className="text-xl font-semibold tracking-tight text-fg">
           {emptyTitle ?? `Ask anything about ${teamName}'s timeline`}
         </h2>
         {emptyHint ? <p className="mt-2 text-sm leading-6 text-fg-muted">{emptyHint}</p> : null}
@@ -508,7 +513,7 @@ function ChatEmptyState({
             onClick={() => {
               onSuggestion(suggestion);
             }}
-            className="rounded-sm border border-border bg-surface px-3 py-1.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg"
+            className="rounded-sm border border-border bg-surface px-3 py-2.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg"
           >
             {suggestion}
           </button>

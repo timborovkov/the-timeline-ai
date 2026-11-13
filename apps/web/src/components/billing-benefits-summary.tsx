@@ -337,7 +337,11 @@ function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
       </div>
       <div className="space-y-2">
         <dt className="text-xs text-fg-muted">Recorded usage charges</dt>
-        <dd className="font-mono text-xl">
+        <dd
+          className={
+            summary.charges.status === 'available' ? 'font-mono text-xl' : 'text-base text-fg-muted'
+          }
+        >
           {summary.charges.status === 'available' && summary.charges.amounts ? (
             <Money value={summary.charges.amounts.totalCents} />
           ) : summary.charges.status === 'updating' ? (

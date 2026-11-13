@@ -235,7 +235,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           value={query}
           placeholder="Ask, jump, capture, or search…"
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent font-mono text-xs text-fg placeholder:text-fg-dim focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-dim focus:outline-none"
           onFocus={() => {
             setOpen(true);
           }}

@@ -7,7 +7,8 @@ Screen specifications live in [app.md](app.md) and [public.md](public.md).
 
 The default route header. It owns the single sentence-case `<h1>`, an optional
 subtitle, leading/trailing actions, and a quiet wrapping 12px metadata row.
-Metadata is sans by default; individual values may opt into mono.
+Metadata is sans by default; individual values may opt into mono. Descriptions stay
+bounded to a readable measure; action groups wrap at narrow widths.
 
 The collection variant has compact spacing on desktop, without a bottom rule;
 long headings wrap and increase its height. It uses an 18px title,
@@ -360,3 +361,7 @@ Clipboard failure messages wrap below their action group without pushing adjacen
 controls off-screen. Copy feedback belongs to the current value and latest copy
 attempt; value changes clear it, and late responses from older attempts cannot
 overwrite the current result.
+
+Item icon controls use 44px mobile targets and compact 32px desktop targets.
+Approval decisions stack below proposal context on phones, preserving readable
+source context and explicit Accept labels.

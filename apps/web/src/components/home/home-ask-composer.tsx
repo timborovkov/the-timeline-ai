@@ -47,13 +47,13 @@ export function HomeAskComposer({
   return (
     <section aria-labelledby="home-ask-title" className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 id="home-ask-title" className="text-base font-semibold text-fg">
             Ask the timeline
           </h2>
-          <p className="mt-1 text-sm text-fg-muted">
+          <p className="mt-1 max-w-[65ch] text-sm leading-6 text-fg-muted">
             {hasSources
-              ? 'Ask a specific question, then open a citation to check the evidence. Newly added sources may still be processing; check Documents or Connections if an answer cannot find them.'
+              ? 'Find a decision, check what changed, or work through a next step—with sources you can open.'
               : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
           </p>
         </div>
@@ -75,7 +75,7 @@ export function HomeAskComposer({
             type="text"
             value={prompt}
             maxLength={CHAT_HANDOFF_MAX_PROMPT_LENGTH}
-            className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
+            className="h-12 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
             placeholder="Ask the timeline…"
             aria-describedby={error ? 'home-ask-error' : undefined}
             aria-invalid={Boolean(error)}
@@ -93,7 +93,7 @@ export function HomeAskComposer({
             onClick={() => {
               submit();
             }}
-            className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2"
+            className="absolute right-1 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2"
           >
             <Send aria-hidden="true" className="size-4" />
           </button>
@@ -109,7 +109,7 @@ export function HomeAskComposer({
           <button
             key={suggestion}
             type="button"
-            className="rounded-sm border border-border bg-surface px-3 py-1.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-sm border border-border bg-surface px-3 py-2.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               submit(suggestion);
             }}

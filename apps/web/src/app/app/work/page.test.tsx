@@ -623,7 +623,7 @@ describe('WorkPage', () => {
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Pin to Home Pilot pipeline');
     expect(html.indexOf('Northstar pilot')).toBeLessThan(html.indexOf('Pilot pipeline'));
-    expect(html.indexOf('aria-label="Pinned"')).toBeLessThan(html.indexOf('Work queue'));
+    expect(html.indexOf('Work queue')).toBeLessThan(html.indexOf('aria-label="Pinned"'));
   });
 
   it('does not duplicate timeline event text on the work overview', async () => {

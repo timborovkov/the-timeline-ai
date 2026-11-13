@@ -31,11 +31,13 @@ export function TeamMemberListItem({
       <CollectionRow.Context>
         {user?.email?.trim() !== memberLabel ? user?.email : undefined}
       </CollectionRow.Context>
-      <CollectionRow.Metadata>
-        <Badge variant="outline" className="capitalize">
-          {member.role}
-        </Badge>
-      </CollectionRow.Metadata>
+      {!canManageRole ? (
+        <CollectionRow.Metadata>
+          <Badge variant="outline" className="capitalize">
+            {member.role}
+          </Badge>
+        </CollectionRow.Metadata>
+      ) : null}
       <CollectionRow.Actions>
         {canManageRole || canRemove ? (
           <ItemActionGroup label={`Actions for ${memberLabel}`}>

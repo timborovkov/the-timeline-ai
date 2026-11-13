@@ -363,7 +363,6 @@ export function ObjectCleanupList({
                       return (
                         <ObjectCollectionItem
                           object={object}
-                          typeLabel={typeLabels[object.type] ?? object.type}
                           timezone={timezone}
                           returnTo={returnTo}
                           selecting={selecting}
@@ -423,7 +422,6 @@ function sameObjectFieldValue(left: ObjectEditableValue, right: ObjectEditableVa
 
 function ObjectCollectionItem({
   object,
-  typeLabel,
   timezone,
   returnTo,
   selecting,
@@ -432,7 +430,6 @@ function ObjectCollectionItem({
   onToggle,
 }: {
   object: PinnableObjectRow;
-  typeLabel: string;
   timezone: string;
   returnTo: string;
   selecting: boolean;
@@ -546,7 +543,6 @@ function ObjectCollectionItem({
           </Link>
           <DiscussionCountBadge count={object.commentCount} className="ml-2 shrink-0" />
         </CollectionRow.Title>
-        <CollectionRow.Context>{typeLabel}</CollectionRow.Context>
         <CollectionRow.Metadata>
           <>
             {object.type === 'task' ? (

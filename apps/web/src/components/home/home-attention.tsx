@@ -29,7 +29,7 @@ export function HomeAttention({ groups }: { groups: AttentionGroup[] }) {
               href={group.href}
               className="group flex items-center gap-3 py-3 transition-colors hover:bg-surface sm:px-3"
             >
-              <span className={`[&>svg]:size-4 ${group.danger ? 'text-danger' : 'text-signal'}`}>
+              <span className={`[&>svg]:size-4 ${group.danger ? 'text-danger' : 'text-fg-muted'}`}>
                 {group.icon}
               </span>
               <span className="min-w-0 flex-1">
