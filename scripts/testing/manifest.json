@@ -1,8 +1,16 @@
 {
-  "apps/worker/src/workers/boardQualification-discovery.test.ts": { "group": "integration" },
-  "apps/web/src/components/agent-reporting-settings.test.tsx": { "group": "dom" },
-  "packages/shared/src/boards/qualification.live-eval.test.ts": { "group": "live" },
-  "apps/web/src/components/boards/board-qualification-fields.test.tsx": { "group": "dom" },
+  "apps/worker/src/workers/boardQualification-discovery.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/agent-reporting-settings.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/boards/qualification.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/web/src/components/boards/board-qualification-fields.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/app/team-deletion-requested/page.test.tsx": {
     "group": "dom"
   },
@@ -2471,5 +2479,8 @@
   },
   "apps/worker/src/workers/engine.live-eval.test.ts": {
     "group": "live"
+  },
+  "packages/shared/src/task-categories/experiment-report.test.ts": {
+    "group": "unit"
   }
 }
