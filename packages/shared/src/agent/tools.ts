@@ -2090,7 +2090,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             notes: result.notes.slice(0, 10).map((n) => ({
               id: n.id,
               citation: artifactRefCitation({ kind: 'object_note', id: n.id }),
-              body: n.body,
+              body: fenceExternalContent(n.body, { source: 'object_note', eventId: n.id }),
               entityId: result.id,
               authorUserId: n.authorUserId,
               updatedAt: n.updatedAt.toISOString(),

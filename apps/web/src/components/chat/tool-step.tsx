@@ -964,6 +964,10 @@ function WorkspaceApprovalReferences({ references }: { references: Record<string
 }
 
 function WorkspaceApprovalValue({ value }: { value: unknown }) {
+  if (typeof value === 'string' && value.startsWith('<external_content source="object_note" ')) {
+    const contentStart = value.indexOf('>') + 1;
+    return <>{value.slice(contentStart).replace(/<\/external_content>$/, '')}</>;
+  }
   if (typeof value === 'boolean') return <>{value ? 'On' : 'Off'}</>;
   if (Array.isArray(value))
     return (

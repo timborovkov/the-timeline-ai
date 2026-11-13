@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { fenceExternalContent } from '#src/agent/external-content.js';
 import { capabilityTool, type CapabilityTool } from '#src/agent/tool-policy.js';
 import {
   defaultBoardLanes,
@@ -76,6 +77,21 @@ export function buildWorkspaceTools(
       execute: (raw) => runSafe(name, () => run(schema.parse(raw))),
     });
   }
+  async function originalNoteState(noteId: string, expected: z.output<typeof noteState>) {
+    const note = await scope.objects.getObjectNotePreview(noteId);
+    if (
+      !note ||
+      note.object.id !== expected.entityId ||
+      note.updatedAt.toISOString() !== expected.updatedAt ||
+      (note.body !== expected.body &&
+        fenceExternalContent(note.body, { source: 'object_note', eventId: noteId }) !==
+          expected.body)
+    )
+      throw new StaleWorkspaceStateError();
+    // Fencing sanitizes nested markers. Compare the returned view, but retain the exact
+    // original body for the domain service's transactional stale-state check.
+    return { ...expected, body: note.body };
+  }
   const boardResult = (board: BoardDetail, message: string) => ({
     ok: true,
     board_id: board.id,
@@ -111,7 +127,7 @@ export function buildWorkspaceTools(
                 id: note.id,
                 entityId: note.object.id,
                 objectName: note.object.canonicalName,
-                body: note.body,
+                body: fenceExternalContent(note.body, { source: 'object_note', eventId: note.id }),
                 authorUserId: note.authorUserId,
                 updatedAt: note.updatedAt.toISOString(),
                 citation: artifactRefCitation({ kind: 'object_note', id: note.id }),
@@ -259,7 +275,7 @@ export function buildWorkspaceTools(
     ),
     execute_object_note_update: mutation(
       'execute_object_note_update',
-      'Edit a note authored by the current user. Read get_object or get_object_note first; expectedCurrent must match the note body, object, and revision.',
+      'Edit a note authored by the current user. Read get_object or get_object_note first; copy the returned body (including its source fence), object, and revision into expectedCurrent.',
       z.object({
         noteId: id,
         expectedCurrent: noteState,
@@ -267,7 +283,13 @@ export function buildWorkspaceTools(
         reason,
       }),
       async (input) => {
-        const ok = await scope.objects.updateNote({ ...input, actorUserId: scope.userId, actor });
+        const expectedCurrent = await originalNoteState(input.noteId, input.expectedCurrent);
+        const ok = await scope.objects.updateNote({
+          ...input,
+          expectedCurrent,
+          actorUserId: scope.userId,
+          actor,
+        });
         if (!ok) throw new Error('Note not found or not editable');
         return {
           ok,
@@ -283,7 +305,13 @@ export function buildWorkspaceTools(
       'Delete a note authored by the current user, after an explicit request. Read its current state first.',
       z.object({ noteId: id, expectedCurrent: noteState, reason }),
       async (input) => {
-        const ok = await scope.objects.deleteNote({ ...input, actorUserId: scope.userId, actor });
+        const expectedCurrent = await originalNoteState(input.noteId, input.expectedCurrent);
+        const ok = await scope.objects.deleteNote({
+          ...input,
+          expectedCurrent,
+          actorUserId: scope.userId,
+          actor,
+        });
         if (!ok) throw new Error('Note not found or not editable');
         return {
           ok,

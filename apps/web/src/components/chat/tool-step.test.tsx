@@ -96,6 +96,26 @@ describe('ToolStep', () => {
     expect(screen.getByText(/Cards in removed lanes become unassigned/)).toBeTruthy();
   });
 
+  it('shows readable note content instead of model evidence fences in approval previews', () => {
+    render(
+      <ToolStep
+        name="execute_object_note_update"
+        state="approval-requested"
+        input={{
+          expectedCurrent: {
+            body: '<external_content source="object_note" event_id="note-1">Original note</external_content>',
+          },
+          body: 'Revised note',
+        }}
+        approval={{ id: 'note-approval' }}
+        onApprovalResponse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Original note/)).toBeTruthy();
+    expect(screen.getByText(/Revised note/)).toBeTruthy();
+    expect(screen.queryByText(/external_content/)).toBeNull();
+  });
+
   it('does not label a denied action completed', () => {
     render(<ToolStep name="execute_object_update" state="output-denied" />);
     expect(screen.getByRole('status').textContent).toContain('Denied');
