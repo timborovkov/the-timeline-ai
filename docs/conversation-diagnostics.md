@@ -71,3 +71,5 @@ intermediate execution state or diagnose real retrieval recall from text alone.
 It introduces no automatic customer-content tracing or model-training permission.
 Existing billing/usage metadata is not a complete, correlated diagnostic timeline;
 adding richer content-free telemetry is a separate follow-up.
+
+Workspace source-evaluation permission is a separate [settings and retention contract](workspace-evaluation-tracing.md). It never forwards these one-off reports.

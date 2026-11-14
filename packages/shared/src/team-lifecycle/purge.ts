@@ -2,6 +2,7 @@ import { schema, teams, type Db } from '@timeline/db';
 import { eq, is, sql, Table } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 
+import { pruneEvaluationTraces } from '#src/evaluation-tracing/runtime.js';
 import { PURGED_TEAM_TABLES } from '#src/team-lifecycle/inventory.js';
 import { lifecycleRows } from '#src/team-lifecycle/result.js';
 
@@ -9,6 +10,13 @@ import { lifecycleRows } from '#src/team-lifecycle/result.js';
 export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
   const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
   if (!team?.deletionStartedAt) throw new Error('Permanent deletion has not started');
+  await pruneEvaluationTraces(db, teamId);
+  const [pendingTraces] = await db
+    .select({ id: schema.evaluationTraceProjects.id })
+    .from(schema.evaluationTraceProjects)
+    .where(eq(schema.evaluationTraceProjects.teamId, teamId))
+    .limit(1);
+  if (pendingTraces) return false;
   // Legacy history must go before deleting any parent: ON DELETE SET NULL
   // would also revalidate its old NOT VALID provenance constraints.
   let legacyRemaining = false;

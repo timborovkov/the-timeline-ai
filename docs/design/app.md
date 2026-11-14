@@ -784,3 +784,7 @@ storage details in a disclosure. Tool and source payloads are excluded.
 Workspace sharing controls live separately at `/app/diagnostics/settings`, linked
 from Team settings. They do not constitute consent for members. Staff report content
 requires a deliberate audited open action, never automatic list previews.
+
+### Evaluation tracing settings
+
+Team settings links to `/app/team/evaluation`. Explain the quality purpose before the opt-in control; default it off, leave source choices unchecked initially, and require a separate acknowledgment to enable it. Show capture availability separately from the saved preference. Onboarding offers the same disclosure in a new tab without interrupting completion. Distinguish automatic sampled source extraction from individually reviewed conversation reports.

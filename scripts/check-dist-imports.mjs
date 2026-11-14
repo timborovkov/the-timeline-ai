@@ -53,7 +53,8 @@ const checks = [
     name: '@timeline/shared legal versions',
     run: async () => {
       const legalVersions = await import('@timeline/shared/legal-versions');
-      const versionPattern = /^\d{4}-\d{2}-\d{2}$/;
+      // A positive revision distinguishes material updates published on the same day.
+      const versionPattern = /^\d{4}-\d{2}-\d{2}(?:\.[1-9]\d*)?$/;
       if (
         !versionPattern.test(legalVersions.TERMS_VERSION) ||
         !versionPattern.test(legalVersions.PRIVACY_VERSION)

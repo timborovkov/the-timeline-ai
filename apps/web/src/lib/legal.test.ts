@@ -159,6 +159,15 @@ describe('legal acceptance persistence', () => {
 });
 
 describe('hasCurrentLegalAcceptance', () => {
+  it('requires acknowledgment of a material privacy revision published on the same day', () => {
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: '2026-11-14',
+        legalAcceptedAt: new Date('2026-11-14T10:00:00Z'),
+      }),
+    ).toBe(false);
+  });
   it('requires renewed Privacy acknowledgment after deletion disclosure changes', () => {
     expect(
       hasCurrentLegalAcceptance({

@@ -118,6 +118,12 @@ export default async function TeamSettingsPage({
   } = await loadTeamSettingsPage({ searchParams });
   return (
     <div className="space-y-4">
+      <Link
+        href="/app/team/evaluation"
+        className="inline-flex min-h-11 items-center text-sm underline"
+      >
+        Evaluation tracing
+      </Link>
       <Link href="/app/diagnostics/settings" className="text-sm underline">
         Conversation report sharing
       </Link>
