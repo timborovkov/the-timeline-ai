@@ -205,15 +205,7 @@ function PrivacyAiAndProviderSections() {
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyDetail}
         <TranscriptionRetentionSources />
       </p>
-      <p>
-        We do not use Customer Content to train or fine-tune any model, or to build model-training
-        datasets. Creating customer-specific embeddings for retrieval is service processing, not
-        model training. We also disable rich prompt-and-output observability tracing in hosted
-        production. AI output can be inaccurate; Timeline keeps citations so users can inspect the
-        underlying evidence.
-      </p>
-
-      <OptionalConversationReports />
+      <PrivacyConversationAndTrainingDisclosure />
 
       <h2>6. Meetings, recordings, and transcripts</h2>
       <p>
@@ -811,9 +803,16 @@ export default function PrivacyPage() {
   );
 }
 
-function OptionalConversationReports() {
+function PrivacyConversationAndTrainingDisclosure() {
   return (
     <>
+      <p>
+        We do not use Customer Content to train or fine-tune any model, or to build model-training
+        datasets. Creating customer-specific embeddings for retrieval is service processing, not
+        model training. We also disable rich prompt-and-output observability tracing in hosted
+        production. AI output can be inaccurate; Timeline keeps citations so users can inspect the
+        underlying evidence.
+      </p>
       <h3>Optional conversation reports</h3>
       <p>
         Workspace owners and admins can enable conversation report sharing; it is disabled by
