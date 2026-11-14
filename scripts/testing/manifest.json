@@ -2500,5 +2500,11 @@
   },
   "apps/web/src/components/diagnostic-report-form.test.tsx": {
     "group": "dom"
+  },
+  "packages/shared/src/evaluation-tracing/scope.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/evaluation-tracing-settings.test.tsx": {
+    "group": "dom"
   }
 }

@@ -663,6 +663,18 @@
       "development": "./src/diagnostics/operator.ts",
       "import": "./dist/diagnostics/operator.js",
       "default": "./dist/diagnostics/operator.js"
+    },
+    "./evaluation-tracing/contract": {
+      "types": "./src/evaluation-tracing/contract.ts",
+      "development": "./src/evaluation-tracing/contract.ts",
+      "import": "./dist/evaluation-tracing/contract.js",
+      "default": "./dist/evaluation-tracing/contract.js"
+    },
+    "./evaluation-tracing/runtime": {
+      "types": "./src/evaluation-tracing/runtime.ts",
+      "development": "./src/evaluation-tracing/runtime.ts",
+      "import": "./dist/evaluation-tracing/runtime.js",
+      "default": "./dist/evaluation-tracing/runtime.js"
     }
   },
   "main": "./dist/index.js",
