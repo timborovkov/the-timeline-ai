@@ -56,7 +56,11 @@
     "billing:polar-convert": "bun --no-env-file --conditions=development scripts/billing-polar-convert.ts",
     "email:replay": "bun --conditions=development scripts/replay-inbound-email.ts",
     "capture:marketing-screenshots": "bun scripts/capture-marketing-screenshots.mjs",
-    "test:website-scan:live": "WEBSITE_SCAN_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/workers/websiteScan.live-eval.test.ts --live"
+    "test:website-scan:live": "WEBSITE_SCAN_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/workers/websiteScan.live-eval.test.ts --live",
+    "eval:sync": "bun --conditions=development packages/shared/src/scripts/task-category-experiment.ts --sync",
+    "eval:compare": "bun --conditions=development packages/shared/src/scripts/task-category-experiment.ts",
+    "eval:agent:sync": "bun --conditions=development packages/shared/src/scripts/agent-experiment.ts --sync",
+    "eval:agent:compare": "bun --conditions=development packages/shared/src/scripts/agent-experiment.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1165.0",
