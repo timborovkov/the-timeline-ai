@@ -6,9 +6,12 @@ Synthetic evaluations remain separate; see the [testing policy](testing/README.m
 
 ## User and workspace controls
 
-Team settings links to `/app/diagnostics`. Sharing defaults off; only current owners
+Team settings links to `/app/diagnostics/settings`. Sharing defaults off; only current owners
 and admins can enable it. “Report an issue” in a completed web conversation opens
-an editable preview of persisted user/assistant text. Tool payloads, reasoning,
+a message-by-message preview of persisted user/assistant text. Members can uncheck
+messages or edit their text individually. Only selected, nonempty message text is
+serialized into the submitted transcript; excluded text has no submitted form field.
+Changing the description, selection, or message text clears the consent checkbox. Tool payloads, reasoning,
 attachments, source documents and system prompts are excluded. Long conversations
 must be edited to 60,000 characters; the system does not silently truncate them.
 
@@ -19,7 +22,7 @@ is user-provided diagnostic evidence, not an authenticated model transcript. No 
 inference is run. Nothing is submitted merely by opening the preview.
 
 Each member can submit at most ten reports per workspace per day. Deleting reports
-does not reset that limit. Senders can delete their active copies from the same page;
+does not reset that limit. Senders can delete their active copies from `/app/diagnostics`;
 workspace admins cannot read another member’s report. Disabling sharing blocks new
 submissions but does not withdraw existing reports. Account/team deletion includes
 report rows. Users who have lost access use the [support deletion process](setup/manual-support-deletion.md).

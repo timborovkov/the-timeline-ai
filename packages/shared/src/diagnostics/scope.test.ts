@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
-import { diagnosticConversation, DIAGNOSTIC_CONSENT_VERSION } from '#src/diagnostics/contract.js';
+import {
+  diagnosticMessages,
+  formatDiagnosticConversation,
+  DIAGNOSTIC_CONSENT_VERSION,
+} from '#src/diagnostics/contract.js';
 import {
   listDiagnosticReports,
   readDiagnosticReport,
@@ -70,37 +74,39 @@ async function fixture() {
 describe('opt-in diagnostics', () => {
   it('excludes tools, reasoning, system messages, and attachment data from previews', () => {
     expect(
-      diagnosticConversation([
-        { role: 'system', content: { text: 'hidden prompt' } },
-        { role: 'tool', content: { text: 'private source' } },
-        {
-          role: 'user',
-          content: {
-            ui_message: {
-              parts: [
-                { type: 'text', text: 'Question' },
-                { type: 'file', url: 'private-file' },
-              ],
+      formatDiagnosticConversation(
+        diagnosticMessages([
+          { role: 'system', content: { text: 'hidden prompt' } },
+          { role: 'tool', content: { text: 'private source' } },
+          {
+            role: 'user',
+            content: {
+              ui_message: {
+                parts: [
+                  { type: 'text', text: 'Question' },
+                  { type: 'file', url: 'private-file' },
+                ],
+              },
             },
           },
-        },
-        {
-          role: 'assistant',
-          content: {
-            ui_message: {
-              parts: [
-                { type: 'reasoning', text: 'hidden reasoning' },
-                { type: 'tool-retrieve', output: 'hidden result' },
-                { type: 'text', text: 'Answer' },
-              ],
+          {
+            role: 'assistant',
+            content: {
+              ui_message: {
+                parts: [
+                  { type: 'reasoning', text: 'hidden reasoning' },
+                  { type: 'tool-retrieve', output: 'hidden result' },
+                  { type: 'text', text: 'Answer' },
+                ],
+              },
             },
           },
-        },
-        {
-          role: 'assistant',
-          content: { text: 'Legacy answer', tool_calls: [{ output: 'hidden result' }] },
-        },
-      ]),
+          {
+            role: 'assistant',
+            content: { text: 'Legacy answer', tool_calls: [{ output: 'hidden result' }] },
+          },
+        ]),
+      ),
     ).toBe('You:\nQuestion\n\nAssistant:\nAnswer\n\nAssistant:\nLegacy answer');
   });
   it('requires workspace permission, affirmative current consent and the author’s own session', async () => {

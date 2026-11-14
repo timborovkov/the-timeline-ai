@@ -12,27 +12,42 @@ export const diagnosticInput = z
   })
   .strict();
 
+export interface DiagnosticMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+}
+
 // Only user-visible text. Never copy tool payloads, reasoning, attachments or system prompts.
-export function diagnosticConversation(messages: { role: string; content: unknown }[]): string {
+export function diagnosticMessages(
+  messages: { role: string; content: unknown }[],
+): DiagnosticMessage[] {
+  return messages.flatMap(({ role, content }, index) => {
+    if (role !== 'user' && role !== 'assistant') return [];
+    if (!content || typeof content !== 'object') return [];
+    const value = content as { ui_message?: { parts?: unknown }; text?: unknown };
+    const parts = value.ui_message?.parts;
+    const text = Array.isArray(parts)
+      ? parts
+          .flatMap((part: unknown) => {
+            if (!part || typeof part !== 'object') return [];
+            const p = part as { type?: unknown; text?: unknown };
+            return p.type === 'text' && typeof p.text === 'string' ? [p.text] : [];
+          })
+          .join('\n')
+      : role === 'assistant' && typeof value.text === 'string'
+        ? value.text
+        : '';
+    return text.trim() ? [{ id: `message-${index + 1}`, role, text }] : [];
+  });
+}
+
+export function formatDiagnosticConversation(
+  messages: Pick<DiagnosticMessage, 'role' | 'text'>[],
+): string {
   return messages
-    .flatMap(({ role, content }) => {
-      if (role !== 'user' && role !== 'assistant') return [];
-      if (!content || typeof content !== 'object') return [];
-      const value = content as { ui_message?: { parts?: unknown }; text?: unknown };
-      const parts = value.ui_message?.parts;
-      const text = Array.isArray(parts)
-        ? parts
-            .flatMap((part: unknown) => {
-              if (!part || typeof part !== 'object') return [];
-              const p = part as { type?: unknown; text?: unknown };
-              return p.type === 'text' && typeof p.text === 'string' ? [p.text] : [];
-            })
-            .join('\n')
-        : role === 'assistant' && typeof value.text === 'string'
-          ? value.text
-          : '';
-      return text ? [`${role === 'user' ? 'You' : 'Assistant'}:\n${text}`] : [];
-    })
+    .filter((message) => message.text.trim())
+    .map((message) => `${message.role === 'user' ? 'You' : 'Assistant'}:\n${message.text}`)
     .join('\n\n');
 }
 

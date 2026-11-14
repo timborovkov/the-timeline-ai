@@ -774,9 +774,13 @@ returns focus to the search input.
 ## Conversation reports
 
 Completed Ask conversations expose a quiet “Report an issue” link. The report page
-shows editable conversation text, a problem description and an unchecked explicit
-consent control. It excludes tool and source payloads. Submission errors retain the
-user’s edits; successful submissions offer deletion through the sender’s report list.
-Workspace sharing controls live on that page, linked from Team settings, and do not
-constitute consent for members. Staff report content requires a deliberate audited
-open action, never automatic list previews.
+focuses on a problem description, individually selectable/editable text messages,
+and an unchecked consent control. Excluded messages collapse to an omission label;
+re-including them preserves any redactions. Editing content or the selection clears
+consent. Submission errors retain the draft; success links to the sender’s report
+list for early deletion. Retention and staff access remain visible, with supporting
+storage details in a disclosure. Tool and source payloads are excluded.
+
+Workspace sharing controls live separately at `/app/diagnostics/settings`, linked
+from Team settings. They do not constitute consent for members. Staff report content
+requires a deliberate audited open action, never automatic list previews.

@@ -1,16 +1,12 @@
 import {
-  diagnosticConversation,
+  diagnosticMessages,
   diagnosticPage,
   DIAGNOSTIC_PAGE_SIZE,
 } from '@timeline/shared/diagnostics/contract';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import {
-  DiagnosticReportForm,
-  DiagnosticSharingSettings,
-  DeleteDiagnosticReport,
-} from '@/components/diagnostic-report-form';
+import { DiagnosticReportForm, DeleteDiagnosticReport } from '@/components/diagnostic-report-form';
 import { PageHeader } from '@/components/page-header';
 import { resolveScope } from '@/lib/action-scope';
 
@@ -23,39 +19,46 @@ export default async function DiagnosticReportsPage({
 }) {
   const { r, settings, reports, canConfigure, session, loaded, page } =
     await loadDiagnosticPage(searchParams);
+  if (session)
+    return (
+      <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8">
+        <Link
+          href={`/app/chat?session=${encodeURIComponent(session)}`}
+          className="inline-flex min-h-11 items-center text-sm text-fg-muted underline underline-offset-4"
+        >
+          Back to conversation
+        </Link>
+        <PageHeader
+          title="Report an issue"
+          subtitle="Choose what to share. The rest stays private."
+        />
+        {loaded ? (
+          <DiagnosticReportForm
+            key={session}
+            teamId={r.teamId}
+            sessionId={session}
+            initialMessages={diagnosticMessages(loaded.messages)}
+          />
+        ) : (
+          <SharingDisabled canConfigure={canConfigure} />
+        )}
+      </div>
+    );
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-6 md:px-8">
       <PageHeader
         title="Conversation reports"
-        subtitle="Choose what to share with Timeline support."
+        subtitle="Manage the conversations you’ve shared with Timeline support."
       />
-      <p className="text-sm text-fg-muted">
-        Conversations are not automatically collected for quality review. Sharing a report is
-        optional and does not grant access to the rest of your workspace.
-      </p>
       {canConfigure && (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Workspace sharing</h2>
-          <DiagnosticSharingSettings
-            key={String(settings.enabled)}
-            teamId={r.teamId}
-            enabled={settings.enabled}
-          />
-        </section>
+        <Link
+          href="/app/diagnostics/settings"
+          className="inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+        >
+          Workspace sharing settings
+        </Link>
       )}
-      {!settings.enabled && (
-        <p>
-          Conversation sharing is disabled for this workspace. An owner or admin can enable it here.
-        </p>
-      )}
-      {loaded && session && (
-        <DiagnosticReportForm
-          key={session}
-          teamId={r.teamId}
-          sessionId={session}
-          conversation={diagnosticConversation(loaded.messages)}
-        />
-      )}
+      {!settings.enabled && <SharingDisabled canConfigure={canConfigure} />}
       {settings.enabled && !session && (
         <p>
           Open a conversation and choose “Report an issue” to review the messages before sharing.{' '}
@@ -113,4 +116,22 @@ async function loadDiagnosticPage(searchParams: Promise<{ session?: string; page
   const loaded = session && settings.enabled ? await r.scope.objects.getChatSession(session) : null;
   if (session && settings.enabled && !loaded) notFound();
   return { r, settings, reports, canConfigure, session, loaded, page };
+}
+
+function SharingDisabled({ canConfigure }: { canConfigure: boolean }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-fg-muted">Conversation sharing is disabled for this workspace.</p>
+      {canConfigure ? (
+        <Link
+          href="/app/diagnostics/settings"
+          className="inline-flex min-h-11 items-center text-sm underline"
+        >
+          Manage sharing in workspace settings
+        </Link>
+      ) : (
+        <p className="text-sm text-fg-muted">Ask a workspace owner or admin to enable it.</p>
+      )}
+    </div>
+  );
 }

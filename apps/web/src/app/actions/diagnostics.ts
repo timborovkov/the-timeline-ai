@@ -48,6 +48,7 @@ export async function configureDiagnosticAction(
       if (!r.ok || data.get('teamId') !== r.teamId)
         return { error: 'Workspace changed. Reopen this page.' };
       await r.scope.diagnostics.configure(data.get('enabled') === 'on');
+      revalidatePath('/app/diagnostics/settings');
       revalidatePath('/app/diagnostics');
       return { saved: true };
     } catch {
