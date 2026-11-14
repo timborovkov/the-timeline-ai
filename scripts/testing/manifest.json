@@ -2506,5 +2506,11 @@
   },
   "packages/shared/src/evals/agent-harness.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/diagnostics/scope.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/diagnostic-report-form.test.tsx": {
+    "group": "dom"
   }
 }

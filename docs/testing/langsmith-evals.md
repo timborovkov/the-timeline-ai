@@ -6,6 +6,25 @@ real database visibility checks, and controlled retrieval responses. Production
 models, prompts, and tracing settings remain unchanged. Production feedback
 capture and training exports are outside these workflows.
 
+## How Git and LangSmith fit together
+
+Git is the source of truth for synthetic inputs, expected outputs, splits, and
+scoring rules. LangSmith stores a versioned copy of each split and the experiments
+run against it. A dataset is the question/reference collection; an experiment is
+one model run with outputs, traces, and feedback scores.
+
+Open **Datasets & Experiments** in LangSmith, choose a versioned dataset, then an
+experiment and an individual case to inspect its trace and scores. The application
+projects `timeline-development` and `the-timeline-ai` are separate trace destinations;
+benchmark datasets do not need to be duplicated into both projects.
+
+Both compare commands sync their selected split before running. The explicit sync
+commands only upload/verify datasets and make no model calls. Sync is command-driven,
+not a background service: changing fixtures in Git does not immediately upload them.
+After reviewed fixture changes, commit them and sync each intended split, or run a
+comparison. Existing versions and experiments remain available. Do not edit labels
+in LangSmith or copy user-submitted diagnostic reports into these synthetic datasets.
+
 ## Datasets and splits
 
 The classification corpus contains 400 cases: 240 development and 160 held-out.

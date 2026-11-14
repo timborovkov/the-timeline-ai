@@ -44,6 +44,7 @@ import { createCalendarScope } from '#src/calendar/scope.js';
 import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
+import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import {
@@ -3587,6 +3588,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
     mcpOutbound: mcpOutboundScope,
+    diagnostics: createDiagnosticScope({ db, teamId, userId, ensureMember }),
     agentReporting: createAgentReportingScope({ db, teamId, userId, ensureMember }),
     ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,

@@ -226,6 +226,15 @@ function ChatSurfaceContent({
         teamName={teamName}
       />
       <ChatError error={error} />
+      {sessionId && !isStreaming && messages.length > 0 && (
+        <Link
+          href={`/app/diagnostics?session=${encodeURIComponent(sessionId)}`}
+          prefetch={false}
+          className="inline-flex min-h-11 items-center text-sm text-fg-muted underline underline-offset-4"
+        >
+          Report an issue
+        </Link>
+      )}
       <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
     </div>
   );

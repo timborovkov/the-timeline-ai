@@ -651,6 +651,18 @@
       "development": "./src/boards/templates.ts",
       "import": "./dist/boards/templates.js",
       "default": "./dist/boards/templates.js"
+    },
+    "./diagnostics/contract": {
+      "types": "./src/diagnostics/contract.ts",
+      "development": "./src/diagnostics/contract.ts",
+      "import": "./dist/diagnostics/contract.js",
+      "default": "./dist/diagnostics/contract.js"
+    },
+    "./diagnostics/operator": {
+      "types": "./src/diagnostics/operator.ts",
+      "development": "./src/diagnostics/operator.ts",
+      "import": "./dist/diagnostics/operator.js",
+      "default": "./dist/diagnostics/operator.js"
     }
   },
   "main": "./dist/index.js",
