@@ -6,11 +6,34 @@ import { EDITORIAL_GUIDES, HOW_IT_WORKS_ROUTE } from '@/components/marketing/edi
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import {
   buildGuideStructuredData,
+  buildGuidesStructuredData,
+  createGuidesMetadata,
   buildHowItWorksStructuredData,
   createGuideMetadata,
   createHowItWorksMetadata,
 } from '@/components/marketing/editorial/metadata';
 describe('editorial metadata', () => {
+  it('publishes the guides collection with canonical metadata and all articles', () => {
+    const metadata = createGuidesMetadata();
+    expect(metadata.alternates).toEqual({ canonical: '/guides' });
+    expect(metadata.robots).toMatchObject({ index: true, follow: true });
+    const graph = buildGuidesStructuredData()['@graph'];
+    const collection = graph.find((node) => node['@type'] === 'CollectionPage');
+    expect(collection?.hasPart).toHaveLength(7);
+    for (const guide of EDITORIAL_GUIDES) {
+      const articleGraph = buildGuideStructuredData(guide)['@graph'];
+      const article = articleGraph.find((node) => node['@type'] === 'TechArticle');
+      expect(article?.isPartOf).toMatchObject({ name: 'Guides' });
+      expect(JSON.stringify(article?.isPartOf)).toContain('/guides#webpage');
+      const breadcrumb = articleGraph.find((node) => node['@type'] === 'BreadcrumbList');
+      expect(breadcrumb?.itemListElement).toMatchObject([
+        { name: 'Home' },
+        { name: 'Guides' },
+        { name: guide.shortTitle },
+      ]);
+    }
+  });
+
   it('publishes canonical index metadata', () => {
     const metadata = createHowItWorksMetadata();
 

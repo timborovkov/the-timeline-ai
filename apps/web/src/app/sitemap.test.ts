@@ -54,10 +54,13 @@ describe('sitemap', () => {
     expect(byUrl.get('https://thetimeline.cc/product-tour')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-10');
-    expect(byUrl.get('https://thetimeline.cc/terms')).toBe(TERMS_VERSION);
-    expect(byUrl.get('https://thetimeline.cc/privacy')).toBe(PRIVACY_VERSION);
+    expect(byUrl.get('https://thetimeline.cc/terms')).toBe(TERMS_VERSION.slice(0, 10));
+    expect(byUrl.get('https://thetimeline.cc/privacy')).toBe(PRIVACY_VERSION.slice(0, 10));
     expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-10-24');
     expect(first.every((entry) => typeof entry.lastModified === 'string')).toBe(true);
+    for (const path of ['/terms', '/privacy']) {
+      expect(byUrl.get(`https://thetimeline.cc${path}`)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
   });
 
   it('returns serializer-safe canonical URLs for contributed routes', () => {

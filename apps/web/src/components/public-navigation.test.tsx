@@ -339,3 +339,14 @@ it('marks the exact child route and closes same-route dropdown links', async () 
     screen.getByRole('link', { name: 'Slack · Native sync' }).getAttribute('aria-current'),
   ).toBe('page');
 });
+
+describe('Guides footer navigation', () => {
+  it('links Resources to the guides directory and marks the section active', () => {
+    route.pathname = '/guides';
+    render(<PublicFooterColumns currentSection="guides" />);
+    const resources = screen.getByRole('region', { name: 'Resources' });
+    const link = within(resources).getByRole('link', { name: 'Guides' });
+    expect(link.getAttribute('href')).toBe('/guides');
+    expect(link.getAttribute('aria-current')).toBe('page');
+  });
+});
