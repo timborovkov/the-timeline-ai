@@ -4,6 +4,8 @@ import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 
 export const EDITORIAL_PUBLICATION_NAME = 'How Timeline works';
 
+export const GUIDES_ROUTE = '/guides' as const;
+
 export const HOW_IT_WORKS_ROUTE = '/how-it-works' as const;
 
 export const HOW_IT_WORKS_FLOW_SHOT = {
@@ -121,7 +123,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     title: 'How to search Slack and Google Drive together',
     shortTitle: 'Search Slack and Drive together',
     summary:
-      'A practical workflow for turning shared Slack conversations and newly captured Google Drive files into one visibility-aware, cited answer.',
+      'A practical workflow for turning shared Slack conversations and captured Google Drive changes into one visibility-aware, cited answer.',
     machineSummary:
       'Activate supported Slack and Drive sources, confirm the needed evidence has been captured, then ask a bounded question and inspect its citations.',
     topics: ['cross-tool search', 'Slack search', 'Google Drive search', 'cited answers'],
@@ -131,7 +133,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       body: 'Connect Slack and Google Drive as native sources. Review the supported selection and capture limits on each connector page, then share the sources that contain the project, then ask Timeline a question with a named project, time window, and desired output. The useful result is not a blended blob: it is an answer whose claims point back to the conversation or file that supports them.',
       checklist: [
         'Choose supported Slack and Drive sources and review who will see their captured evidence.',
-        'Confirm a useful message or supported file snapshot appears in Timeline before asking about it.',
+        'Confirm a useful message or relevant Drive change appears in Timeline before asking about it.',
         'Ask for a specific decision, change, owner, or unresolved question.',
         'Open the citations before treating the answer as settled fact.',
       ],
@@ -149,8 +151,8 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       },
       {
         index: '02',
-        title: 'Capture the source history',
-        body: 'Slack messages, threads, edits, reactions, and shared-file signals from selected channels become source events. Drive contributes supported file snapshots observed by sync, subject to the connector’s selection, filtering and size limits. It is not a complete document archive or a record of every intermediate edit.',
+        title: 'Check the captured work record',
+        body: 'Slack messages, threads, edits, reactions, and shared-file signals from selected channels become source events. Drive contributes selected CRM-relevant changes after a quiet editing window. Activation starts a changes cursor; historical files are not enumerated, and the first observation establishes a baseline without writing an event. It is not a document archive or a record of every intermediate edit.',
         output: 'Separate, time-addressable evidence captured after activation.',
       },
       {
@@ -162,7 +164,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '04',
         title: 'Read chronology before confidence',
-        body: 'Look for the order of events: an early Slack proposal, a later document revision, and any follow-up that confirms or rejects it. Recency matters, but a later message is not automatically more authoritative than an approved document.',
+        body: 'Look for the order of events: an early Slack proposal, a later document revision, and any follow-up that confirms or rejects it. Search balances relevance and freshness, but a later message is not automatically more authoritative than an approved document. Keep the accepted record separate from proposed changes awaiting approval.',
         output: 'A defensible sequence instead of a relevance-ranked pile.',
       },
       {
@@ -187,9 +189,10 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         provider: 'Google Drive',
         role: 'Durable document context',
-        includes: 'Supported file snapshots and change metadata that sync actually captured.',
+        includes:
+          'Selected CRM-relevant edits to Docs, Sheets, Slides, PDF, and Word files, plus captured comment, reply, and sharing signals.',
         boundary:
-          'Check the Google Drive connector page for current selection, history and comment coverage. Unsupported or oversized files may contribute metadata without searchable body text. Upload a needed document directly when connector coverage is insufficient.',
+          'Drive capture waits for about 15 minutes of quiet editing, at most one hour per burst; missed notifications are recovered about once a day. Unsupported files and files over 20 MB are skipped. Check the connector page for selection and relevance limits; upload a needed document directly if its content is missing.',
       },
     ],
     interpretation: {
@@ -201,7 +204,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     },
     limitations: [
       'The search boundary is the material your team connected and shared, not every item in either provider.',
-      'Connecting Drive does not prove an older file is searchable. Check the captured evidence; upload the file directly if it is missing.',
+      'Connecting Drive does not backfill older files or guarantee an event for every edit. Check the captured evidence; upload the file directly if it is missing.',
       'A cited answer can expose disagreement; it cannot turn disagreement into approval.',
       'Provider sync and extraction may lag behind the moment a message or file changes.',
       'Ambiguous project names, duplicated documents, and renamed channels require a more explicit query.',
@@ -293,7 +296,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '05',
         title: 'Review the exceptions',
-        body: 'Check merged work that was not released, completed Linear issues with no matching implementation evidence, and Slack commitments with no owner or due date. These exceptions are often more valuable than the happy path.',
+        body: 'Check merged work that was not released, completed Linear issues with no matching implementation evidence, and Slack commitments with no owner or due date. Use the auto-updating work record and daily update as starting points, then inspect the source evidence for the reporting window. Label proposed task or record changes as pending until accepted.',
         output: 'A short list of reporting risks and missing evidence.',
       },
       {
@@ -319,7 +322,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         role: 'Declared plan and work state',
         includes: 'Issue updates, comments, status changes, assignees, priorities, and projects.',
         boundary:
-          'A Linear status reflects the tracker. It does not prove that code was released or that users received the outcome.',
+          'A Linear status reflects the tracker. Initial sync captures current fields, not earlier transitions; without webhooks, reconciliation can lag by nearly six hours. It does not prove that code was released or that users received the outcome.',
       },
       {
         provider: 'GitHub',
@@ -437,7 +440,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '06',
         title: 'Close with verification',
-        body: 'End the chronology with the mitigation or fix, the delivery event, and the evidence used to confirm recovery. Keep follow-up work separate from the resolved incident state.',
+        body: 'End the chronology with the mitigation or fix, the delivery event, and the evidence used to confirm recovery. Keep follow-up work separate from the resolved incident state. Add response notes to the work record as evidence; proposed task or record changes still need human approval before they take effect.',
         output: 'A cited handoff or post-incident dossier.',
       },
     ],
@@ -451,7 +454,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
         includes:
           'Issue updates, resolved or regressed states, issue counts and affected-user counts when present, and Sentry releases from selected projects.',
         boundary:
-          'Polled issue events use Sentry’s last-seen time when present and do not preserve a separate first-seen timestamp. This evidence does not replace event-level debugging, stack-trace analysis, or reproduction; an issue near a release is correlation, not proof of causation.',
+          'Polled issue events use Sentry’s last-seen time when present and do not preserve a separate first-seen timestamp. Lifecycle webhook records use delivery receipt time, not the exact time of the state change. Alerts and release deployments are webhook-only; daily reconciliation cannot recover those missed deliveries. This evidence does not replace debugging or reproduction; an issue near a release is correlation, not proof of causation.',
       },
       {
         provider: 'GitHub',
@@ -530,6 +533,14 @@ export const EDITORIAL_MACHINE_SUMMARIES = [
     summary:
       'A practical explanation of how Timeline turns selected source records into chronology and cited answers, with three detailed cross-tool walkthroughs.',
     topics: ['operational memory', 'evidence', 'cited answers', 'cross-tool workflows'],
+  },
+  {
+    route: GUIDES_ROUTE,
+    title: 'Guides',
+    kind: 'guide-index',
+    summary:
+      'Practical walkthroughs for searching conversations and documents, preparing engineering updates, and investigating incidents with cited evidence from your work record.',
+    topics: ['guides', 'cited answers', 'cross-tool workflows'],
   },
   ...EDITORIAL_GUIDES.map((guide) => ({
     route: guide.route,

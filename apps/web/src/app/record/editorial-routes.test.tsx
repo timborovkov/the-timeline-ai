@@ -5,6 +5,7 @@ import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import SentryIncidentGuidePage from '@/app/guides/connect-sentry-incidents-to-releases-discussions-and-fixes/page';
+import GuidesPage from '@/app/guides/page';
 import SlackAndDriveGuidePage from '@/app/guides/search-slack-and-google-drive-together/page';
 import WeeklyEngineeringUpdatesGuidePage from '@/app/guides/weekly-engineering-updates-from-slack-linear-and-github/page';
 import HowItWorksPage from '@/app/how-it-works/page';
@@ -85,6 +86,21 @@ describe('how-it-works and guide routes', () => {
     }
   });
 
+  it('renders a server-readable guides directory with all reviewed walkthroughs', () => {
+    const html = renderToStaticMarkup(<GuidesPage />);
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html.match(/<article\b/g)).toHaveLength(3);
+    expect(html.match(/<time dateTime="2026-11-14"/g)).toHaveLength(3);
+    expect(html).toContain('14 November 2026');
+    expect(html).not.toContain('type="search"');
+    for (const guide of EDITORIAL_GUIDES) {
+      expect(html).toContain(`href="${guide.route}"`);
+      expect(html).toContain(guide.title);
+      expect(html).toContain(guide.summary);
+      expect(html).toContain(guide.nativeConnectors.join(' + '));
+    }
+  });
+
   it('keeps the old record URL as a permanent redirect only', () => {
     const legacyRoute = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
 
@@ -130,6 +146,8 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-up"');
       expect(html).toContain('aria-label="Breadcrumb"');
+      expect(html).toContain('href="/guides"');
+      expect(html).toContain('Browse all guides');
       expect(html).not.toMatch(/Publication|Edition 00|field notes|field guide/u);
       for (const connector of guide.nativeConnectors) {
         const slug = connector

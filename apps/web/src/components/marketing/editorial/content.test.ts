@@ -9,6 +9,7 @@ import {
   findEditorialGuide,
   GUIDE_ROUTES,
   HOW_IT_WORKS_ROUTE,
+  GUIDES_ROUTE,
   NATIVE_EDITORIAL_PROVIDERS,
 } from '@/components/marketing/editorial/content';
 describe('editorial content model', () => {
@@ -16,12 +17,13 @@ describe('editorial content model', () => {
     expect(EDITORIAL_PUBLICATION_NAME).toBe('How Timeline works');
     expect(EDITORIAL_CANONICAL_ROUTES).toEqual([
       HOW_IT_WORKS_ROUTE,
+      GUIDES_ROUTE,
       GUIDE_ROUTES.slackAndDrive,
       GUIDE_ROUTES.weeklyEngineeringUpdates,
       GUIDE_ROUTES.sentryReleaseIncidents,
     ]);
-    expect(new Set(EDITORIAL_CANONICAL_ROUTES).size).toBe(4);
-    expect(EDITORIAL_MACHINE_SUMMARIES).toHaveLength(4);
+    expect(new Set(EDITORIAL_CANONICAL_ROUTES).size).toBe(5);
+    expect(EDITORIAL_MACHINE_SUMMARIES).toHaveLength(5);
     expect(EDITORIAL_MACHINE_SUMMARIES.every((entry) => entry.summary.length > 80)).toBe(true);
   });
 
@@ -62,6 +64,16 @@ describe('editorial content model', () => {
 
   it('uses a plain-language name for the public explanation', () => {
     expect(EDITORIAL_PUBLICATION_NAME).toBe('How Timeline works');
+  });
+
+  it('keeps Drive guidance within captured-change coverage', () => {
+    const guide = findEditorialGuide('search-slack-and-google-drive-together');
+    const text = JSON.stringify(guide);
+    expect(text).toContain('historical files are not enumerated');
+    expect(text).toContain('baseline without writing an event');
+    expect(text).toContain('CRM-relevant');
+    expect(text).toContain('20 MB');
+    expect(text).not.toContain('Supported file snapshots');
   });
 
   it('states native timing and branch boundaries in the affected guides', () => {
