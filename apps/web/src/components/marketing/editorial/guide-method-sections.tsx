@@ -11,7 +11,7 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
     <>
       <section className="border-y border-border bg-surface/45">
         <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-16">
-          <EditorialSectionHeading title="Why this needs more than one source" />
+          <EditorialSectionHeading title="Choose the right evidence for the question" />
           <div className={`${styles.readingMeasure} mt-6 space-y-5 text-base leading-8`}>
             {guide.context.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>

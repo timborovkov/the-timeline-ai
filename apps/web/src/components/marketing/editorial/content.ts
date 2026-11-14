@@ -1,5 +1,6 @@
 import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 
+import { WORKFLOW_GUIDES } from '@/components/marketing/editorial/workflow-guides';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 
 export const EDITORIAL_PUBLICATION_NAME = 'How Timeline works';
@@ -40,14 +41,20 @@ export const GUIDE_ROUTES = {
   slackAndDrive: '/guides/search-slack-and-google-drive-together',
   weeklyEngineeringUpdates: '/guides/weekly-engineering-updates-from-slack-linear-and-github',
   sentryReleaseIncidents: '/guides/connect-sentry-incidents-to-releases-discussions-and-fixes',
+  dailyUpdates: '/guides/automate-daily-team-updates-in-slack',
+  actionItems: '/guides/track-action-items-meetings-slack-email',
+  projectHandover: '/guides/software-project-handover-checklist-template',
+  slackSummaries: '/guides/summarize-slack-channels',
 } as const;
 
 export type GuideRoute = (typeof GUIDE_ROUTES)[keyof typeof GUIDE_ROUTES];
 type GuideSlug = GuideRoute extends `/guides/${infer Slug}` ? Slug : never;
+type EditorialSource = NativeEditorialProvider | 'Email' | 'Meetings' | 'Documents';
+
 type NativeEditorialProvider = (typeof NATIVE_EDITORIAL_PROVIDERS)[number];
 
 interface EditorialSourceBoundary {
-  provider: NativeEditorialProvider;
+  provider: EditorialSource;
   role: string;
   includes: string;
   boundary: string;
@@ -61,7 +68,7 @@ interface EditorialWorkflowStep {
 }
 
 interface EditorialDiagramSource {
-  provider: NativeEditorialProvider;
+  provider: EditorialSource;
   stamp: string;
   signal: string;
 }
@@ -108,6 +115,13 @@ export interface EditorialGuide {
   faqs: readonly EditorialFaq[];
   relatedRoutes: readonly GuideRoute[];
   screenshots?: readonly MarketingScreenshotSlot[];
+  toolkit?: {
+    title: string;
+    introduction: string;
+    template: string;
+    example: string;
+    links: readonly { label: string; href: string }[];
+  };
   cta: {
     title: string;
     body: string;
@@ -227,7 +241,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
           'Ask the answer to show the conflict, the timestamps, and the source of each claim. Do not ask the model to choose an authority rule that your team has not defined.',
       },
     ],
-    relatedRoutes: [GUIDE_ROUTES.weeklyEngineeringUpdates],
+    relatedRoutes: [GUIDE_ROUTES.weeklyEngineeringUpdates, GUIDE_ROUTES.slackSummaries],
     screenshots: [
       {
         file: '12-timeline-slack-dark.png',
@@ -246,7 +260,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
   {
     slug: 'weekly-engineering-updates-from-slack-linear-and-github',
     route: GUIDE_ROUTES.weeklyEngineeringUpdates,
-    title: 'How to create engineering and project updates from Slack, Linear, and GitHub',
+    title: 'Engineering status update template: examples from Slack, Linear, and GitHub',
     shortTitle: 'Build engineering updates',
     summary:
       'A source-aware method for compiling decisions, movement, shipped work, blockers, and next steps without flattening three systems into one status list.',
@@ -365,7 +379,37 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
           'Yes, if the connected sources match the work. The reporting contract still holds: outcomes, decisions, blockers, and commitments, each supported by visible evidence.',
       },
     ],
-    relatedRoutes: [GUIDE_ROUTES.slackAndDrive, GUIDE_ROUTES.sentryReleaseIncidents],
+    relatedRoutes: [
+      GUIDE_ROUTES.dailyUpdates,
+      GUIDE_ROUTES.projectHandover,
+      GUIDE_ROUTES.sentryReleaseIncidents,
+    ],
+    toolkit: {
+      title: 'Engineering status update template and example',
+      introduction:
+        'Use this format for a weekly report or a shorter reporting window. Replace source labels with your own evidence links; the example is fictional.',
+      template: `Project: [name]
+Reporting window: [start → end + timezone]
+Outcomes: [verified result + source; distinguish merge and release]
+Decisions: [decision + approver + source]
+Blockers: [impact + owner + source]
+Next commitments: [action + owner + agreed date]
+Mismatches / missing evidence: [tracker vs delivery vs discussion]
+Reviewed by: [owner]`,
+      example: `Illustrative Acme engineering update
+Window: 9–13 November 2026, UTC
+Outcomes: Callback implementation merged and CI passed [PR #482]. Production release not verified.
+Decisions: Keep broad rollout on hold pending SSO validation [Slack launch review].
+Blockers: ENG-241 still requires validation [Linear].
+Next commitment: Priya to confirm the next validation run; date not agreed [Slack].
+Mismatch: A merged PR does not resolve the rollout blocker.
+Review: Project owner to confirm before distribution.`,
+      links: [
+        { label: 'GitHub capture limits', href: '/integrations/github' },
+        { label: 'Linear setup and history limits', href: '/integrations/linear' },
+        { label: 'Daily team updates', href: GUIDE_ROUTES.dailyUpdates },
+      ],
+    },
     screenshots: [
       {
         file: '11-timeline-dark.png',
@@ -513,6 +557,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       href: '/sign-up',
     },
   },
+  ...WORKFLOW_GUIDES,
 ] as const;
 
 export function findEditorialGuide(slug: string): EditorialGuide | undefined {
@@ -531,7 +576,7 @@ export const EDITORIAL_MACHINE_SUMMARIES = [
     title: EDITORIAL_PUBLICATION_NAME,
     kind: 'how-it-works',
     summary:
-      'A practical explanation of how Timeline turns selected source records into chronology and cited answers, with three detailed cross-tool walkthroughs.',
+      'A practical explanation of how Timeline turns selected source records into chronology and cited answers, with practical cross-tool walkthroughs.',
     topics: ['operational memory', 'evidence', 'cited answers', 'cross-tool workflows'],
   },
   {
@@ -539,7 +584,7 @@ export const EDITORIAL_MACHINE_SUMMARIES = [
     title: 'Guides',
     kind: 'guide-index',
     summary:
-      'Practical walkthroughs for searching conversations and documents, preparing engineering updates, and investigating incidents with cited evidence from your work record.',
+      'Practical guides and templates for daily updates, action items, project handovers, Slack summaries, engineering reports and incident reviews.',
     topics: ['guides', 'cited answers', 'cross-tool workflows'],
   },
   ...EDITORIAL_GUIDES.map((guide) => ({

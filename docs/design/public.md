@@ -491,10 +491,13 @@ with the footer links' typography and treatment.
 ### Guides directory
 
 `/guides` is the public directory for cross-tool walkthroughs. Use the shared
-editorial shell, a short introduction and a responsive three-card grid. Each
+editorial shell, a short introduction and a responsive guide-card grid. Each
 card draws its title, outcome and integrations from the editorial guide model,
 and its visible last-reviewed date from the public-document metadata. No search
-or filters are needed for the current collection. The footer Resources column
+or filters are needed for the current collection. Guides may include selectable
+plain-text templates, clearly labelled fictional worked examples, and
+authoritative setup references. Templates and examples remain server-rendered
+and are included in machine-readable discovery. The footer Resources column
 links to Guides. Article breadcrumbs use Home → Guides → Article, with a Browse
 all guides link beside related walkthroughs. `/how-it-works` remains the product
 explanation; existing article URLs remain canonical.

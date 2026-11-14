@@ -8,6 +8,7 @@ import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
 import { GuideMethodSections } from '@/components/marketing/editorial/guide-method-sections';
+import { GuideToolkit } from '@/components/marketing/editorial/guide-toolkit';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import { MarketingScreenshotBlock } from '@/components/marketing/product-screenshot';
 
@@ -76,6 +77,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
           </div>
         ) : null}
 
+        {guide.toolkit ? <GuideToolkit toolkit={guide.toolkit} /> : null}
         <GuideMethodSections guide={guide} />
         <GuideClosingSections guide={guide} />
       </article>

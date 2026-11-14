@@ -44,7 +44,7 @@ const howItWorksDocument = {
       ...EVIDENCE_FRESHNESS_FAQS.map((faq) => ({ title: faq.question, body: faq.answer })),
       {
         title: 'Questions covered',
-        body: 'Three detailed walkthroughs apply the same cited-answer method to common cross-tool questions.',
+        body: 'Practical walkthroughs apply the same cited-answer method to common cross-tool questions.',
         items: EDITORIAL_GUIDES.map((guide) => `${guide.title}: ${guide.machineSummary}`),
       },
       {
@@ -101,6 +101,21 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
             `${boundary.provider}: ${boundary.role}. Includes: ${boundary.includes} Boundary: ${boundary.boundary}`,
         ),
       },
+      ...(guide.toolkit
+        ? [
+            {
+              title: guide.toolkit.title,
+              body: guide.toolkit.introduction,
+              codeBlock: { content: guide.toolkit.template, language: 'text' },
+            },
+            {
+              title: 'Illustrative worked example',
+              body: 'Fictional example; replace source labels with your own evidence links.',
+              codeBlock: { content: guide.toolkit.example, language: 'text' },
+              links: guide.toolkit.links,
+            },
+          ]
+        : []),
       {
         title: 'Limitations',
         body: 'These limitations remain visible when interpreting or sharing the answer.',
@@ -115,7 +130,7 @@ const guidesDocument = {
   kind: 'guide-index',
   title: 'Guides',
   description:
-    'Practical walkthroughs for searching conversations and documents, preparing engineering updates, and investigating incidents with cited evidence from your work record.',
+    'Practical guides and templates for daily updates, action items, project handovers, Slack summaries, engineering reports and incident reviews.',
   indexability: 'index',
   dates: { modified: GUIDE_REVIEW_DATE, reviewed: GUIDE_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -134,7 +149,7 @@ const guidesDocument = {
     section: 'how-it-works',
     order: 1,
     summary:
-      'Browse practical guides to searching Slack and Drive, preparing engineering updates, and investigating incidents from cited work records.',
+      'Browse guides and reusable templates for daily updates, action items, project handovers, Slack summaries, engineering reports and incident reviews.',
     sections: [
       {
         title: 'Available guides',

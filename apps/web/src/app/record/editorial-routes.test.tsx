@@ -4,9 +4,13 @@ import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import DailyUpdatesGuidePage from '@/app/guides/automate-daily-team-updates-in-slack/page';
 import SentryIncidentGuidePage from '@/app/guides/connect-sentry-incidents-to-releases-discussions-and-fixes/page';
 import GuidesPage from '@/app/guides/page';
 import SlackAndDriveGuidePage from '@/app/guides/search-slack-and-google-drive-together/page';
+import ProjectHandoverGuidePage from '@/app/guides/software-project-handover-checklist-template/page';
+import SlackSummariesGuidePage from '@/app/guides/summarize-slack-channels/page';
+import ActionItemsGuidePage from '@/app/guides/track-action-items-meetings-slack-email/page';
 import WeeklyEngineeringUpdatesGuidePage from '@/app/guides/weekly-engineering-updates-from-slack-linear-and-github/page';
 import HowItWorksPage from '@/app/how-it-works/page';
 import {
@@ -23,6 +27,13 @@ await vi.mock(
 );
 
 const GUIDE_PAGES = [
+  { guide: findEditorialGuideByRoute(GUIDE_ROUTES.dailyUpdates), Page: DailyUpdatesGuidePage },
+  { guide: findEditorialGuideByRoute(GUIDE_ROUTES.actionItems), Page: ActionItemsGuidePage },
+  {
+    guide: findEditorialGuideByRoute(GUIDE_ROUTES.projectHandover),
+    Page: ProjectHandoverGuidePage,
+  },
+  { guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackSummaries), Page: SlackSummariesGuidePage },
   {
     guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive),
     Page: SlackAndDriveGuidePage,
@@ -89,8 +100,8 @@ describe('how-it-works and guide routes', () => {
   it('renders a server-readable guides directory with all reviewed walkthroughs', () => {
     const html = renderToStaticMarkup(<GuidesPage />);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html.match(/<article\b/g)).toHaveLength(3);
-    expect(html.match(/<time dateTime="2026-11-14"/g)).toHaveLength(3);
+    expect(html.match(/<article\b/g)).toHaveLength(7);
+    expect(html.match(/<time dateTime="2026-11-14"/g)).toHaveLength(7);
     expect(html).toContain('14 November 2026');
     expect(html).not.toContain('type="search"');
     for (const guide of EDITORIAL_GUIDES) {
@@ -148,6 +159,13 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain('aria-label="Breadcrumb"');
       expect(html).toContain('href="/guides"');
       expect(html).toContain('Browse all guides');
+      if (guide.toolkit) {
+        expect(html).toContain('Reusable template');
+        expect(html).toContain('Worked example · fictional');
+        expect(html).toContain(renderToStaticMarkup(<>{guide.toolkit.template}</>));
+        expect(html).toContain(renderToStaticMarkup(<>{guide.toolkit.example}</>));
+        for (const link of guide.toolkit.links) expect(html).toContain(`href="${link.href}"`);
+      }
       expect(html).not.toMatch(/Publication|Edition 00|field notes|field guide/u);
       for (const connector of guide.nativeConnectors) {
         const slug = connector

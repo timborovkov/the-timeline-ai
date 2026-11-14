@@ -19,7 +19,7 @@ describe('editorial metadata', () => {
     expect(metadata.robots).toMatchObject({ index: true, follow: true });
     const graph = buildGuidesStructuredData()['@graph'];
     const collection = graph.find((node) => node['@type'] === 'CollectionPage');
-    expect(collection?.hasPart).toHaveLength(3);
+    expect(collection?.hasPart).toHaveLength(7);
     for (const guide of EDITORIAL_GUIDES) {
       const articleGraph = buildGuideStructuredData(guide)['@graph'];
       const article = articleGraph.find((node) => node['@type'] === 'TechArticle');

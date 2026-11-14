@@ -64,6 +64,13 @@ describe('editorial public documents', () => {
       expect(compact).toContain(`[${guide.title}](${SITE_URL}${guide.route})`);
       expect(full).toContain(`URL: ${SITE_URL}${guide.route}`);
       expect(full).toContain(firstBoundary.boundary);
+      if (guide.toolkit) {
+        expect(full).toContain(guide.toolkit.template);
+        expect(full).toContain(guide.toolkit.example);
+      }
+      for (const route of guide.relatedRoutes) {
+        expect(PUBLIC_DOCUMENT_REGISTRY.get(route)).toBeDefined();
+      }
     }
   });
 
