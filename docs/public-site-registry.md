@@ -182,3 +182,7 @@ do not add ordinary noindex pages to the robots disallow list.
 `/agents/provisioning.md` is a machine document linked from setup, excluded from the sitemap and automatic llms registry expansion, with a brief discovery link in llms.txt. The public skill and signed-in skill download read the canonical plugin SKILL.md. Discovery remains useful without an account or connection.
 
 The 2026-11-07 setup/skill update establishes reporting in OAuth consent and finishes first use with a cited task result or an approved brief. `llms.txt` remains the discovery index; reporting controls and operating rules stay in consent, setup and the canonical skill.
+
+Legal consent versions can carry a same-day `.N` revision. Public-document
+modified/reviewed dates use only the `YYYY-MM-DD` date portion; the full legal
+version remains unchanged for acceptance checks.

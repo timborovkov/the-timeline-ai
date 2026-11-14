@@ -1,6 +1,10 @@
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 
-import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site/types';
+import type {
+  PublicDocument,
+  PublicIsoDate,
+  PublicLlmsContentSection,
+} from '@/lib/public-site/types';
 
 import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-documents';
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
@@ -27,6 +31,10 @@ import { HELP_PAGES } from '@/lib/help-content';
 import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
 import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-claims';
+
+// Legal consent versions may have a same-day .N revision; public dates cannot.
+const termsDate = TERMS_VERSION.slice(0, 10) as PublicIsoDate;
+const privacyDate = PRIVACY_VERSION.slice(0, 10) as PublicIsoDate;
 
 const LAST_REVIEWED = '2026-08-12' as const;
 
@@ -340,7 +348,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Terms of Use',
     description: 'Terms governing access to The Timeline.',
     indexability: 'index',
-    dates: { modified: TERMS_VERSION, reviewed: TERMS_VERSION },
+    dates: { modified: termsDate, reviewed: termsDate },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -358,7 +366,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Privacy Policy',
     description: 'How The Timeline processes personal data and team content.',
     indexability: 'index',
-    dates: { modified: PRIVACY_VERSION, reviewed: PRIVACY_VERSION },
+    dates: { modified: privacyDate, reviewed: privacyDate },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
