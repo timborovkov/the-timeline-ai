@@ -97,6 +97,9 @@ scoring rules before held-out runs. LangSmith experiments and dated reports form
 the evaluation history: once results have been inspected, future tuning must not
 claim that same corpus is fresh held-out evidence. Create a new version containing
 fresh held-out families after tuning; keep historical results and failures.
+If a reference/scoring defect is corrected, retain the original experiment and
+identify any saved-output rescore with its source experiment and new corpus/revision.
+A rescore is not another model execution or fresh held-out evidence.
 
 Classification runs four concurrent cases per model; agents run sequentially to
 isolate database state. Latency includes retries and is diagnostic, not a controlled

@@ -385,7 +385,7 @@ const heldOut: Record<AgentScenario, Partial<AgentCase>[]> = {
         ),
       ],
       expectedClaims: [
-        { value: 'Gate Alpha', state: 'historical', evidence: [0] },
+        { value: 'Gate Alpha', state: 'historical', evidence: [], allowedEvidence: [0, 1] },
         { value: 'Gate Beta', state: 'approved', evidence: [1] },
       ],
       rationale: 'Explicit approved supersession changes current authority.',

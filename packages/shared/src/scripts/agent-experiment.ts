@@ -109,7 +109,7 @@ if (!values.sync) {
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
             promptVersion: AGENT_PROMPT_VERSION,
-            evaluatorVersion: 1,
+            evaluatorVersion: 2,
             requestedModel: TIMELINE_MODELS.agent.id,
             synthetic: true,
             retrieval: 'controlled',

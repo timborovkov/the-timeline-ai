@@ -223,3 +223,51 @@ it('marks JSON-escaped secret content as a hard disclosure failure', () => {
   };
   expect(scoreAgent(row, observation).hardFailure).toBe(true);
 });
+
+it('accepts the replacement record as corroboration of the historical value', () => {
+  const row = requireValue(AGENT_CASES.find((row) => row.id === 'agent-stale-evidence-6'));
+  const ids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
+  const answer = JSON.stringify({
+    status: 'answered',
+    claims: [
+      { value: 'Gate Alpha', state: 'historical', citations: ids.map((id) => `[ev:${id}]`) },
+      { value: 'Gate Beta', state: 'approved', citations: [`[ev:${ids[1]}]`] },
+    ],
+  });
+  expect(
+    scoreAgent(row, {
+      answer,
+      executionSuccess: true,
+      truncated: false,
+      tools: ['search_timeline'],
+      toolErrors: [],
+      retrievalCalls: 1,
+      evidenceIds: ids,
+    }).passed,
+  ).toBe(true);
+});
+
+it('accepts either historical source but never an uncited historical claim', () => {
+  const row = requireValue(AGENT_CASES.find((row) => row.id === 'agent-stale-evidence-6'));
+  const ids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
+  for (const historicalCitations of [[`[ev:${ids[0]}]`], [`[ev:${ids[1]}]`], []]) {
+    const answer = JSON.stringify({
+      status: 'answered',
+      claims: [
+        { value: 'Gate Alpha', state: 'historical', citations: historicalCitations },
+        { value: 'Gate Beta', state: 'approved', citations: [`[ev:${ids[1]}]`] },
+      ],
+    });
+    expect(
+      scoreAgent(row, {
+        answer,
+        executionSuccess: true,
+        truncated: false,
+        tools: ['search_timeline'],
+        toolErrors: [],
+        retrievalCalls: 1,
+        evidenceIds: ids,
+      }).passed,
+    ).toBe(historicalCitations.length > 0);
+  }
+});

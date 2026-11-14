@@ -87,6 +87,7 @@ export function scoreAgent(row: AgentCase, observation: AgentObservation) {
           requireValue(expected[index]).allowedEvidence ?? requireValue(expected[index]).evidence
         ).map((i) => `[ev:${observation.evidenceIds[i]}]`);
         return (
+          actual.length > 0 &&
           actual.every((citation) => allowed.includes(citation)) &&
           new Set(actual).size === actual.length &&
           required.every((citation) => actual.includes(citation))
