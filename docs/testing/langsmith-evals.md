@@ -1,65 +1,112 @@
-# LangSmith classification experiments
+# LangSmith synthetic benchmarks
 
-The first LangSmith benchmark covers the repository's synthetic task-category
-fixtures. It calls the real single-task classifier through shared inference;
-production model defaults and production tracing remain unchanged. Agent workflow
-experiments, production feedback capture and training exports are not implemented
-by this runner.
+Classification experiments call the real single-task classifier through shared
+inference. Agent experiments call the real agent with isolated synthetic records,
+real database visibility checks, and controlled retrieval responses. Production
+models, prompts, and tracing settings remain unchanged. Production feedback
+capture and training exports are outside these workflows.
+
+## Datasets and splits
+
+The classification corpus contains 400 cases: 240 development and 160 held-out.
+All 120 previously inspected fixtures remain in development. Cases cover every
+category, ambiguous and conflicting context, multiple business functions, typos,
+abbreviations, multilingual text, long inputs, specialist vocabulary, and injection.
+Labels describe work visible after packet truncation; rationales explain the label.
+
+The agent corpus contains 60 cases, split 30/30. Each split has five cases for
+missing evidence, contradictions, stale evidence, citations, permissions, and tool
+failures. The harness migrates an isolated in-memory PGlite database, resets it
+between cases, and injects synthetic search hits through the existing retrieval
+seam. Actual team scope filters records, including private, restricted, and foreign
+workspace records returned by deliberately overinclusive retrieval. Embeddings and
+retrieval ranking are controlled, so this benchmark does **not** measure retrieval
+recall. Existing end-to-end freshness evaluations remain separate.
+
+Stable case IDs, family IDs, scenario tags, split assignments, and rationales live
+in Git. Keep related examples and paraphrases in one split. Never move inspected
+development cases into held-out. Automated checks catch exact duplicate content
+and family overlap; semantic overlap and label quality still require review.
 
 ## Run
 
-Use the pinned Bun and install dependencies with `bun run deps --frozen-lockfile`.
-Provide `LANGSMITH_API_KEY` and, for comparisons, `OPENROUTER_API_KEY` through the
-environment. Optional `LANGSMITH_ENDPOINT` and `LANGSMITH_WORKSPACE_ID` select the
-account region/workspace. Never put keys in command arguments or reports.
+Use pinned Bun and `bun run deps --frozen-lockfile`. Set `LANGSMITH_API_KEY` and,
+for comparisons, `OPENROUTER_API_KEY` in the environment. Optional
+`LANGSMITH_ENDPOINT` and `LANGSMITH_WORKSPACE_ID` select the region/workspace.
+Never place credentials in command arguments or reports.
 
 ```sh
 bun run eval:sync
-bun run eval:compare --candidate=<model-id> --out=/tmp/classification-comparison.json
+bun run eval:agent:sync
+bun run eval:compare --limit=2 --out=/tmp/classification-smoke.json
+bun run eval:agent:compare --limit=1 --out=/tmp/agent-smoke.json
 ```
 
-Sync creates a dataset named with a hash of the complete fixture corpus. Repeated
-syncs reuse matching examples and repair interrupted uploads. Unexpected examples,
-duplicate case IDs or changed reference labels are rejected rather than overwritten.
-Do not edit these datasets in LangSmith; edit fixtures in Git and sync a new version.
-Run one sync at a time. Dataset inputs identify local cases; the runner never sends
-arbitrary remotely edited text to a model. Synthetic task text is inspectable in
-example metadata and model traces.
+Both runners default to `--split=development --repeats=1`. Repetitions must be
+between 1 and 10. `--limit` selects the first N cases within the selected split and
+marks the run partial. Use new output paths; existing reports are never overwritten.
 
-Compare always includes the pinned production classifier model. Repeat `--candidate`
-to compare additional models on identical cases. Candidate access depends on the
-OpenRouter key's permissions and provider availability; do not widen a production
-key's model restrictions for this benchmark. Use an evaluation key if necessary.
-
-For an inexpensive connectivity check:
+For frozen held-out comparisons:
 
 ```sh
-bun run eval:compare --limit=2 --out=/tmp/classification-smoke.json
+bun run eval:sync --split=held-out
+bun run eval:agent:sync --split=held-out
+bun run eval:compare --split=held-out --repeats=3 --candidate=deepseek/deepseek-v4-pro-0813 --out=/tmp/classification-held-out.json
+bun run eval:agent:compare --split=held-out --repeats=3 --out=/tmp/agent-held-out.json
 ```
 
-A limited run is marked partial and cannot pass the release gate. Full runs use the
-existing thresholds: exact accuracy at least 85%, macro recall at least 80%, and
-100% accuracy on injection cases. Failed calls count as incorrect and are reported
-separately. A failing full-run gate or failed call produces a nonzero exit status.
-Reports refuse to overwrite an existing file. Each experiment records the Git
-revision, dirty-worktree status, corpus hash, system-prompt hash and evaluator
-version. Use a clean committed revision for promotion evidence; the revision also
-identifies packet construction, schemas and inference settings.
+Classification always includes its pinned baseline; repeat `--candidate` to add
+models. Agent runs use the configured agent baseline and existing fallback policy;
+reports retain requested and served model IDs when available. Candidate access
+requires provider permissions. Do not widen production key restrictions for evals.
 
-Inspect per-case labels and execution scores in LangSmith, and per-category recall,
-p95 call duration and release gates in the JSON report. Duration includes retries
-inside shared inference. LLM child traces carry SDK usage information when available;
-the local report does not yet aggregate token counts or provider-reported costs.
-Do not interpret missing cost data as zero. Model candidates run sequentially, with
-four concurrent cases per model; this is a quality comparison with diagnostic latency,
-not a controlled load benchmark.
+Sync names datasets by corpus hash and split. Repeated sync repairs interrupted
+uploads and rejects duplicate IDs, changed reference outputs, or unexpected examples.
+Old versions remain intact. Run one sync per dataset at a time. Edit fixtures in
+Git, never in LangSmith; remote text is never executed as model input.
+
+## Scores and interpretation
+
+Classification reports include exact accuracy, macro recall, category and scenario
+scores with denominators, failed case IDs, execution failures, and p95 latency.
+Every failed call counts as incorrect. Full held-out runs retain the existing gates:
+accuracy ≥85%, macro recall ≥80%, and injection accuracy 100%. Development and
+partial runs cannot pass a release gate. Paired comparisons report baseline wins,
+candidate wins, and disagreements separately for each repetition. Repeated answers
+are not independent new cases and are not pooled into a larger sample size.
+
+Agent feedback scores execution, structured facts and their authority, structured citation IDs,
+permissions, tool selection, and failure handling separately. Required citations
+must identify visible fixture records; forbidden content or tool actions are hard
+failures. Benchmark questions request JSON containing an answer status and scalar claims,
+authority states, and per-claim citation markers. Scoring rejects extra claims,
+authority inversions, unsupported or malformed citations, and extra fields/prose.
+This deliberately constrained response contract does not evaluate free-form writing
+quality. Inspect failed criteria and answer text together. No LLM judge is used. Agent scores are diagnostic;
+there is no aggregate model-promotion threshold. Any failed agent case, execution
+failure, missing feedback, or classification held-out gate returns nonzero.
+
+Timeouts, rate limits, malformed JSON, invalid categories, and missing/duplicate
+batch results also have deterministic tests. Injected agent retrieval failures
+exercise how the agent handles unavailable evidence; they do not measure provider
+retry behavior. The agent only has read-only tools and no external MCP discovery.
+
+Each experiment records Git revision, dirty status, corpus hash, split, repetition,
+evaluation time, evaluator version, and prompt hash/version. Commit fixtures and
+scoring rules before held-out runs. LangSmith experiments and dated reports form
+the evaluation history: once results have been inspected, future tuning must not
+claim that same corpus is fresh held-out evidence. Create a new version containing
+fresh held-out families after tuning; keep historical results and failures.
+
+Classification runs four concurrent cases per model; agents run sequentially to
+isolate database state. Latency includes retries and is diagnostic, not a controlled
+load benchmark. LLM traces carry usage when available; reports do not aggregate
+provider cost. Missing cost is not zero.
 
 ## Data boundary
 
-Only the checked-in synthetic corpus is eligible. The command refuses production
-mode and enables rich tracing only within its evaluation process. It requires no
-database service and supplies local schema placeholders for database/auth settings
-when absent. Do not use customer data or production configuration for this command.
-Retention and access follow the selected LangSmith workspace; this workflow does
-not change account settings or establish training consent. See the
-[security standard](../security-privacy-trust.md) for production collection rules.
+Only checked-in synthetic fixtures are eligible. Commands reject production mode
+and enable rich tracing within the eval process. They require no production data
+store. Retention and access follow the selected LangSmith workspace; these commands
+do not change account settings or establish training consent. See the
+[security standard](../security-privacy-trust.md).

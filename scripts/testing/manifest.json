@@ -2497,5 +2497,14 @@
   },
   "packages/shared/src/task-categories/experiment-report.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/evals/benchmark.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/failure.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/evals/agent-harness.test.ts": {
+    "group": "unit"
   }
 }
