@@ -7,16 +7,15 @@ import { Client } from 'langsmith';
 import { evaluate } from 'langsmith/evaluation';
 
 import { getEnv } from '#src/env.js';
+import { requireValue } from '#src/evals/benchmark.js';
+import { selectBenchmark, syncBenchmark } from '#src/evals/benchmark.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { CLASSIFICATION_CASES } from '#src/task-categories/benchmark-cases.js';
 import {
   buildTaskCategoryPacket,
   classifyTaskCategory,
   TASK_CATEGORY_SYSTEM_PROMPT,
 } from '#src/task-categories/classifier.js';
-
-import { requireValue } from '#src/evals/benchmark.js';
-import { selectBenchmark, syncBenchmark } from '#src/evals/benchmark.js';
-import { CLASSIFICATION_CASES } from '#src/task-categories/benchmark-cases.js';
 import {
   summarizeClassification,
   compareClassificationRuns,

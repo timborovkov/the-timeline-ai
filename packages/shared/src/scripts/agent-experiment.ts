@@ -8,13 +8,12 @@ import { evaluate } from 'langsmith/evaluation';
 
 import { AGENT_PROMPT_VERSION } from '#src/agent/system-prompt.js';
 import { getEnv } from '#src/env.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-
 import { AGENT_CASES } from '#src/evals/agent-cases.js';
 import { createAgentHarness } from '#src/evals/agent-harness.js';
 import { scoreAgent, summarizeAgent, type AgentResult } from '#src/evals/agent-report.js';
 import { selectBenchmark, syncBenchmark } from '#src/evals/benchmark.js';
 import { requireValue } from '#src/evals/benchmark.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 const { values } = parseArgs({
   options: {
     sync: { type: 'boolean' },

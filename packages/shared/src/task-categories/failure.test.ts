@@ -3,6 +3,7 @@ import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
+import { requireValue } from '#src/evals/benchmark.js';
 import { chatStructured } from '#src/llm/chat.js';
 import {
   buildTaskCategoryPacket,
@@ -10,7 +11,6 @@ import {
   classifyTaskCategories,
 } from '#src/task-categories/classifier.js';
 
-import { requireValue } from '#src/evals/benchmark.js';
 // Inject failures at inference boundaries; never make provider calls. Malformed
 // model output must traverse the real schema parser, not a stubbed classifier.
 const original = { ...process.env };

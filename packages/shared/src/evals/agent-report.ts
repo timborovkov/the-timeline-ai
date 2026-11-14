@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-import type { AgentCase } from '#src/evals/agent-cases.js';
-
 import { requireValue } from '#src/evals/benchmark.js';
 import { scenarioScores } from '#src/evals/benchmark.js';
+
+import type { AgentCase } from '#src/evals/agent-cases.js';
 export interface AgentObservation {
   answer: string;
   executionSuccess: boolean;

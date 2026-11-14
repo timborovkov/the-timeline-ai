@@ -1,6 +1,5 @@
-import { TASK_CATEGORIES, type TaskCategory } from '#src/task-categories/types.js';
-
 import { scenarioScores } from '#src/evals/benchmark.js';
+import { TASK_CATEGORIES, type TaskCategory } from '#src/task-categories/types.js';
 
 export interface ClassificationResult {
   id: string;

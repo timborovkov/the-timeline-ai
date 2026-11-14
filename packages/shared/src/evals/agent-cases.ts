@@ -1,6 +1,7 @@
+import { requireValue } from '#src/evals/benchmark.js';
+
 import type { BenchmarkCase } from '#src/evals/benchmark.js';
 
-import { requireValue } from '#src/evals/benchmark.js';
 export const AGENT_SCENARIOS = [
   'missing-evidence',
   'contradictory-evidence',

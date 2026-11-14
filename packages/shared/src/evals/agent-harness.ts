@@ -4,6 +4,7 @@ import { rawEvents } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { askAgent } from '#src/agent/ask.js';
+import { requireValue } from '#src/evals/benchmark.js';
 import { buildSearchHit } from '#src/test/agent-eval-harness.js';
 import { createResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -11,7 +12,6 @@ import type { AskAgentDeps } from '#src/agent/ask.js';
 import type { AgentCase } from '#src/evals/agent-cases.js';
 import type { AgentObservation } from '#src/evals/agent-report.js';
 
-import { requireValue } from '#src/evals/benchmark.js';
 const TEAM = '11111111-1111-4111-8111-111111111111';
 const FOREIGN = '22222222-2222-4222-8222-222222222222';
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

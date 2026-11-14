@@ -2,7 +2,6 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import { TASK_CATEGORY_EVAL_CASES } from '#src/task-categories/eval-cases.js';
-
 import { summarizeClassification } from '#src/task-categories/experiment-report.js';
 
 describe('classification experiments', () => {

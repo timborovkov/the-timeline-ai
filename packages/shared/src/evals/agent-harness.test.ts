@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, expect, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
-import { makeAskAgentToolRoundModel } from '#src/test/agent-eval-harness.js';
-
 import { AGENT_CASES } from '#src/evals/agent-cases.js';
 import { createAgentHarness } from '#src/evals/agent-harness.js';
 import { requireValue } from '#src/evals/benchmark.js';
+import { makeAskAgentToolRoundModel } from '#src/test/agent-eval-harness.js';
 // Real migrations and team scope must filter adversarial retrieval hits before
 // evidence reaches a model, even for an owner. Model and retrieval are offline.
 const original = { ...process.env };

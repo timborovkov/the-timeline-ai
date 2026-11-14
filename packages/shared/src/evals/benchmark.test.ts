@@ -1,7 +1,5 @@
 import { expect, it } from 'bun:test';
 
-import { TASK_CATEGORIES } from '#src/task-categories/types.js';
-
 import { AGENT_CASES, AGENT_SCENARIOS } from '#src/evals/agent-cases.js';
 import { scoreAgent, type AgentObservation } from '#src/evals/agent-report.js';
 import { requireValue } from '#src/evals/benchmark.js';
@@ -11,6 +9,7 @@ import {
   compareClassificationRuns,
   summarizeClassification,
 } from '#src/task-categories/experiment-report.js';
+import { TASK_CATEGORIES } from '#src/task-categories/types.js';
 // Benchmarks must keep inspected families out of held-out evidence and failures
 // out of successful scores. All fixtures and test observations are synthetic.
 it('validates corpus sizes, labels, scenarios and independent splits', () => {
