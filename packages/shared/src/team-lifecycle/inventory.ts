@@ -33,6 +33,7 @@ export const RETAINED_TEAM_TABLES = [
   'team_billing_accounts',
 ] as const;
 export const PURGED_TEAM_TABLES = [
+  'diagnostic_reports',
   'agent_suggestion_evidence',
   'agent_suggestion_items',
   'agent_suggestions',

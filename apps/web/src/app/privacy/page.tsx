@@ -213,6 +213,8 @@ function PrivacyAiAndProviderSections() {
         underlying evidence.
       </p>
 
+      <OptionalConversationReports />
+
       <h2>6. Meetings, recordings, and transcripts</h2>
       <p>
         If a team enables meeting capture, Recall.ai joins as a visible bot and processes meeting
@@ -806,5 +808,32 @@ export default function PrivacyPage() {
       <PrivacyRetentionSections />
       <PrivacyRightsAndClosingSections />
     </LegalPage>
+  );
+}
+
+function OptionalConversationReports() {
+  return (
+    <>
+      <h3>Optional conversation reports</h3>
+      <p>
+        Workspace owners and admins can enable conversation report sharing; it is disabled by
+        default. If enabled, you can choose to share a conversation for troubleshooting. Before
+        submitting, you can review and edit the conversation text and your description of the
+        problem. We collect those submitted fields with your sender and workspace identifiers,
+        consent version, and submission and expiry times. Hidden tool results, attachments, and
+        source documents are not automatically included. Sharing does not give staff access to other
+        conversations or workspace records.
+      </p>
+      <p>
+        Authorized Timeline staff may review submitted reports to investigate the issue, and each
+        report read is audited. Report content is encrypted in Timeline storage. We do not forward
+        these reports to LangSmith or use them for model training. Reports become unavailable after
+        30 days and are removed by scheduled cleanup. You can delete your report earlier from
+        Conversation reports; this deletes the active copy, not the original conversation. Backup
+        copies may remain under backup retention, and content-free consent and access audit records
+        are retained separately. Contact support if you can no longer access the workspace.
+        Disabling workspace sharing prevents new submissions; it does not delete existing reports.
+      </p>
+    </>
   );
 }

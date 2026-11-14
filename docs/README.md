@@ -37,3 +37,5 @@ Remove completed roadmap items in the completing change. Ordinary implementation
 Use Markdown for internal authoring. Product email templates, public app content and the distributed Timeline skill are runtime artifacts with their own validation. Bundled third-party skills retain attribution and package structure; update them deliberately from their provenance rather than hand-merging reference files.
 
 A normal change reviews affected owners and inbound links. A requested full audit reviews the entire set. Keep the public path/anchor map in sync when moving documents; do not change historical SQL migrations to fix a prose link.
+
+- [Conversation diagnostics](conversation-diagnostics.md): opt-in support reports, staff access, and retention.

@@ -10,6 +10,7 @@ import {
 import { childLogger, queue } from '@timeline/shared';
 import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
+import { pruneDiagnosticReports } from '@timeline/shared/diagnostics/operator';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import {
@@ -443,6 +444,13 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
           log.info(retention, 'janitor: platform record retention completed');
       } catch (err: unknown) {
         log.error({ err }, 'janitor: platform record retention failed; next tick will retry');
+        captureWorkerException(err);
+      }
+      try {
+        const deleted = await pruneDiagnosticReports(deps.db);
+        if (deleted > 0) log.info({ deleted }, 'janitor: expired diagnostic reports removed');
+      } catch (err: unknown) {
+        log.error({ err }, 'janitor: diagnostic report retention failed; next tick will retry');
         captureWorkerException(err);
       }
       const result = await processJanitorTick({ db: deps.db });

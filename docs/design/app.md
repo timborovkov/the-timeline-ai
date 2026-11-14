@@ -770,3 +770,13 @@ icons; content results retain their context and due dates. Arrow navigation,
 Enter, Escape, active-descendant semantics, and row actions keep their existing
 linear order. Opening and closing use the shared popover transition; closing
 returns focus to the search input.
+
+## Conversation reports
+
+Completed Ask conversations expose a quiet “Report an issue” link. The report page
+shows editable conversation text, a problem description and an unchecked explicit
+consent control. It excludes tool and source payloads. Submission errors retain the
+user’s edits; successful submissions offer deletion through the sender’s report list.
+Workspace sharing controls live on that page, linked from Team settings, and do not
+constitute consent for members. Staff report content requires a deliberate audited
+open action, never automatic list previews.

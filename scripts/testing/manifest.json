@@ -1,16 +1,34 @@
 {
-  "packages/shared/src/agent/workspace-tools.test.ts": { "group": "integration" },
-  "packages/shared/src/objects/chat-turns.test.ts": { "group": "integration" },
-  "apps/web/src/lib/chat-session.test.ts": { "group": "unit" },
-  "apps/web/src/lib/kanban-keyboard.test.ts": { "group": "unit" },
-  "apps/worker/src/workers/boardQualification.test.ts": { "group": "unit" },
-  "apps/worker/src/workers/boardQualification-discovery.test.ts": { "group": "integration" },
+  "packages/shared/src/agent/workspace-tools.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/objects/chat-turns.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/lib/chat-session.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/kanban-keyboard.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/boardQualification.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/boardQualification-discovery.test.ts": {
+    "group": "integration"
+  },
   "apps/web/src/app/workspace-suspended/page.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/components/agent-reporting-settings.test.tsx": { "group": "dom" },
-  "packages/shared/src/boards/qualification.live-eval.test.ts": { "group": "live" },
-  "apps/web/src/components/boards/board-qualification-fields.test.tsx": { "group": "dom" },
+  "apps/web/src/components/agent-reporting-settings.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/boards/qualification.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/web/src/components/boards/board-qualification-fields.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/app/team-deletion-requested/page.test.tsx": {
     "group": "dom"
   },
@@ -2476,5 +2494,11 @@
   },
   "apps/worker/src/workers/engine.live-eval.test.ts": {
     "group": "live"
+  },
+  "packages/shared/src/diagnostics/scope.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/diagnostic-report-form.test.tsx": {
+    "group": "dom"
   }
 }

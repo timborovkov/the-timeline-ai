@@ -13,6 +13,11 @@ const {
 
 // Checked against the composed scope at withTeam; new operations require a deliberate policy.
 export const WORKSPACE_OPERATOR_POLICY = {
+  'diagnostics.settings': accountRead,
+  'diagnostics.configure': accountWrite,
+  'diagnostics.submit': accountWrite,
+  'diagnostics.list': accountRead,
+  'diagnostics.remove': accountWrite,
   'lifecycle.inventoryIndirect': maintenanceAccountRead,
   'lifecycle.purgeIndirect': maintenanceAccountWrite,
   'lifecycle.settlePriorUsage': maintenanceAccountWrite,
