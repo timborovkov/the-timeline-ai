@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-11-10 |
+| Version | 2026-11-14 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](evidence/provider-privacy-research.md) |
@@ -559,7 +559,7 @@ Every change must preserve these rules:
 - All Timeline-controlled AI requests use the shared inference layer and the
   fail-closed privacy routing in section 7. Recall meeting transcription stays
   exclusively behind the meeting-bots provider boundary described there.
-- Production tracing of prompts or outputs remains disabled.
+- Automatic production tracing of prompts or outputs remains disabled. Explicitly submitted conversation reports follow the separate [diagnostic-report contract](conversation-diagnostics.md); this does not authorize background collection.
 - Credentials use the shared secret-encryption or one-way hashing path; no
   plaintext secret persistence.
 - External MCP/integration content is fenced as untrusted, and untrusted URLs
@@ -734,3 +734,20 @@ Sentry intake and queued delivery require current source selection. GitHub captu
 [Website sources](websites.md) extend the existing Firecrawl data flow to manual and scheduled capture. URL, schedule, actor/credential identifiers, run status, immutable snapshots and page-version associations have separate operational/evidence purposes. Website grants are explicit; worker execution revalidates them. Source removal is not erasure.
 
 Bot completion outbox records temporarily retain AES-256-GCM encrypted delivery payloads and provider credentials in PostgreSQL, then hand off to the existing encrypted Redis delivery queue. Outbox records are removed after enqueue or one day after completion, with a two-day creation-age ceiling; website completion queue receipts retain the encrypted payload for at most one day to deduplicate enqueue recovery; logs contain no payloads. Existing processor retention/DPA gaps remain open. Material terms/privacy versions were advanced; source changes do not constitute counsel approval or production publication.
+
+## User-submitted conversation reports
+
+[Conversation diagnostics](conversation-diagnostics.md) owns this optional support flow.
+Workspace sharing defaults off; admin enablement is not member consent. Each member
+reviews editable text and explicitly submits under the current consent version.
+Only the submitted fields are copied, encrypted in PostgreSQL using the existing
+Railway infrastructure. No LangSmith, email, analytics, or training export receives
+this content. Existing infrastructure/provider evidence gaps remain open.
+
+Verified platform staff reads are audited before content returns; staff impersonation
+cannot submit consent or change sharing. Expiry denies access after 30 days independently
+of cleanup. The worker deletes expired rows; sender deletion removes the active copy.
+Backups and content-free audits have separate retention; no total-erasure deadline is
+claimed. Restore procedures must purge expired reports before serving requests.
+The privacy version advances for renewed acknowledgment. Repository changes are not
+counsel approval, deployment evidence, or evidence of completed backup deletion.

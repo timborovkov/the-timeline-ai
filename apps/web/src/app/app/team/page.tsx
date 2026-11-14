@@ -118,6 +118,9 @@ export default async function TeamSettingsPage({
   } = await loadTeamSettingsPage({ searchParams });
   return (
     <div className="space-y-4">
+      <Link href="/app/diagnostics" className="text-sm underline">
+        Conversation report sharing
+      </Link>
       <PageHeader
         variant="collection"
         title="Team"

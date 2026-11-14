@@ -205,13 +205,7 @@ function PrivacyAiAndProviderSections() {
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyDetail}
         <TranscriptionRetentionSources />
       </p>
-      <p>
-        We do not use Customer Content to train or fine-tune any model, or to build model-training
-        datasets. Creating customer-specific embeddings for retrieval is service processing, not
-        model training. We also disable rich prompt-and-output observability tracing in hosted
-        production. AI output can be inaccurate; Timeline keeps citations so users can inspect the
-        underlying evidence.
-      </p>
+      <PrivacyConversationAndTrainingDisclosure />
 
       <h2>6. Meetings, recordings, and transcripts</h2>
       <p>
@@ -806,5 +800,39 @@ export default function PrivacyPage() {
       <PrivacyRetentionSections />
       <PrivacyRightsAndClosingSections />
     </LegalPage>
+  );
+}
+
+function PrivacyConversationAndTrainingDisclosure() {
+  return (
+    <>
+      <p>
+        We do not use Customer Content to train or fine-tune any model, or to build model-training
+        datasets. Creating customer-specific embeddings for retrieval is service processing, not
+        model training. We also disable rich prompt-and-output observability tracing in hosted
+        production. AI output can be inaccurate; Timeline keeps citations so users can inspect the
+        underlying evidence.
+      </p>
+      <h3>Optional conversation reports</h3>
+      <p>
+        Workspace owners and admins can enable conversation report sharing; it is disabled by
+        default. If enabled, you can choose to share a conversation for troubleshooting. Before
+        submitting, you can review and edit the conversation text and your description of the
+        problem. We collect those submitted fields with your sender and workspace identifiers,
+        consent version, and submission and expiry times. Hidden tool results, attachments, and
+        source documents are not automatically included. Sharing does not give staff access to other
+        conversations or workspace records.
+      </p>
+      <p>
+        Authorized Timeline staff may review submitted reports to investigate the issue, and each
+        report read is audited. Report content is encrypted in Timeline storage. We do not forward
+        these reports to LangSmith or use them for model training. Reports become unavailable after
+        30 days and are removed by scheduled cleanup. You can delete your report earlier from
+        Conversation reports; this deletes the active copy, not the original conversation. Backup
+        copies may remain under backup retention, and content-free consent and access audit records
+        are retained separately. Contact support if you can no longer access the workspace.
+        Disabling workspace sharing prevents new submissions; it does not delete existing reports.
+      </p>
+    </>
   );
 }

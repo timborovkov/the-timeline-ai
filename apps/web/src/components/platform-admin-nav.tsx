@@ -10,6 +10,7 @@ const links = [
   ['Teams', '/app/admin/teams'],
   ['Deletion requests', '/app/admin/teams?status=requested'],
   ['Audit', '/app/admin/audit'],
+  ['Conversation reports', '/app/admin/diagnostics'],
   ['Billing', '/app/admin/billing'],
   ['Back to workspace', '/app'],
 ] as const;
