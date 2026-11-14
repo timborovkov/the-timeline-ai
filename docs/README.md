@@ -8,7 +8,7 @@ Read the document for the task at hand. Current behavior, future work and histor
 - [Railway deployment](railway.md), [operations and maintenance](operations.md).
 - [Integration setup](setup/integrations.md), [OpenRouter](setup/openrouter.md), [Polar billing](setup/polar.md), [Resend](setup/resend.md).
 - [Telegram](setup/telegram.md), [Slack conversations](setup/slack.md), [meeting bots](setup/meeting-bots.md), [analytics](setup/analytics.md), [Sentry](setup/sentry.md).
-- [Platform administration](platform-admin.md), [support deletion](setup/manual-support-deletion.md).
+- [Platform administration](platform-admin.md), [support deletion](setup/manual-support-deletion.md), [conversation diagnostics](conversation-diagnostics.md).
 
 ## Understand and change behavior
 

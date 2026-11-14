@@ -417,6 +417,16 @@ export default function TrustPage() {
                       needs.
                     </p>
                     <p>
+                      Conversation reports are optional. A workspace owner or admin must enable
+                      sharing, and you must review and explicitly submit each report. You can edit
+                      or remove messages before sending. Authorized staff can review only the
+                      submitted report through this flow, with access recorded in an audit log.
+                      Reports are not sent to LangSmith or used for model training. They expire
+                      after 30 days and are removed by scheduled cleanup; you can delete the active
+                      copy earlier. Backup retention and separate audit records still apply. Sharing
+                      a report does not grant access to other conversations or organization data.
+                    </p>
+                    <p>
                       Customer team owners and administrators do not receive general access to
                       another member&apos;s private content.
                     </p>

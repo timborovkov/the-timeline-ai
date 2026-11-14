@@ -770,3 +770,17 @@ icons; content results retain their context and due dates. Arrow navigation,
 Enter, Escape, active-descendant semantics, and row actions keep their existing
 linear order. Opening and closing use the shared popover transition; closing
 returns focus to the search input.
+
+## Conversation reports
+
+Completed Ask conversations expose a quiet “Report an issue” link. The report page
+focuses on a problem description, individually selectable/editable text messages,
+and an unchecked consent control. Excluded messages collapse to an omission label;
+re-including them preserves any redactions. Editing content or the selection clears
+consent. Submission errors retain the draft; success links to the sender’s report
+list for early deletion. Retention and staff access remain visible, with supporting
+storage details in a disclosure. Tool and source payloads are excluded.
+
+Workspace sharing controls live separately at `/app/diagnostics/settings`, linked
+from Team settings. They do not constitute consent for members. Staff report content
+requires a deliberate audited open action, never automatic list previews.
