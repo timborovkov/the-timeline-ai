@@ -47,6 +47,7 @@ import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-arti
 import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
+import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
 import {
   acceptIngestWebhookEvidence,
   type AcceptIngestWebhookEvidenceInput,
@@ -3588,6 +3589,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
     mcpOutbound: mcpOutboundScope,
+    evaluationTracing: createEvaluationTracingScope({ db, teamId, userId, ensureMember }),
     diagnostics: createDiagnosticScope({ db, teamId, userId, ensureMember }),
     agentReporting: createAgentReportingScope({ db, teamId, userId, ensureMember }),
     ingestWebhooks: ingestWebhookScope,

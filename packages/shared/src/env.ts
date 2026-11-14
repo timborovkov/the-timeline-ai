@@ -381,6 +381,8 @@ const baseSchema = z.object({
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
   // LangSmith LLM observability (optional)
+  // Enable only after the processor/access/retention review in docs/providers.md.
+  WORKSPACE_EVALUATION_TRACING_READY: z.preprocess(booleanString, z.boolean().default(false)),
   LANGSMITH_TRACING: z.preprocess(booleanString, z.boolean().default(false)),
   LANGSMITH_TRACING_SAMPLING_RATE: z.preprocess(
     emptyStringAsUnset,

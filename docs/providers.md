@@ -27,9 +27,7 @@ PostgreSQL, Redis, Qdrant, RustFS, Auth.js, and the AI SDK are not separate
 hosted subprocessors merely because their software is used. In the documented
 hosted topology, their infrastructure data path runs through Railway.
 
-LangSmith is a development/evaluation tool, not an approved production
-processor. Production environment validation rejects tracing because traces can
-contain concentrated prompt and output content.
+LangSmith is a **conditional** evaluation processor for [workspace-opted-in extraction traces](workspace-evaluation-tracing.md), as well as synthetic development/evaluation work. General production tracing remains rejected. The scoped production path is gated off until a documented processor, DPA/transfer/region, staff-access and retention/deletion review is complete. Those external-account checks remain **Gap**; implementing a gate is not evidence of approval. Customer opt-in is separate from operator readiness. Traces contain concentrated prompt/output content and are not covered by inference ZDR.
 
 Static repository documentation currently loads fonts from Fontshare and
 jsDelivr when served in a browser. Those CDNs can receive ordinary visitor

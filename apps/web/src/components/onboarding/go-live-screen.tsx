@@ -5,6 +5,7 @@ import {
   type GoLiveChannel,
   type TeamWorkStyle,
 } from '@timeline/shared/onboarding/first-run';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -131,6 +132,22 @@ export function GoLiveScreen({
             </Button>
           </div>
         ))}
+        <div className="space-y-2 border-b border-border py-4">
+          <h2 className="text-sm font-medium">Help improve accuracy? It’s optional.</h2>
+          <p className="text-sm leading-6 text-fg-muted">
+            An owner or admin can choose to share sampled, team-visible source processing with
+            LangSmith for quality evaluation. Sharing starts off and is not required to finish
+            setup.
+          </p>
+          <Link
+            href="/app/team/evaluation"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center text-sm underline"
+          >
+            Review evaluation sharing options (opens a new tab)
+          </Link>
+        </div>
         <div className="flex flex-wrap items-center gap-3 border-b border-border py-3">
           <div className="min-w-0 flex-1 basis-[14rem]">
             <div className="text-sm font-medium">Set up daily digests</div>

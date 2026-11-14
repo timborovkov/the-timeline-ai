@@ -68,6 +68,10 @@ export const teams = pgTable('teams', {
     .$type<AgentReportingPreference>()
     .notNull()
     .default({ mode: 'on_request', scope: '', revision: '0' }),
+  evaluationTracing: jsonb('evaluation_tracing')
+    .$type<{ enabled: boolean; sources: string[]; revision: string; policyVersion: string }>()
+    .notNull()
+    .default({ enabled: false, sources: [], revision: '0', policyVersion: '' }),
   diagnosticSharingEnabled: boolean('diagnostic_sharing_enabled').notNull().default(false),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),

@@ -13,6 +13,10 @@ const {
 
 // Checked against the composed scope at withTeam; new operations require a deliberate policy.
 export const WORKSPACE_OPERATOR_POLICY = {
+  'evaluationTracing.begin': accountWrite,
+  'evaluationTracing.finish': accountWrite,
+  'evaluationTracing.settings': accountRead,
+  'evaluationTracing.configure': accountWrite,
   'diagnostics.settings': accountRead,
   'diagnostics.configure': accountWrite,
   'diagnostics.submit': accountWrite,

@@ -809,9 +809,45 @@ function PrivacyConversationAndTrainingDisclosure() {
       <p>
         We do not use Customer Content to train or fine-tune any model, or to build model-training
         datasets. Creating customer-specific embeddings for retrieval is service processing, not
-        model training. We also disable rich prompt-and-output observability tracing in hosted
-        production. AI output can be inaccurate; Timeline keeps citations so users can inspect the
-        underlying evidence.
+        model training. General prompt-and-output tracing is disabled in hosted production.
+        Workspace administrators may separately opt in to the limited evaluation collection below.
+        AI output can be inaccurate; Timeline keeps citations so users can inspect the underlying
+        evidence.
+      </p>
+      <h3>Optional workspace evaluation tracing</h3>
+      <p>
+        To investigate real extraction mistakes and compare model and prompt quality, workspace
+        owners and admins can opt in from Team settings → Evaluation tracing, including during
+        onboarding. Sharing is off by default and is not required to use the Service. Administrators
+        select eligible sources and acknowledge the disclosure; they must have authority to share
+        that content and inform affected members.
+      </p>
+      <p>
+        Once enabled on a reviewed installation, we sample 10% of eligible new source-extraction
+        runs, capped at 100 per workspace per day. LangSmith receives the text actually supplied to
+        the model, nearby source context, extracted facts, model and prompt versions, timing, and
+        generic failure status. These records may include names, messages and confidential
+        information; they are not guaranteed to be anonymized. Only team-visible records from
+        selected Telegram, email, Slack, GitHub or Google Drive activity sources qualify. Private
+        and restricted records, original file binaries, full agent conversations and agent tool
+        results are excluded. Attachment names, source URLs, and Google Drive change excerpts or
+        comments may be included when present in the event text supplied to the model.
+      </p>
+      <p>
+        Authorized Timeline staff may review collected traces for quality investigation and
+        benchmarking under limited-access policies. This does not grant general access to workspace
+        records, authorize model training, or automatically add content to permanent evaluation
+        datasets. LangSmith is a separate evaluation processor; the zero-data-retention inference
+        setting does not apply to these stored traces. Provider hosting region, transfers and
+        safeguards must be reviewed before capture is activated.
+      </p>
+      <p>
+        Traces are scheduled for deletion within 30 days. Changing or disabling the preference stops
+        collection under the previous permission and schedules removal of those traces; provider
+        outages can delay cleanup. Deletion of active provider copies is distinct from backup
+        expiry. Content-free permission and export audit records are retained separately. No
+        previous runs are backfilled. Contact support to request earlier removal or exercise your
+        data rights. Individual conversation reports remain a separate choice.
       </p>
       <h3>Optional conversation reports</h3>
       <p>

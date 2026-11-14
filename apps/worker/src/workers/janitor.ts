@@ -13,6 +13,7 @@ import { runBillingMaintenanceTick } from '@timeline/shared/billing';
 import { pruneDiagnosticReports } from '@timeline/shared/diagnostics/operator';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
+import { pruneEvaluationTraces } from '@timeline/shared/evaluation-tracing/runtime';
 import {
   flushDeferredAcceptedSourceEnrichment,
   flushDeferredAudioTranscription,
@@ -452,6 +453,12 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
       } catch (err: unknown) {
         log.error({ err }, 'janitor: diagnostic report retention failed; next tick will retry');
         captureWorkerException(err);
+      }
+      try {
+        const cleanup = await pruneEvaluationTraces(deps.db);
+        if (cleanup.failed) log.error(cleanup, 'janitor: evaluation trace cleanup pending');
+      } catch {
+        log.error('janitor: evaluation trace cleanup pending; retrying next tick');
       }
       const result = await processJanitorTick({ db: deps.db });
       try {
