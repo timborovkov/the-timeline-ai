@@ -5248,6 +5248,112 @@ describe('suggestion scope', () => {
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
   });
 
+  it('accepts unassigned tasks when inference supplies null optional human names', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Review policy',
+      dedupeKey: 'null-human-names',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review policy',
+          dedupeKey: 'null-human-names-task',
+          proposedPayload: {
+            canonicalName: 'Review policy',
+            ownerName: null,
+            assigneeName: null,
+            assigneeUserId: null,
+          },
+        },
+      ],
+    });
+    expect(await scope.suggestions.acceptAll(bundle.id)).toMatchObject({ accepted: 1, failed: 0 });
+    const [task] = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
+    expect(task).toMatchObject({
+      canonicalName: 'Review policy',
+      status: 'todo',
+      assigneeUserId: null,
+      ownerUserId: null,
+    });
+  });
+
+  // Task attachment may create its own project; explicit project proposals must resolve first.
+  it('accepts a company project and task together regardless of generated item IDs', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Customer delivery',
+      dedupeKey: 'combined-creation',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare migration checklist',
+          dedupeKey: 'combined-task',
+          proposedPayload: {
+            canonicalName: 'Prepare migration checklist',
+            createProjectName: 'Patient Portal',
+            status: 'todo',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Patient Portal',
+          dedupeKey: 'combined-project',
+          proposedPayload: {
+            type: 'project',
+            canonicalName: 'Patient Portal',
+            localRef: 'portal',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Cedar Dental',
+          dedupeKey: 'combined-company',
+          proposedPayload: { type: 'company', canonicalName: 'Cedar Dental', localRef: 'cedar' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Customer project',
+          dedupeKey: 'combined-relation',
+          proposedPayload: { kind: 'related', fromRef: 'portal', toRef: 'cedar' },
+        },
+      ],
+    });
+    const task = bundle.items.find((item) => item.targetKind === 'task');
+    const project = bundle.items.find((item) => item.proposedPayload.localRef === 'portal');
+    if (!task || !project) throw new Error('Missing fixture items');
+    // Preserve item IDs/FKs while making the task sort before the explicit project.
+    if (task.id.localeCompare(project.id) > 0) {
+      for (const [target, source] of [
+        [task, project],
+        [project, task],
+      ] as const)
+        await db
+          .update(agentSuggestionItems)
+          .set({
+            targetKind: source.targetKind,
+            title: source.title,
+            proposedPayload: source.proposedPayload,
+          })
+          .where(eq(agentSuggestionItems.id, target.id));
+    }
+    expect(await scope.suggestions.acceptAll(bundle.id)).toMatchObject({ accepted: 4, failed: 0 });
+    const nodes = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
+    expect(nodes).toHaveLength(3);
+    expect(nodes.find((node) => node.type === 'project')?.status).toBe('planning');
+    const edges = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.teamId, TEAM_ID));
+    expect(edges.map((edge) => edge.kind).sort()).toEqual(['child', 'related']);
+  });
+
   it('creates a proposed project, links the task, and applies a fresh proposed category', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const packet = buildTaskCategoryPacket({

@@ -109,6 +109,8 @@ Follow [local setup](../setup/local.md) for dependencies, disposable services an
 
 ## Live evaluation
 
+[LangSmith synthetic benchmarks](langsmith-evals.md) version classification and agent datasets, separate development from held-out cases, and report repeated experiments with inspectable traces.
+
 [Transcription evaluation](transcription-quality-eval.md) owns the corpus and promotion gates. Live-provider evidence must name its revision, environment, date and scope without exposing secrets or customer data. Offline CI is not proof of provider or production behavior.
 
 ## Live website scan

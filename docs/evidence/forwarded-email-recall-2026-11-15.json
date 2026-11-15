@@ -1,0 +1,865 @@
+{
+  "date": "2026-11-15",
+  "implementationCommit": "bb3d419de8c4d4f9123479759aacafb1841af451",
+  "scope": "Synthetic forwarded-email development diagnostics through real normalized inbound capture, forward parsing, suggestion queue boundary, inference, persistence and visibility. No production data or deployment.",
+  "observations": [
+    "Before the email-policy fix, customer/project context without a new task produced no objects; the other two initial cases passed.",
+    "The first revision recovered the objects but one run added redundant task/project relationships. The final policy avoids duplicating parentObjectId links.",
+    "Both final runs passed all four cases, including informal customer/project discussion."
+  ],
+  "limitations": [
+    "Development tuning examples, not independent human validation or fresh held-out evidence.",
+    "The baseline contains three cases; final corpus adds an informal-context case and tighter optional relationship scoring. Do not present aggregate percentages as a controlled population-quality comparison.",
+    "Runs occurred on dirty development trees before the implementation commit; the reports retain their original revision and dirty flags.",
+    "No SMTP/webhook transport verification; a missing production email or job remains a separate diagnosis.",
+    "Historical held-out results predate this email policy and must not be reused as fresh evidence for it."
+  ],
+  "experiments": [
+    "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/df78f380-0032-4045-88a2-dadaad77427d/compare?selectedSessions=6eed92f9-ab00-49b1-958a-652de04c8448",
+    "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/df78f380-0032-4045-88a2-dadaad77427d/compare?selectedSessions=05c689b7-cc68-401f-8cc6-36090ebcbc65",
+    "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/df78f380-0032-4045-88a2-dadaad77427d/compare?selectedSessions=88c3511f-ea96-4ec7-8705-5e91313b670b",
+    "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/d1113e71-608c-4238-a1f3-56c8e13841aa/compare?selectedSessions=4f0ffff5-3da9-4692-a874-f7e53131c3f0",
+    "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/d1113e71-608c-4238-a1f3-56c8e13841aa/compare?selectedSessions=d4f3e87c-e550-4a14-9323-68925b3e7178"
+  ],
+  "baseline": {
+    "datasetName": "timeline-suggestions-development-6dc8f0112c3edb55",
+    "corpusHash": "6dc8f0112c3edb55e4ef7b6fd3adcc5d17fbdb8a6af7353597dd2d03569041d9",
+    "revision": "ac991b75e38d6441f0e4f9a85a2edcca667bc1c3",
+    "dirty": true,
+    "split": "development",
+    "evaluatedAt": "2026-11-15T14:03:28.402Z",
+    "reports": [
+      {
+        "repetition": 1,
+        "experiment": "suggestions-development-5f34d583",
+        "complete": false,
+        "benchmarkEvidence": false,
+        "feedbackComplete": true,
+        "summary": {
+          "cases": 3,
+          "passed": 2,
+          "executionFailures": 0,
+          "hardFailures": 0,
+          "expected": 4,
+          "proposed": 2,
+          "matched": 2,
+          "missed": 2,
+          "noise": 0,
+          "recall": 0.5,
+          "precision": 1,
+          "allowed": 0,
+          "noActionCases": 1,
+          "meanDurationMs": 6394.231492333333,
+          "scenarios": [
+            {
+              "scenario": "email",
+              "cases": 3,
+              "correct": 2,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "scenario": "forwarded-email",
+              "cases": 3,
+              "correct": 2,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "scenario": "recall",
+              "cases": 3,
+              "correct": 2,
+              "accuracy": 0.6666666666666666
+            }
+          ],
+          "failedCaseIds": ["forwarded-customer-context"]
+        },
+        "rows": [
+          {
+            "actions": [],
+            "executionErrors": [],
+            "modelCalls": 1,
+            "durationMs": 4464.5299780000005,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-customer-context",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 2,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": false
+            }
+          },
+          {
+            "actions": [
+              {
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare migration checklist for Northstar rollout",
+                "proposedPayload": {
+                  "status": "todo",
+                  "localRef": "migration-checklist",
+                  "projectName": "Northstar rollout",
+                  "canonicalName": "Prepare migration checklist for Northstar rollout",
+                  "assigneeUserId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                  "assigneeName": "Evaluator",
+                  "parentName": "Northstar rollout"
+                },
+                "evidenceIds": ["3f616c30-d0bb-42b1-b503-062198ed6a4f"]
+              },
+              {
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Review backup procedure for Northstar rollout",
+                "proposedPayload": {
+                  "status": "todo",
+                  "localRef": "backup-procedure-review",
+                  "projectName": "Northstar rollout",
+                  "canonicalName": "Review backup procedure for Northstar rollout",
+                  "assigneeUserId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                  "assigneeName": "Evaluator",
+                  "parentName": "Northstar rollout"
+                },
+                "evidenceIds": ["3f616c30-d0bb-42b1-b503-062198ed6a4f"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 13843.305676,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-project-tasks",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 2,
+              "matched": 2,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [],
+            "executionErrors": [],
+            "modelCalls": 1,
+            "durationMs": 874.8588229999987,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-incidental-mention",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 0,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          }
+        ]
+      }
+    ],
+    "inProgress": null
+  },
+  "intermediate": {
+    "corpusHash": "6dc8f0112c3edb55e4ef7b6fd3adcc5d17fbdb8a6af7353597dd2d03569041d9",
+    "revision": "ac991b75e38d6441f0e4f9a85a2edcca667bc1c3",
+    "dirty": true,
+    "reports": [
+      {
+        "repetition": 1,
+        "experiment": "suggestions-development-b1107ef5",
+        "summary": {
+          "cases": 3,
+          "passed": 2,
+          "executionFailures": 0,
+          "hardFailures": 0,
+          "expected": 4,
+          "proposed": 7,
+          "matched": 4,
+          "missed": 0,
+          "noise": 2,
+          "recall": 1,
+          "precision": 0.7142857142857143,
+          "allowed": 1,
+          "noActionCases": 1,
+          "meanDurationMs": 10313.518886666663,
+          "scenarios": [
+            {
+              "scenario": "email",
+              "cases": 3,
+              "correct": 2,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "scenario": "forwarded-email",
+              "cases": 3,
+              "correct": 2,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "scenario": "recall",
+              "cases": 3,
+              "correct": 2,
+              "accuracy": 0.6666666666666666
+            }
+          ],
+          "failedCaseIds": ["forwarded-project-tasks"]
+        }
+      },
+      {
+        "repetition": 2,
+        "experiment": "suggestions-development-7b74d9c9",
+        "summary": {
+          "cases": 3,
+          "passed": 3,
+          "executionFailures": 0,
+          "hardFailures": 0,
+          "expected": 4,
+          "proposed": 5,
+          "matched": 4,
+          "missed": 0,
+          "noise": 0,
+          "recall": 1,
+          "precision": 1,
+          "allowed": 1,
+          "noActionCases": 1,
+          "meanDurationMs": 11276.60571333333,
+          "scenarios": [
+            {
+              "scenario": "email",
+              "cases": 3,
+              "correct": 3,
+              "accuracy": 1
+            },
+            {
+              "scenario": "forwarded-email",
+              "cases": 3,
+              "correct": 3,
+              "accuracy": 1
+            },
+            {
+              "scenario": "recall",
+              "cases": 3,
+              "correct": 3,
+              "accuracy": 1
+            }
+          ],
+          "failedCaseIds": []
+        }
+      }
+    ]
+  },
+  "final": {
+    "datasetName": "timeline-suggestions-development-2a5997cd915d9da3",
+    "corpusHash": "2a5997cd915d9da37c2ef5a0ed91e01cc4bcc4a74c21701ffdabeeccbe16152a",
+    "revision": "ac991b75e38d6441f0e4f9a85a2edcca667bc1c3",
+    "dirty": true,
+    "split": "development",
+    "evaluatedAt": "2026-11-15T14:10:46.931Z",
+    "reports": [
+      {
+        "repetition": 1,
+        "experiment": "suggestions-development-a21aff7f",
+        "complete": false,
+        "benchmarkEvidence": false,
+        "feedbackComplete": true,
+        "summary": {
+          "cases": 4,
+          "passed": 4,
+          "executionFailures": 0,
+          "hardFailures": 0,
+          "expected": 6,
+          "proposed": 7,
+          "matched": 6,
+          "missed": 0,
+          "noise": 0,
+          "recall": 1,
+          "precision": 1,
+          "allowed": 1,
+          "noActionCases": 1,
+          "meanDurationMs": 11414.374406749997,
+          "scenarios": [
+            {
+              "scenario": "email",
+              "cases": 4,
+              "correct": 4,
+              "accuracy": 1
+            },
+            {
+              "scenario": "forwarded-email",
+              "cases": 4,
+              "correct": 4,
+              "accuracy": 1
+            },
+            {
+              "scenario": "recall",
+              "cases": 4,
+              "correct": 4,
+              "accuracy": 1
+            }
+          ],
+          "failedCaseIds": []
+        },
+        "rows": [
+          {
+            "actions": [
+              {
+                "bundleId": "2444256d-7d41-42ba-bd84-25e74294ed9e",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["6da3af4a-670d-4aaa-9d66-1a2241a973b8"]
+              },
+              {
+                "bundleId": "2444256d-7d41-42ba-bd84-25e74294ed9e",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "active",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["6da3af4a-670d-4aaa-9d66-1a2241a973b8"]
+              },
+              {
+                "bundleId": "2444256d-7d41-42ba-bd84-25e74294ed9e",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Patient Portal related to Cedar Dental",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toRef": "cedar-dental"
+                },
+                "evidenceIds": ["6da3af4a-670d-4aaa-9d66-1a2241a973b8"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 14571.218840000001,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-customer-context",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 3,
+              "matched": 2,
+              "allowed": 1,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "abe42e7d-10a7-40cb-b394-8138d2d6e326",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare the migration checklist",
+                "proposedPayload": {
+                  "status": "todo",
+                  "projectName": "Northstar rollout",
+                  "canonicalName": "Prepare the migration checklist",
+                  "assigneeUserId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                  "assigneeName": "Evaluator",
+                  "parentName": "Northstar rollout"
+                },
+                "evidenceIds": ["cfe74c11-3bb1-4730-b78b-e1bd07dc7715"]
+              },
+              {
+                "bundleId": "abe42e7d-10a7-40cb-b394-8138d2d6e326",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Review the backup procedure",
+                "proposedPayload": {
+                  "status": "todo",
+                  "projectName": "Northstar rollout",
+                  "canonicalName": "Review the backup procedure",
+                  "assigneeUserId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                  "assigneeName": "Evaluator",
+                  "parentName": "Northstar rollout"
+                },
+                "evidenceIds": ["cfe74c11-3bb1-4730-b78b-e1bd07dc7715"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 15095.398540999999,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-project-tasks",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 2,
+              "matched": 2,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [],
+            "executionErrors": [],
+            "modelCalls": 1,
+            "durationMs": 1967.8963609999992,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-incidental-mention",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 0,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "d23373bc-dc72-4eb2-8b93-f39dc1ff50a0",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "aliases": ["Cedar Dental"],
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["5a7be899-db84-45fc-98e4-47610e45d4ce"]
+              },
+              {
+                "bundleId": "d23373bc-dc72-4eb2-8b93-f39dc1ff50a0",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "active",
+                  "aliases": ["Patient Portal"],
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["5a7be899-db84-45fc-98e4-47610e45d4ce"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 14022.983884999994,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-informal-context",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 2,
+              "matched": 2,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          }
+        ]
+      },
+      {
+        "repetition": 2,
+        "experiment": "suggestions-development-e58b591b",
+        "complete": false,
+        "benchmarkEvidence": false,
+        "feedbackComplete": true,
+        "summary": {
+          "cases": 4,
+          "passed": 4,
+          "executionFailures": 0,
+          "hardFailures": 0,
+          "expected": 6,
+          "proposed": 8,
+          "matched": 6,
+          "missed": 0,
+          "noise": 0,
+          "recall": 1,
+          "precision": 1,
+          "allowed": 2,
+          "noActionCases": 1,
+          "meanDurationMs": 22078.52502775,
+          "scenarios": [
+            {
+              "scenario": "email",
+              "cases": 4,
+              "correct": 4,
+              "accuracy": 1
+            },
+            {
+              "scenario": "forwarded-email",
+              "cases": 4,
+              "correct": 4,
+              "accuracy": 1
+            },
+            {
+              "scenario": "recall",
+              "cases": 4,
+              "correct": 4,
+              "accuracy": 1
+            }
+          ],
+          "failedCaseIds": []
+        },
+        "rows": [
+          {
+            "actions": [
+              {
+                "bundleId": "bfe8be30-0dd4-41c4-850f-759898e5a3fb",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Link Patient Portal project to Cedar Dental",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toRef": "cedar-dental"
+                },
+                "evidenceIds": ["5ee70770-cfb3-4a0c-8063-6d5565b29bfb"]
+              },
+              {
+                "bundleId": "bfe8be30-0dd4-41c4-850f-759898e5a3fb",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Create project: Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["5ee70770-cfb3-4a0c-8063-6d5565b29bfb"]
+              },
+              {
+                "bundleId": "bfe8be30-0dd4-41c4-850f-759898e5a3fb",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Create company: Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["5ee70770-cfb3-4a0c-8063-6d5565b29bfb"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 25377.303826000003,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-customer-context",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 3,
+              "matched": 2,
+              "allowed": 1,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "ad5bf50c-b9a6-46d0-a990-5457b8e4f54d",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Review backup procedure",
+                "proposedPayload": {
+                  "aliases": ["backup procedure"],
+                  "priority": 3,
+                  "projectName": "Northstar rollout",
+                  "canonicalName": "Review backup procedure",
+                  "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                  "parentName": "Northstar rollout"
+                },
+                "evidenceIds": ["b574afa7-c39e-4346-b723-92c1299f911f"]
+              },
+              {
+                "bundleId": "ad5bf50c-b9a6-46d0-a990-5457b8e4f54d",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare migration checklist",
+                "proposedPayload": {
+                  "aliases": ["migration checklist"],
+                  "priority": 3,
+                  "projectName": "Northstar rollout",
+                  "canonicalName": "Prepare migration checklist",
+                  "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                  "parentName": "Northstar rollout"
+                },
+                "evidenceIds": ["b574afa7-c39e-4346-b723-92c1299f911f"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 41069.441091,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-project-tasks",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 2,
+              "matched": 2,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [],
+            "executionErrors": [],
+            "modelCalls": 1,
+            "durationMs": 1897.417776999995,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-incidental-mention",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 0,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "2daa1f4a-f5ed-4070-9022-8f39d3923485",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "active",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["7306a10d-9ac9-404a-a567-d22ac2ed588c"]
+              },
+              {
+                "bundleId": "2daa1f4a-f5ed-4070-9022-8f39d3923485",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["7306a10d-9ac9-404a-a567-d22ac2ed588c"]
+              },
+              {
+                "bundleId": "2daa1f4a-f5ed-4070-9022-8f39d3923485",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Patient Portal \u2014 Cedar Dental",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toRef": "cedar-dental"
+                },
+                "evidenceIds": ["7306a10d-9ac9-404a-a567-d22ac2ed588c"]
+              }
+            ],
+            "executionErrors": [],
+            "modelCalls": 2,
+            "durationMs": 19969.93741700001,
+            "stages": [
+              "seeded",
+              "email-captured",
+              "model-called",
+              "model-called",
+              "events-dispatched",
+              "worker-returned",
+              "visibility-read"
+            ],
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "id": "forwarded-informal-context",
+            "tags": ["forwarded-email", "recall", "email"],
+            "score": {
+              "expected": 2,
+              "proposed": 3,
+              "matched": 2,
+              "allowed": 1,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          }
+        ]
+      }
+    ],
+    "inProgress": null
+  }
+}

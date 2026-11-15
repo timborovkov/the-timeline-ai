@@ -675,6 +675,12 @@
       "development": "./src/evaluation-tracing/runtime.ts",
       "import": "./dist/evaluation-tracing/runtime.js",
       "default": "./dist/evaluation-tracing/runtime.js"
+    },
+    "./evals/benchmark": {
+      "types": "./src/evals/benchmark.ts",
+      "development": "./src/evals/benchmark.ts",
+      "import": "./dist/evals/benchmark.js",
+      "default": "./dist/evals/benchmark.js"
     }
   },
   "main": "./dist/index.js",

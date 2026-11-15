@@ -609,8 +609,16 @@ const objectPayloadFields = {
   priority: z.number().int().min(1).max(4).nullable().optional(),
   ownerUserId: blankStringAsNull(uuid.nullable()).optional(),
   assigneeUserId: blankStringAsNull(uuid.nullable()).optional(),
-  ownerName: z.string().trim().min(1).max(200).optional(),
-  assigneeName: z.string().trim().min(1).max(200).optional(),
+  // Inference may encode an unknown optional name as null. Unlike IDs, name
+  // hints do not represent a clear operation; treat absence consistently.
+  ownerName: z.preprocess(
+    (value) => (value === null ? undefined : value),
+    z.string().trim().min(1).max(200).optional(),
+  ),
+  assigneeName: z.preprocess(
+    (value) => (value === null ? undefined : value),
+    z.string().trim().min(1).max(200).optional(),
+  ),
   dueAt: blankStringAsNull(z.iso.datetime().nullable()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 };
@@ -4935,6 +4943,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
     if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
     if (parsed.status !== undefined) input.status = parsed.status;
+    else if (type === 'task') input.status = 'todo';
+    else if (type === 'project') input.status = 'planning';
     if (parsed.stage !== undefined) input.stage = parsed.stage;
     if (parsed.priority !== undefined) input.priority = parsed.priority;
     if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
@@ -5361,14 +5371,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   }
 
   function acceptancePriority(item: SuggestionItem): number {
+    // Explicit hubs must exist before a task resolves createProjectName. Otherwise
+    // that task can create the same project and strand its sibling localRef.
     if (
       item.operation === 'create' &&
-      (item.targetKind === 'object' || item.targetKind === 'task')
-    ) {
+      item.targetKind === 'object' &&
+      item.proposedPayload.type !== 'task'
+    )
       return 0;
-    }
-    if (item.operation === 'create' && item.targetKind === 'object_note') return 1;
-    return 2;
+    if (item.operation === 'create' && (item.targetKind === 'task' || item.targetKind === 'object'))
+      return 1;
+    if (item.operation === 'create' && item.targetKind === 'object_note') return 2;
+    return 3;
   }
 
   function orderSuggestionItemsForAcceptance(items: SuggestionItem[]): SuggestionItem[] {

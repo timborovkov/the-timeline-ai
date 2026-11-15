@@ -2495,6 +2495,18 @@
   "apps/worker/src/workers/engine.live-eval.test.ts": {
     "group": "live"
   },
+  "packages/shared/src/task-categories/experiment-report.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/evals/benchmark.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/failure.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/evals/agent-harness.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/diagnostics/scope.test.ts": {
     "group": "integration"
   },
@@ -2508,6 +2520,18 @@
     "group": "dom"
   },
   "apps/web/src/lib/workspace-sharing-status.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/evals/suggestion-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/evals/suggestion-harness.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/evals/communication-harness.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/evals/communication-report.test.ts": {
     "group": "unit"
   }
 }
