@@ -390,6 +390,28 @@ describe('TimelineList archive virtualization', () => {
     expect(html).not.toContain('sticky top-[var(--timeline-toolbar-height,2.75rem)]');
     expect(html).toContain('aria-label="Recent timeline moments"');
   });
+
+  it('keys date-group headings by YYYY-MM-DD instead of the locale label', () => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: '11111111-1111-4111-8111-111111111111',
+          occurredAt: '2026-08-14T12:00:00.000Z',
+        }),
+      ],
+      {
+        compact: true,
+        maxMoments: 8,
+        timezone: 'UTC',
+      },
+    );
+
+    expect(html).toContain('id="timeline-date-2026-08-14"');
+    expect(html).toContain('aria-labelledby="timeline-date-2026-08-14"');
+    expect(html).toContain('Friday, Aug 14');
+    expect(html).not.toContain('id="timeline-date-Friday');
+    expect(html).not.toContain('Friday 14 Aug');
+  });
 });
 
 describe('TimelineList document attachments', () => {
