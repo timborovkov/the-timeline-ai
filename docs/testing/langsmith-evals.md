@@ -264,8 +264,8 @@ noise. A uniquely grounded company/project association may be optional. A task
 deadline may have a matching calendar companion; unsupported dates remain noise.
 Missing work, acceptance failures, lost required packet content and inference
 errors cannot pass. Privacy violations, invalid evidence and automatic changes to
-human-edited pending proposals are hard failures. Prospect proposals must express
-uncertainty and concrete proposed projects must remain `planning`.
+human-edited pending proposals are hard failures. Prospect proposals must use low confidence and explain
+the uncertainty; concrete proposed projects must remain `planning`.
 
 Communications run four cases concurrently, each with a separate disposable database
 and queue; report writes are serialized. Reports retain an implementation digest,

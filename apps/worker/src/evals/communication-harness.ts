@@ -539,7 +539,7 @@ export async function createCommunicationHarness() {
         bundles.length &&
         bundles.some(
           (bundle) =>
-            bundle.confidence !== 'low' &&
+            bundle.confidence !== 'low' ||
             !/potential|possible|prospect|uncertain|not.*signed|no.*contract|not.*client/i.test(
               `${bundle.reason} ${bundle.summary}`,
             ),

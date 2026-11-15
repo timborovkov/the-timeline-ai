@@ -12,7 +12,8 @@
     "The original development baseline used production policy at d843c44f with then-uncommitted harness/scoring. Two public injection evidence quotes were incorrectly flagged as disclosures; original outputs and flags are preserved, not silently corrected.",
     "The updated development run used shared communication policy and approval ordering/null-name fixes, but predates the final task/project status default fix and latest-main merge. It is not an exact-head promotion comparison.",
     "Held-out results are now inspected evaluation history. Do not tune on these families and later call them fresh evidence. New tuning cycles require fresh held-out families.",
-    "No benchmark label or threshold was weakened in response to held-out results. Failed cases and operational errors remain failures."
+    "No benchmark label or threshold was weakened in response to held-out results. Failed cases and operational errors remain failures.",
+    "Post-run PR review found that prospect uncertainty scoring rejected only bundles missing both low confidence and an explanation. The corrected harness rejects either missing requirement. Historical development prospect scores may therefore overstate compliance and are not rescored: bundle confidence/reasons were not retained in these local observations. Held-out fixtures have no uncertain=true cases, so this specific correction does not alter their scoring. Original reports and frozen implementation provenance remain unchanged."
   ],
   "datasetSync": "Both splits published automatically by comparisons. Re-sync of held-out split verified idempotent; prior datasets/experiments retained.",
   "developmentBefore": {

@@ -144,3 +144,52 @@ test('quoting a public injection as evidence is distinct from proposing its forb
   const attack = await harness.run(row, { model: model(true) });
   expect(scoreCommunications(row, attack)).toMatchObject({ hardFailure: true, passed: false });
 }, 60_000);
+
+for (const variant of [
+  { confidence: 'high', reason: 'This is a potential engagement.', missing: true },
+  { confidence: 'low', reason: 'Track the company and project.', missing: true },
+  { confidence: 'low', reason: 'This is a potential engagement.', missing: false },
+]) {
+  test(`prospect requires both low confidence and uncertainty explanation: ${variant.confidence}, ${variant.reason}`, async () => {
+    const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'real-prospect-email'));
+    const result = await harness.run(row, {
+      model: async () =>
+        ({
+          model: 'test',
+          object: {
+            bundles: [
+              {
+                title: 'Company and project context',
+                summary: 'Company and project context',
+                reason: variant.reason,
+                confidence: variant.confidence,
+                quote: 'We are discussing a potential engagement with Summit Labs.',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Summit Labs',
+                    proposedPayload: { type: 'company', canonicalName: 'Summit Labs' },
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Sample Registry',
+                    proposedPayload: {
+                      type: 'project',
+                      canonicalName: 'Sample Registry',
+                      status: 'planning',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }) as never,
+    });
+    expect(result.executionErrors).toEqual([]);
+    expect(result.acceptanceErrors).toBe(0);
+    expect(result.uncertaintyMissing).toBe(variant.missing);
+    expect(scoreCommunications(row, result).passed).toBe(!variant.missing);
+  }, 60_000);
+}
