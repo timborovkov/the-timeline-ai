@@ -1,3 +1,4 @@
+import { getEnv } from '@timeline/shared/env';
 import {
   readPlatformTeam,
   listPlatformAudit,
@@ -19,6 +20,7 @@ import {
   AdminImpersonateForm,
   AdminMembershipForm,
 } from '@/components/platform-admin-forms';
+import { PlatformWorkspaceSharing } from '@/components/platform-workspace-sharing';
 import { TeamDeletionForm } from '@/components/team-deletion-form';
 import { db } from '@/lib/db';
 import { requireAdmin } from '@/lib/platform-admin';
@@ -30,6 +32,10 @@ export default async function AdminTeamPage({
   searchParams: Promise<DirectoryOptions & { error?: string }>;
 }) {
   const actor = await requireAdmin();
+  const env = getEnv();
+  const captureAvailable = Boolean(
+    env.WORKSPACE_EVALUATION_TRACING_READY && env.LANGSMITH_API_KEY && env.LANGSMITH_WORKSPACE_ID,
+  );
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const options = await searchParams;
@@ -50,6 +56,16 @@ export default async function AdminTeamPage({
       )}
       <CopyableTextField id="team-id" label="Team ID" value={id} />
       <TeamMetadata team={team} />
+      <PlatformWorkspaceSharing
+        preference={team.evaluationTracing}
+        reportsEnabled={team.diagnosticSharingEnabled}
+        available={captureAvailable}
+        inactive={
+          Boolean(team.disabledAt ?? team.deletionStartedAt ?? team.deletedAt) ||
+          team.securityState === 'suspended' ||
+          team.securityState === 'terminated'
+        }
+      />
       <TeamCleanupProgress team={team} id={id} />
       {!team.deletionStartedAt && <AdminRenameForm kind="team" id={id} name={team.name} />}
       <Link className="inline-block text-sm underline" href={`/app/admin/billing?team=${id}`}>

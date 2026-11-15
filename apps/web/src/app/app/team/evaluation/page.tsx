@@ -21,23 +21,18 @@ export default async function EvaluationTracingPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8">
       <Link
-        href="/app/team"
+        href="/app/team?section=general"
         className="inline-flex min-h-11 items-center text-sm text-fg-muted underline underline-offset-4"
       >
-        Back to team settings
+        Back to General settings
       </Link>
       <PageHeader
-        title="Help improve real-world accuracy"
-        subtitle="Optional evaluation tracing for selected workspace sources."
+        title="Evaluation tracing"
+        subtitle="Share selected processing samples to help us investigate mistakes and improve accuracy."
       />
-      <p className="text-sm leading-6 text-fg-muted">
-        Synthetic tests cannot show every mistake in real messages and events. Sharing a small
-        sample helps us reproduce failures, check extracted facts, and benchmark improvements. You
-        can use Timeline without sharing.
-      </p>
       <p role="status" className="rounded-lg border border-border p-4 text-sm">
         {!available
-          ? 'Capture is not active on this installation. You can save your preference; collection can begin only after Timeline enables the reviewed LangSmith configuration.'
+          ? 'Capture is not active on this installation. Your saved choice applies when the reviewed configuration is enabled.'
           : preference.enabled
             ? 'Your workspace has opted in. Eligible new runs may be sampled.'
             : 'Your workspace has not opted in. No evaluation traces are collected through this setting.'}

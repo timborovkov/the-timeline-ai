@@ -21,10 +21,10 @@ export default async function DiagnosticSettingsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8">
       <Link
-        href="/app/team"
+        href="/app/team?section=general"
         className="inline-flex min-h-11 items-center text-sm text-fg-muted underline underline-offset-4"
       >
-        Back to team settings
+        Back to General settings
       </Link>
       <PageHeader
         title="Conversation sharing"

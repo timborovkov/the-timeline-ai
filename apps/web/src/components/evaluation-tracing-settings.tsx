@@ -8,8 +8,12 @@ import {
 import Link from 'next/link';
 import { useActionState } from 'react';
 
-import { configureEvaluationTracingAction } from '@/app/actions/evaluation-tracing';
+import {
+  configureEvaluationTracingAction,
+  type EvaluationActionState,
+} from '@/app/actions/evaluation-tracing';
 import { Button } from '@/components/ui/button';
+import { notifyAction } from '@/lib/notify';
 
 export function EvaluationTracingSettings({
   teamId,
@@ -20,7 +24,17 @@ export function EvaluationTracingSettings({
   enabled: boolean;
   sources: string[];
 }) {
-  const [state, action, pending] = useActionState(configureEvaluationTracingAction, {});
+  const [state, action, pending] = useActionState(
+    async (previous: EvaluationActionState, data: FormData) =>
+      notifyAction({
+        id: `evaluation-settings:${teamId}`,
+        loading: 'Saving evaluation preference…',
+        success: 'Evaluation preference saved',
+        error: 'Couldn’t save evaluation preference',
+        run: () => configureEvaluationTracingAction(previous, data),
+      }),
+    {},
+  );
   return (
     <form action={action} className="space-y-6">
       <input type="hidden" name="teamId" value={teamId} />
@@ -29,7 +43,7 @@ export function EvaluationTracingSettings({
         <input type="checkbox" name="enabled" defaultChecked={enabled} />
         Share selected source processing for quality evaluation
       </label>
-      <fieldset className="space-y-2">
+      <fieldset className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
         <legend className="mb-2 text-sm font-medium">Which sources may be included?</legend>
         {EVALUATION_SOURCES.map((source) => (
           <label key={source} className="flex min-h-11 items-center gap-3 text-sm">
@@ -43,32 +57,53 @@ export function EvaluationTracingSettings({
           </label>
         ))}
       </fieldset>
-      <div className="space-y-3 text-sm leading-6 text-fg-muted">
-        <p>
-          We sample 10% of eligible new extraction runs, up to 100 per workspace per day. These runs
-          turn incoming source text into facts. A trace includes the text sent to the model, nearby
-          conversation context, extracted facts, model and prompt versions, timing, and whether the
-          call failed. Structured GitHub events and some Drive activity bypass extraction, so
-          selecting a source does not trace every event.
-        </p>
-        <p>
-          Only team-visible records from your selected sources qualify. Private or restricted
-          records, full agent conversations, agent tool results and original file binaries are
-          excluded. Names of attachments, source URLs, and Google Drive change excerpts or comments
-          may be included when they are part of the event text sent to the model.
-        </p>
-        <p>
-          LangSmith stores these traces so authorized Timeline staff can investigate mistakes and
-          compare model and prompt quality. Traces can contain names, messages and confidential
-          details; they are not guaranteed to be anonymized. This does not authorize model training
-          or general access to your workspace.
-        </p>
-        <p>
-          Traces are scheduled for deletion within 30 days. Changing or disabling this setting stops
-          collection under the old permission and requests removal of its traces. Provider cleanup
-          may take time; it is not instant erasure of backups. No data is backfilled.
-        </p>
-      </div>
+      <section className="space-y-3" aria-labelledby="evaluation-sharing-summary">
+        <h2 id="evaluation-sharing-summary" className="text-sm font-semibold">
+          What you’re agreeing to
+        </h2>
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-fg-muted">
+          <li>
+            <strong className="font-medium text-fg">Shared with LangSmith:</strong> selected
+            team-visible input, nearby context and extracted facts. Authorized Timeline staff can
+            review samples to investigate mistakes and compare quality.
+          </li>
+          <li>
+            <strong className="font-medium text-fg">May contain sensitive details:</strong>{' '}
+            messages, names, source URLs, attachment names and Drive excerpts or comments. Samples
+            are not guaranteed anonymous.
+          </li>
+          <li>
+            <strong className="font-medium text-fg">Limits:</strong> no private/restricted records,
+            full agent conversations, original file binaries or model training.
+          </li>
+          <li>
+            <strong className="font-medium text-fg">Your control:</strong> off by default. Change or
+            disable sharing anytime; previous traces are scheduled for removal. Traces are scheduled
+            for deletion within 30 days; provider outages may delay removal.
+          </li>
+        </ul>
+        <details className="border-t border-border pt-3 text-sm">
+          <summary className="min-h-11 cursor-pointer font-medium">
+            Sampling, captured details and deletion
+          </summary>
+          <div className="space-y-3 py-2 leading-6 text-fg-muted">
+            <p>
+              We sample 10% of eligible new extraction runs, up to 100 per workspace per day. Traces
+              include model and prompt versions, timing and generic failure status. No past runs are
+              backfilled.
+            </p>
+            <p>
+              Structured GitHub events and some Drive activity bypass extraction. Selecting a source
+              does not trace every event. Agent tool results are excluded; this permission does not
+              grant general access to your workspace.
+            </p>
+            <p>
+              Changing permission stops new collection under the old permission. Provider cleanup
+              may take time and is not instant erasure of backups.
+            </p>
+          </div>
+        </details>
+      </section>
       <label className="flex min-h-11 items-start gap-3 text-sm leading-6">
         <input className="mt-1.5" type="checkbox" name="consent" />
         <span>
@@ -93,14 +128,8 @@ export function EvaluationTracingSettings({
           {state.error}
         </p>
       )}
-      {state.saved && (
-        <p role="status" className="text-sm">
-          Evaluation preference saved. Changing permission also schedules deletion of earlier
-          traces.
-        </p>
-      )}
       <Button variant="outline" type="submit" disabled={pending}>
-        Save evaluation preference
+        {pending ? 'Saving…' : 'Save evaluation preference'}
       </Button>
     </form>
   );

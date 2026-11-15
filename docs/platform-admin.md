@@ -54,7 +54,7 @@ Suspended accounts and teams allow read-only impersonation inspection. The
 request, scoped operation, database-write, and job-admission boundaries block
 mutations and new work. Previously issued external signed URLs retain their
 existing expiry; suspension does not revoke a provider URL already issued.
-Read-only inspection includes team metadata and unread notification counts.
+Read-only inspection includes team metadata and unread notification counts. The Teams directory and team detail show saved evaluation-tracing and conversation-report permissions through the verified, audited directory read. Detail includes selected sources and consent version; configuration readiness refers to the web instance and is not evidence that a worker exported traces. This view exposes no submitted content and cannot grant workspace consent.
 Document preview/download server actions are explicitly classified as reads at
 the server-action boundary; POST alone does not imply a write. Other actions stay
 blocked, and normal scoped visibility checks still apply.
