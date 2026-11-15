@@ -95,8 +95,8 @@ describe('LandingPage', () => {
     expect(html).not.toContain('timeline.retrieve_workspace_context');
     expect(html).not.toContain('timeline.get_event');
     const overviewIndex = html.indexOf('data-use-case-overview');
-    expect(overviewIndex).toBeGreaterThan(html.indexOf('data-scene="01-claim"'));
-    expect(overviewIndex).toBeLessThan(html.indexOf('data-scene="02-intake"'));
+    expect(overviewIndex).toBeGreaterThan(html.indexOf('data-scene="02-intake"'));
+    expect(overviewIndex).toBeLessThan(html.indexOf('data-scene="03-timeline"'));
     expect(html.match(/data-use-case-overview/g)).toHaveLength(1);
     expect(html).toContain('data-chat-to-answer');
     expect(html).toContain('aria-label="Public navigation menu"');
@@ -181,7 +181,7 @@ describe('LandingPage', () => {
     expect(overview?.textContent).toContain('selected conversations, calls and documents');
     expect(overview?.querySelectorAll('a')).toHaveLength(6);
     const html = container.innerHTML;
-    expect(html.indexOf('data-use-case-overview')).toBeLessThan(
+    expect(html.indexOf('data-use-case-overview')).toBeGreaterThan(
       html.indexOf('data-scene="02-intake"'),
     );
     expect(html.indexOf('data-scene="02-intake"')).toBeLessThan(
