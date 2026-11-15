@@ -27,6 +27,7 @@ import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconcil
 import { withTeam } from '@timeline/shared/team-scope';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
+import { UnrecoverableError } from 'bullmq';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -38,8 +39,11 @@ import {
   fallbackBundles,
   processSuggestionJobForTests,
   SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
+  usableRawEventIds,
 } from '#src/workers/suggestions.js';
+
 /**
+ *
  * Agentic-core worker tests. These exercise the background suggestion
  * processor against a real migrated PGlite database with injected LLM/env
  * boundaries, proving that raw timeline events become approval-queue task,
@@ -1394,6 +1398,55 @@ describe('processSuggestionJobForTests', () => {
     const bundles = await db.select({ teamId: agentSuggestions.teamId }).from(agentSuggestions);
     expect(bundles.length).toBeGreaterThan(0);
     expect(bundles.every((bundle) => bundle.teamId === OTHER_TEAM_ID)).toBe(true);
+  });
+
+  it('usableRawEventIds drops missing bindings that would crash postgres.js', () => {
+    expect(
+      usableRawEventIds([undefined, null, '', '  ', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']),
+    ).toEqual(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']);
+  });
+
+  it('settles suggestion jobs that omit rawEventId instead of querying with undefined', async () => {
+    await expect(
+      processSuggestionJobForTests({ db: db as never }, { teamId: TEAM_ID } as never, {
+        getEnv: env,
+      }),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+  });
+
+  it('continues object-cleanup-daily when identity evidence lacks a raw event id', async () => {
+    // Regression for THE-TIMELINE-AI-3N: one evidence row with an undefined
+    // rawEventId used to make postgres.js throw UNDEFINED_VALUE and abort the scan.
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      const [project] = await db
+        .insert(entities)
+        .values({
+          teamId: TEAM_ID,
+          type: 'project',
+          canonicalName: 'Northstar Cleanup Anchor',
+        })
+        .returning({ id: entities.id });
+      if (!project) throw new Error('expected project');
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'daily', objectId: project.id },
+        {
+          identityEvidence: () =>
+            Promise.resolve([
+              {
+                objectId: project.id,
+                rawEventId: undefined as unknown as string,
+                text: 'Evidence row missing its raw event id.',
+              },
+            ]),
+        },
+      );
+    } finally {
+      process.env.IDENTITY_SEMANTIC_ENABLED = 'false';
+      resetEnvForTests();
+    }
   });
 
   it('creates deduped object cleanup merge and archive suggestions across manual and daily scans', async () => {

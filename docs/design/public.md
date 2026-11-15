@@ -20,13 +20,13 @@ visitor has not yet acquired.
 The opening claim describes a living record built from selected tools and sources,
 with connected clients, projects, tasks and decisions. Keep sources attached and
 approval boundaries explicit; asking questions is one use of the record, not its
-only outcome. Work continues through the use-case chooser, intake,
+only outcome. Work continues through intake, the use-case chooser,
 chronology, cited answer, connected records, audience fit with trust, and Start
 free. Section headings carry the narrative without decorative numbered rails or
 repeated eyebrows. Source timestamps, citation numbers and actual process order
 remain meaningful metadata.
 
-The six-use-case overview appears once, immediately after the hero. It presents
+The six-use-case overview appears once, immediately after intake. It presents
 linked job rows before the detailed walkthrough. The intake section brings
 supported capture surfaces, document uploads and native connectors together as
 compact links. Frame the voice-note example around capturing updates, decisions

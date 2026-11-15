@@ -36,7 +36,9 @@ const DESKTOP_SHOTS = [
   {
     stem: '14-timeline-email',
     path: '/app/timeline?source=email&mode=events&event=92000000-0000-4000-8000-000000000003',
-    wait: /Source evidence|Northwind Capital|Original email/,
+    // Desktop inspector uses compact "Activity" (not "Source evidence"). Avoid the
+    // hidden floating-agent title that also contains "Northwind Capital".
+    wait: /Activity|Original email|Priya Shah/,
   },
   {
     stem: '15-timeline-meeting',
@@ -46,7 +48,7 @@ const DESKTOP_SHOTS = [
   {
     stem: '17-timeline-voice',
     path: '/app/timeline?source=telegram&mode=events&event=92000000-0000-4000-8000-000000000fa1',
-    wait: /Voice memo|Source evidence|0:00/,
+    wait: /Voice memo|Activity|Original telegram|0:00/,
   },
   {
     stem: '18-sources',
@@ -115,7 +117,9 @@ const DESKTOP_SHOTS = [
   {
     stem: '44-work',
     path: '/app/work',
-    wait: /Pinned|Northstar pilot|Customer dealflow/,
+    // Work hub now shows a prioritized queue (not pinned dealflow cards).
+    // Avoid the mobile-only "Pinned work" jump link (xl:hidden).
+    wait: /Work queue|Prioritized work|Validate Northstar pilot export/,
   },
 ];
 
@@ -199,8 +203,24 @@ async function signIn(page) {
   await page.waitForLoadState('networkidle');
 }
 
+async function dismissConsentPopups(page) {
+  // Public analytics consent (and similar) must not appear in product shots.
+  const labels = [/^(Reject|Reject analytics|Not now|Dismiss|Close)$/i];
+  for (const name of labels) {
+    const button = page.getByRole('button', { name }).first();
+    if ((await button.count()) === 0) continue;
+    if (!(await button.isVisible().catch(() => false))) continue;
+    await button.click({ timeout: 2_000 }).catch(() => {});
+    await page.waitForTimeout(150);
+  }
+  await page.evaluate(() => {
+    document.querySelector('nextjs-portal')?.remove();
+  });
+}
+
 async function stabilize(page) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await dismissConsentPopups(page);
   await page.addStyleTag({
     content:
       '*,*::before,*::after{animation-duration:0s!important;transition-duration:0s!important}',
@@ -254,6 +274,9 @@ async function runTheme(browser, theme, shots, viewport) {
   });
   await context.addInitScript((value) => {
     window.localStorage.setItem('tl-theme', value);
+    // Cookie shape: version|choice|timestampMs (see public-analytics-consent.ts).
+    const consent = `2|rejected|${Date.now()}`;
+    document.cookie = `tl_analytics_consent=${consent}; path=/; max-age=15552000; SameSite=Lax`;
   }, theme);
   const page = await context.newPage();
   try {
