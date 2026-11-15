@@ -49,7 +49,9 @@ evidence, per-task project IDs and matching name hints survive global ambiguity
 only when the source explicitly names that project. Relationship identity uses
 endpoints, not similar display titles. A direct English completion assertion whose
 subject matches the full task name can disambiguate it from other loosely recalled
-open work; vague, hedged or complex clauses still cannot choose a target.
+open work; vague, hedged or complex clauses still cannot choose a target. Extraction
+also distinguishes ownership confirmation from a lifecycle change and keeps rejected
+attack directives out of proposal text.
 
 Unknown optional name/type/status/project hints encoded as `null` are treated as
 absent. Explicit clears for member IDs, dates, priorities and primary project IDs
