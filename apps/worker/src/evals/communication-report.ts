@@ -9,6 +9,30 @@ import { summarizeSuggestions } from '#src/evals/suggestion-report.js';
 
 /** Score the approved graph, including preservation of existing records. Counts are graph assertions, not independent examples. */
 export function scoreCommunications(row: CommunicationCase, observation: CommunicationObservation) {
+  // Authorized seed aliases are identity equivalences, not extra acceptable outcomes.
+  // Expand only whole, uniquely owned aliases; ambiguous aliases remain unmatched.
+  const canonicalTitle = (title: string) => {
+    let result = title;
+    for (const seed of row.seed)
+      for (const alias of seed.aliases ?? []) {
+        if (
+          row.seed.some(
+            (other) =>
+              other.key !== seed.key &&
+              [other.name, ...(other.aliases ?? [])].some(
+                (name) => name.toLowerCase() === alias.toLowerCase(),
+              ),
+          )
+        )
+          continue;
+        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        result = result.replace(
+          new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu'),
+          () => seed.name,
+        );
+      }
+    return result.toLowerCase();
+  };
   const assigned = new Map<string, ObservedNode>();
   const used = new Set<string>();
   let matched = 0;
@@ -24,7 +48,7 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
           ? node.id === communicationId(row.familyId, expected.key) && node.name === expected.name
           : expected.terms?.length
             ? expected.terms.every((group) =>
-                group.some((term) => node.name.toLowerCase().includes(term.toLowerCase())),
+                group.some((term) => canonicalTitle(node.name).includes(term.toLowerCase())),
               )
             : [expected.name, ...(expected.acceptedNames ?? [])].some(
                 (name) => node.name.toLowerCase() === name.toLowerCase(),

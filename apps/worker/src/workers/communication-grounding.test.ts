@@ -472,3 +472,153 @@ test('relationship grounding matches task intent while keeping customer identity
   });
   expect(bundles[0]?.items).toHaveLength(2);
 });
+
+test('the original forwarded header retains its verified speaker', () => {
+  const quote = 'I will review retention policy.';
+  const text = `From: Bob <bob@example.test>\n${quote}`;
+  expect(
+    run(text, { assigneeUserId: bob }, [support('assignee', quote, bob)], {
+      source: 'email',
+      speakerContext: '"senderHandle":"bob@example.test"',
+    })[0]?.items[0]?.proposedPayload,
+  ).toEqual({ assigneeUserId: bob });
+});
+test('complete is an explicit completion predicate', () => {
+  const quote = 'Review retention policy is now complete.';
+  expect(
+    run(quote, { status: 'done' }, [support('status', quote, 'done')], {
+      operation: 'update',
+    })[0]?.items[0]?.proposedPayload,
+  ).toEqual({ status: 'done' });
+});
+
+const relationship = (
+  quotes: string[],
+  text: string,
+  aliases: string[] = [],
+  packet = text,
+  extraHubs: { id: string; name: string; type: string; aliases: string[] }[] = [],
+) =>
+  groundCommunicationBundles({
+    bundles: [
+      {
+        title: 'Portal',
+        confidence: 'high',
+        items: [
+          {
+            title: 'Patient Portal',
+            targetKind: 'object',
+            operation: 'create',
+            proposedPayload: {
+              type: 'project',
+              canonicalName: 'Patient Portal',
+              localRef: 'portal',
+            },
+            grounding: [],
+          },
+          {
+            title: 'Customer link',
+            targetKind: 'object_relationship',
+            operation: 'create',
+            proposedPayload: { fromRef: 'portal', toEntityId: 'customer', kind: 'related' },
+            grounding: quotes.map((quote) =>
+              support('customer', quote, 'customer', 'Patient Portal'),
+            ),
+          },
+        ],
+      },
+    ],
+    packet,
+    sources: [{ id: event, text }],
+    members: [],
+    hubs: [{ id: 'customer', name: 'Cedar Dental', type: 'company', aliases }, ...extraHubs],
+    source: 'slack',
+  })[0]?.items;
+test('separate verified statements can ground an unambiguous project link', () => {
+  const quotes = [
+    'Cedar Dental is our client.',
+    'We are planning their Patient Portal project.',
+    'Link the project to Cedar Dental.',
+  ];
+  expect(relationship(quotes, quotes.join(' '))).toHaveLength(2);
+});
+test('a unique authorized alias grounds a customer link', () => {
+  const quote = 'Link Patient Portal to Cedar.';
+  expect(relationship([quote], quote, ['Cedar'])).toHaveLength(2);
+});
+test('unrelated mentions and hidden association statements cannot ground links', () => {
+  const quotes = ['Cedar Dental is our client.', 'Patient Portal is a separate internal project.'];
+  expect(relationship(quotes, quotes.join(' '))).toHaveLength(1);
+  const explicit = 'Link Patient Portal to Cedar Dental.';
+  expect(relationship([explicit], explicit, [], 'Truncated.')).toHaveLength(1);
+});
+
+test('a following deadline sentence belongs to its explicitly named task', () => {
+  const quote = 'Please review retention policy. Its deadline is 2026-06-16T09:00:00Z.';
+  expect(
+    run(quote, { dueAt: '2026-06-16T09:00:00.000Z' }, [
+      support('dueAt', quote, '2026-06-16T09:00:00.000Z'),
+    ])[0]?.items[0]?.proposedPayload,
+  ).toEqual({ dueAt: '2026-06-16T09:00:00.000Z' });
+});
+test('a correction can assign Alice rather than Bob without negating Alice', () => {
+  const quote = 'Alice will review retention policy, not Bob.';
+  expect(
+    run(quote, { assigneeUserId: alice }, [support('assignee', quote, alice)])[0]?.items[0]
+      ?.proposedPayload,
+  ).toEqual({ assigneeUserId: alice });
+  expect(
+    run(quote, { assigneeUserId: bob }, [support('assignee', quote, bob)])[0]?.items[0]
+      ?.proposedPayload,
+  ).toEqual({});
+});
+
+test('a short pronoun deadline quote resolves only its visible preceding task', () => {
+  const quote = 'Its deadline is 2026-06-16T09:00:00Z.';
+  const text = `Please review retention policy. ${quote}`;
+  const payload = { dueAt: '2026-06-16T09:00:00.000Z' };
+  expect(
+    run(text, payload, [support('dueAt', quote, payload.dueAt)])[0]?.items[0]?.proposedPayload,
+  ).toEqual(payload);
+  expect(
+    run(text, payload, [support('dueAt', quote, payload.dueAt)], { packet: quote })[0]?.items[0]
+      ?.proposedPayload,
+  ).toEqual({});
+  expect(
+    run(`Please deploy the server. ${quote}`, payload, [support('dueAt', quote, payload.dueAt)])[0]
+      ?.items[0]?.proposedPayload,
+  ).toEqual({});
+});
+
+test('an imperative to complete work is not evidence it is done', () => {
+  const quote = 'Please complete review retention policy.';
+  expect(
+    run(quote, { status: 'done' }, [support('status', quote, 'done')], { operation: 'update' })[0]
+      ?.items,
+  ).toEqual([]);
+});
+test('unresolved or different plain email headers cannot inherit the forwarder', () => {
+  const quote = 'I will review retention policy.';
+  for (const header of ['From: Alice alice@example.test', 'From: Alice']) {
+    const text = `${header}\n${quote}`;
+    expect(
+      run(text, { assigneeUserId: bob }, [support('assignee', quote, bob)], {
+        source: 'email',
+        speakerContext: '"senderHandle":"bob@example.test"',
+      })[0]?.items[0]?.proposedPayload,
+    ).toEqual({});
+  }
+});
+
+test('typed relationship references count visible aliases as competing candidates', () => {
+  const quotes = [
+    'Cedar Dental is a client.',
+    'Maple is another client.',
+    'Link Patient Portal to the customer.',
+  ];
+  expect(
+    relationship(quotes, quotes.join(' '), [], quotes.join(' '), [
+      { id: 'other', name: 'Maple Corporation', type: 'company', aliases: ['Maple'] },
+    ]),
+  ).toHaveLength(1);
+});

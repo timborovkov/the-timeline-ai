@@ -277,7 +277,7 @@ as independent evidence. `--tag` and `--limit` are diagnostic only. Complete hel
 runs require committed fixtures/scoring and full feedback; inspected holdouts must
 remain in evaluation history and cannot become fresh evidence after tuning.
 
-Communications evaluator version 6 requires complete outcome fields: missing
+Communications evaluator version 7 requires complete outcome fields: missing
 assignees and deadlines are explicit `null` expectations, not unscored properties.
 Seeded values remain expected unless the source supports a change. Reports list
 individual field mismatches and uncertainty violations. Graph matching is not an
@@ -286,8 +286,10 @@ text). Only actionable (`pending`/`failed`) approvals count as proposed work;
 superseded history and saved approval outcomes remain available separately.
 Forwarded timestamps follow their synthetic sequence times. Reviewed
 `acceptedNames` permit specific equivalent renderings, never unrestricted fuzzy
-matching. Historical results are retained and are not silently rescored under
-stricter assertions; aggregate v5/v6 scores are not directly comparable.
+matching. Version 7 additionally resolves whole, uniquely owned seed aliases in task titles;
+ambiguous aliases do not match. Required graph edges and field values are unchanged.
+Historical results are retained and are not silently rescored under
+stricter assertions; aggregate v5/v6/v7 scores are not directly comparable.
 
 Use `--tag=closure-regression` for the nine inspected cases from the three prior
 failure families. Closure validation runs the full development set once and those

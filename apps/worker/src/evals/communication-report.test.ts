@@ -7,6 +7,7 @@ import {
   validateCommunicationCases,
 } from '#src/evals/communication-cases.js';
 import { scoreCommunications, summarizeCommunications } from '#src/evals/communication-report.js';
+import { communicationId } from '#src/evals/communication-types.js';
 import type { CommunicationObservation } from '#src/evals/communication-types.js';
 import { suggestionRunComplete } from '#src/evals/suggestion-report.js';
 
@@ -208,4 +209,54 @@ test('ordinary requests reject invented owners and deadlines', () => {
       nodes: [{ ...node, dueAt: '2026-06-01T23:00:00.000Z' }],
     }).fieldMismatches.some((mismatch) => mismatch.field === 'dueAt'),
   ).toBe(true);
+});
+
+test('task title scoring resolves unique seed aliases but not ambiguous ones', () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'account-alias-link-email'),
+  );
+  const companyId = communicationId(row.familyId, 'company');
+  const observation = {
+    ...empty,
+    nodes: [
+      {
+        id: companyId,
+        type: 'company',
+        name: 'Northwind Medical',
+        status: 'active',
+        assigneeUserId: null,
+        dueAt: null,
+      },
+      {
+        id: 'task',
+        type: 'task',
+        name: 'Prepare NWM compliance checklist',
+        status: 'todo',
+        assigneeUserId: null,
+        dueAt: null,
+      },
+    ],
+    edges: [{ from: 'task', to: companyId, kind: 'related' }],
+  };
+  expect(scoreCommunications(row, observation).passed).toBe(true);
+  expect(
+    scoreCommunications(
+      {
+        ...row,
+        seed: [
+          ...row.seed,
+          { key: 'other', type: 'company', name: 'Northwest Materials', aliases: ['NWM'] },
+        ],
+      },
+      observation,
+    ).passed,
+  ).toBe(false);
+  expect(
+    scoreCommunications(row, {
+      ...observation,
+      nodes: observation.nodes.map((node) =>
+        node.id === 'task' ? { ...node, name: 'Prepare XNWM compliance checklist' } : node,
+      ),
+    }).passed,
+  ).toBe(false);
 });

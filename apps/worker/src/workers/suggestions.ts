@@ -4514,7 +4514,12 @@ async function runSuggestionExtraction(
         timezone: workspaceTime.timezone,
         members: memberRows,
         hubs: hubRows,
-        objects: matchingEntityRows,
+        objects: matchingEntityRows.map((object) => ({
+          ...object,
+          aliases: Array.isArray(object.aliases)
+            ? object.aliases.filter((alias): alias is string => typeof alias === 'string')
+            : [],
+        })),
         pendingNames: pendingTaskRows
           .filter((item) => item.operation === 'create')
           .map((item) => item.title),

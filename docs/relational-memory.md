@@ -64,6 +64,10 @@ unambiguous. Unsupported optional writes are omitted, preserving existing values
 on updates. Ownership is not inferred from being a requester or forwarding an email.
 A pronoun ownership correction requires an immediately preceding, uniquely named
 pending-task context quote; nested email excerpts do not inherit the outer sender.
+Relationship quotes may combine statements within one admitted source when an
+explicit typed reference has exactly one visible authorized candidate, including
+aliases. A deadline pronoun may resolve to the immediately preceding visible task
+sentence. Both checks reject ambiguous or truncated support.
 These deterministic checks recognize supported assertion/date forms and fail
 closed on unrecognized forms; they do not establish universal language understanding
 or replace approval. No additional verification-model call is made.
