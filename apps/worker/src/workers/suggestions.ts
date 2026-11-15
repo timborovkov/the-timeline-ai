@@ -57,7 +57,6 @@ import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-conte
 import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-
 import {
   COMMUNICATION_CONTEXT_POLICY,
   COMMUNICATION_POLICY_VERSION,
