@@ -23,3 +23,5 @@ Historical benchmark JSON remains under `docs/research`; [the harness](../../scr
 - [Suggestion pipeline held-out benchmark, 15 November 2026](suggestion-benchmark-2026-11-15.json).
 
 - [GitHub completion suggestion benchmark, 15 November 2026](github-completion-benchmark-2026-11-15.json).
+
+- [Forwarded email customer/project recall, 15 November 2026](forwarded-email-recall-2026-11-15.json).
