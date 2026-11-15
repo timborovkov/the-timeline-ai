@@ -19,3 +19,5 @@ Historical benchmark JSON remains under `docs/research`; [the harness](../../scr
 - [Pre-launch engine correctness evaluations, 12 November 2026](suggestion-engine-2026-11-12.json).
 
 - [Recall-oriented proposal evaluations, 12 November 2026](suggestion-engine-recall-2026-11-12.json).
+
+- [Suggestion pipeline held-out benchmark, 15 November 2026](suggestion-benchmark-2026-11-15.json).
