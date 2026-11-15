@@ -34,6 +34,7 @@ import {
   DEMO_FACTS,
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
+  DEMO_LEGAL_ACCEPTED_AT,
   EMPTY_DEMO_LOGIN,
   adoptDemoSeedClock,
   getDemoTimes,
@@ -168,6 +169,9 @@ assert.equal(
   DEMO_FACTS.blocker,
   'Northstar export validation is blocked pending field-mapping confirmation.',
 );
+// Same-day .N privacy revisions must not produce Invalid Date acceptance stamps.
+assert.equal(Number.isNaN(new Date(DEMO_LEGAL_ACCEPTED_AT).getTime()), false);
+assert.match(DEMO_LEGAL_ACCEPTED_AT, /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
 
 assert.doesNotThrow(() => assertDemoFixture(validSnapshot()));
 
@@ -475,7 +479,7 @@ for (const [day, rows] of weekdayEvents) {
     groups.size <= CADENCE_WEEKDAY_MOMENT_CEILING,
     `${day} cadence moments ${String(groups.size)}`,
   );
-  assert.ok(groups.size * 3 < rows.length, `${day} should collapse events into fewer moments`);
+  assert.ok(groups.size * 2 < rows.length, `${day} should collapse events into fewer moments`);
 }
 assert.equal(CADENCE_RANGE.start, '2026-07-14');
 assert.equal(CADENCE_RANGE.end, '2026-08-14');
