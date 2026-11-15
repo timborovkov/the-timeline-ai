@@ -427,6 +427,17 @@ export default function TrustPage() {
                       a report does not grant access to other conversations or organization data.
                     </p>
                     <p>
+                      Workspace evaluation tracing is a separate, optional admin setting. It samples
+                      selected team-visible source extraction to help investigate real mistakes and
+                      benchmark improvements. LangSmith stores the input, nearby context and output
+                      for authorized quality review; private records and full agent conversations
+                      are excluded. It does not authorize model training or general workspace
+                      browsing. Collection is off by default, capped at 100 sampled runs per day,
+                      and traces are scheduled for removal within 30 days. Changing or withdrawing
+                      permission also schedules removal; provider cleanup and backup expiry are not
+                      instantaneous. See the Privacy Policy for the full scope.
+                    </p>
+                    <p>
                       Customer team owners and administrators do not receive general access to
                       another member&apos;s private content.
                     </p>

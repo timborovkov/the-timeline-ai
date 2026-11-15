@@ -136,6 +136,17 @@ function TermsContentAndAiSections() {
 
       <h2>8. AI features</h2>
       <p>
+        Workspace evaluation tracing is optional and off by default. If an authorized owner or admin
+        enables it, you instruct us to send the selected, eligible source-processing samples to
+        LangSmith to investigate quality issues and benchmark improvements, as described in the{' '}
+        <Link href="/privacy">Privacy Policy</Link>. You must have authority to share the selected
+        content and provide required notices or obtain required permissions from affected people.
+        This limited instruction does not authorize model training, unrestricted staff access, or
+        collection of members’ private or restricted records. Administrators can change or withdraw
+        the preference in Team settings. Withdrawal stops new collection under that permission and
+        schedules removal of collected traces, subject to provider cleanup and backup retention.
+      </p>
+      <p>
         The Service uses AI for transcription, extraction, embeddings, media text extraction,
         summarization, classification, suggestions, and agent answers. Hosted AI requests are routed
         under the privacy controls described in the <Link href="/privacy">Privacy Policy</Link>.

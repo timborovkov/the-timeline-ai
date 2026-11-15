@@ -11,11 +11,13 @@ import { useActionState, useState } from 'react';
 
 import {
   configureDiagnosticAction,
+  type DiagnosticActionState,
   deleteDiagnosticAction,
   submitDiagnosticAction,
 } from '@/app/actions/diagnostics';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { notifyAction } from '@/lib/notify';
 
 interface MessageDraft extends DiagnosticMessage {
   included: boolean;
@@ -277,7 +279,17 @@ export function DiagnosticSharingSettings({
   teamId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(configureDiagnosticAction, {});
+  const [state, action, pending] = useActionState(
+    async (previous: DiagnosticActionState, data: FormData) =>
+      notifyAction({
+        id: `conversation-sharing:${teamId}`,
+        loading: 'Saving sharing preference…',
+        success: 'Sharing preference saved',
+        error: 'Couldn’t save sharing preference',
+        run: () => configureDiagnosticAction(previous, data),
+      }),
+    {},
+  );
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="teamId" value={teamId} />
@@ -290,9 +302,8 @@ export function DiagnosticSharingSettings({
         submissions; existing reports keep their expiry date.
       </p>
       {state.error && <p role="alert">{state.error}</p>}
-      {state.saved && <p role="status">Sharing preference saved.</p>}
       <Button variant="outline" type="submit" disabled={pending}>
-        Save sharing preference
+        {pending ? 'Saving…' : 'Save sharing preference'}
       </Button>
     </form>
   );

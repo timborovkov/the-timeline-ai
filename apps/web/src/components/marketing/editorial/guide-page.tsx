@@ -3,11 +3,12 @@ import Link from 'next/link';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
 
-import { HOW_IT_WORKS_ROUTE } from '@/components/marketing/editorial/content';
+import { GUIDES_ROUTE } from '@/components/marketing/editorial/content';
 import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
 import { GuideMethodSections } from '@/components/marketing/editorial/guide-method-sections';
+import { GuideToolkit } from '@/components/marketing/editorial/guide-toolkit';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import { MarketingScreenshotBlock } from '@/components/marketing/product-screenshot';
 
@@ -23,7 +24,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
                   href="/"
                   className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  Timeline
+                  Home
                 </Link>
               </li>
               <li aria-hidden="true">
@@ -31,10 +32,10 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
               </li>
               <li>
                 <Link
-                  href={HOW_IT_WORKS_ROUTE}
+                  href={GUIDES_ROUTE}
                   className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  How it works
+                  Guides
                 </Link>
               </li>
               <li aria-hidden="true">
@@ -76,6 +77,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
           </div>
         ) : null}
 
+        {guide.toolkit ? <GuideToolkit toolkit={guide.toolkit} /> : null}
         <GuideMethodSections guide={guide} />
         <GuideClosingSections guide={guide} />
       </article>

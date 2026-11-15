@@ -4,6 +4,7 @@ import {
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
   HOW_IT_WORKS_ROUTE,
+  GUIDES_ROUTE,
   type EditorialGuide,
 } from '@/components/marketing/editorial/content';
 import { findEditorialPublicDocument } from '@/components/marketing/editorial/public-documents';
@@ -18,6 +19,26 @@ const SITE_NAME = 'The Timeline';
 
 export function createHowItWorksMetadata(): Metadata {
   return createEditorialMetadata(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE), 'website');
+}
+
+export function createGuidesMetadata(): Metadata {
+  return createEditorialMetadata(findEditorialPublicDocument(GUIDES_ROUTE), 'website');
+}
+
+export function buildGuidesStructuredData(): PublicStructuredDataGraph {
+  const siteUrl = getSiteUrl();
+  const data = buildPublicStructuredData(findEditorialPublicDocument(GUIDES_ROUTE), siteUrl);
+  const collection = data['@graph'].find((node) => node['@type'] === 'CollectionPage');
+  if (collection) {
+    collection.hasPart = EDITORIAL_GUIDES.map((guide) => ({
+      '@type': 'TechArticle',
+      '@id': `${absoluteUrl(guide.route, siteUrl)}#webpage`,
+      url: absoluteUrl(guide.route, siteUrl),
+      headline: guide.title,
+      description: guide.summary,
+    }));
+  }
+  return data;
 }
 
 export function createGuideMetadata(guide: EditorialGuide): Metadata {
@@ -81,13 +102,13 @@ export function buildGuideStructuredData(guide: EditorialGuide): PublicStructure
     Object.assign(article, {
       mainEntityOfPage: guideUrl,
       headline: guide.title,
-      articleSection: EDITORIAL_PUBLICATION_NAME,
+      articleSection: 'Guides',
       author: organization(siteUrl),
       publisher: organization(siteUrl),
       isPartOf: {
         '@type': 'CollectionPage',
-        '@id': `${absoluteUrl(HOW_IT_WORKS_ROUTE, siteUrl)}#webpage`,
-        name: EDITORIAL_PUBLICATION_NAME,
+        '@id': `${absoluteUrl(GUIDES_ROUTE, siteUrl)}#webpage`,
+        name: 'Guides',
       },
       about: guide.topics.map((topic) => ({ '@type': 'Thing', name: topic })),
       mentions: guide.nativeConnectors.map((connector) => ({

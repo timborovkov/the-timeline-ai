@@ -65,7 +65,8 @@ export type PublicNavigationSection =
   | (typeof HEADER_NAVIGATION_ITEMS)[number]['section']
   | (typeof FOOTER_PRODUCT_ITEMS)[number]['section']
   | 'compare'
-  | 'trust';
+  | 'trust'
+  | 'guides';
 
 interface NavChild {
   href: string;
@@ -343,6 +344,7 @@ export function PublicFooterColumns({
         <p className={cn(styles.footerColumnTitle, headingClassName)}>Resources</p>
         <ul className={styles.footerColumnList}>
           {[
+            { href: '/guides', label: 'Guides' },
             { href: '/help', label: 'Help' },
             { href: '/help/support', label: 'Contact and support' },
             { href: '/trust', label: 'Trust' },

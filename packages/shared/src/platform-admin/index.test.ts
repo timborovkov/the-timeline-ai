@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  teams,
   auditLog,
   platformAdminAudit,
   platformImpersonationSessions,
@@ -14,6 +15,8 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { resetEnvForTests } from '#src/env.js';
 import { OPERATOR_CAPABILITIES } from '#src/platform-admin/capabilities.js';
 import {
+  listPlatformTeams,
+  readPlatformTeam,
   directoryPage,
   endImpersonation,
   listPlatformUsers,
@@ -509,4 +512,28 @@ describe('impersonation lifecycle', () => {
       runGuardedJob(data, () => Promise.resolve('must not execute'), db),
     ).rejects.toThrow();
   });
+});
+
+// Sharing permissions are content-free metadata, available only through verified operator reads.
+it('exposes workspace sharing permissions to verified platform admins', async () => {
+  await db
+    .update(teams)
+    .set({
+      diagnosticSharingEnabled: true,
+      evaluationTracing: {
+        enabled: true,
+        sources: ['telegram'],
+        revision: 'synthetic',
+        policyVersion: 'synthetic-policy',
+      },
+    })
+    .where(eq(teams.id, TEAM));
+  const detail = await readPlatformTeam(db, actor, TEAM);
+  expect(detail?.diagnosticSharingEnabled).toBe(true);
+  expect(detail?.evaluationTracing.sources).toEqual(['telegram']);
+  const list = await listPlatformTeams(db, actor, TEAM, 1);
+  expect(list.rows[0]?.evaluationTracing.enabled).toBe(true);
+  await expect(
+    readPlatformTeam(db, { userId: MEMBER, email: 'member@example.test' }, TEAM),
+  ).rejects.toThrow();
 });
