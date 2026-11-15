@@ -44,6 +44,37 @@ describe('formatDisplayDate', () => {
 
     expect(text).toBe('Jun 30, 2026');
   });
+
+  it('stays stable when the runtime default locale is en-GB', () => {
+    const value = new Date('2026-08-14T12:00:00.000Z');
+    const descriptor = Object.getOwnPropertyDescriptor(Date.prototype, 'toLocaleDateString');
+    const original = descriptor?.value as
+      | ((
+          this: Date,
+          locales?: Intl.LocalesArgument,
+          options?: Intl.DateTimeFormatOptions,
+        ) => string)
+      | undefined;
+    if (!descriptor || !original) {
+      throw new Error('expected Date.prototype.toLocaleDateString');
+    }
+
+    Object.defineProperty(Date.prototype, 'toLocaleDateString', {
+      ...descriptor,
+      value(this: Date, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+        return original.call(this, locales ?? 'en-GB', options);
+      },
+    });
+
+    try {
+      expect(formatDisplayDate(value, { timezone: 'UTC' })).toBe('Aug 14, 2026');
+      expect(formatDisplayDate(value, { timezone: 'UTC' })).not.toBe(
+        original.call(value, 'en-GB', { dateStyle: 'medium', timeZone: 'UTC' }),
+      );
+    } finally {
+      Object.defineProperty(Date.prototype, 'toLocaleDateString', descriptor);
+    }
+  });
 });
 
 describe('formatDisplayDateTime', () => {
@@ -52,6 +83,42 @@ describe('formatDisplayDateTime', () => {
     expect(formatDisplayDateTime(value, { timezone: 'America/Los_Angeles' })).toContain(
       'Jul 14, 2026',
     );
+  });
+
+  it('stays stable when the runtime default locale is en-GB', () => {
+    const value = new Date('2026-08-14T15:30:00.000Z');
+    const descriptor = Object.getOwnPropertyDescriptor(Date.prototype, 'toLocaleString');
+    const original = descriptor?.value as
+      | ((
+          this: Date,
+          locales?: Intl.LocalesArgument,
+          options?: Intl.DateTimeFormatOptions,
+        ) => string)
+      | undefined;
+    if (!descriptor || !original) {
+      throw new Error('expected Date.prototype.toLocaleString');
+    }
+
+    Object.defineProperty(Date.prototype, 'toLocaleString', {
+      ...descriptor,
+      value(this: Date, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+        return original.call(this, locales ?? 'en-GB', options);
+      },
+    });
+
+    try {
+      const text = formatDisplayDateTime(value, { timezone: 'UTC' });
+      expect(text).toContain('Aug 14, 2026');
+      expect(text).not.toBe(
+        original.call(value, 'en-GB', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'UTC',
+        }),
+      );
+    } finally {
+      Object.defineProperty(Date.prototype, 'toLocaleString', descriptor);
+    }
   });
 });
 

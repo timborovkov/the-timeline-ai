@@ -55,6 +55,79 @@ describe('timeline moment grouping', () => {
     expect(formatDateSection('2026-03-28T12:00:00.000Z', now, 'UTC')).toBe('Yesterday');
   });
 
+  it('formats older date-section labels with a pinned locale (SSR/client safe)', () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+    const occurredAt = '2026-08-14T12:00:00.000Z';
+    const sectionOptions = {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    } as const;
+
+    // Document the hydration mismatch that undefined locale would cause.
+    expect(new Date(occurredAt).toLocaleDateString('en-US', sectionOptions)).toBe('Friday, Aug 14');
+    expect(new Date(occurredAt).toLocaleDateString('en-GB', sectionOptions)).toBe('Friday 14 Aug');
+
+    expect(formatDateSection(occurredAt, now, 'UTC')).toBe('Friday, Aug 14');
+    expect(formatDateSection(occurredAt, now, 'UTC')).not.toBe(
+      new Date(occurredAt).toLocaleDateString('en-GB', sectionOptions),
+    );
+  });
+
+  it('keeps date-section labels identical when the runtime default locale is en-GB', () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+    const occurredAt = '2026-08-14T12:00:00.000Z';
+    const descriptor = Object.getOwnPropertyDescriptor(Date.prototype, 'toLocaleDateString');
+    const original = descriptor?.value as
+      | ((
+          this: Date,
+          locales?: Intl.LocalesArgument,
+          options?: Intl.DateTimeFormatOptions,
+        ) => string)
+      | undefined;
+    if (!descriptor || !original) {
+      throw new Error('expected Date.prototype.toLocaleDateString');
+    }
+
+    Object.defineProperty(Date.prototype, 'toLocaleDateString', {
+      ...descriptor,
+      value(this: Date, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+        // Simulate a browser whose default locale is en-GB when callers omit locale.
+        return original.call(this, locales ?? 'en-GB', options);
+      },
+    });
+
+    try {
+      expect(formatDateSection(occurredAt, now, 'UTC')).toBe('Friday, Aug 14');
+      expect(
+        buildTimelineMoments(
+          [
+            event({
+              id: 'dated',
+              source: 'web',
+              occurredAt,
+            }),
+          ],
+          authorMap,
+          { now, timezone: 'UTC' },
+        )[0],
+      ).toMatchObject({
+        dateKey: '2026-08-14',
+        dateLabel: 'Friday, Aug 14',
+      });
+    } finally {
+      Object.defineProperty(Date.prototype, 'toLocaleDateString', descriptor);
+    }
+  });
+
+  it('includes the year in date-section labels outside the current year', () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+    expect(formatDateSection('2025-08-14T12:00:00.000Z', now, 'UTC')).toBe(
+      'Thursday, Aug 14, 2025',
+    );
+  });
+
   it('groups meetings by meeting id', () => {
     const moments = buildTimelineMoments(
       [
