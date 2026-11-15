@@ -41,7 +41,7 @@ test('corpus coverage and family isolation are validated', () => {
   expect(selectCommunications({}).selected).toHaveLength(96);
   expect(selectCommunications({ split: 'held-out', repeats: '3' })).toMatchObject({
     repeats: 3,
-    benchmark: true,
+    benchmark: false,
   });
   expect(selectCommunications({ split: 'held-out', tag: 'email' })).toMatchObject({
     benchmark: false,

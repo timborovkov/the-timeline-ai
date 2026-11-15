@@ -559,3 +559,75 @@ describe('attachUniqueHubsToBundles', () => {
     expect(hubsChanged(before, before)).toBe(false);
   });
 });
+
+describe('explicit completion among recalled candidates', () => {
+  const relatedOpenWork = [
+    { id: 'access', name: 'Review access matrix' },
+    { id: 'backup', name: 'Review backup matrix' },
+  ];
+  for (const evidenceText of [
+    'Is the access matrix review finished?',
+    'If the access matrix review is finished, tell me.',
+    'I think the access matrix review is finished.',
+    'The access matrix review is not finished.',
+    'The matrix review is finished.',
+    'Review access matrix is still pending while the deployment finished.',
+  ]) {
+    it(`does not treat uncertain or incomplete identification as completion: ${evidenceText}`, () => {
+      expect(
+        stripAmbiguousLifecycleUpdates({
+          evidenceText,
+          relatedOpenWork,
+          relatedOpenWorkIds: ['access', 'backup'],
+          bundles: [
+            {
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: 'access',
+                  title: 'Access review',
+                  proposedPayload: { status: 'done' },
+                },
+              ],
+            },
+          ],
+        }),
+      ).toEqual([]);
+    });
+  }
+});
+
+it('does not use a model project name to resolve a broad shared client mention', () => {
+  const hubs = ['Orion Client Portal', 'Orion Team Console'].map((name, index) => ({
+    ...fabaProject,
+    id: `orion-${index}`,
+    name,
+  }));
+  const qualified = qualifyWorkspaceHubs({
+    hubs,
+    text: 'For Orion, prepare the migration checklist.',
+  });
+  expect(qualified.mentioned).toHaveLength(2);
+  expect(qualified.explicitlyNamed).toEqual([]);
+  const [bundle] = attachUniqueHubsToBundles({
+    qualified,
+    bundles: [
+      {
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Prepare migration checklist',
+            proposedPayload: {
+              canonicalName: 'Prepare migration checklist',
+              parentObjectId: 'orion-0',
+              projectName: 'Orion Client Portal',
+            },
+          },
+        ],
+      },
+    ],
+  });
+  expect(bundle?.items[0]?.proposedPayload.parentObjectId).toBeUndefined();
+});

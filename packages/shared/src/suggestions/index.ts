@@ -1466,6 +1466,12 @@ function samePendingCreateApprovalSubject(args: {
 }): boolean {
   const { olderItem, olderSuggestion, newerItem, newerSuggestion } = args;
   if (olderItem.operation !== 'create' || newerItem.operation !== 'create') return false;
+  // Relationship identity is its endpoints, never similar display titles.
+  if (
+    olderItem.targetKind === 'object_relationship' ||
+    newerItem.targetKind === 'object_relationship'
+  )
+    return false;
   if (olderItem.targetId || newerItem.targetId) return false;
   if (!sameConversationReview(olderSuggestion, newerSuggestion)) return false;
 
@@ -1765,6 +1771,21 @@ function sameConversationReview(
   );
 }
 
+/** Similar task text is recall, not identity, when both names add distinct terms. */
+function compatibleTaskNames(
+  left: typeof agentSuggestionItems.$inferSelect,
+  right: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const a = [...approvalSubjectTokensFromText(normalizedPrimaryApprovalName(left))];
+  const b = [...approvalSubjectTokensFromText(normalizedPrimaryApprovalName(right))];
+  const matches = (x: string, y: string) => x === y || sameLongTokenFamily(x, y);
+  return (
+    a.length > 0 &&
+    b.length > 0 &&
+    (a.every((x) => b.some((y) => matches(x, y))) || b.every((y) => a.some((x) => matches(x, y))))
+  );
+}
+
 function shouldSupersedePendingItem(args: {
   olderItem: typeof agentSuggestionItems.$inferSelect;
   olderSuggestion: typeof agentSuggestions.$inferSelect;
@@ -1801,6 +1822,14 @@ function shouldSupersedePendingItem(args: {
 
   const olderExternalKey = artifactExternalKey(olderItem);
   if (olderExternalKey && olderExternalKey === artifactExternalKey(newerItem)) return true;
+
+  if (
+    isObjectTaskCreatePair &&
+    normalizedObjectCreateType(olderItem) === 'task' &&
+    normalizedObjectCreateType(newerItem) === 'task' &&
+    !compatibleTaskNames(olderItem, newerItem)
+  )
+    return false;
 
   const newerArtifactIds = itemArtifactIds(newerItem);
   const sameArtifact = [...itemArtifactIds(olderItem)].some((id) => newerArtifactIds.has(id));

@@ -754,6 +754,23 @@ export function validateCommunicationCases() {
         throw new Error('Missing graph endpoint');
   }
 }
+// These families have now been inspected, including the first v2 held-out run.
+// New corpus hashes cannot make reused families fresh again.
+const inspectedFamilies = new Set([
+  ...historicalFamilies.map((family) => family.id),
+  'two-project-routing',
+  'distinct-client-same-deliverable',
+  'pending-ambiguous-project',
+  'partial-completion-separated',
+  'handoff-declined',
+  'existing-account-advertisement',
+  'quoted-injection-reassignment',
+  'private-followup-public-task',
+  'withdrawn-tender-context',
+  'html-quoted-two-requests',
+  'forward-conditional-not-approved',
+  'forward-quoted-assignment-correction',
+]);
 export function selectCommunications(options: {
   split?: string;
   repeats?: string;
@@ -769,6 +786,8 @@ export function selectCommunications(options: {
           ...(options.repeats ? { repeats: options.repeats } : {}),
         },
   );
+  full.benchmark =
+    full.benchmark && !full.corpus.some((row) => inspectedFamilies.has(row.familyId));
   if (options.tag === undefined) return full;
   const subset = selectBenchmark(
     COMMUNICATION_CASES.filter((row) => row.tags.includes(options.tag ?? '')),

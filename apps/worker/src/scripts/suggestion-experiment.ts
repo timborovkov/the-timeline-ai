@@ -102,6 +102,8 @@ if (!values.sync) {
     '../workers/suggestions.ts',
     '../workers/communication-policy.ts',
     '../evals/communication-harness.ts',
+    '../evals/communication-cases.ts',
+    '../../../../packages/shared/src/suggestions/hub-context.ts',
     '../evals/communication-report.ts',
     '../../../../packages/shared/src/suggestions/index.ts',
     '../../../../packages/shared/src/suggestions/proposal-payload.ts',

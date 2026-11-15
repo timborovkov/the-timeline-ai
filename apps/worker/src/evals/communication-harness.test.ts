@@ -430,3 +430,114 @@ for (const text of [
     expect(result.edges).toEqual([]);
   }, 60_000);
 }
+
+test('explicit per-task project routing survives a multi-project message', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'two-project-routing-email'),
+  );
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Two project deliverables',
+              confidence: 'high',
+              items: [
+                ['Write schema migration', 'Records Gateway', 'project'],
+                ['Test password recovery', 'Staff Console', 'second-project'],
+              ].map(([name, projectName, key]) => ({
+                operation: 'create',
+                targetKind: 'task',
+                title: name,
+                proposedPayload: {
+                  canonicalName: name,
+                  status: 'todo',
+                  projectName,
+                  parentObjectId: communicationId(row.familyId, requireValue(key)),
+                },
+              })),
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('similar deliverables for different customers remain distinct approvals', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'distinct-client-same-deliverable-email'),
+  );
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Customer checklists',
+              confidence: 'high',
+              items: [
+                ['River Clinic', 'river', 'company'],
+                ['Mountain Clinic', 'mountain', 'second-company'],
+              ].flatMap(([name, ref, key]) => [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: `Prepare onboarding checklist for ${name}`,
+                  proposedPayload: {
+                    canonicalName: `Prepare onboarding checklist for ${name}`,
+                    status: 'todo',
+                    localRef: ref,
+                  },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: `Link checklist to ${name}`,
+                  proposedPayload: {
+                    kind: 'related',
+                    fromRef: ref,
+                    toEntityId: communicationId(row.familyId, requireValue(key)),
+                  },
+                },
+              ]),
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('explicit completion of one named task is not suppressed by another open task', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'partial-completion-separated-email'),
+  );
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Access review completed',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: communicationId(row.familyId, 'task'),
+                  title: 'Review access matrix',
+                  proposedPayload: { status: 'done' },
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);

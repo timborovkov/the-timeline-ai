@@ -288,3 +288,10 @@ Booking Desk development case accepts its source's leading article (The Booking
 Desk); historical scores are preserved, not silently rescored. These scoring
 changes preclude claiming a direct accuracy improvement over version 4 solely
 from aggregate totals.
+
+The inspected family registry in the communications selector prevents subsequent
+runs of these held-out families from claiming `benchmarkEvidence`, even after a
+corpus hash changes. They remain useful diagnostic regressions. Fresh benchmark
+evidence requires a held-out split containing only uninspected, reviewed families.
+See the [dated follow-up evidence](../evidence/communications-follow-up-2026-11-15.json)
+for the frozen pre-fix runs and subsequent diagnostics; they are different revisions.

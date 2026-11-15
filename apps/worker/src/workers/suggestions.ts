@@ -4477,6 +4477,8 @@ async function runSuggestionExtraction(
         text: evidenceText,
       }),
       relatedOpenWorkIds: relatedOpenWork.map((work) => work.id),
+      relatedOpenWork,
+      evidenceText,
     })
     .map((bundle) =>
       repairRelationshipBundle(

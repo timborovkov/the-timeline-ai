@@ -109,6 +109,7 @@ export interface WorkspaceHub {
 
 export interface QualifiedWorkspaceHubs {
   mentioned: WorkspaceHub[];
+  explicitlyNamed?: WorkspaceHub[];
   uniqueProject: WorkspaceHub | null;
   uniqueCompany: WorkspaceHub | null;
 }
@@ -269,6 +270,7 @@ export function qualifyWorkspaceHubs(args: {
   const explicitProjects = explicitlyNamed.filter((hub) => hub.type === 'project');
   return {
     mentioned,
+    explicitlyNamed,
     uniqueProject: uniqueHubOfType(
       explicitProjects.length ? explicitProjects : mentioned,
       'project',
@@ -435,9 +437,22 @@ function attachUniqueHubsToTaskItem<T extends HubAttachableItem>(
       changed = true;
     }
   } else if (typeof payload.parentObjectId === 'string' && payload.parentObjectId) {
-    delete payload.parentObjectId;
-    delete payload.projectName;
-    changed = true;
+    // A multi-project message can route each task explicitly. Global ambiguity
+    // must not erase a per-item project that is actually named in the evidence.
+    const explicitProject = (qualified.explicitlyNamed ?? []).find(
+      (hub) =>
+        hub.type === 'project' &&
+        hub.id === payload.parentObjectId &&
+        typeof payload.projectName === 'string' &&
+        [hub.name, ...hub.aliases].some(
+          (name) => name.toLowerCase() === String(payload.projectName).toLowerCase(),
+        ),
+    );
+    if (!explicitProject) {
+      delete payload.parentObjectId;
+      delete payload.projectName;
+      changed = true;
+    }
   }
 
   let relationship: T | null = null;
@@ -510,9 +525,42 @@ export function attachUniqueHubsToBundles<T extends HubAttachableItem>(args: {
 export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args: {
   bundles: HubAttachableBundle<T>[];
   relatedOpenWorkIds: readonly string[];
+  relatedOpenWork?: readonly { id: string; name: string }[];
+  evidenceText?: string;
 }): HubAttachableBundle<T>[] {
   if (args.relatedOpenWorkIds.length < 2) return args.bundles;
   const ambiguous = new Set(args.relatedOpenWorkIds);
+  // Full title tokens in an affirmative completion sentence distinguish explicit
+  // completion from the loose token recall that assembled the candidate list.
+  const titleTokens = (text: string) =>
+    (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(
+      (word) => word.length >= 3 && !['the', 'and', 'for', 'with'].includes(word),
+    );
+  const explicit = new Set<string>();
+  for (const sentence of (args.evidenceText ?? '').split(/(?<=[.!?])\s+|\n+/u)) {
+    if (
+      !/\b(?:done|complete|completed|finished|shipped)\b/i.test(sentence) ||
+      /[?]|\b(?:not|never|if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)
+    )
+      continue;
+    // Bind the subject directly to a completion predicate. Extra subject words
+    // (such as another artifact in a subordinate clause) fail closed.
+    const assertion =
+      /^(.*?)\s+(?:is|was|has been)\s+(?:done|complete|completed|finished|shipped)[.!]?$/i.exec(
+        sentence.trim(),
+      );
+    if (!assertion?.[1]) continue;
+    const tokens = new Set(titleTokens(assertion[1]));
+    const matches = (args.relatedOpenWork ?? []).filter((work) => {
+      const words = titleTokens(work.name);
+      return (
+        words.length >= 2 &&
+        tokens.size === new Set(words).size &&
+        words.every((word) => tokens.has(word))
+      );
+    });
+    if (matches.length === 1 && matches[0]) explicit.add(matches[0].id);
+  }
   return args.bundles.flatMap((bundle) => {
     const items: T[] = [];
     for (const item of bundle.items) {
@@ -521,7 +569,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
         continue;
       }
       const targetId = item.targetId;
-      if (typeof targetId !== 'string' || !ambiguous.has(targetId)) {
+      if (typeof targetId !== 'string' || !ambiguous.has(targetId) || explicit.has(targetId)) {
         items.push(item);
         continue;
       }
