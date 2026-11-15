@@ -14,7 +14,9 @@ loading frames and presentation.
 Export the root `.env`, run `bun run db:migrate` and `bun run demo:seed`, start
 the web app, then run `bun run capture:marketing-screenshots`.
 Desktop shots are 1440×900 at device scale 2 (2880×1800 PNG); mobile shots are
-390×844 at device scale 2 (780×1688 PNG). Both themes are captured in one run. Timeline readiness uses a loaded moment,
-so a persisted seed clock does not need to fall on today’s date.
+390×844 at device scale 2 (780×1688 PNG). Both themes are captured in one run.
+The script forces `tl-theme`, rejects public analytics consent, and asserts the
+`html.dark` class on dark captures. Timeline readiness uses a loaded moment, so a
+persisted seed clock does not need to fall on today’s date.
 Copy the PNGs from `/tmp/marketing-screenshots` into this directory. The script
 also copies dark mobile images to the existing unthemed filenames.
