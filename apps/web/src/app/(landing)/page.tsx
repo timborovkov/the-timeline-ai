@@ -137,8 +137,8 @@ export default function LandingPage() {
       <PublicHeader currentSection="product" />
       <main id="main" tabIndex={-1}>
         <ClaimScene />
-        <UseCaseOverview />
         <IntakeScene />
+        <UseCaseOverview />
         <TimelineScene />
         <AnswerScene />
         <OrganisedScene />
