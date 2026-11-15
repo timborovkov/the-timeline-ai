@@ -67,7 +67,6 @@ type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 const SETTINGS_ITEMS = [
   { value: 'members', label: 'Members' },
   { value: 'general', label: 'General' },
-  { value: 'preferences', label: 'Preferences' },
   { value: 'visibility', label: 'Visibility' },
   { value: 'email', label: 'Email' },
   { value: 'billing', label: 'Billing', adminOnly: true },
@@ -118,15 +117,6 @@ export default async function TeamSettingsPage({
   } = await loadTeamSettingsPage({ searchParams });
   return (
     <div className="space-y-4">
-      <Link
-        href="/app/team/evaluation"
-        className="inline-flex min-h-11 items-center text-sm underline"
-      >
-        Evaluation tracing
-      </Link>
-      <Link href="/app/diagnostics/settings" className="text-sm underline">
-        Conversation report sharing
-      </Link>
       <PageHeader
         variant="collection"
         title="Team"
@@ -219,16 +209,19 @@ function TeamSettingsSections({
             />
           </>
         ) : null}
-        {section === 'general' ? <TeamIdentitySettings isAdmin={isAdmin} active={active} /> : null}
-        {section === 'preferences' ? (
-          <TeamPreferencesSettings
-            digestPreference={digestPreference}
-            isAdmin={isAdmin}
-            digestDestinations={digestDestinations}
-            destinationOptions={destinationOptions}
-            timezoneSettings={timezoneSettings}
-            workStyle={workStyle}
-          />
+        {section === 'general' ? (
+          <>
+            <TeamIdentitySettings isAdmin={isAdmin} active={active} />
+            <TeamQualitySettings />
+            <TeamPreferencesSettings
+              digestPreference={digestPreference}
+              isAdmin={isAdmin}
+              digestDestinations={digestDestinations}
+              destinationOptions={destinationOptions}
+              timezoneSettings={timezoneSettings}
+              workStyle={workStyle}
+            />
+          </>
         ) : null}
         {section === 'visibility' ? (
           <SettingsSection title="Visibility defaults">
@@ -299,6 +292,46 @@ function TeamIdentitySettings({
           <p className="text-sm text-fg-muted">Only team administrators can rename this team.</p>
         )}
         <TeamSupportMetadata teamId={active.teamId} teamSlug={active.teamSlug} />
+      </div>
+    </SettingsSection>
+  );
+}
+function TeamQualitySettings() {
+  return (
+    <SettingsSection title="Quality and support">
+      <div className="divide-y divide-border">
+        <Link
+          href="/app/team/evaluation"
+          className="group flex min-h-11 items-center justify-between gap-4 rounded-sm py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div>
+            <span className="text-sm font-medium underline decoration-border underline-offset-4 group-hover:decoration-current">
+              Evaluation tracing
+            </span>
+            <p className="mt-1 text-sm text-fg-muted">
+              Choose whether selected source processing can be shared to help improve accuracy.
+            </p>
+          </div>
+          <span aria-hidden="true" className="shrink-0 text-fg-muted">
+            →
+          </span>
+        </Link>
+        <Link
+          href="/app/diagnostics/settings"
+          className="group flex min-h-11 items-center justify-between gap-4 rounded-sm py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div>
+            <span className="text-sm font-medium underline decoration-border underline-offset-4 group-hover:decoration-current">
+              Conversation report sharing
+            </span>
+            <p className="mt-1 text-sm text-fg-muted">
+              Control whether members can send a reviewed conversation report to support.
+            </p>
+          </div>
+          <span aria-hidden="true" className="shrink-0 text-fg-muted">
+            →
+          </span>
+        </Link>
       </div>
     </SettingsSection>
   );
@@ -540,7 +573,9 @@ async function loadTeamSettingsPage({
   const isAdmin = role === 'owner' || role === 'admin';
   const isOwner = role === 'owner';
   const query = await searchParams;
-  const requestedSection = query.section ?? 'members';
+  // Preserve bookmarks to the former Preferences section.
+  const requestedSection =
+    query.section === 'preferences' ? 'general' : (query.section ?? 'members');
   const section = SETTINGS_ITEMS.some(
     (item) => item.value === requestedSection && (!('adminOnly' in item) || isAdmin),
   )
@@ -679,7 +714,7 @@ async function loadTeamSettingsPage({
     return { id: m.userId, label: displayMemberLabel(u) };
   });
   const destinationOptions =
-    isAdmin && section === 'preferences' ? await digestDestinationOptions(active.teamId) : [];
+    isAdmin && section === 'general' ? await digestDestinationOptions(active.teamId) : [];
   const billingDashboard = isAdmin
     ? await scope.billing.getDashboard({ canManageBilling: true })
     : null;

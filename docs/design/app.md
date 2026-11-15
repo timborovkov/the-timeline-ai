@@ -255,7 +255,7 @@ the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
 Team → General keeps identity as a form (rename for admins) plus two readonly
 copyable support fields — team id and slug — with spacing between sections
-and no nested cards.
+and no nested cards. General also contains work style, messaging, digest destinations and timezone; there is no separate Preferences tab. Old Preferences links resolve to General. Evaluation tracing and conversation report sharing appear as descriptive navigation rows under Quality and support within General, never above the page header.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Member and invitation actions stack below
