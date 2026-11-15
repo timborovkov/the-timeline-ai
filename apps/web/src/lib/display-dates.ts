@@ -19,11 +19,13 @@ interface RelativeAgeOptions {
 
 // Pin English so server Node and the browser cannot disagree on unit labels.
 const RELATIVE_AGE_FORMATTER = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+/** Same locale pin for absolute dates so SSR and client hydration stay identical. */
+const DISPLAY_LOCALE = 'en-US';
 
 export function formatDisplayDateTime(value: Date | string, options: DisplayDateOptions): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(DISPLAY_LOCALE, {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: options.timezone,
@@ -33,7 +35,7 @@ export function formatDisplayDateTime(value: Date | string, options: DisplayDate
 export function formatDisplayDate(value: Date | string, options: DisplayDateOptions): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(DISPLAY_LOCALE, {
     dateStyle: 'medium',
     timeZone: options.timezone,
   });
