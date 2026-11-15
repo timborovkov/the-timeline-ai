@@ -2521,5 +2521,11 @@
   },
   "apps/web/src/lib/workspace-sharing-status.test.ts": {
     "group": "unit"
+  },
+  "apps/worker/src/evals/suggestion-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/evals/suggestion-harness.test.ts": {
+    "group": "integration"
   }
 }

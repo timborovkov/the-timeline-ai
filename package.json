@@ -60,7 +60,9 @@
     "eval:sync": "bun --conditions=development packages/shared/src/scripts/task-category-experiment.ts --sync",
     "eval:compare": "bun --conditions=development packages/shared/src/scripts/task-category-experiment.ts",
     "eval:agent:sync": "bun --conditions=development packages/shared/src/scripts/agent-experiment.ts --sync",
-    "eval:agent:compare": "bun --conditions=development packages/shared/src/scripts/agent-experiment.ts"
+    "eval:agent:compare": "bun --conditions=development packages/shared/src/scripts/agent-experiment.ts",
+    "eval:suggestions:sync": "bun --conditions=development apps/worker/src/scripts/suggestion-experiment.ts --sync",
+    "eval:suggestions:compare": "bun --conditions=development apps/worker/src/scripts/suggestion-experiment.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1165.0",

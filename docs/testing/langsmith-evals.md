@@ -132,3 +132,64 @@ and enable rich tracing within the eval process. They require no production data
 store. Retention and access follow the selected LangSmith workspace; these commands
 do not change account settings or establish training consent. See the
 [security standard](../security-privacy-trust.md).
+
+## Suggestion pipeline benchmark
+
+`bun run eval:suggestions:sync --split=development` publishes the synthetic
+suggestion corpus using the same immutable corpus-hash/split naming convention.
+Use `--split=held-out` to sync the other split. Existing datasets are preserved.
+
+```sh
+bun run eval:suggestions:compare --split=development --repeats=1 --out=/tmp/suggestions-dev.json
+bun run eval:suggestions:compare --split=held-out --repeats=3 --out=/tmp/suggestions-held-out.json
+```
+
+The initial corpus contains 40 authored scenarios, 20 per split, including
+positive commitments and requests, multiple actions, lifecycle changes, explicit
+assignments and deadlines, noise, completed work, retries, private context, and
+injected instructions. Cases define expected operations, target IDs, intent term
+groups, structured fields, and rationales. Intent terms allow synonymous titles;
+no exact prose comparison or LLM judge is used. These references have consistency
+checks, not independent human validation. Review disputed matches before drawing
+model-selection conclusions; this small initial corpus is not a promotion gate.
+
+The harness uses migrated disposable PGlite records, the real event dispatcher,
+conversation scheduling, proposal validation/persistence, and workspace-scoped
+pending-suggestion reads. An in-memory queue drains the scheduled review after
+advancing its synthetic quiet window. Live runs call the current extraction model
+through shared inference, including reconciliation planning. Task-category
+classification, vector retrieval and evidence-pack construction are disabled to
+isolate proposal behavior. Production prompts and model configuration are unchanged.
+
+Success means required actions reach the visible approval queue with the expected
+structured fields and source IDs. One-to-one matching counts missed actions and
+unmatched proposals separately. Deadline cases permit at most one optional calendar
+companion with matching intent and start time; extra or incorrect companions remain
+noise. Empty output remains in the denominator. Provider
+errors remain failures even if the worker catches them and produces fallback
+output. Private source leakage, invalid evidence IDs, or canonical entity mutation
+before approval are hard failures. Reports include individual outputs, execution
+errors, scenario denominators, missed/noisy action counts, latency and observed
+harness stages. These stages identify dispatch, inference and visibility-read
+progress; they are not a complete internal rejection-reason taxonomy.
+
+Each repetition is reported separately; repeated answers are not independent
+examples. Only a complete held-out run with all feedback is marked benchmark
+evidence. Dirty working trees cannot run held-out evaluation. Preserve original
+experiments and reports after inspection; do not tune on these cases and later
+claim they are fresh holdout evidence. Execution failures or unsuccessful cases
+return nonzero without weakening expected outcomes.
+
+This suite starts at captured raw events. It does not measure connector ingestion,
+real retrieval recall, browser rendering, queue load or wall-clock delivery SLA.
+GitHub integration pulses and Drive lifecycle notifications currently test safe
+suppression only; they do not represent the GitHub task-proposal or opted-in
+Drive document-extraction paths. Existing live proposal-engine and document
+freshness/end-to-end suites remain separate. Extend this corpus with those paths
+before claiming full source coverage.
+
+All published inputs are synthetic. This benchmark does **not** broaden production
+trace collection or reinterpret existing workspace consent. Production pipeline
+rejection diagnostics remain separate work requiring a collection contract and
+matching disclosure/consent before activation; see
+[workspace evaluation tracing](../workspace-evaluation-tracing.md).
