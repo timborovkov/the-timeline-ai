@@ -190,14 +190,43 @@ const suggestionExtractionSchemaLegacy = z.object({
   bundles: z.array(suggestionBundleBaseSchema).max(5),
 });
 
+function refineHumanItem(
+  item: z.infer<typeof suggestionItemObjectSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  refineSuggestionItemTarget(item, ctx);
+  if (
+    item.operation === 'create' &&
+    item.targetKind === 'object' &&
+    (typeof item.proposedPayload.type !== 'string' || !item.proposedPayload.type.trim())
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['proposedPayload', 'type'],
+      message: 'Object creates require an explicit type',
+    });
+  }
+  if (item.targetKind === 'object_relationship') {
+    for (const side of ['from', 'to']) {
+      const id = item.proposedPayload[`${side}EntityId`];
+      if (id !== undefined && !z.uuid().safeParse(id).success)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['proposedPayload', `${side}EntityId`],
+          message: 'Use a UUID for existing endpoints, or fromRef/toRef for local references',
+        });
+    }
+  }
+}
+
 const humanItemSchema = suggestionItemObjectSchema
   .extend({
     grounding: z.array(communicationGroundingSchema).max(12),
   })
-  .superRefine(refineSuggestionItemTarget);
+  .superRefine(refineHumanItem);
 const humanBundleSchema = suggestionBundleBaseSchema.extend({
   confidence: z.enum(['low', 'medium', 'high']),
-  items: z.array(humanItemSchema).max(5),
+  items: z.array(humanItemSchema).min(1).max(5),
 });
 const humanExtractionSchema = z.object({ bundles: z.array(humanBundleSchema).max(5) });
 const humanExtractionSchemaCited = z.object({
@@ -211,8 +240,9 @@ const humanExtractionSchemaCited = z.object({
                 grounding: z.array(communicationGroundingSchema).max(12),
                 evidenceRawEventIds: z.array(z.uuid()).min(1).max(32),
               })
-              .superRefine(refineSuggestionItemTarget),
+              .superRefine(refineHumanItem),
           )
+          .min(1)
           .max(5),
       }),
     )

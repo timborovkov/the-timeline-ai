@@ -503,6 +503,7 @@ const relationship = (
     bundles: [
       {
         title: 'Portal',
+        quote: text,
         confidence: 'high',
         items: [
           {
@@ -620,5 +621,23 @@ test('typed relationship references count visible aliases as competing candidate
     relationship(quotes, quotes.join(' '), [], quotes.join(' '), [
       { id: 'other', name: 'Maple Corporation', type: 'company', aliases: ['Maple'] },
     ]),
+  ).toHaveLength(1);
+});
+
+test('verified bundle link clause joins separately quoted endpoint evidence', () => {
+  const quotes = ['Cedar Dental is our client.', 'We are planning their Patient Portal project.'];
+  expect(
+    relationship(quotes, `${quotes.join(' ')} Link the project to Cedar Dental.`),
+  ).toHaveLength(2);
+  expect(
+    relationship(
+      quotes,
+      `${quotes.join(' ')} Link the project to Cedar Dental.`,
+      [],
+      quotes.join(' '),
+    ),
+  ).toHaveLength(1);
+  expect(
+    relationship(quotes, `${quotes.join(' ')} Do not link the project to Cedar Dental.`),
   ).toHaveLength(1);
 });

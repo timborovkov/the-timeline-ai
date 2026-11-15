@@ -634,3 +634,46 @@ test('omitted human extraction confidence is an execution failure, never medium 
   expect(result.executionErrors.length).toBeGreaterThan(0);
   expect(scoreCommunications(row, result).passed).toBe(false);
 }, 60_000);
+
+for (const [name, items] of [
+  ['empty proposed bundle', []],
+  [
+    'typeless object create',
+    [
+      {
+        operation: 'create',
+        targetKind: 'object',
+        title: 'Portal',
+        proposedPayload: { canonicalName: 'Portal' },
+        grounding: [],
+      },
+    ],
+  ],
+  [
+    'local reference passed as existing UUID',
+    [
+      {
+        operation: 'create',
+        targetKind: 'object_relationship',
+        title: 'Customer link',
+        proposedPayload: { fromEntityId: 'new-project', toEntityId: 'customer', kind: 'related' },
+        grounding: [],
+      },
+    ],
+  ],
+] as const) {
+  test(`${name} is an inference failure, not successful abstention`, async () => {
+    const row = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === 'hypothetical-example-email'),
+    );
+    const result = await harness.run(row, {
+      model: async () =>
+        ({
+          model: 'test',
+          object: { bundles: [{ title: 'Proposed work', confidence: 'high', items }] },
+        }) as never,
+    });
+    expect(result.executionErrors.length).toBeGreaterThan(0);
+    expect(scoreCommunications(row, result).passed).toBe(false);
+  }, 60_000);
+}

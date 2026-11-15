@@ -258,10 +258,27 @@ export function groundCommunicationBundles<T extends Item>(args: {
                       ),
                   ),
               );
+        // The bundle quote is evidence only after the same source/packet checks.
+        // Reuse explicit link clauses when endpoint supports are quoted separately.
+        const linkSupports = [...supports];
+        for (const support of supports) {
+          const source = args.sources.find((source) => source.id === support.rawEventId);
+          if (
+            !bundle.quote ||
+            !source ||
+            !safeSourceQuote(source.text, bundle.quote) ||
+            !normalize(args.packet).includes(normalize(bundle.quote))
+          )
+            continue;
+          for (const quote of bundle.quote.split(/(?<=[.!?])\s+/)) {
+            if (/\blink\b/i.test(quote) && safeSourceQuote(source.text, quote))
+              linkSupports.push({ ...support, quote });
+          }
+        }
         const grounded =
           from &&
           to &&
-          supports.some((support) => {
+          linkSupports.some((support) => {
             if (
               !(
                 (support.field === 'customer' && [from.type, to.type].includes('company')) ||

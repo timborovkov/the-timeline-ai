@@ -53,7 +53,9 @@ open work; vague, hedged or complex clauses still cannot choose a target. Extrac
 also distinguishes ownership confirmation from a lifecycle change and keeps rejected
 attack directives out of proposal text.
 
-Human-communication extraction requires explicit bundle confidence and internal
+Human-communication extraction permits an empty bundle list for no action, but
+rejects empty proposed bundles, typeless object creates and non-UUID existing
+relationship endpoints at the inference boundary. It requires explicit bundle confidence and internal
 source grounding for proposed assignments, deadlines, lifecycle changes and
 relationships. Grounding identifies an admitted raw event, an exact quote visible
 in the actual packet, the subject and normalized value. It is checked against
