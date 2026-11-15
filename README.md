@@ -86,8 +86,14 @@ Report security vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
 ## License
 
-This repository does not currently include an open-source license. Public access
-to the source does not grant general permission to copy, modify, redistribute or
-self-host it. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+This repository is licensed under the [Elastic License 2.0](LICENSE)
+(`Elastic-2.0`), except where otherwise noted. You may use, modify, redistribute
+and self-host the software subject to its terms, including restrictions on
+providing it as a hosted or managed service, circumventing license-key
+functionality, and removing licensing or copyright notices.
+
+Elastic License 2.0 is a source-available license, not an OSI-approved open-source
+license. Third-party components retain their own licenses. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 
 Agent coworker reporting, owner-delegated provisioning and rollout details: [agent coworkers](docs/agent-coworkers.md).

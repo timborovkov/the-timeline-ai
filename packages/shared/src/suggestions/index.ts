@@ -4698,6 +4698,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   }
 
   async function validateEvidenceVisible(rawEventIds: string[]): Promise<void> {
+    // Fail closed with a clear error before postgres.js rejects undefined bindings.
+    if (rawEventIds.some((id) => typeof id !== 'string' || id.trim().length === 0)) {
+      throw new Error('Suggestion evidence must reference a raw event id');
+    }
     const ids = Array.from(new Set(rawEventIds));
     if (ids.length === 0) return;
     const rows = await db

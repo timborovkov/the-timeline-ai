@@ -176,7 +176,9 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   bounded inner width. Empty and loading states retain the same content width.
   Home and Work overview use `data-app-width="overview"`: a left-aligned 80rem
   cap with primary work and a narrow context column at wide widths, stacked on
-  smaller screens. Forms, settings, and reading views keep the default cap without decorative bleed.
+  smaller screens. On desktop, Home reserves the expanded sidebar's footprint
+  when the rail folds so its content position and column widths stay stable.
+  Forms, settings, and reading views keep the default cap without decorative bleed.
 - Full-canvas chat and boards may opt into full bleed. The shell supplies their
   available height, including banners; routes do not subtract a fixed header
   height from the viewport or cancel shell gutters with negative margins.

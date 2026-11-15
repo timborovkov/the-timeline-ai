@@ -566,9 +566,10 @@ function rawEventDocumentLink(event: TimelineEvent): {
 function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] {
   const groups = new Map<string, TimelineMoment[]>();
   for (const moment of moments) {
-    const existing = groups.get(moment.dateLabel);
+    // Group and key by stable YYYY-MM-DD dateKey, not the locale-formatted label.
+    const existing = groups.get(moment.dateKey);
     if (existing) existing.push(moment);
-    else groups.set(moment.dateLabel, [moment]);
+    else groups.set(moment.dateKey, [moment]);
   }
   return [...groups.entries()];
 }
@@ -1616,10 +1617,10 @@ export function TimelineList({
         />
       ) : null}
       {compact || typeof maxMoments === 'number' ? (
-        dateGroups.map(([date, group]) => (
-          <section key={date} aria-labelledby={`timeline-date-${date}`}>
+        dateGroups.map(([dateKey, group]) => (
+          <section key={dateKey} aria-labelledby={`timeline-date-${dateKey}`}>
             <h2
-              id={`timeline-date-${date}`}
+              id={`timeline-date-${dateKey}`}
               data-slot={compact ? undefined : 'collection-sticky-band'}
               className={cn(
                 '-mx-3 px-3 text-fg-muted',
@@ -1628,7 +1629,7 @@ export function TimelineList({
                   : 'sticky top-[var(--timeline-toolbar-height,2.75rem)] z-10 bg-surface py-2.5 text-xs font-medium',
               )}
             >
-              {date}
+              {group[0]?.dateLabel ?? dateKey}
             </h2>
             <ol>
               {group.map((moment) => (
