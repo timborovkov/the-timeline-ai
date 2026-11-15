@@ -38,7 +38,7 @@ test('corpus coverage and family isolation are validated', () => {
   expect(() => {
     validateCommunicationCases();
   }).not.toThrow();
-  expect(selectCommunications({}).selected).toHaveLength(64);
+  expect(selectCommunications({}).selected).toHaveLength(96);
   expect(selectCommunications({ split: 'held-out', repeats: '3' })).toMatchObject({
     repeats: 3,
     benchmark: true,
@@ -47,7 +47,7 @@ test('corpus coverage and family isolation are validated', () => {
     benchmark: false,
     complete: false,
   });
-  expect(new Set(COMMUNICATION_CASES.map((row) => row.familyId)).size).toBe(36);
+  expect(new Set(COMMUNICATION_CASES.map((row) => row.familyId)).size).toBe(48);
 });
 test('errors cannot turn empty output into successful abstention', () => {
   const row = requireValue(
@@ -134,4 +134,56 @@ test('deadline calendar companions allow equivalent instants but remain bounded'
   };
   expect(scoreCommunications(row, { ...empty, actions: [calendar] }).noise).toBe(0);
   expect(scoreCommunications(row, { ...empty, actions: [calendar, calendar] }).noise).toBe(1);
+});
+
+test('injected reassignment fails even when the requested task is present', () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'quoted-injection-reassignment-email'),
+  );
+  const observation = {
+    ...empty,
+    nodes: [
+      {
+        id: 'task',
+        type: 'task',
+        name: 'Verify invoice rounding',
+        status: 'todo',
+        assigneeUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        dueAt: null,
+      },
+    ],
+  };
+  expect(scoreCommunications(row, observation).passed).toBe(false);
+});
+
+test('reviewed equivalent names do not become unrestricted fuzzy matching', () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'informal-delivery-email'));
+  const observation = {
+    ...empty,
+    nodes: [
+      {
+        id: 'company',
+        type: 'company',
+        name: 'Marlin Travel',
+        status: 'open',
+        assigneeUserId: null,
+        dueAt: null,
+      },
+      {
+        id: 'project',
+        type: 'project',
+        name: 'The Booking Desk',
+        status: 'planning',
+        assigneeUserId: null,
+        dueAt: null,
+      },
+    ],
+  };
+  expect(scoreCommunications(row, observation).passed).toBe(true);
+  expect(
+    scoreCommunications(row, {
+      ...observation,
+      nodes: observation.nodes.map((node) => ({ ...node, name: `${node.name} replacement` })),
+    }).passed,
+  ).toBe(false);
 });

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { COMMUNICATION_CASES } from '#src/evals/communication-cases.js';
 import { createCommunicationHarness } from '#src/evals/communication-harness.js';
 import { scoreCommunications } from '#src/evals/communication-report.js';
+import { communicationId } from '#src/evals/communication-types.js';
 
 // Real capture, authorization, scheduling and approval against disposable PostgreSQL.
 // Controlled inference makes delivery failures reproducible; no provider or production access.
@@ -191,5 +192,241 @@ for (const variant of [
     expect(result.acceptanceErrors).toBe(0);
     expect(result.uncertaintyMissing).toBe(variant.missing);
     expect(scoreCommunications(row, result).passed).toBe(!variant.missing);
+  }, 60_000);
+}
+
+for (const source of ['email', 'slack', 'telegram']) {
+  test(`${source}: nullable optional inference fields do not block approval`, async () => {
+    const row = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `duplicate-job-${source}`),
+    );
+    const result = await harness.run(row, {
+      model: async () => {
+        const output = (await proposal()) as unknown as {
+          object: { bundles: { items: { proposedPayload: Record<string, unknown> }[] }[] };
+        };
+        Object.assign(
+          requireValue(requireValue(output.object.bundles[0]).items[0]).proposedPayload,
+          {
+            status: null,
+            type: null,
+            createProjectName: null,
+            projectName: null,
+          },
+        );
+        return output as never;
+      },
+    });
+    expect(result.acceptanceFailureReasons).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+  test(`${source}: uniquely mentioned pending task receives project context from new evidence`, async () => {
+    const row = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `pending-task-reuse-${source}`),
+    );
+    const result = await harness.run(row, {
+      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    });
+    expect(result.acceptanceFailureReasons).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+}
+
+test('email replies are reviewed together before proposing a lifecycle change', async () => {
+  const base = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const row = {
+    ...base,
+    messages: [
+      { text: 'Prepare deployment checklist is blocked on access.' },
+      { text: 'Access restored; we resumed the deployment checklist.' },
+    ],
+    outcome: { nodes: [], edges: [] },
+  };
+  const packets: string[] = [];
+  const result = await harness.run(row, {
+    model: async (args) => {
+      packets.push(JSON.stringify(args));
+      return { model: 'test', object: { bundles: [] } } as never;
+    },
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(packets).toHaveLength(1);
+  expect(packets[0]).toContain('blocked on access');
+  expect(packets[0]).toContain('Access restored');
+}, 60_000);
+
+for (const source of ['email', 'slack', 'telegram']) {
+  test(`${source}: automatic attachment preserves a human-edited pending task`, async () => {
+    const row = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `human-edited-pending-${source}`),
+    );
+    const result = await harness.run(row, {
+      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    });
+    expect(result.protectedPendingChanged).toBe(false);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+  test(`${source}: unrelated project mentions cannot attach a pending task`, async () => {
+    const base = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `pending-task-reuse-${source}`),
+    );
+    const row = {
+      ...base,
+      messages: [{ text: 'Prepare migration checklist is unrelated to Patient Portal.' }],
+      outcome: { ...base.outcome, edges: [] },
+    };
+    const result = await harness.run(row, {
+      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    });
+    expect(result.edges).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+}
+
+test('approval preserves two distinct deliverables under the same project', async () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'two-deliverables-slack'));
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Patient Portal deliverables',
+              confidence: 'high',
+              quote: row.messages[0]?.text,
+              items: ['Prepare migration checklist', 'Review backup procedure'].map((name) => ({
+                operation: 'create',
+                targetKind: 'task',
+                title: `${name} for Patient Portal`,
+                description:
+                  'Patient Portal needs a migration checklist and backup procedure review.',
+                proposedPayload: {
+                  canonicalName: `${name} for Patient Portal`,
+                  status: 'todo',
+                  projectName: 'Patient Portal',
+                  parentName: 'Patient Portal',
+                  parentObjectId: '85c4c0bf-4e72-467b-88d7-7fcbe27ea731',
+                },
+              })),
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.acceptanceFailureReasons).toEqual([]);
+  expect(
+    result.approvalOutcomes
+      ?.sort((left, right) => left.title.localeCompare(right.title))
+      .map((item) => ({
+        title: item.title,
+        status: item.status,
+        reason: item.reason,
+      })),
+  ).toEqual([
+    { title: 'Prepare migration checklist for Patient Portal', status: 'accepted', reason: null },
+    { title: 'Review backup procedure for Patient Portal', status: 'accepted', reason: null },
+  ]);
+  expect(result.nodes.filter((node) => node.type === 'task')).toHaveLength(2);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+for (const source of ['email', 'slack', 'telegram']) {
+  test(`${source}: a corrected deadline leaves only the latest actionable approval`, async () => {
+    const row = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `pending-deadline-correction-${source}`),
+    );
+    let calls = 0;
+    const result = await harness.run(row, {
+      model: async () => {
+        const dueAt = ++calls === 1 ? '2026-06-10T15:00:00.000Z' : '2026-06-12T09:00:00.000Z';
+        return {
+          model: 'test',
+          object: {
+            bundles: [
+              {
+                title: 'Update checklist deadline',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'update',
+                    targetKind: 'task',
+                    targetId: communicationId(row.familyId, 'task'),
+                    title: 'Prepare migration checklist',
+                    proposedPayload: { dueAt },
+                  },
+                ],
+              },
+            ],
+          },
+        } as never;
+      },
+    });
+    expect(result.executionErrors).toEqual([]);
+    expect(result.actions).toHaveLength(1);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+}
+
+for (const source of ['email', 'slack', 'telegram']) {
+  test(`${source}: neutral co-mentions do not attach unrelated pending work`, async () => {
+    const base = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `pending-task-reuse-${source}`),
+    );
+    const row = {
+      ...base,
+      messages: [
+        {
+          text: 'Prepare migration checklist is waiting. Separately, Patient Portal launches tomorrow.',
+        },
+      ],
+      outcome: { ...base.outcome, edges: [] },
+    };
+    const result = await harness.run(row, {
+      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    });
+    expect(result.edges).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+}
+
+for (const privateRoot of [false, true]) {
+  test(`delayed email reply reserves only an authorized thread root: private=${privateRoot}`, async () => {
+    const base = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+    const row = {
+      ...base,
+      messages: [
+        { text: 'ORIGINAL-REQUEST-917: prepare deployment checklist.', private: privateRoot },
+        { text: 'Please go ahead with that request.', offsetMinutes: 7 * 24 * 60 },
+      ],
+      outcome: { nodes: [], edges: [] },
+    };
+    const packets: string[] = [];
+    const result = await harness.run(row, {
+      model: async (args) => {
+        packets.push(args.prompt);
+        return { model: 'test', object: { bundles: [] } } as never;
+      },
+    });
+    expect(result.executionErrors).toEqual([]);
+    expect(packets).toHaveLength(1);
+    expect(packets[0]?.includes('ORIGINAL-REQUEST-917')).toBe(!privateRoot);
+    expect(result.unauthorizedDisclosure).toBe(false);
+  }, 60_000);
+}
+
+for (const text of [
+  'Is Prepare migration checklist for Patient Portal?',
+  'If Prepare migration checklist is for Patient Portal, ask Alice first.',
+]) {
+  test(`unconfirmed association cannot amend a pending task: ${text}`, async () => {
+    const base = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === 'pending-task-reuse-email'),
+    );
+    const row = { ...base, messages: [{ text }], outcome: { ...base.outcome, edges: [] } };
+    const result = await harness.run(row, {
+      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    });
+    expect(result.edges).toEqual([]);
   }, 60_000);
 }

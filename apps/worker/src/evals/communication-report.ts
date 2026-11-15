@@ -24,7 +24,9 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
             ? expected.terms.every((group) =>
                 group.some((term) => node.name.toLowerCase().includes(term.toLowerCase())),
               )
-            : node.name.toLowerCase() === expected.name.toLowerCase()),
+            : [expected.name, ...(expected.acceptedNames ?? [])].some(
+                (name) => node.name.toLowerCase() === name.toLowerCase(),
+              )),
     );
     const node = candidates[0];
     if (!node) continue;

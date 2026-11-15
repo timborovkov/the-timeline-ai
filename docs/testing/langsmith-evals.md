@@ -226,7 +226,7 @@ email-policy change and are not new evidence for it.
 ## Communications and approval benchmark
 
 Use `--suite=communications` on the suggestion sync/compare commands for the
-separate 96-case communications corpus. The default remains `--suite=suggestions`;
+separate 126-case communications corpus. The default remains `--suite=suggestions`;
 its historical datasets and experiments are unchanged.
 
 ```sh
@@ -236,9 +236,11 @@ bun run eval:suggestions:compare --suite=communications --out=/tmp/communication
 bun run eval:suggestions:compare --suite=communications --split=held-out --repeats=3 --out=/tmp/communications-held-out.json
 ```
 
-Thirty semantic families have email, Slack and Telegram variants; six additional
-families cover email packaging. There are 64 development cases and 32 held-out
-cases, with whole families assigned to one split. Cases cover combined account,
+Thirty-nine semantic families have email, Slack and Telegram variants; nine additional
+families cover email packaging. There are 96 development cases and 30 held-out
+cases, with whole families assigned to one split. All 96 cases from the first
+inspected corpus are now development regressions; the 30 held-out cases use new
+families. Earlier dataset versions and reports remain unchanged. Cases cover combined account,
 project and task creation; aliases and pending objects; corrections; ownership;
 prospects and difficult negatives; injection, privacy and retries; and forwarding
 formats, multilingual content and long inputs. References include initial state,
@@ -269,9 +271,20 @@ the uncertainty; concrete proposed projects must remain `planning`.
 
 Communications run four cases concurrently, each with a separate disposable database
 and queue; report writes are serialized. Reports retain an implementation digest,
-per-case outputs, source/family/scenario denominators, latency,
+per-case outputs, saved approval outcomes, source/family/scenario denominators, latency,
 execution and approval failures, packet loss, and each repetition separately.
 Source variants within a family and repeated runs are correlated; do not pool them
 as independent evidence. `--tag` and `--limit` are diagnostic only. Complete held-out
 runs require committed fixtures/scoring and full feedback; inspected holdouts must
 remain in evaluation history and cannot become fresh evidence after tuning.
+
+Communications evaluator version 5 counts only actionable (`pending`/`failed`)
+items as proposed work; superseded history retained in a bundle is not a duplicate
+approval. Approval outcomes retain failures and supersession reasons separately.
+Forwarded message timestamps follow their synthetic sequence times, including
+delayed replies, rather than reusing the root timestamp. Explicit `acceptedNames` allow individually reviewed equivalent name renderings;
+they do not permit fuzzy matching of unrelated accounts or projects. The inspected
+Booking Desk development case accepts its source's leading article (The Booking
+Desk); historical scores are preserved, not silently rescored. These scoring
+changes preclude claiming a direct accuracy improvement over version 4 solely
+from aggregate totals.

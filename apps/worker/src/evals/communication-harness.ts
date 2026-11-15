@@ -80,7 +80,7 @@ function emailText(row: CommunicationCase, index: number) {
   const author = actor === 'alice' ? 'Alice' : 'Bob';
   const header = [
     `From: ${author} <${actor}@example.test>`,
-    'Date: Mon, Jun 1, 2026 at 09:00 AM',
+    `Date: ${new Date(BASE_TIME + (item.offsetMinutes ?? index) * 60_000).toUTCString()}`,
     'Subject: Workspace discussion',
     'To: Alice <alice@example.test>',
   ];
@@ -352,7 +352,7 @@ export async function createCommunicationHarness() {
             .update(slackConversationBindings)
             .set({ visibilityDefault: item.private ? 'private' : 'team' })
             .where(eq(slackConversationBindings.workspaceId, WORKSPACE));
-        const timestamp = BASE_TIME + index * 60_000;
+        const timestamp = BASE_TIME + (item.offsetMinutes ?? index) * 60_000;
         const eventKey = `${row.id}-${index}`;
         const capture = async () => {
           if (row.source === 'email') {
@@ -485,17 +485,19 @@ export async function createCommunicationHarness() {
           protectedPendingChanged = true;
       }
       const actions = bundles.flatMap((bundle) =>
-        bundle.items.map((item) => ({
-          bundleId: bundle.id,
-          operation: item.operation,
-          targetKind: item.targetKind,
-          targetId: item.targetId,
-          title: item.title,
-          proposedPayload: item.proposedPayload,
-          evidenceIds: bundle.evidence
-            .map((e) => e.rawEventId)
-            .filter((id): id is string => Boolean(id)),
-        })),
+        bundle.items
+          .filter((item) => item.status === 'pending' || item.status === 'failed')
+          .map((item) => ({
+            bundleId: bundle.id,
+            operation: item.operation,
+            targetKind: item.targetKind,
+            targetId: item.targetId,
+            title: item.title,
+            proposedPayload: item.proposedPayload,
+            evidenceIds: bundle.evidence
+              .map((e) => e.rawEventId)
+              .filter((id): id is string => Boolean(id)),
+          })),
       );
       const actionKeys = actions
         .filter((action) => action.targetKind === 'task' || action.targetKind === 'object')
@@ -570,7 +572,14 @@ export async function createCommunicationHarness() {
           acceptanceErrors++;
         }
       }
-      const acceptanceFailureReasons = (await db.select().from(agentSuggestionItems))
+      const savedItems = await db.select().from(agentSuggestionItems);
+      const approvalOutcomes = savedItems.map((item) => ({
+        title: item.title,
+        status: item.status,
+        resultId: item.resultId,
+        reason: item.failureReason ?? item.supersededReason,
+      }));
+      const acceptanceFailureReasons = savedItems
         .filter((item) => item.status === 'failed')
         .map((item) => `${item.targetKind}: ${item.failureReason ?? 'Acceptance failed'}`);
       stages.push('approval-checked');
@@ -600,6 +609,7 @@ export async function createCommunicationHarness() {
         edges,
         acceptanceErrors,
         acceptanceFailureReasons,
+        approvalOutcomes,
         duplicateProposals,
         packetLoss,
         protectedPendingChanged,

@@ -16,6 +16,8 @@ export interface CommunicationNode {
   name: string;
   terms?: string[][];
   aliases?: string[];
+  /** Explicit equivalent renderings reviewed with the label rationale. */
+  acceptedNames?: string[];
   status?: string;
   assignee?: Actor | null;
   dueAt?: string | null;
@@ -32,6 +34,7 @@ export interface CommunicationMessage {
   flush?: boolean;
   private?: boolean;
   replay?: boolean;
+  offsetMinutes?: number;
   mustReachModel?: string[];
 }
 export type EmailPackaging = 'plain' | 'gmail' | 'outlook' | 'apple' | 'html' | 'nested';
@@ -64,6 +67,12 @@ export interface CommunicationObservation extends SuggestionObservation {
   edges: ObservedEdge[];
   acceptanceErrors: number;
   acceptanceFailureReasons: string[];
+  approvalOutcomes?: {
+    title: string;
+    status: string;
+    resultId: string | null;
+    reason: string | null;
+  }[];
   duplicateProposals: number;
   packetLoss: string[];
   protectedPendingChanged: boolean;

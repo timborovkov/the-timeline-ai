@@ -104,6 +104,8 @@ if (!values.sync) {
     '../evals/communication-harness.ts',
     '../evals/communication-report.ts',
     '../../../../packages/shared/src/suggestions/index.ts',
+    '../../../../packages/shared/src/suggestions/proposal-payload.ts',
+    '../../../../packages/shared/src/conversation-review/index.ts',
   ])
     implementationHash.update(await readFile(new URL(path, import.meta.url)));
   const implementationDigest = implementationHash.digest('hex');
@@ -202,7 +204,7 @@ if (!values.sync) {
             partial: !selection.complete,
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
-            evaluatorVersion: communications ? 4 : 2,
+            evaluatorVersion: communications ? 5 : 2,
             requestedModel: selection.selected.every((row) =>
               row.tags.includes('github-completion'),
             )

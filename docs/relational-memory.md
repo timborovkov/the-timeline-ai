@@ -30,6 +30,27 @@ Hub roles distinguish goals, tracked work, findings and mentions. Incidental men
 
 Human discussions in email, Slack and Telegram share the same proposal policy, including preserved forwarded chains. They may propose a named customer/company or a concrete project when the discussion establishes an account or work the team is delivering, planning or tracking. Real prospective engagements may be proposed with low confidence and an explanation of the uncertainty; concrete proposed projects remain `planning` until evidence supports active work. Hypothetical examples are not prospects. A new task commitment or explicit creation command is not required for that context. Reuse matching existing or pending objects, including aliases and renamed projects, and preserve human-edited pending fields. Later supported corrections supersede earlier requests. Source parsing, original-speaker attribution, privacy and scheduling remain source-specific. Names in signatures, domains, news or unrelated mentions are not sufficient. Tasks still need supported requests or work commitments, and a task's primary-project field already represents its project link. All changes remain approval-backed; quoted instructions do not grant authority. Approved task/project creates default to `todo`/`planning` when their proposal omits a status. Bulk approval applies explicit hub objects before tasks and relationships so a task attachment cannot create a competing project before its sibling proposal.
 
+Threaded email uses its stored RFC thread root for the same ten-minute quiet-window
+review as chat. Only team-visible, non-deleted messages from that workspace and
+thread enter the bounded two-day window, with an authorized thread root reserved
+for delayed replies. Private replies do not enter it. Legacy
+email captures without a thread root retain event-local extraction.
+
+A later source may attach an unedited pending task to an existing project when it
+explicitly names and links exactly one pending task to the unambiguous project.
+The conservative cross-source attachment recognizes direct English association
+phrases; other phrasings remain model-reviewed proposals. Candidate overflow
+disables that fallback rather than guessing uniqueness. Loose
+similarity, uncertain/negated associations and human-edited attachments do not
+qualify. Descriptions supply context, not task identity: distinct deliverables
+must not be deduplicated merely because they share a project description.
+
+Unknown optional name/type/status/project hints encoded as `null` are treated as
+absent. Explicit clears for member IDs, dates, priorities and primary project IDs
+retain their existing meaning. Assignment belongs to a supported workspace member;
+external or unresolved participants remain attribution context rather than guessed
+assignees. Independent requested deliverables remain separate tasks.
+
 ## Evidence packs
 
 A shared bounded builder can assemble answer/proposal evidence with consumer-specific admission rules, deterministic ranking, citation identities and visibility checks. Answer retrieval may use broader semantic recall. Proposal admission requires a qualifying relationship, not semantic relevance alone, and preserves the approval source's visibility floor.
@@ -147,7 +168,7 @@ rewrites the workspace. Trace a missing result through these boundaries in order
 | --- | --- | --- |
 | Capture and classification | `integrations/event-writer.ts`, `integrations/signal-class.ts` | Immutable raw event, signal class, provider identity and occurrence time |
 | Extraction | Worker `extract.ts`, shared `extract/` | Facts and mentions; these are evidence, not accepted objects |
-| Conversation scheduling | Shared `conversation-review/`, worker `suggestions.ts` | A bounded review window for Slack/Telegram rather than independent message guesses |
+| Conversation scheduling | Shared `conversation-review/`, worker `suggestions.ts` | A bounded review window for Slack/Telegram and threaded email rather than independent message guesses |
 | Candidate recall and qualification | Shared `suggestions/hub-context.ts`, `suggestions/linked-hubs.ts` | Existing hubs and work recalled into context; unique supported attachments |
 | Proposal generation | Worker `suggestions.ts` | Typed create/update/relationship/note/calendar items with supporting evidence |
 | Structured completion | `integrations/github-task-proposals.ts` | Approval-backed lifecycle/assignee updates and qualified merged-PR task proposals |

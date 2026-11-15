@@ -1329,25 +1329,10 @@ function normalizedLocalRef(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim().toLowerCase() : null;
 }
 
-function approvalTextForItem(item: typeof agentSuggestionItems.$inferSelect): string {
-  const payload = normalizeLifecyclePayload(item);
-  return [
-    item.title,
-    item.description,
-    payload.canonicalName,
-    payload.title,
-    payload.name,
-    payload.description,
-  ]
-    .map(normalizedApprovalText)
-    .filter(Boolean)
-    .join(' ');
-}
-
 function distinctiveApprovalTokens(item: typeof agentSuggestionItems.$inferSelect): string[] {
   return [
     ...new Set(
-      approvalTextForItem(item)
+      normalizedPrimaryApprovalName(item)
         .split(/\s+/)
         .filter((token) => token.length >= 8 && !APPROVAL_TOKEN_STOPWORDS.has(token)),
     ),
@@ -1418,10 +1403,8 @@ function createSubjectCandidates(item: typeof agentSuggestionItems.$inferSelect)
   return [
     normalizedPrimaryApprovalName(item),
     item.title,
-    item.description ?? '',
     stringPayloadValue(payload, 'name') ?? '',
     stringPayloadValue(payload, 'title') ?? '',
-    stringPayloadValue(payload, 'description') ?? '',
     ...aliasesForPendingItem(item),
   ].filter((value) => value.trim().length > 0);
 }
