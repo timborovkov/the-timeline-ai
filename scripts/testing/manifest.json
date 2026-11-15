@@ -2527,5 +2527,11 @@
   },
   "apps/worker/src/evals/suggestion-harness.test.ts": {
     "group": "integration"
+  },
+  "apps/worker/src/evals/communication-harness.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/evals/communication-report.test.ts": {
+    "group": "unit"
   }
 }

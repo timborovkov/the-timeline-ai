@@ -2,9 +2,9 @@
 
 Classification experiments call the real single-task classifier through shared
 inference. Agent experiments call the real agent with isolated synthetic records,
-real database visibility checks, and controlled retrieval responses. Production
-models, prompts, and tracing settings remain unchanged. Production feedback
-capture and training exports are outside these workflows.
+real database visibility checks, and controlled retrieval responses. Experiments do not change production configuration or collect production inputs.
+Application policy changes are reviewed in source separately from model comparisons.
+Production feedback capture and training exports are outside these workflows.
 
 ## How Git and LangSmith fit together
 
@@ -222,3 +222,56 @@ same-bundle references to the expected pair; arbitrary relationships count as no
 The owning policy is [the memory engine](../relational-memory.md#identity-artifacts-and-hubs).
 These cases are diagnostic tuning examples. Historical held-out scores predate the
 email-policy change and are not new evidence for it.
+
+## Communications and approval benchmark
+
+Use `--suite=communications` on the suggestion sync/compare commands for the
+separate 96-case communications corpus. The default remains `--suite=suggestions`;
+its historical datasets and experiments are unchanged.
+
+```sh
+bun run eval:suggestions:sync --suite=communications --split=development
+bun run eval:suggestions:sync --suite=communications --split=held-out
+bun run eval:suggestions:compare --suite=communications --out=/tmp/communications-dev.json
+bun run eval:suggestions:compare --suite=communications --split=held-out --repeats=3 --out=/tmp/communications-held-out.json
+```
+
+Thirty semantic families have email, Slack and Telegram variants; six additional
+families cover email packaging. There are 64 development cases and 32 held-out
+cases, with whole families assigned to one split. Cases cover combined account,
+project and task creation; aliases and pending objects; corrections; ownership;
+prospects and difficult negatives; injection, privacy and retries; and forwarding
+formats, multilingual content and long inputs. References include initial state,
+message sequences, expected approved objects and relationships, and rationales.
+These rationales receive consistency review, not independent human validation.
+
+The harness drives the real local email, Slack and Telegram dispatchers using
+synthetic provider payloads, controlled transports, real routing/authorization,
+and disposable migrated PGlite databases. Ordered messages and review boundaries
+exercise pending-state refinement. A controlled queue drains actual worker jobs;
+real scoped APIs read the approval queue and accept proposals. Foreign-workspace
+acceptance is attempted and must fail. No canonical mutation is permitted before
+approval. Summary refresh jobs, vector indexing, external delivery, production
+stores and wall-clock delivery performance are outside the boundary.
+
+The scorer checks the approved object graph: identity reuse, lifecycle, explicit
+assignee/deadline assertions, and task/project/account relationships. Counts are
+**graph assertions**, including preservation of seeded objects, rather than task
+recall estimates or independent samples. Named fixture objects use their synthetic
+identity; task intent uses term groups rather than exact prose. Extra objects,
+incorrect relationships, duplicate proposals and unsupported action kinds are
+noise. A uniquely grounded company/project association may be optional. A task
+deadline may have a matching calendar companion; unsupported dates remain noise.
+Missing work, acceptance failures, lost required packet content and inference
+errors cannot pass. Privacy violations, invalid evidence and automatic changes to
+human-edited pending proposals are hard failures. Prospect proposals must express
+uncertainty and concrete proposed projects must remain `planning`.
+
+Communications run four cases concurrently, each with a separate disposable database
+and queue; report writes are serialized. Reports retain an implementation digest,
+per-case outputs, source/family/scenario denominators, latency,
+execution and approval failures, packet loss, and each repetition separately.
+Source variants within a family and repeated runs are correlated; do not pool them
+as independent evidence. `--tag` and `--limit` are diagnostic only. Complete held-out
+runs require committed fixtures/scoring and full feedback; inspected holdouts must
+remain in evaluation history and cannot become fresh evidence after tuning.

@@ -87,6 +87,8 @@ type DbOrTx = Db | DbTx;
 
 export interface SlackIngestDeps {
   db: Db;
+  /** Optional controlled transport; workspace routing and authorization still run normally. */
+  api?: SlackApi;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
   agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
@@ -133,7 +135,8 @@ export async function handleSlackEnvelope(
     const workspace = await findWorkspaceBySlackTeamId(deps.db, envelope.team_id);
     if (!workspace) return { ok: true };
     if (workspace.appId && envelope.api_app_id !== workspace.appId) return { ok: false };
-    const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
+    const api =
+      deps.api ?? new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
     const event = envelope.event;
     if (event.type === 'app_mention') {
       await handleAppMention(deps, api, workspace, envelope.event_id, event);
