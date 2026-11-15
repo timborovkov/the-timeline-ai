@@ -28,6 +28,8 @@ Hard relationships include provider object IDs, canonical URLs, aliases, explici
 
 Hub roles distinguish goals, tracked work, findings and mentions. Incidental mentions and automated findings stay supporting context on the parent work item; do not mint tasks for every entity. Priority remains the existing task field, not a second numeric importance score.
 
+Email discussions, including preserved forwarded chains, may propose a named customer/company and a concrete project when the discussion establishes an account or work the team is delivering or tracking. A new task commitment or explicit creation command is not required for that context. Reuse matching existing or pending objects. Names in signatures, domains, news or unrelated mentions are not sufficient. Tasks still need supported requests or work commitments, and a task's primary-project field already represents its project link. All changes remain approval-backed; quoted instructions do not grant authority.
+
 ## Evidence packs
 
 A shared bounded builder can assemble answer/proposal evidence with consumer-specific admission rules, deterministic ranking, citation identities and visibility checks. Answer retrieval may use broader semantic recall. Proposal admission requires a qualifying relationship, not semantic relevance alone, and preserves the approval source's visibility floor.

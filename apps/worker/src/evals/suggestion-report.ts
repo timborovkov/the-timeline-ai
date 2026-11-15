@@ -3,6 +3,7 @@ import { scenarioScores } from '@timeline/shared/evals/benchmark';
 import type { SuggestionCase, ExpectedAction } from '#src/evals/suggestion-cases.js';
 
 export interface ObservedAction {
+  bundleId?: string;
   operation: string;
   targetKind: string;
   targetId?: string | null;
@@ -20,7 +21,30 @@ export interface SuggestionObservation {
   invalidEvidence: boolean;
   stages: string[];
 }
-function matches(expected: ExpectedAction, actual: ObservedAction) {
+function matches(expected: ExpectedAction, actual: ObservedAction, actions: ObservedAction[]) {
+  if (expected.relatedNames) {
+    const names = ['from', 'to'].map((side) => {
+      const named = actual.proposedPayload[`${side}Name`];
+      if (typeof named === 'string') return named.trim().toLowerCase();
+      const ref = actual.proposedPayload[`${side}Ref`];
+      if (typeof ref !== 'string') return null;
+      const targets = actions.filter(
+        (action) =>
+          action.bundleId === actual.bundleId &&
+          action.operation === 'create' &&
+          action.targetKind === 'object' &&
+          action.proposedPayload.localRef === ref,
+      );
+      const name = targets.length === 1 ? targets[0]?.proposedPayload.canonicalName : null;
+      return typeof name === 'string' ? name.trim().toLowerCase() : null;
+    });
+    if (
+      names.some((name) => !name) ||
+      JSON.stringify(names.sort()) !==
+        JSON.stringify(expected.relatedNames.map((name) => name.trim().toLowerCase()).sort())
+    )
+      return false;
+  }
   const text =
     `${actual.title} ${typeof actual.proposedPayload.canonicalName === 'string' ? actual.proposedPayload.canonicalName : ''} ${typeof actual.proposedPayload.description === 'string' ? actual.proposedPayload.description : ''}`.toLowerCase();
   return (
@@ -47,7 +71,7 @@ export function scoreSuggestions(row: SuggestionCase, observation: SuggestionObs
     const expected = row.expected[expectedIndex];
     if (!expected) return false;
     for (const [index, actual] of observation.actions.entries()) {
-      if (seen.has(index) || !matches(expected, actual)) continue;
+      if (seen.has(index) || !matches(expected, actual, observation.actions)) continue;
       seen.add(index);
       const previous = assigned.get(index);
       if (previous === undefined || assign(previous, seen)) {
@@ -64,7 +88,9 @@ export function scoreSuggestions(row: SuggestionCase, observation: SuggestionObs
   for (const allowed of row.allowed ?? []) {
     const index = observation.actions.findIndex(
       (action, index) =>
-        !assigned.has(index) && !optionalMatches.has(index) && matches(allowed, action),
+        !assigned.has(index) &&
+        !optionalMatches.has(index) &&
+        matches(allowed, action, observation.actions),
     );
     if (index >= 0) optionalMatches.add(index);
   }

@@ -135,3 +135,46 @@ for (const row of SUGGESTION_CASES.filter((row) => row.tags.includes('github-com
     expect(scoreSuggestions(row, result)).toMatchObject({ passed: true, missed: 0, noise: 0 });
   }, 60_000);
 }
+
+test('forwarded email survives real capture and queues visible customer/project proposals', async () => {
+  const row = requireValue(SUGGESTION_CASES.find((row) => row.id === 'forwarded-customer-context'));
+  const result = await harness.run(row, async (input) => {
+    expect(input.prompt).toContain('Cedar Dental is our existing customer');
+    expect(input.prompt).toContain('Patient Portal');
+    expect(input.prompt).toContain('From: Customer team');
+    return {
+      model: 'test',
+      object: {
+        bundles: [
+          {
+            title: 'Customer and project',
+            quote: 'Cedar Dental is our existing customer.',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Cedar Dental',
+                proposedPayload: { type: 'company', canonicalName: 'Cedar Dental' },
+              },
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Patient Portal',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Patient Portal',
+                  status: 'active',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    } as never;
+  });
+  expect(result.stages).toContain('email-captured');
+  expect(result.executionErrors).toEqual([]);
+  expect(result.modelCalls).toBe(1);
+  expect(scoreSuggestions(row, result).passed).toBe(true);
+}, 60_000);

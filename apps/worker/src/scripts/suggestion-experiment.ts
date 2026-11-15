@@ -137,7 +137,7 @@ if (!values.sync) {
             partial: !selection.complete,
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
-            evaluatorVersion: 1,
+            evaluatorVersion: 2,
             requestedModel: selection.selected.every((row) =>
               row.tags.includes('github-completion'),
             )

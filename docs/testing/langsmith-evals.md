@@ -144,7 +144,7 @@ bun run eval:suggestions:compare --split=development --repeats=1 --out=/tmp/sugg
 bun run eval:suggestions:compare --split=held-out --repeats=3 --out=/tmp/suggestions-held-out.json
 ```
 
-The corpus contains 49 authored scenarios (29 development / 20 held-out), including
+The corpus contains 53 authored scenarios (33 development / 20 held-out), including
 positive commitments and requests, multiple actions, lifecycle changes, explicit
 assignments and deadlines, noise, completed work, retries, private context, and
 injected instructions. Cases define expected operations, target IDs, intent term
@@ -159,7 +159,8 @@ pending-suggestion reads. An in-memory queue drains the scheduled review after
 advancing its synthetic quiet window. Live runs call the current extraction model
 through shared inference, including reconciliation planning. Task-category
 classification, vector retrieval and evidence-pack construction are disabled to
-isolate proposal behavior. Production prompts and model configuration are unchanged.
+isolate proposal behavior. The harness uses the application extraction policy; it does
+not replace the prompt with an evaluation-only prompt. Model configuration is unchanged.
 
 Success means required actions reach the visible approval queue with the expected
 structured fields and source IDs. One-to-one matching counts missed actions and
@@ -180,7 +181,10 @@ experiments and reports after inspection; do not tune on these cases and later
 claim they are fresh holdout evidence. Execution failures or unsuccessful cases
 return nonzero without weakening expected outcomes.
 
-This suite starts at captured raw events. It does not measure connector ingestion,
+Most cases start at captured raw events. Forwarded-email cases additionally exercise
+the real inbound-email dispatcher, local forward parsing and suggestion enqueue
+boundary with synthetic normalized receiving payloads. They do not exercise SMTP
+or webhook authentication/transport. This suite does not measure live connector ingestion,
 real retrieval recall, browser rendering, queue load or wall-clock delivery SLA.
 Nine development-only GitHub completion cases exercise the raw-event and coalesced
 `github_task_proposal` worker routes: merged/closed PRs, completed tasks, duplicate
@@ -210,3 +214,11 @@ inside that subset. It never qualifies as a complete held-out benchmark. The
 GitHub-only slice requires LangSmith credentials but no OpenRouter key. The nine
 related cases stay in development; changing the corpus hash does not make the
 previously inspected held-out examples fresh again.
+
+The `--tag=forwarded-email` development slice covers explicit and informal customer/
+project context without new tasks, requests inside forwarded bodies, and unrelated
+company mentions. Optional company/project relationships must resolve by name or
+same-bundle references to the expected pair; arbitrary relationships count as noise.
+The owning policy is [the memory engine](../relational-memory.md#identity-artifacts-and-hubs).
+These cases are diagnostic tuning examples. Historical held-out scores predate the
+email-policy change and are not new evidence for it.

@@ -4,6 +4,7 @@ import {
   type BenchmarkCase,
 } from '@timeline/shared/evals/benchmark';
 
+import { FORWARDED_EMAIL_CASES } from '#src/evals/forwarded-email-cases.js';
 import { GITHUB_SUGGESTION_CASES } from '#src/evals/github-suggestion-cases.js';
 
 export const PROJECT = '33333333-3333-4333-8333-333333333333';
@@ -15,12 +16,14 @@ export interface ExpectedAction {
   terms: string[][];
   fields?: Record<string, unknown> | undefined;
   targetId?: string;
+  relatedNames?: [string, string];
 }
 export interface SuggestionCase extends BenchmarkCase {
   source: 'slack' | 'telegram' | 'email' | 'integration' | 'document';
   events: string[];
   expected: ExpectedAction[];
   allowed?: ExpectedAction[];
+  forwardedSubject?: string;
   eventMetadata?: Record<string, unknown>;
   eventVisibility?: 'team' | 'private';
   githubJobExternalId?: string;
@@ -486,6 +489,7 @@ export const SUGGESTION_CASES: SuggestionCase[] = [
     familyId: row.id,
   })),
   ...GITHUB_SUGGESTION_CASES,
+  ...FORWARDED_EMAIL_CASES,
 ];
 export function validateSuggestionCases() {
   validateCases(SUGGESTION_CASES);
@@ -504,7 +508,7 @@ export function validateSuggestionCases() {
   for (const split of ['development', 'held-out']) {
     const rows = SUGGESTION_CASES.filter((row) => row.split === split);
     if (
-      rows.length !== (split === 'development' ? 29 : 20) ||
+      rows.length !== (split === 'development' ? 33 : 20) ||
       rows.filter((row) => !row.expected.length).length < 7
     )
       throw new Error('Coverage target missing');

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import { conversationReviews, entities, rawEvents, type Db } from '@timeline/db';
+import { conversationReviews, entities, rawEvents, teams, type Db } from '@timeline/db';
+import { handleInbound } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import { chatStructured, TIMELINE_MODELS } from '@timeline/shared/llm';
 import { planReconciliation } from '@timeline/shared/reconciliation/planner';
@@ -71,7 +72,9 @@ export async function createSuggestionHarness() {
           metadata: task.metadata ?? {},
         });
       const initial = JSON.stringify(await db.select().from(entities));
-      const ids = row.events.map((_, index) => suggestionEventId(row.id, index));
+      const ids = row.forwardedSubject
+        ? []
+        : row.events.map((_, index) => suggestionEventId(row.id, index));
       const metadata =
         row.eventMetadata ??
         (row.source === 'slack'
@@ -79,10 +82,50 @@ export async function createSuggestionHarness() {
           : row.source === 'telegram'
             ? { tg_chat_id: 'eval-chat' }
             : {});
-      for (const [index, text] of [
-        ...row.events,
-        ...(row.privateContext ? [row.privateContext] : []),
-      ].entries()) {
+      if (row.forwardedSubject) {
+        await db.update(teams).set({ inboundEmail: 'eval@inbound.test' }).where(eq(teams.id, TEAM));
+        for (const [index, text] of row.events.entries()) {
+          const result = await handleInbound(
+            {
+              db: db as unknown as Db,
+              inboundDomain: 'inbound.test',
+              extract: { enqueueExtract: () => Promise.resolve() },
+              embed: { enqueueEmbed: () => Promise.resolve() },
+              suggestions: {
+                enqueueSuggestion: ({ rawEventId }) => {
+                  ids.push(rawEventId);
+                  return Promise.resolve();
+                },
+              },
+            },
+            {
+              providerId: `${row.id}-${index}`,
+              sentAt: '2026-06-01T09:00:00Z',
+              subject: row.forwardedSubject,
+              from: 'eval@example.test',
+              fromName: 'Evaluator',
+              fromAddress: { email: 'eval@example.test', name: 'Evaluator' },
+              toAddresses: [{ email: 'eval@inbound.test', name: 'Synthetic workspace' }],
+              ccAddresses: [],
+              bccAddresses: [],
+              text,
+              html: '',
+              headers: [{ name: 'Message-ID', value: `<${row.id}-${index}@example.test>` }],
+              attachments: [],
+              receivedFor: [],
+              authentication: null,
+              attachmentsDropped: [],
+            },
+          );
+          if (!result.ok || result.inserted !== 1) executionErrors.push('EmailCaptureFailed');
+        }
+        if (ids.length !== row.events.length) executionErrors.push('EmailSuggestionNotQueued');
+        stages.push('email-captured');
+      }
+      for (const [index, text] of (row.forwardedSubject
+        ? []
+        : [...row.events, ...(row.privateContext ? [row.privateContext] : [])]
+      ).entries()) {
         const privateEvent = index === row.events.length;
         await db.insert(rawEvents).values({
           id: suggestionEventId(row.id, index),
@@ -198,6 +241,7 @@ export async function createSuggestionHarness() {
       stages.push('visibility-read');
       const actions = bundles.flatMap((bundle) =>
         bundle.items.map((item) => ({
+          bundleId: bundle.id,
           operation: item.operation,
           targetKind: item.targetKind,
           targetId: item.targetId,

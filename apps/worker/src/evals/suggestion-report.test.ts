@@ -162,7 +162,7 @@ test('partial, duplicate and missing-feedback runs cannot qualify as complete ev
 test('GitHub selection preserves full dataset provenance and cannot count as complete holdout evidence', () => {
   const selection = selectSuggestionCases({ tag: 'github-completion' });
   expect(selection.selected).toHaveLength(9);
-  expect(selection.corpus).toHaveLength(29);
+  expect(selection.corpus).toHaveLength(33);
   expect(selection.complete).toBe(false);
   expect(selection.benchmark).toBe(false);
   expect(
@@ -170,4 +170,49 @@ test('GitHub selection preserves full dataset provenance and cannot count as com
   ).toHaveLength(2);
   expect(() => selectSuggestionCases({ tag: 'not-a-scenario' })).toThrow();
   expect(() => selectSuggestionCases({ tag: 'github-completion', split: 'held-out' })).toThrow();
+});
+
+test('optional customer relationships must resolve to the expected objects in their bundle', () => {
+  const row = requireValue(SUGGESTION_CASES.find((row) => row.id === 'forwarded-customer-context'));
+  const company = {
+    bundleId: 'b',
+    operation: 'create',
+    targetKind: 'object',
+    title: 'Cedar Dental',
+    proposedPayload: { type: 'company', canonicalName: 'Cedar Dental', localRef: 'customer' },
+    evidenceIds: ['visible'],
+  };
+  const project = {
+    ...company,
+    title: 'Patient Portal',
+    proposedPayload: { type: 'project', canonicalName: 'Patient Portal', localRef: 'project' },
+  };
+  const relation = {
+    ...company,
+    targetKind: 'object_relationship',
+    title: 'Link project',
+    proposedPayload: { kind: 'related', fromRef: 'project', toRef: 'customer' },
+  };
+  expect(
+    scoreSuggestions(row, { ...observation, actions: [company, project, relation] }).passed,
+  ).toBe(true);
+  expect(
+    scoreSuggestions(row, {
+      ...observation,
+      actions: [company, project, { ...relation, bundleId: 'elsewhere' }],
+    }).noise,
+  ).toBe(1);
+  expect(
+    scoreSuggestions(row, {
+      ...observation,
+      actions: [
+        company,
+        project,
+        {
+          ...relation,
+          proposedPayload: { kind: 'related', fromName: 'Other company', toName: 'Patient Portal' },
+        },
+      ],
+    }).noise,
+  ).toBe(1);
 });
