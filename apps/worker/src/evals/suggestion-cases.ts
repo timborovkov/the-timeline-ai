@@ -1,4 +1,10 @@
-import { validateCases, type BenchmarkCase } from '@timeline/shared/evals/benchmark';
+import {
+  selectBenchmark,
+  validateCases,
+  type BenchmarkCase,
+} from '@timeline/shared/evals/benchmark';
+
+import { GITHUB_SUGGESTION_CASES } from '#src/evals/github-suggestion-cases.js';
 
 export const PROJECT = '33333333-3333-4333-8333-333333333333';
 export const TASK = '44444444-4444-4444-8444-444444444444';
@@ -15,6 +21,17 @@ export interface SuggestionCase extends BenchmarkCase {
   events: string[];
   expected: ExpectedAction[];
   allowed?: ExpectedAction[];
+  eventMetadata?: Record<string, unknown>;
+  eventVisibility?: 'team' | 'private';
+  githubJobExternalId?: string;
+  projectAliases?: string[];
+  taskFixtures?: {
+    id: string;
+    name: string;
+    status: string;
+    aliases?: string[];
+    metadata?: Record<string, unknown>;
+  }[];
   existingTask?: { name: string; status: string };
   privateContext?: string;
   prohibited?: string[];
@@ -463,10 +480,13 @@ const definitions: (Omit<SuggestionCase, keyof BenchmarkCase> & {
     rationale: 'The explicit date and UTC time must be retained in structured output.',
   },
 ];
-export const SUGGESTION_CASES: SuggestionCase[] = definitions.map((row) => ({
-  ...row,
-  familyId: row.id,
-}));
+export const SUGGESTION_CASES: SuggestionCase[] = [
+  ...definitions.map((row) => ({
+    ...row,
+    familyId: row.id,
+  })),
+  ...GITHUB_SUGGESTION_CASES,
+];
 export function validateSuggestionCases() {
   validateCases(SUGGESTION_CASES);
   const contents = new Set<string>();
@@ -483,7 +503,10 @@ export function validateSuggestionCases() {
   }
   for (const split of ['development', 'held-out']) {
     const rows = SUGGESTION_CASES.filter((row) => row.split === split);
-    if (rows.length !== 20 || rows.filter((row) => !row.expected.length).length < 7)
+    if (
+      rows.length !== (split === 'development' ? 29 : 20) ||
+      rows.filter((row) => !row.expected.length).length < 7
+    )
       throw new Error('Coverage target missing');
     for (const tag of [
       'recall',
@@ -499,4 +522,21 @@ export function validateSuggestionCases() {
         throw new Error(`Missing ${tag} in ${split}`);
     }
   }
+}
+
+/** A scenario selection is always diagnostic, even if it happens to cover a whole split. */
+export function selectSuggestionCases(options: {
+  split?: string;
+  repeats?: string;
+  limit?: string;
+  tag?: string;
+}) {
+  if (options.tag === undefined) return selectBenchmark(SUGGESTION_CASES, options);
+  const full = selectBenchmark(SUGGESTION_CASES, {
+    ...(options.split ? { split: options.split } : {}),
+    ...(options.repeats ? { repeats: options.repeats } : {}),
+  });
+  const subset = SUGGESTION_CASES.filter((row) => row.tags.includes(options.tag ?? ''));
+  const selected = selectBenchmark(subset, options);
+  return { ...selected, corpus: full.corpus, complete: false, benchmark: false };
 }

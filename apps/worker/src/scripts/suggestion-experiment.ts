@@ -3,12 +3,16 @@ import { randomUUID } from 'node:crypto';
 import { open, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 
-import { selectBenchmark, syncBenchmark, requireValue } from '@timeline/shared/evals/benchmark';
+import { syncBenchmark, requireValue } from '@timeline/shared/evals/benchmark';
 import { TIMELINE_MODELS } from '@timeline/shared/llm';
 import { Client } from 'langsmith';
 import { evaluate } from 'langsmith/evaluation';
 
-import { SUGGESTION_CASES, validateSuggestionCases } from '#src/evals/suggestion-cases.js';
+import {
+  SUGGESTION_CASES,
+  selectSuggestionCases,
+  validateSuggestionCases,
+} from '#src/evals/suggestion-cases.js';
 import { createSuggestionHarness } from '#src/evals/suggestion-harness.js';
 import {
   scoreSuggestions,
@@ -24,6 +28,7 @@ const { values } = parseArgs({
     split: { type: 'string' },
     repeats: { type: 'string' },
     limit: { type: 'string' },
+    tag: { type: 'string' },
     out: { type: 'string' },
   },
   strict: true,
@@ -32,9 +37,13 @@ if (process.env.NODE_ENV === 'production')
   throw new Error('Synthetic experiments cannot run in production');
 if (!process.env.LANGSMITH_API_KEY) throw new Error('LANGSMITH_API_KEY is required');
 validateSuggestionCases();
-const selection = selectBenchmark(SUGGESTION_CASES, values);
+const selection = selectSuggestionCases(values);
 if (!values.sync) {
-  if (!values.out || !process.env.OPENROUTER_API_KEY)
+  if (
+    !values.out ||
+    (!process.env.OPENROUTER_API_KEY &&
+      selection.selected.some((row) => !row.tags.includes('github-completion')))
+  )
     throw new Error('Require --out=<new report.json> and OPENROUTER_API_KEY');
   const file = await open(values.out, 'wx');
   await file.close();
@@ -129,7 +138,12 @@ if (!values.sync) {
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
             evaluatorVersion: 1,
-            requestedModel: TIMELINE_MODELS.extraction.id,
+            requestedModel: selection.selected.every((row) =>
+              row.tags.includes('github-completion'),
+            )
+              ? 'none-deterministic'
+              : TIMELINE_MODELS.extraction.id,
+            scenarioFilter: values.tag ?? null,
             synthetic: true,
             retrieval: 'database-only',
             pipeline: 'raw-event-to-visible-proposal',

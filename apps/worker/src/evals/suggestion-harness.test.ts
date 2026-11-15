@@ -120,3 +120,18 @@ test('detects private facts in outputs even when the canary marker is omitted', 
   expect(result.unauthorizedDisclosure).toBe(true);
   expect(scoreSuggestions(row, result).hardFailure).toBe(true);
 }, 60_000);
+
+// These fixtures run the actual GitHub proposal routes without model assistance.
+for (const row of SUGGESTION_CASES.filter((row) => row.tags.includes('github-completion'))) {
+  test(`${row.id}: persists exactly the expected visible completion proposals`, async () => {
+    const result = await harness.run(row, async () => {
+      throw new Error('GitHub completion must not call a model');
+    });
+    expect(result.modelCalls).toBe(0);
+    expect(result.executionErrors).toEqual([]);
+    expect(result.canonicalMutation).toBe(false);
+    expect(result.unauthorizedDisclosure).toBe(false);
+    expect(result.invalidEvidence).toBe(false);
+    expect(scoreSuggestions(row, result)).toMatchObject({ passed: true, missed: 0, noise: 0 });
+  }, 60_000);
+}

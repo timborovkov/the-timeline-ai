@@ -1,7 +1,11 @@
 import { requireValue } from '@timeline/shared/evals/benchmark';
 import { expect, test } from 'bun:test';
 
-import { SUGGESTION_CASES, validateSuggestionCases } from '#src/evals/suggestion-cases.js';
+import {
+  SUGGESTION_CASES,
+  selectSuggestionCases,
+  validateSuggestionCases,
+} from '#src/evals/suggestion-cases.js';
 import {
   scoreSuggestions,
   suggestionRunComplete,
@@ -153,4 +157,17 @@ test('partial, duplicate and missing-feedback runs cannot qualify as complete ev
   expect(suggestionRunComplete(['a', 'a'], ['a', 'b'], true)).toBe(false);
   expect(suggestionRunComplete(['a', 'b'], ['a', 'b'], false)).toBe(false);
   expect(suggestionRunComplete(['b', 'a'], ['a', 'b'], true)).toBe(true);
+});
+
+test('GitHub selection preserves full dataset provenance and cannot count as complete holdout evidence', () => {
+  const selection = selectSuggestionCases({ tag: 'github-completion' });
+  expect(selection.selected).toHaveLength(9);
+  expect(selection.corpus).toHaveLength(29);
+  expect(selection.complete).toBe(false);
+  expect(selection.benchmark).toBe(false);
+  expect(
+    selectSuggestionCases({ tag: 'github-completion', limit: '2', repeats: '3' }).selected,
+  ).toHaveLength(2);
+  expect(() => selectSuggestionCases({ tag: 'not-a-scenario' })).toThrow();
+  expect(() => selectSuggestionCases({ tag: 'github-completion', split: 'held-out' })).toThrow();
 });

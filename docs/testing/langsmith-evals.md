@@ -144,7 +144,7 @@ bun run eval:suggestions:compare --split=development --repeats=1 --out=/tmp/sugg
 bun run eval:suggestions:compare --split=held-out --repeats=3 --out=/tmp/suggestions-held-out.json
 ```
 
-The initial corpus contains 40 authored scenarios, 20 per split, including
+The corpus contains 49 authored scenarios (29 development / 20 held-out), including
 positive commitments and requests, multiple actions, lifecycle changes, explicit
 assignments and deadlines, noise, completed work, retries, private context, and
 injected instructions. Cases define expected operations, target IDs, intent term
@@ -182,9 +182,14 @@ return nonzero without weakening expected outcomes.
 
 This suite starts at captured raw events. It does not measure connector ingestion,
 real retrieval recall, browser rendering, queue load or wall-clock delivery SLA.
-GitHub integration pulses and Drive lifecycle notifications currently test safe
-suppression only; they do not represent the GitHub task-proposal or opted-in
-Drive document-extraction paths. Existing live proposal-engine and document
+Nine development-only GitHub completion cases exercise the raw-event and coalesced
+`github_task_proposal` worker routes: merged/closed PRs, completed tasks, duplicate
+jobs/events, ambiguous title matches, partial work linked to a separate issue,
+new completed tasks, repository identity and private source suppression. They
+check visible approval items and unchanged canonical entities. These deterministic
+cases need no model calls. They start from captured event metadata, so GitHub
+webhook transport and ingestion remain outside this benchmark. Drive lifecycle
+cases still cover safe suppression only, not opted-in document extraction. Existing live proposal-engine and document
 freshness/end-to-end suites remain separate. Extend this corpus with those paths
 before claiming full source coverage.
 
@@ -193,3 +198,15 @@ trace collection or reinterpret existing workspace consent. Production pipeline
 rejection diagnostics remain separate work requiring a collection contract and
 matching disclosure/consent before activation; see
 [workspace evaluation tracing](../workspace-evaluation-tracing.md).
+
+To run only the GitHub completion slice:
+
+```sh
+bun run eval:suggestions:compare --tag=github-completion --out=/tmp/github-completions.json
+```
+
+`--tag` selects a diagnostic subset of the versioned split, with `--limit` applied
+inside that subset. It never qualifies as a complete held-out benchmark. The
+GitHub-only slice requires LangSmith credentials but no OpenRouter key. The nine
+related cases stay in development; changing the corpus hash does not make the
+previously inspected held-out examples fresh again.

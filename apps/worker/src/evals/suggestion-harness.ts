@@ -49,6 +49,7 @@ export async function createSuggestionHarness() {
         teamId: TEAM,
         type: 'project',
         canonicalName: 'Northstar rollout',
+        aliases: row.projectAliases ?? [],
         status: 'active',
       });
       if (row.existingTask)
@@ -59,14 +60,25 @@ export async function createSuggestionHarness() {
           canonicalName: row.existingTask.name,
           status: row.existingTask.status,
         });
+      for (const task of row.taskFixtures ?? [])
+        await db.insert(entities).values({
+          id: task.id,
+          teamId: TEAM,
+          type: 'task',
+          canonicalName: task.name,
+          status: task.status,
+          aliases: task.aliases ?? [],
+          metadata: task.metadata ?? {},
+        });
       const initial = JSON.stringify(await db.select().from(entities));
       const ids = row.events.map((_, index) => suggestionEventId(row.id, index));
       const metadata =
-        row.source === 'slack'
+        row.eventMetadata ??
+        (row.source === 'slack'
           ? { slack_workspace_id: 'W_EVAL', slack_channel_id: 'C_EVAL' }
           : row.source === 'telegram'
             ? { tg_chat_id: 'eval-chat' }
-            : {};
+            : {});
       for (const [index, text] of [
         ...row.events,
         ...(row.privateContext ? [row.privateContext] : []),
@@ -79,8 +91,8 @@ export async function createSuggestionHarness() {
           source: row.source,
           contentText: text,
           occurredAt: new Date(Date.UTC(2026, 5, 1, 9, privateEvent ? -1 : index)),
-          visibility: privateEvent ? 'private' : 'team',
-          visibilityOwnerUserId: privateEvent ? OTHER : null,
+          visibility: privateEvent ? 'private' : (row.eventVisibility ?? 'team'),
+          visibilityOwnerUserId: privateEvent || row.eventVisibility === 'private' ? OTHER : null,
           sourceMetadata: metadata,
         });
       }
@@ -123,7 +135,18 @@ export async function createSuggestionHarness() {
       try {
         const anchor = ids.at(-1);
         if (!anchor) throw new Error('Missing fixture anchor');
-        for (const rawEventId of ids) {
+        if (row.githubJobExternalId) {
+          const githubJob = {
+            scope: 'github_task_proposal' as const,
+            teamId: TEAM,
+            integrationId: '66666666-6666-4666-8666-666666666666',
+            externalObjectId: row.githubJobExternalId,
+          };
+          await processSuggestionJobForTests({ db: db as unknown as Db }, githubJob, io);
+          if (row.replay)
+            await processSuggestionJobForTests({ db: db as unknown as Db }, githubJob, io);
+        }
+        for (const rawEventId of row.githubJobExternalId ? [] : ids) {
           await processSuggestionJobForTests(
             { db: db as unknown as Db },
             { rawEventId, teamId: TEAM },
@@ -140,7 +163,7 @@ export async function createSuggestionHarness() {
             .where(eq(conversationReviews.id, job.conversationReviewId));
           await processSuggestionJobForTests({ db: db as unknown as Db }, job, io);
           if (row.replay) await processSuggestionJobForTests({ db: db as unknown as Db }, job, io);
-        } else if (row.replay) {
+        } else if (row.replay && !row.githubJobExternalId) {
           await processSuggestionJobForTests(
             { db: db as unknown as Db },
             { rawEventId: anchor, teamId: TEAM },
