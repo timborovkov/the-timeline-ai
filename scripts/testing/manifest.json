@@ -2506,5 +2506,8 @@
   },
   "apps/web/src/components/evaluation-tracing-settings.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/lib/workspace-sharing-status.test.ts": {
+    "group": "unit"
   }
 }

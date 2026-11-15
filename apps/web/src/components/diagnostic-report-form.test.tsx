@@ -1,5 +1,15 @@
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, it } from 'bun:test';
+const toast = vi.hoisted(() => ({ loading: vi.fn(), success: vi.fn(), error: vi.fn() }));
+await vi.mock(
+  import.meta.resolve('sonner'),
+  () => ({ toast }),
+  () => import('sonner'),
+);
+const configure = vi.fn(
+  (_previous: unknown, _data: FormData): Promise<{ saved?: boolean; error?: string }> =>
+    Promise.resolve({ saved: true }),
+);
 // Only selected, edited messages leave the browser. Failures retain drafts and every edit renews consent.
 const submit = vi.fn(
   (_previous: unknown, _data: FormData): Promise<{ error?: string; saved?: boolean }> =>
@@ -9,13 +19,14 @@ await vi.mock(
   import.meta.resolve('@/app/actions/diagnostics'),
   () => ({
     submitDiagnosticAction: submit,
-    configureDiagnosticAction: vi.fn(),
+    configureDiagnosticAction: configure,
     deleteDiagnosticAction: vi.fn(),
   }),
   () => import('@/app/actions/diagnostics'),
 );
 const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
-const { DiagnosticReportForm } = await import('./diagnostic-report-form');
+const { DiagnosticReportForm, DiagnosticSharingSettings } =
+  await import('./diagnostic-report-form');
 const messages = [
   { id: 'first', role: 'user' as const, text: 'Original sensitive message' },
   { id: 'second', role: 'assistant' as const, text: 'Private answer to exclude' },
@@ -107,4 +118,20 @@ it('keeps long messages intact and lets the sender exclude them to meet the limi
   fireEvent.click(screen.getByRole('checkbox', { name: 'Include message 1 from You' }));
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.getByRole('status').textContent).toBe('1 of 2 messages selected');
+});
+
+it('announces sharing preference saves and errors with toasts', async () => {
+  render(<DiagnosticSharingSettings teamId="synthetic" enabled={false} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Save sharing preference' }));
+  await waitFor(() => {
+    expect(toast.success).toHaveBeenCalledWith('Sharing preference saved', expect.anything());
+  });
+  configure.mockResolvedValueOnce({ error: 'Only current admins can change sharing' });
+  fireEvent.click(screen.getByRole('button', { name: 'Save sharing preference' }));
+  await waitFor(() => {
+    expect(toast.error).toHaveBeenCalledWith(
+      'Only current admins can change sharing',
+      expect.anything(),
+    );
+  });
 });

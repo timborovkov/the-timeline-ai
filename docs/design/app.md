@@ -788,3 +788,5 @@ requires a deliberate audited open action, never automatic list previews.
 ### Evaluation tracing settings
 
 Team settings links to `/app/team/evaluation`. Explain the quality purpose before the opt-in control; default it off, leave source choices unchecked initially, and require a separate acknowledgment to enable it. Show capture availability separately from the saved preference. Onboarding offers the same disclosure in a new tab without interrupting completion. Distinguish automatic sampled source extraction from individually reviewed conversation reports.
+
+Quality-sharing forms keep the material consent summary visible in short bullets, with sampling and cleanup details in an expandable disclosure. Source choices use a compact responsive grid. Saves use shared loading/success/error toasts and disable the save button while pending. Platform Admin → Teams shows saved evaluation/report permissions; team detail adds selected sources, consent version and this web instance’s configuration readiness. Readiness is not evidence of worker capture or received traces, and platform staff cannot grant workspace consent from this view.

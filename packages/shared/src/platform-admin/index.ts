@@ -61,6 +61,8 @@ const userFields = {
   suspendedAt: users.suspendedAt,
 };
 const teamFields = {
+  evaluationTracing: teams.evaluationTracing,
+  diagnosticSharingEnabled: teams.diagnosticSharingEnabled,
   id: teams.id,
   name: teams.name,
   slug: teams.slug,
