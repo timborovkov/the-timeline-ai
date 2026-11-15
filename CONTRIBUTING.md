@@ -4,10 +4,13 @@ Thank you for taking the time to improve The Timeline.
 
 ## Important repository status
 
-The source is publicly inspectable, but this repository does not currently
-publish a software license or general contribution terms. Public visibility is
-not permission to copy, distribute, modify, deploy, or submit code. Opening an
-issue also does not grant those rights.
+The source is available under the [Elastic License 2.0](LICENSE), except where
+otherwise noted. See that license for permission to use, copy, modify, distribute
+and self-host the software and the applicable limitations. Third-party components
+retain their own licenses.
+
+General contribution terms are not yet published. The software license does not
+establish the terms under which Timeline accepts contributions.
 
 Before substantial work or any pull request:
 

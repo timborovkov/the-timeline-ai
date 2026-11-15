@@ -58,5 +58,5 @@ supported versions.
 
 For non-sensitive security hardening, documentation corrections, or dependency
 updates that do not reveal an exploitable weakness, a normal issue is welcome.
-Until the repository publishes contribution terms and a license, contact us
-before submitting a pull request.
+Contact us before submitting a pull request, as described in
+[CONTRIBUTING.md](CONTRIBUTING.md).
