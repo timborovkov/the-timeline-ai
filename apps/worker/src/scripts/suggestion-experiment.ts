@@ -101,6 +101,9 @@ if (!values.sync) {
   for (const path of [
     '../workers/suggestions.ts',
     '../workers/communication-policy.ts',
+    '../workers/communication-grounding.ts',
+    '../evals/communication-gap-cases.ts',
+    '../../../../packages/shared/src/suggestions/linked-hubs.ts',
     '../evals/communication-harness.ts',
     '../evals/communication-cases.ts',
     '../../../../packages/shared/src/suggestions/hub-context.ts',
@@ -206,7 +209,7 @@ if (!values.sync) {
             partial: !selection.complete,
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
-            evaluatorVersion: communications ? 5 : 2,
+            evaluatorVersion: communications ? 6 : 2,
             requestedModel: selection.selected.every((row) =>
               row.tags.includes('github-completion'),
             )

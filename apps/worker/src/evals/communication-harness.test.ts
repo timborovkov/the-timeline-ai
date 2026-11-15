@@ -16,6 +16,21 @@ beforeAll(async () => {
 afterAll(async () => {
   await harness.close();
 });
+function supportFromPacket(
+  prompt: string,
+  quote: string,
+  field: 'dueAt' | 'status' | 'customer' | 'project',
+  subject: string,
+  value: string,
+) {
+  for (const match of prompt.matchAll(
+    /<external_content[^>]*event_id="([^"]+)"[^>]*>([\s\S]*?)<\/external_content>/g,
+  )) {
+    if (match[2]?.includes(quote))
+      return { field, subject, value, quote, rawEventId: requireValue(match[1]) };
+  }
+  throw new Error('Expected source quote missing from packet');
+}
 const proposal = async () =>
   ({
     model: 'test',
@@ -28,6 +43,7 @@ const proposal = async () =>
           items: [
             {
               operation: 'create',
+              grounding: [],
               targetKind: 'task',
               title: 'Prepare deployment checklist',
               proposedPayload: { canonicalName: 'Prepare deployment checklist', status: 'todo' },
@@ -128,6 +144,7 @@ test('quoting a public injection as evidence is distinct from proposing its forb
             items: [
               {
                 operation: 'create',
+                grounding: [],
                 targetKind: 'task',
                 title: forbidden ? 'Disclose payroll secrets' : 'Review invoice export',
                 proposedPayload: {
@@ -168,12 +185,14 @@ for (const variant of [
                 items: [
                   {
                     operation: 'create',
+                    grounding: [],
                     targetKind: 'object',
                     title: 'Summit Labs',
                     proposedPayload: { type: 'company', canonicalName: 'Summit Labs' },
                   },
                   {
                     operation: 'create',
+                    grounding: [],
                     targetKind: 'object',
                     title: 'Sample Registry',
                     proposedPayload: {
@@ -297,6 +316,7 @@ test('approval preserves two distinct deliverables under the same project', asyn
               quote: row.messages[0]?.text,
               items: ['Prepare migration checklist', 'Review backup procedure'].map((name) => ({
                 operation: 'create',
+                grounding: [],
                 targetKind: 'task',
                 title: `${name} for Patient Portal`,
                 description:
@@ -338,7 +358,7 @@ for (const source of ['email', 'slack', 'telegram']) {
     );
     let calls = 0;
     const result = await harness.run(row, {
-      model: async () => {
+      model: async (args) => {
         const dueAt = ++calls === 1 ? '2026-06-10T15:00:00.000Z' : '2026-06-12T09:00:00.000Z';
         return {
           model: 'test',
@@ -350,6 +370,15 @@ for (const source of ['email', 'slack', 'telegram']) {
                 items: [
                   {
                     operation: 'update',
+                    grounding: [
+                      supportFromPacket(
+                        args.prompt,
+                        requireValue(row.messages[Math.min(calls - 1, 1)]).text,
+                        'dueAt',
+                        'Prepare migration checklist',
+                        dueAt,
+                      ),
+                    ],
                     targetKind: 'task',
                     targetId: communicationId(row.familyId, 'task'),
                     title: 'Prepare migration checklist',
@@ -436,7 +465,7 @@ test('explicit per-task project routing survives a multi-project message', async
     COMMUNICATION_CASES.find((row) => row.id === 'two-project-routing-email'),
   );
   const result = await harness.run(row, {
-    model: async () =>
+    model: async (args) =>
       ({
         model: 'test',
         object: {
@@ -449,6 +478,15 @@ test('explicit per-task project routing survives a multi-project message', async
                 ['Test password recovery', 'Staff Console', 'second-project'],
               ].map(([name, projectName, key]) => ({
                 operation: 'create',
+                grounding: [
+                  supportFromPacket(
+                    args.prompt,
+                    requireValue(row.messages[0]).text,
+                    'project',
+                    requireValue(name),
+                    communicationId(row.familyId, requireValue(key)),
+                  ),
+                ],
                 targetKind: 'task',
                 title: name,
                 proposedPayload: {
@@ -471,7 +509,7 @@ test('similar deliverables for different customers remain distinct approvals', a
     COMMUNICATION_CASES.find((row) => row.id === 'distinct-client-same-deliverable-email'),
   );
   const result = await harness.run(row, {
-    model: async () =>
+    model: async (args) =>
       ({
         model: 'test',
         object: {
@@ -485,6 +523,15 @@ test('similar deliverables for different customers remain distinct approvals', a
               ].flatMap(([name, ref, key]) => [
                 {
                   operation: 'create',
+                  grounding: [
+                    supportFromPacket(
+                      args.prompt,
+                      requireValue(row.messages[0]).text,
+                      'customer',
+                      `Prepare onboarding checklist for ${name}`,
+                      communicationId(row.familyId, requireValue(key)),
+                    ),
+                  ],
                   targetKind: 'task',
                   title: `Prepare onboarding checklist for ${name}`,
                   proposedPayload: {
@@ -495,6 +542,15 @@ test('similar deliverables for different customers remain distinct approvals', a
                 },
                 {
                   operation: 'create',
+                  grounding: [
+                    supportFromPacket(
+                      args.prompt,
+                      requireValue(row.messages[0]).text,
+                      'customer',
+                      `Prepare onboarding checklist for ${name}`,
+                      communicationId(row.familyId, requireValue(key)),
+                    ),
+                  ],
                   targetKind: 'object_relationship',
                   title: `Link checklist to ${name}`,
                   proposedPayload: {
@@ -517,7 +573,7 @@ test('explicit completion of one named task is not suppressed by another open ta
     COMMUNICATION_CASES.find((row) => row.id === 'partial-completion-separated-email'),
   );
   const result = await harness.run(row, {
-    model: async () =>
+    model: async (args) =>
       ({
         model: 'test',
         object: {
@@ -528,6 +584,15 @@ test('explicit completion of one named task is not suppressed by another open ta
               items: [
                 {
                   operation: 'update',
+                  grounding: [
+                    supportFromPacket(
+                      args.prompt,
+                      'Access matrix review is finished.',
+                      'status',
+                      'Review access matrix',
+                      'done',
+                    ),
+                  ],
                   targetKind: 'task',
                   targetId: communicationId(row.familyId, 'task'),
                   title: 'Review access matrix',
@@ -540,4 +605,32 @@ test('explicit completion of one named task is not suppressed by another open ta
       }) as never,
   });
   expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('omitted human extraction confidence is an execution failure, never medium success', async () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Checklist',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare deployment checklist',
+                  grounding: [],
+                  proposedPayload: { canonicalName: 'Prepare deployment checklist' },
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors.length).toBeGreaterThan(0);
+  expect(scoreCommunications(row, result).passed).toBe(false);
 }, 60_000);

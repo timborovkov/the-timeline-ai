@@ -38,16 +38,16 @@ test('corpus coverage and family isolation are validated', () => {
   expect(() => {
     validateCommunicationCases();
   }).not.toThrow();
-  expect(selectCommunications({}).selected).toHaveLength(96);
+  expect(selectCommunications({}).selected).toHaveLength(162);
   expect(selectCommunications({ split: 'held-out', repeats: '3' })).toMatchObject({
     repeats: 3,
-    benchmark: false,
+    benchmark: true,
   });
   expect(selectCommunications({ split: 'held-out', tag: 'email' })).toMatchObject({
     benchmark: false,
     complete: false,
   });
-  expect(new Set(COMMUNICATION_CASES.map((row) => row.familyId)).size).toBe(48);
+  expect(new Set(COMMUNICATION_CASES.map((row) => row.familyId)).size).toBe(72);
 });
 test('errors cannot turn empty output into successful abstention', () => {
   const row = requireValue(
@@ -186,4 +186,26 @@ test('reviewed equivalent names do not become unrestricted fuzzy matching', () =
       nodes: observation.nodes.map((node) => ({ ...node, name: `${node.name} replacement` })),
     }).passed,
   ).toBe(false);
+});
+
+test('ordinary requests reject invented owners and deadlines', () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'unknown-owner-email'));
+  const node = {
+    id: 'task',
+    type: 'task',
+    name: 'Review retention policy',
+    status: 'todo',
+    assigneeUserId: null,
+    dueAt: null,
+  };
+  expect(
+    scoreCommunications(row, { ...empty, nodes: [{ ...node, dueAt: '2026-06-01T23:00:00.000Z' }] })
+      .passed,
+  ).toBe(false);
+  expect(
+    scoreCommunications(row, {
+      ...empty,
+      nodes: [{ ...node, dueAt: '2026-06-01T23:00:00.000Z' }],
+    }).fieldMismatches.some((mismatch) => mismatch.field === 'dueAt'),
+  ).toBe(true);
 });

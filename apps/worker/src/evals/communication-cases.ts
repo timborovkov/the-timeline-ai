@@ -1,5 +1,6 @@
 import { selectBenchmark, validateCases } from '@timeline/shared/evals/benchmark';
 
+import { communicationGapFamilies } from '#src/evals/communication-gap-cases.js';
 import type {
   CommunicationCase,
   CommunicationMessage,
@@ -8,7 +9,7 @@ import type {
   EmailPackaging,
 } from '#src/evals/communication-types.js';
 
-interface Family {
+export interface Family {
   id: string;
   category: string;
   split: 'development' | 'held-out';
@@ -701,13 +702,28 @@ const families: Family[] = [
     nodes: [{ ...task('Prepare release checklist'), assignee: 'alice' }],
   },
 ];
-export const COMMUNICATION_CASES: CommunicationCase[] = families.flatMap((family) =>
+const expandedFamilies: Family[] = [
+  ...families.map((family) => ({ ...family, split: 'development' as const })),
+  ...communicationGapFamilies,
+];
+export const COMMUNICATION_CASES: CommunicationCase[] = expandedFamilies.flatMap((family) =>
   (family.emailOnly ? (['email'] as const) : (['email', 'slack', 'telegram'] as const)).map(
     (source) => ({
       id: `${family.id}-${source}`,
       familyId: family.id,
       split: family.split,
-      tags: [family.category, source, 'communications'],
+      tags: [
+        family.category,
+        source,
+        'communications',
+        ...([
+          'real-prospect',
+          'distinct-client-same-deliverable',
+          'quoted-injection-reassignment',
+        ].includes(family.id)
+          ? ['closure-regression']
+          : []),
+      ],
       category: family.category,
       rationale: family.rationale,
       source,
@@ -715,7 +731,21 @@ export const COMMUNICATION_CASES: CommunicationCase[] = families.flatMap((family
       expected: [],
       messages: family.messages,
       seed: family.seed ?? [],
-      outcome: { nodes: family.nodes, edges: family.edges ?? [] },
+      outcome: {
+        nodes: family.nodes.map((node) => {
+          const seed = family.seed?.find((entry) => entry.key === node.key);
+          return {
+            ...node,
+            status:
+              node.status ??
+              seed?.status ??
+              (node.type === 'company' ? (seed ? 'active' : 'open') : 'planning'),
+            assignee: node.assignee === undefined ? (seed?.assignee ?? null) : node.assignee,
+            dueAt: node.dueAt === undefined ? (seed?.dueAt ?? null) : node.dueAt,
+          };
+        }),
+        edges: family.edges ?? [],
+      },
       ...(family.pending ? { pending: family.pending } : {}),
       ...(family.packaging ? { packaging: family.packaging } : {}),
       ...(family.prohibitedText ? { prohibitedText: family.prohibitedText } : {}),
@@ -725,21 +755,13 @@ export const COMMUNICATION_CASES: CommunicationCase[] = families.flatMap((family
 );
 export function validateCommunicationCases() {
   validateCases(COMMUNICATION_CASES);
-  if (families.length !== 48 || COMMUNICATION_CASES.length !== 126)
+  if (expandedFamilies.length !== 72 || COMMUNICATION_CASES.length !== 198)
     throw new Error('Communication coverage changed');
   for (const split of ['development', 'held-out']) {
     const rows = COMMUNICATION_CASES.filter((row) => row.split === split);
-    if (rows.length !== (split === 'development' ? 96 : 30))
+    if (rows.length !== (split === 'development' ? 162 : 36))
       throw new Error('Communication split coverage changed');
-    for (const category of [
-      'combined',
-      'reuse',
-      'chronology',
-      'ownership',
-      'context',
-      'safety',
-      'packaging',
-    ])
+    for (const category of ['uncertainty', 'routing', 'attribution', 'temporal'])
       if (!rows.some((row) => row.category === category)) throw new Error(`Missing ${category}`);
   }
   const content = new Set<string>();
@@ -747,6 +769,10 @@ export function validateCommunicationCases() {
     const fingerprint = JSON.stringify([row.source, row.messages, row.seed, row.pending ?? []]);
     if (content.has(fingerprint)) throw new Error('Duplicate communication content');
     content.add(fingerprint);
+    for (const node of row.outcome.nodes) {
+      if (!node.status || !Object.hasOwn(node, 'assignee') || !Object.hasOwn(node, 'dueAt'))
+        throw new Error('Incomplete field expectations');
+    }
     const keys = row.outcome.nodes.map((node) => node.key);
     if (new Set(keys).size !== keys.length) throw new Error('Duplicate graph key');
     for (const edge of row.outcome.edges)

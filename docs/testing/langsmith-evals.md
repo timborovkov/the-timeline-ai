@@ -226,7 +226,7 @@ email-policy change and are not new evidence for it.
 ## Communications and approval benchmark
 
 Use `--suite=communications` on the suggestion sync/compare commands for the
-separate 126-case communications corpus. The default remains `--suite=suggestions`;
+separate 198-case communications corpus. The default remains `--suite=suggestions`;
 its historical datasets and experiments are unchanged.
 
 ```sh
@@ -236,16 +236,15 @@ bun run eval:suggestions:compare --suite=communications --out=/tmp/communication
 bun run eval:suggestions:compare --suite=communications --split=held-out --repeats=3 --out=/tmp/communications-held-out.json
 ```
 
-Thirty-nine semantic families have email, Slack and Telegram variants; nine additional
-families cover email packaging. There are 96 development cases and 30 held-out
-cases, with whole families assigned to one split. All 96 cases from the first
-inspected corpus are now development regressions; the 30 held-out cases use new
-families. Earlier dataset versions and reports remain unchanged. Cases cover combined account,
-project and task creation; aliases and pending objects; corrections; ownership;
-prospects and difficult negatives; injection, privacy and retries; and forwarding
-formats, multilingual content and long inputs. References include initial state,
-message sequences, expected approved objects and relationships, and rationales.
-These rationales receive consistency review, not independent human validation.
+Sixty-three semantic families have email, Slack and Telegram variants; nine additional
+families cover email packaging. There are 162 development cases and 36 held-out
+cases, with whole families assigned to one split. All 126 previously inspected
+cases are development regressions. The 24 new families cover prospect uncertainty,
+per-deliverable customer routing, ownership and temporal fields, split evenly
+between development and held-out. Earlier datasets and reports remain unchanged.
+Coverage also includes combined object/task creation, aliases and pending objects,
+corrections, privacy, injection, retries, forwarding, multilingual content and long
+inputs. Rationales receive consistency review, not independent human validation.
 
 The harness drives the real local email, Slack and Telegram dispatchers using
 synthetic provider payloads, controlled transports, real routing/authorization,
@@ -256,9 +255,9 @@ acceptance is attempted and must fail. No canonical mutation is permitted before
 approval. Summary refresh jobs, vector indexing, external delivery, production
 stores and wall-clock delivery performance are outside the boundary.
 
-The scorer checks the approved object graph: identity reuse, lifecycle, explicit
-assignee/deadline assertions, and task/project/account relationships. Counts are
-**graph assertions**, including preservation of seeded objects, rather than task
+The scorer checks the approved object graph: identity reuse, lifecycle, mandatory
+status, assignee and deadline assertions, and task/project/account relationships. Counts are
+**graph and field assertions**, including preservation of seeded objects, rather than task
 recall estimates or independent samples. Named fixture objects use their synthetic
 identity; task intent uses term groups rather than exact prose. Extra objects,
 incorrect relationships, duplicate proposals and unsupported action kinds are
@@ -278,16 +277,24 @@ as independent evidence. `--tag` and `--limit` are diagnostic only. Complete hel
 runs require committed fixtures/scoring and full feedback; inspected holdouts must
 remain in evaluation history and cannot become fresh evidence after tuning.
 
-Communications evaluator version 5 counts only actionable (`pending`/`failed`)
-items as proposed work; superseded history retained in a bundle is not a duplicate
-approval. Approval outcomes retain failures and supersession reasons separately.
-Forwarded message timestamps follow their synthetic sequence times, including
-delayed replies, rather than reusing the root timestamp. Explicit `acceptedNames` allow individually reviewed equivalent name renderings;
-they do not permit fuzzy matching of unrelated accounts or projects. The inspected
-Booking Desk development case accepts its source's leading article (The Booking
-Desk); historical scores are preserved, not silently rescored. These scoring
-changes preclude claiming a direct accuracy improvement over version 4 solely
-from aggregate totals.
+Communications evaluator version 6 requires complete outcome fields: missing
+assignees and deadlines are explicit `null` expectations, not unscored properties.
+Seeded values remain expected unless the source supports a change. Reports list
+individual field mismatches and uncertainty violations. Graph matching is not an
+assertion about every possible canonical field (for example, priority or free-form
+text). Only actionable (`pending`/`failed`) approvals count as proposed work;
+superseded history and saved approval outcomes remain available separately.
+Forwarded timestamps follow their synthetic sequence times. Reviewed
+`acceptedNames` permit specific equivalent renderings, never unrestricted fuzzy
+matching. Historical results are retained and are not silently rescored under
+stricter assertions; aggregate v5/v6 scores are not directly comparable.
+
+Use `--tag=closure-regression` for the nine inspected cases from the three prior
+failure families. Closure validation runs the full development set once and those
+nine cases twice more, with all targeted cases passing each repetition before a
+fresh held-out run. Then run held-out three times with complete feedback. Execution,
+approval or hard failures block closure, as do failures in the four targeted areas.
+Do not weaken labels or reuse an inspected holdout as fresh evidence after tuning.
 
 The inspected family registry in the communications selector prevents subsequent
 runs of these held-out families from claiming `benchmarkEvidence`, even after a

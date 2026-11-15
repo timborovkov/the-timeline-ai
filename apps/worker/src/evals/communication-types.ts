@@ -22,6 +22,12 @@ export interface CommunicationNode {
   assignee?: Actor | null;
   dueAt?: string | null;
 }
+/** Expectations are complete; omission must never silently disable field scoring. */
+export interface CommunicationExpectedNode extends CommunicationNode {
+  status: string;
+  assignee: Actor | null;
+  dueAt: string | null;
+}
 export interface CommunicationEdge {
   from: string;
   to: string;
@@ -44,7 +50,7 @@ export interface CommunicationCase extends SuggestionCase {
   messages: CommunicationMessage[];
   seed: CommunicationNode[];
   pending?: { node: CommunicationNode; edited?: boolean }[];
-  outcome: { nodes: CommunicationNode[]; edges: CommunicationEdge[] };
+  outcome: { nodes: CommunicationExpectedNode[]; edges: CommunicationEdge[] };
   packaging?: EmailPackaging;
   prohibitedText?: string[];
   uncertain?: boolean;

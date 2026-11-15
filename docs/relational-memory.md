@@ -53,6 +53,21 @@ open work; vague, hedged or complex clauses still cannot choose a target. Extrac
 also distinguishes ownership confirmation from a lifecycle change and keeps rejected
 attack directives out of proposal text.
 
+Human-communication extraction requires explicit bundle confidence and internal
+source grounding for proposed assignments, deadlines, lifecycle changes and
+relationships. Grounding identifies an admitted raw event, an exact quote visible
+in the actual packet, the subject and normalized value. It is checked against
+active members and authorized objects; internal grounding is not a canonical field.
+Prospect support lowers confidence and keeps newly proposed projects in planning.
+Per-task support can repair a missing customer link only when one endpoint is
+unambiguous. Unsupported optional writes are omitted, preserving existing values
+on updates. Ownership is not inferred from being a requester or forwarding an email.
+A pronoun ownership correction requires an immediately preceding, uniquely named
+pending-task context quote; nested email excerpts do not inherit the outer sender.
+These deterministic checks recognize supported assertion/date forms and fail
+closed on unrecognized forms; they do not establish universal language understanding
+or replace approval. No additional verification-model call is made.
+
 Unknown optional name/type/status/project hints encoded as `null` are treated as
 absent. Explicit clears for member IDs, dates, priorities and primary project IDs
 retain their existing meaning. Assignment belongs to a supported workspace member;

@@ -12,6 +12,8 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
   const assigned = new Map<string, ObservedNode>();
   const used = new Set<string>();
   let matched = 0;
+  const fieldMismatches: { key: string; field: string; expected: unknown; observed: unknown }[] =
+    [];
   for (const expected of row.outcome.nodes) {
     const seeded = row.seed.some((node) => node.key === expected.key);
     const candidates = observation.nodes.filter(
@@ -32,14 +34,23 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
     if (!node) continue;
     assigned.set(expected.key, node);
     used.add(node.id);
-    if (
-      (expected.status === undefined || node.status === expected.status) &&
-      (expected.assignee === undefined ||
-        node.assigneeUserId ===
-          (expected.assignee === null ? null : COMM_ACTORS[expected.assignee])) &&
-      (expected.dueAt === undefined || node.dueAt === expected.dueAt)
-    )
-      matched++;
+    const fields = [
+      ['status', expected.status, node.status],
+      [
+        'assignee',
+        expected.assignee === null ? null : COMM_ACTORS[expected.assignee],
+        node.assigneeUserId,
+      ],
+      ['dueAt', expected.dueAt, node.dueAt],
+    ] as const;
+    let valid = true;
+    for (const [field, value, observed] of fields) {
+      if (!Object.hasOwn(expected, field) || value !== observed) {
+        valid = false;
+        fieldMismatches.push({ key: expected.key, field, expected: value, observed });
+      }
+    }
+    if (valid) matched++;
   }
   const edgeMatches = (
     edge: CommunicationObservation['edges'][number],
@@ -123,6 +134,8 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
     observation.packetLoss.length > 0;
   const missed = expected - matched;
   return {
+    fieldMismatches,
+    uncertaintyViolation: observation.uncertaintyMissing,
     expected,
     proposed,
     matched,
@@ -152,7 +165,13 @@ export function summarizeCommunications(rows: CommunicationResult[]) {
     }));
   return {
     ...summarizeSuggestions(rows),
-    scoringUnit: 'approved-graph-assertions',
+    scoringUnit: 'approved-graph-and-field-assertions',
+    fieldMismatchCases: rows
+      .filter((row) => row.score.fieldMismatches.length)
+      .map((row) => ({ id: row.id, fields: row.score.fieldMismatches })),
+    uncertaintyViolationCases: rows
+      .filter((row) => row.score.uncertaintyViolation)
+      .map((row) => row.id),
     sources: group('source'),
     families: group('familyId'),
     packetLossCases: rows.filter((row) => row.packetLoss.length).map((row) => row.id),

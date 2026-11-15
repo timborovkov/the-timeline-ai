@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   teamBillingAccounts,
+  users,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -8362,6 +8363,7 @@ describe('processSuggestionJobForTests', () => {
             items: [
               {
                 operation: 'create',
+                grounding: [],
                 targetKind: 'task',
                 title: 'Send the Acme proposal',
                 proposedPayload: { canonicalName: 'Send the Acme proposal' },
@@ -8389,9 +8391,11 @@ describe('processSuggestionJobForTests', () => {
         bundles: [
           {
             title: 'Send the Acme proposal',
+            confidence: 'high',
             items: [
               {
                 operation: 'create',
+                grounding: [],
                 targetKind: 'task',
                 title: 'Send the Acme proposal',
                 proposedPayload: { canonicalName: 'Send the Acme proposal' },
@@ -8506,6 +8510,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('revises a pending conversation proposal when a follow-up changes the owner', async () => {
+    await db.update(users).set({ name: 'Sarah' }).where(eq(users.id, OWNER_ID));
+    await db.update(users).set({ name: 'John' }).where(eq(users.id, MEMBER_ID));
     const firstId = '10000000-0000-0000-0000-0000000000b1';
     const secondId = '10000000-0000-0000-0000-0000000000b2';
     const reviewId = '20000000-0000-0000-0000-0000000000b1';
@@ -8540,7 +8546,16 @@ describe('processSuggestionJobForTests', () => {
                   operation: 'create',
                   targetKind: 'task',
                   title: 'Send Acme deck',
-                  proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+                  proposedPayload: { canonicalName: 'Send Acme deck', assigneeName: 'Sarah' },
+                  grounding: [
+                    {
+                      field: 'assignee',
+                      rawEventId: firstId,
+                      quote: 'Sarah will send the Acme deck Friday.',
+                      subject: 'Send Acme deck',
+                      value: OWNER_ID,
+                    },
+                  ],
                 },
               ],
             },
@@ -8562,7 +8577,20 @@ describe('processSuggestionJobForTests', () => {
                   operation: 'create',
                   targetKind: 'task',
                   title: 'Send Acme deck',
-                  proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+                  proposedPayload: { canonicalName: 'Send Acme deck', assigneeName: 'John' },
+                  grounding: [
+                    {
+                      field: 'assignee',
+                      rawEventId: secondId,
+                      quote: 'John will take this instead.',
+                      subject: 'Send Acme deck',
+                      value: MEMBER_ID,
+                      context: {
+                        rawEventId: firstId,
+                        quote: 'Sarah will send the Acme deck Friday.',
+                      },
+                    },
+                  ],
                 },
               ],
             },
@@ -8601,7 +8629,7 @@ describe('processSuggestionJobForTests', () => {
     const rows = await db.select().from(agentSuggestionItems);
     expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
     const pending = rows.find((row) => row.status === 'pending');
-    expect(pending?.proposedPayload).toMatchObject({ ownerName: 'John' });
+    expect(pending?.proposedPayload).toMatchObject({ assigneeUserId: MEMBER_ID });
   });
 
   it('supersedes a stale meeting move approval when the conversation moves it again', async () => {
@@ -8735,6 +8763,15 @@ describe('processSuggestionJobForTests', () => {
             items: [
               {
                 operation: 'update',
+                grounding: [
+                  {
+                    field: 'status',
+                    rawEventId,
+                    quote: 'I sent the Acme deck.',
+                    subject: 'Send Acme deck',
+                    value: 'done',
+                  },
+                ],
                 targetKind: 'task',
                 targetId: OBJECT_ID,
                 title: 'Mark Send Acme deck done',
@@ -8835,6 +8872,15 @@ describe('processSuggestionJobForTests', () => {
             items: [
               {
                 operation: 'update',
+                grounding: [
+                  {
+                    field: 'status',
+                    rawEventId,
+                    quote: 'I am working on the Acme deck.',
+                    subject: 'Draft Acme deck',
+                    value: 'doing',
+                  },
+                ],
                 targetKind: 'task',
                 targetId: OBJECT_ID,
                 title: 'Mark Draft Acme deck in progress',
@@ -8943,6 +8989,15 @@ describe('processSuggestionJobForTests', () => {
             items: [
               {
                 operation: 'update',
+                grounding: [
+                  {
+                    field: 'status',
+                    rawEventId,
+                    quote: 'Blocked until legal approves the Acme deck.',
+                    subject: 'Send Acme deck',
+                    value: 'blocked',
+                  },
+                ],
                 targetKind: 'task',
                 targetId: OBJECT_ID,
                 title: 'Mark Send Acme deck blocked',
@@ -9105,6 +9160,15 @@ describe('processSuggestionJobForTests', () => {
                   targetKind: 'task',
                   title: 'Send Acme deck',
                   proposedPayload: { canonicalName: 'Send Acme deck', status: 'done' },
+                  grounding: [
+                    {
+                      field: 'status',
+                      rawEventId: secondId,
+                      quote: 'Sarah sent the Acme deck.',
+                      subject: 'Send Acme deck',
+                      value: 'done',
+                    },
+                  ],
                 },
               ],
             },
