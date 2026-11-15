@@ -39,10 +39,13 @@ interface DisplayDateOptions {
   timezone?: string | undefined;
 }
 
+/** Pin English so Node SSR and any browser locale cannot disagree on labels. */
+const DISPLAY_LOCALE = 'en-US';
+
 function formatDisplayDateTime(value: Date | string, options: DisplayDateOptions = {}): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(DISPLAY_LOCALE, {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: options.timezone,
@@ -346,7 +349,7 @@ export function formatDateSection(
   const key = dateKey(d, timezone);
   if (key === today) return 'Today';
   if (key === previousDateKey(today)) return 'Yesterday';
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(DISPLAY_LOCALE, {
     weekday: 'long',
     month: 'short',
     day: 'numeric',
@@ -356,7 +359,7 @@ export function formatDateSection(
 }
 
 function formatTime(input: Date | string, timezone?: string): string {
-  return eventDate(input).toLocaleTimeString(undefined, {
+  return eventDate(input).toLocaleTimeString(DISPLAY_LOCALE, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,

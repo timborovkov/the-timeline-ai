@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-11-14 |
+| Version | 2026-11-15 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](evidence/provider-privacy-research.md) |
@@ -596,9 +596,10 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
 ### Allowed with the stated qualification
 
 - The repository source is publicly inspectable and non-sensitive issues are
-  welcome. Until contribution terms and a license are published, contributors
-  must contact Timeline before submitting a pull request. Public source
-  improves transparency but is not an independent security audit.
+  welcome. The [repository license](../LICENSE) governs software use and
+  self-hosting; it is source-available, not OSI-approved open source. Contributors
+  must follow [contribution guidance](../CONTRIBUTING.md) before submitting a pull
+  request. Public source improves transparency but is not an independent security audit.
 - Repository controls and deployment policy require no-collection, ZDR
   endpoints, cache disablement, and fail-closed routing for every
   `zdr_required` role. This may be described as a hosted-product guarantee only
@@ -642,8 +643,8 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
   never load analytics” as a deployed fact until G-10's provider-account and
   deployment evidence is complete.
 - “Anonymous analytics” when stable user or team identifiers are processed.
-- “Open source” or “anyone may self-host” until a repository license grants those
-  rights.
+- “Open source” for software covered by Elastic License 2.0, or unconditional
+  self-hosting rights that omit the [repository license](../LICENSE) limitations.
 - Any claim that Timeline is SOC 2 audited, ISO 27001 certified, HIPAA compliant,
   or “GDPR certified.”
 

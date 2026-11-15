@@ -104,6 +104,19 @@ interface SuggestionWorkerIO {
   evidencePackMode?: 'off' | 'shadow' | 'enforced';
   buildEvidencePack?: typeof evidencePacks.buildEvidencePack;
   takeIngestProcessingSlot?: typeof integrations.takeConnectionIngestSlot;
+  /** Test seam for object-cleanup identity re-extract evidence. */
+  identityEvidence?: (
+    objectIds: string[],
+  ) => Promise<{ objectId: string; rawEventId: string; text: string }[]>;
+}
+
+/** Keep only concrete raw-event ids so postgres.js never sees undefined bindings. */
+export function usableRawEventIds(ids: Iterable<unknown>): string[] {
+  return [
+    ...new Set(
+      [...ids].filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+    ),
+  ];
 }
 
 const suggestionItemObjectSchema = z.object({
@@ -1073,6 +1086,11 @@ export async function processSuggestionJobForTests(
   }
 
   const { rawEventId, teamId } = data;
+  if (typeof rawEventId !== 'string' || rawEventId.trim().length === 0) {
+    // Malformed / partial job payloads must not hit postgres.js with an undefined
+    // binding (UNDEFINED_VALUE) and retry forever — settle as unrecoverable.
+    throw new UnrecoverableError('suggestions: rawEventId required');
+  }
 
   const rows = await deps.db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)).limit(1);
   const row = rows[0];
@@ -3214,11 +3232,16 @@ async function createObjectCleanupSuggestionsForTeam(
         objectIds,
       });
       if (await rejectedApprovalOutputExists(db, teamId, dedupeKey)) continue;
+      const mergeEvidence = semanticPair
+        ? (semanticMatch?.citations ?? []).filter(
+            (cite) => usableRawEventIds([cite.rawEventId]).length > 0,
+          )
+        : [];
       await scope.suggestions.createOrMergeSuggestionBundle({
         maintenanceLease: io.maintenanceLease,
         source: 'background',
         title: `Merge duplicate objects: ${left.canonicalName} / ${right.canonicalName}`,
-        ...(semanticPair ? { evidence: semanticMatch?.citations ?? [] } : {}),
+        ...(mergeEvidence.length > 0 ? { evidence: mergeEvidence } : {}),
         summary: 'Two objects look like they may represent the same thing.',
         reason,
         confidence: match === 'exact' ? 'high' : 'medium',
@@ -3340,6 +3363,7 @@ async function createObjectCleanupSuggestionsForTeam(
         ...(await repairConnectedWorkRelationshipCandidates(db, teamId, repairObject)),
       ];
       for (const candidate of candidates) {
+        if (usableRawEventIds([candidate.rawEventId]).length === 0) continue;
         if (candidate.source === 'fact' && !factLooksRelationshipShaped(candidate.statement)) {
           continue;
         }
@@ -3401,6 +3425,9 @@ async function createObjectCleanupSuggestionsForTeam(
         relationshipDedupe.keys.add(relationshipKey);
       }
       for (const candidate of await repairPersonCandidates(db, teamId, repairObject, rows)) {
+        // Skip rows whose supporting raw event id is missing — one bad candidate
+        // must not abort the rest of the cleanup scan (THE-TIMELINE-AI-3N).
+        if (usableRawEventIds([candidate.rawEventId]).length === 0) continue;
         const relationshipKey = createdPersonRelationshipKey(
           candidate.canonicalName,
           repairObjectId,
@@ -3475,8 +3502,13 @@ async function createObjectCleanupSuggestionsForTeam(
   }
 
   if (repairSubject && getEnv().IDENTITY_SEMANTIC_ENABLED && getEnv().OPENROUTER_API_KEY) {
-    const evidence = await scope.engineMaintenance.identityEvidence([repairSubject.id]);
-    const eventIds = [...new Set(evidence.map((row) => row.rawEventId))].slice(0, 3);
+    const loadIdentityEvidence =
+      io.identityEvidence ??
+      ((objectIds: string[]) => scope.engineMaintenance.identityEvidence(objectIds));
+    const evidence = await loadIdentityEvidence([repairSubject.id]);
+    // Drop missing/undefined raw_event ids before the per-id lookup — postgres.js
+    // rejects undefined bindings with UNDEFINED_VALUE and aborts the whole daily scan.
+    const eventIds = usableRawEventIds(evidence.map((row) => row.rawEventId)).slice(0, 3);
     for (const rawEventId of eventIds.reverse()) {
       const [anchor] = await db
         .select()
