@@ -365,6 +365,22 @@ dialog#floating-agent-chat-panel::backdrop {
   max-width: 80rem;
   margin-inline: 0;
 }
+/* Keep Home's position and column widths stable while the desktop rail folds. */
+@media (min-width: 48rem) {
+  .dashboard-shell #main:has(> .app-page-container > .home-overview) {
+    transition: padding-left 200ms
+      var(--default-transition-timing-function, cubic-bezier(0.4, 0, 0.2, 1));
+  }
+  .dashboard-shell:has(> aside[data-expanded='false'])
+    #main:has(> .app-page-container > .home-overview) {
+    padding-left: calc(2rem + 15rem - 3.5rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-shell #main:has(> .app-page-container > .home-overview) {
+    transition: none;
+  }
+}
 .work-overview [data-slot='collection-group-header'] {
   background: transparent;
   padding-inline: 0;
