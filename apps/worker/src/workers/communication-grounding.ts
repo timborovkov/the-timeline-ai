@@ -105,11 +105,35 @@ function deadlineMatches(
 }
 function taskClause(quote: string, subject: string): string | undefined {
   if (/^blocked until\b/i.test(quote.trim()) && namesTask(quote, subject)) return quote;
-  const connected = quote.replace(/\.\s+(?:Its|The task[’']s) (deadline|due date)\b/gi, ' $1');
+  const connected = quote
+    .replace(/\.\s+(?:Its|The task[’']s) (deadline|due date)\b/gi, ' $1')
+    .replace(
+      /\.\s+(?=[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b))/gu,
+      ' ',
+    );
   const clauses = connected
     .split(/(?:[;!?]|\.(?=\s|$)|\band\b|\bwhile\b|\bwhereas\b|\buntil\b|\bpero\b|\by\b)/iu)
     .filter((clause) => namesTask(clause, subject));
   return clauses.length === 1 ? clauses[0]?.trim() : undefined;
+}
+
+/** Canonicalize an existing object ID placed in a local-ref slot, never guessing identity. */
+export function normalizeKnownRelationshipReferences(
+  input: Record<string, unknown>,
+  localRefs: string[],
+  objectIds: string[],
+): Record<string, unknown> | null {
+  const payload = { ...input };
+  for (const side of ['from', 'to']) {
+    const ref = payload[`${side}Ref`];
+    if (typeof ref !== 'string' || localRefs.includes(ref) || !objectIds.includes(ref)) continue;
+    const existing = payload[`${side}EntityId`];
+    if (typeof existing === 'string' && existing !== ref) return null;
+    payload[`${side}EntityId`] = ref;
+    if (side === 'from') delete payload.fromRef;
+    else delete payload.toRef;
+  }
+  return payload;
 }
 
 /** Ground optional writes against admitted source text, not the model's echoed context. */
@@ -136,6 +160,63 @@ export function groundCommunicationBundles<T extends Item>(args: {
     const verified = (item: T) =>
       (item.grounding ?? [])
         .map((support) => {
+          const sourceForQuote = args.sources.find((row) => row.id === support.rawEventId);
+          // Recover visible sentence context for short entity citations. Never cross a
+          // source, header, truncated packet, or an ambiguous repeated occurrence.
+          if (sourceForQuote && ['customer', 'project', 'prospect'].includes(support.field)) {
+            const start = sourceForQuote.text.indexOf(support.quote);
+            if (start >= 0 && !sourceForQuote.text.includes(support.quote, start + 1)) {
+              const sentence = [...sourceForQuote.text.matchAll(/[^.!?\n]+[.!?]?/g)]
+                .find(
+                  (match) =>
+                    start >= match.index &&
+                    start + support.quote.length <= match.index + match[0].length,
+                )?.[0]
+                .trim();
+              if (
+                sentence &&
+                !/^(?:From|To|Cc|Subject):/i.test(sentence) &&
+                safeSourceQuote(sourceForQuote.text, sentence) &&
+                normalize(args.packet).includes(normalize(sentence))
+              )
+                support = { ...support, quote: sentence };
+            }
+          }
+          if (
+            sourceForQuote &&
+            support.field === 'assignee' &&
+            /^[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b)/u.test(
+              support.quote,
+            )
+          ) {
+            const at = sourceForQuote.text.indexOf(support.quote);
+            const previous =
+              at < 0
+                ? undefined
+                : /[^.!?\n]+[.!?]$/.exec(sourceForQuote.text.slice(0, at).trim())?.[0]?.trim();
+            const knownTasks = [
+              ...(args.objects ?? []).filter((row) => row.type === 'task').map((row) => row.name),
+              ...(args.pendingNames ?? []),
+              ...bundle.items
+                .filter((row) => row.targetKind === 'task' || row.proposedPayload.type === 'task')
+                .map((row) => row.title),
+            ];
+            const otherTask =
+              previous &&
+              knownTasks.some(
+                (name) => name && !namesTask(name, support.subject) && namesTask(previous, name),
+              );
+            const quote = previous ? `${previous} ${support.quote}` : '';
+            if (
+              previous &&
+              namesTask(previous, support.subject) &&
+              !otherTask &&
+              !sourceForQuote.text.includes(support.quote, at + 1) &&
+              safeSourceQuote(sourceForQuote.text, quote) &&
+              normalize(args.packet).includes(normalize(quote))
+            )
+              support = { ...support, quote };
+          }
           if (support.field !== 'dueAt' || !/^its (?:deadline|due date)\b/i.test(support.quote))
             return support;
           const source = args.sources.find((row) => row.id === support.rawEventId);
@@ -195,6 +276,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ? 'task'
           : (payload.type ?? args.objects?.find((object) => object.id === item.targetId)?.type);
       if (item.targetKind === 'object_relationship') {
+        const normalizedRefs = normalizeKnownRelationshipReferences(
+          payload,
+          bundle.items
+            .map((candidate) => candidate.proposedPayload.localRef)
+            .filter((ref): ref is string => typeof ref === 'string'),
+          [...args.hubs, ...(args.objects ?? [])].map((object) => object.id),
+        );
+        if (!normalizedRefs) return [];
+        if (!('fromRef' in normalizedRefs)) delete payload.fromRef;
+        if (!('toRef' in normalizedRefs)) delete payload.toRef;
+        Object.assign(payload, normalizedRefs);
         const endpoint = (side: 'from' | 'to') => {
           const id = payload[`${side}EntityId`];
           if (typeof id === 'string') {
@@ -277,6 +369,78 @@ export function groundCommunicationBundles<T extends Item>(args: {
               linkSupports.push({ ...support, quote });
           }
         }
+        const adjacentEngagement = () => {
+          const company = from?.type === 'company' ? from : to?.type === 'company' ? to : null;
+          const project = from?.type === 'project' ? from : to?.type === 'project' ? to : null;
+          if (!company || !project) return false;
+          return args.sources.some((source) => {
+            const sentences = [...source.text.matchAll(/[^.!?\n]+[.!?]?/g)].filter((match) =>
+              match[0].trim(),
+            );
+            const visibleText = sentences
+              .filter(
+                (match) =>
+                  safeSourceQuote(source.text, match[0].trim()) &&
+                  normalize(args.packet).includes(normalize(match[0])),
+              )
+              .map((match) => match[0])
+              .join(' ');
+            if (
+              /\b(?:do not|don't|must not|never) (?:link|connect|associate)\b|\bunrelated\b|\bseparate from\b/i.test(
+                visibleText,
+              )
+            )
+              return false;
+            for (const object of [company, project]) {
+              const candidates = new Set(
+                known
+                  .filter(
+                    (candidate) =>
+                      candidate.type === object.type &&
+                      [candidate.name, ...(candidate.aliases ?? [])].some(
+                        (name) => name && mentions(visibleText, name),
+                      ),
+                  )
+                  .map((candidate) => candidate.id),
+              );
+              if (candidates.size !== 1 || !candidates.has(object.id)) return false;
+              if (
+                !supports.some(
+                  (support) =>
+                    support.rawEventId === source.id && namesEndpoint(support.quote, object),
+                )
+              )
+                return false;
+            }
+            return sentences.some((first, index) => {
+              const second = sentences[index + 1];
+              if (!second) return false;
+              const engagement =
+                /^(?:we are |we're )?(?:discussing|considering|exploring|planning) (?:a |the )?(?:(?:potential|possible|prospective|proposed) )?engagement (?:with|for)\b/i.test(
+                  first[0].trim(),
+                ) &&
+                /^the (?:(?:concrete|proposed|potential|possible) ){0,2}project is (?:called|named)\b/i.test(
+                  second[0].trim(),
+                );
+              const possessive =
+                /\bis our (?:new )?(?:client|customer)[.!]?$/i.test(first[0].trim()) &&
+                /^(?:we are|we're) (?:planning|building|delivering|tracking) their\b.*\bproject[.!]?$/i.test(
+                  second[0].trim(),
+                );
+              if (!engagement && !possessive) return false;
+              const span = source.text.slice(first.index, second.index + second[0].length);
+              return (
+                namesEndpoint(first[0], company) &&
+                namesEndpoint(second[0], project) &&
+                !/[?]|\b(?:not|no|unless|if|instead|unrelated|separate|another|either|or|maybe|perhaps)\b/i.test(
+                  span,
+                ) &&
+                safeSourceQuote(source.text, span) &&
+                normalize(args.packet).includes(normalize(span))
+              );
+            });
+          });
+        };
         const grounded =
           from &&
           to &&
@@ -338,7 +502,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               )
             );
           });
-        if (!grounded) return [];
+        if (!grounded && !adjacentEngagement()) return [];
       }
       const has = (field: Support['field'], value: unknown) =>
         supports.find(
@@ -388,7 +552,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           name &&
           clause &&
           new RegExp(
-            `(?:${name}\\s+(?:will|shall|owns|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|assign[^.!?]*\\b${name}\\b|${name},?\\s+please)`,
+            `(?:${name}\\s+(?:will|shall|owns|(?:remains|is still) (?:the )?owner|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|assign[^.!?]*\\b${name}\\b|${name},?\\s+please)`,
             'i',
           ).test(clause) &&
           !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause);
@@ -505,7 +669,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
             ? taskClause(projectSupport.quote, projectSupport.subject)
             : undefined;
           const projects = clause
-            ? args.hubs.filter((hub) => hub.type === 'project' && mentions(clause, hub.name))
+            ? args.hubs.filter(
+                (hub) =>
+                  hub.type === 'project' &&
+                  [hub.name, ...(hub.aliases ?? [])].some((name) => mentions(clause, name)),
+              )
             : [];
           if (projects.length !== 1 || projects[0]?.id !== payload.parentObjectId) {
             delete payload.parentObjectId;
@@ -538,8 +706,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
       }
       // Internal grounding must never leak into user-editable canonical payloads.
       delete payload.grounding;
-      if (item.operation === 'update' && Object.keys(payload).length === 0) return [];
-      return [{ ...item, proposedPayload: payload }];
+      const operation =
+        item.operation === 'archive_or_cancel' && type === 'task' && payload.status === 'cancelled'
+          ? 'update'
+          : item.operation;
+      if (operation === 'update' && Object.keys(payload).length === 0) return [];
+      return [{ ...item, operation, proposedPayload: payload }];
     });
     return {
       ...bundle,

@@ -703,7 +703,16 @@ for (const source of ['email', 'slack', 'telegram']) {
                 confidence: 'high',
                 items: [
                   {
-                    auditId: 'checklist',
+                    coverage: {
+                      kind: 'task',
+                      evidence: [
+                        {
+                          rawEventId: evidence.rawEventId,
+                          quote: evidence.quote,
+                        },
+                      ],
+                      reason: 'The explicit task request was missing from the draft.',
+                    },
                     operation: 'create',
                     targetKind: 'task',
                     title: 'Prepare deployment checklist',
@@ -713,17 +722,8 @@ for (const source of ['email', 'slack', 'telegram']) {
                 ],
               },
             ],
-            pendingAmendmentIds: [],
-            coverage: [
-              {
-                kind: 'task',
-                disposition: 'proposed',
-                evidence: [{ rawEventId: evidence.rawEventId, quote: evidence.quote }],
-                proposalIds: ['checklist'],
-                existingIds: [],
-                reason: 'The explicit task request was missing from the draft.',
-              },
-            ],
+            pendingAmendments: [],
+            coverage: [],
           },
         } as never;
       },
@@ -734,7 +734,14 @@ for (const source of ['email', 'slack', 'telegram']) {
   }, 60_000);
 }
 
-for (const failure of ['timeout', 'malformed', 'dangling-coverage', 'removed-grounding']) {
+for (const failure of [
+  'timeout',
+  'malformed',
+  'missing-item-coverage',
+  'removed-grounding',
+  'unknown-source',
+  'fabricated-quote',
+]) {
   test(`completeness ${failure} cannot publish a partial result`, async () => {
     const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
     const result = await harness.run(row, {
@@ -758,7 +765,26 @@ for (const failure of ['timeout', 'malformed', 'dangling-coverage', 'removed-gro
                 confidence: 'high',
                 items: [
                   {
-                    auditId: 'task',
+                    ...(failure === 'missing-item-coverage'
+                      ? {}
+                      : {
+                          coverage: {
+                            kind: 'task',
+                            evidence: [
+                              {
+                                rawEventId:
+                                  failure === 'unknown-source'
+                                    ? '99999999-9999-4999-8999-999999999999'
+                                    : evidence.rawEventId,
+                                quote:
+                                  failure === 'fabricated-quote'
+                                    ? 'A fabricated statement never present in the source.'
+                                    : evidence.quote,
+                              },
+                            ],
+                            reason: 'Controlled invalid check.',
+                          },
+                        }),
                     operation: 'create',
                     targetKind: 'task',
                     title: 'Prepare deployment checklist',
@@ -771,17 +797,8 @@ for (const failure of ['timeout', 'malformed', 'dangling-coverage', 'removed-gro
                 ],
               },
             ],
-            pendingAmendmentIds: [],
-            coverage: [
-              {
-                kind: 'task',
-                disposition: 'proposed',
-                evidence: [{ rawEventId: evidence.rawEventId, quote: evidence.quote }],
-                proposalIds: [failure === 'dangling-coverage' ? 'missing' : 'task'],
-                existingIds: [],
-                reason: 'Controlled invalid check.',
-              },
-            ],
+            pendingAmendments: [],
+            coverage: [],
           },
         } as never;
       },
@@ -875,16 +892,24 @@ test('checked no-action can decline a prepared pending-task amendment', async ()
       const checked = await controlledCommunicationAudit(input);
       const object = checked.object as {
         bundles: unknown[];
-        pendingAmendmentIds: string[];
-        coverage: { disposition: string; proposalIds: string[]; reason: string }[];
+        pendingAmendments: {
+          id: string;
+          coverage: {
+            kind: string;
+            evidence: { rawEventId: string; quote: string }[];
+            reason: string;
+          };
+        }[];
+        coverage: unknown[];
       };
-      candidatesSeen ||= object.pendingAmendmentIds.length > 0;
-      object.pendingAmendmentIds = [];
-      object.coverage.forEach((entry) => {
-        entry.disposition = 'no_action';
-        entry.proposalIds = [];
-        entry.reason = 'Controlled rejection of a pending amendment.';
-      });
+      candidatesSeen ||= object.pendingAmendments.length > 0;
+      object.coverage = object.pendingAmendments.map((candidate) => ({
+        ...candidate.coverage,
+        disposition: 'no_action',
+        existingIds: [],
+        reason: 'Controlled rejection of a pending amendment.',
+      }));
+      object.pendingAmendments = [];
       return checked;
     },
   });
@@ -944,4 +969,102 @@ test('overlapping pending amendment cannot overwrite a checked correction', asyn
   expect(
     result.nodes.find((node) => node.name === 'Prepare migration checklist')?.dueAt,
   ).toBeNull();
+}, 60_000);
+
+test('task cancellation survives approval as a cancelled record', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'correction-after-delay-slack'),
+  );
+  const quote = requireValue(row.messages[1]).text;
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Cancel launch announcement',
+              confidence: 'high',
+              quote,
+              items: [
+                {
+                  operation: 'archive_or_cancel',
+                  targetKind: 'task',
+                  targetId: communicationId(row.familyId, 'task'),
+                  title: 'Cancel Prepare launch announcement',
+                  proposedPayload: { status: 'cancelled' },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      quote,
+                      'status',
+                      'Prepare launch announcement',
+                      'cancelled',
+                    ),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(result.acceptanceErrors).toBe(0);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('known customer UUID in a reference field survives normalization and real approval', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'account-alias-link-email'),
+  );
+  const quote = requireValue(row.messages[0]).text;
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Compliance checklist',
+              confidence: 'high',
+              quote,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare Northwind Medical compliance checklist',
+                  proposedPayload: {
+                    localRef: 'checklist',
+                    canonicalName: 'Prepare Northwind Medical compliance checklist',
+                  },
+                  grounding: [],
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: 'Link checklist to customer',
+                  proposedPayload: {
+                    fromRef: 'checklist',
+                    toRef: communicationId(row.familyId, 'company'),
+                    kind: 'related',
+                  },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      quote,
+                      'customer',
+                      'Prepare Northwind Medical compliance checklist',
+                      'Northwind Medical',
+                    ),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);

@@ -8,7 +8,7 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
   const start = input.prompt.lastIndexOf(marker) + marker.length;
   const end = input.prompt.lastIndexOf('\nEND_DRAFT_PROPOSALS_JSON');
   const bundles = JSON.parse(input.prompt.slice(start, end)) as {
-    items: { auditId: string; grounding?: unknown[] }[];
+    items: { grounding?: unknown[] }[];
   }[];
   for (const bundle of bundles) for (const item of bundle.items) item.grounding ??= [];
   const evidence = [
@@ -24,23 +24,22 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
       input.prompt.lastIndexOf('\nEND_PENDING_AMENDMENTS_JSON'),
     ),
   ) as { id: string }[];
-  const proposalIds = bundles.flatMap((bundle) => bundle.items.map((item) => item.auditId));
-  proposalIds.push(...candidates.map((candidate) => `pending-${candidate.id}`));
-  const coverage = [
-    {
-      kind: 'other',
-      disposition: proposalIds.length ? 'proposed' : 'no_action',
-      evidence: [{ rawEventId: evidence[1], quote: evidence[2].trim().slice(0, 1000) }],
-      proposalIds,
-      existingIds: [],
-      reason: 'Controlled checker output for a downstream pipeline test.',
-    },
-  ];
+  const coverage = {
+    kind: 'other',
+    evidence: [{ rawEventId: evidence[1], quote: evidence[2].trim().slice(0, 1000) }],
+    reason: 'Controlled checker output for a downstream pipeline test.',
+  };
   return Promise.resolve({
     object: input.schema.parse({
-      bundles,
-      coverage,
-      pendingAmendmentIds: candidates.map((candidate) => candidate.id),
+      bundles: bundles.map((bundle) => ({
+        ...bundle,
+        items: bundle.items.map((item) => ({ ...item, coverage })),
+      })),
+      coverage:
+        bundles.length || candidates.length
+          ? []
+          : [{ ...coverage, disposition: 'no_action', existingIds: [] }],
+      pendingAmendments: candidates.map((candidate) => ({ id: candidate.id, coverage })),
     }),
     model: 'controlled-audit',
   });

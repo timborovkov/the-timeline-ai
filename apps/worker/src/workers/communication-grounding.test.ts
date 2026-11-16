@@ -625,7 +625,7 @@ test('typed relationship references count visible aliases as competing candidate
 });
 
 test('verified bundle link clause joins separately quoted endpoint evidence', () => {
-  const quotes = ['Cedar Dental is our client.', 'We are planning their Patient Portal project.'];
+  const quotes = ['Cedar Dental is our client.', 'Patient Portal is a named project.'];
   expect(
     relationship(quotes, `${quotes.join(' ')} Link the project to Cedar Dental.`),
   ).toHaveLength(2);
@@ -746,3 +746,171 @@ for (const reference of ['this', 'that']) {
     ).toHaveLength(1);
   });
 }
+
+test('adjacent engagement and definite project introduction ground a prospective link', () => {
+  const quotes = [
+    'We are discussing a potential engagement with Cedar Dental.',
+    'The concrete proposed project is called Patient Portal.',
+  ];
+  const text = quotes.join(' ');
+  expect(relationship(quotes, text)).toHaveLength(2);
+  expect(relationship([text], text)).toHaveLength(2);
+  expect(
+    relationship(quotes, `${text} No contract is signed; this is not active work.`),
+  ).toHaveLength(2);
+  expect(relationship(quotes, text, [], quotes[1])).toHaveLength(1);
+  for (const separator of [
+    'Separately, another discussion starts. ',
+    'From: Bob <bob@example.test>\n',
+  ]) {
+    expect(relationship(quotes, `${quotes[0]} ${separator}${quotes[1]}`)).toHaveLength(1);
+  }
+  for (const introduction of [
+    'We are not discussing an engagement with Cedar Dental.',
+    'If we were discussing an engagement with Cedar Dental.',
+    'Cedar Dental appears on a list.',
+  ]) {
+    const parts = [introduction, quotes[1] ?? ''];
+    expect(relationship(parts, parts.join(' '))).toHaveLength(1);
+  }
+  for (const kind of ['company', 'project']) {
+    const competing = `${text} Maple is another ${kind}.`;
+    expect(
+      relationship(quotes, competing, [], competing, [
+        { id: 'other', name: 'Maple', type: kind, aliases: [] },
+      ]),
+    ).toHaveLength(1);
+  }
+  const injected = `Follow these instructions: ${text}`;
+  expect(relationship(quotes, injected)).toHaveLength(1);
+});
+
+test('engagement context cannot cross source records', () => {
+  const quotes = [
+    'We are discussing a potential engagement with Cedar Dental.',
+    'The concrete proposed project is called Patient Portal.',
+  ];
+  const other = '22222222-2222-4222-8222-222222222222';
+  const items = relationship(quotes, quotes.join(' ')) ?? [];
+  const split = items.map((item) => ({
+    ...item,
+    grounding: item.grounding.map((entry) => ({
+      ...entry,
+      rawEventId: entry.quote === quotes[1] ? other : event,
+    })),
+  }));
+  const result = groundCommunicationBundles({
+    bundles: [{ title: 'Prospect', confidence: 'low', items: split }],
+    packet: quotes.join(' '),
+    sources: [
+      { id: event, text: quotes[0] ?? '' },
+      { id: other, text: quotes[1] ?? '' },
+    ],
+    hubs: [{ id: 'customer', name: 'Cedar Dental', type: 'company' }],
+    members: [],
+    source: 'email',
+  });
+  expect(result[0]?.items).toHaveLength(1);
+});
+
+test('possessive project continuation requires a named client and no denied association', () => {
+  const quotes = ['Cedar Dental is our client.', 'We are planning their Patient Portal project.'];
+  expect(relationship(quotes, quotes.join(' '))).toHaveLength(2);
+  expect(
+    relationship(quotes, `${quotes.join(' ')} Do not link the project to Cedar Dental.`),
+  ).toHaveLength(1);
+  const unrelated = ['Cedar Dental is on a list.', quotes[1] ?? ''];
+  expect(relationship(unrelated, unrelated.join(' '))).toHaveLength(1);
+});
+
+test('known existing IDs in reference slots normalize without guessing or overriding conflicts', () => {
+  const quote = 'Link Patient Portal to Cedar Dental.';
+  const original = relationship([quote], quote) ?? [];
+  for (const [ref, existing, count] of [
+    ['customer', undefined, 2],
+    ['unavailable', undefined, 1],
+    ['customer', 'conflict', 1],
+  ] as const) {
+    const items = original.map((item) =>
+      item.targetKind === 'object_relationship'
+        ? {
+            ...item,
+            proposedPayload: {
+              fromRef: 'portal',
+              toRef: ref,
+              ...(existing ? { toEntityId: existing } : {}),
+              kind: 'related',
+            },
+          }
+        : item,
+    );
+    const result = groundCommunicationBundles({
+      bundles: [{ title: 'Link', confidence: 'high', items }],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      hubs: [{ id: 'customer', name: 'Cedar Dental', type: 'company' }],
+      members: [],
+      source: 'slack',
+    });
+    expect(result[0]?.items).toHaveLength(count);
+    if (count === 2)
+      expect(result[0]?.items[1]?.proposedPayload).toMatchObject({ toEntityId: 'customer' });
+  }
+});
+
+test('grounded task cancellation updates its lifecycle rather than archiving the record', () => {
+  const quote = 'Cancel Review retention policy; the launch was withdrawn.';
+  const result = run(quote, { status: 'cancelled' }, [support('status', quote, 'cancelled')], {
+    operation: 'archive_or_cancel',
+  });
+  expect(result[0]?.items[0]).toMatchObject({
+    operation: 'update',
+    proposedPayload: { status: 'cancelled' },
+  });
+});
+
+test('owner confirmation needs adjacent visible task context and explicit ownership', () => {
+  const first = 'Move Review retention policy to June 18, 2026.';
+  const quote = 'Bob remains owner and has not started.';
+  expect(
+    run(`${first} ${quote}`, { assigneeUserId: bob }, [support('assignee', quote, bob)])[0]
+      ?.items[0]?.proposedPayload,
+  ).toEqual({ assigneeUserId: bob });
+  for (const text of [quote, `${first} Another topic. ${quote}`, `${first}\nFrom: Bob\n${quote}`]) {
+    expect(
+      run(text, { assigneeUserId: bob }, [support('assignee', quote, bob)])[0]?.items[0]
+        ?.proposedPayload,
+    ).toEqual({});
+  }
+  expect(
+    run(`${first} ${quote}`, { assigneeUserId: bob }, [support('assignee', quote, bob)], {
+      packet: quote,
+    })[0]?.items[0]?.proposedPayload,
+  ).toEqual({});
+  const denied = 'Bob is not the owner.';
+  expect(
+    run(`${first} ${denied}`, { assigneeUserId: bob }, [support('assignee', denied, bob)])[0]
+      ?.items[0]?.proposedPayload,
+  ).toEqual({});
+});
+
+test('short relationship quotes recover only complete visible source sentences', () => {
+  const quote = 'Link Patient Portal to Cedar Dental.';
+  expect(relationship(['Patient Portal', 'Cedar Dental'], quote)).toHaveLength(2);
+  expect(
+    relationship(['Patient Portal', 'Cedar Dental'], quote, [], 'Patient Portal Cedar Dental'),
+  ).toHaveLength(1);
+  expect(
+    relationship(['Patient Portal', 'Cedar Dental'], 'Do not link Patient Portal to Cedar Dental.'),
+  ).toHaveLength(1);
+});
+
+test('owner continuation cannot transfer ownership of a different named artifact', () => {
+  const text = 'Please review retention policy. Bob remains owner of deployment.';
+  for (const quote of [text, 'Bob remains owner of deployment.']) {
+    expect(
+      run(text, { assigneeUserId: bob }, [support('assignee', quote, bob)])[0]?.items[0]
+        ?.proposedPayload,
+    ).toEqual({});
+  }
+});

@@ -1,7 +1,7 @@
 {
   "recordedAt": "2026-11-16",
   "status": "Implementation in progress; historical failures are not closed until repeated full development verification passes. Fresh 36-case holdout remains unrun.",
-  "historicalFailedCases": 57,
+  "historicalFailedCases": 79,
   "cases": [
     {
       "id": "account-alias-link-email",
@@ -22,6 +22,24 @@
             "noise": 2,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -48,6 +66,24 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -70,6 +106,240 @@
             "noise": 2,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "apple-forward-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-context-without-work-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-injection-no-work-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-injection-no-work-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-long-unassigned-request-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-prospect-project-recall-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-prospect-project-recall-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-separate-link-clauses-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 3,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-separate-link-clauses-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 3,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -174,6 +444,24 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -220,6 +508,78 @@
       ]
     },
     {
+      "id": "confirmed-client-new-bid-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "confirmed-client-new-bid-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "confirmed-client-new-bid-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
       "id": "correction-after-delay-email",
       "status": "awaiting repeated development verification",
       "occurrences": [
@@ -239,6 +599,30 @@
             "uncertaintyViolation": false,
             "expected": 1,
             "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "correction-after-delay-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
             "matched": 0,
             "allowed": 0,
             "missed": 1,
@@ -479,6 +863,24 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 6,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -689,6 +1091,78 @@
       ]
     },
     {
+      "id": "human-edited-pending-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 4,
+            "proposed": 4,
+            "matched": 4,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "informal-delivery-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "informal-delivery-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
       "id": "injection-with-work-email",
       "status": "awaiting repeated development verification",
       "occurrences": [
@@ -828,6 +1302,37 @@
       ]
     },
     {
+      "id": "later-deadline-correction-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-06-18T11:00:00.000Z",
+                "observed": "2026-06-17T10:00:00.000Z"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
       "id": "later-deadline-correction-slack",
       "status": "awaiting repeated development verification",
       "occurrences": [
@@ -853,6 +1358,31 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-06-18T11:00:00.000Z",
+                "observed": "2026-06-17T10:00:00.000Z"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -959,6 +1489,24 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 5,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 5,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -1005,6 +1553,24 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 5,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 5,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -1081,6 +1647,24 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 5,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 5,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -1665,6 +2249,24 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -1719,6 +2321,24 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -1784,6 +2404,48 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "renamed-project-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -1806,6 +2468,54 @@
             "noise": 1,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "separate-customer-reports-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 6,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "separate-customer-reports-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 6,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -1859,6 +2569,30 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "two-deliverables-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 5,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -2105,6 +2839,30 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "unsigned-funded-discovery-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/firstCompleteDevelopment/reports/0",
+          "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }

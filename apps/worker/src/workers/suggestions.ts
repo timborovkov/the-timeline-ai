@@ -67,6 +67,7 @@ import {
 import {
   communicationGroundingSchema,
   groundCommunicationBundles,
+  normalizeKnownRelationshipReferences,
 } from '#src/workers/communication-grounding.js';
 import {
   COMMUNICATION_CONTEXT_POLICY,
@@ -2581,10 +2582,21 @@ function normalizeBundleAgainstExistingObjects(
 ): SuggestionBundleOutput {
   const normalizedBundle = {
     ...bundle,
-    items: bundle.items.map((item) => ({
-      ...item,
-      proposedPayload: normalizeSuggestionItemPayload(item),
-    })),
+    items: bundle.items.flatMap((item) => {
+      const payload = normalizeSuggestionItemPayload(item);
+      const normalized =
+        item.targetKind === 'object_relationship'
+          ? normalizeKnownRelationshipReferences(
+              payload,
+              bundle.items.flatMap((candidate) => {
+                const ref = candidate.proposedPayload.localRef;
+                return typeof ref === 'string' ? [ref, localRefSlug(ref) ?? ref] : [];
+              }),
+              rows.map((object) => object.id),
+            )
+          : payload;
+      return normalized ? [{ ...item, proposedPayload: normalized }] : [];
+    }),
   };
   const resolvedRefs = new Map<string, string>();
   const identityReviewNotes = new Set<string>();
@@ -4417,10 +4429,7 @@ async function runSuggestionExtraction(
     !args.document && !args.repairObjectId ? await preparePendingTaskAmendments(amendmentArgs) : [];
   let selectedAmendments = amendmentCandidates;
   if (isHumanCommunication(row.source)) {
-    const drafts = result.object.bundles.map((bundle, b) => ({
-      ...bundle,
-      items: bundle.items.map((item, i) => ({ ...item, auditId: `draft-${b}-${i}` })),
-    }));
+    const drafts = result.object.bundles;
     const auditPrompt = `${prompt}\n\nDRAFT_PROPOSALS_JSON\n${JSON.stringify(drafts)}\nEND_DRAFT_PROPOSALS_JSON\nPENDING_AMENDMENTS_JSON\n${JSON.stringify(amendmentCandidates)}\nEND_PENDING_AMENDMENTS_JSON`;
     // Preserve the original evidence verbatim; never truncate it to make room for a check.
     if (
@@ -4428,21 +4437,86 @@ async function runSuggestionExtraction(
       SUGGESTION_PROMPT_MAX_INPUT_TOKENS + SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS
     )
       throw new Error('Communication completeness prompt exceeds budget');
-    const auditItemSchema = suggestionItemObjectSchema
+    const auditSources = [
+      ...(evidencePackEnforced
+        ? (evidencePack?.items ?? []).map((item) => ({
+            id: item.rawEventId,
+            text: item.contentText,
+          }))
+        : []),
+      ...(args.conversation?.window ?? []).map((event) => ({
+        id: event.id,
+        text: event.contentText,
+      })),
+      { id: row.id, text },
+    ];
+    const visibleSourceIds = [
+      ...new Set(auditSources.map((source) => source.id).filter((id) => prompt.includes(id))),
+    ];
+    const visibleExistingIds = [
+      ...new Set(
+        [
+          ...matchingEntityRows.map((object) => object.id),
+          ...hubRows.map((hub) => hub.id),
+          ...pendingTaskRows.map((item) => item.id),
+          ...pendingCalendarRows.map((item) => item.id),
+          ...calendarRows.map((item) => item.id),
+        ].filter((id) => prompt.includes(id)),
+      ),
+    ];
+    if (!visibleSourceIds.length) throw new Error('Communication audit has no visible source');
+    const sourceIdSchema = z.enum(visibleSourceIds);
+    const itemCoverageSchema = communicationCoverageSchema.element
+      .pick({ kind: true, evidence: true, reason: true })
       .extend({
-        auditId: z.string().min(1).max(80),
-        grounding: z.array(communicationGroundingSchema).max(12),
+        evidence: z
+          .array(z.object({ rawEventId: sourceIdSchema, quote: z.string().min(3).max(1000) }))
+          .min(1)
+          .max(12),
+      });
+    const auditItemSchema = suggestionItemObjectSchema
+      .omit({ auditId: true })
+      .extend({
+        coverage: itemCoverageSchema,
+        grounding: z
+          .array(
+            communicationGroundingSchema.extend({
+              rawEventId: sourceIdSchema,
+              context: z
+                .object({ rawEventId: sourceIdSchema, quote: z.string().min(3).max(800) })
+                .optional(),
+            }),
+          )
+          .max(12),
         evidenceRawEventIds: evidencePackEnforced
-          ? z.array(z.uuid()).min(1).max(32)
-          : z.array(z.uuid()).max(32).optional(),
+          ? z.array(sourceIdSchema).min(1).max(32)
+          : z.array(sourceIdSchema).max(32).optional(),
       })
       .superRefine(refineHumanItem);
     const auditSchema = z.object({
       bundles: z
         .array(humanBundleSchema.extend({ items: z.array(auditItemSchema).min(1).max(5) }))
         .max(5),
-      coverage: communicationCoverageSchema,
-      pendingAmendmentIds: z.array(z.uuid()).max(50),
+      coverage: z
+        .array(
+          itemCoverageSchema.extend({
+            disposition: z.enum(['existing', 'no_action']),
+            existingIds: visibleExistingIds.length
+              ? z.array(z.enum(visibleExistingIds)).max(25)
+              : z.array(z.uuid()).max(0),
+          }),
+        )
+        .max(100),
+      pendingAmendments: z
+        .array(
+          z.object({
+            id: amendmentCandidates.length
+              ? z.enum(amendmentCandidates.map((candidate) => candidate.id))
+              : z.uuid(),
+            coverage: itemCoverageSchema,
+          }),
+        )
+        .max(Math.min(50, amendmentCandidates.length)),
     });
     const checked = await (io.auditCommunication ?? chatStructured)({
       schema: auditSchema,
@@ -4453,20 +4527,43 @@ async function runSuggestionExtraction(
       prompt: auditPrompt,
     });
     const audited = auditSchema.parse(checked.object);
+    const amendmentIds = audited.pendingAmendments.map((candidate) => candidate.id);
     if (
-      new Set(audited.pendingAmendmentIds).size !== audited.pendingAmendmentIds.length ||
-      audited.pendingAmendmentIds.some(
-        (id) => !amendmentCandidates.some((candidate) => candidate.id === id),
-      )
+      new Set(amendmentIds).size !== amendmentIds.length ||
+      amendmentIds.some((id) => !amendmentCandidates.some((candidate) => candidate.id === id))
     )
       throw new Error('Communication audit selected an unavailable pending amendment');
     selectedAmendments = amendmentCandidates.filter((candidate) =>
-      audited.pendingAmendmentIds.includes(candidate.id),
+      amendmentIds.includes(candidate.id),
     );
+    const auditedBundles = audited.bundles.map((bundle, b) => ({
+      ...bundle,
+      items: bundle.items.map(({ coverage: _coverage, ...item }, i) => ({
+        ...item,
+        auditId: `checked-${b}-${i}`,
+      })),
+    }));
+    const coverage = communicationCoverageSchema.parse([
+      ...audited.coverage.map((entry) => ({ ...entry, proposalIds: [] })),
+      ...audited.bundles.flatMap((bundle, b) =>
+        bundle.items.map((item, i) => ({
+          ...item.coverage,
+          disposition: 'proposed',
+          existingIds: [],
+          proposalIds: [`checked-${b}-${i}`],
+        })),
+      ),
+      ...audited.pendingAmendments.map((candidate) => ({
+        ...candidate.coverage,
+        disposition: 'proposed',
+        existingIds: [],
+        proposalIds: [`pending-${candidate.id}`],
+      })),
+    ]);
     validateCommunicationCoverage({
-      ...audited,
+      coverage,
       bundles: [
-        ...audited.bundles,
+        ...auditedBundles,
         {
           items: selectedAmendments.map((candidate) => ({
             auditId: `pending-${candidate.id}`,
@@ -4475,28 +4572,10 @@ async function runSuggestionExtraction(
         },
       ],
       packet: prompt,
-      sources: [
-        ...(evidencePackEnforced
-          ? (evidencePack?.items ?? []).map((item) => ({
-              id: item.rawEventId,
-              text: item.contentText,
-            }))
-          : []),
-        ...(args.conversation?.window ?? []).map((event) => ({
-          id: event.id,
-          text: event.contentText,
-        })),
-        { id: row.id, text },
-      ],
-      existingIds: [
-        ...matchingEntityRows.map((object) => object.id),
-        ...hubRows.map((hub) => hub.id),
-        ...pendingTaskRows.map((item) => item.id),
-        ...pendingCalendarRows.map((item) => item.id),
-        ...calendarRows.map((item) => item.id),
-      ].filter((id) => prompt.includes(id)),
+      sources: auditSources,
+      existingIds: visibleExistingIds,
     });
-    result = { object: { bundles: audited.bundles }, model: checked.model };
+    result = { object: { bundles: auditedBundles }, model: checked.model };
     if (
       args.conversation &&
       !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))

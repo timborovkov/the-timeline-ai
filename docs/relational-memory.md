@@ -63,20 +63,20 @@ active members and authorized objects; internal grounding is not a canonical fie
 Prospect support lowers confidence and keeps newly proposed projects in planning.
 Per-task support can repair a missing customer link only when one endpoint is
 unambiguous. Unsupported optional writes are omitted, preserving existing values
-on updates. Ownership is not inferred from being a requester or forwarding an email.
+on updates. Ownership is not inferred from being a requester, forwarding an email or being its sole header recipient. Assignment requires the message body to identify the tasked teammate or an attributable commitment.
 A pronoun ownership correction requires an immediately preceding, uniquely named
 pending-task context quote; nested email excerpts do not inherit the outer sender.
 Relationship quotes may combine statements within one admitted source when an
 explicit typed reference has exactly one visible authorized candidate, including
 aliases. A deadline pronoun may resolve to the immediately preceding visible task
-sentence. Both checks reject ambiguous or truncated support.
+sentence. Both checks reject ambiguous or truncated support. A company–project relationship may also use an immediately adjacent engagement statement and definite project introduction from the same source, with unique visible endpoints and no intervening speaker boundary.
 These deterministic checks recognize supported assertion/date forms and fail
 closed on unrecognized forms; they do not establish universal language understanding
 or replace approval. Every human communication extraction, including an empty result,
 receives one completeness check through shared inference using the same model and
 authorized evidence. The check returns a complete replacement proposal set and a
 source-cited coverage ledger; it also selects any prepared pending-approval refinements.
-The ledger is structurally validated, not treated as proof of semantic completeness.
+Coverage belongs directly to each checked item and selected amendment; internal IDs are assigned by the runtime. Source and existing-record IDs are constrained to authorized visible context. The ledger is structurally validated, not treated as proof of semantic completeness.
 Deterministic grounding remains mandatory. A failed check or rejected checked claim
 fails the attempt before new proposals are written; existing approvals are preserved
 and the job uses its bounded retry policy. There is no recursive checker loop.
