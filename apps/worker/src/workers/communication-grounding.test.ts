@@ -914,3 +914,11 @@ test('owner continuation cannot transfer ownership of a different named artifact
     ).toEqual({});
   }
 });
+
+test('a comma does not transfer a different artifact owner to the requested task', () => {
+  const text = 'Please review retention policy, Bob remains owner of deployment.';
+  expect(
+    run(text, { assigneeUserId: bob }, [support('assignee', text, bob)])[0]?.items[0]
+      ?.proposedPayload,
+  ).toEqual({});
+});

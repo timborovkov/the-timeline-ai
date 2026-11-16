@@ -741,6 +741,7 @@ for (const failure of [
   'removed-grounding',
   'unknown-source',
   'fabricated-quote',
+  'empty-existing',
 ]) {
   test(`completeness ${failure} cannot publish a partial result`, async () => {
     const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
@@ -798,7 +799,18 @@ for (const failure of [
               },
             ],
             pendingAmendments: [],
-            coverage: [],
+            coverage:
+              failure === 'empty-existing'
+                ? [
+                    {
+                      kind: 'task',
+                      disposition: 'existing',
+                      existingIds: [],
+                      evidence: [{ rawEventId: evidence.rawEventId, quote: evidence.quote }],
+                      reason: 'Invalid empty existing disposition.',
+                    },
+                  ]
+                : [],
           },
         } as never;
       },

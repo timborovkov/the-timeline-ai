@@ -1,6 +1,6 @@
 {
   "recordedAt": "2026-11-16T00:48:15.952Z",
-  "status": "Full development at 0bf6456d: 164/198 passed, 33 execution failures, no hard or approval failures; complete feedback. Repetitions stopped after failing first sweep. Fixes require repeated full development verification; fresh holdout remains unrun.",
+  "status": "Full development at 0bf6456d: 164/198 passed, 33 execution failures, no hard or approval failures; complete feedback. Repetitions stopped after failing first sweep. Fixes require repeated full development verification; fresh holdout remains unrun. Subsequent 6fc14cd8 sweep interrupted after 3 completed cases (2 passing), before a stricter owner boundary and coverage disposition schema correction; partial feedback is not complete.",
   "reports": {
     "initialCompletenessDiagnostic": {
       "suite": "communications",
@@ -28292,6 +28292,366 @@
         "repetition": 2,
         "rows": []
       }
+    },
+    "ownershipBoundaryInterruptedDevelopment": {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "e41ba3549c5a44ded9250843d5d78a30f69ca86cb5ce606c76d801d06503a4f7",
+      "revision": "6fc14cd8320d20ab676f68bf1d0beeb4c6734d77",
+      "dirty": false,
+      "split": "development",
+      "evaluatedAt": "2026-11-16T01:53:28.021Z",
+      "reports": [],
+      "inProgress": {
+        "repetition": 1,
+        "rows": [
+          {
+            "actions": [
+              {
+                "bundleId": "304e93d0-a3a7-4d32-927b-e0d2e9af9fd1",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "confidence": 0.7,
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["a90a6722-93f7-4979-9010-60ce48a4f5f1"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 2983.0226680000014,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 14045.16401,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 12457.092348999995,
+                "failed": false
+              }
+            ],
+            "durationMs": 30211.883014,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "4ef72ed9-5779-4626-ad70-87b72d9a390a",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Cedar Dental",
+                "status": "accepted",
+                "resultId": "4ef72ed9-5779-4626-ad70-87b72d9a390a",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "company-without-task",
+            "id": "company-without-task-email",
+            "tags": ["combined", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "016ab48c-c7aa-4cf5-a477-8574dbf77dc2",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["1639f40f-60cf-40d3-9b8f-75d57a87d174"]
+              },
+              {
+                "bundleId": "016ab48c-c7aa-4cf5-a477-8574dbf77dc2",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["1639f40f-60cf-40d3-9b8f-75d57a87d174"]
+              },
+              {
+                "bundleId": "016ab48c-c7aa-4cf5-a477-8574dbf77dc2",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Patient Portal \u2194 Cedar Dental",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toRef": "cedar-dental"
+                },
+                "evidenceIds": ["1639f40f-60cf-40d3-9b8f-75d57a87d174"]
+              },
+              {
+                "bundleId": "016ab48c-c7aa-4cf5-a477-8574dbf77dc2",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare migration checklist for Patient Portal",
+                "proposedPayload": {
+                  "localRef": "migration-checklist-patient-portal",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare migration checklist for Patient Portal",
+                  "createProjectName": "Patient Portal"
+                },
+                "evidenceIds": ["1639f40f-60cf-40d3-9b8f-75d57a87d174"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 25501.941884999997,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 23724.652219000003,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 10125.04879,
+                "failed": false
+              }
+            ],
+            "durationMs": 60259.804404,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "484b7f97-7047-49c3-9c68-69ee718c322f",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "c37fd6f6-0bab-40cf-acf5-7da309c2789f",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "5803897f-89e7-4aab-9d1f-da57b0e9a063",
+                "type": "task",
+                "name": "Prepare migration checklist for Patient Portal",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "5803897f-89e7-4aab-9d1f-da57b0e9a063",
+                "to": "c37fd6f6-0bab-40cf-acf5-7da309c2789f",
+                "kind": "child"
+              },
+              {
+                "from": "484b7f97-7047-49c3-9c68-69ee718c322f",
+                "to": "c37fd6f6-0bab-40cf-acf5-7da309c2789f",
+                "kind": "related"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Cedar Dental",
+                "status": "accepted",
+                "resultId": "484b7f97-7047-49c3-9c68-69ee718c322f",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal",
+                "status": "accepted",
+                "resultId": "c37fd6f6-0bab-40cf-acf5-7da309c2789f",
+                "reason": null
+              },
+              {
+                "title": "Prepare migration checklist for Patient Portal",
+                "status": "accepted",
+                "resultId": "5803897f-89e7-4aab-9d1f-da57b0e9a063",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal \u2194 Cedar Dental",
+                "status": "accepted",
+                "resultId": "fe59b3ad-da48-40bd-8071-b43906b7e190",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "new-customer-project-task",
+            "id": "new-customer-project-task-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [],
+            "executionErrors": ["Error"],
+            "executionFailureDetails": [
+              "Communication coverage disposition disagrees with existing records"
+            ],
+            "modelCalls": 2,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 4956.058756999999,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 38549.666884,
+                "failed": false
+              }
+            ],
+            "durationMs": 43776.511839000006,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "company-without-task",
+            "id": "company-without-task-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 1,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": true,
+              "passed": false
+            }
+          }
+        ]
+      }
     }
   },
   "originalReportSha256": {
@@ -28306,6 +28666,7 @@
   ],
   "interruptedDevelopmentReason": "Stopped after reproducing deterministic rejection of explicit link that project references. Partial run and incomplete feedback are diagnostic only; three full development repetitions remain required after the fix.",
   "retainedReportHashes": {
-    "firstCompleteDevelopment": "fcde45b8eb43ec3ae23d68372bce9710b2c3cd0fac0c565ed6554a09a22ae944"
+    "firstCompleteDevelopment": "fcde45b8eb43ec3ae23d68372bce9710b2c3cd0fac0c565ed6554a09a22ae944",
+    "ownershipBoundaryInterruptedDevelopment": "ff0ad8eb3c36929446a781cfc5d8a84e5c1192d43aea5d6ba2767a278d0e0852"
   }
 }

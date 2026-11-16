@@ -69,7 +69,8 @@ pending-task context quote; nested email excerpts do not inherit the outer sende
 Relationship quotes may combine statements within one admitted source when an
 explicit typed reference has exactly one visible authorized candidate, including
 aliases. A deadline pronoun may resolve to the immediately preceding visible task
-sentence. Both checks reject ambiguous or truncated support. A company–project relationship may also use an immediately adjacent engagement statement and definite project introduction from the same source, with unique visible endpoints and no intervening speaker boundary.
+sentence. An explicit owner-confirmation sentence can use the immediately preceding uniquely named task, but ownership of another artifact cannot transfer to that task. Both checks reject ambiguous or truncated support. A company–project relationship may also use an immediately adjacent engagement statement and definite project introduction from the same source, with unique visible endpoints and no intervening speaker boundary.
+Short entity quotations may use their complete, uniquely located source sentence only when that entire sentence remains in the authorized packet. Known object UUIDs in relationship reference fields normalize to existing-object endpoints; unknown or conflicting identities never do. Supported task cancellation updates the task lifecycle without archiving the canonical task.
 These deterministic checks recognize supported assertion/date forms and fail
 closed on unrecognized forms; they do not establish universal language understanding
 or replace approval. Every human communication extraction, including an empty result,

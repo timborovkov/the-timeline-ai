@@ -552,7 +552,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           name &&
           clause &&
           new RegExp(
-            `(?:${name}\\s+(?:will|shall|owns|(?:remains|is still) (?:the )?owner|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|assign[^.!?]*\\b${name}\\b|${name},?\\s+please)`,
+            `(?:${name}\\s+(?:will|shall|owns|(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|assign[^.!?]*\\b${name}\\b|${name},?\\s+please)`,
             'i',
           ).test(clause) &&
           !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause);

@@ -4493,20 +4493,25 @@ async function runSuggestionExtraction(
           : z.array(sourceIdSchema).max(32).optional(),
       })
       .superRefine(refineHumanItem);
+    const existingIdSchema = visibleExistingIds.length ? z.enum(visibleExistingIds) : z.uuid();
+    const noActionCoverage = itemCoverageSchema.extend({
+      disposition: z.literal('no_action'),
+      existingIds: z.array(existingIdSchema).max(visibleExistingIds.length ? 25 : 0),
+    });
+    const settledCoverage = visibleExistingIds.length
+      ? z.discriminatedUnion('disposition', [
+          noActionCoverage,
+          itemCoverageSchema.extend({
+            disposition: z.literal('existing'),
+            existingIds: z.array(existingIdSchema).min(1).max(25),
+          }),
+        ])
+      : noActionCoverage;
     const auditSchema = z.object({
       bundles: z
         .array(humanBundleSchema.extend({ items: z.array(auditItemSchema).min(1).max(5) }))
         .max(5),
-      coverage: z
-        .array(
-          itemCoverageSchema.extend({
-            disposition: z.enum(['existing', 'no_action']),
-            existingIds: visibleExistingIds.length
-              ? z.array(z.enum(visibleExistingIds)).max(25)
-              : z.array(z.uuid()).max(0),
-          }),
-        )
-        .max(100),
+      coverage: z.array(settledCoverage).max(100),
       pendingAmendments: z
         .array(
           z.object({
