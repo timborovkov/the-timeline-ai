@@ -304,3 +304,8 @@ corpus hash changes. They remain useful diagnostic regressions. Fresh benchmark
 evidence requires a held-out split containing only uninspected, reviewed families.
 See the [dated follow-up evidence](../evidence/communications-follow-up-2026-11-15.json)
 for the frozen pre-fix runs and subsequent diagnostics; they are different revisions.
+
+The [dated grounding evidence](../evidence/communications-grounding-2026-11-16.json)
+retains the expanded corpus runs, original scorer versions and unexecuted holdout
+status. Use its frozen revision and individual failure reports when diagnosing
+remaining recall or field errors.
