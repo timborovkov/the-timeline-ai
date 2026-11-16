@@ -17,7 +17,7 @@ import {
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
-import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import {
@@ -283,13 +283,20 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
           and(
             eq(meetings.teamId, teamId),
             isNotNull(meetings.providerBotId),
-            inArray(meetings.status, ['pending', 'scheduled', 'joining', 'active', 'processing']),
+            or(
+              inArray(meetings.status, ['pending', 'scheduled', 'joining', 'active', 'processing']),
+              sql`(${meetings.metadata} ->> 'provider_leave_pending') = 'true'`,
+            ),
           ),
         )
         .limit(50);
       for (const meeting of rows) {
         if (!meeting.providerBotId) continue;
-        if (!meeting.endedAt) await getMeetingBotProvider().leaveMeeting(meeting.providerBotId);
+        const leavePending =
+          (meeting.metadata as Record<string, unknown> | null)?.provider_leave_pending === true;
+        const shouldLeave = !meeting.endedAt || leavePending;
+        if (shouldLeave)
+          await getMeetingBotProvider(meeting.provider).leaveMeeting(meeting.providerBotId);
         await db.transaction(async (tx) => {
           await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
           const now = new Date();
@@ -304,7 +311,16 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
           });
           await tx
             .update(meetings)
-            .set({ status: 'cancelled', endedAt, updatedAt: now })
+            .set({
+              status: 'cancelled',
+              endedAt,
+              ...(shouldLeave
+                ? {
+                    metadata: sql`(COALESCE(${meetings.metadata}, '{}'::jsonb) - 'provider_leave_pending') || ${JSON.stringify({ provider_leave_confirmed_at: now.toISOString() })}::jsonb`,
+                  }
+                : {}),
+              updatedAt: now,
+            })
             .where(eq(meetings.id, meeting.id));
         });
       }

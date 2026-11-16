@@ -727,6 +727,40 @@ describe('team lifecycle', () => {
       }
     },
   );
+  it('keeps lifecycle cleanup pending until an ended bot confirms its provider leave', async () => {
+    const previousKey = process.env.RECALL_API_KEY;
+    process.env.RECALL_API_KEY = 'synthetic-recall-key';
+    resetEnvForTests();
+    resetMeetingBotProviderForTests();
+    const leave = vi.spyOn(getMeetingBotProvider(), 'leaveMeeting');
+    const meetingId = '10000000-0000-4000-8000-000000000042';
+    try {
+      await pg.exec(`INSERT INTO meetings (id,team_id,platform,meeting_url,provider_bot_id,status,ended_at,metadata) VALUES
+        ('${meetingId}','${TEAM}','meet','https://meet.google.com/synthetic','synthetic-bot','cancelled',now(),' {"provider_leave_pending":true}'::jsonb)`);
+      await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Stop fixture');
+      leave.mockRejectedValueOnce(new Error('provider unavailable')).mockResolvedValue(undefined);
+      const scope = withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+        skipMembershipCheck: true,
+      }).lifecycle;
+      await expect(scope.stopBots()).rejects.toThrow('provider unavailable');
+      expect(await scope.stopBots()).toBe(false);
+      expect(await scope.stopBots()).toBe(true);
+      const [meeting] = (
+        await pg.query<{ metadata: Record<string, unknown> }>(
+          `SELECT metadata FROM meetings WHERE id='${meetingId}'`,
+        )
+      ).rows;
+      expect(meeting?.metadata).not.toHaveProperty('provider_leave_pending');
+      expect(meeting?.metadata).toHaveProperty('provider_leave_confirmed_at');
+      expect(leave).toHaveBeenCalledTimes(2);
+    } finally {
+      leave.mockRestore();
+      if (previousKey === undefined) delete process.env.RECALL_API_KEY;
+      else process.env.RECALL_API_KEY = previousKey;
+      resetMeetingBotProviderForTests();
+      resetEnvForTests();
+    }
+  });
   it('settles missed active-day usage before deleting its source history', async () => {
     await pg.exec(`INSERT INTO team_billing_accounts (team_id,plan_id,billing_state,shadow_billing,price_override) VALUES ('${TEAM}','team','team_active',true,'{"includedActiveMembers":0}');
       UPDATE teams SET created_at=now()-interval '40 days', disabled_periods=jsonb_build_array(jsonb_build_object('start',now()-interval '1 day','end',now()-interval '12 hours')) WHERE id='${TEAM}';

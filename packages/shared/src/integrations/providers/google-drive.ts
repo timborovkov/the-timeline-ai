@@ -8,7 +8,6 @@ import {
   driveFileChangeDedupKey,
   driveFileContentRevision,
   hashDrivePayload,
-  isDriveExtractResultTooLarge,
   type DriveObjectLinkHints,
   type DrivePermissionGrant,
 } from '#src/integrations/google-drive-capture.js';
@@ -744,21 +743,8 @@ async function loadDriveText(
       }
       return { text: existing.text, consumeReadyExtract: true };
     }
-    if (existing?.status === 'failed') {
-      const terminal = isDriveExtractResultTooLarge(existing.error);
-      if (terminal) {
-        await ctx.consumeTransientDriveExtract(file.id);
-        return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
-      }
-      await ctx.recordAudit('drive_extract_failed', {
-        file_id: file.id,
-        mime_type: file.mimeType,
-        error: existing.error,
-        retrying: true,
-      });
-      await ctx.consumeTransientDriveExtract(file.id);
-      // Fall through: take a new extract slot (the daily budget is the bound)
-      // and enqueue again after a config fix or a later edit.
+    if (existing?.status === 'failed' && revisionMatches) {
+      return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
     } else if (existing?.status === 'pending' && revisionMatches) {
       return {
         text: '',
