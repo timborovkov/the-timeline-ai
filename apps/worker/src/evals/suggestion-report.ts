@@ -150,8 +150,10 @@ export function suggestionRunComplete(
   ids: string[],
   expectedIds: string[],
   feedbackComplete: boolean,
+  fullSelection = true,
 ) {
   return (
+    fullSelection &&
     feedbackComplete &&
     ids.length === expectedIds.length &&
     new Set(ids).size === ids.length &&

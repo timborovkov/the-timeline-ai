@@ -45,6 +45,7 @@ const { values } = parseArgs({
     repeats: { type: 'string' },
     limit: { type: 'string' },
     tag: { type: 'string' },
+    cases: { type: 'string' },
     out: { type: 'string' },
   },
   strict: true,
@@ -55,6 +56,8 @@ if (!process.env.LANGSMITH_API_KEY) throw new Error('LANGSMITH_API_KEY is requir
 const suite = values.suite ?? 'suggestions';
 if (suite !== 'suggestions' && suite !== 'communications') throw new Error('Invalid --suite');
 const communications = suite === 'communications';
+if (!communications && values.cases !== undefined)
+  throw new Error('--cases requires --suite=communications');
 if (communications) validateCommunicationCases();
 else validateSuggestionCases();
 const selection = communications ? selectCommunications(values) : selectSuggestionCases(values);
@@ -135,7 +138,7 @@ if (!values.sync) {
   let inProgress: { repetition: number; rows: SuggestionResult[] } | null = null;
   let checkpointChain = Promise.resolve();
   const checkpoint = () => {
-    const content = `${JSON.stringify({ suite, datasetName, corpusHash, implementationDigest, revision, dirty, split: selection.split, evaluatedAt: new Date().toISOString(), reports, inProgress }, null, 2)}\n`;
+    const content = `${JSON.stringify({ suite, datasetName, corpusHash, implementationDigest, revision, dirty, split: selection.split, caseFilter: values.cases ?? null, evaluatedAt: new Date().toISOString(), reports, inProgress }, null, 2)}\n`;
     checkpointChain = checkpointChain.then(() => writeFile(requireValue(values.out), content));
     return checkpointChain;
   };
@@ -218,6 +221,7 @@ if (!values.sync) {
               ? 'none-deterministic'
               : TIMELINE_MODELS.extraction.id,
             scenarioFilter: values.tag ?? null,
+            caseFilter: values.cases ?? null,
             synthetic: true,
             retrieval: 'database-only',
             pipeline: communications
@@ -250,6 +254,7 @@ if (!values.sync) {
         rows.map((row) => row.id),
         selection.corpus.map((row) => row.id),
         feedbackComplete,
+        selection.complete,
       );
       const summary = communications
         ? summarizeCommunications(rows as CommunicationResult[])

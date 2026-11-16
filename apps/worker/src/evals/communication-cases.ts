@@ -805,6 +805,7 @@ export function selectCommunications(options: {
   repeats?: string;
   limit?: string;
   tag?: string;
+  cases?: string;
 }) {
   const full = selectBenchmark(
     COMMUNICATION_CASES,
@@ -817,6 +818,23 @@ export function selectCommunications(options: {
   );
   full.benchmark =
     full.benchmark && !full.corpus.some((row) => inspectedFamilies.has(row.familyId));
+  if (options.cases !== undefined) {
+    if (options.tag !== undefined || options.limit !== undefined)
+      throw new Error('--cases cannot be combined with --tag or --limit');
+    const ids = options.cases.split(',').map((id) => id.trim());
+    if (
+      ids.some((id) => !id) ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !full.corpus.some((row) => row.id === id))
+    )
+      throw new Error('--cases requires unique valid IDs in the selected split');
+    return {
+      ...full,
+      selected: full.corpus.filter((row) => ids.includes(row.id)),
+      complete: false,
+      benchmark: false,
+    };
+  }
   if (options.tag === undefined) return full;
   const subset = selectBenchmark(
     COMMUNICATION_CASES.filter((row) => row.tags.includes(options.tag ?? '')),

@@ -260,3 +260,38 @@ test('task title scoring resolves unique seed aliases but not ambiguous ones', (
     }).passed,
   ).toBe(false);
 });
+
+test('exact diagnostic cases preserve the corpus and cannot qualify as benchmark evidence', () => {
+  const ids = ['explicit-assignment-telegram', 'two-project-routing-telegram'] as const;
+  const selected = selectCommunications({ cases: ids.join(','), repeats: '2' });
+  expect(selected.selected.map((row) => row.id)).toEqual([...ids]);
+  expect(selected).toMatchObject({ complete: false, benchmark: false, repeats: 2 });
+  expect(selected.corpus).toHaveLength(198);
+  const held = selectCommunications({ split: 'held-out' });
+  expect(
+    selectCommunications({ split: 'held-out', cases: requireValue(held.selected[0]).id }),
+  ).toMatchObject({ complete: false, benchmark: false });
+  for (const options of [
+    { cases: '' },
+    { cases: 'unknown' },
+    { cases: `${ids[0]},${ids[0]}` },
+    { cases: requireValue(held.selected[0]).id },
+    { cases: ids[0], tag: 'ownership' },
+    { cases: ids[0], limit: '1' },
+  ]) {
+    expect(() => selectCommunications(options)).toThrow();
+  }
+});
+
+test('listing all case IDs still produces a partial diagnostic report', () => {
+  const full = selectCommunications({});
+  const selected = selectCommunications({ cases: full.corpus.map((row) => row.id).join(',') });
+  expect(
+    suggestionRunComplete(
+      selected.selected.map((row) => row.id),
+      full.corpus.map((row) => row.id),
+      true,
+      selected.complete,
+    ),
+  ).toBe(false);
+});

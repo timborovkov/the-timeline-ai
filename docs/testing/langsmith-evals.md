@@ -270,6 +270,11 @@ errors cannot pass. Privacy violations, invalid evidence and automatic changes t
 human-edited pending proposals are hard failures. Prospect proposals must use low confidence and explain
 the uncertainty; concrete proposed projects must remain `planning`.
 
+For a small development diagnostic, pass `--cases=id1,id2` to select exact case IDs.
+This cannot be combined with `--tag` or `--limit`; unknown, duplicate, or wrong-split
+IDs are rejected before any provider calls. Exact-case runs retain the versioned
+full-split dataset and are always partial diagnostics, never benchmark evidence.
+
 Communications run four cases concurrently, each with a separate disposable database
 and queue; report writes are serialized. Reports retain an implementation digest,
 per-case outputs, saved approval outcomes, source/family/scenario denominators, latency,
