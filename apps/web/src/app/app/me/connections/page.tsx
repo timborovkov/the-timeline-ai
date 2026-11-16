@@ -65,7 +65,7 @@ export default async function PersonalConnectionsPage({
         ]}
       />
 
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 py-1.5">
         <ActionChip href="/app/connections" label="View connections" />
         <ActionChip href="/app/me/mcp-servers" label="Manage personal MCP" />
       </div>

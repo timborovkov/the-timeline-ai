@@ -1,7 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineEvent } from '@/lib/timeline-types';
 
 import {
   buildTimelineMoments,
@@ -14,7 +14,7 @@ import {
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 const authorMap = new Map<string, TimelineAuthor>([
-  [USER_ID, { id: USER_ID, name: 'Tim', email: 'tim@example.com' }],
+  [USER_ID, { id: USER_ID, name: 'Taylor', email: 'taylor@example.com' }],
 ]);
 
 function event(
@@ -53,6 +53,79 @@ describe('timeline moment grouping', () => {
     const now = new Date('2026-03-29T23:30:00.000Z');
 
     expect(formatDateSection('2026-03-28T12:00:00.000Z', now, 'UTC')).toBe('Yesterday');
+  });
+
+  it('formats older date-section labels with a pinned locale (SSR/client safe)', () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+    const occurredAt = '2026-08-14T12:00:00.000Z';
+    const sectionOptions = {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    } as const;
+
+    // Document the hydration mismatch that undefined locale would cause.
+    expect(new Date(occurredAt).toLocaleDateString('en-US', sectionOptions)).toBe('Friday, Aug 14');
+    expect(new Date(occurredAt).toLocaleDateString('en-GB', sectionOptions)).toBe('Friday 14 Aug');
+
+    expect(formatDateSection(occurredAt, now, 'UTC')).toBe('Friday, Aug 14');
+    expect(formatDateSection(occurredAt, now, 'UTC')).not.toBe(
+      new Date(occurredAt).toLocaleDateString('en-GB', sectionOptions),
+    );
+  });
+
+  it('keeps date-section labels identical when the runtime default locale is en-GB', () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+    const occurredAt = '2026-08-14T12:00:00.000Z';
+    const descriptor = Object.getOwnPropertyDescriptor(Date.prototype, 'toLocaleDateString');
+    const original = descriptor?.value as
+      | ((
+          this: Date,
+          locales?: Intl.LocalesArgument,
+          options?: Intl.DateTimeFormatOptions,
+        ) => string)
+      | undefined;
+    if (!descriptor || !original) {
+      throw new Error('expected Date.prototype.toLocaleDateString');
+    }
+
+    Object.defineProperty(Date.prototype, 'toLocaleDateString', {
+      ...descriptor,
+      value(this: Date, locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+        // Simulate a browser whose default locale is en-GB when callers omit locale.
+        return original.call(this, locales ?? 'en-GB', options);
+      },
+    });
+
+    try {
+      expect(formatDateSection(occurredAt, now, 'UTC')).toBe('Friday, Aug 14');
+      expect(
+        buildTimelineMoments(
+          [
+            event({
+              id: 'dated',
+              source: 'web',
+              occurredAt,
+            }),
+          ],
+          authorMap,
+          { now, timezone: 'UTC' },
+        )[0],
+      ).toMatchObject({
+        dateKey: '2026-08-14',
+        dateLabel: 'Friday, Aug 14',
+      });
+    } finally {
+      Object.defineProperty(Date.prototype, 'toLocaleDateString', descriptor);
+    }
+  });
+
+  it('includes the year in date-section labels outside the current year', () => {
+    const now = new Date('2026-08-20T12:00:00.000Z');
+    expect(formatDateSection('2025-08-14T12:00:00.000Z', now, 'UTC')).toBe(
+      'Thursday, Aug 14, 2025',
+    );
   });
 
   it('groups meetings by meeting id', () => {
@@ -264,7 +337,7 @@ describe('timeline moment grouping', () => {
     expect(moments.every((moment) => moment.rawEvents.length === 1)).toBe(true);
   });
 
-  it('bundles GitHub workflow runs by repo, workflow, branch, and day', () => {
+  it('keeps distinct GitHub workflow runs separate on the same day', () => {
     const moments = buildTimelineMoments(
       [
         event({
@@ -304,11 +377,11 @@ describe('timeline moment grouping', () => {
       new Date('2026-05-28T12:00:00.000Z'),
     );
 
-    expect(moments).toHaveLength(1);
+    expect(moments).toHaveLength(2);
     expect(moments[0]?.kind).toBe('ci_deploy');
     expect(moments[0]?.title).toBe('CI passed on timborovkov/audit-ai · main');
-    expect(moments[0]?.subtitle).toBe('GitHub · workflow run success · 2 events');
-    expect(moments[0]?.grouping.strategy).toBe('provider_workflow_window');
+    expect(moments[0]?.subtitle).toBe('GitHub · workflow run success · 1 event');
+    expect(moments[0]?.grouping.strategy).toBe('provider_workflow_run');
   });
 
   it('truncates generated Telegram attachment filenames in moment summaries', () => {
@@ -611,7 +684,7 @@ describe('timeline moment grouping', () => {
             tg_chat_id: 'chat-1',
             tg_chat_title: 'AuditAI',
             tg_user_id: 12345,
-            tg_username: 'mikaelrintala',
+            tg_username: 'cameronvale',
           },
           contentText: 'Confirmed',
         }),
@@ -621,7 +694,7 @@ describe('timeline moment grouping', () => {
     );
 
     expect(moments).toHaveLength(1);
-    expect(moments[0]?.actorLabel).toBe('Tim');
+    expect(moments[0]?.actorLabel).toBe('Taylor');
   });
 
   it('treats Telegram sender as a valid literal source sender name', () => {
@@ -669,7 +742,7 @@ describe('timeline moment grouping', () => {
           sourceMetadata: {
             meeting_id: 'meet-1',
             summary: 'Launch scope narrowed.',
-            action_items: [{ text: 'Send agenda', owner: 'Tim' }],
+            action_items: [{ text: 'Send agenda', owner: 'Taylor' }],
           },
         }),
       ],

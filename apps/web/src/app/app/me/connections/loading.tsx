@@ -18,13 +18,13 @@ export default function PersonalConnectionsLoading() {
         />
         <div aria-hidden="true" className="space-y-4">
           <PageHeaderSkeleton variant="collection" />
-          <div className="flex flex-wrap gap-2 border-y border-border py-2">
+          <div className="flex flex-wrap gap-2 py-2">
             <Skeleton className="h-7 w-32" />
             <Skeleton className="h-7 w-40" />
           </div>
           <section className="space-y-3">
             <Skeleton className="h-5 w-48" />
-            <div className="border-y border-border py-4">
+            <div className="py-4">
               <Skeleton className="h-4 w-2/5" />
               <Skeleton className="mt-3 h-3 w-full" />
               <Skeleton className="mt-2 h-3 w-4/5" />

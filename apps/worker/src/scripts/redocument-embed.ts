@@ -15,6 +15,7 @@
  */
 import { closeDb, documentChunks, documents, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNull, or, type SQL } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -121,5 +122,5 @@ main()
   .finally(() => {
     void closeDb();
     void queue.closeEmbedQueue();
-    void queue.closeRedisConnection();
+    void closeAllRedisConnections();
   });

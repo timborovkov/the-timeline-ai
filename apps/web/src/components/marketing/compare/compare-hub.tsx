@@ -3,7 +3,6 @@ import Link from 'next/link';
 
 import { COMPARE_HUB, COMPARE_PAGES } from '@/components/marketing/compare/content';
 import { findCompareHubDocument } from '@/components/marketing/compare/public-documents';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -20,8 +19,7 @@ export function CompareHubPage() {
       <EditorialStructuredData data={buildPublicStructuredData(hubDocument, getSiteUrl())} />
       <header className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <EditorialKicker>Compare</EditorialKicker>
-          <h1 className={`${styles.displayTitle} mt-6`}>{COMPARE_HUB.title}</h1>
+          <h1 className={styles.displayTitle}>{COMPARE_HUB.title}</h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
             {COMPARE_HUB.summary}
           </p>
@@ -30,7 +28,6 @@ export function CompareHubPage() {
 
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         <EditorialSectionHeading
-          index="Vs"
           title="Head to head"
           intro="Each page cites the competitor's own site and says when that tool is the better pick. Unverified claims are left out."
         />

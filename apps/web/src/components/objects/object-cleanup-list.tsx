@@ -3,7 +3,7 @@
 import { Archive, GitMerge, Shapes, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useState, useTransition } from 'react';
+import { useCallback, useMemo, useReducer, useState, useTransition } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -23,6 +23,7 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
+import { useObjectListScrollElement } from '@/components/objects/object-list-viewport';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
   LiveTaskCategoryBadge,
@@ -36,7 +37,6 @@ import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
 import { notifyAction } from '@/lib/notify';
-import { objectDetailHref } from '@/lib/object-links';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
@@ -58,6 +58,7 @@ interface Props {
   filterParams?: Record<string, string>;
   sectionMoreHrefs?: Record<string, string>;
   returnTo?: string;
+  selectedObjectId?: string;
 }
 
 interface CleanupListState {
@@ -131,7 +132,10 @@ export function ObjectCleanupList({
   filterParams = EMPTY_FILTER_PARAMS,
   sectionMoreHrefs,
   returnTo = '/app/objects',
+  selectedObjectId,
 }: Props) {
+  const scrollElement = useObjectListScrollElement();
+  const getScrollElement = useCallback(() => scrollElement, [scrollElement]);
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const dialog = useAppDialog();
@@ -260,21 +264,7 @@ export function ObjectCleanupList({
 
   return (
     <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-      <div className="space-y-4">
-        <div className="flex min-h-10 items-center justify-end border-b border-border">
-          {!selecting ? (
-            <button
-              type="button"
-              onClick={() => {
-                dispatchCleanupList({ type: 'begin-selecting' });
-              }}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs text-fg transition-colors hover:bg-surface-2"
-            >
-              <SquareCheckBig className="size-3.5" aria-hidden />
-              Select
-            </button>
-          ) : null}
-        </div>
+      <div className="min-w-0">
         <SelectionBar
           count={selectedCount}
           label={selectedCount === 1 ? 'object selected' : 'objects selected'}
@@ -333,30 +323,51 @@ export function ObjectCleanupList({
                   title={typeLabels[typeKey] ?? typeKey}
                   count={list.length}
                   actions={
-                    sectionMoreHrefs?.[typeKey] ? (
-                      <Link
-                        href={sectionMoreHrefs[typeKey]}
-                        className="min-h-10 px-2 py-3 text-xs text-signal hover:underline"
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          dispatchCleanupList(
+                            selecting ? { type: 'clear-selection' } : { type: 'begin-selecting' },
+                          );
+                        }}
+                        className="inline-flex size-8 items-center justify-center rounded-sm text-fg-muted hover:bg-surface-2"
+                        aria-label={
+                          selecting
+                            ? 'Cancel selection'
+                            : `Select ${typeLabels[typeKey] ?? typeKey}`
+                        }
+                        title={selecting ? 'Cancel selection' : 'Select objects'}
                       >
-                        View all
-                      </Link>
-                    ) : null
+                        <SquareCheckBig className="size-4" aria-hidden="true" />
+                      </button>
+                      {sectionMoreHrefs?.[typeKey] ? (
+                        <Link
+                          href={sectionMoreHrefs[typeKey]}
+                          className="min-h-10 px-2 py-3 text-xs text-signal hover:underline"
+                        >
+                          View all
+                        </Link>
+                      ) : null}
+                    </>
                   }
                 >
                   <VirtualList
                     items={list}
                     getItemKey={(object) => object.id}
                     estimateSize={48}
+                    getScrollElement={getScrollElement}
+                    offsetWithinScrollElement
                     renderItem={(object) => {
                       const isSelected = selected.has(object.id);
                       return (
                         <ObjectCollectionItem
                           object={object}
-                          typeLabel={typeLabels[object.type] ?? object.type}
                           timezone={timezone}
                           returnTo={returnTo}
                           selecting={selecting}
                           selected={isSelected}
+                          previewed={selectedObjectId === object.id}
                           onToggle={() => {
                             toggle(object.id);
                           }}
@@ -370,6 +381,7 @@ export function ObjectCleanupList({
           </div>
         )}
         <InfiniteScroll
+          root={scrollElement}
           hasMore={Boolean(pageCursor)}
           loading={loadingMore}
           error={pageLoadError}
@@ -410,19 +422,19 @@ function sameObjectFieldValue(left: ObjectEditableValue, right: ObjectEditableVa
 
 function ObjectCollectionItem({
   object,
-  typeLabel,
   timezone,
   returnTo,
   selecting,
   selected,
+  previewed,
   onToggle,
 }: {
   object: PinnableObjectRow;
-  typeLabel: string;
   timezone: string;
   returnTo: string;
   selecting: boolean;
   selected: boolean;
+  previewed: boolean;
   onToggle: () => void;
 }) {
   const router = useRouter();
@@ -497,10 +509,19 @@ function ObjectCollectionItem({
   }
 
   const statusOptions = statusOptionsForType(object.type, status);
+  const previewParams = new URLSearchParams(returnTo.split('?')[1] ?? '');
+  previewParams.set('object', object.id);
+  const previewHref = `/app/objects?${previewParams.toString()}`;
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-      <CollectionRow selected={selected}>
+      <CollectionRow
+        selected={selected || previewed}
+        onActivate={() => {
+          router.push(previewHref, { scroll: false });
+        }}
+        activateLabel={`Preview ${displayText(object.canonicalName)}`}
+      >
         <CollectionRow.Leading>
           {selecting ? (
             <input
@@ -514,15 +535,14 @@ function ObjectCollectionItem({
         </CollectionRow.Leading>
         <CollectionRow.Title>
           <Link
-            href={objectDetailHref(object.id, returnTo)}
+            href={previewHref}
             scroll={false}
-            className="block truncate hover:underline"
+            className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
           >
             {displayText(object.canonicalName)}
           </Link>
           <DiscussionCountBadge count={object.commentCount} className="ml-2 shrink-0" />
         </CollectionRow.Title>
-        <CollectionRow.Context>{typeLabel}</CollectionRow.Context>
         <CollectionRow.Metadata>
           <>
             {object.type === 'task' ? (
@@ -577,45 +597,52 @@ function ObjectCollectionItem({
                 </select>
               </EditableMetadata.Editor>
             </EditableMetadata>
-            <EditableMetadata
-              label={`Priority for ${displayText(object.canonicalName)}`}
-              pending={saving === 'priority'}
-            >
-              <EditableMetadata.Value>
-                <CollectionStatus
-                  value={priority ? `p${priority}` : 'none'}
-                  tone={priorityTone(priority)}
-                  label={priority ? `P${priority}` : 'No priority'}
-                />
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <select
-                  aria-label="Priority"
-                  value={priority ?? ''}
-                  onChange={(event) => {
-                    save(
-                      'priority',
-                      event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                    );
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                >
-                  <option value="">None</option>
-                  {[1, 2, 3, 4].map((value) => (
-                    <option key={value} value={value}>
-                      P{value}
-                    </option>
-                  ))}
-                </select>
-              </EditableMetadata.Editor>
-            </EditableMetadata>
+            {priority !== null || isSchedulableObjectType(object.type) ? (
+              <EditableMetadata
+                label={`Priority for ${displayText(object.canonicalName)}`}
+                pending={saving === 'priority'}
+              >
+                <EditableMetadata.Value>
+                  <CollectionStatus
+                    value={priority ? `p${priority}` : 'none'}
+                    tone={priorityTone(priority)}
+                    label={priority ? `P${priority}` : 'No priority'}
+                  />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    aria-label="Priority"
+                    value={priority ?? ''}
+                    onChange={(event) => {
+                      save(
+                        'priority',
+                        event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                      );
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                  >
+                    <option value="">None</option>
+                    {[1, 2, 3, 4].map((value) => (
+                      <option key={value} value={value}>
+                        P{value}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            ) : null}
             {isSchedulableObjectType(object.type) ? (
               <EditableMetadata
                 label={`Due date for ${displayText(object.canonicalName)}`}
                 pending={saving === 'dueAt'}
               >
                 <EditableMetadata.Value>
-                  <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+                  <DueDateDisplay
+                    workStatus={status}
+                    value={dueAt}
+                    timezone={timezone}
+                    variant="compact"
+                  />
                 </EditableMetadata.Value>
                 <EditableMetadata.Editor>
                   <ObjectDueDateEditor

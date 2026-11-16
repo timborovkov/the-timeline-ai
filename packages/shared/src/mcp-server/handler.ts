@@ -12,10 +12,14 @@ import {
   type ServerContext,
   type ToolAnnotations,
 } from '@modelcontextprotocol/server';
-import { type Db } from '@timeline/db';
+import { eventSource, type Db } from '@timeline/db';
 import { z } from 'zod';
 
 import * as agent from '#src/agent/index.js';
+import {
+  retrieveWorkspaceContextInput,
+  type RetrievalExecutionContext,
+} from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { askBillingUserMessage } from '#src/billing/admission.js';
 import {
@@ -34,6 +38,7 @@ import { type McpAuthPrincipal, resolveMcpBearer } from '#src/mcp-server/oauth.j
 import * as objects from '#src/objects/index.js';
 import { serializeObjectRowsWithProjects } from '#src/objects/tool-serialization.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
@@ -47,9 +52,11 @@ import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
-} from '#src/timeline-moments/presentation.js';
+} from '#src/timeline-moments/presentation-contract.js';
+import { startWebsiteScan, normalizeWebsiteUrl } from '#src/websites/index.js';
 
 import type * as boards from '#src/boards/index.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('mcp-server');
 
@@ -62,20 +69,10 @@ const MCP_CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-
 const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-const EVENT_SOURCE_VALUES = [
-  'web',
-  'telegram',
-  'email',
-  'system',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'slack',
-  'ingest_webhook',
-] as const;
+const EVENT_SOURCE_VALUES = eventSource.enumValues;
 
 interface SearchHitForMoment {
+  ranking?: { rankingScore: number };
   eventId: string;
   factIds: string[];
   score: number;
@@ -88,26 +85,6 @@ interface SearchHitForMoment {
 const objectTypeSchema = z.enum(
   objects.OBJECT_TYPES as [objects.ObjectType, ...objects.ObjectType[]],
 );
-
-const retrieveWorkspaceContextInput = z.object({
-  query: z.string().trim().min(1).max(500),
-  recipe: z
-    .enum([
-      'auto',
-      'object_profile',
-      'timeline_evidence',
-      'task_status',
-      'calendar',
-      'board_state',
-      'document_knowledge',
-      'product_guide',
-    ])
-    .optional(),
-  objectId: z.string().regex(UUID_RE).optional(),
-  limit: z.number().int().min(1).max(10).optional(),
-  includeDocuments: z.boolean().optional(),
-  includeCalendar: z.boolean().optional(),
-});
 
 const objectFilterInput = z.object({
   type: z.union([objectTypeSchema, z.array(objectTypeSchema).max(10)]).optional(),
@@ -147,6 +124,7 @@ const listTasksInput = objectFilterInput.pick({
 });
 
 const searchEventsInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
@@ -194,6 +172,7 @@ const listIntegrationsInput = z.object({
 });
 
 const searchDocumentsInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500),
   folderId: z.string().regex(UUID_RE).nullable().optional(),
   fileKind: z.enum(['document', 'captured']).optional(),
@@ -240,6 +219,7 @@ const GET_KINDS = [
 ] as const;
 
 const searchWorkspaceInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500).optional(),
   surface: z.enum(SEARCH_SURFACES).optional(),
   timePhrase: z.string().trim().min(1).max(100).optional(),
@@ -329,12 +309,15 @@ function withMcpScope(db: Db, principal: McpAuthPrincipal) {
     // visibility boundary. withTeam re-checks that membership on every
     // request, so revoked/removed users fail closed even if a token lookup
     // raced the membership change.
-    return withTeam(db, principal.teamId, principal.userId);
+    return withTeam(db, principal.teamId, principal.userId, { websitePrincipal: principal });
   }
   // Static outbound keys represent the team rather than a user. The
   // pseudo-user cannot match an author or specific-user visibility target,
   // so these keys remain limited to team-visible data.
-  return withTeam(db, principal.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+  return withTeam(db, principal.teamId, PSEUDO_USER, {
+    skipMembershipCheck: true,
+    websitePrincipal: principal,
+  });
 }
 
 function textMatches(value: string | null | undefined, query: string | undefined): boolean {
@@ -377,10 +360,12 @@ function parsedEventSearch(
   from?: Date;
   to?: Date;
   source?: (typeof EVENT_SOURCE_VALUES)[number];
+  ranking?: 'auto' | 'relevance' | 'balanced';
 } {
   const input = searchEventsInput.parse(args);
   return {
     query: input.query,
+    ...(input.ranking ? { ranking: input.ranking } : {}),
     limit: input.limit ?? defaultLimit,
     ...(input.from ? { from: new Date(input.from) } : {}),
     ...(input.to ? { to: new Date(input.to) } : {}),
@@ -474,49 +459,67 @@ async function serializeMcpTimelineMoments(
     buildTimelineMomentPresentationCacheKey({ teamId: scope.teamId, moment }),
   );
   const presentations = await scope.timeline.listMomentPresentations(cacheKeys);
-  return builtMoments.map((builtMoment, index) => {
-    const cacheKey = cacheKeys[index];
-    const moment = cacheKey
-      ? applyTimelineMomentPresentationCache(
-          builtMoment,
-          presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
-          { teamId: scope.teamId },
-        )
-      : builtMoment;
-    const rawEvents = moment.rawEvents;
-    const topScore = Math.max(...rawEvents.map((event) => hitByEventId.get(event.id)?.score ?? 0));
-    return {
-      moment_id: moment.id,
-      version: moment.version,
-      anchor_id: moment.anchorId,
-      kind: moment.kind,
-      title: fenceTimelineMomentText(moment.title, moment),
-      subtitle: fenceTimelineMomentText(moment.subtitle, moment),
-      preview: fenceTimelineMomentText(moment.preview, moment),
-      occurred_at:
-        rawEvents[0]?.occurredAt instanceof Date
-          ? rawEvents[0].occurredAt.toISOString()
-          : (rawEvents[0]?.occurredAt ?? null),
-      source_families: moment.grouping.sourceFamilies,
-      evidence_count: rawEvents.length,
-      raw_event_ids: rawEvents.map((event) => event.id),
-      citations: rawEvents.map((event) =>
-        artifactRefCitation({ kind: 'timeline_event', id: event.id }),
-      ),
-      score: topScore,
-      evidence: rawEvents.map((event) => ({
-        event_id: event.id,
-        citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
-        source: event.source,
+  return [...builtMoments]
+    .sort(
+      (a, b) =>
+        Math.min(
+          ...a.rawEvents
+            .map((ev) => hits.findIndex((hit) => hit.eventId === ev.id))
+            .filter((i) => i >= 0),
+        ) -
+        Math.min(
+          ...b.rawEvents
+            .map((ev) => hits.findIndex((hit) => hit.eventId === ev.id))
+            .filter((i) => i >= 0),
+        ),
+    )
+    .map((builtMoment) => {
+      const index = builtMoments.indexOf(builtMoment);
+      const cacheKey = cacheKeys[index];
+      const moment = cacheKey
+        ? applyTimelineMomentPresentationCache(
+            builtMoment,
+            presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
+            { teamId: scope.teamId },
+          )
+        : builtMoment;
+      const rawEvents = moment.rawEvents;
+      const topScore = Math.max(
+        ...rawEvents.map((event) => hitByEventId.get(event.id)?.score ?? 0),
+      );
+      return {
+        moment_id: moment.id,
+        legacy_moment_ids: moment.legacyIds ?? [],
+        version: moment.version,
+        anchor_id: moment.anchorId,
+        kind: moment.kind,
+        title: fenceTimelineMomentText(moment.title, moment),
+        subtitle: fenceTimelineMomentText(moment.subtitle, moment),
+        preview: fenceTimelineMomentText(moment.preview, moment),
         occurred_at:
-          event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
-        snippet: fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+          rawEvents[0]?.occurredAt instanceof Date
+            ? rawEvents[0].occurredAt.toISOString()
+            : (rawEvents[0]?.occurredAt ?? null),
+        source_families: moment.grouping.sourceFamilies,
+        evidence_count: rawEvents.length,
+        raw_event_ids: rawEvents.map((event) => event.id),
+        citations: rawEvents.map((event) =>
+          artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+        ),
+        score: topScore,
+        evidence: rawEvents.map((event) => ({
+          event_id: event.id,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
           source: event.source,
-          eventId: event.id,
-        }),
-      })),
-    };
-  });
+          occurred_at:
+            event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+          snippet: fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+            source: event.source,
+            eventId: event.id,
+          }),
+        })),
+      };
+    });
 }
 
 async function hydrateCompleteMcpMomentEvents(
@@ -647,7 +650,36 @@ function readTool(
   };
 }
 
+const crawlInput = z.object({
+  url: z.string().max(2048),
+  subject: z.enum(['own_team', 'other_company']).default('other_company'),
+  permissionConfirmed: z.literal(true),
+  idempotencyKey: z.string().min(1).max(200),
+});
 const TOOLS: TimelineToolDefinition[] = [
+  {
+    name: 'timeline.crawl',
+    title: 'Scan a public website',
+    description:
+      'Explicitly scan up to five public pages into team-visible evidence. Costs 20 source units per captured page, up to 100 per scan, plus AI and storage. Requires the user to confirm permission and paid usage. Never invoke automatically while searching.',
+    inputSchema: crawlInput,
+    outputSchema: z.looseObject({}),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    securitySchemes: [{ type: 'oauth2', scopes: ['read', 'websites:scan'] }],
+    _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read', 'websites:scan'] }] },
+  },
+  readTool(
+    'timeline.crawl_status',
+    'Website scan status',
+    'Read a website scan status and usage in this team.',
+    z.object({ runId: z.uuid() }),
+    z.looseObject({}),
+  ),
   readTool(
     'timeline.search',
     'Search Timeline',
@@ -678,6 +710,8 @@ export const ADVERTISED_MCP_TOOL_NAMES = [
   'timeline.search',
   'timeline.get',
   'timeline.subject',
+  'timeline.crawl',
+  'timeline.crawl_status',
   REMEMBER_TOOL_NAME,
   ASK_TOOL_NAME,
 ] as const;
@@ -785,6 +819,7 @@ interface HandleContext {
 }
 
 export interface HandleMcpRequestDeps {
+  currentDate?: Date;
   askAgent?: typeof agent.askAgent;
   checkRateLimit?: typeof checkRateLimit;
   enqueueIngestProcessing?: IngestEvidenceEnqueue;
@@ -800,22 +835,42 @@ async function callTool(
   deps: HandleMcpRequestDeps = {},
 ): Promise<unknown> {
   const scope = withMcpScope(db, principal);
+  const executionContext = { currentDate: deps.currentDate ?? new Date() };
   switch (toolName) {
+    case 'timeline.crawl': {
+      if (!principal.scopes.includes('websites:scan'))
+        throw new Error('Missing website permission');
+      const input = crawlInput.parse(args);
+      const url = normalizeWebsiteUrl(input.url);
+      const existing = (await scope.websites.list()).find((source) => source.url === url);
+      const source =
+        existing ??
+        (await scope.websites.add({ url, subject: input.subject, permissionConfirmed: true }));
+      const run = await startWebsiteScan(scope, {
+        websiteId: source.id,
+        idempotencyKey: input.idempotencyKey,
+        permissionConfirmed: true,
+        trigger: 'mcp',
+      });
+      return { run, statusUrl: `/api/websites/${source.id}/scans/${run.id}` };
+    }
+    case 'timeline.crawl_status':
+      return { run: await scope.websites.getRun(z.object({ runId: z.uuid() }).parse(args).runId) };
     case 'timeline.search':
-      return searchWorkspace(scope, args);
+      return searchWorkspace(scope, executionContext, args);
     case 'timeline.get':
       if (getRecordInput.parse(args).kind === 'connection')
         return scope.agentReporting.current(principal);
-      return getRecord(scope, args);
+      return getRecord(scope, executionContext, args);
     case 'timeline.subject':
-      return subjectTimeline(scope, args);
+      return subjectTimeline(scope, executionContext, args);
     case REMEMBER_TOOL_NAME:
       if (!principal.scopes.includes('read') || !principal.scopes.includes('capture')) {
         return rememberError('forbidden');
       }
       return rememberNote(scope, principal, args, deps);
     default:
-      return executeReadCapability(scope, toolName, args);
+      return executeReadCapability(scope, executionContext, toolName, args);
   }
 }
 
@@ -826,30 +881,53 @@ async function callTool(
  */
 async function executeReadCapability(
   scope: TeamScope,
+  executionContext: RetrievalExecutionContext,
   toolName: string,
   args: CallToolArgs,
 ): Promise<unknown> {
   switch (toolName) {
     case 'timeline.search_events': {
-      const hits = await scope.timeline.searchEvents(parsedEventSearch(args, 10));
+      let retrieval: SearchRankingSummary | null = null;
+      const hits = await scope.timeline.searchEvents({
+        ...parsedEventSearch(args, 10),
+        rankingNow: executionContext.currentDate,
+        onRanking: (value) => {
+          retrieval = value;
+        },
+      });
       return {
         count: hits.length,
+        retrieval,
+        context: await enrichEvidenceContext(scope, { eventIds: hits.map((hit) => hit.eventId) }),
         results: hits.map((r) => ({
           event_id: r.eventId,
           citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
           occurred_at: r.occurredAt,
           score: r.score,
+          ranking: r.ranking,
           source: r.source,
           snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
         })),
       };
     }
     case 'timeline.search_moments': {
-      const hits = await scope.timeline.searchEvents(parsedEventSearch(args, 20));
+      let retrieval: SearchRankingSummary | null = null;
+      const hits = await scope.timeline.searchEvents({
+        ...parsedEventSearch(args, 20),
+        rankingNow: executionContext.currentDate,
+        onRanking: (value) => {
+          retrieval = value;
+        },
+      });
       const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
       const events = await hydrateCompleteMcpMomentEvents(scope, rows.map(timelineMomentEvent));
       const moments = await serializeMcpTimelineMoments(scope, hits, events);
-      return { count: moments.length, moments };
+      return {
+        count: moments.length,
+        moments,
+        retrieval,
+        context: await enrichEvidenceContext(scope, { eventIds: hits.map((hit) => hit.eventId) }),
+      };
     }
     case 'timeline.list_moments': {
       const input = z
@@ -937,7 +1015,10 @@ async function executeReadCapability(
       }));
       const moments = await serializeMcpTimelineMoments(scope, hits, events);
       const expanded = input.momentId
-        ? moments.find((moment) => moment.moment_id === input.momentId)
+        ? (moments.find((moment) => moment.moment_id === input.momentId) ??
+          moments.find((moment) =>
+            Boolean(input.momentId && moment.legacy_moment_ids.includes(input.momentId)),
+          ))
         : moments[0];
       if (!expanded) {
         return {
@@ -1014,27 +1095,35 @@ async function executeReadCapability(
         query: input.query,
         limit: input.limit ?? 10,
       };
+      searchArgs.rankingNow = executionContext.currentDate;
+      if (input.ranking) searchArgs.ranking = input.ranking;
       if (typeof input.folderId === 'string') searchArgs.folderIds = [input.folderId];
       if (input.folderId === null) searchArgs.rootFolder = true;
       if (input.fileKind) searchArgs.fileKinds = [input.fileKind];
       if (input.name) searchArgs.name = input.name;
       if (input.from) searchArgs.from = new Date(input.from);
       if (input.to) searchArgs.to = new Date(input.to);
-      const results = await scope.documents.searchDocumentChunks(searchArgs);
-      return { count: results.length, results };
+      let retrieval: SearchRankingSummary | null = null;
+      const results = await scope.documents.searchDocumentChunks({
+        ...searchArgs,
+        onRanking: (value) => {
+          retrieval = value;
+        },
+      });
+      return {
+        count: results.length,
+        results,
+        retrieval,
+        context: await enrichEvidenceContext(scope, {
+          eventIds: results.flatMap((hit) =>
+            [hit.sourceEvidenceEventId].filter((id): id is string => Boolean(id)),
+          ),
+        }),
+      };
     }
     case 'timeline.retrieve_workspace_context': {
       const input = retrieveWorkspaceContextInput.parse(args);
-      return retrieveWorkspaceContext(scope, {
-        query: input.query,
-        ...(input.recipe === undefined ? {} : { recipe: input.recipe }),
-        ...(input.objectId === undefined ? {} : { objectId: input.objectId }),
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
-        ...(input.includeDocuments === undefined
-          ? {}
-          : { includeDocuments: input.includeDocuments }),
-        ...(input.includeCalendar === undefined ? {} : { includeCalendar: input.includeCalendar }),
-      });
+      return retrieveWorkspaceContext(scope, input, executionContext);
     }
     case 'timeline.get_object': {
       const input = z.object({ idOrName: z.string().trim().min(1).max(200) }).parse(args);
@@ -1319,7 +1408,7 @@ async function executeReadCapability(
       };
       if (input.from) opts.from = new Date(input.from);
       if (input.to) opts.to = new Date(input.to);
-      if (!input.from && !input.to) opts.from = new Date();
+      if (!input.from && !input.to) opts.from = executionContext.currentDate ?? new Date();
       if (input.query) opts.search = input.query;
       const events = (await scope.calendar.listCalendarEventPage(opts)).events;
       return {
@@ -1380,7 +1469,9 @@ async function executeReadCapability(
         })
         .parse(args);
       const settings = await scope.calendar.getCalendarSettings();
-      const referenceDate = input.referenceDate ? new Date(input.referenceDate) : new Date();
+      const referenceDate = input.referenceDate
+        ? new Date(input.referenceDate)
+        : (executionContext.currentDate ?? new Date());
       const context = workspaceTimeContext(settings.defaultTimezone, referenceDate);
       const resolved = input.phrase
         ? resolveTimePhrase(input.phrase, {
@@ -1460,23 +1551,36 @@ async function executeReadCapability(
         mondayDocIds: [...selectedDocIds],
         limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
       });
+      let retrieval: SearchRankingSummary | null = null;
       const opts: Parameters<typeof scope.timeline.searchEvents>[0] = {
         query: input.query,
         source: 'integration',
         limit: requestedLimit,
         eventIds: candidates.eventIds,
+        ranking: 'balanced',
+        rankingNow: executionContext.currentDate,
+        onRanking: (value) => {
+          retrieval = value;
+        },
       };
       const filtered = (await scope.timeline.searchEvents(opts)).filter(
         (hit) => hit.source === 'integration',
       );
       return {
+        context: await enrichEvidenceContext(scope, {
+          eventIds: filtered.map((hit) => hit.eventId),
+        }),
         count: filtered.length,
-        truncated: candidates.truncated,
+        truncated:
+          candidates.truncated ||
+          Boolean((retrieval as SearchRankingSummary | null)?.candidateLimitReached),
+        retrieval,
         results: filtered.map((r) => ({
           event_id: r.eventId,
           citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
           occurred_at: r.occurredAt,
           score: r.score,
+          ranking: r.ranking,
           snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
         })),
       };
@@ -1523,15 +1627,21 @@ async function executeReadCapability(
 
 async function resolveSearchTime(
   scope: TeamScope,
+  executionContext: RetrievalExecutionContext,
   args: { timePhrase?: string; referenceDate?: string; from?: string; to?: string },
 ) {
   if (!args.timePhrase) {
     return { time: null, from: args.from, to: args.to };
   }
-  const resolved = (await executeReadCapability(scope, 'timeline.resolve_time_context', {
-    phrase: args.timePhrase,
-    ...(args.referenceDate ? { referenceDate: args.referenceDate } : {}),
-  })) as {
+  const resolved = (await executeReadCapability(
+    scope,
+    executionContext,
+    'timeline.resolve_time_context',
+    {
+      phrase: args.timePhrase,
+      ...(args.referenceDate ? { referenceDate: args.referenceDate } : {}),
+    },
+  )) as {
     context: unknown;
     resolved: { from: string; to: string } | null;
   };
@@ -1542,10 +1652,14 @@ async function resolveSearchTime(
   };
 }
 
-async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<unknown> {
+async function searchWorkspace(
+  scope: TeamScope,
+  executionContext: RetrievalExecutionContext,
+  args: CallToolArgs,
+): Promise<unknown> {
   const input = searchWorkspaceInput.parse(args);
   const surface = input.surface ?? 'auto';
-  const { time, from, to } = await resolveSearchTime(scope, {
+  const { time, from, to } = await resolveSearchTime(scope, executionContext, {
     ...(input.timePhrase ? { timePhrase: input.timePhrase } : {}),
     ...(input.referenceDate ? { referenceDate: input.referenceDate } : {}),
     ...(input.from ? { from: input.from } : {}),
@@ -1565,26 +1679,34 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
         throw new Error('query is required for surface=workspace');
       }
       return withTime(
-        await executeReadCapability(scope, 'timeline.retrieve_workspace_context', {
-          query: input.query,
-          ...(input.recipe ? { recipe: input.recipe } : {}),
-          ...(input.objectId ? { objectId: input.objectId } : {}),
-          ...(input.limit ? { limit: Math.min(input.limit, 10) } : {}),
-          ...(input.includeDocuments !== undefined
-            ? { includeDocuments: input.includeDocuments }
-            : {}),
-          ...(input.includeCalendar !== undefined
-            ? { includeCalendar: input.includeCalendar }
-            : {}),
-        }),
+        await executeReadCapability(
+          scope,
+          executionContext,
+          'timeline.retrieve_workspace_context',
+          {
+            query: input.query,
+            ...(input.recipe ? { recipe: input.recipe } : {}),
+            ...(input.objectId ? { objectId: input.objectId } : {}),
+            ...(input.limit ? { limit: Math.min(input.limit, 10) } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
+            ...(input.includeDocuments !== undefined
+              ? { includeDocuments: input.includeDocuments }
+              : {}),
+            ...(input.includeCalendar !== undefined
+              ? { includeCalendar: input.includeCalendar }
+              : {}),
+          },
+        ),
       );
     case 'moments':
       return withTime(
         await executeReadCapability(
           scope,
+          executionContext,
           input.query ? 'timeline.search_moments' : 'timeline.list_moments',
           {
             ...(input.query ? { query: input.query } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(from ? { from } : {}),
             ...(to ? { to } : {}),
             ...(input.source ? { source: input.source } : {}),
@@ -1596,9 +1718,11 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
       return withTime(
         await executeReadCapability(
           scope,
+          executionContext,
           input.query ? 'timeline.search_events' : 'timeline.list_events',
           {
             ...(input.query ? { query: input.query } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(from ? { from } : {}),
             ...(to ? { to } : {}),
             ...(input.source ? { source: input.source } : {}),
@@ -1610,9 +1734,11 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
       return withTime(
         await executeReadCapability(
           scope,
+          executionContext,
           input.query ? 'timeline.search_objects' : 'timeline.list_objects',
           {
             ...(input.query ? { query: input.query } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(input.type ? { type: input.type } : {}),
             ...(input.status ? { status: input.status } : {}),
             ...(input.stage ? { stage: input.stage } : {}),
@@ -1632,6 +1758,7 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
       return withTime(
         await executeReadCapability(
           scope,
+          executionContext,
           input.query ? 'timeline.search_objects' : 'timeline.list_tasks',
           {
             ...(input.query ? { query: input.query, type: 'task' } : {}),
@@ -1651,8 +1778,9 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
       );
     case 'boards':
       return withTime(
-        await executeReadCapability(scope, 'timeline.search_boards', {
+        await executeReadCapability(scope, executionContext, 'timeline.search_boards', {
           ...(input.query ? { query: input.query } : {}),
+          ...(input.ranking ? { ranking: input.ranking } : {}),
           ...(input.boardId ? { boardId: input.boardId } : {}),
           ...(input.templateKind ? { templateKind: input.templateKind } : {}),
           ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
@@ -1671,16 +1799,22 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
     case 'documents':
       if (input.since && !input.query && !input.name) {
         return withTime(
-          await executeReadCapability(scope, 'timeline.list_recent_document_changes', {
-            since: input.since,
-            ...(input.limit ? { limit: input.limit } : {}),
-          }),
+          await executeReadCapability(
+            scope,
+            executionContext,
+            'timeline.list_recent_document_changes',
+            {
+              since: input.since,
+              ...(input.limit ? { limit: input.limit } : {}),
+            },
+          ),
         );
       }
       if (input.query) {
         return withTime(
-          await executeReadCapability(scope, 'timeline.search_documents', {
+          await executeReadCapability(scope, executionContext, 'timeline.search_documents', {
             query: input.query,
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
             ...(input.fileKind ? { fileKind: input.fileKind } : {}),
             ...(input.name ? { name: input.name } : {}),
@@ -1691,18 +1825,24 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
         );
       }
       return withTime(
-        await executeReadCapability(scope, 'timeline.search_documents_structured', {
-          ...(input.name ? { name: input.name } : {}),
-          ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
-          ...(input.fileKind ? { fileKind: input.fileKind } : {}),
-          ...(input.includeDeleted !== undefined ? { includeDeleted: input.includeDeleted } : {}),
-          ...(input.limit ? { limit: input.limit } : {}),
-        }),
+        await executeReadCapability(
+          scope,
+          executionContext,
+          'timeline.search_documents_structured',
+          {
+            ...(input.name ? { name: input.name } : {}),
+            ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
+            ...(input.fileKind ? { fileKind: input.fileKind } : {}),
+            ...(input.includeDeleted !== undefined ? { includeDeleted: input.includeDeleted } : {}),
+            ...(input.limit ? { limit: input.limit } : {}),
+          },
+        ),
       );
     case 'calendar':
       return withTime(
-        await executeReadCapability(scope, 'timeline.list_calendar_events', {
+        await executeReadCapability(scope, executionContext, 'timeline.list_calendar_events', {
           ...(input.query ? { query: input.query } : {}),
+          ...(input.ranking ? { ranking: input.ranking } : {}),
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
           ...(input.limit ? { limit: input.limit } : {}),
@@ -1711,15 +1851,20 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
     case 'integrations':
       if (input.query) {
         return withTime(
-          await executeReadCapability(scope, 'timeline.search_integration_events', {
-            query: input.query,
-            ...(input.provider ? { provider: input.provider } : {}),
-            ...(input.limit ? { limit: Math.min(input.limit, 20) } : {}),
-          }),
+          await executeReadCapability(
+            scope,
+            executionContext,
+            'timeline.search_integration_events',
+            {
+              query: input.query,
+              ...(input.provider ? { provider: input.provider } : {}),
+              ...(input.limit ? { limit: Math.min(input.limit, 20) } : {}),
+            },
+          ),
         );
       }
       return withTime(
-        await executeReadCapability(scope, 'timeline.list_integrations', {
+        await executeReadCapability(scope, executionContext, 'timeline.list_integrations', {
           ...(input.provider ? { provider: input.provider } : {}),
         }),
       );
@@ -1727,22 +1872,27 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
     default:
       if (input.query) {
         return withTime(
-          await executeReadCapability(scope, 'timeline.retrieve_workspace_context', {
-            query: input.query,
-            ...(input.recipe ? { recipe: input.recipe } : {}),
-            ...(input.objectId ? { objectId: input.objectId } : {}),
-            ...(input.limit ? { limit: Math.min(input.limit, 10) } : {}),
-            ...(input.includeDocuments !== undefined
-              ? { includeDocuments: input.includeDocuments }
-              : {}),
-            ...(input.includeCalendar !== undefined
-              ? { includeCalendar: input.includeCalendar }
-              : {}),
-          }),
+          await executeReadCapability(
+            scope,
+            executionContext,
+            'timeline.retrieve_workspace_context',
+            {
+              query: input.query,
+              ...(input.recipe ? { recipe: input.recipe } : {}),
+              ...(input.objectId ? { objectId: input.objectId } : {}),
+              ...(input.limit ? { limit: Math.min(input.limit, 10) } : {}),
+              ...(input.includeDocuments !== undefined
+                ? { includeDocuments: input.includeDocuments }
+                : {}),
+              ...(input.includeCalendar !== undefined
+                ? { includeCalendar: input.includeCalendar }
+                : {}),
+            },
+          ),
         );
       }
       return withTime(
-        await executeReadCapability(scope, 'timeline.list_moments', {
+        await executeReadCapability(scope, executionContext, 'timeline.list_moments', {
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
           ...(input.source ? { source: input.source } : {}),
@@ -1788,17 +1938,21 @@ function parseGetRef(ref: string): { kind: (typeof GET_KINDS)[number]; id: strin
   return { kind: 'auto', id: ref };
 }
 
-async function getRecord(scope: TeamScope, args: CallToolArgs): Promise<unknown> {
+async function getRecord(
+  scope: TeamScope,
+  executionContext: RetrievalExecutionContext,
+  args: CallToolArgs,
+): Promise<unknown> {
   const input = getRecordInput.parse(args);
   if (input.provider && input.externalObjectId) {
-    return executeReadCapability(scope, 'timeline.get_integration_resource', {
+    return executeReadCapability(scope, executionContext, 'timeline.get_integration_resource', {
       provider: input.provider,
       externalObjectId: input.externalObjectId,
       ...(input.historyLimit ? { historyLimit: input.historyLimit } : {}),
     });
   }
   if (input.kind === 'moment' || input.momentId || input.rawEventIds) {
-    return executeReadCapability(scope, 'timeline.get_moment', {
+    return executeReadCapability(scope, executionContext, 'timeline.get_moment', {
       ...(input.momentId ? { momentId: input.momentId } : {}),
       ...(input.ref?.startsWith('moment:') ? { momentId: input.ref } : {}),
       ...(input.rawEventIds ? { rawEventIds: input.rawEventIds } : {}),
@@ -1813,19 +1967,31 @@ async function getRecord(scope: TeamScope, args: CallToolArgs): Promise<unknown>
   const tryKind = async (candidate: (typeof GET_KINDS)[number], value: string) => {
     switch (candidate) {
       case 'event':
-        return executeReadCapability(scope, 'timeline.get_event', { id: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_event', { id: value });
       case 'moment':
-        return executeReadCapability(scope, 'timeline.get_moment', { momentId: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_moment', {
+          momentId: value,
+        });
       case 'entity':
-        return executeReadCapability(scope, 'timeline.get_entity', { idOrName: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_entity', {
+          idOrName: value,
+        });
       case 'object':
-        return executeReadCapability(scope, 'timeline.get_object', { idOrName: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_object', {
+          idOrName: value,
+        });
       case 'document':
-        return executeReadCapability(scope, 'timeline.get_document', { id: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_document', {
+          id: value,
+        });
       case 'document_chunk':
-        return executeReadCapability(scope, 'timeline.get_document_chunk', { id: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_document_chunk', {
+          id: value,
+        });
       case 'calendar_event':
-        return executeReadCapability(scope, 'timeline.get_calendar_event', { id: value });
+        return executeReadCapability(scope, executionContext, 'timeline.get_calendar_event', {
+          id: value,
+        });
       default:
         return null;
     }
@@ -1859,9 +2025,13 @@ async function getRecord(scope: TeamScope, args: CallToolArgs): Promise<unknown>
   return { found: false };
 }
 
-async function subjectTimeline(scope: TeamScope, args: CallToolArgs): Promise<unknown> {
+async function subjectTimeline(
+  scope: TeamScope,
+  executionContext: RetrievalExecutionContext,
+  args: CallToolArgs,
+): Promise<unknown> {
   const input = subjectTimelineInput.parse(args);
-  const { time, from, to } = await resolveSearchTime(scope, {
+  const { time, from, to } = await resolveSearchTime(scope, executionContext, {
     ...(input.timePhrase ? { timePhrase: input.timePhrase } : {}),
     ...(input.referenceDate ? { referenceDate: input.referenceDate } : {}),
     ...(input.from ? { from: input.from } : {}),
@@ -1869,21 +2039,25 @@ async function subjectTimeline(scope: TeamScope, args: CallToolArgs): Promise<un
   });
   const limit = input.limit ?? 10;
   const [entity, object] = await Promise.all([
-    executeReadCapability(scope, 'timeline.get_entity', { idOrName: input.subject }),
-    executeReadCapability(scope, 'timeline.get_object', { idOrName: input.subject }),
+    executeReadCapability(scope, executionContext, 'timeline.get_entity', {
+      idOrName: input.subject,
+    }),
+    executeReadCapability(scope, executionContext, 'timeline.get_object', {
+      idOrName: input.subject,
+    }),
   ]);
   const objectId =
     object && typeof object === 'object' && !Array.isArray(object) && 'id' in object
       ? (object as { id?: unknown }).id
       : undefined;
   const [context, moments] = await Promise.all([
-    executeReadCapability(scope, 'timeline.retrieve_workspace_context', {
+    executeReadCapability(scope, executionContext, 'timeline.retrieve_workspace_context', {
       query: input.subject,
       recipe: 'object_profile',
       limit: Math.min(limit, 10),
       ...(typeof objectId === 'string' ? { objectId } : {}),
     }),
-    executeReadCapability(scope, 'timeline.search_moments', {
+    executeReadCapability(scope, executionContext, 'timeline.search_moments', {
       query: input.subject,
       limit,
       ...(from ? { from } : {}),
@@ -2154,6 +2328,7 @@ async function callTimelineAgent(
       },
       {
         includeMcpTools: true,
+        ...(deps.currentDate ? { currentDate: deps.currentDate } : {}),
         abortSignal: controller.signal,
         onTurnObservability: (value) => {
           observability = value;
@@ -2391,7 +2566,22 @@ export function createTimelineMcpServer(input: {
   if (principal.scopes.includes('read')) {
     for (const definition of TOOLS) {
       registerTimelineTool(server, definition, async (args) => {
-        const output = structuredOutput(await callTool(input.db, principal, definition.name, args));
+        if (definition.name === 'timeline.crawl' && !principal.scopes.includes('websites:scan')) {
+          const challenge = [
+            'Bearer error="insufficient_scope"',
+            'error_description="Grant the websites:scan scope to use timeline.crawl"',
+            'scope="read websites:scan"',
+            `resource_metadata="${timelineMcpResourceMetadataUrl(expectedResource)}"`,
+          ].join(', ');
+          return toolResult(
+            { ok: false, error: 'forbidden' },
+            true,
+            principal.authType === 'oauth' ? { 'mcp/www_authenticate': [challenge] } : undefined,
+          );
+        }
+        const output = structuredOutput(
+          await callTool(input.db, principal, definition.name, args, input.deps),
+        );
         return toolResult(output);
       });
     }
@@ -2490,7 +2680,9 @@ export function createTimelineMcpServer(input: {
           _meta: { securitySchemes: READ_SECURITY_SCHEMES },
         },
         async (args) => {
-          const output = structuredOutput(await callTool(input.db, principal, name, args));
+          const output = structuredOutput(
+            await callTool(input.db, principal, name, args, input.deps),
+          );
           return toolResult(output);
         },
       );

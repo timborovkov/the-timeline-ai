@@ -24,6 +24,8 @@ interface AdvancedState {
   nameError: string | null;
   allowCapture: boolean;
   allowAgent: boolean;
+  allowWebsiteScan: boolean;
+  allowWebsiteManage: boolean;
   busy: boolean;
   mintedKey: { name: string; plaintext: string } | null;
 }
@@ -50,16 +52,30 @@ export function ConnectAgentAdvanced({
   const focusNameOnError = useRef(false);
   const busyKeyIds = useRef<Set<string> | null>(null);
   const [keyMutations, setKeyMutations] = useState<Record<string, { busy: boolean }>>({});
-  const [{ showCreate, name, nameError, allowCapture, allowAgent, busy, mintedKey }, update] =
-    useReducer(patchState, {
-      showCreate: false,
-      name: '',
-      nameError: null,
-      allowCapture: true,
-      allowAgent: false,
-      busy: false,
-      mintedKey: null,
-    });
+  const [
+    {
+      showCreate,
+      name,
+      nameError,
+      allowCapture,
+      allowAgent,
+      allowWebsiteScan,
+      allowWebsiteManage,
+      busy,
+      mintedKey,
+    },
+    update,
+  ] = useReducer(patchState, {
+    showCreate: false,
+    name: '',
+    nameError: null,
+    allowCapture: true,
+    allowAgent: false,
+    allowWebsiteScan: false,
+    allowWebsiteManage: false,
+    busy: false,
+    mintedKey: null,
+  });
 
   function activeBusyKeyIds(): Set<string> {
     busyKeyIds.current ??= new Set();
@@ -99,7 +115,13 @@ export function ConnectAgentAdvanced({
             const res = await fetch('/api/team/mcp-keys', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ name, allowCapture, allowAgent }),
+              body: JSON.stringify({
+                name,
+                allowCapture,
+                allowAgent,
+                allowWebsiteScan,
+                allowWebsiteManage,
+              }),
             });
             if (!res.ok) {
               return {
@@ -112,6 +134,8 @@ export function ConnectAgentAdvanced({
               name: '',
               allowCapture: true,
               allowAgent: false,
+              allowWebsiteScan: false,
+              allowWebsiteManage: false,
               showCreate: false,
             });
             return { ok: true };
@@ -244,6 +268,17 @@ export function ConnectAgentAdvanced({
               nameError={nameError}
               allowCapture={allowCapture}
               allowAgent={allowAgent}
+              allowWebsiteScan={allowWebsiteScan}
+              allowWebsiteManage={allowWebsiteManage}
+              onAllowWebsiteScanChange={(value) => {
+                update({
+                  allowWebsiteScan: value,
+                  ...(!value ? { allowWebsiteManage: false } : {}),
+                });
+              }}
+              onAllowWebsiteManageChange={(value) => {
+                update({ allowWebsiteManage: value, ...(value ? { allowWebsiteScan: true } : {}) });
+              }}
               busy={busy}
               allowAgentDescription="This key can start paid agent turns. Remember from a static key is still authored as the team actor."
               onNameChange={(value) => {

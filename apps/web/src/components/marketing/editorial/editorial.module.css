@@ -5,19 +5,19 @@
 .displayTitle {
   max-width: 18ch;
   text-wrap: balance;
-  font-size: clamp(3rem, 5vw, 4.75rem);
-  font-weight: 600;
-  line-height: 0.92;
-  letter-spacing: -0.055em;
+  font-size: clamp(2.25rem, 4vw, 4rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .guideTitle {
   max-width: 20ch;
   text-wrap: balance;
-  font-size: clamp(2.5rem, 4.5vw, 4.25rem);
-  font-weight: 600;
-  line-height: 0.95;
-  letter-spacing: -0.055em;
+  font-size: clamp(2rem, 3.4vw, 3.25rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .heroGrid {
@@ -31,45 +31,14 @@
   position: relative;
 }
 
-.indexRule::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -1px;
-  width: 1px;
-  content: '';
-  background: linear-gradient(to bottom, var(--signal), var(--border) 42%, transparent);
-}
-
 .provenanceStage {
   position: relative;
   overflow: hidden;
   min-height: 30rem;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background:
-    linear-gradient(color-mix(in oklch, var(--border) 52%, transparent) 1px, transparent 1px),
-    linear-gradient(
-      90deg,
-      color-mix(in oklch, var(--border) 52%, transparent) 1px,
-      transparent 1px
-    ),
-    var(--surface);
-  background-size: 3rem 3rem;
+  background: var(--surface);
   contain: paint;
-}
-
-.provenanceStage::before {
-  position: absolute;
-  inset: -28% -45% auto auto;
-  width: 88%;
-  aspect-ratio: 1;
-  border: 1px solid color-mix(in oklch, var(--signal) 35%, transparent);
-  border-radius: 50%;
-  content: '';
-  box-shadow:
-    0 0 0 4rem color-mix(in oklch, var(--signal) 4%, transparent),
-    0 0 0 9rem color-mix(in oklch, var(--signal) 2%, transparent);
 }
 
 .sourceStack {
@@ -131,14 +100,6 @@
   background: color-mix(in oklch, var(--bg) 94%, transparent);
 }
 
-.answerCard::before {
-  position: absolute;
-  inset: -1px auto -1px -1px;
-  width: 2px;
-  content: '';
-  background: var(--signal);
-}
-
 .citation {
   display: inline-grid;
   min-width: 1.55rem;
@@ -149,7 +110,7 @@
   background: var(--signal-soft);
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: 0.75rem;
 }
 
 .workflowStep {
@@ -189,19 +150,6 @@
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--fg);
-}
-
-.promptBlock::before {
-  position: absolute;
-  inset: -90% -14% auto auto;
-  width: 35rem;
-  aspect-ratio: 1;
-  border: 1px solid color-mix(in oklch, var(--signal) 55%, transparent);
-  border-radius: 50%;
-  content: '';
-  box-shadow:
-    0 0 0 5rem color-mix(in oklch, var(--signal) 7%, transparent),
-    0 0 0 11rem color-mix(in oklch, var(--signal) 4%, transparent);
 }
 
 .readingMeasure {
@@ -286,7 +234,6 @@
 
   .provenanceStage {
     min-height: 0;
-    background-size: 2rem 2rem;
   }
 
   .sourceCard::after {
@@ -310,8 +257,7 @@
     border-color: CanvasText;
   }
 
-  .chronologyRail::after,
-  .answerCard::before {
+  .chronologyRail::after {
     background: Highlight;
   }
 }

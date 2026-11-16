@@ -118,7 +118,10 @@ export function WorkQueueRow({
   return (
     <CollectionRow>
       <CollectionRow.Title>
-        <Link href={item.href} className="block truncate hover:underline">
+        <Link
+          href={item.href}
+          className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
+        >
           {displayText(item.title)}
         </Link>
         <DiscussionCountBadge count={item.commentCount} className="ml-2 shrink-0" />
@@ -201,7 +204,10 @@ function workQueueRowValues(
       ? uniqueStatuses([...TASK_STATUS_COLUMNS, displayStatus])
       : statusOptionsForType(item.objectType ?? '', status);
   const contextReasons = item.reasons.filter(
-    (reason) => reason !== 'overdue' && reason !== 'due_soon',
+    (reason) =>
+      reason !== 'overdue' &&
+      reason !== 'due_soon' &&
+      !(reason === 'blocked' && displayStatus === 'blocked'),
   );
   const context = item.subtitle ? displayText(item.subtitle) : undefined;
   return {

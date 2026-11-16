@@ -52,7 +52,7 @@ describe('timeline moment AI presentation', () => {
           source: 'telegram',
           contentText: 'Works for me.',
           occurredAt: '2026-06-27T18:01:00.000Z',
-          sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Tim' },
+          sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Taylor' },
         }),
         event({
           id: 'message-c',
@@ -459,7 +459,7 @@ describe('timeline moment AI presentation', () => {
             source: 'telegram',
             contentText: '16:20 works for me.',
             occurredAt: '2026-06-27T18:01:00.000Z',
-            sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Taylor' },
           }),
           event({
             id: 'message-c',

@@ -217,7 +217,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {props.checkoutReturned ? (
         <BillingCheckoutStatus active={checkoutActive} planName={props.planName} />
       ) : null}
@@ -319,7 +319,7 @@ function BillingSpendCapEditor({
   saveSpendCap: () => void;
 }) {
   return (
-    <details id="billing-spend-cap">
+    <details id="billing-spend-cap" className="rounded-lg bg-surface p-5">
       <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">Spend cap</summary>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="block text-sm">
@@ -361,18 +361,32 @@ function BillingUsageDetails({
     <>
       <BillingBenefitsSummary summary={presentation} />
       {presentation.allowances.length > 0 ? (
-        <BillingUsageSummary
-          planId={planId}
-          meters={Object.fromEntries(
-            presentation.allowances.map((row) => [
-              row.meter,
-              { nativeUnits: row.used, customerChargeCents: 0 },
-            ]),
-          )}
-          capacityUsage={[]}
-          allowanceBalances={presentation.allowances}
-          allowancesOnly
-        />
+        <section className="space-y-4" aria-labelledby="billing-allowances-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 id="billing-allowances-heading" className="text-base font-semibold">
+              Monthly allowances
+            </h2>
+            <Link
+              href="/app/usage"
+              className="text-sm text-fg-muted underline-offset-4 hover:underline"
+            >
+              View usage
+            </Link>
+          </div>
+          <BillingUsageSummary
+            layout="cards"
+            planId={planId}
+            meters={Object.fromEntries(
+              presentation.allowances.map((row) => [
+                row.meter,
+                { nativeUnits: row.used, customerChargeCents: 0 },
+              ]),
+            )}
+            capacityUsage={[]}
+            allowanceBalances={presentation.allowances}
+            allowancesOnly
+          />
+        </section>
       ) : null}
     </>
   );
@@ -437,10 +451,10 @@ function BillingPlanControls({
   runCheckout: (plan: 'payg' | 'team' | 'business') => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex flex-wrap items-start justify-between gap-6 rounded-lg bg-surface p-5">
       <div>
         <p className="text-sm text-fg-muted">Current plan</p>
-        <p className="mt-1 text-lg font-medium text-fg">{props.planName}</p>
+        <p className="mt-2 text-2xl font-semibold text-fg">{props.planName}</p>
         <p className="mt-1 font-mono text-sm text-fg" data-billing-price>
           {planPriceLabel(props.planId, props.platformFeeCents)}
         </p>
@@ -450,7 +464,7 @@ function BillingPlanControls({
           </p>
         ) : null}
       </div>
-      <div className="flex flex-col items-end gap-2">
+      <div className="flex min-w-0 max-w-full flex-col items-end gap-3">
         {showPortal ? (
           <button type="button" disabled={pending} onClick={openPortal} className={PRIMARY_CLASS}>
             Manage payment

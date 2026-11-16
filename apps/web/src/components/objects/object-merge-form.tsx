@@ -171,7 +171,7 @@ export function ObjectMergeForm({
         })}
       </div>
 
-      <section className="space-y-3 border-y border-border py-4">
+      <section className="space-y-3 py-4">
         <h2 className="text-xs text-fg">Merge Preview</h2>
         <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-4">
           {[

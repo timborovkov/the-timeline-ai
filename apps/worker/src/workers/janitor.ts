@@ -10,19 +10,27 @@ import {
 import { childLogger, queue } from '@timeline/shared';
 import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
+import { pruneDiagnosticReports } from '@timeline/shared/diagnostics/operator';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
+import { pruneEvaluationTraces } from '@timeline/shared/evaluation-tracing/runtime';
 import {
   flushDeferredAcceptedSourceEnrichment,
   flushDeferredAudioTranscription,
 } from '@timeline/shared/integrations';
+import { RECOVERY_STALE_AFTER_MS } from '@timeline/shared/job-recovery/policy';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
 import { prunePlatformAdminRecords } from '@timeline/shared/platform-admin/retention';
+import {
+  activeWorkspaceCondition,
+  isInactiveWorkspaceError,
+} from '@timeline/shared/platform-admin/runtime';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { sweepOrphanDriveTransientExtracts } from '#src/integrations/drive-extract-runtime.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -35,20 +43,6 @@ const PAGE_SIZE = 500;
 // A cap hit just rolls to the next tick — workers are idempotent.
 const MAX_REQUEUES_PER_KIND = 5_000;
 
-// Stuck-row thresholds. Picked to be generous multiples of the normal
-// happy-path latency so a fast-but-legitimate run never gets a duplicate
-// job. The duplicate would be harmless (worker advisory locks bail under
-// the status re-check) but unnecessary log noise.
-const PENDING_DOC_MIN_AGE_MS = 5 * 60 * 1000;
-// 60min, not 30, because `documentVersions.createdAt` is set at
-// presigned-PUT allocation time — not when extract starts. A slow user
-// upload + a slow vision-OCR pass can legitimately leave the row in
-// 'extracting' 30min+ from createdAt. Worker idempotency would bail any
-// duplicate (advisory lock + under-lock status re-check) so the cost of
-// being wrong is noise, not corruption, but 60min keeps the noise to
-// genuinely-dead workers.
-const EXTRACTING_DOC_MIN_AGE_MS = 60 * 60 * 1000;
-const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
 const PENDING_TASK_CATEGORY_MIN_AGE_MS = 5 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
@@ -62,6 +56,11 @@ interface JanitorDeps {
   enqueueTaskCategoryJob?: (data: queue.TaskCategoryJobData) => Promise<unknown>;
   taskCategoryEnabled?: boolean;
   taskCategoryAttemptLimit?: number;
+  sweepOrphanDriveTransientExtracts?: (input: {
+    db: Db;
+    now?: Date;
+    limit?: number;
+  }) => Promise<number>;
 }
 
 export interface JanitorTickResult {
@@ -73,6 +72,7 @@ export interface JanitorTickResult {
   mcpOAuthAuthorizationCodesDeleted: number;
   mcpOAuthTokensDeleted: number;
   mcpOAuthGrantsDeleted: number;
+  driveTransientExtractsCleared: number;
 }
 
 /**
@@ -113,6 +113,12 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     : 0;
   const timelineMomentPinsDeleted = await sweepDeletedTimelineMomentPins(deps.db);
   const mcpOAuthDeleted = await sweepExpiredMcpOAuthCredentials(deps.db);
+  const sweepDriveExtracts =
+    deps.sweepOrphanDriveTransientExtracts ?? sweepOrphanDriveTransientExtracts;
+  const driveTransientExtractsCleared = await sweepDriveExtracts({
+    db: deps.db,
+    limit: PAGE_SIZE,
+  });
 
   return {
     documentVersionsRequeued,
@@ -123,6 +129,7 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     mcpOAuthAuthorizationCodesDeleted: mcpOAuthDeleted.authorizationCodesDeleted,
     mcpOAuthTokensDeleted: mcpOAuthDeleted.tokensDeleted,
     mcpOAuthGrantsDeleted: mcpOAuthDeleted.grantsDeleted,
+    driveTransientExtractsCleared,
   };
 }
 
@@ -156,7 +163,9 @@ async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
   const teamsWithPins = await db
     .select({ teamId: userPins.teamId })
     .from(userPins)
-    .where(eq(userPins.targetKind, 'timeline_moment'))
+    .where(
+      and(eq(userPins.targetKind, 'timeline_moment'), activeWorkspaceCondition(userPins.teamId)),
+    )
     .groupBy(userPins.teamId)
     .orderBy(asc(userPins.teamId));
   let deleted = 0;
@@ -164,7 +173,11 @@ async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
     const scope = withTeam(db, row.teamId, MCP_TEAM_ACTOR_USER_ID, {
       skipMembershipCheck: true,
     });
-    deleted += await scope.pins.pruneDeletedTimelineMomentPins(PAGE_SIZE);
+    try {
+      deleted += await scope.pins.pruneDeletedTimelineMomentPins(PAGE_SIZE);
+    } catch (error) {
+      if (!isInactiveWorkspaceError(error)) throw error;
+    }
   }
   return deleted;
 }
@@ -176,6 +189,7 @@ async function sweepTaskCategoryProjectInvalidations(
   const rows = await db
     .select()
     .from(taskCategoryProjectInvalidations)
+    .where(activeWorkspaceCondition(taskCategoryProjectInvalidations.teamId))
     .orderBy(
       asc(taskCategoryProjectInvalidations.createdAt),
       asc(taskCategoryProjectInvalidations.id),
@@ -227,6 +241,7 @@ async function sweepTaskCategories(
       .from(pendingTasks)
       .where(
         and(
+          activeWorkspaceCondition(pendingTasks.teamId),
           eq(pendingTasks.type, 'task'),
           eq(pendingTasks.taskCategoryMode, 'automatic'),
           eq(pendingTasks.taskCategoryStatus, 'pending'),
@@ -294,15 +309,16 @@ async function sweepDocumentVersions(
       .from(documentVersions)
       .where(
         and(
+          activeWorkspaceCondition(documentVersions.teamId),
           isNotNull(documentVersions.byteSize),
           or(
             and(
               eq(documentVersions.processingStatus, 'pending'),
-              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${PENDING_DOC_MIN_AGE_MS / 1000})`,
+              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.documentPending / 1000})`,
             ),
             and(
               eq(documentVersions.processingStatus, 'extracting'),
-              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${EXTRACTING_DOC_MIN_AGE_MS / 1000})`,
+              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.documentExtracting / 1000})`,
             ),
           ),
           cursor ? gt(documentVersions.id, cursor) : undefined,
@@ -328,6 +344,7 @@ async function sweepDocumentVersions(
         .set({ processingStatus: 'pending', processingError: null })
         .where(
           and(
+            activeWorkspaceCondition(documentVersions.teamId),
             inArray(documentVersions.id, extractingIds),
             eq(documentVersions.processingStatus, 'extracting'),
           ),
@@ -380,8 +397,9 @@ async function sweepMeetings(
       .from(meetings)
       .where(
         and(
+          activeWorkspaceCondition(meetings.teamId),
           eq(meetings.status, 'processing'),
-          sql`${meetings.updatedAt} < now() - make_interval(secs => ${PROCESSING_MEETING_MIN_AGE_MS / 1000})`,
+          sql`${meetings.updatedAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.meetingProcessing / 1000})`,
           cursor ? gt(meetings.id, cursor) : undefined,
         ),
       )
@@ -428,6 +446,19 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
       } catch (err: unknown) {
         log.error({ err }, 'janitor: platform record retention failed; next tick will retry');
         captureWorkerException(err);
+      }
+      try {
+        const deleted = await pruneDiagnosticReports(deps.db);
+        if (deleted > 0) log.info({ deleted }, 'janitor: expired diagnostic reports removed');
+      } catch (err: unknown) {
+        log.error({ err }, 'janitor: diagnostic report retention failed; next tick will retry');
+        captureWorkerException(err);
+      }
+      try {
+        const cleanup = await pruneEvaluationTraces(deps.db);
+        if (cleanup.failed) log.error(cleanup, 'janitor: evaluation trace cleanup pending');
+      } catch {
+        log.error('janitor: evaluation trace cleanup pending; retrying next tick');
       }
       const result = await processJanitorTick({ db: deps.db });
       try {

@@ -7,6 +7,7 @@ import { useMemo, useReducer, useState, useTransition } from 'react';
 import type * as boards from '@timeline/shared/boards';
 
 import { deleteBoardAction, updateBoardSettingsAction } from '@/app/actions/boards';
+import { BoardQualificationFields } from '@/components/boards/board-qualification-fields';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import {
@@ -23,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EMPTY_BOARD_QUALIFICATION, type BoardQualificationDraft } from '@/lib/board-qualification';
 import { notifyAction } from '@/lib/notify';
 
 export function BoardActionsMenu({
@@ -30,11 +32,13 @@ export function BoardActionsMenu({
   name,
   purpose,
   lanes,
+  qualification = EMPTY_BOARD_QUALIFICATION,
 }: {
   id: string;
   name: string;
   purpose: string;
   lanes: boards.BoardLaneRow[];
+  qualification?: BoardQualificationDraft;
 }) {
   const router = useRouter();
   const dialog = useAppDialog();
@@ -109,6 +113,7 @@ export function BoardActionsMenu({
         initialName={name}
         initialPurpose={purpose}
         initialLanes={activeLanes}
+        initialQualification={qualification}
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
       />
@@ -122,6 +127,7 @@ function BoardSettingsDialog({
   initialName,
   initialPurpose,
   initialLanes,
+  initialQualification,
   open,
   onOpenChange,
 }: {
@@ -129,11 +135,13 @@ function BoardSettingsDialog({
   initialName: string;
   initialPurpose: string;
   initialLanes: boards.BoardLaneRow[];
+  initialQualification: BoardQualificationDraft;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [qualification, setQualification] = useState(initialQualification);
   const [fieldError, setFieldError] = useState<'name' | 'stages' | null>(null);
   const [draft, dispatchDraft] = useReducer(settingsDraftReducer, {
     name: initialName,
@@ -164,6 +172,7 @@ function BoardSettingsDialog({
             name: draft.name.trim(),
             purpose: draft.purpose.trim(),
             lanes: stages,
+            ...qualification,
           });
           return saved.error ? { error: saved.error } : {};
         },
@@ -172,6 +181,7 @@ function BoardSettingsDialog({
             const restored = await updateBoardSettingsAction({
               id,
               name: initialName,
+              ...initialQualification,
               purpose: initialPurpose,
               lanes: initialLanes.map((lane) => ({
                 id: lane.id,
@@ -229,6 +239,11 @@ function BoardSettingsDialog({
               className="w-full resize-none rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-60"
             />
           </label>
+          <BoardQualificationFields
+            value={qualification}
+            onChange={setQualification}
+            disabled={pending}
+          />
           <BoardStageEditor
             stages={draft.stages}
             onChange={(stages) => {

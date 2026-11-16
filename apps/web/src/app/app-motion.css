@@ -1,0 +1,182 @@
+/* Interaction motion is owned by the stateful surface, not each caller. */
+:root {
+  --motion-feedback: 120ms;
+  --motion-enter: 220ms;
+  --motion-exit: 150ms;
+  --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes surface-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes panel-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes veil-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes veil-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+
+[data-motion='popover'][data-state='open'],
+[data-motion='popover'][data-state='delayed-open'],
+[data-motion='popover'][data-state='instant-open'] {
+  animation: surface-in var(--motion-feedback) var(--motion-ease);
+}
+[data-motion='popover'][data-state='closed'] {
+  animation: surface-out var(--motion-feedback) ease-in;
+  pointer-events: none;
+}
+[data-slot='sheet-content'][data-state='open'] {
+  animation: panel-in var(--motion-enter) var(--motion-ease);
+}
+[data-slot='sheet-content'][data-state='closed'] {
+  animation: panel-out var(--motion-exit) ease-in;
+  pointer-events: none;
+}
+[data-slot='dialog-content'][data-state='open'] {
+  animation: dialog-in 180ms var(--motion-ease);
+}
+[data-slot='dialog-content'][data-state='closed'] {
+  animation: dialog-out var(--motion-feedback) ease-in;
+  pointer-events: none;
+}
+:is([data-slot='dialog-overlay'], [data-slot='sheet-overlay'])[data-state='open'] {
+  animation: veil-in var(--motion-enter) ease-out;
+}
+:is([data-slot='dialog-overlay'], [data-slot='sheet-overlay'])[data-state='closed'] {
+  animation: veil-out var(--motion-exit) ease-in;
+}
+
+.collection-disclosure {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--motion-enter) var(--motion-ease),
+    opacity var(--motion-feedback);
+}
+.collection-disclosure[data-state='closed'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-enter) var(--motion-ease),
+    opacity var(--motion-feedback),
+    visibility 0s var(--motion-enter);
+}
+
+@supports selector(details::details-content) {
+  #main details::details-content,
+  [data-slot='sheet-body'] details::details-content {
+    interpolate-size: allow-keywords;
+    block-size: 0;
+    overflow: clip;
+    opacity: 0;
+    transition:
+      block-size var(--motion-enter) var(--motion-ease),
+      opacity var(--motion-feedback),
+      content-visibility var(--motion-enter) allow-discrete;
+  }
+  #main details[open]::details-content,
+  [data-slot='sheet-body'] details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-motion='popover'][data-state],
+  [data-slot='sheet-content'][data-state],
+  [data-slot='dialog-content'][data-state] {
+    animation-name: veil-in;
+    animation-duration: 80ms;
+  }
+  [data-motion='popover'][data-state='closed'],
+  [data-slot='sheet-content'][data-state='closed'],
+  [data-slot='dialog-content'][data-state='closed'] {
+    animation-name: veil-out;
+  }
+  :is([data-slot='dialog-overlay'], [data-slot='sheet-overlay'])[data-state] {
+    animation-duration: 80ms;
+  }
+  .collection-disclosure,
+  .collection-disclosure[data-state='closed'] {
+    transition: opacity 80ms;
+  }
+  #main details::details-content,
+  [data-slot='sheet-body'] details::details-content {
+    transition: opacity 80ms;
+  }
+}
+
+/* A source choice reveals one form; motion confirms that replacement. */
+.onboarding-source-panel:not([hidden]) {
+  animation: veil-in 160ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-source-panel:not([hidden]) {
+    animation: none;
+  }
+}

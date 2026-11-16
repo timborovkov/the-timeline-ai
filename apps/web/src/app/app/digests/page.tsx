@@ -5,7 +5,6 @@ import type { Metadata } from 'next';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -37,7 +36,7 @@ export default async function DigestsPage({
   });
 
   return (
-    <div className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Digests"
@@ -45,7 +44,6 @@ export default async function DigestsPage({
         metadata={[{ label: 'days', value: rows.length, mono: true }]}
         srLabel={`Digests · ${String(rows.length)} days`}
       />
-      <WorkSubnav current="/app/digests" />
       <DigestHistoryTable
         selectedId={selectedId}
         digests={rows.map((row) => {

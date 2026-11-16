@@ -5,7 +5,7 @@ import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/mar
 import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-07' as const;
+const REVIEW_DATE = '2026-11-13' as const;
 
 export const AGENTS_HUB_DOCUMENT = {
   canonicalPath: AGENTS_HUB.route,

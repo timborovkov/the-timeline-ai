@@ -267,6 +267,98 @@ describe('worker Sentry monitoring', () => {
     expect(setScopeTag).toHaveBeenCalledWith('teamId', 'team-1');
   });
 
+  it('keeps retrying embedding timeouts as breadcrumbs and captures exhausted timeouts', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+    const err = Object.assign(new Error('llm.embedMany failed'), {
+      timelineAi: true,
+      operation: 'llm.embedMany',
+      causeName: 'AI_APICallError',
+      causeMessage: 'Worker upstream fetch timed out after 60000ms',
+    });
+    const job = {
+      id: 'job-timeout',
+      name: 'embed',
+      queueName: 'embed',
+      attemptsMade: 1,
+      opts: { attempts: 6 },
+    };
+    monitoring.captureWorkerJobFailure(err, job);
+    expect(captureException).not.toHaveBeenCalled();
+    expect(addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'worker.retry',
+        level: 'warning',
+        message: 'Embedding provider timed out; queue retry pending',
+        data: {
+          queueName: 'embed',
+          jobName: 'embed',
+          jobId: 'job-timeout',
+          attemptsMade: 1,
+          maxAttempts: 6,
+        },
+      }),
+    );
+    monitoring.captureWorkerJobFailure(err, { ...job, attemptsMade: 6 });
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(setScopeTag).toHaveBeenCalledWith('terminal', 'true');
+  });
+
+  it('captures embedding timeouts when retries are unavailable or failure is unrecoverable', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+    const metadata = {
+      timelineAi: true,
+      operation: 'llm.embedMany',
+      causeName: 'AI_APICallError',
+      causeMessage: 'Worker upstream fetch timed out after 60000ms',
+    };
+    const err = Object.assign(new Error('llm.embedMany failed'), metadata);
+    monitoring.captureWorkerJobFailure(err, undefined);
+    monitoring.captureWorkerJobFailure(err, {
+      id: 'job-single',
+      name: 'embed',
+      queueName: 'embed',
+      attemptsMade: 1,
+      opts: {},
+    });
+    monitoring.captureWorkerJobFailure(
+      Object.assign(new MockUnrecoverableError('failed'), metadata),
+      {
+        id: 'job-stop',
+        name: 'embed',
+        queueName: 'embed',
+        attemptsMade: 1,
+        opts: { attempts: 6 },
+      },
+    );
+    expect(captureException).toHaveBeenCalledTimes(3);
+    expect(addBreadcrumb).not.toHaveBeenCalled();
+  });
+
+  it('still reports unrelated provider failures during retries', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+    for (const details of [
+      { operation: 'llm.embedMany', causeName: 'AI_APICallError', causeMessage: 'Invalid API key' },
+      { operation: 'llm.chat', causeName: 'AI_APICallError', causeMessage: 'Request timed out' },
+      { operation: 'llm.embedMany', causeName: 'TypeError', causeMessage: 'Request timed out' },
+    ]) {
+      monitoring.captureWorkerJobFailure(
+        Object.assign(new Error('failed'), { timelineAi: true, ...details }),
+        {
+          id: 'job-other',
+          name: 'embed',
+          queueName: 'embed',
+          attemptsMade: 1,
+          opts: { attempts: 6 },
+        },
+      );
+    }
+    expect(captureException).toHaveBeenCalledTimes(3);
+    expect(addBreadcrumb).not.toHaveBeenCalled();
+  });
+
   it('records expected billing admission failures as breadcrumbs instead of errors', async () => {
     process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     const monitoring = await import('#src/monitoring.js');

@@ -22,15 +22,13 @@ export type ExternalHttpErrorCode =
   | 'timeout';
 
 export class ExternalHttpError extends Error {
-  constructor(
-    readonly code: ExternalHttpErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
+  readonly code: ExternalHttpErrorCode;
+  constructor(code: ExternalHttpErrorCode, message: string, options?: ErrorOptions) {
     const causeText =
       options?.cause === undefined ? '' : ` [cause: ${formatErrorCause(options.cause)}]`;
     super(`${message} code=${code}${causeText}`, options);
     this.name = 'ExternalHttpError';
+    this.code = code;
   }
 }
 

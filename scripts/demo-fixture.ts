@@ -365,7 +365,20 @@ export interface DemoAssociationSnapshot {
   sourceRefs: unknown;
 }
 
-const DEMO_CURRENT_LEGAL_DATE = TERMS_VERSION >= PRIVACY_VERSION ? TERMS_VERSION : PRIVACY_VERSION;
+/** Calendar day of a legal version (strips optional same-day `.N` revision). */
+function legalVersionCalendarDate(version: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:\.\d+)?$/.exec(version);
+  if (!match?.[1]) {
+    throw new Error(`Unsupported legal version for demo seed acceptance timestamp: ${version}`);
+  }
+  return match[1];
+}
+
+const DEMO_CURRENT_LEGAL_DATE = (() => {
+  const termsDate = legalVersionCalendarDate(TERMS_VERSION);
+  const privacyDate = legalVersionCalendarDate(PRIVACY_VERSION);
+  return termsDate >= privacyDate ? termsDate : privacyDate;
+})();
 export const DEMO_LEGAL_ACCEPTED_AT = `${DEMO_CURRENT_LEGAL_DATE}T00:00:00.000Z`;
 
 export interface DemoLoginSnapshot {
@@ -475,6 +488,7 @@ export interface EmptyDemoWorkspaceSnapshot {
   completedOnboardingSteps: string[];
   billingPlanId: string | null;
   billingState: string | null;
+  firstRunPhase: string | null;
 }
 
 export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
@@ -942,6 +956,7 @@ export function assertEmptyDemoWorkspace(snapshot: EmptyDemoWorkspaceSnapshot): 
   expectValue('empty workspace completed onboarding', snapshot.completedOnboardingSteps, []);
   expectValue('empty workspace billing plan', snapshot.billingPlanId, 'free');
   expectValue('empty workspace billing state', snapshot.billingState, 'free');
+  expectValue('empty workspace first-run phase', snapshot.firstRunPhase, 'welcome');
 
   if (errors.length > 0) {
     throw new Error(`Empty onboarding workspace verification failed:\n- ${errors.join('\n- ')}`);

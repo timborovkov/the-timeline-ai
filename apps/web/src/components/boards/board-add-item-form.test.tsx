@@ -427,4 +427,31 @@ describe('BoardAddItemForm', () => {
       expect(screen.getByRole('button', { name: /Ada Buyer/ })).toBeTruthy();
     });
   });
+  it('uses the current allowed type for quick creation after settings change', async () => {
+    const user = userEvent.setup();
+    const props = {
+      boardId: 'board-1',
+      defaultLaneId: null,
+      candidates: [],
+      strictObjectTypes: true,
+    };
+    const { rerender } = render(<BoardAddItemForm {...props} recommendedTypes={['company']} />);
+    await user.click(screen.getByRole('button', { name: /^Add item$/ }));
+    await user.click(screen.getByRole('button', { name: /^new$/ }));
+    await user.type(screen.getByLabelText('Object name'), 'Alex');
+    rerender(<BoardAddItemForm {...props} recommendedTypes={['person']} />);
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Object type' }).value).toBe(
+      'person',
+    );
+    fakes.quickCreateBoardItemAction.mockResolvedValue({ error: 'test response' });
+    await user.click(screen.getByRole('button', { name: 'Add to board' }));
+    await waitFor(() => {
+      expect(fakes.quickCreateBoardItemAction).toHaveBeenCalledWith({
+        boardId: 'board-1',
+        type: 'person',
+        canonicalName: 'Alex',
+        laneId: null,
+      });
+    });
+  });
 });

@@ -101,7 +101,8 @@ describe('BoardsIndexPage', () => {
     expect(html).toContain('focus-visible:ring-2 focus-visible:ring-ring');
     expect(html).toContain('Launch plan');
     expect(html).toContain('href="/app/boards/board-1">Launch plan</a>');
-    expect(html).toContain('<span class="capitalize">task board</span>');
+    expect(html).toContain('text-fg-dim">task board</span>');
+    expect(html).toContain('Updated');
     expect(html).toContain('3 items');
     expect(html).toContain('dateTime="2026-08-03T12:00:00.000Z"');
     expect(html.match(/>Create board</g)).toHaveLength(1);

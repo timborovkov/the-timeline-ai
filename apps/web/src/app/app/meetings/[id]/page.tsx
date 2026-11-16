@@ -132,12 +132,9 @@ export default async function MeetingDetailPage({ params }: Props) {
         ]}
         trailing={headerActions}
       />
-      <TechnicalDetails
-        items={[{ label: 'Meeting ID', value: meeting.id, copyValue: meeting.id }]}
-      />
 
       {summary ? (
-        <section className="space-y-2 border-y border-border py-4">
+        <section className="space-y-2 py-4">
           <SectionHeading>Summary</SectionHeading>
           <p className="whitespace-pre-wrap text-sm">{summary}</p>
         </section>
@@ -152,7 +149,7 @@ export default async function MeetingDetailPage({ params }: Props) {
             title={
               meeting.status === 'pending' || meeting.status === 'joining'
                 ? 'Waiting for the notetaker to join'
-                : 'No transcript chunks captured'
+                : 'No transcript captured'
             }
             body={
               meeting.status === 'pending' || meeting.status === 'joining'
@@ -161,7 +158,7 @@ export default async function MeetingDetailPage({ params }: Props) {
             }
           />
         ) : (
-          <ol className="space-y-2 border-y border-border py-3 text-sm">
+          <ol className="space-y-2 py-3 text-sm">
             {chunks.map((c) => (
               <li key={c.id} className="flex gap-3">
                 <span className="w-12 shrink-0 font-mono text-xs text-fg-muted">
@@ -176,6 +173,9 @@ export default async function MeetingDetailPage({ params }: Props) {
           </ol>
         )}
       </section>
+      <TechnicalDetails
+        items={[{ label: 'Meeting ID', value: meeting.id, copyValue: meeting.id }]}
+      />
     </div>
   );
 }

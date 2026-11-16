@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { PGlite } from '@electric-sql/pglite';
 import {
   artifactClusters,
@@ -10,11 +12,14 @@ import {
   type Db,
 } from '@timeline/db';
 import { type queue } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
+import { EVALUATION_CONSENT_VERSION } from '@timeline/shared/evaluation-tracing/contract';
 import {
   currentExtractionModelVersions,
   makeExtractionModelVersion,
 } from '@timeline/shared/extraction-model-version';
 import { TIMELINE_MODELS } from '@timeline/shared/llm';
+import { withTeam } from '@timeline/shared/team-scope';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -106,6 +111,66 @@ afterEach(async () => {
 });
 
 describe('processExtractJobForTests', () => {
+  it('exports the actual extraction prompt and context only after workspace opt-in', async () => {
+    // A local HTTP boundary exercises the real SDK without sending fixture data externally.
+    const requests: Record<string, unknown>[] = [];
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      async fetch(request) {
+        requests.push((await request.json()) as Record<string, unknown>);
+        return Response.json({});
+      },
+    });
+    const patch = {
+      WORKSPACE_EVALUATION_TRACING_READY: 'true',
+      LANGSMITH_API_KEY: 'unused-synthetic',
+      LANGSMITH_WORKSPACE_ID: 'synthetic-workspace',
+      LANGSMITH_ENDPOINT: `http://127.0.0.1:${server.port}`,
+    };
+    const before = Object.fromEntries(Object.keys(patch).map((key) => [key, process.env[key]]));
+    try {
+      Object.assign(process.env, patch);
+      resetEnvForTests();
+      await withTeam(db, TEAM_ID, OWNER_ID).evaluationTracing.configure({
+        enabled: true,
+        sources: ['telegram'],
+        consent: true,
+        consentVersion: EVALUATION_CONSENT_VERSION,
+      });
+      let anchor = '';
+      for (let n = 1; n < 1000; n++) {
+        const id = `eeeeeeee-eeee-4eee-8eee-${String(n).padStart(12, '0')}`;
+        if (createHash('sha256').update(id).digest().readUInt32BE(0) % 10 === 0) {
+          anchor = id;
+          break;
+        }
+      }
+      await seedEvent(db, {
+        id: OWNER_ID,
+        text: 'Earlier synthetic context',
+        source: 'telegram',
+        occurredAt: new Date('2026-06-01T09:00:00Z'),
+      });
+      await seedEvent(db, { id: anchor, text: 'New synthetic message', source: 'telegram' });
+      const model = modelWithFacts([]);
+      const inference = io({ chatStructured: model });
+      await processExtractJobForTests({ db }, { teamId: TEAM_ID, rawEventId: anchor }, inference);
+      expect(requests.length).toBe(1);
+      const modelPrompt = model.mock.calls[0]?.[0] as { prompt: string } | undefined;
+      const inputs = requests[0]?.inputs as { prompt?: string } | undefined;
+      expect(inputs?.prompt).toBe(modelPrompt?.prompt);
+      expect(inputs?.prompt).toContain('Earlier synthetic context');
+      expect(inputs?.prompt).toContain('New synthetic message');
+    } finally {
+      await server.stop(true);
+      for (const key of Object.keys(patch)) {
+        if (before[key] === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = before[key];
+      }
+      resetEnvForTests();
+    }
+  });
   it('builds failure tags defensively for malformed job payloads', () => {
     expect(
       extractWorkerInternals.extractFailureTags({

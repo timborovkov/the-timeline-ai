@@ -4,6 +4,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeDocumentListEntry } from '@/lib/document-list';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,30 +31,7 @@ export async function GET(req: Request): Promise<Response> {
       limit: 30,
     });
     return {
-      items: result.items.map((document) => ({
-        id: document.id,
-        fileKind: document.fileKind,
-        name: document.name,
-        metadata: document.metadata,
-        visibility: document.visibility,
-        updatedAt: document.updatedAt.toISOString(),
-        ownerUserId: document.ownerUserId,
-        currentVersion: document.currentVersion
-          ? {
-              ...document.currentVersion,
-              createdAt: document.currentVersion.createdAt.toISOString(),
-            }
-          : null,
-        provenance: {
-          source: document.provenance.source,
-          sourceEventId: document.provenance.sourceEventId,
-          parentEventId: document.provenance.parentEventId,
-          occurredAt: document.provenance.occurredAt?.toISOString() ?? null,
-          summary: document.provenance.summary,
-        },
-        description: document.description,
-        presentation: document.presentation,
-      })),
+      items: result.items.map(serializeDocumentListEntry),
       nextCursor: result.nextCursor,
     };
   });

@@ -23,7 +23,7 @@ import { useRouter } from 'next/navigation';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
-import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
@@ -52,6 +52,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
 import {
   buildTimelineMoments,
@@ -107,9 +108,9 @@ const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
   approval: 'Approval',
 };
 
-const INSPECTOR_RAW_EVENT_LIMIT = 8;
-const SOURCE_EVIDENCE_BODY_CHARACTER_LIMIT = 420;
-const SOURCE_EVIDENCE_BODY_LINE_LIMIT = 6;
+const INSPECTOR_RAW_EVENT_LIMIT = 3;
+const SOURCE_EVIDENCE_BODY_CHARACTER_LIMIT = 240;
+const SOURCE_EVIDENCE_BODY_LINE_LIMIT = 3;
 
 const MOMENT_KIND_ICON: Record<TimelineMoment['kind'], LucideIcon> = {
   conversation: MessageSquareText,
@@ -362,12 +363,13 @@ function shouldCapSourceEvidenceBody(body: string): boolean {
 }
 
 function inspectorTitle(moment: TimelineMoment): string {
-  return displayMomentTitle(moment);
+  const event = moment.rawEvents.length === 1 ? moment.rawEvents[0] : undefined;
+  return (event ? authoredCaptureFromEvent(event)?.title : null) ?? displayMomentTitle(moment);
 }
 
 function rawEventBody(event: TimelineEvent, timezone: string): string {
   const meta = metaObject(event.sourceMetadata);
-  const content = event.contentText?.trim();
+  const content = authoredCaptureFromEvent(event)?.text ?? event.contentText?.trim();
   if (content) return displayText(formatTimelineAttachmentText(content), { timezone });
   const caption = stringMeta(meta, 'tg_caption');
   if (caption) return displayText(caption, { timezone });
@@ -564,9 +566,10 @@ function rawEventDocumentLink(event: TimelineEvent): {
 function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] {
   const groups = new Map<string, TimelineMoment[]>();
   for (const moment of moments) {
-    const existing = groups.get(moment.dateLabel);
+    // Group and key by stable YYYY-MM-DD dateKey, not the locale-formatted label.
+    const existing = groups.get(moment.dateKey);
     if (existing) existing.push(moment);
-    else groups.set(moment.dateLabel, [moment]);
+    else groups.set(moment.dateKey, [moment]);
   }
   return [...groups.entries()];
 }
@@ -598,19 +601,24 @@ function InspectorBody({
   const href = externalSourceHref(moment);
   const meetingHref = meetingDetailHrefForMoment(moment);
   const preview = supportingText(moment, '');
+  const previewText = normalizedText(preview.replace(/(?:\.\.\.|…)$/, ''));
+  const repeatsSource =
+    previewText.length > 0 &&
+    moment.rawEvents.some((event) => normalizedText(event.contentText).includes(previewText));
   // Compact list rows must not remove an owner's evidence-management controls
   // from the inspector, including when All events renders every row as a pulse.
   const compactEvidence =
     moment.visualWeight === 'pulse' &&
     !moment.rawEvents.some(
       (event) =>
+        authoredCaptureFromEvent(event) !== null ||
         canEditVisibility(event, currentUserId) ||
         canRemoveConversational(event, currentUserId, isAdmin),
     );
 
   return (
     <div className="space-y-5">
-      {preview && preview !== displayMomentTitle(moment) ? (
+      {preview && !repeatsSource && preview !== displayMomentTitle(moment) ? (
         <p className="break-words text-sm leading-6 text-fg-muted">{preview}</p>
       ) : null}
       {facts.length > 0 ? (
@@ -653,7 +661,7 @@ function InspectorBody({
             {impactItems.map((item) => (
               <li
                 key={JSON.stringify([item.kind, item.sourceEventId, item.href, item.label])}
-                className="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
+                className="rounded-md bg-surface-2 px-3 py-2.5"
               >
                 {item.href ? (
                   <Link
@@ -821,61 +829,69 @@ function ArtifactEvidenceBundle({
 }) {
   const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
   return (
-    <div className="rounded-sm border border-border bg-surface p-3">
+    <div className="space-y-3 py-2">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="break-words text-sm font-medium leading-5 text-fg">
             {cluster.canonicalName}
           </p>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+          <p className="mt-1 text-xs text-fg-dim">
             {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} ·{' '}
             {evidenceCountLabel(cluster.relatedEvidence.length)}
           </p>
         </div>
         {statusSources > 0 ? (
-          <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
+          <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 text-xs text-signal">
             {statusSources} status source{statusSources === 1 ? '' : 's'}
           </span>
         ) : null}
       </div>
-      <ol className="mt-3 space-y-2">
-        {cluster.relatedEvidence.map((evidence, index) => {
-          const label = `${titleCase(evidenceSourceLabel(evidence))} · ${titleCase(evidence.role)}`;
-          const body =
-            evidence.snippet ??
-            (evidence.externalObjectId ? `External reference ${evidence.externalObjectId}` : null);
-          return (
-            <li
-              key={`${cluster.id}:${evidence.rawEventId ?? evidence.externalObjectId ?? index}`}
-              className="rounded-sm border border-border bg-bg px-2.5 py-2"
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                {evidence.rawEventId ? (
-                  <Link
-                    href={`/app/timeline?event=${evidence.rawEventId}#ev-${evidence.rawEventId}`}
-                    className="text-fg-muted transition-colors hover:text-signal"
-                  >
-                    {label}
-                  </Link>
-                ) : (
-                  <span className="text-fg-muted">{label}</span>
-                )}
-                <span>{evidenceStrengthLabel(evidence)}</span>
-                {evidence.occurredAt ? (
-                  <time data-visual-dynamic="timeline-timestamp" dateTime={evidence.occurredAt}>
-                    {formatTimestamp(evidence.occurredAt, timezone)}
-                  </time>
+      <details>
+        <summary className="cursor-pointer text-xs font-medium text-fg-muted">
+          {cluster.relatedEvidence.length} related source
+          {cluster.relatedEvidence.length === 1 ? '' : 's'}
+        </summary>
+        <ol className="mt-3 space-y-3">
+          {cluster.relatedEvidence.map((evidence, index) => {
+            const label = `${titleCase(evidenceSourceLabel(evidence))} · ${titleCase(evidence.role)}`;
+            const body =
+              evidence.snippet ??
+              (evidence.externalObjectId
+                ? `External reference ${evidence.externalObjectId}`
+                : null);
+            return (
+              <li
+                key={`${cluster.id}:${evidence.rawEventId ?? evidence.externalObjectId ?? index}`}
+                className="border-l border-border pl-3"
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-dim">
+                  {evidence.rawEventId ? (
+                    <Link
+                      href={`/app/timeline?event=${evidence.rawEventId}#ev-${evidence.rawEventId}`}
+                      className="text-fg-muted transition-colors hover:text-signal"
+                    >
+                      {label}
+                    </Link>
+                  ) : (
+                    <span className="text-fg-muted">{label}</span>
+                  )}
+                  <span>{evidenceStrengthLabel(evidence)}</span>
+                  {evidence.occurredAt ? (
+                    <time data-visual-dynamic="timeline-timestamp" dateTime={evidence.occurredAt}>
+                      {formatTimestamp(evidence.occurredAt, timezone)}
+                    </time>
+                  ) : null}
+                </div>
+                {body ? (
+                  <p className="mt-1 line-clamp-2 break-words text-sm leading-5 text-fg-muted">
+                    {displayText(body, { timezone })}
+                  </p>
                 ) : null}
-              </div>
-              {body ? (
-                <p className="mt-1 line-clamp-2 break-words text-sm leading-5 text-fg-muted">
-                  {displayText(body, { timezone })}
-                </p>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
+              </li>
+            );
+          })}
+        </ol>
+      </details>
     </div>
   );
 }
@@ -907,6 +923,7 @@ function SourceEvidenceCard({
   const documentLink = rawEventDocumentLink(event);
   const context = rawEventContextLabel(event);
   const transcriptionStatus = transcriptionStatusMessage(event);
+  const authored = authoredCaptureFromEvent(event);
   const body = rawEventBody(event, timezone);
   const capBody = shouldCapSourceEvidenceBody(body);
   const metaLine = [
@@ -918,16 +935,18 @@ function SourceEvidenceCard({
     .filter((part): part is string => Boolean(part))
     .join(' · ');
   return (
-    <li className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2">
+    <li className="min-w-0 overflow-hidden rounded-md bg-bg p-4">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-dim">
           <span className="text-fg-muted">{actorLabel}</span>
-          <span>{formatSourceLabel(event.source)}</span>
-          {context ? <span>{context}</span> : null}
+          {actorLabel.toLowerCase() !== formatSourceLabel(event.source).toLowerCase() ? (
+            <span>{formatSourceLabel(event.source)}</span>
+          ) : null}
+          {context && context !== actorLabel ? <span>{context}</span> : null}
           <time
             data-visual-dynamic="timeline-timestamp"
             dateTime={event.occurredAt}
-            className="inline-block min-w-[28ch] whitespace-nowrap"
+            className="font-mono text-[11px]"
           >
             {formatTimestamp(event.occurredAt, timezone)}
           </time>
@@ -965,10 +984,13 @@ function SourceEvidenceCard({
           ))}
         </div>
       ) : null}
+      {authored?.title ? (
+        <h4 className="mt-3 text-sm font-medium text-fg">{authored.title}</h4>
+      ) : null}
       <p
         className={cn(
           'mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted',
-          capBody ? 'max-h-32 overflow-hidden' : null,
+          capBody ? 'line-clamp-4' : null,
         )}
       >
         {body}
@@ -1318,18 +1340,18 @@ function TimelineMomentRow({
         {selectedChatBinder}
         <Link
           href={compactTimelineMomentHref(moment)}
-          className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
+          className="grid min-h-9 min-w-0 grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 py-3 text-left sm:flex sm:gap-3 sm:py-1.5"
         >
           <span
             data-visual-dynamic="timeline-time"
-            className="w-[4.75rem] shrink-0 font-mono text-[11px] tabular-nums text-fg-dim"
+            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:w-[4.75rem] sm:text-[11px]"
           >
             {moment.timeLabel}
           </span>
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal">
+          <span className="order-first col-span-2 min-w-0 pr-6 text-sm leading-5 text-fg underline decoration-fg-dim underline-offset-2 group-hover:text-signal group-hover:decoration-signal sm:order-none sm:flex-1 sm:truncate sm:pr-0">
             {title}
           </span>
         </Link>
@@ -1346,12 +1368,13 @@ function TimelineMomentRow({
   }
   return (
     <div
+      data-slot="collection-row"
       id={moment.anchorId}
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'group relative -mx-3 scroll-mt-24 border-b border-border/80 px-3 transition-colors hover:bg-surface',
         pulse ? 'min-h-11' : 'min-h-12',
-        selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)]',
+        selected && 'bg-surface shadow-[inset_2px_0_0_var(--signal)] timeline-row-selected',
       )}
       data-moment-id={moment.id}
       data-visual-weight={moment.visualWeight}
@@ -1403,8 +1426,8 @@ function TimelineMomentRow({
           >
             <p
               className={cn(
-                'truncate text-sm leading-5',
-                pulse ? 'text-fg-muted' : 'font-medium text-fg',
+                'break-words text-sm leading-5',
+                pulse ? 'truncate text-fg-muted' : 'line-clamp-2 font-medium text-fg',
               )}
             >
               {title}
@@ -1473,13 +1496,7 @@ function timelineMomentPresentation(
   const pulse = moment.visualWeight === 'pulse';
   const previewText = supportingText(moment, '');
   const contextParts = rowContextParts(moment);
-  const titleStem = title.replace(/…$/, '').trim().toLowerCase();
-  const previewOverlapsTitle =
-    Boolean(previewText) && Boolean(titleStem) && previewText.toLowerCase().startsWith(titleStem);
-  const subtitleParts = [
-    ...contextParts.filter((part) => !previewText.includes(part)),
-    previewOverlapsTitle ? null : previewText,
-  ].filter((part): part is string => Boolean(part));
+  const subtitleParts = contextParts;
   return {
     selected,
     title,
@@ -1600,18 +1617,19 @@ export function TimelineList({
         />
       ) : null}
       {compact || typeof maxMoments === 'number' ? (
-        dateGroups.map(([date, group]) => (
-          <section key={date} aria-labelledby={`timeline-date-${date}`}>
+        dateGroups.map(([dateKey, group]) => (
+          <section key={dateKey} aria-labelledby={`timeline-date-${dateKey}`}>
             <h2
-              id={`timeline-date-${date}`}
+              id={`timeline-date-${dateKey}`}
+              data-slot={compact ? undefined : 'collection-sticky-band'}
               className={cn(
-                '-mx-3 bg-bg px-3 font-mono uppercase tracking-[0.14em] text-fg-dim',
+                '-mx-3 px-3 text-fg-muted',
                 compact
-                  ? 'py-1 text-[10px]'
-                  : 'sticky top-11 z-10 border-y border-border py-2 text-[11px]',
+                  ? 'bg-bg py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim'
+                  : 'sticky top-[var(--timeline-toolbar-height,2.75rem)] z-10 bg-surface py-2.5 text-xs font-medium',
               )}
             >
-              {date}
+              {group[0]?.dateLabel ?? dateKey}
             </h2>
             <ol>
               {group.map((moment) => (
@@ -1623,10 +1641,7 @@ export function TimelineList({
                   isAdmin={isAdmin}
                   members={members}
                   capturedFilesByEventId={capturedFilesByEventId}
-                  focused={
-                    moment.id === focusMomentId ||
-                    moment.rawEvents.some((event) => event.id === focusEventId)
-                  }
+                  focused={moment.id === focusedMoment?.id}
                   compact={compact}
                   pinned={pinnedMomentIds.has(moment.id)}
                   timezone={resolvedTimezone}
@@ -1643,7 +1658,10 @@ export function TimelineList({
           onEndReached={onEndReached}
           renderSticky={(moment) =>
             moment ? (
-              <h2 className="sticky top-11 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+              <h2
+                data-slot="collection-sticky-band"
+                className="sticky top-[var(--timeline-toolbar-height,2.75rem)] z-10 -mx-3 bg-surface px-3 py-2.5 text-xs font-medium text-fg-muted"
+              >
                 {moment.dateLabel}
               </h2>
             ) : null
@@ -1656,10 +1674,7 @@ export function TimelineList({
               isAdmin={isAdmin}
               members={members}
               capturedFilesByEventId={capturedFilesByEventId}
-              focused={
-                moment.id === focusMomentId ||
-                moment.rawEvents.some((event) => event.id === focusEventId)
-              }
+              focused={moment.id === focusedMoment?.id}
               compact={compact}
               pinned={pinnedMomentIds.has(moment.id)}
               timezone={resolvedTimezone}
@@ -1727,14 +1742,11 @@ function timelineVisibleMoments(
   maxMoments: number | undefined,
 ) {
   const moments = serverMoments ?? localMoments;
-  const focusedMoments =
-    focusEventId === null && focusMomentId === null
-      ? []
-      : moments.filter(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        );
+  const focusTarget =
+    moments.find((moment) => moment.id === focusMomentId) ??
+    moments.find((moment) => Boolean(focusMomentId && moment.legacyIds?.includes(focusMomentId))) ??
+    moments.find((moment) => moment.rawEvents.some((event) => event.id === focusEventId));
+  const focusedMoments = focusTarget ? [focusTarget] : [];
   const filteredMoments = mergeTimelineMoments(
     filterTimelineMomentsByImpact(moments, impactFilter),
     focusedMoments,
@@ -1743,14 +1755,7 @@ function timelineVisibleMoments(
     typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
   const dateGroups = groupedByDate(visibleMoments);
   const focusKey = focusMomentId ?? focusEventId;
-  const focusedMoment =
-    focusKey === null
-      ? null
-      : (visibleMoments.find(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        ) ?? null);
+  const focusedMoment = visibleMoments.find((moment) => moment.id === focusTarget?.id) ?? null;
   return { focusKey, focusedMoment, visibleMoments, dateGroups };
 }
 

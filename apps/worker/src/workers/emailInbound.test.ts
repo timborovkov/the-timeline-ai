@@ -1,10 +1,9 @@
+import type { Db } from '@timeline/db';
 import { ResendError } from '@timeline/shared/email';
+import type { EmailInboundJobData } from '@timeline/shared/queue';
 import { expect, vi } from '@timeline/test-support';
 import { DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { describe, it } from 'bun:test';
-
-import type { Db } from '@timeline/db';
-import type { EmailInboundJobData } from '@timeline/shared/queue';
 
 import { processInboundJob } from '#src/workers/emailInbound.js';
 

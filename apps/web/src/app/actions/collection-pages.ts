@@ -15,6 +15,7 @@ import {
   SUGGESTIONS_PAGE_SIZE,
 } from '@/lib/collection-page-sizes';
 import { displayObjectLabel } from '@/lib/display-labels';
+import { guidedApprovalItemIds } from '@/lib/guided-approval-items';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { groupLinkedObjectsByEvent, serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
@@ -75,6 +76,8 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
       .object({
         cursor: cursorSchema,
         status: z.enum(['pending', 'failed', 'resolved', 'all']).default('pending'),
+        guided: z.boolean().default(false),
+        boardId: z.uuid().optional(),
       })
       .safeParse(input);
     if (!parsed.success) return { suggestions: [], nextCursor: null, error: 'Invalid cursor' };
@@ -83,6 +86,8 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
     const rows = await r.scope.suggestions.withCalendarResolutionHints(
       await r.scope.suggestions.listSuggestions({
         status: parsed.data.status,
+        boardId: parsed.data.boardId,
+        itemIds: parsed.data.guided ? await guidedApprovalItemIds(r.scope) : undefined,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: parsed.data.cursor ?? null,
       }),
@@ -92,7 +97,18 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
       id: row.id,
     }));
     return {
-      suggestions: page.items.map((bundle) => serializeSuggestionBundle(bundle)),
+      suggestions: page.items.map((bundle) =>
+        serializeSuggestionBundle(
+          parsed.data.boardId
+            ? {
+                ...bundle,
+                items: bundle.items.filter(
+                  (item) => item.proposedPayload.boardId === parsed.data.boardId,
+                ),
+              }
+            : bundle,
+        ),
+      ),
       nextCursor: page.nextCursor,
     };
   });

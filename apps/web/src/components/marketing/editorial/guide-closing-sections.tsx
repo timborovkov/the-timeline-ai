@@ -6,8 +6,8 @@ import type { EditorialGuide } from '@/components/marketing/editorial/content';
 import {
   findEditorialGuideByRoute,
   HOW_IT_WORKS_ROUTE,
+  GUIDES_ROUTE,
 } from '@/components/marketing/editorial/content';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { SupportMailto } from '@/components/support-email-provider';
 import {
@@ -98,6 +98,12 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
 
       <section className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
         <EditorialSectionHeading title="Related walkthroughs" />
+        <Link
+          href={GUIDES_ROUTE}
+          className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          Browse all guides
+        </Link>
         <div className="mt-8 grid gap-px overflow-hidden rounded-md border border-border bg-border md:grid-cols-2">
           {guide.relatedRoutes.map((route) => {
             const related = findEditorialGuideByRoute(route);
@@ -200,8 +206,7 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
 
       <section className="border-y border-border bg-surface">
         <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
-          <EditorialKicker>Try it on one real question</EditorialKicker>
-          <h2 className="mt-5 max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+          <h2 className="max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
             {guide.cta.title}
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-8 text-fg-muted sm:text-lg">

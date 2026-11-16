@@ -1,5 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  documents,
+  documentVersions,
+  documentChunks,
   artifactClusters,
   artifactEvidenceAssociations,
   boardItemChanges,
@@ -14,6 +17,7 @@ import {
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { buildAssociationDedupeKey, buildOutputDedupeKey } from '#src/reconciliation/index.js';
@@ -646,6 +650,94 @@ describe('reconciliation dashboard snapshot', () => {
     expect(visibleOutputSourceRefs).not.toContainEqual(
       expect.objectContaining({ rawEventId: privateRaw.id }),
     );
+  });
+
+  it('hides document-backed output payloads after restriction, replacement or deletion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, ADMIN_ID);
+    const [doc] = await db
+      .insert(documents)
+      .values({ teamId: TEAM_ID, name: 'client.txt', ownerUserId: MEMBER_ID, visibility: 'team' })
+      .returning();
+    if (!doc) throw new Error('missing document');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        version: 1,
+        objectKey: 'synthetic/client.txt',
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!version) throw new Error('missing version');
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'Private client detail',
+        tokenCount: 4,
+      })
+      .returning();
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Document project',
+      })
+      .returning();
+    const [run] = await db
+      .insert(reconciliationRuns)
+      .values({
+        teamId: TEAM_ID,
+        trigger: 'manual_repair',
+        scope: 'document',
+        status: 'completed',
+        inputFingerprint: 'doc-output',
+        engineVersion: 'test',
+      })
+      .returning();
+    if (!chunk || !cluster || !run) throw new Error('missing output fixtures');
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, doc.id));
+    await db.insert(reconciliationOutputs).values({
+      teamId: TEAM_ID,
+      runId: run.id,
+      clusterId: cluster.id,
+      outputKind: 'approval_bundle',
+      targetKind: 'object',
+      operation: 'create',
+      requiresApproval: true,
+      dedupeKey: 'doc-output',
+      status: 'approval_created',
+      payload: {
+        projection_metadata: {
+          document_id: doc.id,
+          document_version_id: version.id,
+          document_chunk_id: chunk.id,
+        },
+        title: 'Private client detail',
+      },
+    });
+    expect(
+      (await scope.reconciliation.getClusterDetail({ clusterId: cluster.id }))?.outputs,
+    ).toHaveLength(1);
+    for (const patch of [
+      { visibility: 'private' as const },
+      { visibility: 'team' as const, currentVersionId: null },
+      { currentVersionId: version.id, deletedAt: new Date() },
+    ]) {
+      await db.update(documents).set(patch).where(eq(documents.id, doc.id));
+      expect(await scope.reconciliation.getClusterDetail({ clusterId: cluster.id })).toBeNull();
+      const snapshot = await scope.reconciliation.getDashboardSnapshot();
+      expect(snapshot.outputs.recent).toHaveLength(0);
+    }
   });
 
   it('requires admin membership through the team scope', async () => {

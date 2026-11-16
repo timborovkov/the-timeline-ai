@@ -1,3 +1,5 @@
+import { Flag } from 'lucide-react';
+
 import {
   STATUS_TONE_CLASS,
   STATUS_TONE_ICON,
@@ -25,7 +27,7 @@ export function CollectionStatus({
   quietText?: boolean;
   className?: string;
 }) {
-  const Icon = STATUS_TONE_ICON[tone];
+  const Icon = /^p[1-4]$/.test(value) ? Flag : STATUS_TONE_ICON[tone];
   return (
     <span
       className={cn(

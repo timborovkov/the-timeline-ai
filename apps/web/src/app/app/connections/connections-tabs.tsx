@@ -76,7 +76,9 @@ export function ConnectionsTabs({
   const searchLabel = CONNECTIONS_SEARCH_LABEL[tab];
 
   function activate(next: ConnectionsTab) {
-    document.getElementById(`connections-tab-${next}`)?.click();
+    const target = document.getElementById(`connections-tab-${next}`);
+    target?.focus();
+    target?.click();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLAnchorElement>, current: ConnectionsTab) {

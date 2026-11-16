@@ -8,15 +8,12 @@ import type {
   TimelineMoment,
   WebTimelineMomentDto,
 } from '@/lib/timeline-moments';
+import type { TimelineEvent, TimelinePage } from '@/lib/timeline-types';
 
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { InlineError } from '@/components/inline-error';
 import { TimelineList } from '@/components/timeline-list';
-import {
-  useTimelineInfiniteQuery,
-  type TimelineEvent,
-  type TimelinePage,
-} from '@/lib/use-paginated-queries';
+import { useTimelineInfiniteQuery } from '@/lib/use-paginated-queries';
 
 interface Props {
   initialPage: TimelinePage;

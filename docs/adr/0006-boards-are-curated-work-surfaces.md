@@ -11,7 +11,9 @@ object. This makes boards usable for CRM pipelines, task boards, product
 catalogs, and other team workflows without letting broad object types flood
 every board.
 
-Add item can attach any workspace object type. The existing-object picker
+Add item can attach any workspace object type unless the board explicitly restricts
+allowed types. The current [membership contract](../objects.md#automatic-membership-suggestions)
+owns opt-in qualification and separate approval rules. The existing-object picker
 prefers the board's recommended types so a sales pipeline is not buried under
 recent tasks, and type filters plus search look up people, companies, and other
 objects beyond that first window.

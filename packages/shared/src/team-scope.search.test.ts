@@ -4,6 +4,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { generateAndStoreTimelineMomentPresentation } from '#src/timeline-moments/generation.js';
@@ -21,6 +22,7 @@ import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { ZodType } from 'zod';
+
 // These tests protect the semantic retrieval contract the agent depends on:
 // query text is embedded once, vector hits are only a first pass, and Postgres
 // hydration still enforces team/visibility boundaries before evidence reaches
@@ -143,6 +145,316 @@ describe('withTeam timeline semantic search', () => {
   let embeddedTexts: string[];
   let qdrantCalls: { teamId: string; userId: string; vector: number[]; opts: SearchOpts }[];
   let hits: SearchHit[];
+
+  it('ranks newer Telegram corrections after SQL visibility checks and preserves historical ordering', async () => {
+    await pg.exec(
+      `UPDATE raw_events SET source='telegram', occurred_at='2026-11-11T12:00:00Z' WHERE id='${RELATED_EVENT}';`,
+    );
+    hits = [
+      hit('old', 0.82, { event_id: TEAM_EVENT }),
+      hit('new', 0.8, { event_id: RELATED_EVENT }),
+      hit('private', 0.99, { event_id: PRIVATE_EVENT }),
+    ];
+    const input = { query: 'Acme', rankingNow: new Date('2026-11-11T12:00:00Z'), limit: 1 };
+    const fresh = await scopeFor(MEMBER).timeline.searchEvents(input);
+    expect(fresh.map((row) => row.eventId)).toEqual([RELATED_EVENT]);
+    expect(fresh[0]?.score).toBe(0.8);
+    expect(fresh[0]?.ranking?.freshnessBoost).toBe(0.05);
+    const next = await scopeFor(MEMBER).timeline.searchEvents({ ...input, offset: 1 });
+    expect(next.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
+    const historical = await scopeFor(MEMBER).timeline.searchEvents({
+      ...input,
+      ranking: 'relevance',
+    });
+    expect(historical.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
+  });
+
+  it('controls an obsolete calendar pin through its current notice without duplicates', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='calendar', content_text='Scheduled: Digest', source_metadata='{"action":"scheduled","calendar_event_id":"calendar-a"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    const legacy = 'moment:calendar:calendar-a';
+    await pg.query(
+      `INSERT INTO user_pins (team_id,user_id,target_kind,target_key,sort_key) VALUES ($1,$2,'timeline_moment',$3,0)`,
+      [TEAM_A, OWNER, legacy],
+    );
+    const scope = scopeFor(OWNER);
+    const current = buildTimelineMoments(
+      await scope.timeline.getEventsByIds([TEAM_EVENT]),
+      new Map(),
+    )[0];
+    if (!current) throw new Error('Expected notice');
+    const ref = { kind: 'timeline_moment' as const, key: current.id };
+    expect(await scope.pins.isPinned(ref)).toBe(true);
+    expect(await scope.pins.isPinnedMany([ref])).toEqual({
+      [`timeline_moment:${current.id}`]: true,
+    });
+    await scope.pins.pin(ref);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.unpin(ref)).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(0);
+  });
+
+  it('assigns a split legacy workflow pin to only the run displayed on Home', async () => {
+    for (const [id, run, time] of [
+      [TEAM_EVENT, 'run-a', '2026-06-27T18:00:00Z'],
+      [RELATED_EVENT, 'run-b', '2026-06-27T18:05:00Z'],
+    ]) {
+      await pg.query(
+        `UPDATE raw_events SET source='integration', content_text='Workflow CI succeeded', occurred_at=$2, source_metadata=$3::jsonb WHERE id=$1`,
+        [
+          id,
+          time,
+          JSON.stringify({
+            provider: 'github',
+            external_object_id: run,
+            github: {
+              type: 'workflow_run',
+              repo: 'fixture/repo',
+              workflow_name: 'CI',
+              head_branch: 'main',
+            },
+          }),
+        ],
+      );
+    }
+    const scope = scopeFor(OWNER);
+    const moments = buildTimelineMoments(
+      await scope.timeline.getEventsByIds([TEAM_EVENT, RELATED_EVENT]),
+      new Map(),
+    );
+    const current = moments[0];
+    const other = moments[1];
+    const legacy = current?.legacyIds?.find((id) => other?.legacyIds?.includes(id));
+    if (!current || !other || !legacy) throw new Error('Expected split legacy workflow group');
+    await pg.query(
+      `INSERT INTO user_pins (team_id,user_id,target_kind,target_key,sort_key) VALUES ($1,$2,'timeline_moment',$3,0)`,
+      [TEAM_A, OWNER, legacy],
+    );
+    expect((await scope.pins.list()).items[0]?.href).toContain(encodeURIComponent(current.id));
+    const currentRef = { kind: 'timeline_moment' as const, key: current.id };
+    const otherRef = { kind: 'timeline_moment' as const, key: other.id };
+    expect(await scope.pins.isPinnedMany([currentRef, otherRef])).toEqual({
+      [`timeline_moment:${current.id}`]: true,
+      [`timeline_moment:${other.id}`]: false,
+    });
+    expect(await scope.pins.isPinned(otherRef)).toBe(false);
+    expect(await scope.pins.unpin(otherRef)).toBe(false);
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    await scope.pins.pin(otherRef);
+    expect((await scope.pins.list()).items).toHaveLength(2);
+    expect(await scope.pins.unpin(otherRef)).toBe(true);
+    expect(await scope.pins.isPinned(currentRef)).toBe(true);
+    expect(await scope.pins.unpin(currentRef)).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(0);
+  });
+
+  it('finds and preserves a pinned notice beyond unrelated lookup candidates', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='system', content_text='Completed task', occurred_at='2026-06-27T18:00:00Z', source_metadata='{"kind":"object_update","entity_id":"target"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    await pg.query(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, occurred_at, visibility, source_metadata)
+      SELECT $1::uuid, $2::uuid, 'system', 'Unrelated ' || n, '2026-06-27T18:00:30Z', 'team', jsonb_build_object('kind','object_update','entity_id','unrelated-' || n) FROM generate_series(1, 305) n`,
+      [TEAM_A, OWNER],
+    );
+    const scope = scopeFor(OWNER);
+    const target = await scope.timeline.getEventsByIds([TEAM_EVENT]);
+    const moment = buildTimelineMoments(target, new Map())[0];
+    if (!moment) throw new Error('Expected notice');
+    const plan = timelineMomentLookupPlan(moment.id);
+    if (!plan) throw new Error('Expected lookup plan');
+    expect((await scope.timeline.listEventsForMomentLookup(plan)).map((row) => row.id)).toEqual([
+      TEAM_EVENT,
+    ]);
+    await scope.pins.pin({ kind: 'timeline_moment', key: moment.id });
+    expect((await scope.pins.list()).items).toHaveLength(1);
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
+  });
+
+  it('expands website scan moments through the scoped metadata predicate', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source_metadata=jsonb_build_object('websiteScanId','fixture-scan') WHERE id=ANY($1::uuid[])`,
+      [[TEAM_EVENT, PRIVATE_EVENT, OTHER_TEAM_EVENT]],
+    );
+    const rows = await scopeFor(MEMBER).timeline.listEventsForMomentLookup({
+      source: 'web',
+      limit: 20,
+      metadataPredicates: [{ path: ['websiteScanId'], equals: 'fixture-scan' }],
+    });
+    expect(rows.map((row) => row.id)).toEqual([TEAM_EVENT]);
+  });
+
+  it('expands a short correction absent from semantic hits and excludes private replies', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='telegram',source_metadata=jsonb_build_object('tg_chat_id','correction-room'),occurred_at='2026-06-01T09:01:00Z' WHERE id=ANY($1::uuid[])`,
+      [[TEAM_EVENT, RELATED_EVENT, PRIVATE_EVENT]],
+    );
+    await pg.query(`UPDATE raw_events SET content_text='Actually, Friday.' WHERE id=$1`, [
+      RELATED_EVENT,
+    ]);
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { eventIds: [TEAM_EVENT] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.evidence.map((row) => row.eventId)).toContain(RELATED_EVENT);
+    expect(result.evidence.map((row) => row.eventId)).not.toContain(PRIVATE_EVENT);
+    expect(result.evidence.find((row) => row.eventId === RELATED_EVENT)?.content).toContain(
+      'Actually, Friday.',
+    );
+  });
+
+  it('keeps text anchors when optional Slack attachments have no transcript', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='slack',source_metadata='{"slack_channel_id":"C-REVIEW","slack_thread_ts":"1780304460"}'::jsonb,occurred_at='2026-06-01T09:01:00Z' WHERE id=ANY($1::uuid[])`,
+      [[TEAM_EVENT, RELATED_EVENT]],
+    );
+    await pg.query('UPDATE raw_events SET content_text=NULL WHERE id=$1', [RELATED_EVENT]);
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { eventIds: [TEAM_EVENT] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.evidence.map((row) => row.eventId)).toContain(TEAM_EVENT);
+    expect(result.evidence.map((row) => row.eventId)).not.toContain(RELATED_EVENT);
+    const invalidAnchor = await enrichEvidenceContext(scopeFor(MEMBER), {
+      eventIds: [RELATED_EVENT],
+    });
+    expect(invalidAnchor.adapterFailures).toContainEqual({
+      adapter: 'conversation_context',
+      errorReason: 'EvidencePackError',
+    });
+  });
+
+  it('discloses conversation evidence omitted by the downstream core budget', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='telegram',source_metadata='{"tg_chat_id":"long-thread"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    for (let index = 0; index < 24; index++) {
+      await pg.query(
+        `INSERT INTO raw_events (id,team_id,author_user_id,source,content_text,occurred_at,visibility,source_metadata) VALUES ($1,$2,$3,'telegram',$4,'2026-06-01T09:01:00Z','team','{"tg_chat_id":"long-thread"}'::jsonb)`,
+        [crypto.randomUUID(), TEAM_A, OWNER, `Reply ${index}`],
+      );
+    }
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { eventIds: [TEAM_EVENT] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.truncated).toBe(true);
+    expect(result.evidence.filter((row) => row.role === 'core')).toHaveLength(24);
+  });
+
+  it('keeps pending board updates for their exactly associated object', async () => {
+    const boardId = crypto.randomUUID(),
+      boardItemId = crypto.randomUUID(),
+      bundleId = crypto.randomUUID(),
+      itemId = crypto.randomUUID();
+    await pg.query(`INSERT INTO boards(id,team_id,name) VALUES ($1,$2,'Fixture pipeline')`, [
+      boardId,
+      TEAM_A,
+    ]);
+    await pg.query(
+      `INSERT INTO board_items(id,team_id,board_id,entity_id,next_step) VALUES ($1,$2,$3,$4,'Old next step')`,
+      [boardItemId, TEAM_A, boardId, ENTITY_ID],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestions(id,team_id,source,title,dedupe_key) VALUES ($1,$2,'background','Board update','board-fixture')`,
+      [bundleId, TEAM_A],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'update','board_item_update',$4,'Next step','board-fixture',$5)`,
+      [
+        itemId,
+        bundleId,
+        TEAM_A,
+        boardItemId,
+        JSON.stringify({ boardItemId, field: 'nextStep', newValue: 'Confirm Friday' }),
+      ],
+    );
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { objectIds: [ENTITY_ID] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.objects[0]?.pending.map((item) => item.id)).toEqual([itemId]);
+    expect(result.objects[0]?.currentBoardItems[0]?.values).toContain('Old next step');
+    await pg.query(`UPDATE board_items SET archived_at=now() WHERE id=$1`, [boardItemId]);
+    const archived = await enrichEvidenceContext(scopeFor(MEMBER), { objectIds: [ENTITY_ID] });
+    expect(archived.objects[0]?.pending).toEqual([]);
+  });
+
+  it('retains pending tasks associated through their parent object', async () => {
+    const bundle = crypto.randomUUID(),
+      item = crypto.randomUUID();
+    await pg.query(
+      `INSERT INTO agent_suggestions(id,team_id,source,title,dedupe_key) VALUES ($1,$2,'background','Next action','parent-task')`,
+      [bundle, TEAM_A],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'create','task','Confirm launch','parent-task',$4::jsonb)`,
+      [
+        item,
+        bundle,
+        TEAM_A,
+        JSON.stringify({ parentObjectId: ENTITY_ID, title: 'Confirm launch' }),
+      ],
+    );
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { objectIds: [ENTITY_ID] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.objects[0]?.pending.map((entry) => entry.id)).toContain(item);
+  });
+
+  it('discloses the bounded pool even when duplicate hits collapse to one event', async () => {
+    hits = Array.from({ length: 200 }, (_, index) => ({
+      ...hit(TEAM_EVENT, 0.8),
+      id: `duplicate-${index}`,
+    }));
+    const summary: unknown[] = [];
+    const result = await scopeFor(MEMBER).timeline.searchEvents({
+      query: 'Acme',
+      limit: 1,
+      onRanking: (value) => {
+        summary.push(value);
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.ranking?.candidateLimitReached).toBe(true);
+    expect(summary).toEqual([
+      { mode: 'balanced', candidateLimit: 200, candidateLimitReached: true },
+    ]);
+  });
+
+  it('keeps current state separate from pending evidence and drops rejected proposals', async () => {
+    const bundle = '90000000-0000-4000-8000-000000000001';
+    const item = '90000000-0000-4000-8000-000000000002';
+    await pg.exec(`
+      INSERT INTO agent_suggestions (id,team_id,source,title,dedupe_key) VALUES ('${bundle}','${TEAM_A}','background','Acme correction','freshness');
+      INSERT INTO agent_suggestion_items (id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload)
+      VALUES ('${item}','${bundle}','${TEAM_A}','update','object','${ENTITY_ID}','Correct Acme status','freshness','{"status":"blocked"}');
+      INSERT INTO agent_suggestion_evidence (suggestion_id,team_id,raw_event_id,quote) VALUES ('${bundle}','${TEAM_A}','${TEAM_EVENT}','Acme correction');
+    `);
+    const scope = scopeFor(MEMBER);
+    const pending = await enrichEvidenceContext(scope, { objectIds: [ENTITY_ID] });
+    expect(pending.adapterFailures).toEqual([]);
+    expect(pending.objects[0]?.current.canonical).toBe(true);
+    expect(pending.objects[0]?.current.status).not.toBe('blocked');
+    expect(pending.objects[0]?.pending[0]).toMatchObject({
+      id: item,
+      canonical: false,
+      status: 'pending',
+    });
+    await scope.suggestions.rejectSuggestionItem(item);
+    const rejected = await enrichEvidenceContext(scope, { objectIds: [ENTITY_ID] });
+    expect(rejected.objects[0]?.pending).toEqual([]);
+    expect(await scope.timeline.getEventWithFacts(TEAM_EVENT)).not.toBeNull();
+  });
+
+  it('discloses failed context adapters rather than claiming no conflict', async () => {
+    const scope = scopeFor(MEMBER);
+    const failed = {
+      ...scope,
+      objects: {
+        ...scope.objects,
+        getObject: () => Promise.reject(new Error('unavailable')),
+      },
+    };
+    const context = await enrichEvidenceContext(failed, { objectIds: [ENTITY_ID] });
+    expect(context.objects).toEqual([]);
+    expect(context.adapterFailures).toEqual([{ adapter: 'current_record', errorReason: 'Error' }]);
+  });
 
   beforeEach(async () => {
     pg = new PGlite();
@@ -345,6 +657,17 @@ describe('withTeam timeline semantic search', () => {
         ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${baseEvidence}', 'origin', 'human', 'human', '[]'::jsonb, 'team', 'team', NULL, '{"canonical_name":"Acme pricing rollout","status":"active"}'::jsonb, 'association:base'),
         ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${ownerOnlyEvidence}', 'lifecycle_update', 'provider', 'authoritative_provider', '[]'::jsonb, 'team', 'private', '${OWNER}', '{"canonical_name":"Owner-only Acme rollout state","status":"blocked"}'::jsonb, 'association:owner-only');
     `);
+    await pg.query(`UPDATE artifact_clusters SET canonical_entity_id=$1 WHERE id=$2`, [
+      ENTITY_ID,
+      ARTIFACT_CLUSTER,
+    ]);
+    expect(await scopeFor(MEMBER).timeline.resolveEvidenceObjectIds([TEAM_EVENT])).toEqual({
+      objectIds: [ENTITY_ID],
+      truncated: false,
+    });
+    expect(
+      await scopeFor(OWNER).timeline.resolveEvidenceObjectIds([TEAM_EVENT, RELATED_EVENT]),
+    ).toEqual({ objectIds: [ENTITY_ID], truncated: false });
     hits = [hit(TEAM_EVENT, 0.9)];
 
     const memberResults = await scopeFor(MEMBER).timeline.searchEvents({
@@ -482,7 +805,7 @@ describe('withTeam timeline semantic search', () => {
         (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
       VALUES
         ('${CHAT_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Can we meet at 16:20 to review the launch checklist?', '2026-06-27T18:00:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Ada"}'::jsonb),
-        ('${CHAT_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', '16:20 works for me.', '2026-06-27T18:01:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Tim"}'::jsonb),
+        ('${CHAT_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', '16:20 works for me.', '2026-06-27T18:01:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Taylor"}'::jsonb),
         ('${CHAT_EVENT_C}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Booked. Use the daily call link.', '2026-06-27T18:02:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Ada"}'::jsonb);
     `);
     const scope = scopeFor(OWNER);

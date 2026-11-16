@@ -2,7 +2,6 @@
 
 import { ErrorState } from '@/components/error-state';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function BoardsError({
   error,
@@ -14,7 +13,6 @@ export default function BoardsError({
   return (
     <div className="space-y-6">
       <PageHeader title="Boards" subtitle="Curated work surfaces for the way your team operates." />
-      <WorkSubnav current="/app/boards" />
       <ErrorState
         title="Unable to load boards"
         description="Boards could not be loaded. Your saved board data is unchanged. Check your connection, then try again."

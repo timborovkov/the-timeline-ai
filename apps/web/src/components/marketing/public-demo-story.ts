@@ -1,5 +1,3 @@
-export const PUBLIC_DEMO_DISCLOSURE = 'Fictional Acme example, not customer data.';
-
 /**
  * One coherent fictional project for every public acquisition surface.
  * Provider pages use different slices of the same chronology so examples can
@@ -350,7 +348,7 @@ export const PUBLIC_DEMO_STORY = {
   },
   editorial: {
     slackAndDrive: {
-      label: 'Illustrative Acme rollout query',
+      label: 'Acme rollout query',
       query: 'What changed in the Acme rollout plan, and what is still undecided?',
       sources: [
         {
@@ -376,7 +374,7 @@ export const PUBLIC_DEMO_STORY = {
       citations: ['01', '02', '03'],
     },
     weeklyEngineering: {
-      label: 'Illustrative Acme rollout compilation',
+      label: 'Acme rollout compilation',
       query: 'What changed in the Acme rollout from Monday through Friday?',
       sources: [
         {
@@ -402,7 +400,7 @@ export const PUBLIC_DEMO_STORY = {
       citations: ['01', '02', '03'],
     },
     sentryIncident: {
-      label: 'Illustrative Acme incident reconstruction',
+      label: 'Acme incident reconstruction',
       query: 'What changed before ACME-913 appeared, and what evidence confirms the fix?',
       sources: [
         {

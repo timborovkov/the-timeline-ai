@@ -14,6 +14,9 @@ const fakes = vi.hoisted(() => ({
   getCalendarSettings: vi.fn(),
   getObjectMergePreview: vi.fn(),
   isPinnedMany: vi.fn(),
+  getObject: vi.fn(),
+  isPinned: vi.fn(),
+  listPrimaryProjectsForTasks: vi.fn(),
   userRows: [] as { id: string; name: string | null; email: string }[],
   categoryRefresh: null as {
     surface: string;
@@ -45,6 +48,8 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       objects: {
+        getObject: fakes.getObject,
+        listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
         listObjects: fakes.listObjects,
         countObjects: fakes.countObjects,
         getObjectMergePreview: fakes.getObjectMergePreview,
@@ -52,7 +57,7 @@ await vi.mock(
       },
       suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
       timeline: { listMembers: fakes.listMembers },
-      pins: { isPinnedMany: fakes.isPinnedMany },
+      pins: { isPinnedMany: fakes.isPinnedMany, isPinned: fakes.isPinned },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
     }),
   }),
@@ -160,6 +165,19 @@ await vi.mock(
   () => import('@/components/work-filter-bar'),
 );
 
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-index-peek'),
+  () => ({
+    ObjectIndexPeek: ({ closeHref, returnTo }: { closeHref: string; returnTo: string }) => (
+      <aside data-testid="object-peek">
+        <a href={closeHref}>Close</a>
+        <span>{returnTo}</span>
+      </aside>
+    ),
+  }),
+  () => import('@/components/objects/object-index-peek'),
+);
+
 const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: ObjectsIndexPage } = await import('./page.js');
@@ -178,6 +196,9 @@ beforeEach(() => {
   fakes.listPendingSuggestions.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
   fakes.isPinnedMany.mockResolvedValue({});
+  fakes.getObject.mockResolvedValue(null);
+  fakes.isPinned.mockResolvedValue(false);
+  fakes.listPrimaryProjectsForTasks.mockResolvedValue([]);
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.userRows = [];
   fakes.categoryRefresh = null;
@@ -235,6 +256,35 @@ function objectRow(index: number, type = 'task') {
 }
 
 describe('ObjectsIndexPage', () => {
+  it('loads an authorized object preview and preserves filters on close and return', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    fakes.getObject.mockResolvedValue({ id, type: 'company' });
+    const html = renderToStaticMarkup(
+      await ObjectsIndexPage({
+        searchParams: Promise.resolve({ object: id, type: 'company', q: 'Acme' }),
+      }),
+    );
+    expect(fakes.getObject).toHaveBeenCalledWith(id);
+    expect(html).toContain('data-testid="object-peek"');
+    expect(html).toContain('href="/app/objects?type=company&amp;q=Acme"');
+    expect(html).toContain(`object=${id}&amp;type=company&amp;q=Acme`);
+  });
+
+  it('does not load malformed object IDs or display unavailable objects', async () => {
+    let html = renderToStaticMarkup(
+      await ObjectsIndexPage({ searchParams: Promise.resolve({ object: 'not-a-uuid' }) }),
+    );
+    expect(fakes.getObject).not.toHaveBeenCalled();
+    expect(html).not.toContain('data-testid="object-peek"');
+    html = renderToStaticMarkup(
+      await ObjectsIndexPage({
+        searchParams: Promise.resolve({ object: '11111111-1111-4111-8111-111111111111' }),
+      }),
+    );
+    expect(html).not.toContain('data-testid="object-peek"');
+    expect(fakes.isPinned).not.toHaveBeenCalled();
+  });
+
   it('watches task category changes when the object index has a category filter', async () => {
     const html = renderToStaticMarkup(
       await ObjectsIndexPage({ searchParams: Promise.resolve({ category: 'design' }) }),

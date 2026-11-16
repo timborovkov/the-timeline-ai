@@ -20,6 +20,7 @@
  */
 import { closeDb, documentVersions, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, inArray, or, type SQL } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -145,5 +146,5 @@ main()
   .finally(() => {
     void closeDb();
     void queue.closeDocumentExtractQueue();
-    void queue.closeRedisConnection();
+    void closeAllRedisConnections();
   });

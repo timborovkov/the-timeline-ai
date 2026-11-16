@@ -148,6 +148,9 @@ export interface SearchOpts {
   source?: QdrantPayload['source'];
   entityIds?: string[];
   eventIds?: string[];
+  /** Superseded website captures: retain promoted drive-document chunks even
+   * when their provenance still points to an older website event. */
+  obsoleteWebsiteEventIds?: string[];
   /** Zero-based semantic-result offset used by bounded paginated retrieval. */
   offset?: number;
   /**
@@ -241,6 +244,7 @@ export interface QdrantClient {
     queryEventIds: string[],
     candidateEventIds: string[],
   ): Promise<SearchHit[]>;
+  deleteTeamPoints(teamId: string): Promise<void>;
   deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
   deletePointsForSource(input: {
     teamId: string;
@@ -624,6 +628,18 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (searchOpts.embeddingModel) {
       extraMust.push({ key: 'embedding_model', match: { value: searchOpts.embeddingModel } });
     }
+    if (searchOpts.obsoleteWebsiteEventIds?.length)
+      extraMust.push({
+        should: [
+          { must_not: [{ key: 'event_id', match: { any: searchOpts.obsoleteWebsiteEventIds } }] },
+          {
+            must: [
+              { key: 'source_kind', match: { value: 'doc_chunk' } },
+              { key: 'file_kind', match: { value: 'document' } },
+            ],
+          },
+        ],
+      });
     if (searchOpts.eventIds && searchOpts.eventIds.length > 0) {
       extraMust.push({ key: 'event_id', match: { any: searchOpts.eventIds } });
     }
@@ -821,6 +837,21 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       sourceKind: STORED_EVENT_SOURCE_KINDS,
       limit: uniqueCandidateIds.length * STORED_EVENT_SOURCE_KINDS.length,
     });
+  }
+
+  async function deleteTeamPoints(teamId: string): Promise<void> {
+    if (!/^[0-9a-f-]{36}$/i.test(teamId)) throw new Error('Invalid team ID');
+    await ensureCollection();
+    await request(
+      'write',
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
+      {
+        filter: { must: [{ key: 'team_id', match: { value: teamId } }] },
+      },
+    );
+    if ((await countPoints(teamId)) !== 0)
+      throw new Error('Team vector deletion verification failed');
   }
 
   async function deletePoints(ids: string[], opts: DeletePointsOpts = {}): Promise<void> {
@@ -1173,6 +1204,8 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         () => searchByStoredEventVectors(...args),
         'searchByStoredEventVectors',
       ),
+    deleteTeamPoints: (teamId: string) =>
+      withQdrantOperation({}, () => deleteTeamPoints(teamId), 'deleteTeamPoints'),
     deletePoints: (...args: Parameters<typeof deletePoints>) =>
       withQdrantOperation({}, () => deletePoints(...args), 'deletePoints'),
     deletePointsForSource: (...args: Parameters<typeof deletePointsForSource>) =>

@@ -11,15 +11,18 @@ import { SectionHeading } from '@/components/section-heading';
 export function PinnedWorkspacePreview({
   initialItems,
   heading = 'Pinned work',
+  showEmpty = false,
 }: {
   initialItems: PinnedItem[];
   heading?: string;
+  showEmpty?: boolean;
 }) {
   return (
     <PinnedWorkspacePreviewList
       key={initialItems.map((item) => item.pinId).join('|') || 'empty'}
       initialItems={initialItems}
       heading={heading}
+      showEmpty={showEmpty}
     />
   );
 }
@@ -28,12 +31,14 @@ export function PinnedWorkspacePreview({
 function PinnedWorkspacePreviewList({
   initialItems,
   heading,
+  showEmpty,
 }: {
   initialItems: PinnedItem[];
   heading: string;
+  showEmpty: boolean;
 }) {
   const [items, setItems] = useState(initialItems);
-  if (items.length === 0) return null;
+  if (items.length === 0 && !showEmpty) return null;
   return (
     <section className="space-y-3" aria-label={heading}>
       <SectionHeading
@@ -48,6 +53,11 @@ function PinnedWorkspacePreviewList({
       >
         {heading}
       </SectionHeading>
+      {items.length === 0 ? (
+        <p className="text-sm leading-6 text-fg-muted">
+          Pin an object, document, or meeting from its menu to keep it here.
+        </p>
+      ) : null}
       <div>
         {items.map((item) => (
           <PinnedItemRow

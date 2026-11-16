@@ -20,14 +20,18 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('ai'),
-  () => ({
+  async () => ({
+    ...(await import('ai')),
     DefaultChatTransport: class DefaultChatTransport {
-      constructor(
-        public options: {
-          body?: () => unknown;
-          fetch?: (url: string, init?: RequestInit) => Promise<Response>;
-        },
-      ) {
+      options: {
+        body?: () => unknown;
+        fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+      };
+      constructor(options: {
+        body?: () => unknown;
+        fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+      }) {
+        this.options = options;
         fakes.transports.push({ options });
       }
     },

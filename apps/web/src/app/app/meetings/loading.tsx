@@ -12,22 +12,21 @@ export default function MeetingsLoading() {
         Loading meetings
       </output>
       <div
+        data-app-width="collection"
         className="space-y-4 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading meetings"
       >
         <h1 className="sr-only">Meetings</h1>
-        <PageHeaderSkeleton variant="collection" />
-        <nav aria-label="Loading meeting views" className="flex gap-1 border-b border-border">
+        <PageHeaderSkeleton variant="collection" action />
+        <nav
+          data-slot="collection-tabs"
+          aria-label="Loading meeting views"
+          className="flex gap-1 border-b border-border"
+        >
           <Skeleton className="h-9 w-20 rounded-t-sm" />
           <Skeleton className="h-9 w-16 rounded-t-sm" />
         </nav>
-        <section
-          aria-label="Meeting setup loading placeholder"
-          className="border-y border-border py-1.5"
-        >
-          <Skeleton className="h-5 w-32 max-w-full" />
-        </section>
         <section aria-label="Meeting search controls loading placeholder">
           <CollectionToolbarSkeleton />
         </section>

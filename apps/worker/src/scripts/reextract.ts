@@ -17,6 +17,7 @@
 import { closeDb, getDb, rawEvents } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { currentExtractionModelVersions } from '@timeline/shared/extraction-model-version';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
   );
 
   await queue.closeExtractQueue();
-  await queue.closeRedisConnection();
+  await closeAllRedisConnections();
   await closeDb();
 }
 

@@ -4,9 +4,10 @@ import { type UIMessage } from 'ai';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
+import type { ActionState } from '@/lib/action-result';
 import type { ChatContextRef } from '@timeline/shared/chat-context';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';

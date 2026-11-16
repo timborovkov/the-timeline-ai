@@ -214,7 +214,7 @@ describe('email dispatcher', () => {
       'from: Ada Lovelace <ada@example.com>',
       'Date: Wed, Jun 17, 2026 at 2:15 PM',
       'subject: Re: Launch checklist',
-      'to: Tim <tim@team.example>',
+      'to: Taylor <taylor@team.example>',
       '',
       'The launch checklist is approved.',
       '',
@@ -1218,6 +1218,9 @@ describe('email dispatcher', () => {
     await expect(
       withTeam(db as never, TEAM_ID, system).timeline.getEmailIngestRecoveryState(parent.id),
     ).rejects.toThrow('system principal');
+    await db
+      .insert(teams)
+      .values({ id: OTHER_TEAM_ID, name: 'Other recovery team', slug: 'other-recovery-team' });
     await expect(
       withTeam(db as never, OTHER_TEAM_ID, system, {
         emailIngestRecovery: true,

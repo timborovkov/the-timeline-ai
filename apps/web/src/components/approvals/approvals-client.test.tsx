@@ -2,7 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -93,7 +93,8 @@ await vi.mock(
   () => import('@/components/collections/virtual-list'),
 );
 
-const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 
 const { createElement } = await import('react');
@@ -130,6 +131,80 @@ afterEach(() => {
 });
 
 describe('ApprovalsClient', () => {
+  it.each(['accepted', 'rejected', 'superseded'])(
+    'keeps %s inbox proposals read-only',
+    (status) => {
+      render(<ApprovalsClient layout="inbox" suggestions={[inboxBundle(status)]} />);
+      const review = screen.getByRole('region', { name: 'Review proposal' });
+      expect(within(review).getByText(`${status} · Read-only`)).toBeTruthy();
+      expect(screen.getByText(status)).toBeTruthy();
+      expect(within(review).queryByRole('button', { name: 'Accept' })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Reject' })).toBeNull();
+      expect(within(review).queryByRole('button', { name: 'Change' })).toBeNull();
+    },
+  );
+
+  it('locks decisions while the previous inbox proposal is still being accepted', async () => {
+    fakes.acceptSuggestionItemAction.mockReturnValue(new Promise(() => undefined));
+    render(
+      <ApprovalsClient
+        layout="inbox"
+        suggestions={[inboxBundle('pending', ['First proposal', 'Second proposal'])]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    const review = screen.getByRole('region', { name: 'Review proposal' });
+    expect(within(review).getByRole('heading', { name: 'Second proposal' })).toBeTruthy();
+    const accept = within(review).getByRole('button', { name: 'Accept' });
+    expect(accept.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(accept);
+    await waitFor(() => {
+      expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps inbox decisions in review and preserves the proposal reason', async () => {
+    const user = userEvent.setup();
+    render(
+      <ApprovalsClient
+        layout="inbox"
+        suggestions={[
+          {
+            id: 'inbox-bundle',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow-up',
+            summary: null,
+            reason: 'The customer requested a follow-up.',
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'inbox-item',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Follow up with customer',
+                description: null,
+                proposedPayload: { name: 'Follow up with customer' },
+                failureReason: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Accept Follow up with customer' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Preview Follow up with customer' }));
+    const review = await screen.findByRole('region', { name: 'Review proposal' });
+    expect(within(review).getByText('The customer requested a follow-up.')).toBeTruthy();
+    await user.click(within(review).getByRole('button', { name: /^Accept$/ }));
+    await waitFor(() => {
+      expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'inbox-item' });
+    });
+  });
   it('renders the empty approval state', () => {
     const html = renderToStaticMarkup(createElement(ApprovalsClient, { suggestions: [] }));
 
@@ -257,12 +332,12 @@ describe('ApprovalsClient', () => {
             evidence: [
               {
                 rawEventId: EVENT_ID,
-                quote: '@timbo0 lupaan hoitaa PRH-rekisteröinnin.',
+                quote: '@taylo0 lupaan hoitaa PRH-rekisteröinnin.',
                 occurredAt: '2026-07-23T10:00:00.000Z',
                 source: 'telegram',
-                senderName: 'Miku',
-                senderHandle: '@mikael',
-                senderTimelineName: 'Mikael',
+                senderName: 'Casey',
+                senderHandle: '@cameron',
+                senderTimelineName: 'Cameron',
                 conversationName: 'Founders',
               },
             ],
@@ -275,7 +350,7 @@ describe('ApprovalsClient', () => {
                 targetId: null,
                 title: 'Submit company registration to PRH',
                 description: null,
-                proposedPayload: { ownerName: 'Miku' },
+                proposedPayload: { ownerName: 'Casey' },
                 failureReason: null,
               },
             ],
@@ -284,7 +359,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Evidence from Mikael (Miku, @mikael) in Founders on Telegram');
+    expect(html).toContain('Evidence from Cameron (Casey, @cameron) in Founders on Telegram');
   });
 
   it('renders exact evidence beneath each change and blocks stale evidence acceptance', () => {
@@ -963,8 +1038,10 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html).toContain('create person');
-    expect(html).toContain('Jonne Granqvist ↔ DFK · related');
-    expect(html).toContain('Depends on Jonne Granqvist in this bundle.');
+    expect(html).toContain('<span>Jonne Granqvist</span>');
+    expect(html).toContain('<span>DFK</span>');
+    expect(html).toContain('related');
+    expect(html).toContain('Requires the referenced record in this group.');
     expect(html).toContain('Jonne Granqvist from DFK discussed the pilot scope.');
   });
 
@@ -1055,7 +1132,14 @@ describe('ApprovalsClient', () => {
             reason: null,
             confidence: 'high',
             createdAt: '2026-06-01T10:00:00.000Z',
-            evidence: [],
+            evidence: [
+              {
+                rawEventId: '11111111-1111-4111-8111-111111111111',
+                quote: 'Telegram correction: Friday, not Thursday.',
+                occurredAt: '2026-06-01T10:00:00Z',
+                source: 'telegram',
+              },
+            ],
             items: [
               {
                 id: 'item-edit',
@@ -1083,6 +1167,9 @@ describe('ApprovalsClient', () => {
     expect(screen.getByText('Faba website redesign')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Preview Prepare homepage wireframes' }));
     expect(await screen.findByText(/Proposed record/)).toBeTruthy();
+    expect(
+      within(screen.getByRole('dialog')).getByText('Telegram correction: Friday, not Thursday.'),
+    ).toBeTruthy();
     expect(screen.getAllByText('Design').length).toBeGreaterThan(0);
     expect(screen.queryByRole('combobox', { name: /Category for/ })).toBeNull();
   });
@@ -2586,7 +2673,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('John Doe ↔ Acme Corporation · related');
+    expect(html).toContain('<span>John Doe</span>');
+    expect(html).toContain('<span>Acme Corporation</span>');
+    expect(html).toContain('related');
     expect(html).toContain('create relationship');
     expect(html).not.toContain('fromRef');
     expect(html).not.toContain('localRef');
@@ -2630,7 +2719,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Research and Development ↔ Sales and Ops · related');
+    expect(html).toContain('<span>Research and Development</span>');
+    expect(html).toContain('<span>Sales and Ops</span>');
+    expect(html).toContain('related');
     expect(html).not.toContain('existing object ↔ existing object');
   });
 
@@ -2670,7 +2761,48 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Relate Research and Development and Sales and Ops · related');
+    expect(html).toContain('Relate Research and Development and Sales and Ops');
+    expect(html).not.toContain('Research ↔ Development and Sales and Ops');
+  });
+
+  it('retains the descriptive title after a referenced proposal leaves the bundle', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-existing-relationship',
+            source: 'background',
+            status: 'pending',
+            title: 'Remember Research and Development and Sales and Ops',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-existing-relationship',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'object_relationship',
+                targetId: null,
+                title: 'Relate Research and Development and Sales and Ops',
+                description: null,
+                proposedPayload: {
+                  fromRef: 'accepted-person',
+                  toRef: 'pending-project',
+                  kind: 'related',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('>Relate Research and Development and Sales and Ops</div>');
+    expect(html).not.toContain('<span>accepted-person</span>');
     expect(html).not.toContain('Research ↔ Development and Sales and Ops');
   });
 
@@ -2991,3 +3123,31 @@ describe('ApprovalsClient', () => {
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledTimes(1);
   });
 });
+
+function inboxBundle(
+  status: string,
+  titles = ['Reviewed proposal'],
+): ComponentProps<typeof ApprovalsClient>['suggestions'][number] {
+  return {
+    id: 'review-bundle',
+    source: 'background',
+    status,
+    title: 'Review',
+    summary: null,
+    reason: null,
+    confidence: 'high',
+    createdAt: '2026-06-01T10:00:00.000Z',
+    evidence: [],
+    items: titles.map((title, index) => ({
+      id: `review-item-${index}`,
+      status,
+      operation: 'create',
+      targetKind: 'task',
+      targetId: null,
+      title,
+      description: null,
+      proposedPayload: { name: title },
+      failureReason: null,
+    })),
+  };
+}

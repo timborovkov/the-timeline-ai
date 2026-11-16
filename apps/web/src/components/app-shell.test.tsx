@@ -142,7 +142,7 @@ describe('AppShell', () => {
         active={active}
         memberships={[active]}
         recipientInvites={[]}
-        user={{ name: 'Tim', email: 'tim@example.com' }}
+        user={{ name: 'Taylor', email: 'taylor@example.com' }}
         sidebarInitiallyExpanded={false}
         workspaceTimezone="America/Los_Angeles"
       >

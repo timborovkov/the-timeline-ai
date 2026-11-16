@@ -66,7 +66,13 @@ describe('ConnectAgentAdvanced', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Cursor', allowCapture: true, allowAgent: false }),
+        body: JSON.stringify({
+          name: 'Cursor',
+          allowCapture: true,
+          allowAgent: false,
+          allowWebsiteScan: false,
+          allowWebsiteManage: false,
+        }),
       });
     });
     expect(await screen.findByText(/New key: keep this open/)).toBeTruthy();

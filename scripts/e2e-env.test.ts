@@ -163,7 +163,10 @@ function lookupPort(container: string, port: number): string | null {
     const started = Date.now();
     const env = buildE2eEnv({}, { dockerInspectTimeoutMs: 25 });
 
-    assert(Date.now() - started < 1_000, 'slow docker inspect should time out quickly');
+    // Four inspects share this timeout. If it were ignored, the stub's 2s sleep
+    // would make the lookup ~8s. Spawn overhead under a loaded suite can exceed
+    // 1s even when each child is killed quickly.
+    assert(Date.now() - started < 4_000, 'slow docker inspect should time out quickly');
     assert.equal(env.DATABASE_URL, 'postgres://timeline:timeline_dev@localhost:5432/timeline');
     assert.equal(env.REDIS_URL, 'redis://localhost:6379');
     assert.equal(env.S3_ENDPOINT, 'http://localhost:9000');

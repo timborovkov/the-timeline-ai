@@ -1,0 +1,1101 @@
+import { PGlite } from '@electric-sql/pglite';
+import {
+  type Db,
+  entities,
+  documents,
+  documentVersions,
+  documentChunks,
+  rawEvents,
+  agentSuggestions,
+  agentSuggestionItems,
+  engineMaintenanceRuns,
+  objectIdentityFacets,
+  facts,
+  factEntities,
+} from '@timeline/db';
+import type { llm } from '@timeline/shared';
+import { withTeam, getEnv, suggestions } from '@timeline/shared';
+import { runWithBillingContext } from '@timeline/shared/billing';
+import { resetEnvForTests } from '@timeline/shared/env';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+import type { z } from 'zod';
+
+import { applyDbMigrations } from '#src/test/pglite.js';
+import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
+
+// Real migrated persistence verifies pagination, evidence lifetime and destructive reset isolation.
+// LLM transport is injected; no external model, Redis or customer data is used here.
+const teamId = '11111111-1111-4111-8111-111111111111';
+const otherTeam = '22222222-2222-4222-8222-222222222222';
+const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+let pg: PGlite, db: Db;
+beforeEach(async () => {
+  process.env.IDENTITY_SEMANTIC_ENABLED = 'false';
+  resetEnvForTests();
+  pg = new PGlite();
+  await applyDbMigrations(pg);
+  db = drizzle(pg) as unknown as Db;
+  await pg.exec(
+    `INSERT INTO teams(id,slug,name) VALUES ('${teamId}','engine','Engine'),('${otherTeam}','other','Other'); INSERT INTO users(id,email,name) VALUES ('${userId}','owner@example.test','Owner'); INSERT INTO team_members(team_id,user_id,role) VALUES ('${teamId}','${userId}','owner');`,
+  );
+});
+afterEach(async () => {
+  await pg.close();
+  resetEnvForTests();
+});
+const scope = () => withTeam(db, teamId, userId);
+async function documentFixture(status: 'pending' | 'chunked' = 'chunked') {
+  const [event] = await db
+    .insert(rawEvents)
+    .values({
+      teamId,
+      source: 'document',
+      contentText: 'Uploaded clients.csv',
+      visibility: 'team',
+      authorUserId: userId,
+      occurredAt: new Date(),
+    })
+    .returning();
+  const [doc] = await db
+    .insert(documents)
+    .values({ teamId, name: 'clients.csv', ownerUserId: userId, visibility: 'team' })
+    .returning();
+  const [version] = await db
+    .insert(documentVersions)
+    .values({
+      teamId,
+      documentId: required(doc).id,
+      version: 1,
+      objectKey: 'synthetic/clients.csv',
+      sourceEventId: required(event).id,
+      processingStatus: status,
+    })
+    .returning();
+  await db
+    .update(documents)
+    .set({ currentVersionId: required(version).id })
+    .where(eq(documents.id, required(doc).id));
+  return { event: required(event), doc: required(doc), version: required(version) };
+}
+const model: typeof llm.chatStructured = <T extends z.ZodType>(input: llm.ChatStructuredInput<T>) =>
+  Promise.resolve({
+    object: input.schema.parse({
+      bundles: [
+        {
+          title: 'Remember Acme',
+          reason: 'Client list identifies Acme.',
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object',
+              title: 'Acme',
+              proposedPayload: {
+                type: 'company',
+                canonicalName: 'Acme',
+                metadata: { domain: 'acme.test' },
+              },
+            },
+          ],
+        },
+      ],
+    }),
+    model: 'fixture',
+  });
+describe('engine persistence contracts', () => {
+  it('retrieves company affiliations by supported website hostnames without trusting lookalike or invalid URLs', async () => {
+    const websites = [
+      'http://acme0.test',
+      'https://www.acme1.test/',
+      'https://www.acme2.test/clients?ref=home#team',
+      ' HTTPS://Acme3.TEST:8443/about ',
+      'acme4.test/contact',
+      'www.acme5.test/clients',
+    ];
+    const companies = await db
+      .insert(entities)
+      .values(
+        websites.map((website, index) => ({
+          teamId,
+          type: 'company' as const,
+          canonicalName: `Acme ${index}`,
+          metadata: { website },
+        })),
+      )
+      .returning();
+    for (const [index, company] of companies.entries()) {
+      const email = `Alex@ACME${index}.TEST`;
+      const candidates = await scope().engineMaintenance.affiliationCandidates(userId, [email]);
+      expect(candidates.companies.map((row) => row.id)).toEqual([company.id]);
+      expect(suggestions.resolveCompanyAffiliation([email], candidates.companies)).toMatchObject({
+        kind: 'existing',
+        objectId: company.id,
+      });
+    }
+    const [normalizedDomain] = await db
+      .insert(entities)
+      .values({
+        teamId,
+        type: 'company',
+        canonicalName: 'Domain Formatting',
+        metadata: { domain: ' WWW.acme6.test ' },
+      })
+      .returning();
+    expect(
+      (
+        await scope().engineMaintenance.affiliationCandidates(userId, ['alex@acme6.test'])
+      ).companies.map((row) => row.id),
+    ).toEqual([required(normalizedDomain).id]);
+    await db.insert(entities).values([
+      {
+        teamId,
+        type: 'company',
+        canonicalName: 'Lookalike',
+        metadata: { website: 'https://acme7.test.evil.test/path' },
+      },
+      {
+        teamId,
+        type: 'company',
+        canonicalName: 'Conflicting Domain',
+        metadata: { domain: 'unrelated.test', website: 'https://acme7.test/path' },
+      },
+      {
+        teamId,
+        type: 'company',
+        canonicalName: 'Invalid Port',
+        metadata: { website: 'https://acme8.test:invalid/path' },
+      },
+    ]);
+    expect(
+      (await scope().engineMaintenance.affiliationCandidates(userId, ['alex@acme7.test']))
+        .companies,
+    ).toHaveLength(0);
+    const invalid = await scope().engineMaintenance.affiliationCandidates(userId, [
+      'alex@acme8.test',
+    ]);
+    expect(suggestions.resolveCompanyAffiliation(['alex@acme8.test'], invalid.companies).kind).toBe(
+      'new',
+    );
+  });
+
+  it('retains archived cleanup identity context without proposing unusable merges', async () => {
+    const [active, archived] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'company', canonicalName: 'Acme Audit', aliases: ['AcmeAudit'] },
+        { teamId, type: 'company', canonicalName: 'AcmeAudit', archivedAt: new Date() },
+      ])
+      .returning();
+    expect(
+      (await scope().engineMaintenance.identityCandidates(required(active))).map((row) => row.id),
+    ).toContain(required(archived).id);
+    await processSuggestionJobForTests(
+      { db },
+      {
+        scope: 'object_cleanup',
+        teamId,
+        objectId: required(active).id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+    expect(
+      (await db.select().from(agentSuggestionItems)).filter(
+        (row) => row.targetKind === 'object_merge',
+      ),
+    ).toHaveLength(0);
+    expect(
+      required(
+        (
+          await db
+            .select()
+            .from(entities)
+            .where(eq(entities.id, required(archived).id))
+        )[0],
+      ).archivedAt,
+    ).not.toBeNull();
+  });
+
+  it('replaces stale document relationship proposals after chunk re-extraction', async () => {
+    const fixture = await documentFixture();
+    const [person, company] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'person', canonicalName: 'Alex Example' },
+        { teamId, type: 'company', canonicalName: 'Acme' },
+      ])
+      .returning();
+    const insertChunk = () =>
+      db
+        .insert(documentChunks)
+        .values({
+          teamId,
+          documentId: fixture.doc.id,
+          documentVersionId: fixture.version.id,
+          chunkIndex: 0,
+          text: 'Alex Example works at Acme.',
+          tokenCount: 8,
+        })
+        .returning();
+    await insertChunk();
+    const chat: typeof llm.chatStructured = (input) =>
+      Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Alex affiliation',
+              reason: 'Explicit client list affiliation.',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: 'Alex works at Acme',
+                  proposedPayload: {
+                    fromEntityId: required(person).id,
+                    toEntityId: required(company).id,
+                    kind: 'related',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    const data = { scope: 'document' as const, teamId, documentVersionId: fixture.version.id };
+    const io = { chatStructured: chat, getEnv: () => getEnv(), modelId: 'fixture' };
+    await processSuggestionJobForTests({ db }, data, io);
+    expect(
+      (await db.select().from(agentSuggestionItems)).filter(
+        (row) => row.targetKind === 'object_relationship',
+      ),
+    ).toHaveLength(1);
+    await db.delete(documentChunks).where(eq(documentChunks.documentVersionId, fixture.version.id));
+    const [replacementChunk] = await insertChunk();
+    await processSuggestionJobForTests({ db }, data, io);
+    const replacementBundle = required(
+      (await db.select().from(agentSuggestions)).find(
+        (row) =>
+          (row.metadata as Record<string, unknown>).document_chunk_id ===
+          required(replacementChunk).id,
+      ),
+    );
+    const replacement = required(
+      (await db.select().from(agentSuggestionItems)).find(
+        (row) =>
+          row.suggestionId === replacementBundle.id && row.targetKind === 'object_relationship',
+      ),
+    );
+    expect(replacement.status).toBe('pending');
+    expect(await scope().suggestions.acceptSuggestionItem(replacement.id)).toBe(true);
+  });
+
+  it('keeps a deterministic merge survivor throughout daily pagination but honors explicit object repair', async () => {
+    const preferredId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    const otherId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+    await db.insert(entities).values([
+      {
+        id: preferredId,
+        teamId,
+        type: 'company',
+        canonicalName: 'Acme Audit',
+        aliases: ['AcmeAudit'],
+      },
+      { id: otherId, teamId, type: 'company', canonicalName: 'AcmeAudit' },
+    ]);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, triggeredBy: 'daily' },
+    );
+    const daily = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(daily).toHaveLength(1);
+    expect(required(daily[0]).targetId).toBe(preferredId);
+    expect(required(daily[0]).proposedPayload).toMatchObject({ survivorId: preferredId });
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, triggeredBy: 'manual' },
+    );
+    const teamManual = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(teamManual).toHaveLength(1);
+    expect(required(teamManual[0]).targetId).toBe(preferredId);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: otherId, triggeredBy: 'continuation' },
+    );
+    const continued = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(continued).toHaveLength(1);
+    expect(required(continued[0]).targetId).toBe(preferredId);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: otherId, triggeredBy: 'memory_repair' },
+    );
+    const manual = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(manual).toHaveLength(1);
+    expect(required(manual[0]).proposedPayload).toMatchObject({ survivorId: otherId });
+  });
+
+  it('normalizes proposed email domains before retrieving affiliation candidates', async () => {
+    const [person, company] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'person', canonicalName: 'Alex Example' },
+        { teamId, type: 'company', canonicalName: 'Acme', metadata: { domain: 'acme.test' } },
+        {
+          teamId,
+          type: 'company',
+          canonicalName: 'Public Provider',
+          metadata: { domain: 'gmail.com' },
+        },
+      ])
+      .returning();
+    const candidates = await scope().engineMaintenance.affiliationCandidates(required(person).id, [
+      ' Alex@ACME.TEST ',
+    ]);
+    expect(candidates.companies.map((row) => row.id)).toEqual([required(company).id]);
+    expect(
+      (
+        await scope().engineMaintenance.affiliationCandidates(required(person).id, [
+          'Alex@GMAIL.COM',
+        ])
+      ).companies,
+    ).toHaveLength(0);
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText: 'Alex Example works at Acme. Alex uses business email Alex@ACME.TEST.',
+        visibility: 'team',
+        authorUserId: userId,
+        occurredAt: new Date(),
+        sourceMetadata: {
+          extracted_at: new Date().toISOString(),
+          extraction_model_version: 'fixture',
+          source_payload_ref: 'inline://mixed-case-email-fixture',
+        },
+      })
+      .returning();
+    const chat: typeof llm.chatStructured = (input) =>
+      Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Alex business identity',
+              confidence: 'high',
+              reason: 'Explicit business contact email.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'identity_facet',
+                  title: 'Alex email',
+                  proposedPayload: {
+                    entityId: required(person).id,
+                    kind: 'email',
+                    value: 'Alex@ACME.TEST',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    await processSuggestionJobForTests(
+      { db },
+      { teamId, rawEventId: required(event).id },
+      { chatStructured: chat, modelId: 'fixture' },
+    );
+    const items = (await scope().suggestions.listPendingSuggestions()).flatMap(
+      (bundle) => bundle.items,
+    );
+    expect(
+      items.some(
+        (item) =>
+          item.targetKind === 'object_relationship' &&
+          [item.proposedPayload.fromEntityId, item.proposedPayload.toEntityId].includes(
+            required(person).id,
+          ) &&
+          [item.proposedPayload.fromEntityId, item.proposedPayload.toEntityId].includes(
+            required(company).id,
+          ),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps archived lexical and contextual identities for cleanup but excludes them from incoming proposals', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    const [archived] = await db
+      .insert(entities)
+      .values({
+        teamId,
+        type: 'project',
+        canonicalName: 'Client Portal',
+        aliases: ['PBC-portaali'],
+        archivedAt: new Date(),
+        metadata: { companyId: 'northstar' },
+      })
+      .returning();
+    const subject = {
+      id: 'candidate',
+      type: 'project',
+      canonicalName: 'PBC-portaali',
+      metadata: { companyId: 'northstar' },
+    };
+    expect(
+      (await scope().engineMaintenance.identityCandidates(subject)).map((row) => row.id),
+    ).toContain(required(archived).id);
+    expect(
+      await scope().engineMaintenance.identityCandidates(subject, { includeArchived: false }),
+    ).toHaveLength(0);
+    const contextualSubject = { ...subject, canonicalName: 'Audit uploads' };
+    expect(
+      (await scope().engineMaintenance.identityCandidates(contextualSubject)).map((row) => row.id),
+    ).toContain(required(archived).id);
+    expect(
+      await scope().engineMaintenance.identityCandidates(contextualSubject, {
+        includeArchived: false,
+      }),
+    ).toHaveLength(0);
+    const text =
+      'PBC-portaali is the Client Portal project. We need to track PBC-portaali for Northstar.';
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText: text,
+        visibility: 'team',
+        authorUserId: userId,
+        occurredAt: new Date(),
+        sourceMetadata: {
+          extracted_at: new Date().toISOString(),
+          extraction_model_version: 'fixture',
+          source_payload_ref: 'inline://archived-identity-fixture',
+        },
+      })
+      .returning();
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId,
+        rawEventId: required(event).id,
+        statement: text,
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning();
+    await db
+      .insert(factEntities)
+      .values({ factId: required(fact).id, entityId: required(archived).id, role: 'subject' });
+    let semanticCalls = 0;
+    const chat: typeof llm.chatStructured = (input) => {
+      if (input.instructions?.startsWith('Resolve object identity')) {
+        semanticCalls++;
+        return Promise.resolve({
+          model: 'fixture',
+          object: input.schema.parse({
+            matches: [
+              {
+                candidateId: required(archived).id,
+                sameScope: true,
+                reason: 'Same captured project name.',
+                citations: [{ rawEventId: required(event).id, quote: text }],
+              },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Track PBC-portaali',
+              confidence: 'high',
+              reason: 'Explicit request to track the project.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'PBC-portaali',
+                  proposedPayload: {
+                    type: 'project',
+                    canonicalName: 'PBC-portaali',
+                    metadata: { companyId: 'northstar' },
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    };
+    await processSuggestionJobForTests(
+      { db },
+      { teamId, rawEventId: required(event).id },
+      { chatStructured: chat, modelId: 'fixture' },
+    );
+    const proposals = (await scope().suggestions.listPendingSuggestions()).flatMap(
+      (bundle) => bundle.items,
+    );
+    expect(
+      proposals.some((item) => item.operation === 'create' && item.title === 'PBC-portaali'),
+    ).toBe(true);
+    expect(proposals.some((item) => item.targetId === required(archived).id)).toBe(false);
+    expect(semanticCalls).toBe(0);
+    expect(
+      required(
+        (
+          await db
+            .select()
+            .from(entities)
+            .where(eq(entities.id, required(archived).id))
+        )[0],
+      ).archivedAt,
+    ).not.toBeNull();
+  });
+
+  it('uses captured source text instead of paraphrased facts for identity citations', async () => {
+    const [object] = await db
+      .insert(entities)
+      .values({ teamId, type: 'project', canonicalName: 'Client Portal' })
+      .returning();
+    const text = 'PBC-portaali and Client Portal are the same audit document upload project.';
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText: text,
+        visibility: 'team',
+        occurredAt: new Date(),
+      })
+      .returning();
+    const rows = await db
+      .insert(facts)
+      .values([
+        {
+          teamId,
+          rawEventId: required(event).id,
+          statement: 'The client portal has a Finnish alias.',
+          confidence: 0.9,
+          modelVersion: 'fixture',
+        },
+        {
+          teamId,
+          rawEventId: required(event).id,
+          statement: 'Both names refer to an audit upload service.',
+          confidence: 0.9,
+          modelVersion: 'fixture',
+        },
+      ])
+      .returning();
+    await db.insert(factEntities).values(
+      rows.map((fact) => ({
+        factId: fact.id,
+        entityId: required(object).id,
+        role: 'subject' as const,
+      })),
+    );
+    expect(await scope().engineMaintenance.identityEvidence([required(object).id])).toEqual([
+      { objectId: required(object).id, rawEventId: required(event).id, text },
+    ]);
+  });
+
+  it('repairs a target beyond recent-context limits and keeps ordinary extraction eligible', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    // A task avoids the separate project/company semantic-resolution model call.
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId,
+        type: 'task',
+        canonicalName: 'Prepare audit outline',
+        status: 'todo',
+        updatedAt: new Date('2000-01-01'),
+      })
+      .returning();
+    await db.insert(entities).values(
+      Array.from({ length: 501 }, (_, index) => ({
+        teamId,
+        type: 'decision' as const,
+        canonicalName: `Recent decision ${index}`,
+        status: 'accepted',
+        updatedAt: new Date('2026-11-12'),
+      })),
+    );
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText:
+          'The audit outline is complete. We also need to prepare a separate client checklist.',
+        visibility: 'team',
+        authorUserId: userId,
+        occurredAt: new Date(),
+        sourceMetadata: {
+          extracted_at: new Date().toISOString(),
+          extraction_model_version: 'fixture',
+          source_payload_ref: 'inline://engine-repair-fixture',
+        },
+      })
+      .returning();
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId,
+        rawEventId: required(event).id,
+        statement: 'The audit outline was completed.',
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning();
+    await db
+      .insert(factEntities)
+      .values({ factId: required(fact).id, entityId: required(task).id, role: 'subject' });
+    let calls = 0;
+    const chat: typeof llm.chatStructured = (input) => {
+      calls++;
+      if (calls === 1) {
+        expect(input.prompt).toContain(required(task).id);
+        expect(input.prompt).toContain(required(task).canonicalName);
+      }
+      return Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Audit follow-through',
+              confidence: 'high',
+              reason: 'Completed outline and new checklist request.',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: required(task).id,
+                  title: 'Complete audit outline',
+                  proposedPayload: { status: 'done' },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare client checklist',
+                  proposedPayload: { canonicalName: 'Prepare client checklist', status: 'todo' },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    };
+    const io = {
+      chatStructured: chat,
+      modelId: 'fixture',
+      taskCategoryClassificationEnabled: false,
+    };
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: required(task).id },
+      io,
+    );
+    const [afterRepair] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, required(event).id));
+    expect(required(afterRepair).sourceMetadata).not.toHaveProperty('suggestion_model_version');
+    const repairItem = (await db.select().from(agentSuggestionItems)).find(
+      (item) => item.operation === 'update' && item.targetId === required(task).id,
+    );
+    expect(repairItem).toBeDefined();
+    expect(await scope().suggestions.acceptSuggestionItem(required(repairItem).id)).toBe(true);
+    expect(
+      required(
+        (
+          await db
+            .select()
+            .from(entities)
+            .where(eq(entities.id, required(task).id))
+        )[0],
+      ).status,
+    ).toBe('done');
+    expect(
+      (await db.select().from(agentSuggestionItems)).some(
+        (item) => item.operation === 'create' && item.targetKind === 'task',
+      ),
+    ).toBe(false);
+    await processSuggestionJobForTests({ db }, { teamId, rawEventId: required(event).id }, io);
+    expect(calls).toBe(2);
+    expect(
+      (await scope().suggestions.listPendingSuggestions())
+        .flatMap((bundle) => bundle.items)
+        .some((item) => item.operation === 'create' && item.title === 'Prepare client checklist'),
+    ).toBe(true);
+  });
+
+  it('does not propose merging same-name projects based only on a shared company', async () => {
+    await db.insert(entities).values([
+      {
+        teamId,
+        type: 'project',
+        canonicalName: 'Client Portal',
+        metadata: { companyId: 'same-company', scope: 'audit uploads' },
+      },
+      {
+        teamId,
+        type: 'project',
+        canonicalName: 'Client-Portal',
+        metadata: { companyId: 'same-company', scope: 'marketing downloads' },
+      },
+    ]);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId },
+      { chatStructured: model },
+    );
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items.some((item) => item.targetKind === 'object_merge')).toBe(false);
+  });
+
+  it('persists deduplicated billing operation references for maintenance coverage', async () => {
+    const run = await scope().engineMaintenance.beginCleanup();
+    await runWithBillingContext(
+      { db, teamId, userId, operationClass: 'test', operationId: 'synthetic-operation' },
+      async () => {
+        await scope().engineMaintenance.checkpoint(run.id, { status: 'running' });
+        await scope().engineMaintenance.checkpoint(run.id, { status: 'paused' });
+      },
+    );
+    expect(required((await scope().engineMaintenance.latestRuns())[0]).metadata).toMatchObject({
+      billingOperationIds: ['synthetic-operation'],
+      totalObjects: 0,
+      proposalCount: 0,
+    });
+  });
+
+  it('covers more than 500 objects despite concurrent updatedAt changes and excludes another team', async () => {
+    await db.insert(entities).values(
+      Array.from({ length: 601 }, (_, i) => ({
+        teamId,
+        type: 'project' as const,
+        canonicalName: `Project ${i}`,
+      })),
+    );
+    await db
+      .insert(entities)
+      .values({ teamId: otherTeam, type: 'project', canonicalName: 'Private other workspace' });
+    const run = await scope().engineMaintenance.beginCleanup();
+    const lease = await scope().engineMaintenance.claimRun(run.id);
+    expect(lease).not.toBeNull();
+    expect(await scope().engineMaintenance.claimRun(run.id)).toBeNull();
+    let cursor: string | null = null;
+    const seen = new Set<string>();
+    for (;;) {
+      const page = await scope().engineMaintenance.cleanupPage(cursor, run.startedAt, 100);
+      if (!page.length) break;
+      for (const object of page) {
+        expect(seen.has(object.id)).toBe(false);
+        seen.add(object.id);
+      }
+      cursor = required(page.at(-1)).id;
+      await db
+        .update(entities)
+        .set({ updatedAt: new Date() })
+        .where(eq(entities.id, required(page[0]).id));
+      await scope().engineMaintenance.checkpoint(
+        run.id,
+        { cursor, examined: seen.size, status: 'paused' },
+        required(lease),
+      );
+    }
+    expect(seen.size).toBe(601);
+    expect((await scope().engineMaintenance.beginCleanup()).examined).toBe(601);
+    await scope().engineMaintenance.releaseRun(run.id, required(lease));
+  });
+  it('creates document approvals once and rejects acceptance after source visibility changes', async () => {
+    const fixture = await documentFixture();
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId,
+        documentId: fixture.doc.id,
+        documentVersionId: fixture.version.id,
+        chunkIndex: 0,
+        text: 'Acme is a client. Its business domain is acme.test.',
+        tokenCount: 14,
+      })
+      .returning();
+    const data = { scope: 'document' as const, teamId, documentVersionId: fixture.version.id };
+    const io = { chatStructured: model, getEnv: () => getEnv(), modelId: 'fixture' };
+    await processSuggestionJobForTests({ db }, data, io);
+    await processSuggestionJobForTests({ db }, data, io);
+    const bundles = await db.select().from(agentSuggestions);
+    expect(bundles).toHaveLength(1);
+    const runs = await scope().engineMaintenance.latestRuns();
+    expect(required(runs[0]).metadata).toMatchObject({ proposalCount: 1 });
+    expect(required(bundles[0]).metadata).toMatchObject({
+      document_version_id: fixture.version.id,
+      document_chunk_id: required(chunk).id,
+    });
+    expect(await db.select().from(entities)).toHaveLength(0);
+    const [item] = await db.select().from(agentSuggestionItems);
+    await db
+      .update(documents)
+      .set({ visibility: 'private' })
+      .where(eq(documents.id, fixture.doc.id));
+    await scope().suggestions.acceptSuggestionItem(required(item).id);
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+  it('retries shared document extraction using sharing evidence without exposing its private upload', async () => {
+    const fixture = await documentFixture();
+    const memberId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await pg.exec(
+      `INSERT INTO users(id,email,name) VALUES ('${memberId}','member@example.test','Member'); INSERT INTO team_members(team_id,user_id,role) VALUES ('${teamId}','${memberId}','member');`,
+    );
+    await db
+      .update(rawEvents)
+      .set({
+        visibility: 'private',
+        visibilityOwnerUserId: userId,
+        contentText: 'Private upload note must stay private',
+        sourceMetadata: { private_note: 'Private upload metadata must stay private' },
+      })
+      .where(eq(rawEvents.id, fixture.event.id));
+    await db.insert(documentChunks).values({
+      teamId,
+      documentId: fixture.doc.id,
+      documentVersionId: fixture.version.id,
+      chunkIndex: 0,
+      text: 'Acme is a client. Its business domain is acme.test.',
+      tokenCount: 14,
+    });
+    const data = {
+      scope: 'document' as const,
+      teamId,
+      documentVersionId: fixture.version.id,
+      explicitRequest: true,
+    };
+    let modelCalls = 0;
+    const checkedModel: typeof llm.chatStructured = async (input) => {
+      modelCalls++;
+      expect(input.prompt).not.toContain('Private upload note');
+      expect(input.prompt).not.toContain('Private upload metadata');
+      return model(input);
+    };
+    const io = { chatStructured: checkedModel, getEnv: () => getEnv(), modelId: 'fixture' };
+    // No public sharing evidence yet: do not permanently complete a skipped run.
+    const failure = await processSuggestionJobForTests({ db }, data, io).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).toContain('Document sharing evidence unavailable');
+    expect(modelCalls).toBe(0);
+    expect(required((await scope().engineMaintenance.latestRuns())[0]).status).toBe('failed');
+    await scope().documents.setDocumentVisibility({ id: fixture.doc.id, visibility: 'team' });
+    await processSuggestionJobForTests({ db }, data, io);
+    await processSuggestionJobForTests({ db }, data, io);
+    expect(modelCalls).toBe(1);
+    const bundles = await db.select().from(agentSuggestions);
+    expect(bundles).toHaveLength(1);
+    const memberScope = withTeam(db, teamId, memberId);
+    const bundle = required(await memberScope.suggestions.getSuggestion(required(bundles[0]).id));
+    expect(bundle.evidence).toHaveLength(1);
+    expect(required(bundle.evidence[0]).rawEventId).not.toBe(fixture.event.id);
+    expect(required(bundle.evidence[0]).quote).toContain('Acme is a client');
+    expect(JSON.stringify(bundle)).not.toContain('Private upload');
+    const item = required((await db.select().from(agentSuggestionItems))[0]);
+    expect(await memberScope.suggestions.acceptSuggestionItem(item.id)).toBe(true);
+    expect(await db.select().from(entities)).toHaveLength(1);
+    const original = required(
+      (await db.select().from(rawEvents).where(eq(rawEvents.id, fixture.event.id)))[0],
+    );
+    expect(original.visibility).toBe('private');
+    expect(original.contentText).toBe('Private upload note must stay private');
+    expect(original.sourceMetadata).toEqual({
+      private_note: 'Private upload metadata must stay private',
+    });
+    await scope().documents.setDocumentVisibility({ id: fixture.doc.id, visibility: 'private' });
+    expect(await memberScope.suggestions.getSuggestion(required(bundles[0]).id)).toBeNull();
+  });
+  it('fences a stale run owner before it can persist document approvals', async () => {
+    const fixture = await documentFixture();
+    await db.insert(documentChunks).values({
+      teamId,
+      documentId: fixture.doc.id,
+      documentVersionId: fixture.version.id,
+      chunkIndex: 0,
+      text: 'Acme is a client.',
+      tokenCount: 5,
+    });
+    const stealingModel: typeof llm.chatStructured = async (input) => {
+      await db
+        .update(engineMaintenanceRuns)
+        .set({ leaseOwner: crypto.randomUUID() })
+        .where(eq(engineMaintenanceRuns.teamId, teamId));
+      return model(input);
+    };
+    const error = await processSuggestionJobForTests(
+      { db },
+      { scope: 'document', teamId, documentVersionId: fixture.version.id },
+      { chatStructured: stealingModel },
+    ).then(
+      () => null,
+      (failure: unknown) => failure,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain('Maintenance lease lost');
+    expect(await db.select().from(agentSuggestions)).toHaveLength(0);
+  });
+  it('does not publish document proposals if visibility changes during inference', async () => {
+    const fixture = await documentFixture();
+    await db.insert(documentChunks).values({
+      teamId,
+      documentId: fixture.doc.id,
+      documentVersionId: fixture.version.id,
+      chunkIndex: 0,
+      text: 'Acme is a client.',
+      tokenCount: 5,
+    });
+    const changingModel: typeof llm.chatStructured = async (input) => {
+      await db
+        .update(documents)
+        .set({ visibility: 'private' })
+        .where(eq(documents.id, fixture.doc.id));
+      return model(input);
+    };
+    const error = await processSuggestionJobForTests(
+      { db },
+      { scope: 'document', teamId, documentVersionId: fixture.version.id },
+      { chatStructured: changingModel },
+    ).then(
+      () => null,
+      (failure: unknown) => failure,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain('Document evidence changed');
+    expect(await db.select().from(agentSuggestions)).toHaveLength(0);
+  });
+  it('does not permanently complete document review before extraction is ready', async () => {
+    const fixture = await documentFixture('pending');
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'document', teamId, documentVersionId: fixture.version.id },
+      { chatStructured: model },
+    );
+    expect(await db.select().from(engineMaintenanceRuns)).toHaveLength(0);
+  });
+  it('proposes a supported company affiliation without writing canonical relationships', async () => {
+    const [person, company] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'person', canonicalName: 'Alex Example' },
+        { teamId, type: 'company', canonicalName: 'Acme', metadata: { domain: 'acme.test' } },
+      ])
+      .returning();
+    await db.insert(objectIdentityFacets).values({
+      teamId,
+      entityId: required(person).id,
+      kind: 'email',
+      value: 'alex@acme.test',
+      normalizedValue: 'alex@acme.test',
+      source: 'manual',
+      status: 'approved',
+    });
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: required(person).id },
+    );
+    const items = await db.select().from(agentSuggestionItems);
+    expect(
+      items.some((item) => {
+        const payload = item.proposedPayload as Record<string, unknown>;
+        return (
+          [payload.fromEntityId, payload.toEntityId].includes(required(company).id) &&
+          [payload.fromEntityId, payload.toEntityId].includes(required(person).id)
+        );
+      }),
+    ).toBe(true);
+  });
+  it('resets derived objects while preserving captured sources, documents and another team', async () => {
+    const fixture = await documentFixture();
+    await db.insert(rawEvents).values({
+      teamId,
+      source: 'system',
+      contentText: 'Created discarded project',
+      visibility: 'team',
+      occurredAt: new Date(),
+    });
+    await db.insert(entities).values([
+      { teamId, type: 'project', canonicalName: 'Discard development edits' },
+      { teamId: otherTeam, type: 'company', canonicalName: 'Other workspace' },
+    ]);
+    const saved = {
+      ENGINE_DEV_RESET_ALLOWED: process.env.ENGINE_DEV_RESET_ALLOWED,
+      REDIS_URL: process.env.REDIS_URL,
+      QDRANT_URL: process.env.QDRANT_URL,
+    };
+    Object.assign(process.env, {
+      ENGINE_DEV_RESET_ALLOWED: 'true',
+      REDIS_URL: 'redis://localhost:6379',
+      QDRANT_URL: 'http://localhost:6333',
+    });
+    try {
+      const run = await scope().engineMaintenance.beginCleanup('development_reset');
+      await scope().engineMaintenance.resetDerivedState(run.id);
+      expect(await db.select().from(entities)).toHaveLength(1);
+      expect(required((await db.select().from(entities))[0]).teamId).toBe(otherTeam);
+      expect(required((await db.select().from(rawEvents))[0]).id).toBe(fixture.event.id);
+      expect(required((await db.select().from(documentVersions))[0]).id).toBe(fixture.version.id);
+      expect((await scope().engineMaintenance.replayEvents(null)).map((row) => row.id)).toEqual([
+        fixture.event.id,
+      ]);
+      expect(required((await scope().engineMaintenance.replayDocuments())[0]).id).toBe(
+        fixture.version.id,
+      );
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
+    }
+  });
+  it('restricts destructive reset to local development infrastructure', () => {
+    const base = {
+      NODE_ENV: 'test',
+      ENGINE_DEV_RESET_ALLOWED: 'true',
+      DATABASE_URL: 'postgres://test@localhost/test',
+      REDIS_URL: 'redis://localhost',
+      QDRANT_URL: 'http://localhost:6333',
+    };
+    expect(() => {
+      suggestions.assertDevelopmentResetEnvironment(base);
+    }).not.toThrow();
+    expect(() => {
+      suggestions.assertDevelopmentResetEnvironment({ ...base, NODE_ENV: 'production' });
+    }).toThrow();
+    expect(() => {
+      suggestions.assertDevelopmentResetEnvironment({
+        ...base,
+        DATABASE_URL: 'postgres://test@db.example.com/test',
+      });
+    }).toThrow();
+  });
+});
+
+function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error('Expected fixture value');
+  return value;
+}

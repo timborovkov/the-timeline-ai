@@ -1,6 +1,10 @@
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
-
-import type { OnboardingChecklistState, OnboardingStep } from '@timeline/shared/onboarding';
+import {
+  orderChecklistItems,
+  type FirstRunPath,
+  type OnboardingChecklistState,
+  type OnboardingStep,
+} from '@timeline/shared/onboarding';
 
 export const ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS = 30;
 
@@ -32,15 +36,17 @@ export function onboardingChecklistCacheKey(teamId: string, userId: string): str
 
 export function toOnboardingChecklistView(
   state: OnboardingChecklistState,
+  starterPath?: FirstRunPath | null,
 ): OnboardingChecklistView {
+  const items = state.steps.map((step) => ({
+    key: step.step,
+    label: ONBOARDING_STEP_LABELS[step.step],
+    completed: step.completed,
+  }));
   return {
     ...(state.canManageBilling !== undefined ? { canManageBilling: state.canManageBilling } : {}),
     dismissed: state.dismissed,
-    items: state.steps.map((step) => ({
-      key: step.step,
-      label: ONBOARDING_STEP_LABELS[step.step],
-      completed: step.completed,
-    })),
+    items: starterPath ? orderChecklistItems(items, starterPath) : items,
   };
 }
 
@@ -48,10 +54,11 @@ export async function loadOnboardingChecklistView(input: {
   teamId: string;
   userId: string;
   getChecklistState: () => Promise<OnboardingChecklistState>;
+  starterPath?: FirstRunPath | null;
 }): Promise<OnboardingChecklistView> {
   return cachedJson(
     onboardingChecklistCacheKey(input.teamId, input.userId),
     ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS,
-    async () => toOnboardingChecklistView(await input.getChecklistState()),
+    async () => toOnboardingChecklistView(await input.getChecklistState(), input.starterPath),
   );
 }

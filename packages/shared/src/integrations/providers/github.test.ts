@@ -240,7 +240,7 @@ describe('githubProvider.handleOAuthCallback', () => {
       }
       if (url.pathname === '/user') {
         return Promise.resolve(
-          new Response(JSON.stringify({ id: 42, login: 'tim' }), {
+          new Response(JSON.stringify({ id: 42, login: 'taylor' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           }),
@@ -252,7 +252,7 @@ describe('githubProvider.handleOAuthCallback', () => {
             JSON.stringify({
               installations: [
                 { id: 123, account: { login: 'acme', type: 'Organization' } },
-                { id: 456, account: { login: 'tim', type: 'User' } },
+                { id: 456, account: { login: 'taylor', type: 'User' } },
               ],
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
@@ -276,19 +276,19 @@ describe('githubProvider.handleOAuthCallback', () => {
 
     expect(result).toMatchObject({
       externalAccountId: '42',
-      displayName: 'GitHub — tim',
+      displayName: 'GitHub — taylor',
     });
     expect(result.tokens).toMatchObject({
       access_token: 'ghu_user',
       github_app_installations: [
         { id: '123', account_login: 'acme', account_type: 'Organization' },
-        { id: '456', account_login: 'tim', account_type: 'User' },
+        { id: '456', account_login: 'taylor', account_type: 'User' },
       ],
     });
   });
 });
 
-describe('githubProvider.listSyncableResources', () => {
+describe('githubProvider.browseResources', () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -337,7 +337,7 @@ describe('githubProvider.listSyncableResources', () => {
     /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
       Object.assign(fetchMock, { preconnect: vi.fn() });
 
-    const resources = await githubProvider.listSyncableResources({} as never, {
+    const resources = await githubProvider.browseResources({} as never, {
       access_token: 'gho_token',
     });
 
@@ -386,14 +386,14 @@ describe('githubProvider.listSyncableResources', () => {
       Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
-      githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
+      githubProvider.browseResources({} as never, { access_token: 'gho_token' }),
     ).rejects.toMatchObject({
       code: 'github_rate_limited',
       retryAt: new Date('2026-06-25T03:00:00.000Z'),
       rateLimitKind: 'primary',
     });
     await expect(
-      githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
+      githubProvider.browseResources({} as never, { access_token: 'gho_token' }),
     ).rejects.toBeInstanceOf(GithubRateLimitError);
     vi.useRealTimers();
   });

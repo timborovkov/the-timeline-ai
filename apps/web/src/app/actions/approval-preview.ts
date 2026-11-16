@@ -3,13 +3,14 @@
 import { displayObjectTitle } from '@timeline/shared/objects/types';
 import { z } from 'zod';
 
+import type { ActionState } from '@/lib/action-result';
 import type {
   ApprovalCalendarSnapshot,
   ApprovalObjectSnapshot,
   ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -17,6 +18,12 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 export interface ApprovalPreviewActionState extends ActionState {
   snapshot?: ApprovalTargetSnapshot;
   members?: Record<string, string>;
+  currentEvidence?: {
+    rawEventId: string;
+    quote: string | null;
+    source: string;
+    occurredAt: string;
+  }[];
 }
 
 function iso(value: Date | string | null | undefined): string | null {
@@ -155,6 +162,15 @@ export async function getApprovalTargetSnapshotAction(
         return {
           ok: true,
           snapshot: { kind: 'object', object: serializeObject(object) },
+          currentEvidence: [...object.provenance.whyThisExists, ...object.provenance.whatChangedIt]
+            .flatMap((entry) => entry.evidence)
+            .slice(0, 8)
+            .map((ev) => ({
+              rawEventId: ev.rawEventId,
+              quote: ev.quote ?? ev.contentText,
+              source: ev.source,
+              occurredAt: ev.occurredAt.toISOString(),
+            })),
           members: memberLabels,
         };
       }

@@ -205,13 +205,7 @@ function PrivacyAiAndProviderSections() {
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyDetail}
         <TranscriptionRetentionSources />
       </p>
-      <p>
-        We do not use Customer Content to train or fine-tune any model, or to build model-training
-        datasets. Creating customer-specific embeddings for retrieval is service processing, not
-        model training. We also disable rich prompt-and-output observability tracing in hosted
-        production. AI output can be inaccurate; Timeline keeps citations so users can inspect the
-        underlying evidence.
-      </p>
+      <PrivacyConversationAndTrainingDisclosure />
 
       <h2>6. Meetings, recordings, and transcripts</h2>
       <p>
@@ -269,11 +263,55 @@ function PrivacyAiAndProviderSections() {
             </td>
           </tr>
           <tr>
+            <td>Firecrawl (SideGuide Technologies, Inc.)</td>
+            <td>
+              When you request a website scan or enable a recurring schedule, Timeline sends the
+              public website URL a user submits to Firecrawl so Firecrawl can fetch up to five
+              public pages and return markdown. Timeline does not send workspace records, account
+              passwords, or private logged-in pages. Firecrawl&apos;s published privacy policy names
+              the operator as SideGuide Technologies, Inc. d/b/a Firecrawl and states that its
+              servers are in the United States. Firecrawl documents that crawl job results remain
+              retrievable from its API for 24 hours after completion. Broader retention of fetched
+              page content beyond that documented API window is to be confirmed. Timeline does not
+              enable Firecrawl&apos;s Enterprise zero-data-retention option. See Firecrawl&apos;s{' '}
+              <a href="https://www.firecrawl.dev/privacy-policy">privacy policy</a> and{' '}
+              <a href="https://docs.firecrawl.dev/security">security overview</a>. Deleting data in
+              Timeline does not by itself delete copies Firecrawl holds. Websites about clients,
+              partners, or other companies may include other people&apos;s public information.
+              Timeline stores the website URL, schedule, scan status and usage, and captured pages
+              as cited evidence and versioned document snapshots. Current answers prefer the latest
+              successfully processed page version; historical evidence remains available. Pausing or
+              removing a website source stops future scans without erasing earlier captures.
+              Timeline may suggest records for your approval. To request removal of captured pages,
+              snapshots, and derived information, contact the workspace administrator or contact us
+              using the details in this policy. We coordinate applicable deletion requests with the
+              workspace and processors; deleting a document alone does not remove all captured
+              evidence, backups, or processor copies.
+            </td>
+          </tr>
+          <tr>
             <td>Resend</td>
             <td>
-              Transactional and inbound email, invitations, and support messages. Resend retains
-              message content and delivery metadata under its service terms and account settings.
-              Account-specific retention, tracking, and deletion settings remain to be verified.
+              Timeline sends transactional product email through Resend from the verified domain{' '}
+              <code>in.thetimeline.cc</code> in the <code>eu-west-1</code> sending region (for
+              example noreply@in.thetimeline.cc). Current types are team invitations, support
+              requests, welcome messages, email verification, password reset, daily digests,
+              connection-attention notices, and billing usage alerts. Timeline does not use Resend
+              audiences, contacts, segments, broadcasts, topics, automations, or Resend templates.
+              Inbound receiving is enabled on the same domain. Resend posts a signature-verified{' '}
+              <code>email.received</code> webhook to{' '}
+              <code>https://thetimeline.cc/api/email/inbound</code>; a worker then fetches the body
+              and attachments from Resend&apos;s receiving API and stores them in the workspace.
+              Open tracking and click tracking are currently enabled at the domain level. Timeline
+              does not set per-send tracking flags. Resend states that customer data is stored in
+              the United States regardless of sending region. Resend&apos;s published documentation
+              for its Free, Pro, and Scale plans states that email and log data are retained for 30
+              days while the account is active and deleted within 90 days after termination. See
+              Resend&apos;s <a href="https://resend.com/security/gdpr">GDPR documentation</a>,{' '}
+              <a href="https://resend.com/legal/dpa">DPA</a>, and{' '}
+              <a href="https://resend.com/legal/subprocessors">subprocessor list</a>. Deleting data
+              in Timeline does not by itself delete copies Resend holds during that window; earlier
+              deletion of Resend copies requires a request to Resend.
             </td>
           </tr>
           <tr>
@@ -310,6 +348,14 @@ function PrivacyAiAndProviderSections() {
               from a team&apos;s optional GitHub content integration.
             </td>
           </tr>
+          <tr>
+            <td>Google (authentication, when configured)</td>
+            <td>
+              OpenID email and profile identifiers used to sign in. Sign-in requests only{' '}
+              <code>openid</code>, <code>email</code>, and <code>profile</code> — never Google Drive
+              scopes. Connecting Drive remains a separate Connections flow.
+            </td>
+          </tr>
         </tbody>
       </table>
 
@@ -319,8 +365,89 @@ function PrivacyAiAndProviderSections() {
         Monday.com, Sentry, calendar providers, custom webhooks, and custom MCP servers. We exchange
         data with them only when configured or invoked by the customer and according to the
         permissions granted. Those providers act under their own terms and privacy notices for their
-        services. Disconnecting a source stops future access but does not automatically erase
-        records already captured into Timeline.
+        services.
+      </p>
+      <p>Disconnecting access and deleting captured records are different actions:</p>
+      <ul>
+        <li>
+          <strong>Personal account or OAuth disconnect:</strong> A member can remove their own
+          provider account from Timeline. Timeline deletes the encrypted credentials stored for that
+          connection. For Google Drive, Timeline also requests that Google revoke the grant when no
+          remaining Drive connection or Google sign-in on this project still needs it. Workspace
+          sources that used that account are disabled until a replacement connection is chosen. This
+          does not cancel provider watches or webhooks by itself, and it does not delete captured
+          timeline events, documents, Drive change snapshots, or extracted text.
+        </li>
+        <li>
+          <strong>Workspace source removal:</strong> A team admin can disconnect a workspace source.
+          Timeline stops future capture from that source, deletes the source configuration and
+          related sync records, and attempts to cancel provider-managed watches or webhooks where
+          that cleanup is implemented (Google Drive change watches and Monday.com webhooks). Other
+          providers&apos; app-level or manually configured webhooks are not uninstalled by this
+          action. For Google Drive sources, Timeline also cancels in-flight document extraction and
+          deletes Drive change snapshots, the latest extracted text kept for change detection, and
+          transient extract files. Already-captured timeline events and uploaded documents remain.
+        </li>
+        <li>
+          <strong>Deletion of captured history or documents:</strong> Members can soft-delete
+          documents they can access; the document is hidden and can be restored, and stored bytes
+          and search chunks are not immediately purged. Calendar events can be deleted in the
+          product. Captured source events remain immutable workspace evidence. Disconnecting a
+          connection or source does not erase that history. An owner can request permanent team
+          deletion in Team settings. This immediately disables the team for all members; platform
+          administrators carry out deletion of all team content, including private content within
+          that team, files, search vectors, exports, queued payloads and team integrations. Unused
+          personal connector credentials are removed; connections used by other teams, user
+          accounts, sign-in credentials and original external files remain. Only platform
+          administrators can restore access before permanent deletion begins. A minimal team
+          tombstone and limited financial/security records remain under documented retention and
+          legal holds. Backup expiry and provider deletion are tracked separately; active-system
+          removal does not establish immediate erasure from every copy.
+        </li>
+      </ul>
+      <h3>Google Drive</h3>
+      <p>
+        Connecting Google Drive is separate from Sign in with Google. Drive requests{' '}
+        <code>openid</code>, <code>email</code>, and{' '}
+        <code>https://www.googleapis.com/auth/drive.readonly</code>. Sign-in requests only{' '}
+        <code>openid</code>, <code>email</code>, and <code>profile</code>.
+      </p>
+      <p>
+        Timeline uses selected Drive files, metadata, comments, and sharing signals to create cited
+        timeline events after a quiet editing window. OAuth tokens are encrypted at rest. Timeline
+        keeps hashes and the latest extracted text to detect later edits, then deletes that
+        extracted text on team-source disconnection, file removal, or when remaining selections no
+        longer cover the file. Full Drive copies are not stored in the document drive. You choose
+        which folders or files a team may use; a team admin activates those sources. Captured events
+        follow Timeline visibility rules. Timeline does not edit Drive files or change Drive
+        sharing.
+      </p>
+      <p>
+        A small billed model may read changed passages to judge whether they belong on the work
+        record. PDF, Word, and Slides text is extracted by Timeline’s document-extract service, then
+        deleted. Timeline does not use Google user data to train general-purpose models. Timeline’s
+        use of information received from Google APIs adheres to the Google API Services User Data
+        Policy, including the Limited Use requirements.
+      </p>
+      <p>
+        Removing your personal Drive account deletes Timeline’s encrypted Drive tokens and, when no
+        remaining Drive connection or Google sign-in still needs the grant, requests Google
+        revocation. Sources using that account are disabled. It does not delete their snapshots or
+        captured history. The personal connection may remain available to other sources. An admin
+        disconnect of the workspace Drive source deletes change snapshots and latest extracted text
+        for uncovered files, cancels in-flight extraction, and stops Drive change watches when
+        deprovision succeeds. Cited timeline events already captured stay in the workspace. Neither
+        action is a complete purge of every derived index, backup, or processor copy. You can also
+        remove Timeline in Google Account permissions.
+      </p>
+      <p>
+        To request deletion of captured Google Drive data, use our{' '}
+        <Link href="/help/support">support form</Link> or contact <SupportMailto />. We handle
+        requests manually after checking identity and workspace authority and confirming the scope.
+        The review includes captured records and derived data such as search indexes. We explain
+        applicable retention, backup expiry, or provider follow-up and confirm what has been
+        completed. This is a support-assisted process, not an automatic purge on disconnect. See{' '}
+        <Link href="/help/integrations">integration help</Link> for instructions.
       </p>
       <p>
         A member may also authorize ChatGPT, Claude, Codex, or another MCP-compatible client to
@@ -481,6 +608,16 @@ function PrivacyRetentionSections() {
             </td>
           </tr>
           <tr>
+            <td>Google Drive snapshots and tokens</td>
+            <td>
+              Encrypted Drive tokens are deleted when the member disconnects their Drive account;
+              dependent sources are disabled. Change snapshots and latest extracted text are deleted
+              when an admin removes the workspace Drive source or when remaining selections no
+              longer cover a file. Cited Drive timeline events remain with other Customer Content
+              until a team deletion or support-assisted deletion request is completed.
+            </td>
+          </tr>
+          <tr>
             <td>Raw meeting media at Recall.ai</td>
             <td>
               Timeline requests one-hour retention; raw media is not copied into Timeline object
@@ -529,6 +666,16 @@ function PrivacyRetentionSections() {
               or incident references, management actions, and support-session access and activity.
               This audit evidence can remain after the session record is deleted. We do not copy
               workspace content or credentials into these records.
+            </td>
+          </tr>
+          <tr>
+            <td>Email at Resend</td>
+            <td>
+              Outbound transactional email and inbound messages processed by Resend. Open tracking
+              and click tracking are currently enabled at the domain level. Resend states that, on
+              its Free, Pro, and Scale plans, email and log data are retained for 30 days while the
+              account is active and deleted within 90 days after termination. Deleting a Timeline
+              record does not itself delete the Resend copy during that window.
             </td>
           </tr>
           <tr>
@@ -587,10 +734,17 @@ function PrivacyRightsAndClosingSections() {
         the browser-storage inventory.
       </p>
       <p>
-        Send requests to <SupportMailto /> or use our{' '}
-        <Link href="/help/support">private support form</Link>. Do not put account details or a
-        privacy request in a public GitHub issue. You also have the right to complain to your local
-        supervisory authority or the{' '}
+        To request deletion of personal data or assistance with workspace Customer Content, email{' '}
+        <SupportMailto /> or use our <Link href="/help/support">private support form</Link>. Do not
+        put account details or a privacy request in a public GitHub issue. We will verify identity
+        and authority before acting. Timeline does not currently provide a complete self-serve admin
+        or support console that erases every store. After we process a valid request, copies can
+        remain in backups or recovery systems where those are configured, in security and audit
+        logs, in legal, billing, and tax records, and in processor systems until those providers
+        complete their own deletion. Email copies at Resend remain subject to Resend&apos;s
+        published retention window unless Resend is asked to delete them earlier. We do not publish
+        a deletion-completion SLA for those residual copies. Law may require us to retain some
+        records. You also have the right to complain to your local supervisory authority or the{' '}
         <a href="https://www.aki.ee/en/guidelines-legislation/how-can-we-help-foreign-persons-and-authorities">
           Estonian Data Protection Inspectorate
         </a>
@@ -646,5 +800,75 @@ export default function PrivacyPage() {
       <PrivacyRetentionSections />
       <PrivacyRightsAndClosingSections />
     </LegalPage>
+  );
+}
+
+function PrivacyConversationAndTrainingDisclosure() {
+  return (
+    <>
+      <p>
+        We do not use Customer Content to train or fine-tune any model, or to build model-training
+        datasets. Creating customer-specific embeddings for retrieval is service processing, not
+        model training. General prompt-and-output tracing is disabled in hosted production.
+        Workspace administrators may separately opt in to the limited evaluation collection below.
+        AI output can be inaccurate; Timeline keeps citations so users can inspect the underlying
+        evidence.
+      </p>
+      <h3>Optional workspace evaluation tracing</h3>
+      <p>
+        To investigate real extraction mistakes and compare model and prompt quality, workspace
+        owners and admins can opt in from Team settings → Evaluation tracing, including during
+        onboarding. Sharing is off by default and is not required to use the Service. Administrators
+        select eligible sources and acknowledge the disclosure; they must have authority to share
+        that content and inform affected members.
+      </p>
+      <p>
+        Once enabled on a reviewed installation, we sample 10% of eligible new source-extraction
+        runs, capped at 100 per workspace per day. LangSmith receives the text actually supplied to
+        the model, nearby source context, extracted facts, model and prompt versions, timing, and
+        generic failure status. These records may include names, messages and confidential
+        information; they are not guaranteed to be anonymized. Only team-visible records from
+        selected Telegram, email, Slack, GitHub or Google Drive activity sources qualify. Private
+        and restricted records, original file binaries, full agent conversations and agent tool
+        results are excluded. Attachment names, source URLs, and Google Drive change excerpts or
+        comments may be included when present in the event text supplied to the model.
+      </p>
+      <p>
+        Authorized Timeline staff may review collected traces for quality investigation and
+        benchmarking under limited-access policies. This does not grant general access to workspace
+        records, authorize model training, or automatically add content to permanent evaluation
+        datasets. LangSmith is a separate evaluation processor; the zero-data-retention inference
+        setting does not apply to these stored traces. Provider hosting region, transfers and
+        safeguards must be reviewed before capture is activated.
+      </p>
+      <p>
+        Traces are scheduled for deletion within 30 days. Changing or disabling the preference stops
+        collection under the previous permission and schedules removal of those traces; provider
+        outages can delay cleanup. Deletion of active provider copies is distinct from backup
+        expiry. Content-free permission and export audit records are retained separately. No
+        previous runs are backfilled. Contact support to request earlier removal or exercise your
+        data rights. Individual conversation reports remain a separate choice.
+      </p>
+      <h3>Optional conversation reports</h3>
+      <p>
+        Workspace owners and admins can enable conversation report sharing; it is disabled by
+        default. If enabled, you can choose to share a conversation for troubleshooting. Before
+        submitting, you can review and edit the conversation text and your description of the
+        problem. We collect those submitted fields with your sender and workspace identifiers,
+        consent version, and submission and expiry times. Hidden tool results, attachments, and
+        source documents are not automatically included. Sharing does not give staff access to other
+        conversations or workspace records.
+      </p>
+      <p>
+        Authorized Timeline staff may review submitted reports to investigate the issue, and each
+        report read is audited. Report content is encrypted in Timeline storage. We do not forward
+        these reports to LangSmith or use them for model training. Reports become unavailable after
+        30 days and are removed by scheduled cleanup. You can delete your report earlier from
+        Conversation reports; this deletes the active copy, not the original conversation. Backup
+        copies may remain under backup retention, and content-free consent and access audit records
+        are retained separately. Contact support if you can no longer access the workspace.
+        Disabling workspace sharing prevents new submissions; it does not delete existing reports.
+      </p>
+    </>
   );
 }

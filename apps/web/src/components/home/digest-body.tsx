@@ -49,7 +49,7 @@ export function DigestBody({
   );
 
   return (
-    <div className={cn('space-y-6 text-sm', className)}>
+    <div className={cn('@container space-y-6 text-sm', className)}>
       <div className="max-w-3xl space-y-5">
         {summary.map((paragraph, index) => (
           <p key={`${paragraph}:${String(index)}`} className="leading-6 text-fg">
@@ -73,7 +73,7 @@ export function DigestBody({
       </div>
 
       {activityItems.length > 0 ? (
-        <section aria-label="Activity" className="border-y border-border py-3">
+        <section aria-label="Activity" className="py-3">
           <p className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-fg-muted">
             {activityItems.map((item) => (
               <span key={item.label}>
@@ -84,7 +84,7 @@ export function DigestBody({
         </section>
       ) : null}
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 @lg:grid-cols-2">
         <DigestList
           label="New tasks"
           items={digest.tasks.map((task) => ({

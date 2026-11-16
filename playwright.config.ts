@@ -44,6 +44,8 @@ export default defineConfig({
       PLATFORM_ADMIN_EMAILS: e2eEnv.PLATFORM_ADMIN_EMAILS,
       AUTH_GITHUB_ID: 'e2e-auth-github-client-id',
       AUTH_GITHUB_SECRET: 'e2e-auth-github-client-secret',
+      GOOGLE_CLIENT_ID: 'e2e-google-client-id',
+      GOOGLE_CLIENT_SECRET: 'e2e-google-client-secret',
       SECRETS_ENCRYPTION_KEY: e2eEnv.SECRETS_ENCRYPTION_KEY,
       DATABASE_URL: e2eEnv.DATABASE_URL,
       REDIS_URL: e2eEnv.REDIS_URL,

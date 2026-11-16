@@ -513,6 +513,7 @@ describe('finalizeDocumentVersionAction', () => {
     expect(fakeScope.finalizeDocumentVersion).toHaveBeenCalledWith({
       versionId: VERSION_ID,
       byteSize: 4096,
+      sourceMetadata: { object_suggestions_enabled: true },
       contentType: 'text/plain',
     });
     expect(fakeEnqueueDocExtract).toHaveBeenCalledWith({

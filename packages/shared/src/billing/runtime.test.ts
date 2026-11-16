@@ -238,6 +238,30 @@ describe('billing runtime', () => {
     expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
+  it('does not accrue daily usage during disable or backfill the disabled interval after restoration', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = utcDay();
+    await pg.exec(`INSERT INTO documents (id,team_id,name) VALUES ('cccccccc-dddd-4eee-8fff-000000000001','${TEAM_ID}','fixture');
+      INSERT INTO document_versions (team_id,document_id,version,object_key,byte_size) VALUES ('${TEAM_ID}','cccccccc-dddd-4eee-8fff-000000000001',1,'${TEAM_ID}/fixture',${50 * BYTES_PER_MIB});
+      UPDATE teams SET disabled_at = now(), disabled_periods = '[{"start":"${day}T00:00:00Z"}]' WHERE id = '${TEAM_ID}';`);
+    await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day });
+    expect(await db.select().from(billingUsageLedger)).toHaveLength(0);
+    expect(await db.select().from(billingMemberDayLedger)).toHaveLength(0);
+    await pg.exec(
+      `UPDATE teams SET disabled_at=NULL,disabled_periods='[{"start":"${day}T00:00:00Z","end":"${day}T12:00:00Z"}]' WHERE id='${TEAM_ID}'`,
+    );
+    await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day });
+    expect(await db.select().from(billingUsageLedger)).toHaveLength(0);
+    expect(await db.select().from(billingMemberDayLedger)).toHaveLength(0);
+  });
   it('accrues extra member-days on paid plans and resets included discount', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
@@ -1278,10 +1302,11 @@ describe('billing runtime', () => {
     expect(reservation?.state).toBe('released');
   });
 
+  // €7.36 of usage less the €2 Free allowance leaves €5.36 before the admitted discount.
   for (const scenario of [
-    { name: 'expires', initial: 50, next: 50, expired: true, invoice: 118 },
-    { name: 'changes', initial: 50, next: 10, expired: false, invoice: 118 },
-    { name: 'starts later', initial: 0, next: 50, expired: false, invoice: 236 },
+    { name: 'expires', initial: 50, next: 50, expired: true, invoice: 268 },
+    { name: 'changes', initial: 50, next: 10, expired: false, invoice: 268 },
+    { name: 'starts later', initial: 0, next: 50, expired: false, invoice: 536 },
   ]) {
     it(`keeps a failed attempt discount when the override ${scenario.name}`, async () => {
       process.env.BILLING_CHARGES_ENABLED = 'true';
@@ -1726,9 +1751,9 @@ describe('billing runtime', () => {
   });
 
   for (const scenario of [
-    { name: 'expired', admitted: 50, current: 50, expired: true, invoice: 118 },
-    { name: 'replaced', admitted: 50, current: 10, expired: false, invoice: 118 },
-    { name: 'newly added', admitted: null, current: 50, expired: false, invoice: 236 },
+    { name: 'expired', admitted: 50, current: 50, expired: true, invoice: 268 },
+    { name: 'replaced', admitted: 50, current: 10, expired: false, invoice: 268 },
+    { name: 'newly added', admitted: null, current: 50, expired: false, invoice: 536 },
   ]) {
     it(`preserves the admitted AI discount when the override is ${scenario.name}`, async () => {
       process.env.BILLING_CHARGES_ENABLED = 'true';
@@ -1843,7 +1868,7 @@ describe('billing runtime', () => {
     expect(ledger?.metadata).toMatchObject({
       pricing_plan_id: 'payg',
       discount_cents: 0,
-      invoice_cents: 236,
+      invoice_cents: 536,
     });
     const [account] = await db
       .select({

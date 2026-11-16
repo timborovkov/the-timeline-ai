@@ -64,6 +64,8 @@ export async function listRelatedCuratedDocumentChunks(args: {
       documentVersions,
       and(
         eq(documentVersions.id, documentChunks.documentVersionId),
+        eq(documentVersions.id, documents.currentVersionId),
+        eq(documentVersions.documentId, documents.id),
         eq(documentVersions.teamId, args.teamId),
       ),
     )

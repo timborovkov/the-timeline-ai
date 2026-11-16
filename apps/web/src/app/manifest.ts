@@ -1,13 +1,13 @@
 import type { MetadataRoute } from 'next';
 
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { PWA_BACKGROUND_COLOR } from '@/lib/pwa-splash';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'The Timeline',
     short_name: 'Timeline',
-    description:
-      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls.',
+    description: PRODUCT_POSITIONING.description,
     // Stable identity for existing installs; browsers fall back to start_url when id is absent.
     id: '/',
     start_url: '/app',

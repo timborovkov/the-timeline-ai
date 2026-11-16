@@ -10,7 +10,7 @@ export const OBJECT_TITLE_CLASS = 'text-lg font-semibold leading-snug tracking-t
 /** Sticky section titles — "Evidence · 12", "Connected work", "Discussion". */
 export const OBJECT_SECTION_CLASS = 'text-[13px] font-semibold tracking-[-0.01em] text-fg';
 
-/** Soft subgroup under a section — "Open tasks", "Documents". */
+/** Soft subgroup under a section — "Tasks", "Documents". */
 export const OBJECT_GROUP_CLASS = 'text-[11px] font-medium tracking-[0.01em] text-fg-muted';
 
 /** Primary list-row title / entity link (14px medium). */

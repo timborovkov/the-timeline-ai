@@ -1,0 +1,125 @@
+.preview {
+  position: relative;
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.heading {
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.mark {
+  color: var(--signal);
+  flex-shrink: 0;
+}
+.preview h2 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.5rem, 2.6vw, 2.2rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.rows {
+  margin: 0;
+}
+.rows > div {
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+}
+.rows dt {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.rows dd {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.preview[data-preview-kind='work-record'] .rows {
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--border-strong);
+}
+.preview[data-preview-kind='work-record'] .rows > div {
+  border: 0;
+  position: relative;
+  padding-top: 0.5rem;
+}
+.preview[data-preview-kind='work-record'] .rows > div::before {
+  content: '';
+  position: absolute;
+  left: -1.5rem;
+  top: 0.8rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--signal);
+}
+.preview[data-preview-kind='team-daily-log'] .rows > div {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: baseline;
+}
+.preview[data-preview-kind='crm'] .rows > div,
+.preview[data-preview-kind='task-board'] .rows > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: baseline;
+}
+.preview blockquote {
+  margin-bottom: 1.5rem;
+  color: var(--fg-muted);
+  line-height: 1.7;
+}
+.foot {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.foot svg {
+  flex-shrink: 0;
+  color: var(--signal);
+}
+.preview figcaption {
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rows > div {
+    animation: record-arrive 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .rows > div:nth-child(2) {
+    animation-delay: 100ms;
+  }
+  .rows > div:nth-child(3) {
+    animation-delay: 200ms;
+  }
+  .rows > div:nth-child(4) {
+    animation-delay: 300ms;
+  }
+}
+@keyframes record-arrive {
+  from {
+    opacity: 0.6;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

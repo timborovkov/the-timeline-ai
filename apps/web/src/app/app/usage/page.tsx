@@ -5,12 +5,13 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
+import { BillingUsageOverview } from '@/components/billing-benefits-summary';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 import { PageHeader } from '@/components/page-header';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -31,6 +32,21 @@ export default async function UsagePage() {
     return (
       <div className="space-y-5">
         <PageHeader variant="collection" title="Usage" />
+        <section className="space-y-2 text-sm" aria-labelledby="member-usage-heading">
+          <h2 id="member-usage-heading" className="font-semibold">
+            Your workspace usage
+          </h2>
+          <p className="max-w-prose text-fg-muted">
+            Usage reports and billing controls are available to workspace owners and admins. Contact
+            a workspace admin if you need a usage report or a plan change.
+          </p>
+          <Link
+            href="/app/team"
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
+            View your team
+          </Link>
+        </section>
         {dashboard.restrictionReason ? (
           <BillingRestrictionNotice reason={dashboard.restrictionReason} />
         ) : memberNotice ? (
@@ -41,27 +57,55 @@ export default async function UsagePage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <PageHeader
         variant="collection"
         title="Usage"
-        metadata={[{ label: 'Period', value: dashboard.periodYm, mono: true }]}
-      />
+        metadata={[
+          {
+            value: new Date(`${dashboard.periodYm}-01T00:00:00Z`).toLocaleDateString('en-GB', {
+              month: 'long',
+              year: 'numeric',
+              timeZone: 'UTC',
+            }),
+          },
+        ]}
+      >
+        <PageHeader.Trailing>
+          <Button asChild variant="outline">
+            <Link href="/app/team?section=billing">Manage plan</Link>
+          </Button>
+        </PageHeader.Trailing>
+      </PageHeader>
       {dashboard.restrictionReason ? (
         <BillingRestrictionNotice reason={dashboard.restrictionReason} />
       ) : notice ? (
         <UsageBillingNotice notice={notice} state={state} />
       ) : null}
-      {dashboard.presentation ? <BillingBenefitsSummary summary={dashboard.presentation} /> : null}
-      <BillingUsageSummary
-        planId={planId}
-        allowanceBalances={dashboard.presentation?.allowances}
-        comped={dashboard.account.arrangement === 'comped'}
-        meters={dashboard.meters}
-        capacityUsage={capacityUsage}
-        includedActiveMembers={commercial.includedActiveMembers}
-        additionalMemberCents={commercial.additionalMemberCents}
-      />
+      {dashboard.presentation ? (
+        <BillingUsageOverview summary={dashboard.presentation}>
+          <BillingUsageSummary
+            layout="cards"
+            planId={planId}
+            allowanceBalances={dashboard.presentation.allowances}
+            comped={dashboard.account.arrangement === 'comped'}
+            meters={dashboard.meters}
+            capacityUsage={capacityUsage}
+            includedActiveMembers={commercial.includedActiveMembers}
+            additionalMemberCents={commercial.additionalMemberCents}
+          />
+        </BillingUsageOverview>
+      ) : (
+        <BillingUsageSummary
+          layout="cards"
+          planId={planId}
+          comped={dashboard.account.arrangement === 'comped'}
+          meters={dashboard.meters}
+          capacityUsage={capacityUsage}
+          includedActiveMembers={commercial.includedActiveMembers}
+          additionalMemberCents={commercial.additionalMemberCents}
+        />
+      )}
     </div>
   );
 }

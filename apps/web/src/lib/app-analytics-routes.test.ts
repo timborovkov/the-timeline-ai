@@ -4,6 +4,9 @@ import { describe, it } from 'bun:test';
 import { classifyAppAnalyticsPath } from '@/lib/app-analytics-routes';
 describe('app analytics route classification', () => {
   it('maps static app routes to stable surface enums', () => {
+    expect(classifyAppAnalyticsPath('/onboarding')).toBe('onboarding');
+    expect(classifyAppAnalyticsPath('/app/onboarding/record')).toBe('onboarding');
+    expect(classifyAppAnalyticsPath('/app/onboarding/live')).toBe('onboarding');
     expect(classifyAppAnalyticsPath('/app')).toBe('home');
     expect(classifyAppAnalyticsPath('/app/timeline')).toBe('timeline');
     expect(classifyAppAnalyticsPath('/app/team/integrations/audit')).toBe('team_integrations');

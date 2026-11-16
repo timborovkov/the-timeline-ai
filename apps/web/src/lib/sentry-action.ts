@@ -18,6 +18,9 @@ const PLATFORM_ADMIN_ACTIONS = new Set([
   'platform_admin_suspend',
   'platform_admin_membership',
   'platform_admin_impersonate',
+  'platform_admin_team_delete',
+  'platform_admin_team_cleanup_retry',
+  'platform_admin_team_deletion_followup',
 ]);
 
 const SUSPENDED_READ_ACTIONS = new Set(['get_document_download_url', 'get_document_preview_url']);

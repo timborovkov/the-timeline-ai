@@ -35,6 +35,9 @@ await vi.mock(
   () => import('#src/agent/ask.js'),
 );
 
+const { getChatDeliveryPrincipal } =
+  await import('#src/conversation-surfaces/deferred-delivery.js');
+const { SlackApi } = await import('#src/slack/api.js');
 const { randomBytes } = await import('node:crypto');
 const { PGlite } = await import('@electric-sql/pglite');
 const {
@@ -120,8 +123,9 @@ function slackEnvelope(eventId: string, event: Record<string, unknown>): Record<
   };
 }
 
-function installFetchMock(): ReturnType<typeof vi.fn> {
+function installFetchMock(onRequest?: () => void): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn((url: string | URL | Request, _init?: RequestInit) => {
+    onRequest?.();
     const href = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
     if (href.includes('users.info')) {
       return Promise.resolve(
@@ -267,6 +271,7 @@ describe('Slack dispatcher routing', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     resetMeetingBotProviderForTests();
     await pg.close();
@@ -1015,6 +1020,11 @@ describe('Slack dispatcher routing', () => {
   });
 
   it('answers app mentions without recording them as capture events', async () => {
+    let deliveryPrincipal: ReturnType<typeof getChatDeliveryPrincipal>;
+    vi.spyOn(SlackApi.prototype, 'postMessage').mockImplementation(() => {
+      deliveryPrincipal = getChatDeliveryPrincipal();
+      return Promise.resolve();
+    });
     await seedBoundSlackUser(db, 'C_MENTIONS');
     const queues = textQueueDeps();
 
@@ -1031,9 +1041,31 @@ describe('Slack dispatcher routing', () => {
     );
 
     expect(askAgentMock).toHaveBeenCalledOnce();
+    expect(deliveryPrincipal).toMatchObject({ teamId: TEAM_A });
     const rows = await db.select().from(rawEvents);
     expect(rows).toHaveLength(0);
     expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
+  });
+
+  it('does not send an app-mention answer when the team is disabled during generation', async () => {
+    await seedBoundSlackUser(db, 'C_MENTIONS');
+    const send = vi.spyOn(SlackApi.prototype, 'postMessage').mockResolvedValue(undefined);
+    askAgentMock.mockImplementationOnce(async () => {
+      await pg.exec(`UPDATE teams SET disabled_at=now() WHERE id='${TEAM_A}'`);
+      return { ok: true, answer: 'Private synthetic answer' };
+    });
+    await handleSlackEnvelope(
+      { db: db as never, ...textQueueDeps() },
+      slackEnvelope('EvDisabledMention', {
+        type: 'app_mention',
+        channel: 'C_MENTIONS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: '<@U_BOT> what changed?',
+        ts: '1700000000.000801',
+      }),
+    );
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('answers bound channel app mentions from unlinked Slack users as the team bot actor', async () => {
@@ -1531,7 +1563,10 @@ describe('Slack dispatcher routing', () => {
   });
 
   it('answers /ask in a bound Slack channel from an unlinked Slack user', async () => {
-    const fetchMock = installFetchMock();
+    let deliveryPrincipal: ReturnType<typeof getChatDeliveryPrincipal>;
+    const fetchMock = installFetchMock(() => {
+      deliveryPrincipal = getChatDeliveryPrincipal();
+    });
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackConversationBindings).values({
       workspaceId: WORKSPACE_ID,
@@ -1569,6 +1604,7 @@ describe('Slack dispatcher routing', () => {
       expect.objectContaining({ includeMcpTools: true }),
     );
     expect(fetchBodyContaining(fetchMock, 'answer')).not.toBeNull();
+    expect(deliveryPrincipal).toMatchObject({ teamId: TEAM_A });
   });
 
   it('shows every Slack command from /timeline help without requiring a user link', async () => {
@@ -1674,6 +1710,43 @@ describe('Slack dispatcher routing', () => {
     );
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('recall.test'))).toBe(false);
     expect(await db.select().from(meetings)).toHaveLength(0);
+  });
+
+  it('uses the channel-bound team for website crawl confirmation instead of the active DM team', async () => {
+    const fetchMock = installFetchMock();
+    await seedBoundSlackUser(db, 'C_DOCS');
+    await db.insert(slackWorkspaceTeams).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      installedByUserId: USER_B,
+      enabled: true,
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_B,
+      userId: USER_B,
+      linkedByUserId: USER_B,
+      isActive: false,
+    });
+    await db
+      .update(slackConversationBindings)
+      .set({ teamId: TEAM_B, boundByUserId: USER_B })
+      .where(eq(slackConversationBindings.slackConversationId, 'C_DOCS'));
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/timeline',
+        text: 'crawl https://example.com',
+        user_id: 'U_SLACK',
+        team_id: 'T_SLACK',
+        channel_id: 'C_DOCS',
+        response_url: 'https://hooks.slack.test/response',
+        trigger_id: 'crawl-confirmation',
+      },
+    );
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team: Team B');
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('20 per page');
+    expect(await db.select().from(rawEvents)).toHaveLength(0);
   });
 
   it('attributes bound channel messages to the sender linked in that Timeline team', async () => {

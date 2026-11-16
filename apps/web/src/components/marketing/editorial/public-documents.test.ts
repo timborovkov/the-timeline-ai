@@ -37,18 +37,17 @@ describe('editorial public documents', () => {
     );
   });
 
-  it('dates the refreshed how-it-works overview independently from unchanged guides', () => {
-    const firstGuide = EDITORIAL_GUIDES.at(0);
-    if (!firstGuide) throw new Error('Expected at least one editorial guide');
-
+  it('dates reviewed guides independently from the how-it-works overview', () => {
     expect(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE).dates).toEqual({
-      modified: '2026-11-07',
-      reviewed: '2026-11-07',
+      modified: '2026-11-11',
+      reviewed: '2026-11-11',
     });
-    expect(findEditorialPublicDocument(firstGuide.route).dates).toEqual({
-      modified: '2026-11-07',
-      reviewed: '2026-11-07',
-    });
+    for (const guide of EDITORIAL_GUIDES) {
+      expect(findEditorialPublicDocument(guide.route).dates).toEqual({
+        modified: '2026-11-14',
+        reviewed: '2026-11-14',
+      });
+    }
   });
 
   it('publishes curated editorial summaries and source boundaries to both LLM documents', () => {
@@ -65,6 +64,13 @@ describe('editorial public documents', () => {
       expect(compact).toContain(`[${guide.title}](${SITE_URL}${guide.route})`);
       expect(full).toContain(`URL: ${SITE_URL}${guide.route}`);
       expect(full).toContain(firstBoundary.boundary);
+      if (guide.toolkit) {
+        expect(full).toContain(guide.toolkit.template);
+        expect(full).toContain(guide.toolkit.example);
+      }
+      for (const route of guide.relatedRoutes) {
+        expect(PUBLIC_DOCUMENT_REGISTRY.get(route)).toBeDefined();
+      }
     }
   });
 

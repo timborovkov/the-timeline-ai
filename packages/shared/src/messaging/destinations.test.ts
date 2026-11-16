@@ -8,6 +8,7 @@ import {
   isSharedDigestDestination,
   parseAddDigestDestinationInput,
   personalDigestDestinations,
+  rewriteWorkspaceDigestDedupeKeyTarget,
   sharedDigestDestinations,
 } from '#src/messaging/destinations.js';
 describe('digest destinations', () => {
@@ -68,6 +69,42 @@ describe('digest destinations', () => {
         destination: { kind: 'slack_channel', targetId: 'C123' },
       }),
     ).toBe('daily_digest:workspace:team-1:2026-06-14T12:00:00.000Z:slack_channel:C123');
+  });
+
+  it('rewrites only matching workspace digest keys onto a new shared target', () => {
+    const oldKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: 'team-1',
+      windowEnd: '2026-06-14T12:00:00.000Z',
+      destination: { kind: 'telegram_chat', targetId: '-123456' },
+    });
+    expect(
+      rewriteWorkspaceDigestDedupeKeyTarget({
+        dedupeKey: oldKey,
+        teamId: 'team-1',
+        kind: 'telegram_chat',
+        fromTargetId: '-123456',
+        toTargetId: '-1004317012921',
+      }),
+    ).toBe('daily_digest:workspace:team-1:2026-06-14T12:00:00.000Z:telegram_chat:-1004317012921');
+    expect(
+      rewriteWorkspaceDigestDedupeKeyTarget({
+        dedupeKey: oldKey,
+        teamId: 'team-2',
+        kind: 'telegram_chat',
+        fromTargetId: '-123456',
+        toTargetId: '-1004317012921',
+      }),
+    ).toBeNull();
+    expect(
+      rewriteWorkspaceDigestDedupeKeyTarget({
+        dedupeKey: oldKey,
+        teamId: 'team-1',
+        kind: 'slack_channel',
+        fromTargetId: '-123456',
+        toTargetId: '-1004317012921',
+      }),
+    ).toBeNull();
   });
 
   it('labels destinations for settings and splits personal from shared lists', () => {

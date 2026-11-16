@@ -68,6 +68,11 @@ export const tgMessageSchema = z.object({
   audio: tgAudioPayloadSchema.optional(),
   document: tgDocumentPayloadSchema.optional(),
   photo: z.array(tgPhotoSizeSchema).optional(),
+  // Service message when a group is upgraded to a supergroup. Present on the
+  // old-chat update (`migrate_to_chat_id`) and the new-chat update
+  // (`migrate_from_chat_id`).
+  migrate_to_chat_id: z.number().int().optional(),
+  migrate_from_chat_id: z.number().int().optional(),
 });
 
 export const tgCallbackQuerySchema = z.object({

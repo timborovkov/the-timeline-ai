@@ -41,7 +41,9 @@ export const CADENCE_RANGE: { readonly start: string; readonly end: string } = {
 };
 
 export const CADENCE_WEEKDAY_EVENT_FLOOR = 90;
-export const CADENCE_WEEKDAY_MOMENT_CEILING = 32;
+// Workflow-run notices without run identity intentionally stay separate moments, so a
+// dense weekday (including merged CORPUS_EVENTS) can land near ~52 groups.
+export const CADENCE_WEEKDAY_MOMENT_CEILING = 56;
 
 const REPO = 'acme-labs/atlas';
 const LEDGER_WEBHOOK_ID = CORPUS_UUID.webhook(1);

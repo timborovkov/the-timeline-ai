@@ -52,7 +52,7 @@ export function AdminSuspendForm({
   return (
     <details className="rounded-md border border-border p-4">
       <summary className="cursor-pointer font-medium">
-        {suspended ? 'Restore access' : `Suspend ${kind}`}
+        {suspended ? 'Restore access' : `${kind === 'team' ? 'Disable' : 'Suspend'} ${kind}`}
       </summary>
       <form action={adminSuspendAction} className="mt-3 space-y-3">
         <input type="hidden" name="kind" value={kind} />
@@ -60,8 +60,8 @@ export function AdminSuspendForm({
         <input type="hidden" name="suspended" value={String(!suspended)} />
         <p className="text-sm text-fg-muted">
           {suspended
-            ? 'Restore access without changing billing restrictions.'
-            : 'Block access and new processing. Existing data is retained.'}
+            ? 'Restore access without resuming subscription renewal. A pending deletion request is canceled.'
+            : 'Block access and new processing. Team data is retained; disabling a team stops new usage accrual and cancels renewal.'}
         </p>
         <label className="block text-sm">
           Reason

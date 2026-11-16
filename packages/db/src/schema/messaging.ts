@@ -18,6 +18,7 @@ import { users } from '#src/schema/users.js';
 
 export const messageIntent = pgEnum('message_intent', [
   'team_invite',
+  'team_deletion',
   'support_request',
   'welcome',
   'email_verification',

@@ -1,6 +1,8 @@
+import { eventSource } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import { instrumentAgentTools } from '#src/agent/observability.js';
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
 import { resetEnvForTests } from '#src/env.js';
 import { type TeamScope } from '#src/team-scope.js';
@@ -312,14 +314,27 @@ describe('buildAgentTools — team isolation', () => {
     expect(Object.keys(route.shape)).not.toContain('teamId');
   });
 
+  it('accepts every stored event source and rejects unknown sources in timeline tools', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope);
+    for (const name of ['search_timeline', 'search_timeline_moments', 'list_events']) {
+      const schema = tools[name]?.inputSchema as {
+        safeParse: (input: unknown) => { success: boolean };
+      };
+      for (const source of eventSource.enumValues) {
+        expect(schema.safeParse({ query: 'work', source }).success).toBe(true);
+      }
+      expect(schema.safeParse({ query: 'work', source: 'unknown_provider' }).success).toBe(false);
+    }
+  });
+
   it('lists active team members for assignment ids', async () => {
     const scope = makeFakeScope();
     scope.timeline.listMembers.mockResolvedValue([
       {
         userId: '11111111-1111-4111-8111-111111111111',
         role: 'member',
-        name: 'Mikael Rintala',
-        email: 'mikael@example.test',
+        name: 'Cameron Vale',
+        email: 'cameron@example.test',
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       },
     ]);
@@ -338,8 +353,8 @@ describe('buildAgentTools — team isolation', () => {
         {
           user_id: '11111111-1111-4111-8111-111111111111',
           role: 'member',
-          name: 'Mikael Rintala',
-          email: 'mikael@example.test',
+          name: 'Cameron Vale',
+          email: 'cameron@example.test',
         },
       ],
     });
@@ -419,6 +434,7 @@ describe('buildAgentTools — team isolation', () => {
   it('keeps pin reads but removes pin mutations from read-only tool sets', () => {
     const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, {
       toolMode: 'read_only',
+      allowPinMutations: true,
     });
     expect(tools.list_pins).toBeDefined();
     expect(tools.suggest_task).toBeUndefined();
@@ -427,6 +443,23 @@ describe('buildAgentTools — team isolation', () => {
     expect(tools.pin_item).toBeUndefined();
     expect(tools.unpin_item).toBeUndefined();
     expect(tools.move_pin).toBeUndefined();
+    for (const name of [
+      'execute_object_create',
+      'execute_object_update',
+      'execute_object_archive',
+      'execute_object_merge',
+      'execute_board_add_item',
+      'execute_board_update_item',
+      'execute_board_remove_item',
+      'execute_calendar_create',
+      'execute_calendar_update',
+      'execute_calendar_cancel',
+      'suggest_object_memory',
+      'suggest_calendar_event',
+      'propose_calendar_update',
+    ]) {
+      expect(tools[name]).toBeUndefined();
+    }
   });
 
   it('exposes new proposals but no revisions or canonical mutations in proposal-only mode', () => {
@@ -529,6 +562,59 @@ describe('buildAgentTools — team isolation', () => {
       visibilityUserIds: null,
       metadata: { origin_surface: 'mcp', origin_actor_kind: 'team_agent' },
     });
+  });
+
+  it('preserves canonical mutation approval through instrumentation and tool selection', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, {
+      allowPinMutations: true,
+    });
+    const expected = Object.fromEntries(
+      [
+        'execute_board_create',
+        'execute_board_update',
+        'execute_board_archive',
+        'execute_object_restore',
+        'execute_object_note_create',
+        'execute_object_note_update',
+        'execute_object_note_delete',
+        'execute_object_relationship_add',
+        'execute_object_relationship_remove',
+        'execute_object_create',
+        'execute_object_update',
+        'execute_object_archive',
+        'execute_object_merge',
+        'execute_board_add_item',
+        'execute_board_update_item',
+        'execute_board_remove_item',
+        'execute_calendar_create',
+        'execute_calendar_update',
+        'execute_calendar_cancel',
+      ].map((name) => [name, 'user-approval']),
+    );
+    expect(userApprovalForTools(tools)).toEqual(expected);
+    const observed = instrumentAgentTools({ ...tools }, vi.fn());
+    expect(userApprovalForTools(observed)).toEqual(expected);
+    const { execute_object_create, revise_suggestion, pin_item } = observed;
+    if (!execute_object_create || !revise_suggestion || !pin_item) {
+      throw new Error('Expected canonical, revision, and pin tools in the full tool set');
+    }
+    expect(
+      userApprovalForTools({
+        execute_object_create: { ...execute_object_create },
+        revise_suggestion,
+        pin_item,
+      }),
+    ).toEqual({ execute_object_create: 'user-approval' });
+    for (const toolMode of ['read_only', 'proposal_only'] as const) {
+      expect(
+        userApprovalForTools(
+          buildAgentTools(makeFakeScope() as unknown as TeamScope, {
+            toolMode,
+            allowPinMutations: true,
+          }),
+        ),
+      ).toBeUndefined();
+    }
   });
 
   it('does not expose pin mutations without explicit current-turn authorization', () => {
@@ -682,6 +768,8 @@ describe('buildAgentTools — team isolation', () => {
       assigneeUserId: null,
       dueAt: null,
       agentSuggested: true,
+      updatedAt: new Date(),
+      relationships: [],
       archivedAt: null,
       notes: [],
       recentChanges: [],
@@ -1630,7 +1718,7 @@ describe('buildAgentTools — team isolation', () => {
     );
   });
 
-  it('search_timeline_moments bundles integration noise while preserving raw citations', async () => {
+  it('search_timeline_moments groups one CI run while preserving raw citations', async () => {
     const scope = makeFakeScope();
     const eventA = '00000000-0000-0000-0000-0000000000a1';
     const eventB = '00000000-0000-0000-0000-0000000000b2';
@@ -1659,7 +1747,7 @@ describe('buildAgentTools — team isolation', () => {
         resolvedSenderObject: null,
         senderResolutionStatus: 'unresolved',
         entityIds: [],
-        snippet: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+        snippet: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
       },
     ]);
     scope.timeline.getEventsByIds.mockResolvedValue([
@@ -1672,6 +1760,7 @@ describe('buildAgentTools — team isolation', () => {
         occurredAt: new Date('2026-06-27T18:32:00.000Z'),
         sourceMetadata: {
           provider: 'github',
+          external_object_id: 'timborovkov/audit-ai#workflow_run:1603',
           event_type: 'workflow_run.success',
           github: {
             type: 'workflow_run',
@@ -1684,11 +1773,12 @@ describe('buildAgentTools — team isolation', () => {
         id: eventB,
         source: 'integration',
         authorUserId: null,
-        contentText: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+        contentText: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
         contentAudioUrl: null,
         occurredAt: new Date('2026-06-27T18:08:00.000Z'),
         sourceMetadata: {
           provider: 'github',
+          external_object_id: 'timborovkov/audit-ai#workflow_run:1603',
           event_type: 'workflow_run.success',
           github: {
             type: 'workflow_run',
@@ -1730,9 +1820,9 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.moments[0]?.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moments[0]?.title).toMatch(
-      /^<external_content source="timeline_moment" event_id="tm-moment_3Aintegration_3Agithub/,
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Aworkflow-run/,
     );
-    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
+    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aworkflow-run/);
     expect(result.moments[0]?.evidence[0]?.snippet).toContain(
       `<external_content source="integration" event_id="${eventA}">`,
     );
@@ -1756,6 +1846,7 @@ describe('buildAgentTools — team isolation', () => {
       visibilityOwnerUserId: null,
       sourceMetadata: {
         provider: 'github',
+        external_object_id: 'timborovkov/audit-ai#workflow_run:1603',
         event_type: 'workflow_run.success',
         github: {
           type: 'workflow_run',
@@ -1784,7 +1875,7 @@ describe('buildAgentTools — team isolation', () => {
     ]);
     scope.timeline.listEventsForMomentLookup.mockResolvedValue([
       workflowEvent(eventA, '1603', '2026-06-27T18:32:00.000Z'),
-      workflowEvent(eventB, '1602', '2026-06-27T18:08:00.000Z'),
+      workflowEvent(eventB, '1603', '2026-06-27T18:08:00.000Z'),
     ]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.search_timeline_moments?.execute as (
@@ -1807,8 +1898,7 @@ describe('buildAgentTools — team isolation', () => {
     expect(lookupPlan?.metadataPredicates).toEqual(
       expect.arrayContaining([
         { path: ['provider'], equals: 'github' },
-        { path: ['github', 'repo'], equals: 'timborovkov/audit-ai' },
-        { path: ['github', 'head_branch'], equals: 'main' },
+        { path: ['external_object_id'], equals: 'timborovkov/audit-ai#workflow_run:1603' },
       ]),
     );
     expect(result.count).toBe(1);
@@ -1857,8 +1947,8 @@ describe('buildAgentTools — team isolation', () => {
         sourceMetadata: {
           tg_chat_id: 'chat-a',
           tg_chat_title: 'AuditAI',
-          tg_sender_name: 'Miku',
-          tg_username: 'miku',
+          tg_sender_name: 'Casey',
+          tg_username: 'casey',
         },
       },
     ]);
@@ -1888,15 +1978,15 @@ describe('buildAgentTools — team isolation', () => {
           {
             sender: {
               source: 'telegram',
-              displayName: 'Miku',
-              handle: '@miku',
+              displayName: 'Casey',
+              handle: '@casey',
               externalId: null,
               provider: 'telegram',
             },
             resolvedSenderObject: {
               id: '00000000-0000-4000-8000-0000000000bb',
-              canonicalName: 'Mikael',
-              aliases: ['Miku'],
+              canonicalName: 'Cameron',
+              aliases: ['Casey'],
               linkedUserId: null,
             },
             senderResolutionStatus: 'resolved',
@@ -1942,8 +2032,8 @@ describe('buildAgentTools — team isolation', () => {
     expect(result.moment.anchor_id).toMatch(/^tm-moment_3Atelegram_3Achat-a/);
     expect(result.moment.evidence[0]).toMatchObject({
       event_id: eventB,
-      sender: { displayName: 'Miku', handle: '@miku' },
-      resolved_sender_object: { canonicalName: 'Mikael' },
+      sender: { displayName: 'Casey', handle: '@casey' },
+      resolved_sender_object: { canonicalName: 'Cameron' },
       sender_resolution_status: 'resolved',
     });
     expect(result.moment.evidence[0]?.snippet).toContain('oon italiassa 9.8.-14.8.');
@@ -2044,10 +2134,38 @@ describe('buildAgentTools — team isolation', () => {
     ]);
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      raw_event_ids: [eventA, eventB],
+      raw_event_ids: [eventA],
     });
     expect(result.moment.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
+  });
+
+  it('get_timeline_moment expands a saved calendar ID after notice regrouping', async () => {
+    const scope = makeFakeScope();
+    const id = '00000000-0000-0000-0000-0000000000a1';
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue([
+      {
+        id,
+        teamId: 'team-a',
+        source: 'calendar',
+        authorUserId: null,
+        contentText: 'Scheduled: Digest',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-06-27T18:32:00Z'),
+        createdAt: new Date('2026-06-27T18:32:00Z'),
+        visibility: 'team',
+        visibilityUserIds: null,
+        visibilityOwnerUserId: null,
+        sourceMetadata: { action: 'scheduled', calendar_event_id: 'calendar-a' },
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_timeline_moment?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const result = await exec({ momentId: 'moment:calendar:calendar-a' }, {});
+    expect(result).toMatchObject({ found: true, moment: { raw_event_ids: [id] } });
   });
 
   it('get_timeline_moment can expand exact metadata moment ids without raw event ids', async () => {
@@ -2088,7 +2206,7 @@ describe('buildAgentTools — team isolation', () => {
         sourceMetadata: {
           thread_root_id: 'thread-a',
           subject: 'Contract review',
-          from: 'tim@example.test',
+          from: 'taylor@example.test',
         },
       },
     ]);
@@ -2184,7 +2302,7 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(result.found).toBe(true);
     expect(result.moment).toMatchObject({
-      raw_event_ids: [eventA, eventB],
+      raw_event_ids: [eventA],
     });
     expect(result.moment.title).toContain('Webhook object updated · shared-key');
     expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
@@ -2256,8 +2374,8 @@ describe('buildAgentTools — team isolation', () => {
         id: 'suggestion-1',
         source: 'chat',
         status: 'pending',
-        title: 'Remember Mikael Telegram identity',
-        summary: 'Miku is @mikaelrintala',
+        title: 'Remember Cameron Telegram identity',
+        summary: 'Casey is @cameronvale',
         reason: 'User said so',
         confidence: 'high',
         visibility: 'team',
@@ -2269,12 +2387,12 @@ describe('buildAgentTools — team isolation', () => {
           {
             id: 'evidence-1',
             rawEventId: TEAM_B_EVENT_ID,
-            quote: 'Miku is Mikael',
+            quote: 'Casey is Cameron',
             occurredAt: new Date('2026-06-02T11:59:00Z'),
             source: 'telegram',
-            senderName: 'Mikael',
-            senderHandle: '@miku',
-            senderTimelineName: 'Mikael Rintala',
+            senderName: 'Cameron',
+            senderHandle: '@casey',
+            senderTimelineName: 'Cameron Vale',
             conversationName: 'AuditAI founders',
           },
         ],
@@ -2291,7 +2409,7 @@ describe('buildAgentTools — team isolation', () => {
             proposedPayload: {
               entityId: TEAM_B_ENTITY_ID,
               kind: 'telegram',
-              value: '@mikaelrintala',
+              value: '@cameronvale',
             },
             failureReason: null,
           },
@@ -2307,7 +2425,7 @@ describe('buildAgentTools — team isolation', () => {
             proposedPayload: {
               entityId: TEAM_B_ENTITY_ID,
               kind: 'telegram',
-              value: '@mikael-secondary',
+              value: '@cameron-secondary',
             },
             failureReason: null,
           },
@@ -2352,9 +2470,9 @@ describe('buildAgentTools — team isolation', () => {
           evidence: [
             {
               raw_event_id: TEAM_B_EVENT_ID,
-              sender_name: 'Mikael',
-              sender_handle: '@miku',
-              sender_timeline_name: 'Mikael Rintala',
+              sender_name: 'Cameron',
+              sender_handle: '@casey',
+              sender_timeline_name: 'Cameron Vale',
               conversation_name: 'AuditAI founders',
             },
           ],
@@ -2363,14 +2481,14 @@ describe('buildAgentTools — team isolation', () => {
               item_id: 'item-1',
               target_kind: 'identity_facet',
               proposed_payload: {
-                value: '@mikaelrintala',
+                value: '@cameronvale',
               },
             },
             {
               item_id: 'item-2',
               target_kind: 'identity_facet',
               proposed_payload: {
-                value: '@mikael-secondary',
+                value: '@cameron-secondary',
               },
             },
           ],
@@ -2411,7 +2529,7 @@ describe('buildAgentTools — team isolation', () => {
       exec(
         {
           itemId: '11111111-1111-4111-8111-111111111111',
-          feedback: 'Miku made this promise, not Tim.',
+          feedback: 'Casey made this promise, not Taylor.',
         },
         {},
       ),
@@ -2423,7 +2541,7 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(scope.suggestions.reviseSuggestionItem).toHaveBeenCalledWith({
       itemId: '11111111-1111-4111-8111-111111111111',
-      feedback: 'Miku made this promise, not Tim.',
+      feedback: 'Casey made this promise, not Taylor.',
     });
     expect(onApprovalDecision).toHaveBeenCalledWith({
       decision: 'revised',
@@ -2446,7 +2564,7 @@ describe('buildAgentTools — team isolation', () => {
       exec(
         {
           itemId: '11111111-1111-4111-8111-111111111111',
-          feedback: 'Miku made this promise, not Tim.',
+          feedback: 'Casey made this promise, not Taylor.',
         },
         {},
       ),
@@ -2526,15 +2644,15 @@ describe('buildAgentTools — team isolation', () => {
 
     const result = await exec(
       {
-        title: 'Remember Mikael Telegram identity',
-        reason: 'User said Miku is @mikaelrintala',
+        title: 'Remember Cameron Telegram identity',
+        reason: 'User said Casey is @cameronvale',
         confidence: 'high',
         items: [
           {
             kind: 'add_identity_facet',
             entityId: TEAM_B_ENTITY_ID,
             facetKind: 'telegram',
-            value: '@mikaelrintala',
+            value: '@cameronvale',
           },
         ],
       },
@@ -2558,7 +2676,7 @@ describe('buildAgentTools — team isolation', () => {
       proposedPayload: {
         entityId: TEAM_B_ENTITY_ID,
         kind: 'telegram',
-        value: '@mikaelrintala',
+        value: '@cameronvale',
       },
     });
   });
@@ -2579,7 +2697,7 @@ describe('buildAgentTools — team isolation', () => {
           {
             kind: 'create_object',
             type: 'follow_up',
-            canonicalName: 'Call Mikael back',
+            canonicalName: 'Call Cameron back',
           },
         ],
       },
@@ -2596,7 +2714,7 @@ describe('buildAgentTools — team isolation', () => {
       targetKind: 'object',
       proposedPayload: {
         type: 'follow_up',
-        canonicalName: 'Call Mikael back',
+        canonicalName: 'Call Cameron back',
       },
     });
   });
@@ -2946,7 +3064,7 @@ describe('buildAgentTools — team isolation', () => {
         items: [
           {
             kind: 'add_relationship',
-            fromName: 'Mikael Rintala',
+            fromName: 'Cameron Vale',
             toName: 'AuditAI',
             relationshipKind: 'related',
           },
@@ -2966,7 +3084,7 @@ describe('buildAgentTools — team isolation', () => {
       targetKind: 'object_relationship',
       targetId: null,
       proposedPayload: {
-        fromName: 'Mikael Rintala',
+        fromName: 'Cameron Vale',
         toName: 'AuditAI',
         kind: 'related',
       },

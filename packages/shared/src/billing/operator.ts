@@ -1,5 +1,5 @@
 import { type BillingPlanId, PLAN_CATALOG } from '#src/billing/catalog.js';
-import { billingStateAllowsReservation, billingStateForPaidPlan } from '#src/billing/status.js';
+import { billingStateAllowsReservation, billingStateForPaidPlan } from '#src/billing/policy.js';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 

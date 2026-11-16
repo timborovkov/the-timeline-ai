@@ -2,7 +2,6 @@
 
 import { ErrorState } from '@/components/error-state';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function ApprovalsError({
   error,
@@ -17,7 +16,6 @@ export default function ApprovalsError({
         title="Approvals"
         subtitle="Review evidence-backed changes before they become team memory."
       />
-      <WorkSubnav current="/app/approvals" />
       <ErrorState
         title="Unable to load approvals"
         description="Your pending approvals and saved decisions have not changed. Check your connection, then try again."

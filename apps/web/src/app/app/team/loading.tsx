@@ -26,10 +26,7 @@ export default function TeamLoading() {
             </aside>
             <div className="min-w-0 flex-1 space-y-4">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="space-y-2 border-t border-border pt-4 first:border-t-0 first:pt-0"
-                >
+                <div key={i} className="space-y-2 pt-4 first:pt-0">
                   <Skeleton className="h-4 w-32 motion-reduce:animate-none" />
                   <Skeleton className="h-9 w-full motion-reduce:animate-none" />
                   <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />

@@ -4,15 +4,18 @@ Thank you for taking the time to improve The Timeline.
 
 ## Important repository status
 
-The source is publicly inspectable, but this repository does not currently
-publish a software license or general contribution terms. Public visibility is
-not permission to copy, distribute, modify, deploy, or submit code. Opening an
-issue also does not grant those rights.
+The source is available under the [Elastic License 2.0](LICENSE), except where
+otherwise noted. See that license for permission to use, copy, modify, distribute
+and self-host the software and the applicable limitations. Third-party components
+retain their own licenses.
+
+General contribution terms are not yet published. The software license does not
+establish the terms under which Timeline accepts contributions.
 
 Before substantial work or any pull request:
 
 1. Open a non-sensitive
-   [contribution proposal](https://github.com/timborovkov/the-timeline-ai/issues/new?template=contribution_proposal.yml)
+   [feature or improvement proposal](https://github.com/timborovkov/the-timeline-ai/issues/new?template=contribution_proposal.yml)
    describing the problem and proposed outcome.
 2. Wait for a maintainer to confirm the scope and that a contribution can be
    accepted under agreed terms.
@@ -44,24 +47,49 @@ exploit.
   privacy boundaries.
 - Update affected documentation and public claims in the same change.
 
-Before handing a change back, run:
+## Branches
 
-```bash
-bun run validate
-bun run doctor
-```
+Use `<owner>/<type>/<description>`, with a short kebab-case description.
+The owner is the responsible contributor's handle, regardless of which tool
+writes the code. Examples: `<owner>/feat/calendar-sync` or
+`<owner>/fix/invite-expiry`. Types: `feat`, `fix`, `docs`,
+`refactor`, `test`, `chore`. Do not use `codex/`, `claude/`, or `cursor/`.
+Automated dependency-update branches are exempt.
 
-React Doctor must report a score of 100. Also run the nearest focused tests and
-any broader suites required by [AGENTS.md](./AGENTS.md).
+## Validation
+
+Follow the [testing policy](docs/testing/README.md#validation-policy).
+Run focused local tests for changed behavior; GitHub runs repo-wide checks.
+Required checks gate merging, not committing, pushing, or opening a PR.
 
 ## Pull requests
 
-Keep a pull request focused and explain:
+Titles must use `<type>: <clear outcome>`, using the same types as branches.
+Keep them short and specific, for example `docs: simplify contributor guidance`
+or `fix: prevent duplicate invitations`. Do not include agent names or work diaries.
 
-- the problem and agreed issue;
-- the behavior and data-flow changes;
-- the tests and exact commands run; and
-- any rollout, migration, privacy, security, or compatibility concerns.
+Keep each PR focused. Default to a short problem/change summary and the checks
+run with their results. Add rollout, migration, security, or compatibility details
+only when relevant. Link the agreed issue for external contributions.
+Do not repeat the diff, narrate the agent's work, or paste logs and standing policy.
+Use the [PR template](.github/pull_request_template.md).
 
-Do not include production data, customer content, credentials, tokens, private
+Never include production data, customer content, credentials, tokens, private
 logs, or screenshots containing sensitive information.
+
+## Review
+
+Before marking a PR ready, obtain a Codex review of the proposed changes:
+
+1. Review the current diff against the PR's target branch.
+2. Address actionable findings. Explain any disagreement with evidence.
+3. Rerun checks affected by the fixes, then request another Codex review.
+4. Repeat until no actionable findings remain. Record the reviewed commit and
+   a review link or local review result in the PR.
+
+New commits require another review. Unavailable or incomplete review is a blocker,
+not a pass. Codex review does not replace the maintainer's merge decision.
+
+This is currently a contributor requirement, not an automated merge gate. GitHub
+needs a required check that verifies review completion for the current PR head;
+a checklist tick or review of an older commit is insufficient.

@@ -28,9 +28,12 @@ await vi.mock(
   () => import('@/components/inspector-context'),
 );
 
-const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
+
+const { Dialog, DialogContent, DialogTitle, DialogTrigger } =
+  await import('@/components/ui/dialog');
 
 const { InspectorPane } = await import('./inspector-pane.js');
 
@@ -52,7 +55,7 @@ describe('InspectorPane', () => {
     expect(screen.queryByLabelText('Inspector')).toBeNull();
   });
 
-  it('renders active content as a mobile sheet and desktop side pane', () => {
+  it('renders active content in a fixed overlay without resizing the workspace', () => {
     fakes.inspector.open = true;
     fakes.inspector.content = {
       id: 'moment-1',
@@ -64,15 +67,14 @@ describe('InspectorPane', () => {
     render(<InspectorPane />);
 
     const pane = screen.getByLabelText('Inspector');
-    expect(pane.className).toContain('fixed inset-x-0 bottom-0');
-    expect(pane.className).toContain('max-h-[min(90dvh,52rem)]');
-    expect(pane.className).toContain('lg:sticky');
-    expect(pane.className).toContain('lg:w-[min(40%,36rem)]');
+    expect(pane.className).toContain('fixed inset-y-0 right-0');
+    expect(pane.className).toContain('max-w-3xl');
+    expect(pane.getAttribute('role')).toBe('dialog');
     expect(screen.getByText('CI passed')).toBeTruthy();
     expect(screen.getByText('2 source events')).toBeTruthy();
   });
 
-  it('lets mobile users dismiss the sheet from the backdrop or close button', async () => {
+  it('lets users dismiss the inspector with Escape or its close button', async () => {
     const user = userEvent.setup();
     fakes.inspector.open = true;
     fakes.inspector.content = {
@@ -84,10 +86,7 @@ describe('InspectorPane', () => {
 
     render(<InspectorPane />);
 
-    const backdrop = screen.getByRole('button', { name: 'Dismiss inspector' });
-    expect(backdrop.className).toContain('lg:hidden');
-
-    await user.click(backdrop);
+    await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Close inspector' }));
 
     expect(fakes.inspector.hide).toHaveBeenCalledTimes(2);
@@ -196,7 +195,7 @@ describe('InspectorPane', () => {
     outside.remove();
   });
 
-  it('includes native technical-detail summaries in the mobile focus order', async () => {
+  it('keeps expanded technical-detail controls in the focus order', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(
       (query) =>
         ({
@@ -230,50 +229,44 @@ describe('InspectorPane', () => {
     const summary = screen.getByText('Technical details');
     summary.focus();
     expect(document.activeElement).toBe(summary);
-    fireEvent.keyDown(summary, { key: 'Tab' });
+    const user = userEvent.setup();
+    await user.click(summary);
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Copy Event ID' }));
+    await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
   });
 
-  it('leaves keyboard handling to a portaled dialog opened from the inspector', async () => {
-    vi.spyOn(window, 'matchMedia').mockImplementation(
-      (query) =>
-        ({
-          matches: false,
-          media: query,
-          onchange: null,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          dispatchEvent: vi.fn(),
-        }) as unknown as MediaQueryList,
-    );
+  it('leaves focus and Escape handling to a nested dialog', async () => {
+    const user = userEvent.setup();
     fakes.inspector.open = true;
     fakes.inspector.content = {
       id: 'moment-1',
       kind: 'Moment',
       title: 'CI passed',
-      render: () => createElement('button', { type: 'button' }, 'Open evidence'),
+      render: () => (
+        <Dialog>
+          <DialogTrigger asChild>
+            <button type="button">Open evidence</button>
+          </DialogTrigger>
+          <DialogContent aria-describedby={undefined}>
+            <DialogTitle>Evidence</DialogTitle>
+            <button type="button">Download evidence</button>
+          </DialogContent>
+        </Dialog>
+      ),
     };
-
     render(<InspectorPane />);
+    await user.click(screen.getByRole('button', { name: 'Open evidence' }));
     await waitFor(() => {
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Download evidence' }),
+      );
     });
-
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    const dialogAction = document.createElement('button');
-    dialogAction.type = 'button';
-    dialogAction.textContent = 'Download evidence';
-    dialog.append(dialogAction);
-    document.body.append(dialog);
-    dialogAction.focus();
-
-    dialogAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
-    expect(document.activeElement).toBe(dialogAction);
-    dialogAction.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    await user.keyboard('{Escape}');
     expect(fakes.inspector.hide).not.toHaveBeenCalled();
-
-    dialog.remove();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open evidence' }));
+    });
   });
 });

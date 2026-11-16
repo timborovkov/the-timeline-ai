@@ -387,7 +387,7 @@ function CatalogConnectionControls({
       ) : (
         <Button
           size="sm"
-          variant={isConnectable ? 'default' : 'outline'}
+          variant="outline"
           disabled={busy || !isConnectable}
           onClick={() => {
             void onClickConnect();

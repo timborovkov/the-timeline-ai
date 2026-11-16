@@ -1,6 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+import type { ReactElement } from 'react';
+
+import { WorkSubnav as ShellWorkTabs } from '@/components/work-subnav';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
@@ -11,7 +15,7 @@ await vi.mock(
   () => import('@/lib/sentry-report'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, render: renderContent, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { default: ObjectsError } = await import('@/app/app/objects/error');
 const { default: ObjectsLoading } = await import('@/app/app/objects/loading');
@@ -70,3 +74,14 @@ describe('Objects route states', () => {
     }
   });
 });
+
+function render(ui: ReactElement) {
+  return renderContent(ui, {
+    wrapper: ({ children }) => (
+      <>
+        <ShellWorkTabs current="/app/objects" />
+        {children}
+      </>
+    ),
+  });
+}

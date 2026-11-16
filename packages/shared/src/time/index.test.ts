@@ -142,6 +142,29 @@ describe('presentDueDate', () => {
     });
   });
 
+  it('never marks completed work overdue and prefers a completed date', () => {
+    const options = { timezone: 'UTC', now, locale: 'en', completed: true };
+    expect(presentDueDate('2026-07-19', options)).toMatchObject({
+      status: 'scheduled',
+      compactText: 'Due Jul 19, 2026',
+      tone: 'neutral',
+    });
+    expect(
+      presentDueDate('2026-07-19', {
+        ...options,
+        completedAt: '2026-07-18T15:00:00.000Z',
+      }),
+    ).toMatchObject({
+      status: 'completed',
+      compactText: 'Completed Jul 18, 2026',
+      tone: 'muted',
+    });
+    expect(presentDueDate(null, { ...options, completedAt: '2026-07-18' })).toMatchObject({
+      status: 'completed',
+      compactText: 'Completed Jul 18, 2026',
+    });
+  });
+
   it('derives stable workspace-local filter boundaries', () => {
     expect(workspaceDueDateBoundaries('America/Los_Angeles', now)).toEqual({
       today: '2026-07-20',

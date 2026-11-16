@@ -12,7 +12,7 @@ test('pricing calculator compares plans and preserves precise input', async ({ p
   await page.goto('/pricing');
   const calculator = page.locator('[data-pricing-calculator]');
   await expect(calculator.getByRole('heading', { name: 'Pay as you go breakdown' })).toBeVisible();
-  await expect(calculator.getByText('€37.18', { exact: true })).toHaveCount(2);
+  await expect(calculator.getByText('€40.18', { exact: true })).toHaveCount(2);
   await expect(calculator.locator('details')).not.toHaveAttribute('open', '');
   await expect(calculator.getByRole('status')).toHaveAttribute('aria-live', 'polite');
   await calculator.getByRole('radio', { name: 'Team', exact: true }).check();
@@ -53,7 +53,7 @@ test('pricing calculator fits desktop 1440 and mobile 390', async ({ page }) => 
     await expect(
       calculator.getByRole('heading', { name: 'Pay as you go breakdown' }),
     ).toBeVisible();
-    await expect(calculator.getByText('€37.18', { exact: true })).toHaveCount(2);
+    await expect(calculator.getByText('€40.18', { exact: true })).toHaveCount(2);
     await expectNoHorizontalOverflow(page);
   }
 });
@@ -67,7 +67,7 @@ test.describe('without JavaScript', () => {
     await expect(
       calculator.getByRole('heading', { name: 'Pay as you go breakdown' }),
     ).toBeVisible();
-    await expect(calculator.getByText('€37.18', { exact: true })).toHaveCount(2);
+    await expect(calculator.getByText('€40.18', { exact: true })).toHaveCount(2);
     await expect(calculator.locator('details')).not.toHaveAttribute('open', '');
     await expect(calculator.getByLabel('Assumed AI usage', { exact: true })).toHaveValue('20');
     await expect(calculator.getByLabel('Active members', { exact: true })).toHaveValue('5');

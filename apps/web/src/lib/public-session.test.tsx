@@ -44,15 +44,15 @@ function SessionLinks() {
 }
 
 describe('public session island', () => {
-  it('server-renders account actions as a pending signed-out placeholder', () => {
+  it('server-renders both account states as inert sizing placeholders', () => {
     const html = renderToStaticMarkup(<PublicHeader currentSection="product" />);
 
     expect(html).toContain('data-public-session="unknown"');
     expect(html).toContain('href="/sign-in"');
     expect(html).toContain('>Start free</a>');
-    expect(html).toContain('invisible');
+    expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('inert');
-    expect(html).not.toContain('>Dashboard</a>');
+    expect(html).toContain('>Dashboard</a>');
   });
 
   it('resolves Sign in versus Dashboard from the session endpoint without flashing the wrong CTA', async () => {
@@ -171,5 +171,53 @@ describe('public session island', () => {
       '/api/auth/session',
       expect.objectContaining({ credentials: 'same-origin' }),
     );
+  });
+});
+
+describe('public session request generations', () => {
+  it('does not let an old response release a newer in-flight request after reset', async () => {
+    let finishOld!: (response: Response) => void;
+    let finishNew!: (response: Response) => void;
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishOld = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishNew = resolve;
+          }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const oldRequest = refreshPublicSession();
+    resetPublicSessionCache();
+    const newRequest = refreshPublicSession();
+    finishOld(Response.json({ user: { name: 'Old' } }));
+    await oldRequest;
+    expect(refreshPublicSession()).toBe(newRequest);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    finishNew(Response.json({ user: { name: 'Current' } }));
+    await expect(newRequest).resolves.toMatchObject({ status: 'signed-in', name: 'Current' });
+  });
+
+  it('does not replace explicitly installed auth state with an older response', async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const request = refreshPublicSession();
+    setPublicSessionCache({ status: 'signed-out' });
+    finish(Response.json({ user: { name: 'Old' } }));
+    await expect(request).resolves.toEqual({ status: 'signed-out' });
   });
 });

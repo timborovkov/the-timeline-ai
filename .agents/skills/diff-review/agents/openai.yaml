@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Diff Review'
+  short_description: 'High-signal branch and worktree diff reviews'
+  default_prompt: 'Use $diff-review to review my current branch and worktree against its default base branch.'

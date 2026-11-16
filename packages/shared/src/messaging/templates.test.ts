@@ -34,7 +34,7 @@ describe('messaging templates', () => {
   it('renders invite HTML and text with escaped user content', () => {
     const message = renderMessage('team_invite', {
       to: 'new@example.test',
-      inviterName: 'Tim <script>',
+      inviterName: 'Taylor <script>',
       teamName: 'Audit & AI',
       role: 'member',
       inviteUrl: 'https://timeline.test/accept',
@@ -43,18 +43,18 @@ describe('messaging templates', () => {
 
     expect(message.subject).toBe("You're invited to join Audit & AI on The Timeline");
     expect(message.textBody).toContain('https://timeline.test/accept');
-    expect(message.htmlBody).toContain('Tim &lt;script&gt;');
+    expect(message.htmlBody).toContain('Taylor &lt;script&gt;');
     expect(message.htmlBody).toContain('Audit &amp; AI');
-    expect(message.htmlBody).not.toContain('Tim <script>');
+    expect(message.htmlBody).not.toContain('Taylor <script>');
   });
 
   it('renders the daily digest from the stored payload shape', () => {
     const message = renderMessage('daily_digest', {
-      to: 'tim@example.test',
+      to: 'taylor@example.test',
       digestUrl: 'https://timeline.test/app',
       payload: {
         teamName: 'AuditAI',
-        userName: 'Tim',
+        userName: 'Taylor',
         timezone: 'Europe/Helsinki',
         windowStart: '2026-06-13T08:00:00.000Z',
         windowEnd: '2026-06-14T08:00:00.000Z',
@@ -228,11 +228,11 @@ describe('messaging templates', () => {
 
   it('renders older daily digest payloads without structured sections', () => {
     const message = renderMessage('daily_digest', {
-      to: 'tim@example.test',
+      to: 'taylor@example.test',
       digestUrl: 'https://timeline.test/app',
       payload: {
         teamName: 'AuditAI',
-        userName: 'Tim',
+        userName: 'Taylor',
         timezone: 'Europe/Helsinki',
         windowStart: '2026-06-13T08:00:00.000Z',
         windowEnd: '2026-06-14T08:00:00.000Z',
@@ -255,8 +255,8 @@ describe('messaging templates', () => {
 
   it('renders email verification with the verification CTA in text and HTML', () => {
     const message = renderMessage('email_verification', {
-      to: 'tim@example.test',
-      verificationUrl: 'https://timeline.test/verify-email/token?email=tim%40example.test',
+      to: 'taylor@example.test',
+      verificationUrl: 'https://timeline.test/verify-email/token?email=taylor%40example.test',
       expiresAt: new Date('2026-06-15T12:00:00Z'),
     });
 

@@ -11,7 +11,7 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
     <>
       <section className="border-y border-border bg-surface/45">
         <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-16">
-          <EditorialSectionHeading title="Why this needs more than one source" />
+          <EditorialSectionHeading title="Choose the right evidence for the question" />
           <div className={`${styles.readingMeasure} mt-6 space-y-5 text-base leading-8`}>
             {guide.context.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
@@ -52,9 +52,8 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       <section className="border-y border-border bg-surface/55">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="Evidence example"
             title="See the evidence path"
-            intro="The example is illustrative. Its purpose is to make the provenance pattern visible, not to imply customer data or a guaranteed conclusion."
+            intro="Follow the source records through to the answer."
           />
           <div className="mt-10">
             <ProvenanceDiagram diagram={guide.diagram} />
@@ -83,7 +82,6 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
       <section className="border-y border-border bg-surface/45">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <EditorialSectionHeading
-            index="Source roles"
             title="What each source contributes"
             intro="Each source contributes a different part of the answer. Timeline keeps those roles distinct instead of flattening everything into one activity feed."
           />

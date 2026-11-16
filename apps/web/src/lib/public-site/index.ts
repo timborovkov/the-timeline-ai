@@ -4,6 +4,7 @@ export {
   canonicalPublicUrl,
   createPublicDocumentRegistry,
   definePublicDocuments,
+  resolvePublicLlmsResourceHref,
 } from '@/lib/public-site/registry';
 export { buildPublicSitemap } from '@/lib/public-site/sitemap';
 export {

@@ -35,12 +35,13 @@ const log = childLogger('mcp:client');
  */
 export class McpNeedsReauthError extends Error {
   readonly code = 'needs_reauth' as const;
-  constructor(
-    readonly serverId: string,
-    readonly serverName: string,
-  ) {
+  readonly serverId: string;
+  readonly serverName: string;
+  constructor(serverId: string, serverName: string) {
     super(`MCP server ${serverName} needs reconnection`);
     this.name = 'McpNeedsReauthError';
+    this.serverId = serverId;
+    this.serverName = serverName;
   }
 }
 

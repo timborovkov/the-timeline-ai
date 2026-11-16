@@ -95,9 +95,13 @@ export function getProvider(id: string): IntegrationProvider {
       : {}),
     handleOAuthCallback: (input) =>
       run('setup', undefined, () => provider.handleOAuthCallback(input)),
-    listSyncableResources: (integration, tokens, ctx) =>
+    browseResources: (integration, tokens, ctx) =>
       run('setup', integration.externalAccountId, () =>
-        provider.listSyncableResources(integration, tokens, ctx),
+        provider.browseResources(integration, tokens, ctx),
+      ),
+    validateResourceSelections: (identity, tokens, selections, ctx) =>
+      run('setup', identity.externalAccountId, () =>
+        provider.validateResourceSelections(identity, tokens, selections, ctx),
       ),
     backfill: (input) =>
       run(input.purpose ?? 'backfill', input.integration.externalAccountId, () =>
@@ -227,7 +231,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'google_drive',
     label: 'Google Drive',
     description:
-      'Selected folders mirror into the team document drive. New files, comments, and version changes become cited timeline events.',
+      'Selected Drive folders and files become cited timeline events after a quiet editing window. Timeline keeps the latest extracted text to detect changes, then deletes it on disconnect or file removal.',
     logo: '/connectors/google-drive.svg',
     category: 'productivity',
     kind: 'native',

@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, entities, notifications, teamCalendarSettings } from '@timeline/db';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -90,6 +90,101 @@ afterEach(async () => {
 });
 
 describe('processOverdueScanTick', () => {
+  it.each(['disabled_at', 'deletion_started_at', 'deleted_at', 'suspended', 'terminated'])(
+    'ignores %s workspaces without blocking active workspace reminders',
+    async (state) => {
+      await insertObject({
+        id: '00000000-0000-0000-0000-000000000001',
+        name: 'Inactive task',
+        ownerUserId: OWNER_A,
+      });
+      await insertObject({
+        id: '00000000-0000-0000-0000-000000000002',
+        teamId: TEAM_B,
+        name: 'Active task',
+        ownerUserId: OWNER_B,
+      });
+      if (state === 'suspended' || state === 'terminated')
+        await pg.exec(
+          `INSERT INTO team_billing_accounts (team_id, security_state) VALUES ('${TEAM_A}', '${state}')`,
+        );
+      else await pg.exec(`UPDATE teams SET ${state} = now() WHERE id = '${TEAM_A}'`);
+      expect(await processOverdueScanTick({ db })).toEqual({ scanned: 1, inserted: 1 });
+      const rows = await db.select().from(notifications);
+      expect(rows.map((row) => row.teamId)).toEqual([TEAM_B]);
+    },
+  );
+
+  it('continues active workspaces when the lifecycle guard rejects one insert', async () => {
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Guarded task',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000002',
+      teamId: TEAM_B,
+      name: 'Active task',
+      ownerUserId: OWNER_B,
+    });
+    // The real guard raises this exact error. Force it at insert time, after
+    // discovery and the admission recheck, so one workspace cannot fail the tick.
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION reject_inactive_team_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.team_id = '${TEAM_A}' THEN
+          RAISE EXCEPTION 'Workspace is disabled' USING ERRCODE = '42501';
+        END IF;
+        RETURN NEW;
+      END $$;
+    `);
+
+    expect(await processOverdueScanTick({ db })).toEqual({ scanned: 2, inserted: 1 });
+    expect((await db.select().from(notifications)).map((row) => row.teamId)).toEqual([TEAM_B]);
+  });
+
+  it('still fails the scan when a notification insert hits an unrelated database error', async () => {
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Broken insert',
+      ownerUserId: OWNER_A,
+    });
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION reject_inactive_team_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'connection lost' USING ERRCODE = '08006';
+      END $$;
+    `);
+
+    await expect(processOverdueScanTick({ db })).rejects.toThrow(/Failed query/);
+    expect(await db.select().from(notifications)).toEqual([]);
+  });
+
+  it('skips a workspace disabled after discovery and continues the other workspace', async () => {
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Inactive task',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000002',
+      teamId: TEAM_B,
+      name: 'Active task',
+      ownerUserId: OWNER_B,
+    });
+    const originalTransaction = db.transaction.bind(db);
+    const transaction = vi.spyOn(db, 'transaction').mockImplementationOnce(async (...args) => {
+      await pg.exec(`UPDATE teams SET disabled_at = now() WHERE id = '${TEAM_A}'`);
+      return originalTransaction(...args);
+    });
+    try {
+      expect(await processOverdueScanTick({ db })).toEqual({ scanned: 2, inserted: 1 });
+    } finally {
+      transaction.mockRestore();
+    }
+    expect((await db.select().from(notifications)).map((row) => row.teamId)).toEqual([TEAM_B]);
+  });
+
   it('creates one overdue notification per distinct owner and assignee', async () => {
     const taskId = '00000000-0000-0000-0000-000000000101';
     await insertObject({

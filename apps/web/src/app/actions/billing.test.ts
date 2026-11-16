@@ -64,7 +64,7 @@ await vi.mock(
           memberId: string;
           externalCustomerId: string;
         },
-        context: { account: unknown },
+        context: { account: unknown; recordCheckout: (id: string) => Promise<void> },
       ) => Promise<unknown>,
     ) =>
       action(
@@ -73,7 +73,7 @@ await vi.mock(
           memberId: 'member-synthetic',
           externalCustomerId: input.teamId,
         },
-        { account: lockedAccount ?? preflightAccount },
+        { account: lockedAccount ?? preflightAccount, recordCheckout: () => Promise.resolve() },
       ),
     createPolarBillingProvider: () => provider,
     isPolarBillingConfigured: () => true,

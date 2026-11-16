@@ -57,9 +57,9 @@ describe('SuggestionChangeDialog', () => {
       revisedItem: {
         id: '11111111-1111-4111-8111-111111111111',
         status: 'pending',
-        title: 'Miku to register with PRH',
-        description: 'Miku made the promise.',
-        proposedPayload: { ownerName: 'Miku' },
+        title: 'Casey to register with PRH',
+        description: 'Casey made the promise.',
+        proposedPayload: { ownerName: 'Casey' },
       },
     });
     render(
@@ -77,22 +77,22 @@ describe('SuggestionChangeDialog', () => {
     ).toBeTruthy();
     await user.type(
       within(dialog).getByLabelText('What should change?'),
-      'Miku made this promise, not Tim.',
+      'Casey made this promise, not Taylor.',
     );
     await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
 
     await waitFor(() => {
       expect(fakes.reviseSuggestionItemAction).toHaveBeenCalledWith({
         itemId: '11111111-1111-4111-8111-111111111111',
-        feedback: 'Miku made this promise, not Tim.',
+        feedback: 'Casey made this promise, not Taylor.',
       });
     });
     expect(onRevised).toHaveBeenCalledWith({
       id: '11111111-1111-4111-8111-111111111111',
       status: 'pending',
-      title: 'Miku to register with PRH',
-      description: 'Miku made the promise.',
-      proposedPayload: { ownerName: 'Miku' },
+      title: 'Casey to register with PRH',
+      description: 'Casey made the promise.',
+      proposedPayload: { ownerName: 'Casey' },
     });
     expect(fakes.notifyAction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -117,7 +117,7 @@ describe('SuggestionChangeDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Change' }));
     const dialog = screen.getByRole('dialog', { name: 'Change “PRH company registration”' });
-    await user.type(within(dialog).getByLabelText('What should change?'), 'Use Miku.');
+    await user.type(within(dialog).getByLabelText('What should change?'), 'Use Casey.');
     await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
 
     expect((await within(dialog).findByRole('alert')).textContent).toBe(

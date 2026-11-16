@@ -1,253 +1,103 @@
 .figure {
-  overflow: hidden;
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2rem);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
 }
-
-.caption {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+.figure h2 {
+  max-width: 19ch;
+  font-size: clamp(1.75rem, 2.5vw, 2rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
-
-.kicker,
-.disclosure {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.kicker {
-  color: var(--signal);
-}
-
-.disclosure {
-  color: var(--fg-dim);
-}
-
-.lede {
-  max-width: 62ch;
-  margin: 0;
-  padding: 1rem 1.25rem 0;
+.subject {
+  margin-top: 0.75rem;
   color: var(--fg-muted);
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
-
-.lede a {
-  color: var(--fg);
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
+.read {
+  margin-top: 1.75rem;
 }
-
-.clients {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem 0;
-}
-
-.client {
-  display: inline-flex;
-  gap: 0.4rem;
-  align-items: center;
-  min-height: 2rem;
-  padding: 0.2rem 0.55rem 0.2rem 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  font-size: 0.78rem;
-}
-
-.clientMark {
-  display: grid;
-  width: 1.35rem;
-  height: 1.35rem;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: #fff;
-}
-
-.flow {
-  display: grid;
-  grid-template-columns: minmax(12rem, 1.1fr) 2.5rem minmax(10rem, 0.9fr) 2.5rem minmax(
-      12rem,
-      1.1fr
-    );
-  gap: 0;
-  min-height: 22rem;
-  padding: 1.25rem;
-}
-
-.column,
-.core {
-  padding: 1.1rem 1.15rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-}
-
-.column h3,
-.core h3 {
-  margin: 0;
+.figure h3 {
   font-size: 1rem;
   font-weight: 600;
-  letter-spacing: -0.02em;
 }
-
-.column p,
-.core p {
-  margin: 0.55rem 0 0;
+.read dl {
+  margin-top: 0.5rem;
+}
+.read dl > div {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.5;
+}
+.read dt {
   color: var(--fg-muted);
-  font-size: 0.8rem;
-  line-height: 1.45;
+  font-size: 0.875rem;
 }
-
-.column ul {
-  display: grid;
-  gap: 0.65rem;
-  margin: 1rem 0 0;
-  padding: 0;
-  list-style: none;
+.read dd {
+  font-size: 0.9375rem;
 }
-
-.column li {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.column strong {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.column span {
-  color: var(--fg-muted);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
-.core {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  text-align: center;
-  background: color-mix(in oklch, var(--signal) 8%, var(--bg));
-}
-
-.mark {
-  width: 2rem;
-  height: 2rem;
-  margin-bottom: 0.65rem;
-  color: var(--fg);
-}
-
 .transfer {
-  display: flex;
   position: relative;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.transfer span {
-  position: absolute;
-  right: 0;
-  left: 0;
-  height: 1px;
-  overflow: hidden;
-  background: var(--border-strong);
-}
-
-.transfer span::after {
-  position: absolute;
-  inset: 0;
-  background: var(--signal);
-  content: '';
-  transform-origin: left;
-}
-
-.transfer svg {
-  z-index: 1;
-  width: 0.9rem;
-  height: 0.9rem;
-  padding: 0.15rem;
-  box-sizing: content-box;
-  background: var(--surface);
+  display: grid;
+  place-items: center;
+  height: 3rem;
   color: var(--signal);
 }
-
-.arrowNarrow {
-  display: none;
+.transfer span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--signal);
+  transform-origin: top;
 }
-
-@media (max-width: 63.99rem) {
-  .flow {
-    grid-template-columns: 1fr;
-    min-height: 0;
-    gap: 0.35rem;
-  }
-
-  .transfer {
-    min-height: 2.4rem;
-  }
-
-  .transfer span {
-    top: 0;
-    right: auto;
-    bottom: 0;
-    left: 50%;
-    width: 1px;
-    height: auto;
-  }
-
-  .transfer span::after {
-    transform-origin: top;
-  }
-
-  .arrowWide {
-    display: none;
-  }
-
-  .arrowNarrow {
-    display: block;
-  }
+.transfer svg {
+  position: relative;
+  background: var(--surface);
 }
-
+.write blockquote {
+  margin-top: 0.75rem;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+}
+.write p {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.write svg {
+  color: var(--signal);
+  flex-shrink: 0;
+}
+.figure figcaption {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
 @media (prefers-reduced-motion: no-preference) {
-  .transfer span::after {
-    animation: agent-trace 900ms cubic-bezier(0.22, 1, 0.36, 1) 180ms both;
+  .figure[data-motion-entered='true'] .transfer span {
+    animation: agent-trace 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-
-  .core {
-    animation: agent-core 640ms cubic-bezier(0.22, 1, 0.36, 1) 720ms both;
-  }
-}
-
-@media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
-  .transfer span::after {
-    animation-name: agent-trace-vertical;
+  .figure[data-motion-entered='true'] .write {
+    animation: agent-note 700ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both;
   }
 }
-
 @keyframes agent-trace {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-@keyframes agent-trace-vertical {
   from {
     transform: scaleY(0);
   }
@@ -255,14 +105,13 @@
     transform: scaleY(1);
   }
 }
-
-@keyframes agent-core {
+@keyframes agent-note {
   from {
-    opacity: 0.72;
-    transform: scale(0.98);
+    opacity: 0.6;
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0);
   }
 }

@@ -40,13 +40,12 @@ function shouldScanSourceFile(path: string): boolean {
     '.live-eval.test.ts',
     '/packages/db/src/schema/',
     '/packages/shared/src/reconciliation/dev-seed-contract.test.ts',
+    // Synthetic eval harnesses seed disposable fixtures; they are not production writers.
+    '/apps/worker/src/evals/',
+    '/packages/shared/src/evals/',
+    // Disposable erasure fixtures are not production event writers.
+    '/scripts/testing/team-deletion-rehearsal.ts',
   ].some((excluded) => path.includes(excluded));
-}
-
-function scannedApplicationSources(): string {
-  return repoSourceFiles(APPLICATION_SOURCE_ROOTS)
-    .map((path) => readFileSync(path, 'utf8'))
-    .join('\n');
 }
 
 function rawEventWriterFiles(): string[] {
@@ -173,7 +172,21 @@ function declarationCarriesField(
   if (seen.has(name)) return false;
   seen.add(name);
   const declaration = declarationSlice(source, name);
-  if (!declaration) return false;
+  if (!declaration) {
+    const importsCanonicalEnvelope = [
+      ...source.matchAll(
+        /import\s*\{([^}]*)\}\s*from\s*['"]#src\/reconciliation\/direct-write-source\.js['"]/g,
+      ),
+    ].some((match) =>
+      match[1]?.split(',').some((binding) => binding.trim() === 'directWriteSourceEnvelope'),
+    );
+    if (name !== 'directWriteSourceEnvelope' || !importsCanonicalEnvelope) return false;
+    return declarationCarriesField(
+      repoFile('packages/shared/src/reconciliation/direct-write-source.ts'),
+      name,
+      field,
+    );
+  }
   if (declaration.includes(field)) return true;
   return [...declaration.matchAll(/\b(\w+)\(/g)].some((match) =>
     declarationCarriesField(source, match[1] ?? '', field, seen),
@@ -256,25 +269,46 @@ describe('reconciliation cutover contracts', () => {
   it('keeps direct-write source context inputs on raw-event terminology', () => {
     const objects = repoFile('packages/shared/src/objects/index.ts');
     const boards = repoFile('packages/shared/src/boards/index.ts');
-    const signatures = [
-      functionSignature(objects, 'buildObjectDirectWriteSourceContext'),
-      functionSignature(boards, 'buildBoardDirectWriteSourceContext'),
-    ];
-
-    expect(signatures.every((signature) => signature.includes('sourceRawEventId: string'))).toBe(
-      true,
+    for (const [source, alias] of [
+      [objects, 'buildObjectDirectWriteSourceContext'],
+      [boards, 'buildBoardDirectWriteSourceContext'],
+    ] as const) {
+      expect(source).toContain(
+        `export { buildDirectWriteSourceContext as ${alias} } from '#src/reconciliation/direct-write-source.js'`,
+      );
+      expect(source).toMatch(
+        new RegExp(
+          `import\\s*\\{[^}]*buildDirectWriteSourceContext as ${alias}[^}]*\\} from '#src/reconciliation/direct-write-source\\.js'`,
+        ),
+      );
+    }
+    const signature = functionSignature(
+      repoFile('packages/shared/src/reconciliation/direct-write-source.ts'),
+      'buildDirectWriteSourceContext',
     );
-    expect(signatures.join('\n')).not.toContain('sourceEventId: string');
+    expect(signature).toContain('sourceRawEventId: string');
+    expect(signature).not.toContain('sourceEventId: string');
   });
 
   it('keeps old reconciliation writer paths out of application code', () => {
-    const sources = scannedApplicationSources();
-
-    expect(sources).not.toContain('createSuggestion(');
-    expect(sources).not.toContain('artifactClusterMembers');
-    expect(sources).not.toContain('artifact_cluster_members');
-    expect(sources).not.toContain('.insert(artifactClusterMembers)');
-    expect(sources).not.toContain('INSERT INTO artifact_cluster_members');
+    const forbidden = [
+      'createSuggestion(',
+      'artifactClusterMembers',
+      'artifact_cluster_members',
+      '.insert(artifactClusterMembers)',
+      'INSERT INTO artifact_cluster_members',
+    ];
+    const findings = repoSourceFiles(APPLICATION_SOURCE_ROOTS).flatMap((path) => {
+      const file = relativeRepoPath(path);
+      let source = readFileSync(path, 'utf8');
+      // Erasure must classify the retired table; this literal cannot write records.
+      if (file === 'packages/shared/src/team-lifecycle/inventory.ts')
+        source = source.replace(/^  'artifact_cluster_members',\n/m, '');
+      return forbidden
+        .filter((pattern) => source.includes(pattern))
+        .map((pattern) => `${file}: ${pattern}`);
+    });
+    expect(findings).toEqual([]);
   });
 
   it('keeps every production raw-event writer on the reconciliation evidence path', () => {
@@ -407,6 +441,40 @@ describe('reconciliation cutover contracts', () => {
 
     expect(declarationCarriesField(source, 'incompleteEnvelope', 'sourcePayloadRefs')).toBe(false);
     expect(declarationCarriesField(source, 'incompleteEnvelope', 'visibilityFloor')).toBe(false);
+  });
+
+  it('follows only the canonical imported source envelope for spread contracts', () => {
+    const canonicalImport =
+      "import { directWriteSourceEnvelope } from '#src/reconciliation/direct-write-source.js';";
+    const statement = 'values({ ...directWriteSourceEnvelope(context) })';
+    expect(statementCarriesField(canonicalImport, statement, 'sourcePayloadRefs')).toBe(true);
+    expect(statementCarriesField(canonicalImport, statement, 'visibilityFloorUserIds')).toBe(true);
+    expect(statementCarriesField(canonicalImport, statement, 'missingField')).toBe(false);
+    expect(statementCarriesField('', statement, 'sourcePayloadRefs')).toBe(false);
+    expect(
+      statementCarriesField(
+        canonicalImport.replace('direct-write-source.js', 'unrelated.js'),
+        statement,
+        'sourcePayloadRefs',
+      ),
+    ).toBe(false);
+    expect(
+      statementCarriesField(
+        canonicalImport.replace(
+          'directWriteSourceEnvelope }',
+          'directWriteSourceEnvelope as other }',
+        ),
+        statement,
+        'sourcePayloadRefs',
+      ),
+    ).toBe(false);
+    expect(
+      statementCarriesField(
+        'function directWriteSourceEnvelope() { return { sourceRefs: [] }; }',
+        statement,
+        'sourcePayloadRefs',
+      ),
+    ).toBe(false);
   });
 
   it('requires output writers to carry replay payload refs alongside source refs', () => {

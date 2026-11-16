@@ -15,7 +15,8 @@ await vi.mock(
 const { resetEnvForTests } = await import('#src/env.js');
 const { MONDAY_BOARD_WRITER_EVENT_BUDGET, mondayProvider } =
   await import('#src/integrations/providers/monday.js');
-const { ProviderRateLimitError } = await import('#src/integrations/types.js');
+const { ProviderRateLimitError, ProviderAuthorizationError } =
+  await import('#src/integrations/types.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -258,7 +259,7 @@ describe('mondayProvider', () => {
       ),
     );
 
-    const resources = await mondayProvider.listSyncableResources({} as never, {
+    const resources = await mondayProvider.browseResources({} as never, {
       access_token: 'token',
     });
 
@@ -306,7 +307,7 @@ describe('mondayProvider', () => {
     );
 
     await expect(
-      mondayProvider.listSyncableResources({} as never, {
+      mondayProvider.browseResources({} as never, {
         access_token: 'token',
       }),
     ).rejects.toMatchObject({
@@ -317,7 +318,7 @@ describe('mondayProvider', () => {
       reason: 'daily_limit_exceeded',
     });
     await expect(
-      mondayProvider.listSyncableResources({} as never, {
+      mondayProvider.browseResources({} as never, {
         access_token: 'token',
       }),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
@@ -342,7 +343,7 @@ describe('mondayProvider', () => {
     );
 
     await expect(
-      mondayProvider.listSyncableResources({} as never, { access_token: 'token' }),
+      mondayProvider.browseResources({} as never, { access_token: 'token' }),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
   });
 
@@ -1225,6 +1226,45 @@ describe('mondayProvider', () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  it.each([
+    { status: 401, body: {}, terminal: true },
+    { status: 403, body: {}, terminal: true },
+    {
+      status: 200,
+      body: {
+        errors: [{ message: 'Access denied', extensions: { code: 'UserUnauthorizedException' } }],
+      },
+      terminal: true,
+    },
+    { status: 503, body: {}, terminal: false },
+    { status: 429, body: {}, terminal: false },
+  ])(
+    'classifies webhook cleanup authorization at HTTP $status',
+    async ({ status, body, terminal }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+      );
+      let failure: unknown;
+      try {
+        await mondayProvider.deprovisionWebhook?.({
+          integration: { id: 'fixture', teamId: 'fixture' } as never,
+          tokens: { access_token: 'synthetic' },
+          subscription: {
+            externalSubscriptionId: 'fixture-hook',
+            resourceKind: 'monday.board',
+            externalResourceId: 'fixture-board',
+            eventType: 'create_item',
+          },
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure instanceof ProviderAuthorizationError).toBe(terminal);
+    },
+  );
+
   it('deprovisions stale monday.com webhooks', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
@@ -1313,7 +1353,7 @@ describe('mondayProvider', () => {
       ),
     );
 
-    const resources = await mondayProvider.listSyncableResources({} as never, {
+    const resources = await mondayProvider.browseResources({} as never, {
       access_token: 'token',
     });
 
@@ -1366,7 +1406,7 @@ describe('mondayProvider', () => {
     vi.stubGlobal('fetch', fetch);
     const ctx = { persistTokens: vi.fn().mockResolvedValue(undefined) };
 
-    const resources = await mondayProvider.listSyncableResources(
+    const resources = await mondayProvider.browseResources(
       {} as never,
       {
         access_token: 'token-old',
@@ -1421,7 +1461,7 @@ describe('mondayProvider', () => {
       ),
     );
 
-    const resources = await mondayProvider.listSyncableResources({} as never, {
+    const resources = await mondayProvider.browseResources({} as never, {
       access_token: 'token',
     });
 
@@ -1463,7 +1503,7 @@ describe('mondayProvider', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    const resources = await mondayProvider.listSyncableResources({} as never, {
+    const resources = await mondayProvider.browseResources({} as never, {
       access_token: 'token',
     });
 
@@ -1516,7 +1556,7 @@ describe('mondayProvider', () => {
       ),
     );
 
-    const resources = await mondayProvider.listSyncableResources({} as never, {
+    const resources = await mondayProvider.browseResources({} as never, {
       access_token: 'token',
     });
 
@@ -2785,10 +2825,10 @@ describe('mondayProvider', () => {
       throw new Error(`unexpected query: ${body.query}`);
     });
     vi.stubGlobal('fetch', fetch);
-    const cursors = new Map<string, Record<string, unknown>>();
+    const cursors = new Map<string, unknown>();
     const ctx = {
       loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
-      saveCursor: vi.fn((key: string, value: Record<string, unknown>) => {
+      saveCursor: vi.fn((key: string, value: unknown) => {
         cursors.set(key, value);
         return Promise.resolve();
       }),
@@ -2873,7 +2913,7 @@ describe('mondayProvider', () => {
       throw new Error(`unexpected query: ${body.query}`);
     });
     vi.stubGlobal('fetch', fetch);
-    const cursors = new Map<string, Record<string, unknown>>([
+    const cursors = new Map<string, unknown>([
       [
         'monday.board:board-1',
         {
@@ -2884,7 +2924,7 @@ describe('mondayProvider', () => {
     ]);
     const ctx = {
       loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
-      saveCursor: vi.fn((key: string, value: Record<string, unknown>) => {
+      saveCursor: vi.fn((key: string, value: unknown) => {
         cursors.set(key, value);
         return Promise.resolve();
       }),
@@ -3013,10 +3053,10 @@ describe('mondayProvider', () => {
         },
       ),
     );
-    const cursors = new Map<string, Record<string, unknown>>();
+    const cursors = new Map<string, unknown>();
     const ctx = {
       loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
-      saveCursor: vi.fn((key: string, value: Record<string, unknown>) => {
+      saveCursor: vi.fn((key: string, value: unknown) => {
         cursors.set(key, value);
         return Promise.resolve();
       }),

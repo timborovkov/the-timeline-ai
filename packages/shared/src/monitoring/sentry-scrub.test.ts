@@ -94,7 +94,7 @@ describe('Sentry scrubber', () => {
     expect(
       scrubSentryBreadcrumb({
         data: {
-          url: 'https://app.timeline.test/api/auth/callback/github?code=secret&state=secret',
+          url: 'https://app.timeline.test/api/auth/callback/google?code=secret&state=secret',
           from: '/accept-invite/private-invite-token?returnTo=/app',
           to: '/verify-email/private-verification-token?email=person@example.com',
           href: 'https://storage.timeline.test/team/private-document.pdf?signature=secret',
@@ -102,7 +102,7 @@ describe('Sentry scrubber', () => {
         },
       }).data,
     ).toEqual({
-      url: 'https://app.timeline.test/api/auth/callback/github',
+      url: 'https://app.timeline.test/api/auth/callback/google',
       from: '/accept-invite/[redacted]',
       to: '/verify-email/[redacted]',
       href: 'https://storage.timeline.test/team/private-document.pdf',

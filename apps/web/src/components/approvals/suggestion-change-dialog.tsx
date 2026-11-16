@@ -117,7 +117,7 @@ export function SuggestionChangeDialog({
             onChange={(event) => {
               setFeedback(event.target.value);
             }}
-            placeholder="For example: Miku made this promise, not Tim. Keep the date and other details unchanged."
+            placeholder="For example: Casey made this promise, not Taylor. Keep the date and other details unchanged."
             rows={5}
             maxLength={2000}
             disabled={pending}

@@ -20,9 +20,14 @@ await vi.mock(
   () => import('@timeline/shared/messaging'),
 );
 
-const { claimOwnedTeamFreeGrantsForVerifiedUser } = await import('@timeline/shared/billing');
-const { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken, sendEmailVerification } =
-  await import('@/lib/email-verification');
+const { claimOwnedTeamFreeGrantsForVerifiedUser, synchronizePolarBillingUser } =
+  await import('@timeline/shared/billing');
+const {
+  markEmailVerifiedFromTrustedOAuth,
+  retryOwnedTeamFreeGrantsAfterSignIn,
+  verifyEmailToken,
+  sendEmailVerification,
+} = await import('@/lib/email-verification');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -163,6 +168,54 @@ describe('verifyEmailToken', () => {
       userId: 'user-1',
       emailVerified: null,
     });
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('markEmailVerifiedFromTrustedOAuth', () => {
+  it('stamps unverified users and runs the same post-verify side effects', async () => {
+    const now = new Date('2026-11-06T00:00:00.000Z');
+    const updates: unknown[] = [];
+    const db = {
+      update: vi.fn(() => ({
+        set: (values: unknown) => {
+          updates.push(values);
+          return {
+            where: () => ({
+              returning: () => Promise.resolve([{ id: 'user-1' }]),
+            }),
+          };
+        },
+      })),
+    };
+
+    await expect(
+      markEmailVerifiedFromTrustedOAuth({ db: db as never, userId: 'user-1', now }),
+    ).resolves.toBe(true);
+    expect(updates).toEqual([expect.objectContaining({ emailVerified: now, updatedAt: now })]);
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledWith({
+      db,
+      userId: 'user-1',
+    });
+    expect(synchronizePolarBillingUser).toHaveBeenCalledWith(
+      expect.objectContaining({ db, userId: 'user-1' }),
+    );
+  });
+
+  it('does not re-claim grants when the user is already verified', async () => {
+    const db = {
+      update: vi.fn(() => ({
+        set: () => ({
+          where: () => ({
+            returning: () => Promise.resolve([]),
+          }),
+        }),
+      })),
+    };
+
+    await expect(
+      markEmailVerifiedFromTrustedOAuth({ db: db as never, userId: 'user-1' }),
+    ).resolves.toBe(false);
     expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
   });
 });

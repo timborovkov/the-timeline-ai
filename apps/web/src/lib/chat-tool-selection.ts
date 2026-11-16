@@ -1,13 +1,12 @@
 import { contextIdsFromTrail, type ChatContextRef } from '@timeline/shared/chat-context';
-
-import type { ToolSet } from 'ai';
+import { isToolUIPart, type ToolSet, type UIMessage } from 'ai';
 
 /**
  * Dashboard chat sends a subset of native agent tools per turn. Every tool in
  * `buildAgentTools` must appear here except `propose_object_change`, which
  * stays on proposal-only MCP/Telegram agents. `list_team_members` stays in
  * `core` so the model can resolve teammate names even when the user message
- * is only "assign Mikael". Keyword matchers must cover the system prompt's
+ * is only "assign Cameron". Keyword matchers must cover the system prompt's
  * example phrases (scheduled, pins, sentry) and any snake_case tool name the
  * user mentions.
  */
@@ -26,7 +25,12 @@ const nativeToolGroups = {
   ],
   guide: ['search_app_guide', 'get_app_route'],
   objects: ['search_objects', 'get_object', 'list_objects', 'list_tasks', 'recent_changes'],
-  objectMemory: ['list_pending_approvals', 'revise_suggestion', 'suggest_object_memory'],
+  objectMemory: [
+    'get_object_note',
+    'list_pending_approvals',
+    'revise_suggestion',
+    'suggest_object_memory',
+  ],
   suggestions: [
     'list_pending_approvals',
     'revise_suggestion',
@@ -35,7 +39,7 @@ const nativeToolGroups = {
     'suggest_calendar_event',
     'propose_calendar_update',
   ],
-  boards: ['search_boards'],
+  boards: ['search_boards', 'get_board'],
   documents: [
     'search_documents_structured',
     'search_documents',
@@ -47,6 +51,15 @@ const nativeToolGroups = {
   approvals: ['list_pending_approvals', 'revise_suggestion'],
   actions: [
     'revise_suggestion',
+    'execute_board_create',
+    'execute_board_update',
+    'execute_board_archive',
+    'execute_object_restore',
+    'execute_object_note_create',
+    'execute_object_note_update',
+    'execute_object_note_delete',
+    'execute_object_relationship_add',
+    'execute_object_relationship_remove',
     'execute_object_create',
     'execute_object_update',
     'execute_object_archive',
@@ -105,6 +118,7 @@ function addGroupsForNamedNativeTools(question: string, groups: Set<NativeToolGr
 
 export function selectAgentToolGroups(input: {
   question: string;
+  recentMessages?: UIMessage[];
   dashboardContext?: ChatToolDashboardContext | undefined;
   contextTrail?: ChatContextRef[];
 }): ToolSelection {
@@ -116,7 +130,28 @@ export function selectAgentToolGroups(input: {
   const documentId = input.dashboardContext?.documentId ?? trailIds.documentId;
   const calendarEventId = input.dashboardContext?.calendarEventId ?? trailIds.calendarEventId;
   const meetingId = input.dashboardContext?.meetingId ?? trailIds.meetingId;
-  const text = `${input.question} ${input.dashboardContext?.routeKind ?? ''} ${
+  const recent = (input.recentMessages ?? []).slice(-6);
+  const shortFollowup =
+    /^(yes|no|do it|go ahead|please|that one|this one|rename it|change it|try again)[.!?\s]*$/i.test(
+      input.question.trim(),
+    );
+  const contextText = shortFollowup
+    ? recent
+        .filter((m) => m.role === 'user')
+        .flatMap((m) => m.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])))
+        .join(' ')
+        .slice(-2000)
+    : '';
+  const latest = recent.at(-1);
+  const pendingNames =
+    latest?.role === 'assistant'
+      ? latest.parts.flatMap((p) =>
+          isToolUIPart(p) && ['approval-requested', 'approval-responded'].includes(p.state)
+            ? [p.type === 'dynamic-tool' ? p.toolName : p.type.slice(5)]
+            : [],
+        )
+      : [];
+  const text = `${input.question} ${contextText} ${input.dashboardContext?.routeKind ?? ''} ${
     input.dashboardContext?.pathname ?? ''
   }`.toLowerCase();
   const groups = new Set<NativeToolGroup>(['core', 'guide']);
@@ -125,7 +160,7 @@ export function selectAgentToolGroups(input: {
     /\b(team|sources|connections|integrations|slack|telegram|mcp|settings)\b/,
   ]);
   const hasObjectMemoryIntent = matchesAny(text, [
-    /\b(remember|memory|note|alias|aka|also known as|typo|rename|relationship|related|owner|owns|assignee|assign|assigned|reassign|reassigned|responsible|status|stage|priority|due)\b/,
+    /\b(remember|memory|notes?|alias|aka|also known as|typo|rename|relationships?|link|unlink|related|owner|owns|assignee|assign|assigned|reassign|reassigned|responsible|status|stage|priority|due)\b/,
     /\b(calls? this|known as|same as|belongs to|works? with|reports? to)\b/,
     /\b(promises?|promised|commits?|committed|commitment|responsibility)\b/,
   ]);
@@ -135,7 +170,7 @@ export function selectAgentToolGroups(input: {
     objectId ||
     taskId ||
     matchesAny(text, [
-      /\b(object|person|company|project|topic|deal|vendor|incident|decision|hiring|task|todo|follow[- ]?up|status|stage|archive|merge|changed|changes)\b/,
+      /\b(objects?|person|people|compan(?:y|ies)|projects?|topic|deals?|vendor|incident|decision|hiring|tasks?|todo|follow[- ]?up|status|stage|archive|merge|changed|changes)\b/,
     ])
   ) {
     groups.add('objects');
@@ -146,7 +181,11 @@ export function selectAgentToolGroups(input: {
     groups.add('objectMemory');
   }
 
-  if (boardId || boardItemId || matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])) {
+  if (
+    boardId ||
+    boardItemId ||
+    matchesAny(text, [/\b(boards?|kanban|lanes?|cards?|pipelines?|crm)\b/])
+  ) {
     groups.add('boards');
   }
 
@@ -184,14 +223,18 @@ export function selectAgentToolGroups(input: {
   if (
     hasContrastiveCorrection ||
     matchesAny(text, [
-      /\b(create|add|update|change|edit|set|move|cancel|cancelled|canceled|delete|remove|archive|merge|schedule|reschedule|rescheduled|approve|correct|fix|wrong|incorrect|actually|instead|do it|mark|done|complete|finish|close|assign|assigned|reassign|reassigned)\b/,
+      /\b(create|add|update|change|edit|rename|restore|unarchive|link|unlink|set|move|cancel|cancelled|canceled|delete|remove|archive|merge|schedule|reschedule|rescheduled|approve|correct|fix|wrong|incorrect|actually|instead|do it|mark|done|complete|finish|close|assign|assigned|reassign|reassigned)\b/,
       /\bit(?:'s| is)\s+not\b/,
     ])
   ) {
     groups.add('actions');
     groups.add('objects');
     if (hasObjectMemoryIntent) groups.add('objectMemory');
-    if (boardId || boardItemId || matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])) {
+    if (
+      boardId ||
+      boardItemId ||
+      matchesAny(text, [/\b(boards?|kanban|lanes?|cards?|pipelines?|crm)\b/])
+    ) {
       groups.add('boards');
     }
   }
@@ -221,7 +264,7 @@ export function selectAgentToolGroups(input: {
     groups.add('pins');
   }
 
-  addGroupsForNamedNativeTools(input.question, groups);
+  addGroupsForNamedNativeTools(`${input.question} ${pendingNames.join(' ')}`, groups);
 
   const includeMcp = matchesAny(text, [
     /\b(external tool|connected tool|custom tool|mcp|mcp__|github|linear|drive|jira|notion|slack|telegram|source|sentry|monday\.com)\b/,

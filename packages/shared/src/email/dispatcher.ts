@@ -35,7 +35,7 @@ import {
   type ParsedAddress,
 } from '#src/email/parser.js';
 import { childLogger } from '#src/logger.js';
-import { principalIsActive } from '#src/platform-admin/runtime.js';
+import { activeWorkspaceCondition, principalIsActive } from '#src/platform-admin/runtime.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 
@@ -1337,6 +1337,7 @@ export async function flushDeferredEmailEnrichment(
       .from(rawEvents)
       .where(
         and(
+          activeWorkspaceCondition(rawEvents.teamId),
           eq(rawEvents.source, 'email'),
           isNull(rawEvents.contentAudioUrl),
           sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,

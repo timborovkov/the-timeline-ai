@@ -11,10 +11,10 @@ export default function AppError({
 }) {
   return (
     <div className="space-y-6">
-      <h1 className="sr-only">Home</h1>
+      <h1 className="sr-only">Workspace</h1>
       <ErrorState
-        title="Unable to load Home"
-        description="Home could not be loaded. Your captured history and saved work are unchanged. Check your connection, then try again."
+        title="Unable to load this page"
+        description="This workspace page could not be loaded. Your captured history and saved work are unchanged. Check your connection, then try again."
         error={error}
         reset={reset}
       />

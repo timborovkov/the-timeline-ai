@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -38,17 +38,23 @@ type DialogState =
   | (InputDialogInput & { kind: 'input'; resolve: (value: string | null) => void });
 
 export function useAppDialog() {
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
   const [state, setState] = useState<DialogState | null>(null);
   const [inputValue, setInputValue] = useState('');
 
   const alert = useCallback((input: AlertInput) => {
     return new Promise<void>((resolve) => {
+      triggerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setState({ ...input, kind: 'alert', resolve });
     });
   }, []);
 
   const confirm = useCallback((input: ConfirmInput) => {
     return new Promise<boolean>((resolve) => {
+      triggerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setState({ ...input, kind: 'confirm', resolve });
     });
   }, []);
@@ -56,6 +62,8 @@ export function useAppDialog() {
   const input = useCallback((dialogInput: InputDialogInput) => {
     return new Promise<string | null>((resolve) => {
       setInputValue(dialogInput.defaultValue ?? '');
+      triggerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setState({ ...dialogInput, kind: 'input', resolve });
     });
   }, []);
@@ -80,9 +88,19 @@ export function useAppDialog() {
         if (!open) close(false);
       }}
     >
-      <DialogContent>
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          if (state?.kind === 'input') return;
+          event.preventDefault();
+          titleRef.current?.focus({ preventScroll: true });
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+        }}
+      >
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle ref={titleRef} tabIndex={-1}>
             {state?.title ?? (state?.kind === 'confirm' ? 'Confirm' : 'Notice')}
           </DialogTitle>
           <DialogDescription>{state?.description}</DialogDescription>
@@ -102,7 +120,14 @@ export function useAppDialog() {
                 setInputValue(event.currentTarget.value);
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') close(true, event.currentTarget.value);
+                if (
+                  event.key === 'Enter' &&
+                  !event.nativeEvent.isComposing &&
+                  event.nativeEvent.keyCode !== 229
+                ) {
+                  event.preventDefault();
+                  close(true, event.currentTarget.value);
+                }
               }}
             />
           </div>

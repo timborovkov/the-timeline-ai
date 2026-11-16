@@ -51,15 +51,11 @@ describe('crypto/secrets', () => {
 
   it('rejects tampered ciphertext (GCM tag mismatch)', () => {
     const enc = encryptSecret('payload');
-    const tampered = {
-      ciphertext: Buffer.concat([
-        enc.ciphertext.subarray(0, enc.ciphertext.length - 1),
-        Buffer.from([0xff]),
-      ]),
-      iv: enc.iv,
-      tag: enc.tag,
-    };
-    expect(() => decryptSecret(tampered)).toThrow();
+    const ciphertext = Buffer.from(enc.ciphertext);
+    // XOR rather than overwrite with a constant: setting the last byte to
+    // 0xff is a no-op whenever encryption already produced 0xff there.
+    ciphertext[ciphertext.length - 1] = (ciphertext[ciphertext.length - 1] ?? 0) ^ 0xff;
+    expect(() => decryptSecret({ ciphertext, iv: enc.iv, tag: enc.tag })).toThrow();
   });
 
   it('rejects tampered tag', () => {

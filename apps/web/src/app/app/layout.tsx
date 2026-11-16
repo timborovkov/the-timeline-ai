@@ -1,6 +1,7 @@
 import { teamInvites, teams, users } from '@timeline/db';
 import { isPlatformAdminEmail } from '@timeline/shared/billing/operator';
 import { getEnv } from '@timeline/shared/env';
+import { shouldRedirectToSetup } from '@timeline/shared/onboarding';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { cookies } from 'next/headers';
@@ -17,6 +18,7 @@ import { appMetadataForTeam } from '@/lib/app-metadata';
 import { auth, getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
+import { firstRunGuideProps } from '@/lib/first-run-status';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
@@ -113,7 +115,8 @@ export default async function AppLayout({
   }
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [badges, inbox, workspaceTimezone, billingSummary] = await Promise.all([
+  const [gettingStarted, badges, inbox, workspaceTimezone, billingSummary] = await Promise.all([
+    loadGettingStartedGuide(scope, session.user.id),
     getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
       console.error('[app-shell] failed to load navigation attention badges', err);
       reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
@@ -208,6 +211,7 @@ export default async function AppLayout({
               }
             : null
         }
+        gettingStarted={gettingStarted}
       >
         {children}
         {modal}
@@ -215,6 +219,18 @@ export default async function AppLayout({
     </QueryProvider>
   );
 }
+
+async function loadGettingStartedGuide(scope: ReturnType<typeof withTeam>, userId: string) {
+  const firstRun = await scope.onboarding.getFirstRun().catch((err: unknown) => {
+    reportCaughtError(err, { surface: 'layout', operation: 'first_run' });
+    return null;
+  });
+  if (shouldRedirectToSetup({ firstRun, userId })) {
+    redirect('/onboarding');
+  }
+  return firstRunGuideProps(firstRun);
+}
+
 function showPlatformAdmin(
   user: { email: string; emailVerified: Date | null } | undefined,
   realEmail: string | null | undefined,

@@ -1,6 +1,6 @@
-type CaptureSurfaceId = 'telegram' | 'slack-chat' | 'email' | 'meetings' | 'webhooks';
+type CaptureSurfaceId = 'telegram' | 'slack-chat' | 'email' | 'meetings' | 'webhooks' | 'websites';
 
-type CaptureSurfaceIcon = 'telegram' | 'slack' | 'mail' | 'video' | 'webhook';
+type CaptureSurfaceIcon = 'telegram' | 'slack' | 'mail' | 'video' | 'webhook' | 'globe';
 
 export interface CaptureSurfaceContent {
   id: CaptureSurfaceId;
@@ -23,6 +23,22 @@ export interface CaptureSurfaceContent {
  * structured history.
  */
 export const CAPTURE_SURFACES = [
+  {
+    id: 'websites',
+    name: 'Websites',
+    category: 'Public website evidence',
+    icon: 'globe',
+    summary:
+      'Scan your company website or another public website and keep cited versions as it changes.',
+    captured:
+      'Up to five public same-origin pages per scan, stored as cited evidence and document snapshots.',
+    boundary:
+      'Public pages only, with permission confirmation. Each captured page uses 20 source units, even when unchanged; AI and storage are separate. Daily and weekly schedules are available when enabled by the service administrator. Removing a source stops future scans but retains history.',
+    setupHref: '/app/connections/websites',
+    setupLabel: 'Add a website',
+    publicHref: '/integrations/websites',
+    featured: true,
+  },
   {
     id: 'telegram',
     name: 'Telegram',

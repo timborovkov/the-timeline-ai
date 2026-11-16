@@ -31,6 +31,7 @@ describe('resource labels', () => {
     expect(resourceKindLabel('sentry.project')).toBe('Sentry project');
     expect(resourceKindLabel('drive.shared_drive')).toBe('Google Drive shared drive');
     expect(resourceKindLabel('drive.folder')).toBe('Google Drive folder');
+    expect(resourceKindLabel('drive.file')).toBe('Google Drive file');
   });
 
   it('falls back to a cleaned-up kind for unknown values', () => {

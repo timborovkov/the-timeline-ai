@@ -86,6 +86,8 @@ export interface ObjectRow {
   metadata: Record<string, unknown>;
   updatedAt: Date;
   createdAt: Date;
+  /** Latest applied status change to done/cancelled, when that audit row is loaded. */
+  completedAt?: Date | null;
   /** Omitted when there are no discussion comments. */
   commentCount?: number;
 }
@@ -230,6 +232,8 @@ export interface ObjectDetail extends ObjectRow {
   connectedWork: {
     openTasks: ObjectRow[];
     recentTasks: ObjectRow[];
+    openTaskCount: number;
+    doneTaskCount: number;
     calendarEvents: {
       id: string;
       title: string;
@@ -376,4 +380,9 @@ export interface ObjectChangeRow {
   status: 'applied' | 'suggested' | 'rejected';
   note: string | null;
   changedAt: Date;
+}
+
+export interface UpdateActor {
+  kind: ActorKind;
+  userId: string | null;
 }

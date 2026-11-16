@@ -17,16 +17,20 @@ import { createOwnedWorkspace } from '#src/agent-provisioning/workspace.js';
 import { encryptJson, decryptJson } from '#src/crypto/secrets.js';
 import { TERMS_VERSION, isCurrentPrivacyVersion } from '#src/legal-versions.js';
 import { mintKey } from '#src/mcp-server/keys.js';
-export { createOwnedWorkspace } from '#src/agent-provisioning/workspace.js';
+export {
+  createOwnedWorkspace,
+  initializeOwnedWorkspace,
+} from '#src/agent-provisioning/workspace.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const day = 86400000;
 export class ProvisioningError extends Error {
-  constructor(
-    public code: string,
-    public status = 400,
-  ) {
+  code: string;
+  status: number;
+  constructor(code: string, status = 400) {
     super(code);
+    this.code = code;
+    this.status = status;
   }
 }
 export const provisioningGrantInput = z

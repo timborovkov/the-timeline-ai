@@ -12,6 +12,8 @@ import {
 describe('works-with content', () => {
   it('publishes six integrations works-with pages with honest status', () => {
     expect(WORKS_WITH_TOOLS.map((tool) => tool.slug)).toEqual([...WORKS_WITH_SLUGS]);
+    expect(WORKS_WITH_SLUGS).not.toContain('google-drive');
+    expect(findWorksWithTool('google-drive')).toBeUndefined();
     expect(WORKS_WITH_PAGE_TOOLS.map((tool) => tool.slug)).toEqual([
       'jira',
       'notion',

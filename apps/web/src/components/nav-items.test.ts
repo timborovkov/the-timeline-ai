@@ -32,8 +32,8 @@ describe('nav items', () => {
       })),
     ).toEqual([
       { label: 'Overview', items: ['Home', 'Timeline', 'Ask'] },
-      { label: 'Workspace', items: ['Work', 'Documents', 'Meetings'] },
-      { label: 'Manage', items: ['Connections', 'Usage', 'Team'] },
+      { label: 'Workspace', items: ['Work', 'Documents', 'Meetings', 'Connections'] },
+      { label: 'Manage', items: ['Usage', 'Team'] },
     ]);
   });
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   type Db,
+  accounts,
   auditLog,
   connectionAttention,
   entities,
@@ -27,6 +28,28 @@ import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'dri
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  cleanupUncoveredDriveTrackedFiles,
+  deleteDriveSnapshotsForFile as deleteDriveFileSnapshots,
+  deleteDriveSnapshotsForIntegration,
+  discardDriveTrackedFile,
+  driveExtractObjectKeys,
+  linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
+  listDriveExtractCursors,
+  listDriveTrackedDescendantFileIds as loadListDriveTrackedDescendantFileIds,
+  retainDriveExtractsForDisconnect,
+  listTeamEmailDomains as loadTeamEmailDomains,
+  loadLatestDriveSnapshot,
+  remainingDriveExtractObjectKeys,
+  saveDriveSnapshot,
+  type DriveExtractTombstone,
+} from '#src/integrations/google-drive-capture.js';
+import {
+  decideGoogleDriveTokenRevoke,
+  googleOAuthTokenFromDriveSecrets,
+  revokeGoogleOAuthToken,
+} from '#src/integrations/google-drive-oauth-revoke.js';
+import { DRIVE_FILE_KIND } from '#src/integrations/google-drive-scope.js';
+import {
   formatHealthPauseNotice,
   healthPauseNotificationDedupeKey,
   INTEGRATION_HEALTH_PAUSE_MIN_FAILURES,
@@ -35,16 +58,25 @@ import {
   type IntegrationHealthPauseKind,
 } from '#src/integrations/health.js';
 import { getProvider } from '#src/integrations/registry.js';
+import {
+  loadIntegrationSelectionLinks,
+  reconcileDriveSelectionLinkChanges,
+  setIntegrationSelectionObjectLink,
+  type IntegrationSelectionLinkRow,
+} from '#src/integrations/selection-links.js';
+import {
+  ProviderAuthorizationError,
+  type IntegrationRow,
+  type ProviderConnectionRow,
+  type SyncContinuation,
+  type WebhookSubscription,
+} from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
+import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
+import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
-
-import type {
-  IntegrationRow,
-  ProviderConnectionRow,
-  SyncContinuation,
-  WebhookSubscription,
-} from '#src/integrations/types.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
 // through `withTeam`-style membership enforcement so a forged team_id
@@ -144,6 +176,107 @@ const githubRateLimitedUntilKey = 'github_rate_limited_until';
 const integrationSyncContinuationHandoffLeaseMs = 2 * 60 * 1000;
 const integrationSyncContinuationHandoffClaimLimit = 100;
 const log = childLogger('integrations:scope');
+
+async function maybeRevokeGoogleDriveGrantAfterDisconnect(
+  database: Db,
+  connection: ProviderConnectionRow,
+): Promise<void> {
+  if (connection.provider !== 'google_drive') return;
+
+  let token: string | null = null;
+  try {
+    const secrets = decryptJson({
+      ciphertext: connection.authSecretCiphertext,
+      iv: connection.authSecretIv,
+      tag: connection.authSecretTag,
+    }) as Record<string, unknown>;
+    token = googleOAuthTokenFromDriveSecrets(secrets);
+  } catch (err) {
+    log.warn(
+      { err, providerConnectionId: connection.id },
+      'could not decrypt Drive tokens before Google revoke',
+    );
+  }
+
+  const [signIn] = await database
+    .select({ userId: accounts.userId })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.provider, 'google'),
+        eq(accounts.providerAccountId, connection.externalAccountId),
+      ),
+    )
+    .limit(1);
+  const [otherDrive] = await database
+    .select({ id: providerConnections.id })
+    .from(providerConnections)
+    .where(
+      and(
+        eq(providerConnections.provider, 'google_drive'),
+        eq(providerConnections.externalAccountId, connection.externalAccountId),
+      ),
+    )
+    .limit(1);
+
+  const decision = decideGoogleDriveTokenRevoke({
+    token,
+    googleSignInLinked: Boolean(signIn),
+    otherDriveConnectionsRemain: Boolean(otherDrive),
+  });
+  if (decision.action !== 'revoke') return;
+
+  const result = await revokeGoogleOAuthToken(decision.token);
+  if (result === 'failed') {
+    log.warn(
+      {
+        providerConnectionId: connection.id,
+        googleSubject: connection.externalAccountId,
+      },
+      'Google token revoke failed after local Drive disconnect',
+    );
+  }
+}
+
+async function deleteDriveTransientExtractObjects(cursor: {
+  objectKey: string;
+  resultObjectKey: string;
+  pendingDeleteKeys?: string[];
+  tombstones?: DriveExtractTombstone[];
+}): Promise<string[]> {
+  let client;
+  try {
+    client = getS3Client();
+  } catch (err) {
+    log.warn({ err }, 'drive transient extract cleanup skipped');
+    return driveExtractObjectKeys({
+      extractId: 'disconnect',
+      objectKey: cursor.objectKey,
+      resultObjectKey: cursor.resultObjectKey,
+      contentType: 'application/octet-stream',
+      filename: 'disconnect',
+      enqueuedAt: new Date(0).toISOString(),
+      ...(cursor.pendingDeleteKeys ? { pendingDeleteKeys: cursor.pendingDeleteKeys } : {}),
+      ...(cursor.tombstones && cursor.tombstones.length > 0
+        ? { tombstones: cursor.tombstones }
+        : {}),
+    });
+  }
+  const bucket = getDocumentsBucket();
+  const keys = driveExtractObjectKeys({
+    extractId: 'disconnect',
+    objectKey: cursor.objectKey,
+    resultObjectKey: cursor.resultObjectKey,
+    contentType: 'application/octet-stream',
+    filename: 'disconnect',
+    enqueuedAt: new Date(0).toISOString(),
+    ...(cursor.pendingDeleteKeys ? { pendingDeleteKeys: cursor.pendingDeleteKeys } : {}),
+    ...(cursor.tombstones && cursor.tombstones.length > 0 ? { tombstones: cursor.tombstones } : {}),
+  });
+  const results = await Promise.allSettled(keys.map((key) => deleteObject(client, bucket, key)));
+  return remainingDriveExtractObjectKeys(keys, results);
+}
+
 const integrationHealthReset = {
   healthConsecutiveFailures: 0,
   healthFirstFailedAt: null,
@@ -205,6 +338,14 @@ function healthResumeBackfillCursorFromResult(input: {
   };
 }
 
+interface DriveSelectionLink {
+  kind: string;
+  externalId: string;
+  linkedObjectId: string | null;
+}
+
+type DriveSelectionRow = IntegrationSelectionLinkRow;
+
 export function createIntegrationScope(deps: {
   db: Db;
   teamId: string;
@@ -213,6 +354,105 @@ export function createIntegrationScope(deps: {
   requireTeamMember?: (otherUserId: string) => Promise<void>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
+
+  async function applyDriveSelectionCoverageCleanup(
+    scopedDb: Db,
+    input: {
+      integrationId: string;
+      remainingSelections: DriveSelectionLink[];
+      extraTrackedFileIds?: string[];
+      forceDiscardFileIds?: string[];
+      droppedSelections?: DriveSelectionRow[];
+      mode?: 'cancel' | 'disconnect';
+    },
+  ): Promise<void> {
+    await reconcileDriveSelectionLinkChanges(scopedDb, {
+      teamId,
+      integrationId: input.integrationId,
+      previous: input.droppedSelections ?? [],
+      remainingSelections: input.remainingSelections,
+    });
+    const extraTrackedFileIds = [
+      ...(input.extraTrackedFileIds ?? []),
+      ...(input.droppedSelections ?? [])
+        .filter((row) => row.selectionKind === DRIVE_FILE_KIND)
+        .map((row) => row.externalId),
+    ];
+    await cleanupUncoveredDriveTrackedFiles(scopedDb, {
+      teamId,
+      integrationId: input.integrationId,
+      remainingSelections: input.remainingSelections,
+      ...(extraTrackedFileIds.length > 0 ? { extraTrackedFileIds } : {}),
+      ...(input.forceDiscardFileIds ? { forceDiscardFileIds: input.forceDiscardFileIds } : {}),
+      discardFile: (fileId) =>
+        discardDriveTrackedFile(scopedDb, {
+          teamId,
+          integrationId: input.integrationId,
+          fileId,
+          deleteExtractObjects: deleteDriveTransientExtractObjects,
+          mode: input.mode ?? 'cancel',
+        }),
+    });
+  }
+
+  async function applyDriveCleanupAfterSelectionMutation(
+    scopedDb: Db,
+    previousByIntegration: Map<string, DriveSelectionRow[]>,
+    mode: 'cancel' | 'disconnect' = 'cancel',
+  ): Promise<void> {
+    const integrationIds = [...previousByIntegration.keys()];
+    if (integrationIds.length === 0) return;
+    const providers = await scopedDb
+      .select({ id: integrationsTable.id, provider: integrationsTable.provider })
+      .from(integrationsTable)
+      .where(
+        and(eq(integrationsTable.teamId, teamId), inArray(integrationsTable.id, integrationIds)),
+      );
+    const driveIds = new Set(
+      providers.filter((row) => row.provider === 'google_drive').map((row) => row.id),
+    );
+    for (const integrationId of integrationIds) {
+      if (!driveIds.has(integrationId)) continue;
+      const remaining = await loadIntegrationSelectionLinks(scopedDb, integrationId);
+      const remainingKeys = new Set(
+        remaining.map((row) => `${row.selectionKind}\x00${row.externalId}`),
+      );
+      const previous = previousByIntegration.get(integrationId) ?? [];
+      const dropped = previous.filter(
+        (row) => !remainingKeys.has(`${row.selectionKind}\x00${row.externalId}`),
+      );
+      await applyDriveSelectionCoverageCleanup(scopedDb, {
+        integrationId,
+        remainingSelections: remaining.map((row) => ({
+          kind: row.selectionKind,
+          externalId: row.externalId,
+          linkedObjectId: row.linkedObjectId ?? null,
+        })),
+        droppedSelections: dropped,
+        mode,
+      });
+    }
+  }
+
+  async function snapshotSelectionsForShareIds(
+    scopedDb: Db,
+    shareIds: string[],
+  ): Promise<Map<string, DriveSelectionRow[]>> {
+    const previousByIntegration = new Map<string, DriveSelectionRow[]>();
+    if (shareIds.length === 0) return previousByIntegration;
+    const affected = await scopedDb
+      .select({ integrationId: integrationSelections.integrationId })
+      .from(integrationSelections)
+      .where(inArray(integrationSelections.resourceShareId, shareIds));
+    const integrationIds = [...new Set(affected.map((row) => row.integrationId))];
+    for (const integrationId of integrationIds) {
+      previousByIntegration.set(
+        integrationId,
+        await loadIntegrationSelectionLinks(scopedDb, integrationId),
+      );
+    }
+    return previousByIntegration;
+  }
 
   async function listIntegrations(): Promise<IntegrationRow[]> {
     await ensureMember();
@@ -289,59 +529,98 @@ export function createIntegrationScope(deps: {
     input: UpsertProviderConnectionInput,
   ): Promise<ProviderConnectionRow> {
     await ensureMember();
-    const encrypted = encryptJson(input.tokens);
-    const rows = await db
-      .insert(providerConnections)
-      .values({
-        ownerUserId: userId,
-        provider: input.provider,
-        displayName: input.displayName,
-        externalAccountId: input.externalAccountId,
-        scopes: input.scopes ?? [],
-        authSecretCiphertext: encrypted.ciphertext,
-        authSecretIv: encrypted.iv,
-        authSecretTag: encrypted.tag,
-        lastError: null,
-        lastConnectedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          providerConnections.ownerUserId,
-          providerConnections.provider,
-          providerConnections.externalAccountId,
-        ],
-        set: {
+    return db.transaction(async (tx) => {
+      const db = tx as unknown as Db;
+      const encrypted = encryptJson(input.tokens);
+      const rows = await db
+        .insert(providerConnections)
+        .values({
+          ownerUserId: userId,
+          provider: input.provider,
           displayName: input.displayName,
+          externalAccountId: input.externalAccountId,
           scopes: input.scopes ?? [],
           authSecretCiphertext: encrypted.ciphertext,
           authSecretIv: encrypted.iv,
           authSecretTag: encrypted.tag,
           lastError: null,
           lastConnectedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [
+            providerConnections.ownerUserId,
+            providerConnections.provider,
+            providerConnections.externalAccountId,
+          ],
+          set: {
+            displayName: input.displayName,
+            scopes: input.scopes ?? [],
+            authSecretCiphertext: encrypted.ciphertext,
+            authSecretIv: encrypted.iv,
+            authSecretTag: encrypted.tag,
+            lastError: null,
+            lastConnectedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      const row = rows[0];
+      if (!row) throw new Error('Failed to create provider connection');
+      // Lock only active linked teams so reconnect cannot race their suspension.
+      const activeTeams = await db
+        .select({ id: teams.id })
+        .from(teams)
+        .where(
+          and(
+            or(
+              inArray(
+                teams.id,
+                db
+                  .select({ id: integrationsTable.teamId })
+                  .from(integrationsTable)
+                  .where(eq(integrationsTable.providerConnectionId, row.id)),
+              ),
+              inArray(
+                teams.id,
+                db
+                  .select({ id: connectionAttention.teamId })
+                  .from(connectionAttention)
+                  .where(eq(connectionAttention.providerConnectionId, row.id)),
+              ),
+            ),
+            isNull(teams.disabledAt),
+            isNull(teams.deletionStartedAt),
+            isNull(teams.deletedAt),
+          ),
+        )
+        .orderBy(teams.id)
+        .for('share');
+      const teamIds = activeTeams.map((team) => team.id);
+      if (!teamIds.length) return row;
+      await db
+        .update(integrationsTable)
+        .set({
+          displayName: input.displayName,
+          externalAccountId: input.externalAccountId,
+          scopes: input.scopes ?? [],
+          lastError: null,
+          ...integrationHealthReset,
           updatedAt: new Date(),
-        },
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('Failed to create provider connection');
-    await db
-      .update(integrationsTable)
-      .set({
-        displayName: input.displayName,
-        externalAccountId: input.externalAccountId,
-        scopes: input.scopes ?? [],
-        lastError: null,
-        ...integrationHealthReset,
-        updatedAt: new Date(),
-      })
-      .where(eq(integrationsTable.providerConnectionId, row.id));
-    await adminResolveProviderConnectionAttention(db, row.id, [
-      'needs_reconnect',
-      'access_revoked',
-      'sync_error',
-      'webhook_degraded',
-    ]);
-    return row;
+        })
+        .where(
+          and(
+            eq(integrationsTable.providerConnectionId, row.id),
+            inArray(integrationsTable.teamId, teamIds),
+          ),
+        );
+      await adminResolveProviderConnectionAttention(
+        db,
+        row.id,
+        ['needs_reconnect', 'access_revoked', 'sync_error', 'webhook_degraded'],
+        teamIds,
+      );
+      return row;
+    });
   }
 
   async function deleteOwnedProviderConnection(id: string): Promise<boolean> {
@@ -354,6 +633,18 @@ export function createIntegrationScope(deps: {
       attentionId: string;
     }[] = [];
     await db.transaction(async (tx) => {
+      // Account-owned revocation can only disable integrations and remove this
+      // owner's credential. It must work even when a linked workspace is paused.
+      const [owned] = await tx
+        .select({
+          id: providerConnections.id,
+          cleanupSetting: sql<string | null>`current_setting('timeline.lifecycle_cleanup', true)`,
+        })
+        .from(providerConnections)
+        .where(and(eq(providerConnections.id, id), eq(providerConnections.ownerUserId, userId)))
+        .for('update');
+      if (!owned) throw new Error('Provider connection ownership changed');
+      await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
       const affected = await tx
         .update(integrationsTable)
         .set({
@@ -366,6 +657,15 @@ export function createIntegrationScope(deps: {
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
       const attentionRecordedAt = new Date();
       for (const row of affected) {
+        const [team] = await tx
+          .select({
+            disabledAt: teams.disabledAt,
+            deleting: teams.deletionStartedAt,
+            deletedAt: teams.deletedAt,
+          })
+          .from(teams)
+          .where(eq(teams.id, row.teamId));
+        if (!team || team.disabledAt || team.deleting || team.deletedAt) continue;
         const input: ConnectionAttentionInput = {
           integrationId: row.integrationId,
           category: 'needs_new_owner',
@@ -421,7 +721,18 @@ export function createIntegrationScope(deps: {
             .where(and(...conditions));
         }
       }
+      await tx.execute(
+        sql`SELECT set_config('timeline.lifecycle_cleanup', ${owned.cleanupSetting ?? ''}, true)`,
+      );
     });
+    try {
+      await maybeRevokeGoogleDriveGrantAfterDisconnect(db, connection);
+    } catch (err) {
+      log.warn(
+        { err, providerConnectionId: id },
+        'Google token revoke threw after local Drive disconnect',
+      );
+    }
     for (const notification of pendingNotifications) {
       try {
         const shouldEmail = await shouldEmailConnectionAttention(
@@ -605,14 +916,31 @@ export function createIntegrationScope(deps: {
 
   async function deleteIntegration(id: string): Promise<void> {
     await ensureMember('admin');
+    const existingRows = await db
+      .select({ id: integrationsTable.id, provider: integrationsTable.provider })
+      .from(integrationsTable)
+      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) return;
+    if (existing.provider === 'google_drive') {
+      // Persist cancel tombstones before the disconnect transaction so a
+      // late document-extract PUT still has cleanup tracking if disconnect
+      // then fails closed on the producer wait.
+      await retainDriveExtractsForDisconnect(db, {
+        teamId,
+        integrationId: id,
+        deleteExtractObjects: deleteDriveTransientExtractObjects,
+      });
+    }
     await db.transaction(async (tx) => {
-      const existingRows = await tx
+      const lockedRows = await tx
         .select({ id: integrationsTable.id, provider: integrationsTable.provider })
         .from(integrationsTable)
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
         .limit(1);
-      const existing = existingRows[0];
-      if (!existing) return;
+      const locked = lockedRows[0];
+      if (!locked) return;
       await tx
         .delete(connectionAttention)
         .where(
@@ -630,6 +958,19 @@ export function createIntegrationScope(deps: {
         .delete(integrationWebhookSubscriptions)
         .where(eq(integrationWebhookSubscriptions.integrationId, id));
       await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
+      // Coverage-aware discard with remaining=[] deletes every snapshot and
+      // extract. `disconnect` fails closed if S3 objects remain or the
+      // extract producer wait has not settled; leftover `{}` cursors cannot
+      // hide later objects because the helper pages extracts.
+      await applyDriveSelectionCoverageCleanup(tx as unknown as Db, {
+        integrationId: id,
+        remainingSelections: [],
+        mode: 'disconnect',
+      });
+      await deleteDriveSnapshotsForIntegration(tx as unknown as Db, {
+        teamId,
+        integrationId: id,
+      });
       await tx.delete(integrationSyncState).where(eq(integrationSyncState.integrationId, id));
       await tx.delete(integrationAuditLog).where(eq(integrationAuditLog.integrationId, id));
       await tx
@@ -642,7 +983,7 @@ export function createIntegrationScope(deps: {
         targetType: 'integration',
         targetId: id,
         targetVisibility: 'team',
-        metadata: { provider: existing.provider },
+        metadata: { provider: locked.provider },
       });
     });
   }
@@ -723,6 +1064,10 @@ export function createIntegrationScope(deps: {
         (share) => !keepKeys.has(`${share.resourceKind}\x00${share.externalId}`),
       );
       revokedForAttention.push(...revokedShares);
+      const previousByIntegration = await snapshotSelectionsForShareIds(
+        tx as unknown as Db,
+        revokedShares.map((share) => share.id),
+      );
       for (const share of revokedShares) {
         await tx
           .update(teamProviderResourceShares)
@@ -732,6 +1077,7 @@ export function createIntegrationScope(deps: {
           .delete(integrationSelections)
           .where(eq(integrationSelections.resourceShareId, share.id));
       }
+      await applyDriveCleanupAfterSelectionMutation(tx as unknown as Db, previousByIntegration);
       if (resources.length > 0) {
         await tx
           .insert(teamProviderResourceShares)
@@ -825,6 +1171,9 @@ export function createIntegrationScope(deps: {
     const row = rows[0];
     if (!row) throw new Error('Resource share not found');
     await db.transaction(async (tx) => {
+      const previousByIntegration = await snapshotSelectionsForShareIds(tx as unknown as Db, [
+        resourceShareId,
+      ]);
       await tx
         .update(teamProviderResourceShares)
         .set({ revokedAt: new Date(), updatedAt: new Date() })
@@ -832,6 +1181,7 @@ export function createIntegrationScope(deps: {
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.resourceShareId, resourceShareId));
+      await applyDriveCleanupAfterSelectionMutation(tx as unknown as Db, previousByIntegration);
       await tx.insert(auditLog).values({
         teamId,
         actorUserId: userId,
@@ -1416,9 +1766,16 @@ export function createIntegrationScope(deps: {
         .select({
           selectionKind: integrationSelections.selectionKind,
           externalId: integrationSelections.externalId,
+          linkedObjectId: integrationSelections.linkedObjectId,
         })
         .from(integrationSelections)
         .where(eq(integrationSelections.integrationId, integration.id));
+      const links = new Map(
+        existingSelections.map((row) => [
+          `${row.selectionKind}\x00${row.externalId}`,
+          row.linkedObjectId,
+        ]),
+      );
       const existingSelectionKeys = new Set(
         existingSelections.map((row) => `${row.selectionKind}\x00${row.externalId}`),
       );
@@ -1432,14 +1789,14 @@ export function createIntegrationScope(deps: {
         (selection) =>
           !selectedSelectionKeys.has(`${selection.selectionKind}\x00${selection.externalId}`),
       ).length;
-      await tx
-        .delete(integrationSelections)
-        .where(eq(integrationSelections.integrationId, integration.id));
+      const previousByIntegration = new Map<string, DriveSelectionRow[]>();
+      previousByIntegration.set(integration.id, existingSelections);
       const teamIntegrationRows = await tx
         .select({ id: integrationsTable.id })
         .from(integrationsTable)
         .where(eq(integrationsTable.teamId, teamId));
       const teamIntegrationIds = teamIntegrationRows.map((row) => row.id);
+      const duplicateIntegrationIds = new Set<string>();
       for (const share of shares) {
         const duplicateRows = await tx
           .select({ integrationId: integrationSelections.integrationId })
@@ -1454,8 +1811,20 @@ export function createIntegrationScope(deps: {
         for (const duplicate of duplicateRows) {
           if (duplicate.integrationId !== integration.id) {
             replacedIntegrationIds.add(duplicate.integrationId);
+            duplicateIntegrationIds.add(duplicate.integrationId);
           }
         }
+      }
+      for (const replacedId of duplicateIntegrationIds) {
+        previousByIntegration.set(
+          replacedId,
+          await loadIntegrationSelectionLinks(tx as unknown as Db, replacedId),
+        );
+      }
+      await tx
+        .delete(integrationSelections)
+        .where(eq(integrationSelections.integrationId, integration.id));
+      for (const share of shares) {
         await tx
           .delete(integrationSelections)
           .where(
@@ -1474,9 +1843,11 @@ export function createIntegrationScope(deps: {
             selectionKind: share.resourceKind,
             externalId: share.externalId,
             externalLabel: share.externalLabel,
+            linkedObjectId: links.get(`${share.resourceKind}\x00${share.externalId}`) ?? null,
           })),
         );
       }
+      await applyDriveCleanupAfterSelectionMutation(tx as unknown as Db, previousByIntegration);
       await tx.insert(auditLog).values({
         teamId,
         actorUserId: userId,
@@ -1543,6 +1914,32 @@ export function createIntegrationScope(deps: {
     if (!integration) throw new Error('Integration not found');
     // Replace strategy: simpler than diffing and idempotent on resync.
     await db.transaction(async (tx) => {
+      const existing = await tx
+        .select({
+          selectionKind: integrationSelections.selectionKind,
+          externalId: integrationSelections.externalId,
+          linkedObjectId: integrationSelections.linkedObjectId,
+        })
+        .from(integrationSelections)
+        .where(eq(integrationSelections.integrationId, integrationId));
+      const links = new Map(
+        existing.map((row) => [`${row.selectionKind}\x00${row.externalId}`, row.linkedObjectId]),
+      );
+      const nextKeys = new Set(selections.map((s) => `${s.kind}\x00${s.externalId}`));
+      const dropped = existing.filter(
+        (row) => !nextKeys.has(`${row.selectionKind}\x00${row.externalId}`),
+      );
+      if (integration.provider === 'google_drive') {
+        await applyDriveSelectionCoverageCleanup(tx as unknown as Db, {
+          integrationId,
+          remainingSelections: selections.map((selection) => ({
+            kind: selection.kind,
+            externalId: selection.externalId,
+            linkedObjectId: links.get(`${selection.kind}\x00${selection.externalId}`) ?? null,
+          })),
+          droppedSelections: dropped,
+        });
+      }
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.integrationId, integrationId));
@@ -1553,6 +1950,7 @@ export function createIntegrationScope(deps: {
             selectionKind: s.kind,
             externalId: s.externalId,
             externalLabel: s.label ?? null,
+            linkedObjectId: links.get(`${s.kind}\x00${s.externalId}`) ?? null,
           })),
         );
       }
@@ -1564,6 +1962,155 @@ export function createIntegrationScope(deps: {
         targetId: integrationId,
         targetVisibility: 'team',
         metadata: { field: 'selections', selection_count: selections.length },
+      });
+    });
+  }
+
+  async function listTeamDriveExtractCursors(
+    input: {
+      integrationId?: string;
+      now?: Date;
+      orphanOnly?: boolean;
+      limit?: number;
+      after?: { updatedAt: Date; id: string };
+    } = {},
+  ) {
+    await ensureMember();
+    if (input.integrationId) {
+      const integration = await getIntegration(input.integrationId);
+      if (!integration) return [];
+    }
+    return listDriveExtractCursors(db, {
+      teamId,
+      ...(input.integrationId ? { integrationId: input.integrationId } : {}),
+      ...(input.now ? { now: input.now } : {}),
+      ...(input.orphanOnly ? { orphanOnly: true } : {}),
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      ...(input.after ? { after: input.after } : {}),
+    });
+  }
+
+  async function loadDriveSnapshot(integrationId: string, fileId: string) {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return null;
+    return loadLatestDriveSnapshot(db, { teamId, integrationId, fileId });
+  }
+
+  async function persistDriveSnapshot(
+    integrationId: string,
+    fileId: string,
+    snapshot: Parameters<typeof saveDriveSnapshot>[1]['snapshot'],
+  ): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return;
+    await saveDriveSnapshot(db, { teamId, integrationId, fileId, snapshot });
+  }
+
+  async function removeDriveSnapshotsForFile(integrationId: string, fileId: string): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return;
+    await deleteDriveFileSnapshots(db, { teamId, integrationId, fileId });
+  }
+
+  async function cleanupUncoveredDriveTrackedFilesForIntegration(
+    integrationId: string,
+    remainingSelections: { kind: string; externalId: string }[],
+  ): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (integration?.provider !== 'google_drive') return;
+    await applyDriveSelectionCoverageCleanup(db, {
+      integrationId,
+      remainingSelections: remainingSelections.map((selection) => ({
+        kind: selection.kind,
+        externalId: selection.externalId,
+        linkedObjectId: null,
+      })),
+    });
+  }
+
+  async function discardTrackedDriveFileForIntegration(
+    integrationId: string,
+    fileId: string,
+  ): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return;
+    await discardDriveTrackedFile(db, {
+      teamId,
+      integrationId,
+      fileId,
+      deleteExtractObjects: deleteDriveTransientExtractObjects,
+      mode: 'cancel',
+    });
+  }
+
+  async function listDriveTeamEmailDomains(): Promise<string[]> {
+    await ensureMember();
+    return loadTeamEmailDomains(db, teamId);
+  }
+
+  async function listDriveTrackedDescendantFileIds(integrationId: string, ancestorId: string) {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return [];
+    return loadListDriveTrackedDescendantFileIds(db, {
+      teamId,
+      integrationId,
+      ancestorId,
+    });
+  }
+
+  async function linkedObjectForDriveSelection(input: {
+    integrationId: string;
+    fileId: string;
+    parentIds: string[];
+    matchedAncestorId?: string | null;
+    driveId?: string | null;
+    myDriveRootId?: string | null;
+  }) {
+    const integration = await getIntegration(input.integrationId);
+    if (!integration) return null;
+    return loadLinkedObjectForDriveSelection(db, {
+      teamId,
+      integrationId: input.integrationId,
+      fileId: input.fileId,
+      parentIds: input.parentIds,
+      ...(input.matchedAncestorId ? { matchedAncestorId: input.matchedAncestorId } : {}),
+      ...(input.driveId ? { driveId: input.driveId } : {}),
+      ...(input.myDriveRootId ? { myDriveRootId: input.myDriveRootId } : {}),
+    });
+  }
+
+  async function setSelectionLinkedObject(
+    integrationId: string,
+    selectionId: string,
+    objectId: string | null,
+  ): Promise<void> {
+    await ensureMember('admin');
+    const integration = await getIntegration(integrationId);
+    if (!integration) throw new Error('Integration not found');
+    if (objectId) {
+      const [object] = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, objectId), eq(entities.teamId, teamId)))
+        .limit(1);
+      if (!object) throw new Error('Object not found');
+    }
+    await db.transaction(async (tx) => {
+      await setIntegrationSelectionObjectLink(tx as unknown as Db, {
+        teamId,
+        integrationId,
+        selectionId,
+        objectId,
+        provider: integration.provider,
+      });
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.settings_change',
+        targetType: 'integration',
+        targetId: integrationId,
+        targetVisibility: 'team',
+        metadata: { field: 'selection_linked_object', selection_id: selectionId },
       });
     });
   }
@@ -1639,7 +2186,7 @@ export function createIntegrationScope(deps: {
     });
   }
 
-  async function listAudit(integrationId?: string | null, limit = 100) {
+  async function listAudit(integrationId?: string | null, limit = 100, offset = 0) {
     // Defense in depth: the /app/team/integrations/audit page admin-gates
     // before calling, but a future caller might forget. Audit rows
     // contain provider metadata + sync error payloads that the rest of
@@ -1653,8 +2200,9 @@ export function createIntegrationScope(deps: {
       .select()
       .from(integrationAuditLog)
       .where(and(...conditions))
-      .orderBy(desc(integrationAuditLog.createdAt))
-      .limit(limit);
+      .orderBy(desc(integrationAuditLog.createdAt), desc(integrationAuditLog.id))
+      .limit(limit)
+      .offset(offset);
   }
 
   /**
@@ -1847,6 +2395,16 @@ export function createIntegrationScope(deps: {
     resolveConnectionAttention,
     listSelections,
     setSelections,
+    setSelectionLinkedObject,
+    listDriveExtractCursors: listTeamDriveExtractCursors,
+    loadLatestDriveSnapshot: loadDriveSnapshot,
+    saveDriveSnapshot: persistDriveSnapshot,
+    deleteDriveSnapshotsForFile: removeDriveSnapshotsForFile,
+    cleanupUncoveredDriveTrackedFiles: cleanupUncoveredDriveTrackedFilesForIntegration,
+    discardDriveTrackedFile: discardTrackedDriveFileForIntegration,
+    listTeamEmailDomains: listDriveTeamEmailDomains,
+    listDriveTrackedDescendantFileIds,
+    linkedObjectForDriveSelection,
     loadCursor,
     saveCursor,
     listSyncState,
@@ -1975,7 +2533,12 @@ export async function adminLoadIntegration(
 }
 
 export async function adminListEnabledIntegrations(db: Db): Promise<IntegrationRow[]> {
-  return db.select().from(integrationsTable).where(eq(integrationsTable.enabled, true));
+  return db
+    .select()
+    .from(integrationsTable)
+    .where(
+      and(eq(integrationsTable.enabled, true), activeWorkspaceCondition(integrationsTable.teamId)),
+    );
 }
 
 export function adminDecryptTokens(row: IntegrationRow): Record<string, unknown> | null {
@@ -2236,6 +2799,7 @@ export async function adminResolveProviderConnectionAttention(
   db: Db,
   providerConnectionId: string,
   categories: ConnectionAttentionInput['category'][],
+  teamIds?: string[],
 ): Promise<void> {
   await db
     .update(connectionAttention)
@@ -2244,6 +2808,7 @@ export async function adminResolveProviderConnectionAttention(
       and(
         eq(connectionAttention.providerConnectionId, providerConnectionId),
         isNull(connectionAttention.resolvedAt),
+        teamIds ? inArray(connectionAttention.teamId, teamIds) : undefined,
         inArray(connectionAttention.category, categories),
       ),
     );
@@ -3053,7 +3618,9 @@ async function emailConnectionAttentionActors(
 export async function adminListSelections(
   db: Db,
   integrationId: string,
-): Promise<{ kind: string; externalId: string; label: string | null }[]> {
+): Promise<
+  { kind: string; externalId: string; label: string | null; linkedObjectId: string | null }[]
+> {
   const rows = await db
     .select()
     .from(integrationSelections)
@@ -3062,6 +3629,7 @@ export async function adminListSelections(
     kind: r.selectionKind,
     externalId: r.externalId,
     label: r.externalLabel,
+    linkedObjectId: r.linkedObjectId,
   }));
 }
 
@@ -3260,8 +3828,6 @@ export async function adminDeprovisionIntegrationWebhookSubscriptions(
   if (!provider.deprovisionWebhook) {
     return { deprovisioned: 0, skipped: true };
   }
-  const tokens = await adminDecryptIntegrationTokens(db, integration);
-  if (!tokens) throw new Error('No tokens — reconnect required');
   const rows = await db
     .select()
     .from(integrationWebhookSubscriptions)
@@ -3272,6 +3838,9 @@ export async function adminDeprovisionIntegrationWebhookSubscriptions(
         eq(integrationWebhookSubscriptions.status, 'active'),
       ),
     );
+  if (!rows.length) return { deprovisioned: 0, skipped: false };
+  const tokens = await adminDecryptIntegrationTokens(db, integration);
+  if (!tokens) throw new ProviderAuthorizationError(integration.provider);
   for (const row of rows) {
     await provider.deprovisionWebhook({
       integration,
@@ -3312,6 +3881,7 @@ export async function adminReconcileExpiringWebhookSubscriptions(
     )
     .where(
       and(
+        or(isNull(integrationsTable.id), activeWorkspaceCondition(integrationsTable.teamId)),
         eq(integrationWebhookSubscriptions.status, 'active'),
         isNotNull(integrationWebhookSubscriptions.expiresAt),
         lte(integrationWebhookSubscriptions.expiresAt, threshold),

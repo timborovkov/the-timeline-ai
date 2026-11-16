@@ -4,10 +4,10 @@ import type { Metadata } from 'next';
 
 import { SignUpForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';
-import { GitHubSignInButton } from '@/components/github-button';
-import { Separator } from '@/components/ui/separator';
-import { auth, hasGitHubAuth } from '@/lib/auth';
+import { OAuthSignInButtons } from '@/components/oauth-buttons';
+import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
 import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
+import { readLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readPendingInvite } from '@/lib/pending-invite';
 
@@ -38,6 +38,7 @@ export default async function SignUpPage({ searchParams }: Props) {
   const requiresTurnstile = process.env.NODE_ENV === 'production';
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   const legalPublicationReady = isLegalPublicationReady();
+  const lastLoginMethod = await readLastLoginMethod();
   return (
     <AuthShell
       title="Create your account"
@@ -52,10 +53,17 @@ export default async function SignUpPage({ searchParams }: Props) {
       }
       secondaryLabel="Sign in"
     >
-      {hasGitHubAuth && legalPublicationReady ? (
-        <SignupGitHubOptions invite={invite} callbackUrl={callbackUrl} />
+      {legalPublicationReady ? (
+        <OAuthSignInButtons
+          lastLoginMethod={lastLoginMethod}
+          callbackUrl={invite ? `/accept-invite/${invite}` : callbackUrl}
+          inviteToken={invite}
+          google={hasGoogleAuth}
+          github={hasGitHubAuth}
+        />
       ) : null}
       <SignUpForm
+        lastUsed={lastLoginMethod === 'credentials'}
         callbackUrl={callbackUrl}
         inviteToken={invite}
         legalPublicationReady={legalPublicationReady}
@@ -70,27 +78,5 @@ function signupSubtitle(invited: boolean, ready: boolean): string {
   if (!ready) return 'New accounts are paused while our legal publication review is completed.';
   return invited
     ? 'You’ve been invited to a team. Sign up to accept.'
-    : 'Free for up to 3 members — no card required. We’ll create your first team automatically.';
-}
-
-function SignupGitHubOptions({ invite, callbackUrl }: { invite?: string; callbackUrl?: string }) {
-  return (
-    <>
-      <GitHubSignInButton
-        callbackUrl={invite ? `/accept-invite/${invite}` : callbackUrl}
-        inviteToken={invite}
-      />
-      {invite ? (
-        <p className="text-xs text-muted-foreground">
-          After GitHub sign-in we&rsquo;ll send you to the invite; accept it from there using the
-          same email the invite was sent to.
-        </p>
-      ) : null}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <Separator className="flex-1" />
-        <span>or</span>
-        <Separator className="flex-1" />
-      </div>
-    </>
-  );
+    : 'Free for up to 3 members — no card required. We’ll create your first team automatically. Then connect one source and open the first record.';
 }

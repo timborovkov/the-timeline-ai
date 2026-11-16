@@ -67,6 +67,23 @@ describe('onboarding checklist view', () => {
     fakes.cacheKey.mockImplementation((parts: unknown[]) => parts.join(':'));
   });
 
+  it('relabels and reorders capture around a document first-run path', () => {
+    expect(
+      toOnboardingChecklistView(
+        checklistState({
+          dismissed: false,
+          steps: [
+            { step: 'first_note', completed: false },
+            { step: 'first_ask', completed: false },
+            { step: 'review_proposal', completed: false },
+            { step: 'first_document', completed: true },
+          ],
+        }),
+        'document',
+      ).items.map((item) => item.key),
+    ).toEqual(['first_document', 'first_ask', 'review_proposal', 'first_note']);
+  });
+
   it('maps scoped step state onto the client checklist view', () => {
     expect(
       toOnboardingChecklistView(

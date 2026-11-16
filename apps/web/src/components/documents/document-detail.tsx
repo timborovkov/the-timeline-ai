@@ -234,7 +234,7 @@ export function DocumentDetail({
         ]}
       />
 
-      <section className="flex flex-row items-start justify-between gap-4 border-y border-border py-4 max-sm:flex-col">
+      <section className="flex flex-row items-start justify-between gap-4 py-4 max-sm:flex-col">
         <div className="min-w-0 space-y-1">
           <h1
             className="max-w-full break-all text-2xl font-semibold leading-tight tracking-tight"
@@ -297,7 +297,7 @@ export function DocumentDetail({
         />
       ) : null}
 
-      <section className="space-y-3 border-y border-border py-4">
+      <section className="space-y-3 py-4">
         <SectionHeading>Version history</SectionHeading>
         {versions.length === 0 ? (
           <EmptyState
@@ -405,7 +405,7 @@ function CurrentVersionPanel({
       ? 'Manual upload'
       : `${document.provenance.source.replace(/_/g, ' ')} capture`;
   return (
-    <section className="space-y-3 border-y border-border py-4">
+    <section className="space-y-3 py-4">
       <div className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
         <div>
           <SectionHeading>
@@ -443,7 +443,7 @@ function CurrentVersionPanel({
         </div>
         <aside aria-label="Document context" className="space-y-3">
           <InfoBlock
-            title="Model understanding"
+            title="Summary"
             headingId={modelUnderstandingId}
             contentClassName="max-h-72 overflow-y-auto pr-1"
             contentScrollable
@@ -456,7 +456,7 @@ function CurrentVersionPanel({
               </p>
             )}
           </InfoBlock>
-          <InfoBlock title="Provenance">
+          <InfoBlock title="Source">
             <div className="space-y-2 text-sm text-fg-muted">
               <p>{sourceLabel}</p>
               {eventId ? (
@@ -473,12 +473,12 @@ function CurrentVersionPanel({
               ) : null}
             </div>
           </InfoBlock>
-          <InfoBlock title="Agent status">
+          <InfoBlock title="Search status">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={version.processingStatus} />
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <FileText className="size-3.5" />
-                {chunks.length === 1 ? '1 chunk' : `${String(chunks.length)} chunks`}
+                {chunks.length === 1 ? '1 passage' : `${String(chunks.length)} passages`}
               </span>
             </div>
             {version.processingError ? (
@@ -565,7 +565,7 @@ function InfoBlock({
   const resolvedHeadingId = headingId ?? generatedHeadingId;
 
   return (
-    <div className="rounded-sm border border-border bg-bg px-3 py-2">
+    <div className="border-t border-border pb-1 pt-3">
       <h3 id={resolvedHeadingId} className="text-sm font-semibold text-fg">
         {title}
       </h3>
@@ -592,7 +592,7 @@ function UnsupportedPreview({ chunks }: { chunks: Props['activeVersionChunks'] }
       {text ? (
         <div>
           <p className="mb-3 text-[11px] text-fg-dim">Extracted text</p>
-          <pre className="max-h-[58vh] overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-6 text-fg-muted">
+          <pre className="max-h-[58vh] overflow-y-auto whitespace-pre-wrap break-words pr-1 font-sans text-sm leading-6 text-fg-muted">
             {text}
           </pre>
         </div>

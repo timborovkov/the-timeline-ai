@@ -78,8 +78,8 @@ it('keeps all PAYG meters visible and separates included usage from chargeable s
   }
   expect(html).toContain('Monthly spend cap:');
   expect(html).toContain('€25');
-  expect(html).toContain('Included: €5');
-  expect(html).toContain('Remaining: €4.99');
+  expect(html).toContain('Included: €2');
+  expect(html).toContain('Remaining: €1.99');
   expect(html).toContain('Included: 60 min');
   // Earlier Free AI usage retains its measured value but must not appear as a charge.
   expect(html.match(/€0\.01/g)).toHaveLength(2);
@@ -162,4 +162,37 @@ it('fills the storage allowance bar when the 100 MB floor is used up', () => {
   );
   expect(html).toContain('Used: 100 MB');
   expect(html).toMatch(/style="width:100%"/);
+});
+
+it('uses live storage and retains accrued paid charges in allowance cards', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      layout="cards"
+      planId="free"
+      meters={{ ai: { nativeUnits: 1000, customerChargeCents: 1000, capEligibleChargeCents: 500 } }}
+      capacityUsage={[
+        { kind: 'storage_gb', label: 'Storage', used: 20 / 1024, limit: FREE_STORAGE_GB },
+      ]}
+    />,
+  );
+  expect(html).toContain('20 MB');
+  expect(html).toContain('80 MB remaining');
+  expect(html).toContain('Meter charges:');
+  expect(html).toContain('>€5</span>');
+  expect(html).toContain('Allowance used up');
+});
+it('does not invent native allowances or bill tracked comped usage in cards', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      layout="cards"
+      planId="team"
+      comped
+      meters={{ ai: { nativeUnits: 600, customerChargeCents: 600 } }}
+      capacityUsage={[]}
+    />,
+  );
+  expect(html).toContain('€6');
+  expect(html).not.toContain('Meter charges:');
+  expect(html).not.toContain('60 min');
+  expect(html).not.toContain('remaining');
 });

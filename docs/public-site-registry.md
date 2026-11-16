@@ -4,7 +4,11 @@ The machine-facing public-site seam lives in
 [`apps/web/src/lib/public-site`](../apps/web/src/lib/public-site). It is the
 single source for canonical public paths, sitemap discovery, `llms.txt`,
 `llms-full.txt`, capability disclosure, and reusable structured-data input.
-Public route content and UI remain owned by their feature modules.
+Public route content and UI remain owned by their feature modules. The homepage
+uses shared positioning from `apps/web/src/lib/product-positioning.ts`, also used
+by root metadata defaults and the manifest. Keep specialized page descriptions
+specific to their supported capabilities; shared social artwork follows the
+[public-site design patterns](design/public.md#search-and-social-previews).
 
 ## Contribution interface
 
@@ -121,10 +125,13 @@ without removing its entry.
   not accept arbitrary JSON-LD blobs.
 - `llms` supplies a discovery section, stable order, short summary, optional
   full summary, and optional long-form sections with labeled links or fenced
-  code blocks. Help resource links flow into those sections automatically;
-  destinations must be absolute HTTPS URLs and are normalized before Markdown
-  serialization. Set `llms` to `false` when a document should not appear in
-  LLM-readable discovery.
+  code blocks. Help resource links flow into those sections automatically.
+  Origin-relative canonical paths (`/help/support`) and internal source-style
+  hrefs (`help-guides:/help/integrations`) are resolved with `canonicalPublicUrl`
+  against the canonical public origin before validation. Stored destinations
+  must still be absolute HTTPS URLs; the validator is not relaxed for http,
+  protocol-relative, or script URLs. Set `llms` to `false` when a document
+  should not appear in LLM-readable discovery.
 
 ## Verification
 
@@ -146,9 +153,12 @@ Product, guide, integration, pricing, trust, and support links come from the reg
 Use cases, solutions, comparisons, and companion references appear under `Optional`. `SKILL.md` is served from
 `plugins/timeline/skills/timeline/SKILL.md` and must stay byte-identical.
 
-`sitemap.xml` and `robots.txt` are generated at request time so their absolute
-URLs use the runtime `AUTH_URL`. Prerendered public HTML (`metadataBase`, JSON-LD)
-bakes the origin at `next build`. The web Docker image defaults `AUTH_URL` to
+`sitemap.xml` uses Next.js's default metadata-route caching and is generated at
+build time from the public document registry. Registry changes take effect on
+the next build and deployment. Its absolute URLs, like prerendered public HTML
+(`metadataBase`, JSON-LD), use the build-time origin; changing `AUTH_URL` requires
+a rebuild to update them. `robots.txt` remains generated at request time using
+the runtime `AUTH_URL`. The web Docker image defaults `AUTH_URL` to
 `https://thetimeline.cc` for that build so production pages do not ship
 `http://localhost:3000`. Override the build arg for a non-canonical origin.
 
@@ -172,3 +182,7 @@ do not add ordinary noindex pages to the robots disallow list.
 `/agents/provisioning.md` is a machine document linked from setup, excluded from the sitemap and automatic llms registry expansion, with a brief discovery link in llms.txt. The public skill and signed-in skill download read the canonical plugin SKILL.md. Discovery remains useful without an account or connection.
 
 The 2026-11-07 setup/skill update establishes reporting in OAuth consent and finishes first use with a cited task result or an approved brief. `llms.txt` remains the discovery index; reporting controls and operating rules stay in consent, setup and the canonical skill.
+
+Legal consent versions can carry a same-day `.N` revision. Public-document
+modified/reviewed dates use only the `YYYY-MM-DD` date portion; the full legal
+version remains unchanged for acceptance checks.

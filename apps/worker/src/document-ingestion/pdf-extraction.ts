@@ -1,4 +1,4 @@
-import { getEnv } from '@timeline/shared';
+import { childLogger, getEnv } from '@timeline/shared';
 
 import {
   extractOfficeInDaytonaSandbox,
@@ -7,6 +7,7 @@ import {
 } from '#src/document-ingestion/daytona.js';
 import {
   DaytonaNotConfiguredError,
+  shouldAcceptSandboxPdfText,
   type SandboxOfficeExtractResult,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/types.js';
@@ -18,6 +19,52 @@ export {
   type SandboxOfficeExtractResult,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/types.js';
+
+const log = childLogger('worker:pdf-extraction');
+
+/** Exported for document-extract and Drive capture vision fallback. */
+export function completeSandboxPageImages(
+  sandbox: SandboxPdfExtractResult | null,
+): Buffer[] | undefined {
+  if (!sandbox || sandbox.pageImages.length === 0) return undefined;
+  if (sandbox.pageCount > sandbox.pageImages.length) {
+    log.warn(
+      {
+        pageCount: sandbox.pageCount,
+        pageImageCount: sandbox.pageImages.length,
+      },
+      'sandbox pageImages truncated vs pageCount; using full PDF for vision',
+    );
+    return undefined;
+  }
+  return sandbox.pageImages;
+}
+
+export async function extractPdfTextWithVisionFallback(input: {
+  body: Buffer;
+  filename: string;
+  extractPdfSandbox?: (body: Buffer) => Promise<SandboxPdfExtractResult>;
+  extractFromMedia: (input: {
+    body: Buffer;
+    mediaType: string;
+    filename: string;
+    pageImages?: Buffer[];
+  }) => Promise<{ text: string }>;
+}): Promise<{ text: string } | null> {
+  const sandbox = await (input.extractPdfSandbox ?? extractPdfForDocument)(input.body);
+  if (shouldAcceptSandboxPdfText(sandbox)) {
+    return { text: sandbox.text.trim() };
+  }
+  const pageImages = completeSandboxPageImages(sandbox);
+  const vision = await input.extractFromMedia({
+    body: input.body,
+    mediaType: 'application/pdf',
+    filename: input.filename,
+    ...(pageImages ? { pageImages } : {}),
+  });
+  const text = vision.text.trim();
+  return text.length > 0 ? { text } : null;
+}
 
 /**
  * Resolve PDF extraction: Daytona sandbox by default; optional in-process

@@ -21,7 +21,7 @@ export function TimelineFlowMotion({ targetId }: TimelineFlowMotionProps) {
 
     const setSvgMotion = (step: HTMLElement, isActive: boolean, restart = false) => {
       for (const svg of step.querySelectorAll<SVGSVGElement>('[data-flow-motion]')) {
-        if (isActive) {
+        if (isActive && !reduceMotion.matches) {
           if (restart && typeof svg.setCurrentTime === 'function') svg.setCurrentTime(0);
           if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
         } else if (typeof svg.pauseAnimations === 'function') {

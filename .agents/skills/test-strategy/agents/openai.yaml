@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Test Strategy'
+  short_description: 'Meaningful tests and agent evals'
+  default_prompt: 'Use $test-strategy to inspect this repo and improve meaningful test coverage.'

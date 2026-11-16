@@ -40,7 +40,7 @@ function ClusterListSkeleton({ titleWidth }: { titleWidth: string }) {
   return (
     <div className="space-y-3">
       <Skeleton className={`h-5 ${titleWidth}`} />
-      <div className="divide-y divide-border border-y border-border bg-surface">
+      <div className="divide-y divide-border bg-surface">
         {Array.from({ length: 3 }).map((_, index) => (
           <div key={index} className="flex min-h-11 items-center gap-3 px-3">
             <Skeleton className="h-3.5 w-16" />

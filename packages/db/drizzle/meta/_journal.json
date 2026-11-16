@@ -706,21 +706,105 @@
       "idx": 100,
       "version": "7",
       "when": 1795656340000,
-      "tag": "0097_auth_continuations",
+      "tag": "0097_google_drive_v1",
       "breakpoints": true
     },
     {
       "idx": 101,
       "version": "7",
       "when": 1795656400000,
-      "tag": "0098_agent_provisioning",
+      "tag": "0098_google_drive_snapshot_uniqueness",
       "breakpoints": true
     },
     {
       "idx": 102,
       "version": "7",
       "when": 1795656460000,
+      "tag": "0099_google_drive_snapshot_locate",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1795656520000,
+      "tag": "0100_google_drive_snapshot_ancestry",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1795656580000,
+      "tag": "0097_auth_continuations",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1795656640000,
+      "tag": "0098_agent_provisioning",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1795656700000,
       "tag": "0099_agent_reporting",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1795656760000,
+      "tag": "0101_first_run_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1795656820000,
+      "tag": "0102_website_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1795656880000,
+      "tag": "0103_persistent_websites",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1795656940000,
+      "tag": "0104_team_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1795657000000,
+      "tag": "0105_board_qualification",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1795658000000,
+      "tag": "0106_engine_maintenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1795658100000,
+      "tag": "0107_diagnostic_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1795658200000,
+      "tag": "0108_workspace_evaluation_tracing",
       "breakpoints": true
     }
   ]

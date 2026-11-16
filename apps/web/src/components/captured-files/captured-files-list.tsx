@@ -500,7 +500,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
         <CollectionRow.Title>
           <span className="min-w-0">
             <span
-              className="block truncate text-sm font-semibold leading-5 text-fg"
+              className="block whitespace-normal text-sm font-semibold leading-5 text-fg [overflow-wrap:anywhere]"
               title={presentation.displayTitle}
             >
               {presentation.displayTitle}

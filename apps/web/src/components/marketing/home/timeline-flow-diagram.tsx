@@ -1,8 +1,11 @@
-import { FileText, Mail } from 'lucide-react';
+import { FileText, Link2, Mail } from 'lucide-react';
 import Image from 'next/image';
 
+import type { CSSProperties } from 'react';
+
 import styles from '@/app/(landing)/home.module.css';
-import { Logo } from '@/components/brand/logo';
+import { HeroFlowControls } from '@/components/marketing/home/hero-flow-controls';
+import { HeroRecordMesh } from '@/components/marketing/home/hero-record-mesh';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { cn } from '@/lib/utils';
@@ -19,6 +22,8 @@ type TimelineFlowDiagramProps =
 
 const SOURCE_LOGOS = {
   GitHub: '/connectors/github.svg',
+  'Google Drive': '/connectors/google-drive.svg',
+  Linear: '/connectors/linear.svg',
   Meeting: '/connectors/google-meet.svg',
   Sentry: '/connectors/sentry.svg',
   Slack: '/connectors/slack.svg',
@@ -31,50 +36,92 @@ type SourceIcon = BrandedSource | 'Documents' | 'Email';
 const HERO_SOURCES = [
   {
     id: 'telegram',
+    x: 90,
+    y: 110,
     name: 'Telegram',
     icon: 'Telegram',
     time: '08:46',
-    path: 'M118 116 C205 150 226 242 300 300',
+    path: 'C180 110 180 300 300 300',
     delay: '0s',
   },
   {
     id: 'slack',
+    x: 510,
+    y: 110,
     name: 'Slack',
     icon: 'Slack',
     time: '09:14',
-    path: 'M486 142 C414 174 390 244 300 300',
-    delay: '0.72s',
+    path: 'C420 110 420 300 300 300',
+    delay: '0.45s',
   },
   {
     id: 'meeting',
+    x: 90,
+    y: 510,
     name: 'Meeting',
     icon: 'Meeting',
     time: '11:40',
-    path: 'M112 462 C188 412 226 354 300 300',
-    delay: '1.44s',
+    path: 'C180 510 180 300 300 300',
+    delay: '0.9s',
   },
   {
     id: 'github',
+    x: 510,
+    y: 510,
     name: 'GitHub',
     icon: 'GitHub',
     time: '15:22',
-    path: 'M490 470 C420 420 388 354 300 300',
-    delay: '2.16s',
+    path: 'C420 510 420 300 300 300',
+    delay: '1.35s',
   },
   {
     id: 'documents',
+    x: 90,
+    y: 250,
     name: 'Documents',
     icon: 'Documents',
     time: '17:08',
-    path: 'M70 300 C170 300 220 300 300 300',
-    delay: '2.88s',
+    path: 'C180 250 180 300 300 300',
+    delay: '1.8s',
   },
   {
     id: 'sentry',
+    x: 510,
+    y: 370,
     name: 'Sentry',
     icon: 'Sentry',
     time: '18:21',
-    path: 'M530 310 C430 310 380 304 300 300',
+    path: 'C420 370 420 300 300 300',
+    delay: '2.25s',
+  },
+  {
+    id: 'email',
+    x: 90,
+    y: 380,
+    name: 'Email',
+    icon: 'Email',
+    time: '10:05',
+    path: 'C180 380 180 300 300 300',
+    delay: '2.7s',
+  },
+  {
+    id: 'drive',
+    x: 300,
+    y: 70,
+    name: 'Google Drive',
+    icon: 'Google Drive',
+    time: '10:42',
+    path: 'C300 70 300 300 300 300',
+    delay: '3.15s',
+  },
+  {
+    id: 'linear',
+    x: 510,
+    y: 240,
+    name: 'Linear',
+    icon: 'Linear',
+    time: '14:30',
+    path: 'C420 240 420 300 300 300',
     delay: '3.6s',
   },
 ] as const satisfies readonly {
@@ -83,10 +130,21 @@ const HERO_SOURCES = [
   icon: SourceIcon;
   time: string;
   path: string;
+  x: number;
+  y: number;
   delay: string;
 }[];
 
-const HERO_OUTCOME_PATH = 'M300 418 C300 431 300 443 300 456';
+// The outer paths end at the same coordinates as the source tiles.
+const HERO_APPROACH_PATHS = HERO_SOURCES.map((source) => {
+  if (source.x === 300) return `M300 -500 C300 -200 300 -80 300 ${source.y}`;
+  const side = source.x < 300 ? -1 : 1;
+  const outerX = side < 0 ? -800 : 1100;
+  const outerY = source.y + (source.y - 300) * 1.4;
+  return `M${outerX} ${outerY} C${outerX} ${source.y} ${source.x + side * 200} ${source.y} ${source.x} ${source.y}`;
+});
+
+const HERO_OUTCOME_PATH = 'M300 384 C300 410 300 434 300 456';
 
 const FLOW_STORY = PUBLIC_DEMO_STORY.landing.flow;
 
@@ -96,15 +154,23 @@ export function TimelineFlowDiagram(props: TimelineFlowDiagramProps) {
   return <HeroTimelineFlow disclosure={props.disclosure} />;
 }
 
+function heroCardPosition(point: { x: number; y: number }): CSSProperties {
+  return { left: `${point.x / 6}%`, top: `${point.y / 6}%` };
+}
+
+function heroSourcePath(source: (typeof HERO_SOURCES)[number]): string {
+  return `M${source.x} ${source.y} ${source.path}`;
+}
+
 function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
   return (
     <figure
+      id="hero-work-flow"
       className={styles.observatory}
       data-home-diagram
-      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."
+      aria-label="Work events stream from nine sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources."
     >
-      <div className={styles.orbitOuter} aria-hidden="true" />
-      <div className={styles.orbitInner} aria-hidden="true" />
+      <HeroFlowControls />
 
       <svg
         className={styles.orbitLines}
@@ -113,44 +179,155 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
         aria-hidden="true"
         data-flow-motion
       >
+        <defs>
+          <linearGradient
+            id="hero-field-fade"
+            x1="-500"
+            y1="0"
+            x2="900"
+            y2="0"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0" stopColor="white" stopOpacity="0" />
+            <stop offset="0.38" stopColor="white" stopOpacity="0.4" />
+            <stop offset="0.6" stopColor="white" />
+            <stop offset="1" stopColor="white" stopOpacity="0.1" />
+          </linearGradient>
+          <mask
+            id="hero-field-mask"
+            x="-900"
+            y="-300"
+            width="2200"
+            height="1400"
+            maskUnits="userSpaceOnUse"
+          >
+            <rect x="-900" y="-300" width="2200" height="1400" fill="url(#hero-field-fade)" />
+          </mask>
+        </defs>
+        <g className={styles.heroSignalField} mask="url(#hero-field-mask)">
+          {HERO_APPROACH_PATHS.map((path, index) => (
+            <g key={path}>
+              <path className={styles.heroFieldRoute} d={path} />
+              <path
+                className={styles.heroFieldSignal}
+                d={path}
+                pathLength="1"
+                strokeDasharray="0.075 0.925"
+              >
+                <animate
+                  attributeName="stroke-dashoffset"
+                  values="1;0;0"
+                  keyTimes="0;0.25;1"
+                  dur="12s"
+                  begin={HERO_SOURCES[index]?.delay}
+                  repeatCount="indefinite"
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0;0.65;0.65;0;0"
+                  keyTimes="0;0.03;0.22;0.25;1"
+                  dur="12s"
+                  begin={HERO_SOURCES[index]?.delay}
+                  repeatCount="indefinite"
+                />
+              </path>
+            </g>
+          ))}
+        </g>
+        <g className={styles.heroArrival}>
+          {HERO_SOURCES.map((source) => (
+            <circle key={source.id} cx={source.x} cy={source.y} r="32">
+              <animate
+                attributeName="r"
+                values="24;40;40"
+                keyTimes="0;0.08;1"
+                dur="12s"
+                begin={`${parseFloat(source.delay) + 3}s`}
+                repeatCount="indefinite"
+              />
+              <animate
+                attributeName="opacity"
+                values="0.5;0;0"
+                keyTimes="0;0.08;1"
+                dur="12s"
+                begin={`${parseFloat(source.delay) + 3}s`}
+                repeatCount="indefinite"
+              />
+            </circle>
+          ))}
+          <circle cx="300" cy="300" r="108">
+            <animate
+              attributeName="opacity"
+              values="0;0.5;0;0"
+              keyTimes="0;0.04;0.12;1"
+              dur="12s"
+              begin="8.6s"
+              repeatCount="indefinite"
+            />
+          </circle>
+        </g>
         <g className={styles.evidencePaths}>
           {HERO_SOURCES.map((source) => (
-            <path key={source.id} d={source.path} data-hero-flow-path="ingest" />
+            <path key={source.id} d={heroSourcePath(source)} data-hero-flow-path="ingest" />
+          ))}
+        </g>
+        <g className={styles.heroIngestTraces}>
+          {HERO_SOURCES.map((source) => (
+            <path
+              key={source.id}
+              d={heroSourcePath(source)}
+              pathLength="1"
+              strokeDasharray="0.22 0.78"
+            >
+              <animate
+                attributeName="stroke-dashoffset"
+                values="1;0;0"
+                keyTimes="0;0.18;1"
+                dur="12s"
+                begin={`${parseFloat(source.delay) + 3}s`}
+                repeatCount="indefinite"
+              />
+              <animate
+                attributeName="opacity"
+                values="0;0.8;0.8;0;0"
+                keyTimes="0;0.02;0.15;0.18;1"
+                dur="12s"
+                begin={`${parseFloat(source.delay) + 3}s`}
+                repeatCount="indefinite"
+              />
+            </path>
           ))}
         </g>
         <path className={styles.outcomePath} d={HERO_OUTCOME_PATH} data-hero-flow-path="outcome" />
         <g className={styles.ingestPackets}>
           {HERO_SOURCES.map((source) => (
-            <FlowPacket key={source.id} path={source.path} begin={source.delay} dataType="ingest" />
+            <FlowPacket
+              key={source.id}
+              path={heroSourcePath(source)}
+              begin={`${parseFloat(source.delay) + 3}s`}
+              dataType="ingest"
+            />
           ))}
         </g>
         <g className={styles.outcomePacket}>
-          <FlowPacket path={HERO_OUTCOME_PATH} begin="1.9s" dataType="outcome" />
+          <FlowPacket path={HERO_OUTCOME_PATH} begin="9.1s" dataType="outcome" />
         </g>
+        <HeroRecordMesh />
       </svg>
-
-      <div className={styles.memoryCore}>
-        <div className={styles.memoryCoreInner}>
-          <Logo ariaHidden className={styles.memoryCoreMark} />
-          <strong>The Timeline</strong>
-          <span>Work record</span>
-        </div>
-      </div>
 
       <div
         className={styles.heroOutcome}
-        aria-label="Work record becomes a daily update and cited answers"
+        aria-label="Decisions, promises and next steps with sources attached"
       >
-        <span>Daily update</span>
-        <span>Cited answers</span>
+        <strong>Decisions, promises &amp; next steps</strong>
+        <small>
+          <Link2 size={12} aria-hidden="true" /> Sources attached
+        </small>
       </div>
 
       <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">
-        {HERO_SOURCES.map((source, index) => (
-          <li
-            key={source.id}
-            className={cn(styles.orbitSource, styles[`orbitSource${String(index + 1)}`])}
-          >
+        {HERO_SOURCES.map((source) => (
+          <li key={source.id} className={styles.orbitSource} style={heroCardPosition(source)}>
             <time className={styles.orbitSourceTime}>{source.time}</time>
             <span className={styles.orbitSourceIdentity}>
               <SourceLogo source={source.icon} className={styles.orbitSourceLogo} />
@@ -159,7 +336,6 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
           </li>
         ))}
       </ul>
-
       {disclosure ? (
         <figcaption className={styles.observatoryCaption}>{disclosure}</figcaption>
       ) : null}
@@ -178,13 +354,21 @@ function FlowPacket({
 }) {
   return (
     <circle r={dataType === 'outcome' ? 4 : 5} data-hero-flow-packet={dataType}>
-      <animateMotion path={path} begin={begin} dur="5.4s" repeatCount="indefinite" />
+      <animateMotion
+        path={path}
+        begin={begin}
+        dur="12s"
+        keyPoints="0;1;1"
+        keyTimes={dataType === 'outcome' ? '0;0.1;1' : '0;0.18;1'}
+        calcMode="linear"
+        repeatCount="indefinite"
+      />
       <animate
         attributeName="opacity"
-        values="0;1;1;0"
-        keyTimes="0;0.12;0.82;1"
+        values="0;1;1;0;0"
+        keyTimes={dataType === 'outcome' ? '0;0.01;0.08;0.1;1' : '0;0.02;0.15;0.18;1'}
         begin={begin}
-        dur="5.4s"
+        dur="12s"
         repeatCount="indefinite"
       />
     </circle>
@@ -196,12 +380,12 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
 
   return (
     <section id={id} className={styles.flowExplainer} data-flow-explainer aria-labelledby={titleId}>
-      <TimelineFlowMotion targetId={id} />
       <header className={styles.flowExplainerHeader}>
         <span className={styles.monoLabel}>The platform flow</span>
         <div>
           <h2 id={titleId}>How scattered work becomes useful context.</h2>
           <p>Sources become history, working records and verifiable answers.</p>
+          <TimelineFlowMotion targetId={id} />
         </div>
       </header>
 

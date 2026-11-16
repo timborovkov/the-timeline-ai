@@ -42,10 +42,7 @@ export function ConnectAgentOnboardingCard({
   if (!step || step.completed) return null;
 
   return (
-    <section
-      aria-labelledby="connect-agent-onboarding-heading"
-      className="border-y border-border py-4"
-    >
+    <section aria-labelledby="connect-agent-onboarding-heading" className="py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-2xl space-y-1">
           <h2

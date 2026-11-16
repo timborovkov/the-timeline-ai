@@ -1,8 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+import { drizzle } from 'drizzle-orm/postgres-js';
 
-import { buildPgClientOptions, PG_TIMEOUTS } from '#src/client.js';
+import { buildPgClientOptions, createPgClient, PG_TIMEOUTS } from '#src/client.js';
 
 import type * as TestModule1 from '#src/index.js';
 const ENV_BACKUP = { ...process.env };
@@ -18,6 +19,7 @@ describe('postgres client guardrails', () => {
 
     expect(options).toMatchObject({
       max: 10,
+      infer: true,
       connect_timeout: PG_TIMEOUTS.connectTimeoutSeconds,
       idle_timeout: PG_TIMEOUTS.idleTimeoutSeconds,
       max_lifetime: PG_TIMEOUTS.maxLifetimeSeconds,
@@ -57,5 +59,20 @@ describe('postgres client guardrails', () => {
     ) as Promise<typeof TestModule1>);
 
     expect(resolveAppApplicationName()).toBe('timeline-worker');
+  });
+
+  it('constructs a v4 client that keeps drizzle date parser overrides', async () => {
+    const client = createPgClient('postgres://placeholder@127.0.0.1:5432/placeholder', {
+      applicationName: 'timeline-web',
+    });
+    try {
+      expect(client.options.infer).toBe(true);
+      drizzle(client);
+      const parseTimestamptz = client.options.parsers[1184];
+      expect(typeof parseTimestamptz).toBe('function');
+      expect(parseTimestamptz?.('2020-01-01T00:00:00.000Z')).toBe('2020-01-01T00:00:00.000Z');
+    } finally {
+      await client.end({ timeout: 1 });
+    }
   });
 });

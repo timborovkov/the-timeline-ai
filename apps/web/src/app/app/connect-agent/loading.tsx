@@ -31,7 +31,7 @@ export default function ConnectAgentLoading() {
               <CollectionRowSkeleton key={index} leading metadata={0} />
             ))}
           </div>
-          <div aria-hidden="true" className="divide-y divide-border border-y border-border">
+          <div aria-hidden="true" className="divide-y divide-border">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="flex min-h-11 items-center gap-2 py-4">
                 <Skeleton className="size-3.5 shrink-0 motion-reduce:animate-none" />

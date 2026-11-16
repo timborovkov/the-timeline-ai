@@ -29,13 +29,15 @@ describe('connect-agent content', () => {
     );
   });
 
-  it('uses the five timeline.* tools and capture for remember', () => {
+  it('uses the seven timeline.* tools and capture for remember', () => {
     expect(TIMELINE_MCP_TOOLS).toEqual([
       'timeline.search',
       'timeline.get',
       'timeline.subject',
       'timeline.ask',
       'timeline.remember',
+      'timeline.crawl',
+      'timeline.crawl_status',
     ]);
     expect([...TIMELINE_MCP_TOOLS].sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
     expect(readTimelineSkillMarkdown()).toContain('timeline.search');

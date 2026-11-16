@@ -1,6 +1,9 @@
 import { directoryPage, listPlatformUsers } from '@timeline/shared/platform-admin';
 import Link from 'next/link';
 
+import type { DirectoryOptions } from '@timeline/shared/platform-admin';
+
+import { CopyButton } from '@/components/copy-button';
 import { PageHeader } from '@/components/page-header';
 import { AdminSearch, AdminPagination } from '@/components/platform-admin-directory';
 import { db } from '@/lib/db';
@@ -8,13 +11,13 @@ import { requireAdmin } from '@/lib/platform-admin';
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<DirectoryOptions & { q?: string; page?: string }>;
 }) {
   const actor = await requireAdmin();
   const params = await searchParams;
   const query = params.q ?? '';
   const page = directoryPage(params.page);
-  const { rows, total } = await listPlatformUsers(db, actor, query, page);
+  const { rows, total } = await listPlatformUsers(db, actor, query, page, params);
   return (
     <div className="space-y-5">
       <PageHeader
@@ -22,7 +25,7 @@ export default async function AdminUsersPage({
         title="Users"
         subtitle={`${total} users across the platform`}
       />
-      <AdminSearch query={query} />
+      <AdminSearch query={query} options={params} kind="users" />
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
@@ -44,6 +47,10 @@ export default async function AdminUsersPage({
                     {user.name ?? user.email}
                   </Link>
                   <p className="text-fg-muted">{user.email}</p>
+                  <div className="flex items-center gap-2 text-xs">
+                    <code>{user.id}</code>
+                    <CopyButton value={user.id} label="Copy ID" />
+                  </div>
                 </td>
                 <td className="p-3">
                   {user.suspendedAt ? 'Suspended' : user.emailVerified ? 'Verified' : 'Unverified'}
@@ -58,7 +65,7 @@ export default async function AdminUsersPage({
           <p className="p-4 text-sm text-fg-muted">No users match this search.</p>
         )}
       </div>
-      <AdminPagination page={page} hasNext={page * 50 < total} query={query} />
+      <AdminPagination page={page} hasNext={page * 50 < total} query={query} options={params} />
     </div>
   );
 }

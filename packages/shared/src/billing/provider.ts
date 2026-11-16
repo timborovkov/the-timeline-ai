@@ -1,3 +1,5 @@
+import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/meters.js';
+
 import type {
   PolarIdentityApi,
   PolarPerson,
@@ -70,6 +72,7 @@ export interface BillingProvider {
   }): Promise<{ url: string }>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
   /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
+  cancelSubscriptionRenewal(subscriptionId: string, customerId: string): Promise<void>;
   revokeSubscription(subscriptionId: string, customerId?: string): Promise<void>;
   ingestUsage(event: PolarUsageEvent): Promise<void>;
   /**
@@ -79,16 +82,6 @@ export interface BillingProvider {
    */
   listPricedEventNames(productId: string): Promise<readonly string[] | null>;
 }
-
-/** Timeline meter events. Keep aligned with TIMELINE_METERED_EVENT_NAMES. */
-const POLAR_PRICED_EVENT_NAMES = [
-  'timeline_ai_eur_cents',
-  'timeline_recall_minutes',
-  'timeline_email_units',
-  'timeline_storage_gb_month',
-  'timeline_accepted_sources',
-  'timeline_extra_member_days',
-] as const;
 
 /** In-memory provider for unit/e2e tests — no network. */
 export function createFakeBillingProvider(options?: { teamIdentity?: boolean }): BillingProvider & {
@@ -220,6 +213,9 @@ export function createFakeBillingProvider(options?: { teamIdentity?: boolean }):
       subscriptionUpdates.push(input);
       return Promise.resolve({ ok: true });
     },
+    cancelSubscriptionRenewal() {
+      return Promise.resolve();
+    },
     revokeSubscription(subscriptionId) {
       revokedSubscriptionIds.push(subscriptionId);
       return Promise.resolve();
@@ -232,7 +228,7 @@ export function createFakeBillingProvider(options?: { teamIdentity?: boolean }):
       if (pricedEventNamesByProduct.has(productId)) {
         return Promise.resolve(pricedEventNamesByProduct.get(productId) ?? null);
       }
-      return Promise.resolve(POLAR_PRICED_EVENT_NAMES);
+      return Promise.resolve(TIMELINE_METERED_EVENT_NAMES);
     },
   };
 }

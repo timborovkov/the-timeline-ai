@@ -9,9 +9,12 @@ One canonical schema definition shared by `apps/web`, `apps/worker`, and any fut
 ## How to use
 
 ```ts
-import { db, raw_events } from "@timeline/db";
+import { db } from "@timeline/db";
+import { withTeam } from "@timeline/shared";
 
-const rows = await db.select().from(raw_events).limit(10);
+// teamId and userId come from the authenticated request context.
+const scope = withTeam(db, teamId, userId);
+const rows = await scope.timeline.listEvents({ limit: 10 });
 ```
 
 All team-scoped reads must go through `withTeam(db, teamId, userId)` from `@timeline/shared` — never read `raw_events` directly without it.
@@ -81,6 +84,8 @@ senders are preserved; active member addresses are resolved at ingestion time.
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a
 direct `postgres()` call. The shared builder applies:
 
+- postgres.js 4 with `infer: true`, so Date, boolean, bigint, bytea, and array
+  parameters keep v3 JavaScript typing instead of the v4 server-typed default.
 - `application_name` labels for lock diagnosis (`timeline-web`,
   `timeline-worker`, `timeline-migrator`, `timeline-migration-waiter`,
   `timeline-reset`, or `timeline-script`).
@@ -95,6 +100,6 @@ has room to finish.
 
 ## Where it fits
 
-- Deploy/startup migration wiring: [docs/railway.html](../../docs/railway.html).
+- Deploy/startup migration wiring: [docs/railway.html](../../docs/railway.md).
 - Team-scope contract: [packages/shared/README.md](../shared/README.md).
-- Data model overview: [docs/product-brief.html](../../docs/product-brief.html).
+- Data model overview: [docs/product-brief.html](../../docs/product-brief.md).

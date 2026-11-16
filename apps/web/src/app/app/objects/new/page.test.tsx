@@ -71,11 +71,10 @@ beforeEach(() => {
 });
 
 describe('NewObjectPage', () => {
-  it('keeps the Objects work navigation available', async () => {
+  it('leaves Work navigation to the persistent shell', async () => {
     const html = renderToStaticMarkup(await NewObjectPage({ searchParams: Promise.resolve({}) }));
 
-    expect(html).toContain('aria-label="Work"');
-    expect(html).toMatch(/aria-current="page"[^>]*href="\/app\/objects"/);
+    expect(html).not.toContain('aria-label="Work"');
   });
 
   it('hydrates the requested project outside the preload window', async () => {

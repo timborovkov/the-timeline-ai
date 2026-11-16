@@ -9,17 +9,8 @@
   color: var(--home-paper, var(--fg));
 }
 
-.kicker {
-  margin: 0;
-  color: var(--home-signal, var(--signal));
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size, 0.75rem);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .title {
-  margin: 0.25rem 0 0;
+  margin: 0;
   text-wrap: balance;
   font-size: 1.05rem;
   font-weight: 600;
@@ -52,7 +43,7 @@
 
 .commandRow {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
   min-width: 0;
@@ -62,7 +53,7 @@
 }
 
 .command {
-  flex: 1 1 auto;
+  flex: 1 1 16rem;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--home-paper, var(--fg));
@@ -73,9 +64,42 @@
 
 .copyButton {
   flex-shrink: 0;
+  min-height: 2.75rem;
+  margin-inline-start: auto;
   color: var(--home-paper, var(--fg)) !important;
 }
 
 .copyButton:hover {
   background: color-mix(in oklch, var(--home-paper, var(--fg)) 8%, transparent) !important;
+}
+
+.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem 1rem;
+  padding: 0.8rem;
+  border-color: var(--home-line, var(--border));
+}
+.compact .title {
+  font-size: 0.875rem;
+  letter-spacing: -0.015em;
+}
+.compact .lede {
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+}
+.compact .marks {
+  gap: 0.25rem;
+  align-self: center;
+}
+.compact .commandRow {
+  grid-column: 1 / -1;
+  padding: 0.25rem 0.4rem 0.25rem 0.65rem;
+}
+@media (max-width: 40rem) {
+  .compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .compact .command {
+    flex-basis: 0;
+  }
 }

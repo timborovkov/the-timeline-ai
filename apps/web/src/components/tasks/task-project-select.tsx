@@ -47,7 +47,7 @@ export function TaskProjectSelect({
     }
   };
   return (
-    <div>
+    <div className="min-w-0 w-full">
       <ProjectPicker
         value={projectId}
         selectedLabel={currentProjectLabel}
@@ -57,7 +57,7 @@ export function TaskProjectSelect({
         triggerRef={selectorRef}
         className={
           quiet
-            ? 'h-8 border-0 bg-transparent px-1.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg'
+            ? 'h-auto min-h-8 border-0 bg-transparent px-0 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg [&>span]:whitespace-normal'
             : undefined
         }
         onValueChange={(nextProject) => {

@@ -110,7 +110,7 @@ describe('DocumentSearch', () => {
     render(<DocumentSearch />);
 
     await user.type(
-      screen.getByRole('searchbox', { name: 'Search document chunks' }),
+      screen.getByRole('searchbox', { name: 'Search document content' }),
       '  Acme security  ',
     );
     await user.click(screen.getByRole('button', { name: 'Search' }));
@@ -147,7 +147,7 @@ describe('DocumentSearch', () => {
 
     render(<DocumentSearch />);
 
-    await user.type(screen.getByRole('searchbox', { name: 'Search document chunks' }), 'Acme');
+    await user.type(screen.getByRole('searchbox', { name: 'Search document content' }), 'Acme');
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
     const searching = await screen.findByRole('button', { name: 'Searching' });
@@ -171,7 +171,7 @@ describe('DocumentSearch', () => {
 
     render(<DocumentSearch />);
 
-    const input = screen.getByRole('searchbox', { name: 'Search document chunks' });
+    const input = screen.getByRole('searchbox', { name: 'Search document content' });
     await user.type(input, 'missing plan');
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
@@ -211,7 +211,7 @@ describe('DocumentSearch', () => {
 
       render(<DocumentSearch />);
 
-      const input = screen.getByRole('searchbox', { name: 'Search document chunks' });
+      const input = screen.getByRole('searchbox', { name: 'Search document content' });
       await user.type(input, '  Acme security  ');
       await user.click(screen.getByRole('button', { name: 'Search' }));
 
@@ -238,7 +238,7 @@ describe('DocumentSearch', () => {
     });
 
     render(<DocumentSearch />);
-    await user.type(screen.getByRole('searchbox', { name: 'Search document chunks' }), 'Acme');
+    await user.type(screen.getByRole('searchbox', { name: 'Search document content' }), 'Acme');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
 

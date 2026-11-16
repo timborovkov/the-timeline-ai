@@ -6,11 +6,10 @@ const log = childLogger('billing:identity');
 export type PolarIdentityErrorCode =
   'identity_conflict' | 'configuration' | 'forbidden' | 'unavailable';
 export class PolarIdentityError extends Error {
-  constructor(
-    public readonly code: PolarIdentityErrorCode,
-    public readonly operation: string,
-    public readonly status?: number,
-  ) {
+  readonly code: PolarIdentityErrorCode;
+  readonly operation: string;
+  readonly status: number | undefined;
+  constructor(code: PolarIdentityErrorCode, operation: string, status?: number) {
     super(
       {
         identity_conflict:
@@ -21,6 +20,9 @@ export class PolarIdentityError extends Error {
       }[code],
     );
     this.name = 'PolarIdentityError';
+    this.code = code;
+    this.operation = operation;
+    this.status = status;
   }
 }
 const customerSchema = z.object({

@@ -84,6 +84,21 @@ export function sourceOriginalFromEvent(input: {
   };
 }
 
+/** Read authored agent notes without changing their retained source payload. */
+export function authoredCaptureFromEvent(input: {
+  source: string;
+  sourceMetadata?: unknown;
+}): { title: string | null; text: string } | null {
+  if (input.source !== 'ingest_webhook') return null;
+  const snapshot = recordValue(recordValue(input.sourceMetadata).source_snapshot);
+  const body = recordValue(
+    typeof snapshot.body === 'string' ? parseJsonString(snapshot.body) : snapshot.body,
+  );
+  if (body.source !== 'mcp_remember') return null;
+  const text = firstString(body.text);
+  return text ? { title: firstString(body.title), text } : null;
+}
+
 export function hasSourceOriginal(original: SourceOriginal): boolean {
   return Boolean(original.html ?? original.json ?? original.text);
 }

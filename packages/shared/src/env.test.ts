@@ -247,6 +247,41 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_WORKSPACE_VERIFICATION_SECRET).toBe(secret);
   });
 
+  it('defaults the PostHog UI host and validates HTTPS overrides', () => {
+    for (const host of [undefined, '', 'https://eu.posthog.com', 'https://posthog.example.com']) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_UI_HOST: host });
+      expect(getEnv().NEXT_PUBLIC_POSTHOG_UI_HOST).toBe(
+        host === '' ? 'https://eu.posthog.com' : (host ?? 'https://eu.posthog.com'),
+      );
+    }
+    for (const host of [
+      'invalid',
+      'http://posthog.example.com',
+      'https://user:pass@eu.posthog.com',
+    ]) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_UI_HOST: host });
+      expect(() => getEnv()).toThrow(/NEXT_PUBLIC_POSTHOG_UI_HOST/);
+    }
+  });
+
+  it('defaults browser analytics to the managed proxy and retains the EU override', () => {
+    for (const host of [undefined, '', 'https://m.thetimeline.cc', 'https://eu.i.posthog.com']) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_HOST: host });
+      expect(getEnv().NEXT_PUBLIC_POSTHOG_HOST).toBe(
+        host === '' ? 'https://m.thetimeline.cc' : (host ?? 'https://m.thetimeline.cc'),
+      );
+      expect(getEnv().POSTHOG_HOST).toBe('https://eu.i.posthog.com');
+    }
+    for (const host of [
+      'http://m.thetimeline.cc',
+      'https://user:pass@m.thetimeline.cc',
+      'https://us.i.posthog.com',
+    ]) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_HOST: host });
+      expect(() => getEnv()).toThrow(/NEXT_PUBLIC_POSTHOG_HOST/);
+    }
+  });
+
   it('keeps server analytics credentials separate and validates the pseudonymization key', () => {
     setBaseEnv({
       POSTHOG_PROJECT_KEY: 'ph-server',
@@ -381,12 +416,14 @@ describe('getEnv', () => {
       GITHUB_APP_CLIENT_ID: '',
       SLACK_CLIENT_ID: '',
       MONDAY_CLIENT_ID: '',
+      FIRECRAWL_API_KEY: '',
     });
 
     expect(getEnv().GITHUB_APP_ID).toBeUndefined();
     expect(getEnv().GITHUB_APP_CLIENT_ID).toBeUndefined();
     expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
     expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
+    expect(getEnv().FIRECRAWL_API_KEY).toBeUndefined();
   });
 
   it('defaults LangSmith tracing off with an environment-specific project', () => {
@@ -680,6 +717,7 @@ describe('getEnv', () => {
 
   it('accepts non-secret runtime variables injected by Bun and Railway', () => {
     setExtractProductionEnv({
+      ANTHROPIC_OPEN_TELEMETRY: 'false',
       CI: 'true',
       BUN_INSTALL_BIN: '/usr/local/bin',
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: '/tmp/bun-cache',
@@ -736,6 +774,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('MISE_DATA_DIR')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('__MISE_SHIM')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('CI')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('ANTHROPIC_OPEN_TELEMETRY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('BUN_INSTALL_BIN')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('BUN_RUNTIME_TRANSPILER_CACHE_PATH')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);
@@ -744,6 +783,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
 
   it('rejects non-extract secrets including unparsed canary/MCP keys', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('LANGSMITH_API_KEY')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('FIRECRAWL_API_KEY')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('SLACK_CANARY_BOT_TOKEN')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('MCP_PREREGISTERED_X_CLIENT_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('AUTH_SECRET')).toBe(false);

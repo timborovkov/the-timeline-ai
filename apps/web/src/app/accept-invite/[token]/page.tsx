@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 
 import { acceptInviteAction } from '@/app/actions/invites';
 import { AuthShell } from '@/components/auth-shell';
+import { SignOutButton } from '@/components/sign-out-button';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -96,6 +97,10 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
           <span className="font-medium text-foreground">{invite.email}</span>. Sign in with that
           email to accept.
         </p>
+        <SignOutButton
+          label="Switch account"
+          callbackUrl={`/accept-invite/${encodeURIComponent(token)}`}
+        />
       </AuthShell>
     );
   }
@@ -133,7 +138,7 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
         <input type="hidden" name="token" value={token} />
         <Button type="submit">Join team</Button>
         <Button asChild variant="ghost">
-          <Link href="/app/timeline">Decline</Link>
+          <Link href="/app/timeline">Not now</Link>
         </Button>
       </form>
     </AuthShell>

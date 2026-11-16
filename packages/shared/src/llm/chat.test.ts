@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
 import { resetEnvForTests } from '#src/env.js';
+import { normalizeExtractionModelOutput } from '#src/extract/model-output.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
 import { extractionResultSchema } from '#src/extract/schema.js';
 import {
@@ -15,6 +16,8 @@ import {
   streamChat,
 } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { normalizeMeetingSummaryOutput } from '#src/meetings/model-output.js';
+import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
 
 type ProviderFetch = (
   ...args: Parameters<typeof globalThis.fetch>
@@ -208,6 +211,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: The AuditAI team has a meeting scheduled for Monday.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -243,7 +247,8 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
-        prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for Otto.',
+        normalizeOutput: normalizeExtractionModelOutput,
+        prompt: 'Extract facts from: Cameron Vale shared a Google Drive folder for Otto.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       {
@@ -251,14 +256,14 @@ describe('chatStructured', () => {
           JSON.stringify([
             {
               statement:
-                'Mikael Rintala shared a Google Drive folder link containing zip files and an HTML version for Otto.',
+                'Cameron Vale shared a Google Drive folder link containing zip files and an HTML version for Otto.',
               confidence: 1,
               mentions: [
                 {
-                  name: 'Mikael Rintala',
+                  name: 'Cameron Vale',
                   type: 'person',
                   role: 'subject',
-                  aliases: ['@mikaelrintala'],
+                  aliases: ['@cameronvale'],
                 },
                 { name: 'Otto', type: 'person', role: 'object', aliases: [] },
                 { name: 'Google Drive', type: 'company', role: 'object', aliases: [] },
@@ -272,9 +277,9 @@ describe('chatStructured', () => {
     expect(result.object.facts).toHaveLength(1);
     expect(result.object.facts[0]).toMatchObject({
       statement:
-        'Mikael Rintala shared a Google Drive folder link containing zip files and an HTML version for Otto.',
+        'Cameron Vale shared a Google Drive folder link containing zip files and an HTML version for Otto.',
       mentions: [
-        { name: 'Mikael Rintala', type: 'person', role: 'subject' },
+        { name: 'Cameron Vale', type: 'person', role: 'subject' },
         { name: 'Otto', type: 'person', role: 'object' },
         { name: 'Google Drive', type: 'company', role: 'object' },
       ],
@@ -291,12 +296,13 @@ describe('chatStructured', () => {
           ),
         }),
         prompt: 'Summarize the meeting.',
+        normalizeOutput: normalizeMeetingSummaryOutput,
       },
       {
         model: makeMockModel(
           JSON.stringify({
             summary: 'The team discussed launch readiness.',
-            actionItems: [{ text: 'Send the launch checklist.', owner: 'Mikael' }],
+            actionItems: [{ text: 'Send the launch checklist.', owner: 'Cameron' }],
           }),
         ),
       },
@@ -304,7 +310,7 @@ describe('chatStructured', () => {
 
     expect(result.object).toEqual({
       summary: 'The team discussed launch readiness.',
-      action_items: [{ text: 'Send the launch checklist.', owner: 'Mikael' }],
+      action_items: [{ text: 'Send the launch checklist.', owner: 'Cameron' }],
     });
   });
 
@@ -313,6 +319,7 @@ describe('chatStructured', () => {
       {
         schema: z.object({ choice: z.number().int() }),
         prompt: 'Pick the candidate that refers to the same real-world entity.',
+        normalizeOutput: normalizeExtractionModelOutput,
       },
       { model: makeMockModel(JSON.stringify({ candidate_index: 1 })) },
     );
@@ -326,6 +333,7 @@ describe('chatStructured', () => {
         {
           schema: z.object({ choice: z.number().int().min(-1).max(1) }),
           prompt: 'Pick the candidate that refers to the same real-world entity.',
+          normalizeOutput: normalizeExtractionModelOutput,
         },
         { model: makeMockModel(JSON.stringify({ candidate_index: 999 })) },
       ),
@@ -362,14 +370,14 @@ describe('chatStructured', () => {
                   content: JSON.stringify({
                     facts: [
                       {
-                        statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
+                        statement: 'Cameron Vale shared a Google Drive folder for AuditAI.',
                         confidence: 1,
                         mentions: [
                           {
-                            name: 'Mikael Rintala',
+                            name: 'Cameron Vale',
                             type: 'person',
                             role: 'subject',
-                            aliases: ['mikaelrintala'],
+                            aliases: ['cameronvale'],
                           },
                         ],
                       },
@@ -389,7 +397,8 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
-        prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for AuditAI.',
+        normalizeOutput: normalizeExtractionModelOutput,
+        prompt: 'Extract facts from: Cameron Vale shared a Google Drive folder for AuditAI.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
@@ -397,8 +406,8 @@ describe('chatStructured', () => {
 
     expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
     expect(result.object.facts[0]).toMatchObject({
-      statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
-      mentions: [{ name: 'Mikael Rintala', type: 'person', role: 'subject' }],
+      statement: 'Cameron Vale shared a Google Drive folder for AuditAI.',
+      mentions: [{ name: 'Cameron Vale', type: 'person', role: 'subject' }],
     });
     expect(requests).toHaveLength(1);
     expect(requestHeaders[0]?.get('X-OpenRouter-Cache')).toBe('false');
@@ -460,6 +469,7 @@ describe('chatStructured', () => {
           ),
         }),
         prompt: 'Classify the task.',
+        normalizeOutput: normalizeTaskCategoryModelJson,
         instructions: 'Return schema-valid JSON.',
         model: TIMELINE_MODELS.taskCategorization.id,
       },
@@ -522,6 +532,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -625,6 +636,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -668,6 +680,7 @@ describe('chatStructured', () => {
       chatStructured(
         {
           schema: extractionResultSchema,
+          normalizeOutput: normalizeExtractionModelOutput,
           prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
           instructions: EXTRACTION_SYSTEM_PROMPT,
         },
@@ -730,6 +743,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -786,6 +800,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -854,6 +869,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -944,6 +960,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1038,6 +1055,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1145,6 +1163,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1228,6 +1247,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1286,6 +1306,7 @@ describe('chatStructured', () => {
       chatStructured(
         {
           schema: extractionResultSchema,
+          normalizeOutput: normalizeExtractionModelOutput,
           prompt: 'Extract facts from: Heading out for lunch.',
           instructions: EXTRACTION_SYSTEM_PROMPT,
         },
@@ -1325,9 +1346,10 @@ describe('chatStructured', () => {
 
       const result = await chatStructured({
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         instructions: EXTRACTION_SYSTEM_PROMPT,
         prompt:
-          'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
+          'Current event: Taylor met Apple about SaaS licensing. Return one explicit fact with mentions.',
       });
 
       expect(result.model).toBe(TIMELINE_MODELS.extraction.id);

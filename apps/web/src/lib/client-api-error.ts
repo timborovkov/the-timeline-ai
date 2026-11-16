@@ -1,7 +1,4 @@
-interface PublicErrorPayload {
-  error?: unknown;
-  reference?: unknown;
-}
+import { ApiResponseError, readJson } from '@/lib/api-response';
 
 const PUBLIC_ERROR_MESSAGES: Record<string, string> = {
   forbidden: 'You do not have permission to make this change.',
@@ -14,11 +11,15 @@ const PUBLIC_ERROR_MESSAGES: Record<string, string> = {
 };
 
 export async function readPublicApiError(response: Response, fallback: string): Promise<string> {
-  const payload = (await response.json().catch(() => null)) as PublicErrorPayload | null;
-  const code = typeof payload?.error === 'string' ? payload.error : null;
-  const reference = typeof payload?.reference === 'string' ? payload.reference : null;
-  const message = code ? (PUBLIC_ERROR_MESSAGES[code] ?? fallback) : fallback;
-  return reference ? `${message} Reference: ${reference}.` : message;
+  try {
+    await readJson(response);
+  } catch (error) {
+    if (error instanceof ApiResponseError) {
+      const message = error.code ? (PUBLIC_ERROR_MESSAGES[error.code] ?? fallback) : fallback;
+      return error.reference ? `${message} Reference: ${error.reference}.` : message;
+    }
+  }
+  return fallback;
 }
 
 export function networkActionError(action: string): string {

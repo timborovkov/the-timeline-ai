@@ -2,7 +2,6 @@ import { ArrowRight, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -39,8 +38,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
 
           <div className={styles.heroGrid}>
             <div>
-              <EditorialKicker>{solution.eyebrow}</EditorialKicker>
-              <h1 className={`${styles.guideTitle} mt-6`}>{solution.title}</h1>
+              <h1 className={styles.guideTitle}>{solution.title}</h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
                 {solution.summary}
               </p>
@@ -62,8 +60,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
         <section className="border-y border-border bg-surface/45" aria-labelledby="problem-title">
           <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.42fr_1fr]">
             <div>
-              <EditorialKicker>The problem</EditorialKicker>
-              <h2 id="problem-title" className="mt-5 text-2xl font-semibold tracking-[-0.035em]">
+              <h2 id="problem-title" className="text-2xl font-semibold tracking-[-0.035em]">
                 Context breaks between systems.
               </h2>
             </div>
@@ -79,7 +76,6 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
           <EditorialSectionHeading
-            index="01 · Method"
             title="Turn selected work into a reviewable answer."
             intro="The same four-part discipline keeps the result useful: define the evidence, preserve its sequence, ask a bounded question, and verify before acting."
           />
@@ -107,7 +103,6 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
         <section className="border-y border-border bg-surface/45">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
             <EditorialSectionHeading
-              index="02 · Evidence"
               title="Give each source one honest job."
               intro="Citations are most useful when the answer preserves what each source can establish—and what it cannot."
             />
@@ -143,7 +138,6 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
         <section className="mx-auto grid max-w-6xl gap-12 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[0.78fr_1.22fr]">
           <div>
             <EditorialSectionHeading
-              index="03 · Ask"
               title="Start with a question that has edges."
               intro="Name the subject, the time window, the output, and the standard of evidence."
             />
@@ -190,7 +184,6 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
         <section className="border-y border-border bg-surface/45">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
             <EditorialSectionHeading
-              index="04 · Trust"
               title="What this cannot prove."
               intro="A useful work record makes the gaps inspectable. It does not turn missing evidence into confidence."
             />
@@ -208,7 +201,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
         </section>
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-          <EditorialSectionHeading index="05 · Questions" title="Common questions." />
+          <EditorialSectionHeading title="Common questions." />
           <div className="mt-10 divide-y divide-border border-y border-border">
             {solution.faqs.map((faq) => (
               <details key={faq.question} className="group py-1">

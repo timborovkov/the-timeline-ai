@@ -33,7 +33,6 @@ working exploit in a public issue or pull request.
 
 ## Contributions
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before proposing work. Start with the
-[contribution proposal form](https://github.com/timborovkov/the-timeline-ai/issues/new?template=contribution_proposal.yml)
-and wait for maintainer agreement before substantial implementation or a pull
-request.
+Suggest a [feature or improvement](https://github.com/timborovkov/the-timeline-ai/issues/new?template=contribution_proposal.yml)
+without committing to implement it. Before substantial implementation or a PR,
+read [CONTRIBUTING.md](./CONTRIBUTING.md) and agree scope and terms with a maintainer.

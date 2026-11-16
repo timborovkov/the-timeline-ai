@@ -9,14 +9,14 @@ import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-cont
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-06' as const;
+export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-12' as const;
 
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
   canonicalPath: '/integrations',
   kind: 'product',
   title: 'Integrations and capture surfaces',
   description:
-    'Link Slack channels and Telegram groups, forward email and add calls, then sync GitHub, Linear, Google Drive, Monday.com and Sentry. Connect MCP tools for The Timeline Agent, separately from native sync.',
+    'Connect selected sources to build your work record. Capture messages, files and tool activity with native integrations, or connect MCP for live tool access.',
   indexability: 'index',
   dates: {
     modified: INTEGRATION_DIRECTORY_REVIEW_DATE,
@@ -112,7 +112,7 @@ export const TELEGRAM_PUBLIC_DOCUMENT = {
   title: TELEGRAM_PAGE.seoTitle,
   description: TELEGRAM_PAGE.seoDescription,
   indexability: 'index',
-  dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+  dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.8 },
   structuredData: [
@@ -139,9 +139,39 @@ export const TELEGRAM_PUBLIC_DOCUMENT = {
   },
 } as const satisfies PublicDocument;
 
+export const WEBSITES_PUBLIC_DOCUMENT = {
+  canonicalPath: '/integrations/websites',
+  kind: 'product',
+  title: 'Website sources',
+  description:
+    'Capture public website pages as cited evidence, preserve version history, and refresh them manually or on a schedule.',
+  structuredData: [],
+  indexability: 'index',
+  dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
+  capability: { kind: 'current-product' },
+  sitemap: { changeFrequency: 'monthly', priority: 0.7 },
+  llms: {
+    section: 'integrations',
+    order: 6,
+    summary:
+      'Public website capture: five pages per scan, 20 source units per page; immutable snapshots and current-version answers.',
+    sections: [
+      {
+        title: 'Capture and refresh',
+        body: 'Add your own or another company’s public website in Sources. Members can scan; admins manage daily or weekly schedules and removal. Schedules require service activation. Historical citations remain available. Firecrawl fetches public pages; login-protected pages are not supported.',
+      },
+      {
+        title: 'Usage',
+        body: 'Twenty accepted-source units per successfully captured page, including unchanged pages. AI and storage are separate. Removing the source stops future scans and retains history; see Privacy for deletion.',
+      },
+    ],
+  },
+} as const satisfies PublicDocument;
+
 export const CONNECTOR_PUBLIC_DOCUMENTS = definePublicDocuments('native-connectors', [
   INTEGRATION_DIRECTORY_DOCUMENT,
   TELEGRAM_PUBLIC_DOCUMENT,
+  WEBSITES_PUBLIC_DOCUMENT,
   ...connectorDocuments,
 ]);
 

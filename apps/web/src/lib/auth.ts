@@ -11,10 +11,11 @@ import { cache } from 'react';
 
 import { auth as baseAuth } from '@/lib/auth-base';
 import { db } from '@/lib/db';
-export { handlers, signIn, updateSession, hasGitHubAuth } from '@/lib/auth-base';
+export { handlers, signIn, updateSession, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth-base';
 
 export const realAuth = baseAuth;
 export const getRequestIdentity = cache(async () => {
+  initializeOperatorRequestContext();
   const session = await baseAuth();
   if (!session?.user) return { session: null, impersonation: null };
   const [user] = await db
@@ -44,6 +45,7 @@ export const getRequestIdentity = cache(async () => {
 
 /** Existing consumers receive the effective identity; privileged operations use realAuth. */
 export async function auth() {
+  initializeOperatorRequestContext();
   const { session, impersonation } = await getRequestIdentity();
   if (!session || !impersonation) return session;
   const requestHeaders = await headers();
@@ -60,17 +62,19 @@ export async function auth() {
   };
 }
 
-registerOperatorContextResolver(async () => {
-  const { session, impersonation } = await getRequestIdentity();
-  if (!session || !impersonation) return null;
-  const path = (await headers()).get('x-timeline-path') ?? '';
-  if (path.startsWith('/app/admin') || path.startsWith('/api/platform-admin')) return null;
-  return {
-    actorUserId: session.user.id,
-    actorEmail: session.user.email ?? '',
-    effectiveUserId: impersonation.user.id,
-    teamId: impersonation.session.teamId,
-    sessionId: impersonation.session.id,
-    readOnly: impersonation.readOnly,
-  };
-});
+function initializeOperatorRequestContext(): void {
+  registerOperatorContextResolver(async () => {
+    const { session, impersonation } = await getRequestIdentity();
+    if (!session || !impersonation) return null;
+    const path = (await headers()).get('x-timeline-path') ?? '';
+    if (path.startsWith('/app/admin') || path.startsWith('/api/platform-admin')) return null;
+    return {
+      actorUserId: session.user.id,
+      actorEmail: session.user.email ?? '',
+      effectiveUserId: impersonation.user.id,
+      teamId: impersonation.session.teamId,
+      sessionId: impersonation.session.id,
+      readOnly: impersonation.readOnly,
+    };
+  });
+}

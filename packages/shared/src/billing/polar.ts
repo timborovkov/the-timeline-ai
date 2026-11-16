@@ -17,13 +17,15 @@ export type PolarServer = 'sandbox' | 'production';
 
 /** Safe messages for the customer; never expose provider bodies or submitted codes. */
 export class PolarDiscountError extends Error {
-  constructor(public readonly code: 'ineligible' | 'unavailable') {
+  readonly code: 'ineligible' | 'unavailable';
+  constructor(code: 'ineligible' | 'unavailable') {
     super(
       code === 'ineligible'
         ? 'That discount is invalid or not eligible for this plan or customer. No plan change was completed.'
         : 'Polar could not apply the discount right now. Please retry. We will not continue at full price.',
     );
     this.name = 'PolarDiscountError';
+    this.code = code;
   }
 }
 
@@ -275,6 +277,19 @@ export function createPolarBillingProvider(options?: {
       return { url };
     },
 
+    async cancelSubscriptionRenewal(subscriptionId: string, customerId: string) {
+      if (!customerId) throw new PolarIdentityError('identity_conflict', 'subscription_customer');
+      await identity.assertSubscription(customerId, subscriptionId);
+      const response = await polarFetch(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ cancel_at_period_end: true }),
+      });
+      if (!response.ok) throw new Error(`Polar cancellation failed: ${response.status}`);
+      const result = (await response.json()) as { cancel_at_period_end?: boolean; status?: string };
+      if (!result.cancel_at_period_end && result.status !== 'canceled')
+        throw new Error('Polar did not confirm cancellation');
+    },
+
     async revokeSubscription(subscriptionId: string, customerId?: string) {
       if (!customerId) throw new PolarIdentityError('identity_conflict', 'subscription_customer');
       await identity.assertSubscription(customerId, subscriptionId);
@@ -483,7 +498,7 @@ export async function createPlanChangeSession(input: {
   successUrl: string;
   portalReturnUrl: string;
   discountId?: string;
-}): Promise<{ url: string }> {
+}): Promise<{ url: string; id?: string }> {
   if (input.account.planId === 'enterprise') {
     throw new Error(
       'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',

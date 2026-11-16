@@ -49,6 +49,17 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
+              <strong>tl_last_login_method</strong>, a host-only, HTTP-only, SameSite=Lax cookie
+              lasting up to 180 days after a successful sign-in. It is Secure in production.
+            </td>
+            <td>
+              Show “Last used” beside your most recent sign-in method on this browser. Contains only
+              the method name, not your email or account identifier. It stays after sign-out;
+              clearing browser cookies removes it.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <strong>pending_invite</strong>, a signed HTTP-only cookie lasting 15 minutes.
             </td>
             <td>Preserve an invitation while a user completes an external sign-in flow.</td>

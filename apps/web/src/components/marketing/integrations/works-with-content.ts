@@ -65,7 +65,7 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     logo: '/connectors/jira.svg',
     status: 'mcp-lookup',
     statusLabel: 'MCP lookup',
-    title: 'Look Jira issues up when you ask. Keep Jira as the tracker.',
+    title: 'Jira context, when you need it.',
     summary:
       'Jira stays the issue tracker. Enabled Atlassian MCP can look up issues, sprints and related Confluence pages live when you ask Timeline. Native Jira ingest is planned.',
     seoTitle: 'Jira lookup in The Timeline',
@@ -91,7 +91,7 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     logo: '/connectors/notion.svg',
     status: 'mcp-lookup',
     statusLabel: 'MCP lookup',
-    title: 'Search Notion when you ask. Keep Notion as the wiki.',
+    title: 'Notion context, when you need it.',
     summary:
       'Notion stays the wiki. Enabled Notion MCP can search pages, databases and comments live when you ask Timeline. Native page ingest is planned.',
     seoTitle: 'Notion lookup in The Timeline',
@@ -117,7 +117,7 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     logo: '/connectors/hubspot.svg',
     status: 'coming-soon',
     statusLabel: 'Coming soon',
-    title: 'Keep HubSpot. Timeline covers the conversation record.',
+    title: 'Keep HubSpot. Connect the context.',
     summary:
       'If HubSpot already holds the pipeline, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls, so a promise is not only a CRM note.',
     seoTitle: 'HubSpot and The Timeline',
@@ -143,7 +143,7 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     logo: '/connectors/attio.svg',
     status: 'coming-soon',
     statusLabel: 'Coming soon',
-    title: 'Keep Attio. Timeline covers the conversation record.',
+    title: 'Keep Attio. Connect the context.',
     summary:
       'If Attio already holds people, companies and lists, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls.',
     seoTitle: 'Attio and The Timeline',
@@ -169,7 +169,7 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     logo: '/connectors/pipedrive.svg',
     status: 'coming-soon',
     statusLabel: 'Coming soon',
-    title: 'Keep Pipedrive. Timeline covers the conversation record.',
+    title: 'Keep Pipedrive. Connect the context.',
     summary:
       'If Pipedrive already holds the pipeline, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls.',
     seoTitle: 'Pipedrive and The Timeline',

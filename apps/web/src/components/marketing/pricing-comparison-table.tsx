@@ -7,6 +7,7 @@ import {
   formatStorageGb,
 } from '@timeline/shared/billing/catalog';
 
+import styles from '@/components/marketing/pricing-page.module.css';
 import { cn } from '@/lib/utils';
 
 function formatStock(n: number | null, options?: { unit: string } | { zero: string }): string {
@@ -50,9 +51,9 @@ const COMMERCIAL_ROWS: {
     label: 'Metered usage',
     value: (id) => {
       const discount = PLAN_CATALOG[id].includedUsageDiscountCents;
-      if (id === 'free') return 'Native Free allowances';
+      if (id === 'free') return 'Included Free allowances';
       if (discount > 0) return `Up to ${formatEuroFromCents(discount)} on invoice, then overage`;
-      return 'Free allowance, then native overage';
+      return 'Free allowance, then usage charges';
     },
   },
   {
@@ -131,32 +132,40 @@ function ComparisonTable({
   caption?: string;
 }) {
   return (
-    <div className="overflow-x-auto border border-border">
-      <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
-        {caption ? <caption className="sr-only">{caption}</caption> : null}
-        <thead>
-          <tr className="border-b border-border bg-surface">
-            <th className="px-4 py-3 font-medium text-fg-muted">Limit</th>
-            {SELF_SERVE_PLAN_ORDER.map((planId) => (
-              <th key={planId} className="px-4 py-3 font-semibold text-fg">
-                {PLAN_CATALOG[planId].name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.label} className="border-b border-border last:border-b-0">
-              <th className="px-4 py-3 font-medium text-fg-muted">{row.label}</th>
+    <div>
+      <p className={styles.scrollHint}>Scroll to compare all plans.</p>
+      <div
+        className={styles.tableRegion}
+        role="region"
+        aria-label={caption ?? 'Plan comparison'}
+        tabIndex={0}
+      >
+        <table className={styles.table}>
+          {caption ? <caption className="sr-only">{caption}</caption> : null}
+          <thead>
+            <tr className="border-b border-border bg-surface">
+              <th scope="col">Plan detail</th>
               {SELF_SERVE_PLAN_ORDER.map((planId) => (
-                <td key={planId} className="px-4 py-3 text-fg">
-                  {row.value(planId)}
-                </td>
+                <th key={planId} scope="col">
+                  {PLAN_CATALOG[planId].name}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-b border-border last:border-b-0">
+                <th scope="row">{row.label}</th>
+                {SELF_SERVE_PLAN_ORDER.map((planId) => (
+                  <td key={planId} className="px-4 py-3 text-fg">
+                    {row.value(planId)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -168,9 +177,9 @@ export function PricingComparisonTable({ className }: { className?: string }) {
       <details
         id="pricing-infrastructure"
         data-pricing-infrastructure
-        className="border border-border bg-bg"
+        className="scroll-mt-24 border-y border-border bg-bg"
       >
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
+        <summary className="cursor-pointer px-4 py-4 text-base font-medium text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring">
           Infrastructure limits
         </summary>
         <div className="space-y-3 border-t border-border px-4 py-3">

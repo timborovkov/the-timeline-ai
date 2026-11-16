@@ -50,10 +50,10 @@ describe('SettingsNav', () => {
     const general = screen.getByRole('link', { name: 'General' });
     expect(general.getAttribute('href')).toBe('/app/team?section=general');
     expect(general.getAttribute('aria-current')).toBe('page');
-    expect(general.className).toContain('min-h-10');
+    expect(general.className).toContain('min-h-11');
     expect(general.className).toContain('lg:min-h-8');
     expect(screen.queryByRole('link', { name: 'Advanced' })).toBeNull();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
   });
 
   it('shows administrator sections only to administrators and reveals the active destination', () => {
@@ -62,6 +62,6 @@ describe('SettingsNav', () => {
     expect(screen.getByRole('link', { name: 'Advanced' }).getAttribute('aria-current')).toBe(
       'page',
     );
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
   });
 });

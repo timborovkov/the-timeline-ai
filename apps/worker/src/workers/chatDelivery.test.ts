@@ -1,3 +1,4 @@
+import { teams, teamBillingAccounts } from '@timeline/db';
 import { encryptJson, resetSecretsKeyCacheForTests } from '@timeline/shared/crypto';
 import { resetEnvForTests } from '@timeline/shared/env';
 import { SlackApi } from '@timeline/shared/slack';
@@ -62,15 +63,16 @@ describe('deferred chat delivery', () => {
       };
       let suspended = false;
       let teamSuspended = false;
-      let query = 0;
       const db = {
         select: () => ({
-          from: () => ({
+          from: (table: unknown) => ({
             where: () =>
               Promise.resolve(
-                ++query % 2 === 1
-                  ? [{ state: teamSuspended ? 'suspended' : 'active' }]
-                  : [{ suspendedAt: suspended ? new Date() : null }],
+                table === teams
+                  ? [{ disabledAt: teamSuspended ? new Date() : null }]
+                  : table === teamBillingAccounts
+                    ? [{ state: 'normal' }]
+                    : [{ suspendedAt: suspended ? new Date() : null }],
               ),
           }),
         }),

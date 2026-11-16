@@ -1,6 +1,5 @@
 import { HistoryBackLinkSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function NewObjectLoading() {
   return (
@@ -18,7 +17,6 @@ export default function NewObjectLoading() {
           <HistoryBackLinkSkeleton />
           <PageHeaderSkeleton />
         </div>
-        <WorkSubnav current="/app/objects/new" />
         <section aria-hidden="true" inert className="max-w-xl space-y-5">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="space-y-1">

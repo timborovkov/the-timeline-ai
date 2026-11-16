@@ -36,7 +36,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/shared": {
-      "entry": ["src/**/*.test.ts"],
+      "entry": ["src/**/*.test.ts", "src/scripts/*.ts"],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["pino-pretty"]
     }

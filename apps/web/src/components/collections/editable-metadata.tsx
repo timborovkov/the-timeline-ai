@@ -96,7 +96,7 @@ export function EditableMetadata({
             className={cn(
               'inline-flex min-w-0 items-center rounded-sm text-fg-muted transition-[background-color,color,transform] duration-150 hover:bg-surface-2 hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100',
               density === 'compact'
-                ? 'h-5 gap-1 px-1 text-[11px] leading-4'
+                ? 'min-h-7 gap-1 px-1.5 text-xs leading-5'
                 : 'min-h-10 gap-1.5 px-2 text-xs',
               error && 'text-danger',
               className,

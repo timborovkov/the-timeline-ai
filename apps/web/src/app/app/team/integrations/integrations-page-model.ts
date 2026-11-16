@@ -185,28 +185,47 @@ export async function loadIntegrationsPageModel(input: { teamId: string; userId:
   const activeShareIds = selectionLists
     .flat()
     .flatMap((selection) => (selection.resourceShareId ? [selection.resourceShareId] : []));
-  const teamSourceRows: TeamSourceUiRow[] = resourceShares.map((row) => ({
-    share: {
-      id: row.share.id,
-      providerConnectionId: row.share.providerConnectionId,
-      resourceKind: row.share.resourceKind,
-      externalId: row.share.externalId,
-      externalLabel: row.share.externalLabel,
-      revokedAt: row.share.revokedAt ? row.share.revokedAt.toISOString() : null,
-    },
-    connection: {
-      id: row.connection.id,
-      provider: row.connection.provider,
-      displayName: row.connection.displayName,
-      ownerUserId: row.connection.ownerUserId,
-      ownerLabel:
-        memberUserMap.get(row.connection.ownerUserId)?.name ??
-        memberUserMap.get(row.connection.ownerUserId)?.email ??
-        row.connection.ownerUserId,
-      lastError: row.connection.lastError,
-      lastConnectedAt: row.connection.lastConnectedAt.toISOString(),
-    },
-  }));
+  const driveSelectionByShareId = new Map<
+    string,
+    { integrationId: string; selectionId: string; linkedObjectId: string | null }
+  >();
+  for (const integration of connected) {
+    if (integration.provider !== 'google_drive') continue;
+    for (const selection of selectionsByIntegrationId.get(integration.id) ?? []) {
+      if (!selection.resourceShareId) continue;
+      driveSelectionByShareId.set(selection.resourceShareId, {
+        integrationId: integration.id,
+        selectionId: selection.id,
+        linkedObjectId: selection.linkedObjectId,
+      });
+    }
+  }
+  const teamSourceRows: TeamSourceUiRow[] = resourceShares.map((row) => {
+    const driveLink = driveSelectionByShareId.get(row.share.id);
+    return {
+      share: {
+        id: row.share.id,
+        providerConnectionId: row.share.providerConnectionId,
+        resourceKind: row.share.resourceKind,
+        externalId: row.share.externalId,
+        externalLabel: row.share.externalLabel,
+        revokedAt: row.share.revokedAt ? row.share.revokedAt.toISOString() : null,
+      },
+      connection: {
+        id: row.connection.id,
+        provider: row.connection.provider,
+        displayName: row.connection.displayName,
+        ownerUserId: row.connection.ownerUserId,
+        ownerLabel:
+          memberUserMap.get(row.connection.ownerUserId)?.name ??
+          memberUserMap.get(row.connection.ownerUserId)?.email ??
+          row.connection.ownerUserId,
+        lastError: row.connection.lastError,
+        lastConnectedAt: row.connection.lastConnectedAt.toISOString(),
+      },
+      ...(driveLink ? { driveLink } : {}),
+    };
+  });
   const connectedRows: ConnectedIntegrationUiRow[] = connected.map((c, index) => ({
     id: c.id,
     setupRequired:

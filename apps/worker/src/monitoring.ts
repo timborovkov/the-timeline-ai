@@ -61,6 +61,15 @@ function isExpectedWorkerJobFailure(err: unknown): boolean {
   return EXPECTED_BILLING_ADMISSION_FAILURE_RE.test(message);
 }
 
+function isEmbeddingProviderTimeout(err: unknown): boolean {
+  const { tags, context } = aiErrorDetails(err);
+  return (
+    (tags.aiOperation === 'llm.embed' || tags.aiOperation === 'llm.embedMany') &&
+    tags.aiCauseName === 'AI_APICallError' &&
+    /\b(?:timeout|timed out)\b/i.test(context?.causeMessage ?? '')
+  );
+}
+
 function shouldCaptureWorkerJobFailure(
   job: Pick<Job, 'attemptsMade' | 'opts'> | undefined,
   err: unknown,
@@ -97,6 +106,22 @@ export function captureWorkerJobFailure(
         jobId: job?.id,
         attemptsMade: job?.attemptsMade,
         terminal,
+      },
+    });
+    return;
+  }
+  if (!terminal && isEmbeddingProviderTimeout(err)) {
+    if (!isWorkerSentryConfigured()) return;
+    Sentry.addBreadcrumb({
+      category: 'worker.retry',
+      level: 'warning',
+      message: 'Embedding provider timed out; queue retry pending',
+      data: {
+        queueName: job?.queueName,
+        jobName: job?.name,
+        jobId: job?.id,
+        attemptsMade: job?.attemptsMade,
+        maxAttempts: job?.opts.attempts ?? 1,
       },
     });
     return;

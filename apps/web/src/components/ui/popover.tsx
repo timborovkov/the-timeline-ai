@@ -18,6 +18,7 @@ function PopoverContent({
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
+        data-motion="popover"
         align={align}
         sideOffset={sideOffset}
         className={cn(

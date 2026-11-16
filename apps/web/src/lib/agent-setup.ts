@@ -61,7 +61,7 @@ You are connecting your human's agent to The Timeline, their team's auto-updatin
 
 Never ask for, accept or paste any key or token in chat. Sign-in is OAuth in the human's browser. Static \`tla_\` keys belong only under Advanced in Timeline, never in chat.
 
-The hosted MCP server advertises five tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, and \`timeline.remember\`. Default OAuth is \`read\` plus \`capture\` (the capture checkbox is on by default). \`timeline.remember\` needs the \`capture\` scope; uncheck it for a read-only grant. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
+The hosted MCP server advertises seven tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, \`timeline.remember\`, \`timeline.crawl\`, and \`timeline.crawl_status\`. Website scanning requires explicit permission and the separate \`websites:scan\` scope; it costs 20 source units per captured page. Default OAuth is \`read\` plus \`capture\` (the capture checkbox is on by default). \`timeline.remember\` needs the \`capture\` scope; uncheck it for a read-only grant. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
 
 ## 1. Resume or establish access
 

@@ -137,6 +137,115 @@ describe('processEmbedJobForTests', () => {
     ).toBe('OpenRouter 503 temporarily unavailable');
   });
 
+  it('promotes website versions only after embedding into the active collection', async () => {
+    const { documents, documentVersions, documentChunks, websites, websitePages } =
+      await import('@timeline/db');
+    const [website] = await db
+      .insert(websites)
+      .values({
+        teamId: TEAM_ID,
+        url: 'https://example.com/',
+        hostname: 'example.com',
+        subject: 'own_team',
+        createdBy: USER_ID,
+      })
+      .returning();
+    if (!website) throw new Error('Missing website fixture');
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        source: 'web',
+        visibility: 'team',
+        contentText: 'New website content',
+        sourceMetadata: {
+          websiteId: website.id,
+          pageUrl: website.url,
+          websiteContentHash: 'new-content',
+        },
+      })
+      .returning();
+    if (!event) throw new Error('Missing event fixture');
+    const [document] = await db
+      .insert(documents)
+      .values({
+        teamId: TEAM_ID,
+        fileKind: 'captured',
+        name: 'Website.md',
+        visibility: 'team',
+        sourceRawEventId: event.id,
+      })
+      .returning();
+    if (!document) throw new Error('Missing document fixture');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: document.id,
+        version: 1,
+        objectKey: 'website/page.md',
+        sourceEventId: event.id,
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!version) throw new Error('Missing version fixture');
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM_ID,
+        documentId: document.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'New website content',
+        tokenCount: 3,
+      })
+      .returning();
+    if (!chunk) throw new Error('Missing chunk fixture');
+    await db.insert(websitePages).values({
+      teamId: TEAM_ID,
+      websiteId: website.id,
+      url: website.url,
+      documentId: document.id,
+    });
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const io = {
+      getEnv: () =>
+        ({
+          OPENROUTER_API_KEY: 'test-key',
+          QDRANT_URL: 'http://qdrant.test',
+          QDRANT_COLLECTION: 'active',
+        }) as never,
+      embed: () =>
+        Promise.resolve({ vector: [1, 2, 3, 4], model: llm.TIMELINE_MODELS.embedding.id }),
+      getQdrantClient: () =>
+        ({
+          upsertVector,
+          deletePointsForSourceFromChunk: () => Promise.resolve(undefined),
+        }) as never,
+    };
+    await processEmbedJobForTests(
+      { db: db as never },
+      {
+        scope: 'doc_chunk',
+        teamId: TEAM_ID,
+        documentChunkId: chunk.id,
+        targetCollection: 'shadow',
+      },
+      io,
+    );
+    expect(upsertVector).toHaveBeenCalledTimes(1);
+    expect((await db.select().from(websitePages))[0]?.currentVersionId).toBeNull();
+    expect((await db.select().from(documentChunks))[0]?.websiteEmbeddedAt).toBeNull();
+    await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'doc_chunk', teamId: TEAM_ID, documentChunkId: chunk.id },
+      io,
+    );
+    expect((await db.select().from(websitePages))[0]?.currentVersionId).toBe(version.id);
+    expect((await db.select().from(documents))[0]?.currentVersionId).toBe(version.id);
+    expect((await db.select().from(documentVersions))[0]?.processingStatus).toBe('embedded');
+  });
+
   it('embeds rendered raw event text and upserts a stable Qdrant payload', async () => {
     const rawEventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
     await db.insert(rawEvents).values({
@@ -894,6 +1003,61 @@ describe('processEmbedJobForTests', () => {
       timelineAi: true,
       causeName: 'AI_APICallError',
       causeMessage: 'OpenRouter 503 temporarily unavailable',
+    });
+    const embedMany = vi
+      .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()
+      .mockRejectedValue(providerOutage);
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+        { attemptsMade: 5, maxAttempts: 6 },
+      ),
+    ).rejects.toThrow('llm.embedMany failed');
+
+    expect(embedMany).toHaveBeenCalledOnce();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('does not split upstream timed out failures on the final queue attempt', async () => {
+    const rawEventId = '18181818-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Final outage sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const providerOutage = Object.assign(new Error('llm.embedMany failed'), {
+      timelineAi: true,
+      causeName: 'AI_APICallError',
+      causeMessage: 'Worker upstream fetch timed out after 60000ms',
     });
     const embedMany = vi
       .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()

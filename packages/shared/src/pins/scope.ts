@@ -5,6 +5,7 @@ import {
   documents,
   entities,
   meetings,
+  pinTargetKind,
   savedMeetings,
   teamMembers,
   userPins,
@@ -12,7 +13,10 @@ import {
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
+import { documentVisibleToUser } from '#src/documents/visibility.js';
 import { childLogger } from '#src/logger.js';
+import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import {
   buildTimelineMoments,
   timelineMomentAnchorId,
@@ -23,15 +27,7 @@ import type { CalendarScope } from '#src/calendar/scope.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 import type { TimelineMomentEvent } from '#src/timeline-moments/index.js';
 
-export const PIN_TARGET_KINDS = [
-  'object',
-  'board',
-  'document',
-  'meeting',
-  'saved_meeting',
-  'calendar_event',
-  'timeline_moment',
-] as const;
+export const PIN_TARGET_KINDS = pinTargetKind.enumValues;
 
 export const pinTargetKindSchema = z.enum(PIN_TARGET_KINDS);
 export type PinTargetKind = (typeof PIN_TARGET_KINDS)[number];
@@ -189,111 +185,98 @@ export function createPinScope(deps: PinScopeDeps) {
     getTimezone,
   } = deps;
 
-  const documentVisibility = or(
-    eq(documents.visibility, 'team'),
-    and(eq(documents.visibility, 'private'), eq(documents.ownerUserId, scope.userId)),
-    and(
-      eq(documents.visibility, 'specific_users'),
-      sql`COALESCE(${scope.userId}::uuid = ANY(${documents.visibilityUserIds}), false)`,
-    ),
-  );
-  const meetingVisibility = sql`(
-    ${meetings.defaultVisibility} = 'team'
-    OR (${meetings.defaultVisibility} = 'private' AND ${meetings.createdByUserId} = ${scope.userId}::uuid)
-    OR (${meetings.defaultVisibility} = 'specific_users' AND COALESCE(${scope.userId}::uuid = ANY(${meetings.visibilityUserIds}), false))
-  )`;
-  const savedMeetingVisibility = sql`(
-    ${savedMeetings.defaultVisibility} = 'team'
-    OR (${savedMeetings.defaultVisibility} = 'private' AND ${savedMeetings.createdByUserId} = ${scope.userId}::uuid)
-    OR (${savedMeetings.defaultVisibility} = 'specific_users' AND COALESCE(${scope.userId}::uuid = ANY(${savedMeetings.visibilityUserIds}), false))
-  )`;
-  const calendarFullVisibility = sql`(
-    ${calendarEvents.visibility} = 'team'
-    OR ${calendarEvents.createdByUserId} = ${scope.userId}::uuid
-    OR (${calendarEvents.visibility} = 'specific_users' AND COALESCE(${scope.userId}::uuid = ANY(${calendarEvents.visibilityUserIds}), false))
-  )`;
+  const documentVisibility = documentVisibleToUser(scope.userId);
+  const meetingVisibility = meetingVisibleToUser(scope.userId);
+  const savedMeetingVisibility = savedMeetingVisibleToUser(scope.userId);
+  const calendarFullVisibility = calendarEventDetailsVisibleToUser(scope.userId);
 
   async function canonicalize(ref: PinTargetRef): Promise<PinTargetRef> {
-    assertRef(ref);
-    const normalized = normalizeRef(ref);
-    if (normalized.kind !== 'calendar_event') return normalized;
-    const event = await calendar.getCalendarEvent(normalized.key);
-    if (!event || event.redacted) throw new Error('Pinned item not available');
-    if (!event.recurringParentId) return normalized;
-    const parent = await calendar.getCalendarEvent(event.recurringParentId);
-    if (!parent || parent.redacted) throw new Error('Pinned item not available');
-    return { kind: 'calendar_event', key: parent.id };
+    const [canonical] = await canonicalizeMany([ref]);
+    if (!canonical) throw new Error('Pinned item not available');
+    return canonical;
   }
 
   async function canonicalizeMany(refs: PinTargetRef[]): Promise<(PinTargetRef | null)[]> {
-    const calendarKeys: string[] = [];
-    for (const ref of refs) {
+    const normalized = refs.map((ref) => {
       try {
         assertRef(ref);
-        if (ref.kind === 'calendar_event') calendarKeys.push(ref.key);
+        return normalizeRef(ref);
       } catch {
-        // Invalid references are represented as unavailable without leaking
-        // whether a similarly-shaped target exists.
-      }
-    }
-    if (calendarKeys.length === 0) {
-      return refs.map((ref) => {
-        try {
-          assertRef(ref);
-          return normalizeRef(ref);
-        } catch {
-          return null;
-        }
-      });
-    }
-    const eventRows = await db
-      .select({ id: calendarEvents.id, recurringParentId: calendarEvents.recurringParentId })
-      .from(calendarEvents)
-      .where(
-        and(
-          eq(calendarEvents.teamId, scope.teamId),
-          inArray(calendarEvents.id, unique(calendarKeys)),
-          isNull(calendarEvents.deletedAt),
-          calendarFullVisibility,
-        ),
-      );
-    const parentIds = unique(
-      eventRows.flatMap((row) => (row.recurringParentId ? [row.recurringParentId] : [])),
-    );
-    const visibleParentIds =
-      parentIds.length === 0
-        ? new Set<string>()
-        : new Set(
-            (
-              await db
-                .select({ id: calendarEvents.id })
-                .from(calendarEvents)
-                .where(
-                  and(
-                    eq(calendarEvents.teamId, scope.teamId),
-                    inArray(calendarEvents.id, parentIds),
-                    isNull(calendarEvents.deletedAt),
-                    calendarFullVisibility,
-                  ),
-                )
-            ).map((row) => row.id),
-          );
-    const byId = new Map(eventRows.map((row) => [row.id, row]));
-    return refs.map((ref) => {
-      try {
-        assertRef(ref);
-      } catch {
+        // Invalid references must not reveal whether a similarly-shaped target exists.
         return null;
       }
-      const normalized = normalizeRef(ref);
-      if (normalized.kind !== 'calendar_event') return normalized;
-      const row = byId.get(normalized.key);
-      if (!row) return null;
-      if (!row.recurringParentId) return normalized;
-      return visibleParentIds.has(row.recurringParentId)
-        ? { kind: 'calendar_event', key: row.recurringParentId }
-        : null;
     });
+    const calendarKeys = normalized.flatMap((ref) =>
+      ref?.kind === 'calendar_event' ? [ref.key] : [],
+    );
+    const series =
+      calendarKeys.length > 0
+        ? await calendar.resolveVisibleCalendarSeries(calendarKeys)
+        : new Map<string, string>();
+    const momentRefs = normalized.filter(
+      (ref): ref is PinTargetRef => ref?.kind === 'timeline_moment',
+    );
+    const plans = momentRefs.flatMap((ref) => {
+      const plan = timelineMomentLookupPlan(ref.key);
+      return plan ? [plan] : [];
+    });
+    const moments =
+      plans.length > 0
+        ? buildTimelineMoments(await listEventsForMomentLookups(plans), new Map(), {
+            timezone: await getTimezone(),
+          })
+        : [];
+    return normalized.map((ref) => {
+      if (ref?.kind === 'calendar_event') {
+        const key = series.get(ref.key);
+        return key ? { kind: 'calendar_event' as const, key } : null;
+      }
+      if (ref?.kind === 'timeline_moment') {
+        const moment =
+          moments.find((candidate) => candidate.id === ref.key) ??
+          moments.find((candidate) => candidate.legacyIds?.includes(ref.key));
+        return moment ? { kind: 'timeline_moment' as const, key: moment.id } : null;
+      }
+      return ref;
+    });
+  }
+
+  async function equivalentTargetKeysMany(refs: PinTargetRef[]): Promise<Map<string, string[]>> {
+    const plans = refs.flatMap((ref) =>
+      ref.kind === 'timeline_moment'
+        ? [timelineMomentLookupPlan(ref.key)].filter((plan) => plan !== null)
+        : [],
+    );
+    const moments =
+      plans.length > 0
+        ? buildTimelineMoments(await listEventsForMomentLookups(plans), new Map(), {
+            timezone: await getTimezone(),
+          })
+        : [];
+    // Resolve each old reference exactly as Home does. A split legacy group
+    // belongs to one current moment; it must not pin every resulting group.
+    const aliases = unique(moments.flatMap((moment) => moment.legacyIds ?? []));
+    const canonicalAliases = await canonicalizeMany(
+      aliases.map((key) => ({ kind: 'timeline_moment', key })),
+    );
+    const aliasTargets = new Map(aliases.map((id, index) => [id, canonicalAliases[index]?.key]));
+    return new Map(
+      refs.map((ref) => {
+        const moment =
+          ref.kind === 'timeline_moment' ? moments.find((item) => item.id === ref.key) : undefined;
+        return [
+          `${ref.kind}:${ref.key}`,
+          unique([
+            ref.key,
+            ...(moment?.legacyIds ?? []).filter((id) => aliasTargets.get(id) === ref.key),
+          ]),
+        ];
+      }),
+    );
+  }
+
+  async function equivalentStoredKeys(ref: PinTargetRef): Promise<string[]> {
+    return (await equivalentTargetKeysMany([ref])).get(`${ref.kind}:${ref.key}`) ?? [ref.key];
   }
 
   async function resolveRows(rows: PinRow[]): Promise<Map<string, PinnedItem>> {
@@ -307,221 +290,237 @@ export function createPinScope(deps: PinScopeDeps) {
       byKind.set(row.targetKind, current);
     }
 
-    const objectPins = byKind.get('object') ?? [];
-    if (objectPins.length > 0) {
-      const objectRows = await db
-        .select()
-        .from(entities)
-        .where(
-          and(
-            eq(entities.teamId, scope.teamId),
-            inArray(entities.id, unique(objectPins.map((pin) => pin.targetKey))),
-            isNull(entities.archivedAt),
-            isNull(entities.mergedIntoId),
-          ),
-        );
-      const byId = new Map(objectRows.map((row) => [row.id, row]));
-      for (const pin of objectPins) {
-        const row = byId.get(pin.targetKey);
-        if (!row) continue;
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: row.canonicalName,
-            subtitle: objectSubtitle(row),
-            href: `/app/objects/${row.id}`,
-            iconKind: row.type,
-            status: row.status,
-            timestamp: row.updatedAt.toISOString(),
-          }),
-        );
-      }
-    }
-
-    const boardPinRows = byKind.get('board') ?? [];
-    if (boardPinRows.length > 0) {
-      const rowsById = await db
-        .select()
-        .from(boards)
-        .where(
-          and(
-            eq(boards.teamId, scope.teamId),
-            inArray(boards.id, unique(boardPinRows.map((pin) => pin.targetKey))),
-            isNull(boards.archivedAt),
-          ),
-        );
-      const byId = new Map(rowsById.map((row) => [row.id, row]));
-      for (const pin of boardPinRows) {
-        const row = byId.get(pin.targetKey);
-        if (!row) continue;
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: row.name,
-            subtitle: row.purpose || 'Board',
-            href: `/app/boards/${row.id}`,
-            iconKind: 'board',
-            timestamp: row.updatedAt.toISOString(),
-          }),
-        );
-      }
-    }
-
-    const documentPinRows = byKind.get('document') ?? [];
-    if (documentPinRows.length > 0) {
-      const rowsById = await db
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.teamId, scope.teamId),
-            inArray(documents.id, unique(documentPinRows.map((pin) => pin.targetKey))),
-            isNull(documents.deletedAt),
-            documentVisibility,
-          ),
-        );
-      const byId = new Map(rowsById.map((row) => [row.id, row]));
-      for (const pin of documentPinRows) {
-        const row = byId.get(pin.targetKey);
-        if (!row) continue;
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: row.name,
-            subtitle: row.fileKind === 'captured' ? 'Captured file' : 'Document',
-            href: `/app/documents/${row.id}`,
-            iconKind: 'document',
-            timestamp: row.updatedAt.toISOString(),
-          }),
-        );
-      }
-    }
-
-    const meetingPinRows = byKind.get('meeting') ?? [];
-    if (meetingPinRows.length > 0) {
-      const rowsById = await db
-        .select()
-        .from(meetings)
-        .where(
-          and(
-            eq(meetings.teamId, scope.teamId),
-            inArray(meetings.id, unique(meetingPinRows.map((pin) => pin.targetKey))),
-            meetingVisibility,
-          ),
-        );
-      const byId = new Map(rowsById.map((row) => [row.id, row]));
-      for (const pin of meetingPinRows) {
-        const row = byId.get(pin.targetKey);
-        if (!row) continue;
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: row.title ?? 'Untitled meeting',
-            subtitle: `${row.platform} · ${row.status}`,
-            href: `/app/meetings/${row.id}`,
-            iconKind: 'meeting',
-            status: row.status,
-            timestamp: (row.startedAt ?? row.scheduledStartAt ?? row.createdAt).toISOString(),
-          }),
-        );
-      }
-    }
-
-    const savedPinRows = byKind.get('saved_meeting') ?? [];
-    if (savedPinRows.length > 0) {
-      const rowsById = await db
-        .select()
-        .from(savedMeetings)
-        .where(
-          and(
-            eq(savedMeetings.teamId, scope.teamId),
-            inArray(savedMeetings.id, unique(savedPinRows.map((pin) => pin.targetKey))),
-            isNull(savedMeetings.archivedAt),
-            savedMeetingVisibility,
-          ),
-        );
-      const byId = new Map(rowsById.map((row) => [row.id, row]));
-      for (const pin of savedPinRows) {
-        const row = byId.get(pin.targetKey);
-        if (!row) continue;
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: row.title,
-            subtitle: `${row.platform} · Saved meeting`,
-            href: `/app/meetings?tab=saved#saved-meeting-${row.id}`,
-            iconKind: 'saved_meeting',
-            timestamp: row.updatedAt.toISOString(),
-          }),
-        );
-      }
-    }
-
-    const calendarPinRows = byKind.get('calendar_event') ?? [];
-    if (calendarPinRows.length > 0) {
-      const keys = unique(calendarPinRows.map((pin) => pin.targetKey));
-      const eventRows = await db
-        .select()
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.teamId, scope.teamId),
-            or(inArray(calendarEvents.id, keys), inArray(calendarEvents.recurringParentId, keys)),
-            isNull(calendarEvents.deletedAt),
-            calendarFullVisibility,
-          ),
-        )
-        .orderBy(asc(calendarEvents.startAt));
-      const now = new Date();
-      for (const pin of calendarPinRows) {
-        const candidates = eventRows.filter(
-          (row) => row.id === pin.targetKey || row.recurringParentId === pin.targetKey,
-        );
-        const parent = candidates.find((row) => row.id === pin.targetKey);
-        const next = candidates.find(
-          (row) => row.recurringParentId === pin.targetKey && row.endAt >= now,
-        );
-        const row = next ?? parent ?? candidates.at(-1);
-        if (!row) continue;
-        const date = row.startAt.toISOString().slice(0, 10);
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: parent?.title ?? row.title,
-            subtitle: parent?.rrule ? 'Recurring calendar series' : 'Calendar event',
-            href: `/app/calendar?date=${date}&view=day&event=${row.id}`,
-            iconKind: 'calendar_event',
-            timestamp: row.startAt.toISOString(),
-          }),
-        );
-      }
-    }
-
-    const momentPinRows = byKind.get('timeline_moment') ?? [];
-    if (momentPinRows.length > 0) {
-      const timezone = await getTimezone();
-      const plans = momentPinRows.flatMap((pin) => {
-        const plan = timelineMomentLookupPlan(pin.targetKey);
-        return plan ? [plan] : [];
-      });
-      const events = await listEventsForMomentLookups(plans);
-      const momentsById = new Map(
-        buildTimelineMoments(events, new Map(), { timezone }).map((moment) => [moment.id, moment]),
-      );
-      for (const pin of momentPinRows) {
-        const moment = momentsById.get(pin.targetKey);
-        if (!moment) continue;
-        resolved.set(
-          pin.id,
-          itemFromRow(pin, {
-            title: moment.title,
-            subtitle: `${moment.sourceLabel} · ${moment.evidenceSummary.rawEventCount} signal${moment.evidenceSummary.rawEventCount === 1 ? '' : 's'}`,
-            href: `/app/timeline?moment=${encodeURIComponent(moment.id)}#${timelineMomentAnchorId(moment.id)}`,
-            iconKind: `timeline_${moment.kind}`,
-            timestamp: new Date(moment.rawEvents[0]?.occurredAt ?? 0).toISOString(),
-          }),
-        );
-      }
+    const targetResolvers = {
+      object: async (objectPins: PinRow[]) => {
+        if (objectPins.length > 0) {
+          const objectRows = await db
+            .select()
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, scope.teamId),
+                inArray(entities.id, unique(objectPins.map((pin) => pin.targetKey))),
+                isNull(entities.archivedAt),
+                isNull(entities.mergedIntoId),
+              ),
+            );
+          const byId = new Map(objectRows.map((row) => [row.id, row]));
+          for (const pin of objectPins) {
+            const row = byId.get(pin.targetKey);
+            if (!row) continue;
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: row.canonicalName,
+                subtitle: objectSubtitle(row),
+                href: `/app/objects/${row.id}`,
+                iconKind: row.type,
+                status: row.status,
+                timestamp: row.updatedAt.toISOString(),
+              }),
+            );
+          }
+        }
+      },
+      board: async (boardPinRows: PinRow[]) => {
+        if (boardPinRows.length > 0) {
+          const rowsById = await db
+            .select()
+            .from(boards)
+            .where(
+              and(
+                eq(boards.teamId, scope.teamId),
+                inArray(boards.id, unique(boardPinRows.map((pin) => pin.targetKey))),
+                isNull(boards.archivedAt),
+              ),
+            );
+          const byId = new Map(rowsById.map((row) => [row.id, row]));
+          for (const pin of boardPinRows) {
+            const row = byId.get(pin.targetKey);
+            if (!row) continue;
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: row.name,
+                subtitle: row.purpose || 'Board',
+                href: `/app/boards/${row.id}`,
+                iconKind: 'board',
+                timestamp: row.updatedAt.toISOString(),
+              }),
+            );
+          }
+        }
+      },
+      document: async (documentPinRows: PinRow[]) => {
+        if (documentPinRows.length > 0) {
+          const rowsById = await db
+            .select()
+            .from(documents)
+            .where(
+              and(
+                eq(documents.teamId, scope.teamId),
+                inArray(documents.id, unique(documentPinRows.map((pin) => pin.targetKey))),
+                isNull(documents.deletedAt),
+                documentVisibility,
+              ),
+            );
+          const byId = new Map(rowsById.map((row) => [row.id, row]));
+          for (const pin of documentPinRows) {
+            const row = byId.get(pin.targetKey);
+            if (!row) continue;
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: row.name,
+                subtitle: row.fileKind === 'captured' ? 'Captured file' : 'Document',
+                href: `/app/documents/${row.id}`,
+                iconKind: 'document',
+                timestamp: row.updatedAt.toISOString(),
+              }),
+            );
+          }
+        }
+      },
+      meeting: async (meetingPinRows: PinRow[]) => {
+        if (meetingPinRows.length > 0) {
+          const rowsById = await db
+            .select()
+            .from(meetings)
+            .where(
+              and(
+                eq(meetings.teamId, scope.teamId),
+                inArray(meetings.id, unique(meetingPinRows.map((pin) => pin.targetKey))),
+                meetingVisibility,
+              ),
+            );
+          const byId = new Map(rowsById.map((row) => [row.id, row]));
+          for (const pin of meetingPinRows) {
+            const row = byId.get(pin.targetKey);
+            if (!row) continue;
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: row.title ?? 'Untitled meeting',
+                subtitle: `${row.platform} · ${row.status}`,
+                href: `/app/meetings/${row.id}`,
+                iconKind: 'meeting',
+                status: row.status,
+                timestamp: (row.startedAt ?? row.scheduledStartAt ?? row.createdAt).toISOString(),
+              }),
+            );
+          }
+        }
+      },
+      saved_meeting: async (savedPinRows: PinRow[]) => {
+        if (savedPinRows.length > 0) {
+          const rowsById = await db
+            .select()
+            .from(savedMeetings)
+            .where(
+              and(
+                eq(savedMeetings.teamId, scope.teamId),
+                inArray(savedMeetings.id, unique(savedPinRows.map((pin) => pin.targetKey))),
+                isNull(savedMeetings.archivedAt),
+                savedMeetingVisibility,
+              ),
+            );
+          const byId = new Map(rowsById.map((row) => [row.id, row]));
+          for (const pin of savedPinRows) {
+            const row = byId.get(pin.targetKey);
+            if (!row) continue;
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: row.title,
+                subtitle: `${row.platform} · Saved meeting`,
+                href: `/app/meetings?tab=saved#saved-meeting-${row.id}`,
+                iconKind: 'saved_meeting',
+                timestamp: row.updatedAt.toISOString(),
+              }),
+            );
+          }
+        }
+      },
+      calendar_event: async (calendarPinRows: PinRow[]) => {
+        if (calendarPinRows.length > 0) {
+          const requestedKeys = unique(calendarPinRows.map((pin) => pin.targetKey));
+          const visibleSeries = await calendar.resolveVisibleCalendarSeries(requestedKeys);
+          const keys = requestedKeys.filter((key) => visibleSeries.has(key));
+          if (keys.length === 0) return;
+          const eventRows = await db
+            .select()
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.teamId, scope.teamId),
+                or(
+                  inArray(calendarEvents.id, keys),
+                  inArray(calendarEvents.recurringParentId, keys),
+                ),
+                isNull(calendarEvents.deletedAt),
+                calendarFullVisibility,
+              ),
+            )
+            .orderBy(asc(calendarEvents.startAt));
+          const now = new Date();
+          for (const pin of calendarPinRows) {
+            const candidates = eventRows.filter(
+              (row) => row.id === pin.targetKey || row.recurringParentId === pin.targetKey,
+            );
+            const parent = candidates.find((row) => row.id === pin.targetKey);
+            const next = candidates.find(
+              (row) => row.recurringParentId === pin.targetKey && row.endAt >= now,
+            );
+            const row = next ?? parent ?? candidates.at(-1);
+            if (!row) continue;
+            const date = row.startAt.toISOString().slice(0, 10);
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: parent?.title ?? row.title,
+                subtitle: parent?.rrule ? 'Recurring calendar series' : 'Calendar event',
+                href: `/app/calendar?date=${date}&view=day&event=${row.id}`,
+                iconKind: 'calendar_event',
+                timestamp: row.startAt.toISOString(),
+              }),
+            );
+          }
+        }
+      },
+      timeline_moment: async (momentPinRows: PinRow[]) => {
+        if (momentPinRows.length > 0) {
+          const timezone = await getTimezone();
+          const plans = momentPinRows.flatMap((pin) => {
+            const plan = timelineMomentLookupPlan(pin.targetKey);
+            return plan ? [plan] : [];
+          });
+          const events = await listEventsForMomentLookups(plans);
+          const moments = buildTimelineMoments(events, new Map(), { timezone });
+          const momentsById = new Map(moments.map((moment) => [moment.id, moment]));
+          for (const moment of moments) {
+            for (const legacyId of moment.legacyIds ?? []) {
+              if (!momentsById.has(legacyId)) momentsById.set(legacyId, moment);
+            }
+          }
+          for (const pin of momentPinRows) {
+            const moment = momentsById.get(pin.targetKey);
+            if (!moment) continue;
+            resolved.set(
+              pin.id,
+              itemFromRow(pin, {
+                title: moment.title,
+                subtitle: `${moment.sourceLabel} · ${moment.evidenceSummary.rawEventCount} signal${moment.evidenceSummary.rawEventCount === 1 ? '' : 's'}`,
+                href: `/app/timeline?moment=${encodeURIComponent(moment.id)}#${timelineMomentAnchorId(moment.id)}`,
+                iconKind: `timeline_${moment.kind}`,
+                timestamp: new Date(moment.rawEvents[0]?.occurredAt ?? 0).toISOString(),
+              }),
+            );
+          }
+        }
+      },
+    } satisfies Record<PinTargetKind, (pins: PinRow[]) => Promise<void>>;
+    for (const kind of PIN_TARGET_KINDS) {
+      await targetResolvers[kind](byKind.get(kind) ?? []);
     }
 
     const hiddenByKind: Partial<Record<PinTargetKind, number>> = {};
@@ -580,6 +579,7 @@ export function createPinScope(deps: PinScopeDeps) {
     const canonical = await canonicalize(ref);
     const target = await resolveTarget(canonical);
     if (!target) throw new Error('Pinned item not available');
+    const keys = await equivalentStoredKeys(canonical);
     const row = await db.transaction(async (tx) => {
       await lockUserPins(tx, scope);
       const [existing] = await tx
@@ -590,7 +590,7 @@ export function createPinScope(deps: PinScopeDeps) {
             eq(userPins.teamId, scope.teamId),
             eq(userPins.userId, scope.userId),
             eq(userPins.targetKind, canonical.kind),
-            eq(userPins.targetKey, canonical.key),
+            inArray(userPins.targetKey, keys),
           ),
         )
         .limit(1);
@@ -640,6 +640,7 @@ export function createPinScope(deps: PinScopeDeps) {
       assertRef(ref);
       canonical = normalizeRef(ref);
     }
+    const keys = await equivalentStoredKeys(canonical);
     const rows = await db
       .delete(userPins)
       .where(
@@ -647,7 +648,7 @@ export function createPinScope(deps: PinScopeDeps) {
           eq(userPins.teamId, scope.teamId),
           eq(userPins.userId, scope.userId),
           eq(userPins.targetKind, canonical.kind),
-          eq(userPins.targetKey, canonical.key),
+          inArray(userPins.targetKey, keys),
         ),
       )
       .returning({ id: userPins.id });
@@ -662,6 +663,7 @@ export function createPinScope(deps: PinScopeDeps) {
     } catch {
       return false;
     }
+    const keys = await equivalentStoredKeys(canonical);
     const [row] = await db
       .select({ id: userPins.id })
       .from(userPins)
@@ -670,7 +672,7 @@ export function createPinScope(deps: PinScopeDeps) {
           eq(userPins.teamId, scope.teamId),
           eq(userPins.userId, scope.userId),
           eq(userPins.targetKind, canonical.kind),
-          eq(userPins.targetKey, canonical.key),
+          inArray(userPins.targetKey, keys),
         ),
       )
       .limit(1);
@@ -682,8 +684,12 @@ export function createPinScope(deps: PinScopeDeps) {
     const canonical = await canonicalizeMany(refs);
     const valid = canonical.filter((ref): ref is PinTargetRef => ref !== null);
     if (valid.length === 0) return {};
+    const aliases = await equivalentTargetKeysMany(valid);
     const conditions = valid.map((ref) =>
-      and(eq(userPins.targetKind, ref.kind), eq(userPins.targetKey, ref.key)),
+      and(
+        eq(userPins.targetKind, ref.kind),
+        inArray(userPins.targetKey, aliases.get(`${ref.kind}:${ref.key}`) ?? [ref.key]),
+      ),
     );
     const rows = await db
       .select({ kind: userPins.targetKind, key: userPins.targetKey })
@@ -701,7 +707,11 @@ export function createPinScope(deps: PinScopeDeps) {
         const normalized = canonical[index];
         return [
           `${ref.kind}:${ref.key}`,
-          normalized ? pinned.has(`${normalized.kind}:${normalized.key}`) : false,
+          normalized
+            ? (aliases.get(`${normalized.kind}:${normalized.key}`) ?? [normalized.key]).some(
+                (key) => pinned.has(`${normalized.kind}:${key}`),
+              )
+            : false,
         ];
       }),
     );
@@ -899,7 +909,7 @@ export function createPinScope(deps: PinScopeDeps) {
         if (!plan) continue;
         const events = await listTeamEventsForMomentLookup(plan);
         const stillExists = buildTimelineMoments(events, new Map(), { timezone }).some(
-          (moment) => moment.id === row.key,
+          (moment) => moment.id === row.key || Boolean(moment.legacyIds?.includes(row.key)),
         );
         if (!stillExists) {
           deleted += await deleteForTarget({ kind: 'timeline_moment', key: row.key });

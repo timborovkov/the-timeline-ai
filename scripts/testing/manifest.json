@@ -1,4 +1,43 @@
 {
+  "packages/shared/src/agent/workspace-tools.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/objects/chat-turns.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/lib/chat-session.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/kanban-keyboard.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/boardQualification.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/boardQualification-discovery.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/app/workspace-suspended/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/agent-reporting-settings.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/boards/qualification.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/web/src/components/boards/board-qualification-fields.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/team-deletion-requested/page.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/agent/freshness.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/retrieval/ranking.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/(landing)/page.test.tsx": {
     "group": "dom"
   },
@@ -33,6 +72,9 @@
     "group": "unit"
   },
   "apps/web/src/app/actions/events.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/first-run.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/actions/invites.test.ts": {
@@ -131,6 +173,9 @@
   "apps/web/src/app/api/integrations/manage/[id]/resume/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/integrations/manage/[id]/selections/[selectionId]/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/integrations/manage/[id]/selections/route.test.ts": {
     "group": "unit"
   },
@@ -156,6 +201,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/onboarding/checklist/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/onboarding/first-run/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/public/runtime/route.test.ts": {
@@ -309,6 +357,9 @@
     "group": "dom"
   },
   "apps/web/src/app/app/chat/loading.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/chat/page.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/app/chat/route-states.test.tsx": {
@@ -758,6 +809,9 @@
   "apps/web/src/components/global-search-palette.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/google-button.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/help/support-form.test.tsx": {
     "group": "dom"
   },
@@ -807,6 +861,9 @@
     "group": "dom"
   },
   "apps/web/src/components/integrations/catalog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/google-drive-connect-disclosure.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/integrations/connected.test.tsx": {
@@ -875,6 +932,9 @@
   "apps/web/src/components/marketing/editorial/public-documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/first-run-path.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/home/timeline-flow-diagram.test.tsx": {
     "group": "dom"
   },
@@ -902,9 +962,6 @@
   "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
-    "group": "unit"
-  },
   "apps/web/src/components/marketing/integrations/works-with-content.test.ts": {
     "group": "unit"
   },
@@ -918,7 +975,7 @@
     "group": "dom"
   },
   "apps/web/src/components/marketing/product-screenshot.test.tsx": {
-    "group": "unit"
+    "group": "dom"
   },
   "apps/web/src/components/marketing/screenshot-inventory.test.ts": {
     "group": "unit"
@@ -938,9 +995,6 @@
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
-    "group": "unit"
-  },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
     "group": "dom"
   },
@@ -951,6 +1005,9 @@
     "group": "dom"
   },
   "apps/web/src/components/mobile-nav.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/native-provider-connect-button.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/nav-items.test.ts": {
@@ -984,6 +1041,27 @@
     "group": "dom"
   },
   "apps/web/src/components/onboarding-checklist.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/first-run-home-capture.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/getting-started-strip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/go-live-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/processing-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/welcome-screen.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/page-header.test.tsx": {
@@ -1076,6 +1154,9 @@
   "apps/web/src/components/team-setup-checklist-chip.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/team-support-metadata.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/team-switcher.test.tsx": {
     "group": "dom"
   },
@@ -1124,6 +1205,9 @@
   "apps/web/src/components/work-filter-bar.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/work-navigation.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/work-subnav.test.tsx": {
     "group": "dom"
   },
@@ -1143,7 +1227,8 @@
     "group": "unit"
   },
   "apps/web/src/lib/analytics.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "apps/web/src/lib/app-analytics-routes.test.ts": {
     "group": "unit"
@@ -1164,6 +1249,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/auth.config.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/auth.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/board-add-item-candidates.test.ts": {
@@ -1199,6 +1287,9 @@
   "apps/web/src/lib/connections.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/default-team.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/display-dates.test.ts": {
     "group": "unit"
   },
@@ -1211,11 +1302,17 @@
   "apps/web/src/lib/email-verification.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/first-run-status.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/floating-chat-session-storage.test.ts": {
     "group": "dom"
   },
   "apps/web/src/lib/form-action-toast.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/lib/google-drive-limited-use.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/hub-status.test.ts": {
     "group": "unit"
@@ -1227,6 +1324,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/kanban-collision.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/last-login-method.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/legal-publication.test.ts": {
@@ -1247,6 +1347,9 @@
   "apps/web/src/lib/multipart-request.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/mutation-surfaces.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/notification-href.test.ts": {
     "group": "unit"
   },
@@ -1263,6 +1366,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/object-title.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/oauth-sign-in.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/onboarding-checklist.test.ts": {
@@ -1296,7 +1402,8 @@
     "group": "dom"
   },
   "apps/web/src/lib/public-browser-analytics.test.ts": {
-    "group": "dom"
+    "group": "dom",
+    "isolation": "registration"
   },
   "apps/web/src/lib/public-error.test.ts": {
     "group": "unit"
@@ -1445,7 +1552,13 @@
   "apps/worker/src/document-ingestion/full-worker-extract-gate.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/document-ingestion/pdf-extraction.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/document-ingestion/types.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/job-delay.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/monitoring.test.ts": {
@@ -1472,6 +1585,9 @@
   "apps/worker/src/scripts/reconciliation-production-sampling.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/scripts/reembed-pages.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/scripts/resuggest.test.ts": {
     "group": "unit"
   },
@@ -1494,6 +1610,12 @@
     "group": "unit"
   },
   "apps/worker/src/transcription-eval/openrouter.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/platform-worker.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/worker-lifecycle.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/workers/calendarRecurrence.test.ts": {
@@ -1557,7 +1679,9 @@
     "group": "live"
   },
   "apps/worker/src/workers/suggestions.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "apps/worker/src/workers/taskCategory.test.ts": {
     "group": "unit"
@@ -1577,11 +1701,15 @@
   "apps/worker/src/workers/webhookDelivery.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/workers/websiteScan.test.ts": {
+    "group": "unit"
+  },
   "packages/db/src/chat-message-sequence-migration.test.ts": {
     "group": "unit"
   },
   "packages/db/src/client.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/db/src/journal-order.test.ts": {
     "group": "integration"
@@ -1591,6 +1719,9 @@
   },
   "packages/shared/src/agent-provisioning/index.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/agent-provisioning/workspace.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/agent/ask.test.ts": {
     "group": "integration"
@@ -1623,16 +1754,20 @@
     "group": "unit"
   },
   "packages/shared/src/agent/tools.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/analytics/events.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/analytics/posthog-node-transport.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/analytics/posthog-node.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/app-guide.test.ts": {
     "group": "unit"
@@ -1707,7 +1842,9 @@
     "group": "integration"
   },
   "packages/shared/src/billing/scope.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/billing/status.test.ts": {
     "group": "unit"
@@ -1875,6 +2012,41 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/github.test.ts": {
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
+  },
+  "packages/shared/src/integrations/google-drive-capture.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-comments.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-diff.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-document.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-evidence.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-oauth-revoke.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-project-signals.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-spreadsheet.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-team-isolation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/google-drive-revisit.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/google-drive.test.ts": {
@@ -1884,7 +2056,9 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/monday.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/integrations/providers/sentry.test.ts": {
     "group": "unit"
@@ -1953,7 +2127,9 @@
     "group": "unit"
   },
   "packages/shared/src/mcp-server/handler.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/mcp-server/oauth.test.ts": {
     "group": "integration"
@@ -2000,6 +2176,9 @@
   "packages/shared/src/messaging/destinations.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/messaging/digest-delivery.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/messaging/digest-format.test.ts": {
     "group": "unit"
   },
@@ -2034,7 +2213,9 @@
     "group": "unit"
   },
   "packages/shared/src/objects/index.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/objects/mentions.test.ts": {
     "group": "unit"
@@ -2045,8 +2226,17 @@
   "packages/shared/src/objects/summary-evals.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/onboarding/first-run.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/onboarding/index.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/onboarding/website-scan-job.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/onboarding/website-scan.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/pagination.test.ts": {
     "group": "unit"
@@ -2076,7 +2266,8 @@
     "group": "unit"
   },
   "packages/shared/src/queue/queues.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/rate-limit/token-bucket.test.ts": {
     "group": "unit"
@@ -2123,8 +2314,12 @@
   "packages/shared/src/reconciliation/stable-json.test.ts": {
     "group": "unit"
   },
-  "packages/shared/src/s3/client.test.ts": {
+  "packages/shared/src/redis/connection.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/s3/client.test.ts": {
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/s3/objects.test.ts": {
     "group": "unit"
@@ -2138,14 +2333,22 @@
   "packages/shared/src/slack/dispatcher.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/slack/outbound.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/slack/security.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/acceptance-transaction.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/suggestions/hub-context.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/suggestions/index.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/suggestions/linked-hubs.test.ts": {
     "group": "integration"
@@ -2190,10 +2393,15 @@
     "group": "integration"
   },
   "packages/shared/src/team-scope.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/telegram/api.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/telegram/chat-migration.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/telegram/commands.test.ts": {
     "group": "unit"
@@ -2203,6 +2411,9 @@
   },
   "packages/shared/src/telegram/dispatcher.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/telegram/link-token.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/telegram/scope.test.ts": {
     "group": "integration"
@@ -2220,7 +2431,8 @@
     "group": "unit"
   },
   "packages/test-support/runtime.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "scripts/demo-fixture.test.ts": {
     "group": "script"
@@ -2230,5 +2442,96 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "packages/shared/src/integrations/drive-extract-lifecycle.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/resource-access.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/onboarding/website-source-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/policy.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/scope.test.ts": {
+    "group": "db"
+  },
+  "apps/web/src/app/api/websites/route.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/scheduler.test.ts": {
+    "group": "db"
+  },
+  "apps/web/src/app/app/connections/websites/website-manager.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/websites/bot-command.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/runtime.test.ts": {
+    "group": "db"
+  },
+  "packages/shared/src/team-lifecycle/lifecycle.test.ts": {
+    "group": "integration",
+    "isolation": "registration"
+  },
+  "packages/shared/src/suggestions/identity-resolution.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/engine-correctness.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/identity-resolution.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/scripts/reset-objects.integration.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/workers/engine.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/task-categories/experiment-report.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/evals/benchmark.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/failure.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/evals/agent-harness.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/diagnostics/scope.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/diagnostic-report-form.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/evaluation-tracing/scope.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/evaluation-tracing-settings.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/workspace-sharing-status.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/evals/suggestion-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/evals/suggestion-harness.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/evals/communication-harness.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/evals/communication-report.test.ts": {
+    "group": "unit"
   }
 }

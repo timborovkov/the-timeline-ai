@@ -4,6 +4,10 @@ function payloadObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function payloadStringIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+}
+
 interface SuggestionTargetItem {
   targetId: string | null;
   targetKind: string;
@@ -41,6 +45,11 @@ export function suggestionTargetsObject(
 ): boolean {
   if (item.targetId === objectId) return true;
   const payload = payloadObject(item.proposedPayload);
+  if (item.targetKind === 'object_merge') {
+    return (
+      payload.survivorId === objectId || payloadStringIds(payload.objectIds).includes(objectId)
+    );
+  }
   if (item.targetKind === 'object_relationship') {
     return (
       payload.fromEntityId === objectId ||

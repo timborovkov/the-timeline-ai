@@ -5,19 +5,23 @@ import {
   auditLog,
   documentVersions,
   rawEvents,
+  websiteRuns,
   platformAdminAudit,
   platformImpersonationSessions,
   teamBillingAccounts,
   users,
+  teams,
   type Db,
 } from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql, type SQLWrapper } from 'drizzle-orm';
 
 import {
   PlatformAccessError,
   recordPlatformAudit,
   resolveImpersonation,
 } from '#src/platform-admin/index.js';
+
+import type { OperatorCapability, OperatorScopePolicy } from '#src/platform-admin/capabilities.js';
 
 export interface OperatorContext {
   actorUserId: string;
@@ -42,13 +46,59 @@ export function isInactiveWorkspaceSecurityState(state: string | null | undefine
   return state === 'suspended' || state === 'terminated';
 }
 
+/** Shared admission predicate for global scans; apply before pagination/limits. */
+export function activeWorkspaceCondition(teamId: SQLWrapper) {
+  return sql`exists (
+    select 1 from teams as active_workspace
+    where active_workspace.id = ${teamId}
+      and active_workspace.disabled_at is null
+      and active_workspace.deletion_started_at is null
+      and active_workspace.deleted_at is null
+      and not exists (
+        select 1 from team_billing_accounts as inactive_account
+        where inactive_account.team_id = active_workspace.id
+          and inactive_account.security_state in ('suspended', 'terminated')
+      )
+  )`;
+}
+
+export class InactiveWorkspaceError extends PlatformAccessError {}
+
+/** Recognize only lifecycle denials, including a Drizzle-wrapped trigger error. */
+export function isInactiveWorkspaceError(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  while (error && typeof error === 'object' && !seen.has(error)) {
+    seen.add(error);
+    if (error instanceof InactiveWorkspaceError) return true;
+    if (
+      'code' in error &&
+      error.code === '42501' &&
+      'message' in error &&
+      error.message === 'Workspace is disabled'
+    )
+      return true;
+    error = 'cause' in error ? error.cause : undefined;
+  }
+  return false;
+}
+
 export async function assertActivePrincipal(db: Db, teamId: string, userId?: string) {
+  const [team] = await db
+    .select({
+      disabledAt: teams.disabledAt,
+      deleting: teams.deletionStartedAt,
+      deletedAt: teams.deletedAt,
+    })
+    .from(teams)
+    .where(eq(teams.id, teamId));
+  if (!team || team.disabledAt || team.deleting || team.deletedAt)
+    throw new InactiveWorkspaceError('Workspace is suspended (disabled)');
   const [account] = await db
     .select({ state: teamBillingAccounts.securityState })
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, teamId));
   if (isInactiveWorkspaceSecurityState(account?.state))
-    throw new PlatformAccessError('Workspace is suspended');
+    throw new InactiveWorkspaceError('Workspace is suspended');
   if (userId) {
     const [user] = await db
       .select({ suspendedAt: users.suspendedAt })
@@ -66,7 +116,14 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
     )
       throw new PlatformAccessError('Impersonation is restricted to the selected member and team');
     // Read-only suspended inspection is gated separately at the operation boundary.
-    if (context.readOnly) return;
+    if (context.readOnly) {
+      const [team] = await db
+        .select({ deleting: teams.deletionStartedAt })
+        .from(teams)
+        .where(eq(teams.id, teamId));
+      if (!team || team.deleting) throw new PlatformAccessError('Workspace deletion has started');
+      return;
+    }
   }
   if (!context && maintenanceStorage.getStore()) return;
   const admitted = admissionStorage.getStore();
@@ -79,43 +136,86 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
   // again (which deadlocks a single-connection transaction).
   await assertActivePrincipal(db, teamId, userId);
 }
-const READ_OPERATION =
-  /^(get|list|read|search|count|find|resolve|is|has|require|can|preview|summarizeVisibility)/;
-// Read helpers without a conventional read prefix must be reviewed by full scope path.
-const ADDITIONAL_READ_OPERATIONS = new Set(['timeline.team', 'objects.unreadNotificationCount']);
 const WRAPPED_OPERATOR_METHOD = Symbol('timeline.guardOperatorWrapped');
 const wrappedOperatorScopes = new WeakSet();
+const SKIP_NESTED_SCOPE_KEYS = new Set(['postCommitDb', 'postCommitEffects', 'teamId', 'userId']);
+
+function isPlainScopeRecord(value: object): boolean {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isDatabaseHandle(value: object): boolean {
+  const record = value as { select?: unknown; transaction?: unknown };
+  return typeof record.select === 'function' && typeof record.transaction === 'function';
+}
 
 export function guardOperatorScope<T extends object>(
   db: Db,
   teamId: string,
   userId: string,
   scope: T,
+  capabilities: OperatorScopePolicy<NoInfer<T>>,
   prefix = '',
   system = false,
 ): T {
+  validateOperatorCapabilities(scope, capabilities, prefix);
+  return wrapOperatorScope(db, teamId, userId, scope, capabilities, prefix, system);
+}
+
+function validateOperatorCapabilities(
+  scope: object,
+  capabilities: Readonly<Record<string, OperatorCapability>>,
+  prefix: string,
+): void {
+  for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
+    const value: unknown = Reflect.get(scope, key);
+    const operation = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === 'function' && !capabilities[operation]) {
+      throw new PlatformAccessError(`Missing operator capability for ${operation}`);
+    }
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      isPlainScopeRecord(value) &&
+      !isDatabaseHandle(value)
+    ) {
+      validateOperatorCapabilities(value, capabilities, operation);
+    }
+  }
+}
+
+function wrapOperatorScope<T extends object>(
+  db: Db,
+  teamId: string,
+  userId: string,
+  scope: T,
+  capabilities: Readonly<Record<string, OperatorCapability>>,
+  prefix: string,
+  system: boolean,
+): T {
   // Wrap own methods in place and return the same plain object. A Proxy here
   // would hide replacements from Bun's spyOn and from helpers that close over
-  // the original nested namespace.
+  // the original nested namespace. Never wrap Drizzle handles or other class
+  // instances: replacing `db.select` with a guard that itself queries `db`
+  // recurses until the process hangs.
   if (wrappedOperatorScopes.has(scope)) return scope;
   wrappedOperatorScopes.add(scope);
   for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
     const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Scope namespaces are plain objects. Class instances (Drizzle clients,
-      // dates, query builders) must stay untouched so wrappers do not turn
-      // synchronous builders into hanging async functions.
-      if (
-        Object.getPrototypeOf(value) === Object.prototype ||
-        Object.getPrototypeOf(value) === null
-      ) {
-        guardOperatorScope(db, teamId, userId, value, operation, system);
-      }
+      if (isPlainScopeRecord(value) && !isDatabaseHandle(value))
+        wrapOperatorScope(db, teamId, userId, value, capabilities, operation, system);
       continue;
     }
     if (typeof value !== 'function') continue;
     if (Reflect.get(value, WRAPPED_OPERATOR_METHOD) === true) continue;
+    const capability = capabilities[operation];
+    if (!capability) throw new PlatformAccessError(`Missing operator capability for ${operation}`);
     const original = value;
     Reflect.set(
       scope,
@@ -125,13 +225,9 @@ export function guardOperatorScope<T extends object>(
           const context = await operatorContext();
           if (context) {
             await guardTeamAccess(db, teamId, userId, system);
-            if (
-              context.readOnly &&
-              !READ_OPERATION.test(key) &&
-              !ADDITIONAL_READ_OPERATIONS.has(operation)
-            )
+            if (context.readOnly && !capability.readOnly)
               throw new PlatformAccessError('Suspended inspection is read-only');
-            if (/^(billingOperator|mcpOAuth)\./.test(operation))
+            if (!capability.impersonation)
               throw new PlatformAccessError(
                 'Use your administrator identity for account management',
               );
@@ -145,14 +241,7 @@ export function guardOperatorScope<T extends object>(
           }
           // Only internal system scopes can reconcile billing or prune expired data while
           // suspended. Never grant a browser or an impersonated job this exception.
-          if (
-            !context &&
-            system &&
-            (operation.startsWith('billing.') ||
-              operation.startsWith('billingOperator.') ||
-              operation === 'mcpOAuth.pruneExpiredCredentials' ||
-              operation === 'pins.pruneDeletedTimelineMomentPins')
-          )
+          if (!context && system && capability.maintenance)
             return maintenanceStorage.run(
               true,
               () => Reflect.apply(original, scope, args) as unknown,
@@ -193,8 +282,11 @@ export async function runGuardedJob<T>(
     userId?: string;
     requestedByUserId?: string;
     documentVersionId?: string;
+    scanId?: string;
     platformOperatorSessionId?: string;
   };
+  if (payload.teamId && /^[0-9a-f-]{36}$/i.test(payload.teamId))
+    await assertActivePrincipal(db, payload.teamId);
   // Recovery may reconstruct an extraction job without queue attribution. Resolve
   // its immutable upload event before choosing the effective execution identity.
   if (payload.documentVersionId && payload.teamId) {
@@ -216,6 +308,33 @@ export async function runGuardedJob<T>(
       payload.platformOperatorSessionId = durableSession;
     }
     if (!payload.userId && version?.userId) payload.userId = version.userId;
+  }
+  // Website admission outlives queue submission. Recover the original session even
+  // when the durable outbox or an idempotent client reconstructs an untagged job.
+  if (payload.scanId && payload.teamId) {
+    const [run] = await db
+      .select({
+        sessionId: websiteRuns.platformOperatorSessionId,
+        requestedBy: websiteRuns.requestedBy,
+      })
+      .from(websiteRuns)
+      .where(and(eq(websiteRuns.teamId, payload.teamId), eq(websiteRuns.id, payload.scanId)));
+    if (run) {
+      if (
+        (payload.userId && payload.userId !== run.requestedBy) ||
+        (payload.requestedByUserId && payload.requestedByUserId !== run.requestedBy)
+      )
+        throw new PlatformAccessError('Website job attribution does not match its admission');
+      if (run.sessionId) {
+        if (
+          payload.platformOperatorSessionId &&
+          payload.platformOperatorSessionId !== run.sessionId
+        )
+          throw new PlatformAccessError('Website job attribution does not match its admission');
+        payload.platformOperatorSessionId = run.sessionId;
+      }
+      payload.userId = run.requestedBy;
+    }
   }
   const initiatingUser = payload.userId ?? payload.requestedByUserId;
   if (payload.teamId && /^[0-9a-f-]{36}$/i.test(payload.teamId))

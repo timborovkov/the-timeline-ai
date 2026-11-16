@@ -233,7 +233,7 @@ function AddCustomMcpServerForm({
   }
 
   return (
-    <div className="space-y-3 border-y border-border py-4">
+    <div className="space-y-3 py-4">
       <h3 className="text-sm font-medium text-fg">Add MCP server</h3>
       <div className="space-y-3">
         <form ref={formRef} className="space-y-3" onSubmit={(event) => void submit(event)}>
@@ -363,18 +363,20 @@ export function AddCustomMcpServerLauncher({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <>
-      <Button
-        size="sm"
-        variant={open ? 'ghost' : variant}
-        onClick={() => {
-          setOpen((v) => !v);
-        }}
-      >
-        {open ? 'Cancel' : label}
-      </Button>
+    <div className="min-w-0 w-full space-y-3">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant={open ? 'ghost' : variant}
+          onClick={() => {
+            setOpen((v) => !v);
+          }}
+        >
+          {open ? 'Cancel' : label}
+        </Button>
+      </div>
       {open ? (
-        <div className="col-span-full mt-2 w-full">
+        <div className="min-w-0 w-full">
           <AddCustomMcpServerForm
             ownership={ownership}
             onDone={() => {
@@ -386,7 +388,7 @@ export function AddCustomMcpServerLauncher({
           />
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -528,7 +530,7 @@ export function McpServersUi({
       ) : (
         <ul
           aria-label={isPersonalServer ? 'Personal MCP servers' : 'MCP servers'}
-          className="divide-y divide-border border-y border-border"
+          className="divide-y divide-border"
         >
           {servers.map((s) => {
             const mutation = rowMutations[s.id] ?? { busy: null };

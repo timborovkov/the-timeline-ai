@@ -1,7 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { defaultDigestWindow, isDigestWindowExpired } from '#src/messaging/digest.js';
+import { defaultDigestWindow, isDigestWindowExpired } from '#src/messaging/digest-window.js';
 describe('daily digest defaults', () => {
   it('uses the most recent configured-hour boundary with a 25h lookback', () => {
     expect(defaultDigestWindow(new Date('2026-06-14T13:00:00Z'))).toEqual({

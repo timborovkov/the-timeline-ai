@@ -94,6 +94,9 @@ describe('PublicAnalyticsBoundary', () => {
 
     const bannerHeading = await screen.findByRole('heading', { name: 'Optional public analytics' });
     const banner = bannerHeading.closest('aside');
+    expect(banner?.hasAttribute('data-analytics-choice-banner')).toBe(true);
+    expect(banner?.className).toContain('sm:max-w-sm');
+    expect(banner?.className).toContain('sm:right-4');
     expect(banner?.textContent).toContain('visits and selected actions on public pages');
     expect(banner?.textContent).not.toContain('PostHog');
     expect(screen.getByRole('button', { name: 'Reject' })).not.toBeNull();

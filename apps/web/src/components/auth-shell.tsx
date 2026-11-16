@@ -55,7 +55,7 @@ export function AuthShell({
         {secondaryHref && secondaryLabel ? (
           <p className="mt-6 text-sm text-fg-muted">
             {secondaryPrefix ? `${secondaryPrefix} ` : null}
-            <Link href={secondaryHref} className="text-primary hover:underline">
+            <Link href={secondaryHref} className="text-primary underline underline-offset-4">
               {secondaryLabel}
             </Link>
             .

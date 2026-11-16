@@ -8,6 +8,7 @@ import { PendingInvitesCard } from '@/components/pending-invites-card';
 import { RemovedMembersCard } from '@/components/removed-members-card';
 import { SettingsSection } from '@/components/section-heading';
 import { InviteMemberForm } from '@/components/team-forms';
+import { getSiteUrl } from '@/lib/site-url';
 
 export function TeamInviteCards({
   isOwner,
@@ -25,7 +26,7 @@ export function TeamInviteCards({
       <SettingsSection id="invite" title="Invite a teammate">
         <InviteMemberForm canInviteAdmin={isOwner} />
       </SettingsSection>
-      <PendingInvitesCard invites={invites} userMap={userMap} />
+      <PendingInvitesCard siteUrl={getSiteUrl()} invites={invites} userMap={userMap} />
       <RemovedMembersCard removedMembers={removedMembers} userMap={userMap} />
     </>
   );

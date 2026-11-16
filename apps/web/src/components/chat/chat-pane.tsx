@@ -7,6 +7,7 @@ import {
   type ChatContextRef,
 } from '@timeline/shared/chat-context';
 import { numberCitations } from '@timeline/shared/citation';
+import { getToolName, isToolUIPart } from 'ai';
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -17,13 +18,16 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
+import type { ChatHandoff } from '@/lib/chat-handoff';
+import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
+export type { DashboardChatContext } from '@/lib/dashboard-chat-context';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
+import { chatRequestMessages } from '@/lib/chat-session';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -37,9 +41,11 @@ interface Props {
   pinnedEntityId: string | null;
   pinnedEntityName: string | null;
   contextTrail?: ChatContextRef[];
+  initialPrompt?: string | null;
+  suggestionPrompts?: readonly string[];
+  emptyTitle?: string | null;
+  emptyHint?: string | null;
 }
-
-export type DashboardChatContext = ChatHandoffContext;
 
 const SUGGESTIONS = [
   'What did the team work on yesterday?',
@@ -85,6 +91,9 @@ function ChatSurfaceContent({
   dashboardContext,
   contextTrail,
   emptyHint,
+  initialPrompt = null,
+  suggestionPrompts,
+  emptyTitle = null,
   onSessionIdChange,
   updateUrlOnSessionCreate = false,
   consumeHandoff = true,
@@ -118,10 +127,21 @@ function ChatSurfaceContent({
   const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
     transport,
     messages: initialMessages,
+    onFinish: ({ message }) => {
+      if (
+        message.parts.some(
+          (part) =>
+            isToolUIPart(part) &&
+            getToolName(part).startsWith('execute_') &&
+            part.state === 'output-available',
+        )
+      )
+        router.refresh();
+    },
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialPrompt ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
@@ -196,6 +216,8 @@ function ChatSurfaceContent({
       <ChatTranscript
         compact={compact}
         emptyHint={emptyHint}
+        emptyTitle={emptyTitle}
+        suggestionPrompts={suggestionPrompts}
         isStreaming={isStreaming}
         messages={messages}
         onToolApprovalResponse={addToolApprovalResponse}
@@ -204,6 +226,15 @@ function ChatSurfaceContent({
         teamName={teamName}
       />
       <ChatError error={error} />
+      {sessionId && !isStreaming && messages.length > 0 && (
+        <Link
+          href={`/app/diagnostics?session=${encodeURIComponent(sessionId)}`}
+          prefetch={false}
+          className="inline-flex min-h-11 items-center text-sm text-fg-muted underline underline-offset-4"
+        >
+          Report an issue
+        </Link>
+      )}
       <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
     </div>
   );
@@ -279,6 +310,9 @@ function useChatSessionTransport({
     () =>
       new DefaultChatTransport({
         api: '/api/chat',
+        prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => ({
+          body: { ...body, id, trigger, messageId, messages: chatRequestMessages(messages) },
+        }),
         body: () => {
           const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
           if (askForNew) sessionCreateAttempted.current = true;
@@ -416,6 +450,8 @@ function ChatContextBadges({ refs, compact }: { refs: ChatContextRef[]; compact:
 function ChatTranscript({
   compact,
   emptyHint,
+  emptyTitle,
+  suggestionPrompts,
   isStreaming,
   messages,
   onToolApprovalResponse,
@@ -425,6 +461,8 @@ function ChatTranscript({
 }: {
   compact: boolean;
   emptyHint?: string | null;
+  emptyTitle?: string | null;
+  suggestionPrompts?: readonly string[];
   isStreaming: boolean;
   messages: UIMessage[];
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
@@ -433,11 +471,19 @@ function ChatTranscript({
   teamName: string;
 }) {
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+    <div
+      ref={scrollRef}
+      className={cn(
+        'min-h-0 flex-1 overflow-y-auto',
+        messages.length === 0 && !compact && 'flex flex-col justify-end',
+      )}
+    >
       {messages.length === 0 ? (
         <ChatEmptyState
           compact={compact}
           emptyHint={emptyHint}
+          emptyTitle={emptyTitle}
+          suggestionPrompts={suggestionPrompts}
           onSuggestion={onSuggestion}
           teamName={teamName}
         />
@@ -456,14 +502,19 @@ function ChatTranscript({
 function ChatEmptyState({
   compact,
   emptyHint,
+  emptyTitle,
+  suggestionPrompts,
   onSuggestion,
   teamName,
 }: {
   compact: boolean;
   emptyHint?: string | null;
+  emptyTitle?: string | null;
+  suggestionPrompts?: readonly string[];
   onSuggestion: (text: string) => void;
   teamName: string;
 }) {
+  const prompts = suggestionPrompts ?? SUGGESTIONS;
   if (compact) {
     return (
       <p className="pt-1 text-sm text-fg-muted">
@@ -472,22 +523,22 @@ function ChatEmptyState({
     );
   }
   return (
-    <div className="flex flex-col gap-6 pt-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-8 sm:py-12">
       <div>
-        <p className="text-xs font-medium text-fg-muted">Try asking</p>
-        <h2 className="mt-2 text-xl font-medium tracking-tight text-fg">
-          Ask anything about {teamName}&apos;s timeline
+        <h2 className="text-xl font-semibold tracking-tight text-fg">
+          {emptyTitle ?? `Ask anything about ${teamName}'s timeline`}
         </h2>
+        {emptyHint ? <p className="mt-2 text-sm leading-6 text-fg-muted">{emptyHint}</p> : null}
       </div>
       <div className="flex flex-wrap gap-2">
-        {SUGGESTIONS.map((suggestion) => (
+        {prompts.map((suggestion) => (
           <button
             key={suggestion}
             type="button"
             onClick={() => {
               onSuggestion(suggestion);
             }}
-            className="rounded-sm border border-border bg-surface px-3 py-1.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg"
+            className="rounded-sm border border-border bg-surface px-3 py-2.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg"
           >
             {suggestion}
           </button>
@@ -514,6 +565,8 @@ function MessageList({
         <ChatMessage
           key={message.id}
           message={message}
+          isActive={isStreaming && message.id === messages.at(-1)?.id}
+          canApprove={message.id === messages.at(-1)?.id}
           onToolApprovalResponse={onToolApprovalResponse}
         />
       ))}
@@ -528,9 +581,13 @@ function MessageList({
 
 function ChatMessage({
   message,
+  isActive,
+  canApprove,
   onToolApprovalResponse,
 }: {
   message: UIMessage;
+  isActive: boolean;
+  canApprove: boolean;
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   const isUser = message.role === 'user';
@@ -558,6 +615,8 @@ function ChatMessage({
               key={`${message.id}-${String(idx)}`}
               citationNumbers={citationNumbers}
               part={part}
+              isActive={isActive}
+              canApprove={canApprove}
               onToolApprovalResponse={onToolApprovalResponse}
             />
           ))}
@@ -569,32 +628,36 @@ function ChatMessage({
 
 function ChatMessagePart({
   citationNumbers,
+  isActive,
+  canApprove,
   part,
   onToolApprovalResponse,
 }: {
   citationNumbers: Map<string, number>;
   part: UIMessage['parts'][number];
+  isActive: boolean;
+  canApprove: boolean;
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   if (part.type === 'text') {
     return <CitationText numbers={citationNumbers} text={part.text} />;
   }
-  if (!part.type.startsWith('tool-')) return null;
-  const toolPart = part as unknown as {
-    type: string;
-    toolCallId: string;
-    state: string;
-    input?: unknown;
-    output?: unknown;
-    approval?: { id: string; approved?: boolean; reason?: string };
-  };
+  if (part.type === 'data-tool-history') {
+    const data = part.data as { name: string; state: string; input?: unknown };
+    return <ToolStep name={data.name} state={data.state} input={data.input} />;
+  }
+  if (!isToolUIPart(part)) return null;
   return (
     <ToolStep
-      name={toolPart.type.slice('tool-'.length)}
-      state={toolPart.state}
-      input={toolPart.input}
-      output={toolPart.output}
-      approval={toolPart.approval}
+      name={getToolName(part)}
+      state={
+        part.state === 'approval-requested' && !canApprove ? 'approval-unavailable' : part.state
+      }
+      input={part.input}
+      output={part.output}
+      errorText={part.errorText}
+      isActive={isActive}
+      approval={part.approval}
       onApprovalResponse={onToolApprovalResponse}
     />
   );

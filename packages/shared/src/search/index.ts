@@ -18,6 +18,8 @@ export interface GlobalSearchScoreParts {
   title?: number;
   intent?: number;
   recency?: number;
+  /** Already-bounded evidence freshness; do not apply generic recency again. */
+  evidenceFreshness?: number;
   navigation?: number;
 }
 
@@ -382,8 +384,9 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
     kind: 'external_link',
     title: 'Integration setup docs',
     snippet: 'Open integration setup documentation in a new tab.',
-    href: '/docs/setup/integrations.html',
-    externalHref: '/docs/setup/integrations.html',
+    href: 'https://github.com/timborovkov/the-timeline-ai/blob/main/docs/setup/integrations.md',
+    externalHref:
+      'https://github.com/timborovkov/the-timeline-ai/blob/main/docs/setup/integrations.md',
     group: 'Docs',
     keywords: ['setup docs', 'integration docs', 'docs', 'mcp docs'],
   },
@@ -471,6 +474,7 @@ export function scoreFromParts(parts: GlobalSearchScoreParts): number {
       (parts.title ?? 0) * TITLE_WEIGHT +
       (parts.intent ?? 0) * INTENT_WEIGHT +
       (parts.recency ?? 0) * RECENCY_WEIGHT +
+      (parts.evidenceFreshness ?? 0) +
       (parts.navigation ?? 0) * NAVIGATION_WEIGHT
     ).toFixed(6),
   );

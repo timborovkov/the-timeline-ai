@@ -3,6 +3,7 @@ import * as slack from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -49,5 +50,10 @@ export async function GET(req: Request): Promise<Response> {
     metadata: { slack_team_id: oauth.team?.id ?? null, slack_team_name: oauth.team?.name ?? null },
   });
   await safeMarkOnboardingStep(scope, 'slack');
+  trackProductEventBestEffort(
+    { kind: 'user', userId: session.user.id, teamId: state.teamId },
+    'agent_deployed_on_channel',
+    { channel: 'slack' },
+  );
   redirect('/app/team/slack?installed=1');
 }

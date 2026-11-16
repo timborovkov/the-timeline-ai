@@ -15,4 +15,4 @@ export const LEGAL_ADDRESS =
 export { getSupportEmail as getLegalContactEmail } from '@/lib/support-email';
 
 export const COOKIES_REVIEW_DATE = '3 November 2026';
-export const TRUST_REVIEW_DATE = '3 November 2026';
+export const TRUST_REVIEW_DATE = '10 November 2026';

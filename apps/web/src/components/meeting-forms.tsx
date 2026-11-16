@@ -491,10 +491,12 @@ export function ScheduleMeetingBotForm({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
   members = EMPTY_MEMBERS,
+  onSuccess,
 }: {
   defaultVisibility?: Visibility;
   defaultVisibilityUserIds?: string[] | null;
   members?: { id: string; label: string }[];
+  onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [{ pending, visibility, visibilityUserIds, consent }, dispatch] = useReducer(
@@ -533,6 +535,7 @@ export function ScheduleMeetingBotForm({
     });
     dispatch({ type: 'pending', pending: false });
     if (result.error) return;
+    onSuccess?.();
     if ('meetingId' in result && result.meetingId) {
       router.push(`/app/meetings/${result.meetingId}`);
     } else {
@@ -629,11 +632,13 @@ export function SavedMeetingForm({
   defaultVisibilityUserIds = null,
   defaultTimezone = 'UTC',
   members = EMPTY_MEMBERS,
+  onSuccess,
 }: {
   defaultVisibility?: Visibility;
   defaultVisibilityUserIds?: string[] | null;
   defaultTimezone?: string;
   members?: { id: string; label: string }[];
+  onSuccess?: () => void;
 }) {
   const router = useRouter();
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -710,6 +715,7 @@ export function SavedMeetingForm({
     dispatch({ type: 'scheduled', scheduled: false });
     dispatch({ type: 'autoJoin', autoJoin: false });
     dispatch({ type: 'timezone', timezone: browserTimezone() });
+    onSuccess?.();
   }
 
   return (
@@ -768,7 +774,7 @@ export function SavedMeetingForm({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
       />
-      <div className="space-y-3 border-y border-border py-3">
+      <div className="space-y-3 py-3">
         <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -966,7 +972,7 @@ export function EditSavedMeetingForm({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
       />
-      <div className="space-y-3 border-y border-border py-3">
+      <div className="space-y-3 py-3">
         <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"

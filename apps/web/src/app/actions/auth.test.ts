@@ -308,7 +308,7 @@ describe('signUpAction legal acceptance', () => {
       callback(transaction.tx),
     );
 
-    await expect(signUpAction({}, form())).rejects.toThrow('NEXT_REDIRECT:/app');
+    await expect(signUpAction({}, form())).rejects.toThrow('NEXT_REDIRECT:/onboarding');
 
     expect(fakes.recordCurrentLegalAcceptance).toHaveBeenCalledWith(transaction.tx, {
       userId: USER_ID,
@@ -321,6 +321,15 @@ describe('signUpAction legal acceptance', () => {
       email: 'legal-user@example.test',
       passwordHash: 'password-hash',
     });
+    expect(
+      transaction.insertedValues.find(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'email' in value &&
+          value.email === 'legal-user@example.test',
+      ),
+    ).not.toHaveProperty('emailVerified');
     expect(transaction.insertedValues).toContainEqual({
       teamId: TEAM_ID,
       planId: 'free',

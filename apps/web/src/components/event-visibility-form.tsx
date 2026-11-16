@@ -62,7 +62,7 @@ export function EventVisibilityForm({
             .filter((value): value is string => typeof value === 'string'),
         };
       }}
-      className="mt-2 grid gap-3 border-y border-border py-3"
+      className="mt-2 grid gap-3 py-3"
     >
       <input type="hidden" name="id" value={eventId} />
       <div className="grid gap-1.5">

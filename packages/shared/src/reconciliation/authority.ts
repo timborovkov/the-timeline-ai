@@ -1,4 +1,4 @@
-import type { ArtifactClusterKind, Visibility } from '#src/reconciliation/index.js';
+import type { ArtifactClusterKind, Visibility } from '#src/reconciliation/core.js';
 
 export const AUTHORITY_POLICY_VERSION = 'reconciliation-authority-2026-06';
 

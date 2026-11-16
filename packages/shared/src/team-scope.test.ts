@@ -18,6 +18,7 @@ await vi.mock(
 
 const { PGlite } = await import('@electric-sql/pglite');
 const {
+  accounts,
   auditLog,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -171,6 +172,7 @@ describe('withTeam namespaced port', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await pg.close();
   });
 
@@ -912,7 +914,7 @@ describe('withTeam namespaced port', () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_A },
     });
 
@@ -925,16 +927,16 @@ describe('withTeam namespaced port', () => {
       id: eventId,
       authorUserId: null,
       text: 'telegram from prefixed username',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
       tgUserId: 12345,
     });
     const scope = withTeam(db as never, TEAM_A, USER_A);
 
     await expect(
-      scope.timeline.listEvents({ source: 'telegram', senderHandle: '@mikaelrintala' }),
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: '@cameronvale' }),
     ).resolves.toMatchObject([{ id: eventId }]);
     await expect(
-      scope.timeline.listEvents({ source: 'telegram', senderHandle: 'mikaelrintala' }),
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: 'cameronvale' }),
     ).resolves.toMatchObject([{ id: eventId }]);
   });
 
@@ -944,19 +946,19 @@ describe('withTeam namespaced port', () => {
       id: eventId,
       authorUserId: null,
       text: 'telegram from linked person',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
       tgUserId: 12345,
     });
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_A },
     });
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'telegram',
-      value: '@mikaelrintala',
+      value: '@cameronvale',
       actor: { kind: 'user', userId: USER_A },
     });
 
@@ -976,26 +978,26 @@ describe('withTeam namespaced port', () => {
       [
         fromEmailId,
         TEAM_A,
-        JSON.stringify({ from_email: 'Mikael@Example.com' }),
+        JSON.stringify({ from_email: 'Cameron@Example.com' }),
         senderEmailId,
-        JSON.stringify({ sender_email: 'mikael@example.com' }),
+        JSON.stringify({ sender_email: 'cameron@example.com' }),
       ],
     );
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_A },
     });
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'email',
-      value: 'mikael@example.com',
+      value: 'cameron@example.com',
       actor: { kind: 'user', userId: USER_A },
     });
 
     await expect(
-      scope.timeline.listEvents({ senderSource: 'email', senderHandle: 'mikael@example.com' }),
+      scope.timeline.listEvents({ senderSource: 'email', senderHandle: 'cameron@example.com' }),
     ).resolves.toMatchObject([{ id: senderEmailId }, { id: fromEmailId }]);
     await expect(
       scope.timeline.listEvents({ senderSource: 'email', personObjectId: person.id }),
@@ -1009,12 +1011,12 @@ describe('withTeam namespaced port', () => {
       id: telegramId,
       authorUserId: null,
       text: 'telegram sender source event',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
     });
     await pg.query(
       `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
        VALUES ($1, $2, NULL, 'email', 'email sender source event', now(), $3::jsonb)`,
-      [emailId, TEAM_A, JSON.stringify({ from: { email: 'mikael@example.com' } })],
+      [emailId, TEAM_A, JSON.stringify({ from: { email: 'cameron@example.com' } })],
     );
     const scope = withTeam(db as never, TEAM_A, USER_A);
 
@@ -1033,7 +1035,7 @@ describe('withTeam namespaced port', () => {
       id: matchingId,
       authorUserId: null,
       text: 'matching sender search event',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
     });
     await insertTelegramEvent(pg, {
       id: otherId,
@@ -1082,7 +1084,7 @@ describe('withTeam namespaced port', () => {
     await expect(
       scope.timeline.searchEvents({
         query: 'sender search',
-        senderHandle: '@mikaelrintala',
+        senderHandle: '@cameronvale',
       }),
     ).resolves.toHaveLength(1);
 
@@ -1329,7 +1331,7 @@ describe('withTeam namespaced port', () => {
         id,
         authorUserId: null,
         text: `batched sender search ${id}`,
-        username: '@mikaelrintala',
+        username: '@cameronvale',
       });
     }
     const qdrantSearch = vi.fn(
@@ -1355,7 +1357,8 @@ describe('withTeam namespaced port', () => {
     await expect(
       scope.timeline.searchEvents({
         query: 'sender search all batches',
-        senderHandle: '@mikaelrintala',
+        ranking: 'relevance',
+        senderHandle: '@cameronvale',
         limit: 1,
       }),
     ).resolves.toMatchObject([{ eventId: thirdId }]);
@@ -1376,7 +1379,7 @@ describe('withTeam namespaced port', () => {
       id: eventId,
       authorUserId: null,
       text: 'telegram source-only search event',
-      username: '@mikaelrintala',
+      username: '@cameronvale',
     });
     const qdrantSearch = vi.fn().mockResolvedValue([
       {
@@ -1919,7 +1922,7 @@ describe('withTeam namespaced port', () => {
     const event = await scope.timeline.createEvent({
       authorUserId: USER_A,
       source: 'telegram',
-      contentText: 'Miku handles customer follow-up.',
+      contentText: 'Casey handles customer follow-up.',
       visibility: 'team',
     });
     const object = await scope.objects.createObject({
@@ -1941,7 +1944,7 @@ describe('withTeam namespaced port', () => {
           dedupeKey: 'impact-object-note:item',
           proposedPayload: {
             entityId: object.id,
-            body: 'Miku handles customer follow-up.',
+            body: 'Casey handles customer follow-up.',
           },
         },
       ],
@@ -2132,7 +2135,7 @@ describe('withTeam namespaced port', () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Tim Borovkov',
+      canonicalName: 'Taylor Bennett',
       aliases: ['Timbo'],
       actor: { kind: 'user', userId: USER_A },
     });
@@ -2147,14 +2150,14 @@ describe('withTeam namespaced port', () => {
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'telegram',
-      value: '@timbo0',
+      value: '@taylo0',
       externalId: '12345',
       actor: { kind: 'user', userId: USER_A },
     });
     await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'email',
-      value: 'tim@example.com',
+      value: 'taylor@example.com',
       actor: { kind: 'user', userId: USER_A },
     });
 
@@ -2162,14 +2165,14 @@ describe('withTeam namespaced port', () => {
 
     expect(context.person).toMatchObject({
       id: person.id,
-      canonicalName: 'Tim Borovkov',
+      canonicalName: 'Taylor Bennett',
       aliases: ['Timbo'],
     });
     expect(context.facets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'timeline_user', value: USER_A }),
-        expect.objectContaining({ kind: 'telegram', value: '@timbo0', externalId: '12345' }),
-        expect.objectContaining({ kind: 'email', value: 'tim@example.com' }),
+        expect.objectContaining({ kind: 'telegram', value: '@taylo0', externalId: '12345' }),
+        expect.objectContaining({ kind: 'email', value: 'taylor@example.com' }),
       ]),
     );
     expect(context.facets).toHaveLength(3);
@@ -2177,10 +2180,10 @@ describe('withTeam namespaced port', () => {
     await db
       .update(objectIdentityFacets)
       .set({ status: 'archived' })
-      .where(eq(objectIdentityFacets.value, '@timbo0'));
+      .where(eq(objectIdentityFacets.value, '@taylo0'));
 
     const archivedContext = await scope.timeline.currentUserIdentityContext();
-    expect(archivedContext.facets.some((facet) => facet.value === '@timbo0')).toBe(false);
+    expect(archivedContext.facets.some((facet) => facet.value === '@taylo0')).toBe(false);
   });
 
   it('rejects visibility edits for ownerless legacy events with a clear error', async () => {
@@ -2207,6 +2210,51 @@ describe('withTeam namespaced port', () => {
         'team',
       ),
     ).rejects.toThrow('Integration not found');
+  });
+
+  it('preserves Drive selection object links when reactivating the same sources', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Acme',
+      externalAccountId: 'drive-acct-links',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'drive-token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'selected-folder', label: 'Selected' },
+    ]);
+    const share = (await ownerScope.integrations.listOwnedTeamResourceShares())[0]?.share;
+    if (!share) throw new Error('Expected Drive share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    const company = await adminScope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Northstar',
+      actor: { kind: 'user', userId: USER_C },
+    });
+    const [selection] = await adminScope.integrations.listSelections(integration.id);
+    if (!selection) throw new Error('Expected Drive selection');
+    await adminScope.integrations.setSelectionLinkedObject(
+      integration.id,
+      selection.id,
+      company.id,
+    );
+
+    const reactivated = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    expect(reactivated.id).toBe(integration.id);
+    const [kept] = await adminScope.integrations.listSelections(integration.id);
+    expect(kept).toMatchObject({
+      selectionKind: 'drive.folder',
+      externalId: 'selected-folder',
+      linkedObjectId: company.id,
+    });
   });
 
   // Provider connections are personal grants, while team integration scopes are
@@ -2759,6 +2807,111 @@ describe('withTeam namespaced port', () => {
         );
       }),
     ).toBe(true);
+  });
+
+  it('revokes the Google Drive grant after deleting a connection with no remaining Google uses', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Ada',
+      externalAccountId: 'google-sub-revoke',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'access-token', refresh_token: 'refresh-token' },
+    });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      expect(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      ).toBe('https://oauth2.googleapis.com/revoke');
+      expect(init?.body).toBe('token=refresh-token');
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await ownerScope.integrations.getOwnedProviderConnection(connection.id)).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not revoke Google when Sign in with Google still uses the same subject', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — linked sign-in',
+      externalAccountId: 'google-sub-signin',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'access-token', refresh_token: 'refresh-token' },
+    });
+    await db.insert(accounts).values({
+      userId: USER_A,
+      type: 'oidc',
+      provider: 'google',
+      providerAccountId: 'google-sub-signin',
+      access_token: 'signin-access',
+    });
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const [signIn] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.providerAccountId, 'google-sub-signin'));
+    expect(signIn?.access_token).toBe('signin-access');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not revoke Google when another Drive connection still uses the same account', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const otherScope = withTeam(db as never, TEAM_A, USER_B);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Ada',
+      externalAccountId: 'google-sub-shared',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { refresh_token: 'ada-refresh' },
+    });
+    await otherScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — other member',
+      externalAccountId: 'google-sub-shared',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { refresh_token: 'other-refresh' },
+    });
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('still deletes a Drive connection when Google revoke fails', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — revoke fail',
+      externalAccountId: 'google-sub-fail',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { refresh_token: 'refresh-token' },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('google unreachable'))),
+    );
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(await ownerScope.integrations.getOwnedProviderConnection(connection.id)).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it('disconnects an integration even when unresolved attention would collide after set-null', async () => {

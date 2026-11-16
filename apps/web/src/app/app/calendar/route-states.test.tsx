@@ -1,6 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+import type { ReactElement } from 'react';
+
+import { WorkSubnav as ShellWorkTabs } from '@/components/work-subnav';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
@@ -11,7 +15,7 @@ await vi.mock(
   () => import('@/lib/sentry-report'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, render: renderContent, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { default: CalendarError } = await import('@/app/app/calendar/error');
 const { default: CalendarLoading } = await import('@/app/app/calendar/loading');
@@ -73,7 +77,7 @@ describe('Calendar route states', () => {
     expect(contentPlaceholder.hasAttribute('inert')).toBe(true);
     expect(
       headerPlaceholder.compareDocumentPosition(screen.getByRole('navigation', { name: 'Work' })),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    ).toBe(Node.DOCUMENT_POSITION_PRECEDING);
     expect(
       screen.getByRole('navigation', { name: 'Work' }).compareDocumentPosition(contentPlaceholder),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
@@ -87,3 +91,14 @@ describe('Calendar route states', () => {
     ).toBeGreaterThan(0);
   });
 });
+
+function render(ui: ReactElement) {
+  return renderContent(ui, {
+    wrapper: ({ children }) => (
+      <>
+        <ShellWorkTabs current="/app/calendar" />
+        {children}
+      </>
+    ),
+  });
+}

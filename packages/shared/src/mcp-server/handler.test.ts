@@ -44,6 +44,7 @@ const {
   mcpOutboundOAuthTokens,
   objectChanges,
   rawEvents,
+  eventSource,
   reconciliationEvidence,
   teamMembers,
 } = await import('@timeline/db');
@@ -579,6 +580,34 @@ describe('handleMcpRequest', () => {
     expect(getResult.event.source_metadata).toContain('"instruction"');
   });
 
+  it('reports integration candidate exhaustion after deduplication', async () => {
+    await db.insert(rawEvents).values({
+      id: GITHUB_SEARCH_EVENT,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub launch',
+      occurredAt: new Date('2026-06-21'),
+      sourceMetadata: { provider: 'github' },
+    });
+    semanticSearchFakes.search.mockResolvedValue(
+      Array.from({ length: 200 }, () => ({
+        ...integrationSearchHit(GITHUB_SEARCH_EVENT, 0.9),
+        id: randomUUID(),
+      })),
+    );
+    const result = await callTool(db, 'timeline.search', {
+      surface: 'integrations',
+      query: 'launch',
+      provider: 'github',
+      limit: 1,
+    });
+    expect(result).toMatchObject({
+      count: 1,
+      truncated: true,
+      retrieval: { mode: 'balanced', candidateLimit: 200, candidateLimitReached: true },
+    });
+  });
+
   it('applies provider filtering before the semantic result limit', async () => {
     await db.insert(rawEvents).values([
       {
@@ -639,7 +668,7 @@ describe('handleMcpRequest', () => {
       [0.11, 0.22, 0.33],
       expect.objectContaining({
         eventIds: [SENTRY_SEARCH_EVENT],
-        limit: 1,
+        limit: 200,
         source: 'integration',
       }),
     );
@@ -713,7 +742,7 @@ describe('handleMcpRequest', () => {
       [0.11, 0.22, 0.33],
       expect.objectContaining({
         eventIds: [GITHUB_SEARCH_EVENT],
-        limit: 10,
+        limit: 200,
         source: 'integration',
       }),
     );
@@ -999,6 +1028,57 @@ describe('handleMcpRequest', () => {
     );
   });
 
+  it('requests only the website scan grant for an existing OAuth connection', async () => {
+    const response = await invokeHttp(db, principal('oauth'), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'timeline.crawl',
+        arguments: {
+          url: 'https://example.com',
+          permissionConfirmed: true,
+          idempotencyKey: 'oauth-crawl',
+        },
+      },
+    });
+    const result = (response.payload?.result ?? {}) as {
+      _meta?: { 'mcp/www_authenticate'?: string[] };
+    };
+    expect(response.payload).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { ok: false, error: 'forbidden' },
+      },
+    });
+    expect(result._meta?.['mcp/www_authenticate']).toEqual([
+      'Bearer error="insufficient_scope", error_description="Grant the websites:scan scope to use timeline.crawl", scope="read websites:scan", resource_metadata="https://timeline.test/.well-known/oauth-protected-resource/api/mcp/server"',
+    ]);
+  });
+
+  it('does not offer an OAuth upgrade for a static key without website scan permission', async () => {
+    const response = await invokeHttp(db, principal('api_key'), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'timeline.crawl',
+        arguments: {
+          url: 'https://example.com',
+          permissionConfirmed: true,
+          idempotencyKey: 'key-crawl',
+        },
+      },
+    });
+    expect(response.payload).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { ok: false, error: 'forbidden' },
+      },
+    });
+    expect((response.payload?.result as Record<string, unknown>)._meta).toBeUndefined();
+  });
+
   it('reads authenticated connection preferences through timeline.get without a record ref', async () => {
     const key = await withTeam(db as never, TEAM_ID, USER_ID).mcpOutbound.createKey({
       name: 'Coworker',
@@ -1101,9 +1181,7 @@ describe('handleMcpRequest', () => {
       _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read'] }] },
     });
     expect(search?.outputSchema).toMatchObject({ type: 'object' });
-    expect(search?.inputSchema.properties?.source?.enum).toEqual(
-      expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
-    );
+    expect(search?.inputSchema.properties?.source?.enum).toEqual(eventSource.enumValues);
     const categories = [...TASK_CATEGORIES];
     const categorySchema = search?.inputSchema.properties?.category;
     const searchCategorySchemas = categorySchema?.oneOf ?? categorySchema?.anyOf ?? [];
@@ -1142,6 +1220,26 @@ describe('handleMcpRequest', () => {
     expect(result).toHaveProperty('object');
     expect(result).toHaveProperty('context');
     expect(result).toHaveProperty('moments');
+  });
+
+  it('rejects crawling with a legacy read-only credential', async () => {
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: TOKEN },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'timeline.crawl',
+          arguments: {
+            url: 'https://example.com',
+            permissionConfirmed: true,
+            idempotencyKey: 'crawl-test',
+          },
+        },
+      },
+    );
+    expect(response).toMatchObject({ result: { isError: true } });
   });
 
   it('exposes ask_agent for consent discovery and rejects a static read-only key', async () => {
@@ -1635,7 +1733,7 @@ describe('handleMcpRequest', () => {
     expect((turnSignal?.reason as Error).message).toBe('client disconnected');
   });
 
-  it('lists bundled team-visible moments for outbound MCP callers', async () => {
+  it('lists distinct team-visible workflow runs for outbound MCP callers', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
         id,
@@ -1698,20 +1796,30 @@ describe('handleMcpRequest', () => {
       }[];
     };
 
-    expect(result.count).toBe(1);
+    expect(result.count).toBe(2);
     expect(result.moments[0]).toMatchObject({
       version: 'timeline_moment.v1',
-      evidence_count: 2,
-      raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
-      citations: [`[ev:${WORKFLOW_EVENT_A}]`, `[ev:${WORKFLOW_EVENT_B}]`],
+      evidence_count: 1,
+      raw_event_ids: [WORKFLOW_EVENT_A],
+      citations: [`[ev:${WORKFLOW_EVENT_A}]`],
+    });
+    expect(result.moments[1]).toMatchObject({
+      version: 'timeline_moment.v1',
+      evidence_count: 1,
+      raw_event_ids: [WORKFLOW_EVENT_B],
+      citations: [`[ev:${WORKFLOW_EVENT_B}]`],
     });
     expect(result.moments[0]?.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moments[0]?.title).toMatch(
-      /^<external_content source="timeline_moment" event_id="tm-moment_3Aintegration_3Agithub/,
+      /^<external_content source="timeline_moment" event_id="tm-moment_3Anotice_3Aintegration/,
     );
-    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
-    expect(result.moments[0]?.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
-    const snippets = result.moments[0]?.evidence.map((entry) => entry.snippet) ?? [];
+    expect(result.moments[0]?.anchor_id).toMatch(/^tm-moment_3Anotice_3Aintegration/);
+    expect(result.moments.flatMap((moment) => moment.raw_event_ids)).not.toContain(
+      WORKFLOW_PRIVATE_EVENT,
+    );
+    const snippets = result.moments.flatMap((moment) =>
+      moment.evidence.map((entry) => entry.snippet),
+    );
     expect(snippets[0]).toMatch(/^<external_content source="integration"/);
     expect(snippets.join('\n')).toContain('[fence-removed]');
     expect(snippets.join('\n')).not.toContain('</external_content>GitHub');
@@ -1720,14 +1828,13 @@ describe('handleMcpRequest', () => {
   it('scans past large raw-event groups when listing outbound MCP moments', async () => {
     const workflowRows = Array.from({ length: 50 }, (_, index) => {
       const id = `dddddddd-dddd-4ddd-8ddd-${String(index + 1).padStart(12, '0')}`;
-      const occurredAt = new Date(Date.UTC(2026, 5, 27, 18, 59 - index, 0)).toISOString();
       return `(
         '${id}',
         '${TEAM_ID}',
         '${USER_ID}',
         'integration',
-        'GitHub workflow "CI" #${1700 - index} on timborovkov/audit-ai success',
-        '${occurredAt}',
+        'GitHub workflow "CI" on timborovkov/audit-ai success',
+        '2026-06-27T18:59:00Z',
         'team',
         '{"provider":"github","event_type":"workflow_run.success","github":{"type":"workflow_run","repo":"timborovkov/audit-ai","head_branch":"main"}}'::jsonb
       )`;
@@ -1771,7 +1878,7 @@ describe('handleMcpRequest', () => {
     expect(result.moments[1]?.raw_event_ids).toEqual([PR_EVENT_A]);
   });
 
-  it('expands only visible raw evidence for outbound MCP moments', async () => {
+  it('expands distinct visible raw evidence for outbound MCP moments', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
         id,
@@ -1828,24 +1935,29 @@ describe('handleMcpRequest', () => {
         raw_event_ids: string[];
         evidence: { event_id: string; snippet: string }[];
       };
+      related_moments: { raw_event_ids: string[] }[];
     };
 
     expect(result).toMatchObject({
       found: true,
       moment: {
         version: 'timeline_moment.v1',
-        evidence_count: 2,
-        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+        evidence_count: 1,
+        raw_event_ids: [WORKFLOW_EVENT_A],
       },
+      related_moments: [{ raw_event_ids: [WORKFLOW_EVENT_B] }],
     });
-    expect(result.moment.anchor_id).toMatch(/^tm-moment_3Aintegration_3Agithub/);
-    expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+    expect(result.moment.anchor_id).toMatch(/^tm-moment_3Anotice_3Aintegration/);
+    expect([
+      ...result.moment.raw_event_ids,
+      ...result.related_moments.flatMap((moment) => moment.raw_event_ids),
+    ]).not.toContain(WORKFLOW_PRIVATE_EVENT);
     expect(
       result.moment.evidence.every((entry) => entry.snippet.startsWith('<external_content')),
     ).toBe(true);
   });
 
-  it('expands partial raw-event ids into the complete visible outbound MCP moment', async () => {
+  it('keeps partial raw-event lookups scoped to the selected workflow run', async () => {
     await pg.exec(`
       INSERT INTO raw_events (
         id,
@@ -1891,8 +2003,8 @@ describe('handleMcpRequest', () => {
     expect(result).toMatchObject({
       found: true,
       moment: {
-        evidence_count: 2,
-        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+        evidence_count: 1,
+        raw_event_ids: [WORKFLOW_EVENT_A],
       },
     });
   });
@@ -1951,17 +2063,22 @@ describe('handleMcpRequest', () => {
         title: string;
         raw_event_ids: string[];
       };
+      related_moments: { raw_event_ids: string[] }[];
     };
 
     expect(result).toMatchObject({
       found: true,
       moment: {
-        raw_event_ids: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+        raw_event_ids: [WORKFLOW_EVENT_A],
       },
+      related_moments: [{ raw_event_ids: [WORKFLOW_EVENT_B] }],
     });
     expect(result.moment.title).toContain('CI passed on timborovkov/audit-ai');
     expect(result.moment.title).toMatch(/^<external_content source="timeline_moment"/);
-    expect(result.moment.raw_event_ids).not.toContain(WORKFLOW_PRIVATE_EVENT);
+    expect([
+      ...result.moment.raw_event_ids,
+      ...result.related_moments.flatMap((moment) => moment.raw_event_ids),
+    ]).not.toContain(WORKFLOW_PRIVATE_EVENT);
   });
 
   it('expands exact GitHub PR moment ids through team-visible metadata lookup', async () => {
@@ -3473,6 +3590,20 @@ describe('advertised MCP parameters', () => {
       expect(excluded.calendarEvents).toEqual([]);
     });
 
+    it('uses the trusted request clock for composite calendar retrieval', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.search',
+        {
+          surface: 'workspace',
+          query: 'review',
+          recipe: 'calendar',
+        },
+        { currentDate: new Date('1900-01-01T12:00:00.000Z') },
+      )) as { calendarEvents: unknown[] };
+      expect(result.calendarEvents).toEqual([]);
+    });
+
     it('recipe', async () => {
       const result = (await callTool(db, 'timeline.search', {
         surface: 'workspace',
@@ -3579,9 +3710,14 @@ describe('advertised MCP parameters', () => {
     it('rawEventIds', async () => {
       const result = (await callTool(db, 'timeline.get', {
         rawEventIds: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
-      })) as { found: boolean; moment: { raw_event_ids: string[] } };
+      })) as {
+        found: boolean;
+        moment: { raw_event_ids: string[] };
+        related_moments: { raw_event_ids: string[] }[];
+      };
       expect(result.found).toBe(true);
-      expect(result.moment.raw_event_ids).toEqual([WORKFLOW_EVENT_A, WORKFLOW_EVENT_B]);
+      expect(result.moment.raw_event_ids).toEqual([WORKFLOW_EVENT_A]);
+      expect(result.related_moments).toMatchObject([{ raw_event_ids: [WORKFLOW_EVENT_B] }]);
     });
   });
 
@@ -3656,7 +3792,7 @@ describe('advertised MCP parameters', () => {
 
     it('limit', async () => {
       await callTool(db, 'timeline.subject', { subject: 'Project Alpha', limit: 1 });
-      expect(searchCalls().some((opts) => opts.limit === 1)).toBe(true);
+      expect(searchCalls().some((opts) => opts.limit === 200)).toBe(true);
     });
   });
 

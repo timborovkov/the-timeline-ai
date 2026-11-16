@@ -1,0 +1,145 @@
+{
+  "date": "2026-11-11",
+  "baseRevision": "dd938a9ebb0546f1c6804449c95d0e08b4ca4e83",
+  "scope": "Uncommitted working-tree investigation; synthetic sources, disposable PGlite; no deployment or production-data validation.",
+  "sourceSha256": {
+    "apps/worker/src/workers/suggestions.ts": "4ab118e900c8942a18501aec734a78bec2800f9a9875ce28ed7cc6394fb141b9",
+    "packages/shared/src/suggestions/hub-context.ts": "d9723b2ead41fa1ecc2aa498df1c1577292a03a80707d1efdabb1a6e3638ef7c",
+    "packages/shared/src/integrations/github-task-proposals.ts": "39241799676c2afe692fc8746f2cacff627d35cc2b2dff0288b6a4e6b8c8bc1e",
+    "packages/shared/src/objects/summaries.ts": "11888d6d5f4c352cd3e2aad338536097713d75d29a9bdd4c81969864d22abde4",
+    "packages/shared/src/extract/noise.ts": "a27c8ebd3cadbfee9bd37d072ee21f73a81309e5e53f500a352300a052d9411c"
+  },
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "suggestionVersion": "2026-11-projects-v1",
+  "experiments": [
+    {
+      "hypothesis": "Project associations are lost because shared client tokens make explicit sibling names ambiguous.",
+      "observation": "A deterministic qualifier regression failed before the fix and passed after it; independent nested-name mentions remain ambiguous."
+    },
+    {
+      "hypothesis": "Merged PRs cannot originate tasks when no task was previously proposed.",
+      "observation": "A persistence regression returned zero proposals before the fix. Qualified merged-PR creation, acceptance, replay, archived identity, 501 historical tasks, unmerged/private events and ambiguous projects are now covered."
+    },
+    {
+      "hypothesis": "Summary availability ignores structured integration evidence.",
+      "observation": "The object detail returned canGenerate=false for artifact-only evidence before the fix. The regression now passes; making the association private disables team-summary generation."
+    },
+    {
+      "hypothesis": "Explicit task fields are inconsistently represented by the model.",
+      "observation": "The explicit assignment live case passed once and then failed because only ownerUserId was emitted. After an explicit assignee/deadline prompt contract, three consecutive runs passed."
+    },
+    {
+      "hypothesis": "The model necessarily leaves same-meeting completed work open.",
+      "observation": "The synthetic same-meeting completion case passed in three runs; this did not reproduce the reported production case."
+    }
+  ],
+  "liveRuns": [
+    {
+      "command": "bun run test:proposal-engine:live",
+      "revisionScope": "Exploratory working tree before final assignment prompt and review corrections",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 1,
+      "skipReason": "Real-vector recall requires Qdrant; not configured."
+    },
+    {
+      "command": "bun run test:suggestions-eval:live",
+      "revisionScope": "Updated assignment prompt",
+      "passed": 3,
+      "failed": 0,
+      "extraAssignmentRepeatsPassed": 2,
+      "priorFailureRetained": "One earlier run omitted assigneeUserId; a separate old broad assertion inspected historical outputs rather than the pending items projections."
+    },
+    {
+      "command": "bun run test:reconciliation-eval:live",
+      "modelCasesPassed": 7,
+      "modelCasesFailed": 0,
+      "judgeAverageScore": 1,
+      "startedAt": "2026-11-11T23:18:22.562Z",
+      "completedAt": "2026-11-11T23:19:16.082Z",
+      "cases": [
+        {
+          "name": "calendar-project-private-visibility",
+          "passed": true,
+          "packetFingerprint": "sha256:1796b59085c5cd1f70a378033d6bfb4bdfa61d01bf37889d0e0dd0efa46b55ae",
+          "promptFingerprint": "sha256:8c75d2f2e2a6f936bb1c8aa181b4e732510414eca758a00b0dcccc4a2b022f4d"
+        },
+        {
+          "name": "customer-project-email-monday-sentry",
+          "passed": true,
+          "packetFingerprint": "sha256:7d4398723595557d0d04f5e2f0797b097a55b8b1205abf9534fc32921769d02b",
+          "promptFingerprint": "sha256:83191d213a8dd02972fc6685d0b51aef9611a60441290a03b0b2b3cc03b9bfaa"
+        },
+        {
+          "name": "decision-memory-meeting-telegram-document",
+          "passed": true,
+          "packetFingerprint": "sha256:5b93bc403edc480c6d9a44d0dcd3a09ce4e59dd4376beb9f6c2fd369403fd0e7",
+          "promptFingerprint": "sha256:2fc8fed36e2b8d252c6da9bd21b9c5c33e738904471b5c33736d2bab48bcfc17"
+        },
+        {
+          "name": "generic-webhook-web-linear-drive",
+          "passed": true,
+          "packetFingerprint": "sha256:6351148242986e12d06825bbb59ac05a02f1e5b9715242ae2fcf6c0cdb9f79b5",
+          "promptFingerprint": "sha256:42d22a49577824bced4d594e97df149d52aaa611997dfee6800fb7a25e266549"
+        },
+        {
+          "name": "incident-response-sentry-github-slack-email",
+          "passed": true,
+          "packetFingerprint": "sha256:c57306f5ada1e57de57f94ea88c70475a65f4a6679baadc1dfbdc7cd4a3697ce",
+          "promptFingerprint": "sha256:1623e8172426bf863807748e1a5b4a418da0fcf58c02ba060bee0cbe74fc7341"
+        },
+        {
+          "name": "mcp-research-decision-context",
+          "passed": true,
+          "packetFingerprint": "sha256:42be9a54ab6d734b32cb2609be84366a132057602e8ef7963a1ac01507d69ab1",
+          "promptFingerprint": "sha256:86533725d3a726b8ca850d93d663950b155317c81021a1184dbb406ab0ab5f80"
+        },
+        {
+          "name": "sales-success-renewal-risk-email-slack-meeting-drive",
+          "passed": true,
+          "packetFingerprint": "sha256:1149209a446adf1949b273622f272ae51c334b1e70009d382894217018e67b07",
+          "promptFingerprint": "sha256:c76ea56e127e3ec37604662f11df4c0c3d9ffa048bee8e505f71bc9f54b1b2fd"
+        }
+      ]
+    },
+    {
+      "command": "SUGGESTIONS_LIVE_EVAL=1 bun test --conditions=development apps/worker/src/workers/suggestions.live-eval.test.ts --test-name-pattern \"writes a cited explanation\"",
+      "passed": 1,
+      "failed": 0,
+      "scope": "Real summary model, accepted proposal provenance, persisted text and source citations. Object-embedding enqueue is an explicit no-op boundary; Redis/Qdrant delivery is not tested.",
+      "initialAttempt": "The first attempt reached the post-generation embed enqueue but failed because Redis was not configured. The final test isolates that queue boundary."
+    }
+  ],
+  "limitations": [
+    "No Railway CLI, native tool, or registered Railway account was available.",
+    "No real event sampling or deployed scheduler verification.",
+    "No Qdrant recall evaluation.",
+    "No reconstruction UI or multilingual semantic cleanup implementation.",
+    "No production quality, cost, or latency promotion claim.",
+    "Typechecking encounters an unchanged packages/db/src/client.ts infer-option error in the installed postgres types."
+  ],
+  "offlineValidation": {
+    "test:eval": {
+      "passed": 115,
+      "failed": 0
+    },
+    "test:reconciliation-eval": {
+      "passed": 118,
+      "failed": 0
+    },
+    "targetedGitHubHubSummaryNoise": {
+      "passed": 58,
+      "failed": 0
+    },
+    "suggestionWorker": {
+      "initialPassed": 142,
+      "initialFailed": 1,
+      "failure": "New exact-name company preference guessed a company when another company was mentioned by short name. Fixed by retaining broad account ambiguity and restricting exact-name precedence to projects.",
+      "correctedBatchPassed": 20,
+      "correctedBatchFailed": 0
+    },
+    "changedCodeLint": "passed",
+    "markdownLinks": "all affected relative file targets exist",
+    "typecheck": "blocked by unchanged packages/db/src/client.ts:43 infer option type error"
+  }
+}

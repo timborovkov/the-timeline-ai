@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-12",
+  "scope": "Pre-merge synthetic live evaluation and discovered omission regression; no production data or deployment.",
+  "source_parent": "cfbc295f6bbd64b34d5495b4c34f86720af16172",
+  "document_fix": "Document-only preservation of uniquely attributed structured person/email contact records, committed with this report.",
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "identity": {
+    "unique_cases": 5,
+    "repetitions_per_case": 3,
+    "judgments": 15,
+    "tests_passed": 5,
+    "false_matches": 0,
+    "provider_usd": 0.0020325718
+  },
+  "document_before_fix": {
+    "repetitions": 3,
+    "passed": 2,
+    "failed": 1,
+    "failure": "Model omitted separate email identity proposal despite explicit client-list evidence."
+  },
+  "document_after_fix": {
+    "repetitions": 3,
+    "passed": 3,
+    "persisted_approval_and_acceptance": true,
+    "provider_usd": 0.0041879940000000004,
+    "usage_records": [
+      {
+        "evaluationUsage": "document_pipeline",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00139374
+      },
+      {
+        "evaluationUsage": "document_pipeline",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.001007784
+      },
+      {
+        "evaluationUsage": "document_pipeline",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "openRouterUsd": 0.00178647
+      }
+    ],
+    "vector_retrieval_test": "passed against isolated Qdrant v1.20.0; archived and cross-team candidate boundaries exercised",
+    "redis": "isolated Redis 7"
+  },
+  "focused_regressions": {
+    "tests": 3,
+    "assertions": 29,
+    "coverage": [
+      "Omitted email facet persists as an approval-backed proposal",
+      "Eighteen negative ownership inputs including ambiguous, delegated, former, example and instruction contexts",
+      "Chunk generation replacement reruns without retry duplicates"
+    ]
+  },
+  "limitations": [
+    "Small synthetic sample; not a representative customer-event benchmark or a guarantee of production precision/recall.",
+    "Identity model policy unchanged by document-only omission repair.",
+    "Original failed run is retained here rather than excluded from reported results.",
+    "Railway scheduling and representative real-event comparison remain unverified."
+  ]
+}

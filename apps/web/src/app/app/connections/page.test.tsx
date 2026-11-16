@@ -66,7 +66,7 @@ await vi.mock(
 );
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-const { act, cleanup, render, screen, within } = await import('@testing-library/react');
+const { act, cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToString } = await import('react-dom/server');
 const { RedirectActionToast } = await import('@/components/redirect-action-toast');
@@ -282,6 +282,31 @@ describe('SourcesPageView', () => {
     expect(screen.getByText('Syncing for team')).toBeTruthy();
   });
 
+  it('places searchable website sources directly after email', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+    const website = screen.getByRole('link', { name: 'Websites' });
+    expect(website.getAttribute('href')).toBe('/app/connections/websites');
+    const rows = [...document.querySelectorAll('[data-slot="collection-row"]')];
+    const emailIndex = rows.findIndex((row) => row.textContent.includes('Email'));
+    expect(rows[emailIndex + 1]?.contains(website)).toBe(true);
+    expect(screen.queryByText('Website sources — add, scan, and schedule')).toBeNull();
+    await user.type(screen.getByLabelText('Search sources'), 'website');
+    expect(screen.getByRole('link', { name: 'Websites' })).toBeTruthy();
+    expect(screen.queryByText('Email', { exact: true })).toBeNull();
+    await user.clear(screen.getByLabelText('Search sources'));
+    await user.type(screen.getByLabelText('Search sources'), 'drive');
+    expect(screen.queryByRole('link', { name: 'Websites' })).toBeNull();
+  });
+
   it('writes Agent tools onto its own Connections route', async () => {
     window.history.replaceState({ next: true }, '', '/app/connections/sources');
     renderPage(
@@ -321,6 +346,44 @@ describe('SourcesPageView', () => {
     expect(screen.queryByText('Slack')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open GitHub details' })).toBeNull();
     expect(screen.queryByText('No matching sources.')).toBeNull();
+  });
+
+  it('opens panel links with Enter without native anchor scrolling and preserves modified clicks', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+    await openTab('Agent tools');
+    const opener = screen.getByRole('link', { name: 'Open Agent MCP servers details' });
+    const modified = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+    opener.dispatchEvent(modified);
+    expect(modified.defaultPrevented).toBe(false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    let prevented = false;
+    const recordDefault = (event: Event) => {
+      prevented = event.defaultPrevented;
+    };
+    document.addEventListener('click', recordDefault);
+    try {
+      opener.focus();
+      await user.keyboard('{Enter}');
+      expect(await screen.findByRole('dialog', { name: 'Agent MCP servers' })).toBeTruthy();
+      expect(prevented).toBe(true);
+      expect(window.location.hash).toBe('#agent-mcp');
+      await user.keyboard('{Escape}');
+      await waitFor(() => {
+        expect(document.activeElement).toBe(opener);
+      });
+    } finally {
+      document.removeEventListener('click', recordDefault);
+    }
   });
 
   it('keeps native-named MCP catalog entries off the page until that provider sheet opens', async () => {
@@ -631,6 +694,91 @@ describe('SourcesPageView', () => {
     expect(within(dialog).getAllByText('Linear — Acme').length).toBeGreaterThan(0);
   });
 
+  it('opens Google Drive details with accounts, team sync, and the resource picker', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+    const pageModel = model();
+    try {
+      renderPage(
+        <SourcesPageView
+          params={{}}
+          active={{ teamName: 'Acme Labs' }}
+          isAdmin
+          summary={summary()}
+          model={model({
+            ownedConnections: [
+              ...pageModel.ownedConnections,
+              {
+                id: 'conn-drive',
+                provider: 'google_drive',
+                displayName: 'Google Drive — Tim',
+                lastError: null,
+                lastConnectedAt: '2026-06-01T00:00:00.000Z',
+              },
+            ],
+            teamSourceRows: [
+              ...pageModel.teamSourceRows,
+              {
+                share: {
+                  id: 'share-drive',
+                  providerConnectionId: 'conn-drive',
+                  resourceKind: 'drive.folder',
+                  externalId: 'folder-1',
+                  externalLabel: 'Clients',
+                  revokedAt: null,
+                },
+                connection: {
+                  id: 'conn-drive',
+                  provider: 'google_drive',
+                  displayName: 'Google Drive — Tim',
+                  lastError: null,
+                  lastConnectedAt: '2026-06-01T00:00:00.000Z',
+                  ownerLabel: 'Tim',
+                  ownerUserId: 'user-1',
+                },
+              },
+            ],
+            connectedRows: [
+              ...pageModel.connectedRows,
+              {
+                ...baseConnectedRow,
+                id: 'integration-drive',
+                provider: 'google_drive',
+                displayName: 'Google Drive — Tim',
+                attention: [],
+              },
+            ],
+          })}
+        />,
+      );
+
+      await user.click(screen.getByRole('link', { name: 'Open Google Drive details' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Google Drive' });
+      expect(within(dialog).getByText('Accounts')).toBeTruthy();
+      expect(within(dialog).getByText('Team sync')).toBeTruthy();
+      expect(
+        within(dialog).getByRole('combobox', { name: 'Default visibility for Google Drive' }),
+      ).toBeTruthy();
+      const picker = dialog.querySelector(
+        '[data-slot="provider-resource-picker"][data-provider="google_drive"]',
+      );
+      expect(picker).toBeTruthy();
+      if (!(picker instanceof HTMLElement)) throw new Error('Expected Drive resource picker');
+      expect(await within(picker).findByRole('checkbox', { name: /Clients/i })).toBeTruthy();
+      expect(within(dialog).getByText('Team sync')).toBeTruthy();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('moves Telegram and Email setup into provider sheets and keeps agent MCP, webhooks, audit, and jobs on their tabs', async () => {
     const user = userEvent.setup();
     renderPage(
@@ -702,7 +850,7 @@ describe('SourcesPageView', () => {
     );
 
     expect(container.innerHTML).toContain('min-h-8');
-    expect(container.innerHTML).toContain('sm:flex-row sm:items-center sm:gap-3');
+    expect(container.innerHTML).toContain('@container/collection-row');
     expect(container.innerHTML).toContain('focus-visible:ring-2 focus-visible:ring-signal/50');
     expect(container.innerHTML).toContain('bg-white');
     expect(container.innerHTML).not.toContain('rounded-md border border-border bg-surface p-4');

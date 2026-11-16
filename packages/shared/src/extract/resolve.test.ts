@@ -7,6 +7,7 @@ import { describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { lookupMentions } from '#src/extract/lookup.js';
 import { resolveMentions } from '#src/extract/resolve.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -168,3 +169,30 @@ describe('resolveMentions', () => {
     }
   }, 60_000);
 });
+
+// Production extraction may bind existing aliases but must never rewrite canonical memory.
+it('looks up existing aliases without recording new aliases or creating unmatched entities', async () => {
+  const { pg, db } = await createTestDb();
+  try {
+    const [entity] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'Acme', aliases: ['ACME Inc'] })
+      .returning();
+    expect(
+      await lookupMentions(
+        db,
+        TEAM_ID,
+        [
+          { name: 'acme inc', type: 'company', role: 'subject', aliases: ['New alias'] },
+          { name: 'Unmatched', type: 'company', role: 'object' },
+        ],
+        'Acme Inc works with Unmatched.',
+      ),
+    ).toEqual([entity?.id, null]);
+    expect(await db.select().from(entities)).toEqual([
+      expect.objectContaining({ id: entity?.id, aliases: ['ACME Inc'] }),
+    ]);
+  } finally {
+    await pg.close();
+  }
+}, 60_000);

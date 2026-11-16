@@ -14,6 +14,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { entities } from '#src/schema/entities.js';
 import { eventVisibility } from '#src/schema/raw-events.js';
 import { rawEvents } from '#src/schema/raw-events.js';
 import { teams } from '#src/schema/teams.js';
@@ -320,6 +321,9 @@ export const integrationSelections = pgTable(
     selectionKind: text('selection_kind').notNull(),
     externalId: text('external_id').notNull(),
     externalLabel: text('external_label'),
+    linkedObjectId: uuid('linked_object_id').references(() => entities.id, {
+      onDelete: 'set null',
+    }),
     visibility: eventVisibility('visibility').notNull().default('team'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -331,6 +335,90 @@ export const integrationSelections = pgTable(
     ),
     index('integration_selections_integration_idx').on(table.integrationId),
     index('integration_selections_share_idx').on(table.resourceShareId),
+    index('integration_selections_linked_object_idx')
+      .on(table.linkedObjectId)
+      .where(sql`${table.linkedObjectId} IS NOT NULL`),
+  ],
+);
+
+// Compact Drive text hashes for diffing. The document drive never stores a Drive
+// copy; snapshot_text is the truncated prefix. snapshot_locate holds the suffix
+// window plus per-chunk hashes. Only the latest retained state stores per-chunk
+// extracted text so later edits can be located; older states keep hashes only.
+// That latest extracted text is deleted on disconnect or file removal.
+// content_hash is sha256 of the full extracted text. ancestry is the walked
+// parent/drive/matched-ancestor path from capture so deselection can classify
+// baseline-only files that never emitted a raw event.
+export const googleDriveFileSnapshots = pgTable(
+  'google_drive_file_snapshots',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrations.id, { onDelete: 'cascade' }),
+    fileId: text('file_id').notNull(),
+    contentHash: text('content_hash').notNull(),
+    snapshotText: text('snapshot_text').notNull().default(''),
+    snapshotLocate: jsonb('snapshot_locate').$type<{
+      length: number;
+      suffix: string;
+      chunkSize: number;
+      chunkHashes: string[];
+      chunkTexts: string[];
+      permissionGrants?: {
+        id: string;
+        type: string;
+        role: string;
+        email: string;
+        domain: string;
+      }[];
+    } | null>(),
+    ancestry: jsonb('ancestry').$type<{
+      parentIds: string[];
+      driveId: string | null;
+      matchedAncestorId: string | null;
+      inheritedCandidates: string[] | null;
+    } | null>(),
+    commentsHash: text('comments_hash').notNull().default(''),
+    permissionsHash: text('permissions_hash').notNull().default(''),
+    commentsSnapshot: jsonb('comments_snapshot')
+      .$type<
+        {
+          id: string;
+          content: string;
+          resolved: boolean;
+          modifiedTime: string;
+          author: string;
+          replies?: {
+            id: string;
+            content: string;
+            modifiedTime: string;
+            author: string;
+          }[];
+        }[]
+      >()
+      .notNull()
+      .default([]),
+    mimeType: text('mime_type'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('google_drive_file_snapshots_hash_unq').on(
+      table.integrationId,
+      table.fileId,
+      table.contentHash,
+      table.commentsHash,
+      table.permissionsHash,
+    ),
+    index('google_drive_file_snapshots_file_created_idx').on(
+      table.integrationId,
+      table.fileId,
+      table.createdAt,
+    ),
+    index('google_drive_file_snapshots_team_idx').on(table.teamId, table.createdAt),
   ],
 );
 

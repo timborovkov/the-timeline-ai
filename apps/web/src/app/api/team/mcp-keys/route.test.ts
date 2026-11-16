@@ -165,6 +165,8 @@ describe('/api/team/mcp-keys', () => {
       name: 'Cursor',
       allowCapture: true,
       allowAgent: false,
+      allowWebsiteScan: false,
+      allowWebsiteManage: false,
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
@@ -190,6 +192,8 @@ describe('/api/team/mcp-keys', () => {
       name: 'Operator',
       allowCapture: true,
       allowAgent: true,
+      allowWebsiteScan: false,
+      allowWebsiteManage: false,
     });
     await expect(response.json()).resolves.toMatchObject({
       scopes: ['read', 'capture', 'agent:ask'],
@@ -213,6 +217,8 @@ describe('/api/team/mcp-keys', () => {
       name: 'Readonly',
       allowCapture: false,
       allowAgent: false,
+      allowWebsiteScan: false,
+      allowWebsiteManage: false,
     });
     await expect(response.json()).resolves.toMatchObject({
       scopes: ['read'],

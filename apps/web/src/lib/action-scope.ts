@@ -5,34 +5,8 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
-/**
- * Shared auth + active-team resolution for server actions.
- *
- * Every mutating action in this app needs the same prologue: load the
- * session, resolve the user's active team, build a `withTeam` scope, and
- * surface a `{ ok: false }` discriminant when any of those steps fails.
- * Keeping that logic in one place means a change to auth shape, logging,
- * or the scope helper only touches one file.
- */
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const uuidSchema = z.string().regex(UUID_RE, 'Invalid id');
-
-export interface ActionState {
-  error?: string;
-  failedItemIds?: string[];
-  ok?: boolean;
-  id?: string;
-  undoChangeId?: string;
-  message?: string;
-  revisedItem?: {
-    id: string;
-    status: string;
-    title: string;
-    description: string | null;
-    proposedPayload: Record<string, unknown>;
-  };
-}
 
 type ResolvedScope =
   | { ok: false; error: string }

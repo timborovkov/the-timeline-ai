@@ -2,14 +2,13 @@ import { ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
-import styles from '@/components/marketing/editorial/editorial.module.css';
 import { TELEGRAM_PUBLIC_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
+import styles from '@/components/marketing/integrations/integration-detail.module.css';
+import { IntegrationSourceFeed } from '@/components/marketing/integrations/integration-source-feed';
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -24,43 +23,81 @@ export function TelegramIntegrationPage() {
       />
       <main id="main" tabIndex={-1} data-telegram-integration>
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-            <div className="flex items-center gap-4">
-              <span className="grid size-12 place-items-center rounded-md border border-border bg-white">
-                <Image src="/connectors/telegram.svg" alt="" width={28} height={28} />
-              </span>
-              <EditorialKicker>Integrations · Telegram</EditorialKicker>
-            </div>
-            <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
-              <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{TELEGRAM_PAGE.title}</h1>
+          <MarketingContainer className={styles.hero}>
+            <Link href="/integrations" className={styles.back}>
+              All integrations
+            </Link>
+            <div className={styles.heroGrid}>
               <div>
-                <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-                  {TELEGRAM_PAGE.summary}
-                </p>
-                <div className="mt-7 flex flex-wrap gap-3">
-                  <StartFreeLink className="inline-flex min-h-12 items-center gap-2 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+                <div className={styles.identity}>
+                  <span className="grid size-10 place-items-center rounded-sm border border-border bg-white">
+                    <Image src="/connectors/telegram.svg" alt="" width={26} height={26} />
+                  </span>
+                  <span>Telegram · Deliberate capture</span>
+                </div>
+                <h1 className={styles.title}>{TELEGRAM_PAGE.title}</h1>
+                <p className={styles.intro}>{TELEGRAM_PAGE.summary}</p>
+                <div className={styles.actions}>
+                  <StartFreeLink className="inline-flex min-h-12 items-center gap-3 rounded-sm bg-signal px-5 font-semibold text-signal-fg focus-visible:outline-2" />
                   <PublicSessionBranch
-                    signedOut={null}
+                    signedOut={
+                      <Link href="#telegram-capture" className="py-3 underline underline-offset-4">
+                        See what joins the record
+                      </Link>
+                    }
                     signedIn={
                       <Link
                         href={TELEGRAM_PAGE.setupHref}
-                        className="inline-flex min-h-12 items-center gap-2 rounded-sm border border-border px-5 font-semibold outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring"
+                        className="py-3 underline underline-offset-4"
                       >
                         {TELEGRAM_PAGE.setupLabel}
-                        <ArrowRight aria-hidden="true" className="size-4" />
+                        <ArrowRight aria-hidden="true" className="ml-2 inline size-4" />
                       </Link>
                     }
                   />
                 </div>
+                <p className={styles.note}>
+                  Link the chats you choose. Your whole Telegram account is not synced.
+                </p>
               </div>
+              <figure className={styles.preview}>
+                <div className={styles.previewHeader}>
+                  <p>A message worth keeping.</p>
+                  <Image src="/connectors/telegram.svg" alt="" width={24} height={24} />
+                </div>
+                <IntegrationSourceFeed
+                  records={[
+                    {
+                      time: '08:46',
+                      label: 'Acme launch group',
+                      detail: '“We promised the customer an update on Friday.”',
+                    },
+                    {
+                      time: '11:40',
+                      label: 'Launch review',
+                      detail: 'The meeting names SSO as the launch blocker.',
+                    },
+                  ]}
+                />
+                <div className={styles.result}>
+                  <h2>The commitment stays in view.</h2>
+                  <p>
+                    The message joins the project’s history alongside the call, with its sender,
+                    time and source intact.
+                  </p>
+                </div>
+                <figcaption>Illustrative example · Telegram and meeting evidence</figcaption>
+              </figure>
             </div>
           </MarketingContainer>
         </section>
 
-        <section className="border-b border-border bg-surface/45">
-          <MarketingContainer className="py-16 sm:py-20">
+        <section
+          id="telegram-capture"
+          className="scroll-mt-24 border-b border-border bg-surface/45"
+        >
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="01" label="What it captures" />
               <div>
                 <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                   Messages, files and voice memos join the record.
@@ -81,9 +118,8 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="02" label="What to know" />
               <div>
                 <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                   Capture is deliberate, not a silent account sync.
@@ -97,9 +133,8 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section>
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="03" label="Daily update" />
               <div>
                 <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                   Get the workspace update in Telegram.

@@ -36,21 +36,23 @@ describe('hasCurrentLegalSession', () => {
     const grandfathered = session();
     grandfathered.user.legalPrivacyVersion = '2026-11-01';
     expect(grandfathered.user.legalTermsVersion).toBe(TERMS_VERSION);
-    expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(false);
 
     const previous = session();
     previous.user.legalPrivacyVersion = 'older-privacy';
     expect(previous.user.legalTermsVersion).toBe(TERMS_VERSION);
     expect(hasCurrentLegalSession(previous.user)).toBe(false);
     previous.user.legalPrivacyVersion = '2026-11-01';
-    expect(hasCurrentLegalSession(previous.user)).toBe(true);
+    expect(hasCurrentLegalSession(previous.user)).toBe(false);
     expect(hasCurrentLegalSession(session().user)).toBe(true);
   });
 
-  it('keeps grandfathered pre-launch Privacy acknowledgments current', () => {
+  it('requires renewal of pre-launch Privacy acknowledgments', () => {
     const grandfathered = session();
     grandfathered.user.legalPrivacyVersion = '2026-11-01';
-    expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(false);
+    grandfathered.user.legalPrivacyVersion = '2026-11-03';
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(false);
   });
   it('requires both current signed versions and an acceptance timestamp', () => {
     expect(hasCurrentLegalSession(session().user)).toBe(true);
@@ -81,6 +83,19 @@ describe('authorizeProductRequest', () => {
     expect(
       authorizeProductRequest({ auth: session(false), request: request('/api/timeline') }),
     ).toBe(true);
+  });
+
+  it('keeps the existing sign-in gate for unauthenticated onboarding requests', () => {
+    const result = authorizeProductRequest({
+      auth: null,
+      request: request('/onboarding'),
+    });
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(307);
+    expect((result as Response).headers.get('location')).toBe(
+      'https://timeline.test/sign-in?callbackUrl=https%3A%2F%2Ftimeline.test%2Fonboarding',
+    );
   });
 
   it('keeps the existing sign-in gate for unauthenticated app requests', () => {

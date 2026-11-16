@@ -125,6 +125,9 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
     };
   }, [consent?.choice, surface]);
 
+  const showChoiceBanner =
+    preferenceLoaded && isPublicBrowserAnalyticsConfigured && !consent && Boolean(surface);
+
   const acceptAnalytics = useCallback(() => {
     if (!isPublicBrowserAnalyticsConfigured) return;
     writePublicAnalyticsConsent('accepted');
@@ -145,8 +148,8 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
 
   return (
     <PublicAnalyticsSettingsContext value={preferenceLoaded ? openSettings : undefined}>
-      {children}
-      {preferenceLoaded && isPublicBrowserAnalyticsConfigured && !consent && surface ? (
+      <div className={showChoiceBanner ? 'pb-36 sm:pb-8' : undefined}>{children}</div>
+      {showChoiceBanner ? (
         <AnalyticsChoiceBanner
           onAccept={acceptAnalytics}
           onReject={rejectAnalytics}
@@ -154,7 +157,7 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
         />
       ) : null}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="border-border bg-bg sm:max-w-lg">
+        <DialogContent className="overscroll-contain border-border bg-bg sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Analytics preferences</DialogTitle>
             <DialogDescription>
@@ -231,9 +234,10 @@ function AnalyticsChoiceBanner({
   return (
     <aside
       aria-labelledby="analytics-choice-title"
-      className="fixed right-4 bottom-4 left-4 z-40 mx-auto max-w-3xl rounded-md border border-border bg-bg p-4 shadow-lg sm:p-5"
+      data-analytics-choice-banner
+      className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-3xl rounded-md border border-border bg-bg p-4 shadow-lg sm:inset-x-auto sm:right-4 sm:bottom-4 sm:left-auto sm:mx-0 sm:max-w-sm sm:p-4"
     >
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+      <div className="grid gap-4">
         <div>
           <h2 id="analytics-choice-title" className="text-base font-semibold text-fg">
             Optional public analytics

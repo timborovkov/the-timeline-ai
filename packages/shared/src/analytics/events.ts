@@ -131,6 +131,7 @@ export const APP_ANALYTICS_SURFACES = [
   'digests',
   'personal_connections',
   'personal_mcp',
+  'onboarding',
   'team_overview',
   'team_audit',
   'team_integrations',
@@ -162,7 +163,7 @@ const analyticsActorSchema = z.discriminatedUnion('kind', [
 const PRODUCT_EVENT_SCHEMAS = {
   account_registered: z
     .object({
-      source: z.enum(['credentials', 'github']),
+      source: z.enum(['credentials', 'github', 'google']),
       joinedViaInvite: z.boolean(),
       attributionSource: z.enum(PUBLIC_ATTRIBUTION_SOURCES).optional(),
       attributionMedium: z.enum(PUBLIC_ATTRIBUTION_MEDIA).optional(),
@@ -188,7 +189,9 @@ const PRODUCT_EVENT_SCHEMAS = {
   source_indexed: z.object({ source: z.enum(['event', 'fact', 'object', 'other']) }).strict(),
   reference_preview_loaded: z.object({}).strict(),
   email_verified: z.object({}).strict(),
-  authentication_succeeded: z.object({ method: z.enum(['credentials', 'github']) }).strict(),
+  authentication_succeeded: z
+    .object({ method: z.enum(['credentials', 'github', 'google']) })
+    .strict(),
   team_created: z
     .object({ source: z.enum(['signup', 'oauth', 'manual', 'invite_fallback']) })
     .strict(),
@@ -351,6 +354,26 @@ const PRODUCT_EVENT_SCHEMAS = {
       source: z.enum(['manual', 'automatic']),
     })
     .strict(),
+  onboarding_work_style_submitted: z
+    .object({
+      workStyle: z.enum(['email', 'chat', 'dealflow', 'delivery', 'other', 'skipped']),
+    })
+    .strict(),
+  onboarding_first_path_selected: z
+    .object({
+      path: z.enum(['website', 'document', 'email', 'skip']),
+    })
+    .strict(),
+  first_capture_landed: z
+    .object({
+      path: z.enum(['website', 'document', 'email']),
+    })
+    .strict(),
+  agent_deployed_on_channel: z
+    .object({
+      channel: z.enum(['slack', 'telegram', 'email', 'digest', 'meeting']),
+    })
+    .strict(),
   team_export_requested: z.object({}).strict(),
 } as const;
 
@@ -489,6 +512,22 @@ export const PRODUCT_EVENT_METADATA: Record<ProductEventName, ProductEventMetada
   onboarding_step_completed: metadata(
     'Measure onboarding progression.',
     'A user completes an onboarding step.',
+  ),
+  onboarding_work_style_submitted: metadata(
+    'Measure optional work-style answers at first run.',
+    'A teammate submits or skips the how-you-work question.',
+  ),
+  onboarding_first_path_selected: metadata(
+    'Measure which starter capture path a new team chooses.',
+    'A teammate picks website, document, email, or skip on the first-run chooser.',
+  ),
+  first_capture_landed: metadata(
+    'Measure time-to-first starter capture.',
+    'The first document, forwarded email, or website page from first-run is persisted.',
+  ),
+  agent_deployed_on_channel: metadata(
+    'Measure go-live channel adoption after first run.',
+    'A teammate connects Slack or Telegram, enables digest, or starts email forwarding from go-live.',
   ),
   team_export_requested: metadata('Measure export feature use.', 'An admin queues a team export.'),
 };

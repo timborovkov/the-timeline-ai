@@ -17,7 +17,7 @@ describe('isNoisyExtractedFact', () => {
   it('drops message transmission mechanics', () => {
     expect(isNoisyExtractedFact(fact('Otto shared a link to an X post.'))).toBe(true);
     expect(isNoisyExtractedFact(fact('Mia forwarded the screenshot in Telegram.'))).toBe(true);
-    expect(isNoisyExtractedFact(fact('Tim reacted to the LinkedIn post.'))).toBe(true);
+    expect(isNoisyExtractedFact(fact('Taylor reacted to the LinkedIn post.'))).toBe(true);
   });
 
   it('keeps durable facts that mention tools or platforms', () => {
@@ -105,6 +105,9 @@ describe('isLowSignalEntityMention', () => {
     expect(isLowSignalObjectName({ name: 'browser-based', type: 'company' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'PE firms', type: 'company' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'healthcare providers', type: 'vendor' })).toBe(true);
+    expect(isLowSignalObjectName({ name: 'software platform', type: 'project' })).toBe(true);
+    expect(isLowSignalObjectName({ name: 'partner portal', type: 'project' })).toBe(false);
+    expect(isLowSignalObjectName({ name: 'client material portal', type: 'project' })).toBe(false);
     expect(isLowSignalObjectName({ name: 'GitHub', type: 'project' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'Excel', type: 'project' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'Verottaja', type: 'project' })).toBe(true);

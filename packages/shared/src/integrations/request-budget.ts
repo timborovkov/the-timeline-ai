@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ProviderRateLimitError, type NativeProviderId } from '#src/integrations/types.js';
-import { getRedisConnection } from '#src/queue/connection.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 
 const RESERVE = `
 local now = tonumber(ARGV[1])

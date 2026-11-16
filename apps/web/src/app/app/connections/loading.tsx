@@ -25,7 +25,7 @@ function ConnectionsGroupSkeleton({
 }) {
   return (
     <section>
-      <div className="flex min-h-10 items-center gap-2 border-y border-border bg-surface/70 px-2 sm:px-3">
+      <div className="flex min-h-10 items-center gap-2 bg-surface/70 px-2 sm:px-3">
         <Skeleton className="size-3.5" />
         <Skeleton className="h-3 w-32" />
         <Skeleton className="h-3 w-5" />

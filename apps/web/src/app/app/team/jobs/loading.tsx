@@ -27,7 +27,7 @@ export default function JobsLoading() {
         >
           <section
             aria-label="Job recovery controls loading placeholder"
-            className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between"
+            className="flex flex-col gap-2 py-2 md:flex-row md:items-center md:justify-between"
           >
             <ChipNavSkeleton count={4} widths={['w-10', 'w-16', 'w-20', 'w-16']} />
             <div className="flex flex-wrap gap-2 self-start md:self-auto">

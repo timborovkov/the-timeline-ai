@@ -176,7 +176,10 @@ export function BoardCardDetail({
   }
 
   return (
-    <aside className="rounded-sm border border-border bg-bg" aria-label="Board card detail">
+    <aside
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-surface"
+      aria-label="Board card detail"
+    >
       <BoardCardHeader
         boardId={boardId}
         view={view}
@@ -295,7 +298,9 @@ function BoardCardHeader({
         </div>
         <Link
           href={boardViewHref(boardId, view, null, filterParams)}
-          className="shrink-0 text-xs text-fg-muted hover:text-fg"
+          data-peek-close
+          scroll={false}
+          className="inline-flex min-h-9 shrink-0 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Close
         </Link>
@@ -370,7 +375,9 @@ function BoardCommandFields({
         onChange={(value) => {
           onPatch({ dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null });
         }}
-        hint={<DueDateDisplay value={item.dueAt} variant="field-hint" />}
+        hint={
+          <DueDateDisplay workStatus={item.object.status} value={item.dueAt} variant="field-hint" />
+        }
       />
       <FieldSelect
         label="Priority"
@@ -438,7 +445,14 @@ function BoardObjectDetails({
       {isSchedulableObjectType(item.object.type) ? (
         <Detail
           label="Object due"
-          value={<DueDateDisplay value={item.object.dueAt} timezone={timezone} variant="inline" />}
+          value={
+            <DueDateDisplay
+              workStatus={item.object.status}
+              value={item.object.dueAt}
+              timezone={timezone}
+              variant="inline"
+            />
+          }
         />
       ) : null}
       <Detail
@@ -709,7 +723,12 @@ function ObjectPreviewDialog({
             <Detail
               label="Due"
               value={
-                <DueDateDisplay value={item.object.dueAt} timezone={timezone} variant="inline" />
+                <DueDateDisplay
+                  workStatus={item.object.status}
+                  value={item.object.dueAt}
+                  timezone={timezone}
+                  variant="inline"
+                />
               }
             />
           ) : null}

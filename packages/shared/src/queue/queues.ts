@@ -1,7 +1,8 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '#src/env.js';
-import { defaultDigestWindow } from '#src/messaging/digest.js';
+import { driveExtractResumeJobIdentity } from '#src/integrations/google-drive-scheduling.js';
+import { defaultDigestWindow } from '#src/messaging/digest-window.js';
 import { tagOperatorJob } from '#src/platform-admin/runtime.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 
@@ -76,6 +77,10 @@ export const QUEUE_NAMES = {
   // conversational providers. The UUID job id matches the persisted turn.
   conversationAgent: 'conversation-agent',
   chatDelivery: 'chat-delivery',
+  // Persistent website scans, including onboarding. Admission allows one active
+  // run per team; Firecrawl captures public pages as cited web events.
+  websiteScan: 'website-scan',
+  websiteScheduler: 'website-scheduler',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -208,6 +213,7 @@ export async function closeExtractQueue(): Promise<void> {
 export type SuggestionJobData =
   | SuggestionRawEventJobData
   | SuggestionConversationReviewJobData
+  | SuggestionDocumentJobData
   | SuggestionObjectCleanupJobData
   | SuggestionGithubTaskProposalJobData;
 
@@ -220,6 +226,13 @@ export interface SuggestionConversationReviewJobData {
   scope: 'conversation_review';
   conversationReviewId: string;
   teamId: string;
+}
+
+export interface SuggestionDocumentJobData {
+  scope: 'document';
+  explicitRequest?: boolean;
+  teamId: string;
+  documentVersionId: string;
 }
 
 export interface SuggestionObjectCleanupJobData {
@@ -244,6 +257,13 @@ function bullmqCustomJobId(parts: string[]): string {
 
 function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string | undefined {
   if ('scope' in data) {
+    if (data.scope === 'document')
+      return bullmqCustomJobId([
+        'document-suggestions',
+        data.teamId,
+        data.documentVersionId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
     if (data.scope === 'conversation_review') {
       return bullmqCustomJobId([
         'conversation-review',
@@ -650,7 +670,8 @@ export async function closeCalendarRecurrenceQueue(): Promise<void> {
   });
 }
 
-export interface DocumentExtractJobData {
+export interface DocumentVersionExtractJobData {
+  kind?: 'document';
   documentVersionId: string;
   teamId: string;
   /** Override target Qdrant collection for the embed fan-out — used by the
@@ -658,6 +679,42 @@ export interface DocumentExtractJobData {
    *  job verbatim. */
   targetCollection?: string;
 }
+
+/**
+ * Transient Drive PDF/Word/Slides extract. Bytes live in the documents
+ * bucket only for the extract hop; the orchestrator writes a JSON result
+ * and resumes `drive.file`. This must not create a document-drive harvest.
+ */
+export interface DriveTransientExtractJobData {
+  kind: 'drive_transient';
+  teamId: string;
+  integrationId: string;
+  fileId: string;
+  extractId: string;
+  objectKey: string;
+  resultObjectKey: string;
+  contentType: string;
+  filename: string;
+}
+
+export type DocumentExtractJobData = DocumentVersionExtractJobData | DriveTransientExtractJobData;
+
+export function isDriveTransientExtractJob(
+  data: DocumentExtractJobData,
+): data is DriveTransientExtractJobData {
+  return data.kind === 'drive_transient';
+}
+
+const DOCUMENT_EXTRACT_JOB_DEDUPE_STATES = new Set([
+  'active',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting',
+  'waiting-children',
+]);
+
+const DOCUMENT_EXTRACT_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
 
 let _documentExtractQueue: TimelineQueue<DocumentExtractJobData> | undefined;
 
@@ -673,10 +730,39 @@ export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData>
 }
 
 export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): Promise<void> {
-  // No jobId-based dedup for the same reasons as the other queues:
-  // worker-side idempotency comes from advisory locks on
-  // `document_versions.id` plus the deterministic chunk-embed point ids.
-  await getDocumentExtractQueue().add('document-extract', data);
+  // Document-version jobs rely on advisory locks for idempotency. Drive
+  // transient extracts collapse on extractId while in flight so a stale
+  // pending re-enqueue cannot stack duplicate Daytona/vision work. A
+  // retained completed/failed job is replaced so a dropped resume can
+  // reuse the persisted result instead of throwing on JobIdAlreadyExists.
+  const q = getDocumentExtractQueue();
+  const jobId = isDriveTransientExtractJob(data)
+    ? bullmqCustomJobId([
+        'document-extract',
+        'drive-transient',
+        data.integrationId,
+        data.fileId,
+        data.extractId,
+      ])
+    : undefined;
+  if (jobId) {
+    const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+    if (existing) {
+      const state = await existing.getState?.().catch(() => null);
+      if (!state || DOCUMENT_EXTRACT_JOB_DEDUPE_STATES.has(state)) return;
+      if (DOCUMENT_EXTRACT_JOB_REPLACEABLE_STATES.has(state)) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else {
+        return;
+      }
+    }
+  }
+  await q.add('document-extract', data, jobId ? { jobId } : undefined);
 }
 
 export async function closeDocumentExtractQueue(): Promise<void> {
@@ -899,11 +985,12 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
   }
   if (data.kind !== 'targeted') return undefined;
-  if (data.reason === 'provider_pagination_continuation') {
-    return data.continuationHandoffId
-      ? bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId])
-      : undefined;
+  const driveResumeIdentity = driveExtractResumeJobIdentity(data);
+  if (driveResumeIdentity) return bullmqCustomJobId(driveResumeIdentity);
+  if (data.continuationHandoffId) {
+    return bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId]);
   }
+  if (data.reason === 'provider_pagination_continuation') return undefined;
   return bullmqCustomJobId([
     'integration-targeted',
     data.integrationId,
@@ -915,7 +1002,7 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
 
 export async function enqueueIntegrationSyncJob(
   data: IntegrationSyncJobData,
-  opts: { delayMs?: number } = {},
+  opts: { delayMs?: number; replaceDelayed?: boolean } = {},
 ): Promise<void> {
   // Backfill and broad incremental jobs intentionally avoid jobId dedupe:
   // idempotency lives in raw_event dedup keys, per-resource cursors, and the
@@ -925,6 +1012,9 @@ export async function enqueueIntegrationSyncJob(
   // repo/board/project should collapse while a job is waiting or running. A
   // later delivery/reconciliation must be able to enqueue once the retained
   // completed/failed BullMQ job is removed.
+  //
+  // Drive file capture is the exception: `replaceDelayed` extends a waiting
+  // quiet window the same way conversation-review bumps `quietUntil`.
   const q = getIntegrationSyncQueue();
   const jobId = integrationSyncJobId(data);
   if (jobId) {
@@ -936,8 +1026,16 @@ export async function enqueueIntegrationSyncJob(
       // Redis connection dropped" error. Do not recycle it into a duplicate.
       if (data.kind === 'targeted' && data.continuationHandoffId) return;
       const state = await existing.getState?.().catch(() => null);
-      if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) return;
-      if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
+      if (state === 'delayed' && opts.replaceDelayed) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) {
+        return;
+      } else if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
         if (!existing.remove) return;
         const removed = await existing.remove().then(
           () => true,
@@ -1565,5 +1663,56 @@ export async function enqueueEmailInboundJob(data: EmailInboundJobData): Promise
 export async function closeEmailInboundQueue(): Promise<void> {
   await closeQueue(_emailInboundQueue, () => {
     _emailInboundQueue = undefined;
+  });
+}
+
+/** Team and actor IDs only: crawled page text never enters Redis jobs. */
+export interface WebsiteScanJobData {
+  platformOperatorSessionId?: string;
+  teamId: string;
+  userId: string;
+  scanId: string;
+}
+
+let _websiteScanQueue: TimelineQueue<WebsiteScanJobData> | undefined;
+
+export function getWebsiteScanQueue(): TimelineQueue<WebsiteScanJobData> {
+  return (_websiteScanQueue ??= createTimelineQueue<WebsiteScanJobData>(QUEUE_NAMES.websiteScan, {
+    attempts: 4,
+    backoff: { type: 'website-retry', delay: 5_000 },
+    removeOnComplete: { age: 24 * 3600 },
+    removeOnFail: { age: 7 * 24 * 3600 },
+  }));
+}
+
+export async function enqueueWebsiteScanJob(data: WebsiteScanJobData): Promise<void> {
+  await getWebsiteScanQueue().add('scan', data, {
+    jobId: `website-scan-${data.teamId}-${data.scanId}`,
+  });
+}
+
+export async function closeWebsiteScanQueue(): Promise<void> {
+  await closeQueue(_websiteScanQueue, () => {
+    _websiteScanQueue = undefined;
+  });
+}
+
+let _websiteSchedulerQueue: TimelineQueue<Record<string, never>> | undefined;
+export function getWebsiteSchedulerQueue(): TimelineQueue<Record<string, never>> {
+  return (_websiteSchedulerQueue ??= createTimelineQueue<Record<string, never>>(
+    QUEUE_NAMES.websiteScheduler,
+    { removeOnComplete: true, removeOnFail: { age: 86400 } },
+  ));
+}
+export async function scheduleWebsiteScheduler(): Promise<void> {
+  await getWebsiteSchedulerQueue().upsertJobScheduler(
+    'website-scheduler-minute',
+    { every: 60_000 },
+    { name: 'tick', data: {} },
+  );
+}
+export async function closeWebsiteSchedulerQueue(): Promise<void> {
+  await closeQueue(_websiteSchedulerQueue, () => {
+    _websiteSchedulerQueue = undefined;
   });
 }

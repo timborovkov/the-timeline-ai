@@ -3,6 +3,7 @@ import {
   billingUnbilledAlerts,
   billingUsageLedger,
   teamBillingAccounts,
+  teams,
   type Db,
 } from '@timeline/db';
 import { and, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm';
@@ -1142,8 +1143,52 @@ export async function handlePolarWebhookEvent(input: {
     log.warn({ teamId, type }, 'polar webhook for unknown Timeline team; acknowledging');
     return { ok: true, ignored: 'unknown_team' };
   }
+  const [lifecycle] = await input.db.select().from(teams).where(eq(teams.id, teamId));
+  if (lifecycle?.deletionStartedAt) {
+    if (
+      type.startsWith('subscription.') &&
+      !['subscription.revoked', 'subscription.canceled'].includes(type)
+    ) {
+      const subscriptionId = input.payload.data?.id;
+      const customerId = input.payload.data?.customer?.id ?? input.payload.data?.customer_id;
+      const [account] = await input.db
+        .select()
+        .from(teamBillingAccounts)
+        .where(eq(teamBillingAccounts.teamId, teamId));
+      if (
+        !subscriptionId ||
+        !customerId ||
+        account?.polarCustomerId !== customerId ||
+        !input.provider
+      )
+        throw new Error('Deletion subscription reconciliation requires verified billing identity');
+      await input.provider.revokeSubscription(subscriptionId, customerId);
+    }
+    return { ok: true, ignored: 'team_deletion' };
+  }
   try {
-    return await applyPolarWebhookEvent({ ...input, teamId, type });
+    const result = await input.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(teams).where(eq(teams.id, teamId)).for('update');
+      if (current?.deletionStartedAt)
+        return handlePolarWebhookEvent({ ...input, db: tx as unknown as Db });
+      return applyPolarWebhookEvent({ ...input, db: tx as unknown as Db, teamId, type });
+    });
+    if (
+      type.startsWith('subscription.') &&
+      input.payload.data?.cancel_at_period_end !== true &&
+      input.payload.data?.cancelAtPeriodEnd !== true &&
+      !['subscription.canceled', 'subscription.revoked'].includes(type)
+    ) {
+      await input.db.transaction(async (tx) => {
+        const [current] = await tx.select().from(teams).where(eq(teams.id, teamId)).for('update');
+        if (current?.disabledAt)
+          await tx
+            .update(teams)
+            .set({ lifecycleWork: { ...current.lifecycleWork, billingPending: true } })
+            .where(eq(teams.id, teamId));
+      });
+    }
+    return result;
   } catch (err) {
     if (isIgnorablePolarWebhookFailure(err)) {
       log.warn({ err, teamId, type }, 'polar webhook ignored invalid team identifier');

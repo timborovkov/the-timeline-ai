@@ -1,8 +1,7 @@
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type { Db } from '@timeline/db';
 
 import {
   parseArgs,

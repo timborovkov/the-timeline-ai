@@ -1,6 +1,10 @@
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 
-import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site/types';
+import type {
+  PublicDocument,
+  PublicIsoDate,
+  PublicLlmsContentSection,
+} from '@/lib/public-site/types';
 
 import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-documents';
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
@@ -24,8 +28,13 @@ import {
   TIMELINE_SKILL_INSTALL_PROMPT,
 } from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
 import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-claims';
+
+// Legal consent versions may have a same-day .N revision; public dates cannot.
+const termsDate = TERMS_VERSION.slice(0, 10) as PublicIsoDate;
+const privacyDate = PRIVACY_VERSION.slice(0, 10) as PublicIsoDate;
 
 const LAST_REVIEWED = '2026-08-12' as const;
 
@@ -69,7 +78,7 @@ const AGENT_INSTALL_LLM_SECTIONS = [
 const LANDING_SECTIONS = [
   {
     title: 'What The Timeline does',
-    body: 'The Timeline is an auto-updating work record. It turns what is said in Slack, Telegram, email and calls into current client, deal, task and decision records, with the source for every line and human approval before anything changes.',
+    body: PRODUCT_POSITIONING.hero,
   },
   {
     title: 'Best-fit teams',
@@ -116,12 +125,16 @@ const TRUST_SECTIONS = [
     body: 'Recall.ai processes meeting media to produce transcripts. Hosted Timeline requests one-hour provider media retention and does not copy raw meeting audio or video into Timeline storage. The requested setting is not confirmation of completed provider deletion. Transcripts remain workspace content. Uploaded voice notes and documents remain stored until deleted under applicable workspace handling.',
   },
   {
+    title: 'Website sources and scanning',
+    body: 'When a user requests a website scan, Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) fetches public pages of a website URL the user submits. Timeline sends that public URL; Firecrawl returns markdown. Firecrawl documents United States processing and a 24-hour crawl-result API window. Broader page-content retention is to be confirmed. Timeline does not enable Firecrawl Enterprise zero-data-retention.',
+  },
+  {
     title: 'Analytics and third parties',
     body: 'Timeline does not use behavioral advertising trackers. PostHog browser analytics may run only on reviewed public pages after affirmative consent, never in private workspace routes, with autocapture, heatmaps, and session replay off. Separate server-to-server events count allowlisted public and app surfaces through two fixed non-visitor streams, while content-free product actions use pseudonymous server identifiers. Sentry error monitoring is separate from every PostHog path.',
     links: [
       {
         label: 'Read the cookies and browser-storage notice',
-        href: 'https://thetimeline.cc/cookies',
+        href: '/cookies',
       },
     ],
   },
@@ -148,7 +161,7 @@ export const TRUST_DOCUMENT = {
   description:
     'How The Timeline protects team data across AI inference, storage, permissions, meetings, analytics, and human access.',
   indexability: 'index',
-  dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+  dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   structuredData: [{ type: 'web-page' }],
@@ -167,11 +180,10 @@ const coreDocuments = definePublicDocuments('public-core', [
   {
     canonicalPath: '/',
     kind: 'landing',
-    title: "Your team's work, written down for you",
-    description:
-      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
+    title: PRODUCT_POSITIONING.title,
+    description: PRODUCT_POSITIONING.description,
     indexability: 'index',
-    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -182,7 +194,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         features: [
-          'Auto-updating work record from Slack, Telegram, email and calls',
+          'Connected clients, projects, tasks and decisions from selected tools and sources',
           'Deliberate Telegram, Slack, email, meeting transcript, and webhook capture',
           'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -195,9 +207,9 @@ const coreDocuments = definePublicDocuments('public-core', [
       section: 'primary',
       order: 10,
       label: 'Landing page',
-      summary:
-        'Editorial product overview, cited evidence narrative, capture surfaces, and trust model.',
-      fullSummary: 'Product overview and cited evidence narrative.',
+      summary: PRODUCT_POSITIONING.description,
+      fullSummary:
+        'A living work record with connected objects, attached sources and approval-backed changes.',
       sections: LANDING_SECTIONS,
     },
   },
@@ -206,9 +218,9 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'guide-index',
     title: 'Help',
     description:
-      'Guides for The Timeline: capture Slack, Telegram, email and calls, keep records current, and trace every answer to its source.',
+      'Guides to connecting sources, capturing work, managing lasting records and tracing answers to their evidence in The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.8 },
     structuredData: [{ type: 'collection-page' }],
@@ -228,7 +240,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Compare monthly estimates from the same usage. Prices in EUR, excluding VAT.',
     indexability: 'index',
-    dates: { modified: '2026-11-04', reviewed: '2026-11-04' },
+    dates: { modified: '2026-11-13', reviewed: '2026-11-13' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -257,7 +269,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         },
         {
           title: 'Meters',
-          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
+          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted source units (one per ordinary source; 20 per captured website page, including unchanged pages). Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
         },
         {
           title: 'Questions',
@@ -336,7 +348,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Terms of Use',
     description: 'Terms governing access to The Timeline.',
     indexability: 'index',
-    dates: { modified: TERMS_VERSION, reviewed: '2026-11-03' },
+    dates: { modified: termsDate, reviewed: termsDate },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -345,7 +357,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       order: 50,
       summary: 'Terms governing access to The Timeline.',
       fullSummary:
-        'Binding service terms covering user and team authority, customer content, capture responsibility, AI, integrations, acceptable use, security, liability, and termination.',
+        'Binding service terms covering user and team authority, customer content, capture responsibility, AI, integrations, acceptable use, security, liability, and termination. Personal OAuth disconnect, workspace-source removal, and deletion of captured history are distinct actions.',
     },
   },
   {
@@ -354,7 +366,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Privacy Policy',
     description: 'How The Timeline processes personal data and team content.',
     indexability: 'index',
-    dates: { modified: PRIVACY_VERSION, reviewed: '2026-11-03' },
+    dates: { modified: privacyDate, reviewed: privacyDate },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -363,7 +375,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       order: 40,
       summary: 'How The Timeline processes personal data and team content.',
       fullSummary:
-        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors, analytics, human access, security, retention, transfers, and data-subject rights.',
+        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors including Firecrawl public website scanning, Resend transactional and inbound email, analytics, human access, security, retention, transfers, data-subject rights, and the distinction between personal disconnect, workspace-source removal, and deletion of captured history.',
     },
   },
   {
@@ -431,7 +443,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+    dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

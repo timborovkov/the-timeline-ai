@@ -88,6 +88,58 @@ describe('hubMentionedInText', () => {
 });
 
 describe('qualifyWorkspaceHubs', () => {
+  it('prefers an exact project name over siblings sharing the same client token', () => {
+    const sibling = { ...fabaProject, id: 'project-portal', name: 'Faba partner portal' };
+    const qualified = qualifyWorkspaceHubs({
+      hubs: [fabaCompany, fabaProject, sibling],
+      text: 'For Faba partner portal, implement the invitation form.',
+    });
+    expect(qualified.uniqueProject).toEqual(sibling);
+    expect(qualified.uniqueCompany).toEqual(fabaCompany);
+  });
+
+  it('keeps independently named nested projects ambiguous', () => {
+    const short = { ...fabaProject, id: 'short', name: 'Northstar', aliases: [] };
+    const long = { ...short, id: 'long', name: 'Northstar Mobile' };
+    expect(
+      qualifyWorkspaceHubs({
+        hubs: [short, long],
+        text: 'Northstar and Northstar Mobile both need updated onboarding.',
+      }).uniqueProject,
+    ).toBeNull();
+    expect(
+      qualifyWorkspaceHubs({
+        hubs: [short, long],
+        text: 'Northstar Mobile needs updated onboarding.',
+      }).uniqueProject,
+    ).toEqual(long);
+  });
+
+  it('keeps explicitly named sibling projects ambiguous', () => {
+    const sibling = { ...fabaProject, id: 'project-portal', name: 'Faba partner portal' };
+    expect(
+      qualifyWorkspaceHubs({
+        hubs: [fabaProject, sibling],
+        text: 'Faba website redesign and Faba partner portal both need this.',
+      }).uniqueProject,
+    ).toBeNull();
+  });
+
+  it('does not use a shared short alias to disambiguate sibling projects', () => {
+    const sibling = {
+      ...fabaProject,
+      id: 'project-portal',
+      name: 'Faba partner portal',
+      aliases: ['Faba'],
+    };
+    expect(
+      qualifyWorkspaceHubs({
+        hubs: [{ ...fabaProject, aliases: ['Faba'] }, sibling],
+        text: 'Faba needs an invitation form.',
+      }).uniqueProject,
+    ).toBeNull();
+  });
+
   it('returns unique company and project when one client is named', () => {
     const qualified = qualifyWorkspaceHubs({
       hubs: [fabaCompany, fabaProject, acmeCompany, otherProject],
@@ -99,6 +151,15 @@ describe('qualifyWorkspaceHubs', () => {
       'company-faba',
       'project-faba',
     ]);
+  });
+
+  it('does not prefer an exact company name over a second company mentioned by short name', () => {
+    expect(
+      qualifyWorkspaceHubs({
+        hubs: [fabaCompany, { ...acmeCompany, aliases: [] }],
+        text: 'After the Faba call, also ping Acme about the login page.',
+      }).uniqueCompany,
+    ).toBeNull();
   });
 
   it('does not attach a client when two companies are named', () => {

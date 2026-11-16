@@ -28,6 +28,14 @@ const githubProvider = {
   available: true,
 };
 
+const driveProvider = {
+  id: 'google_drive' as const,
+  label: 'Google Drive',
+  description: 'Capture selected Drive files.',
+  logo: '/connectors/google-drive.svg',
+  available: true,
+};
+
 const sentryProvider = {
   id: 'sentry' as const,
   label: 'Sentry',
@@ -100,6 +108,38 @@ describe('IntegrationsCatalog', () => {
 
     resolveFetch?.(new Response('oauth_start_failed', { status: 502 }));
     expect(await screen.findByRole('alert')).toBeTruthy();
+  });
+
+  it('shows Google Drive Limited Use before starting OAuth', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ url: 'https://accounts.google.com/o' }))),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<IntegrationsCatalog catalog={[driveProvider]} />);
+    await user.click(screen.getByRole('button', { name: 'Connect account' }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Connect Google Drive' })).toBeTruthy();
+    expect(screen.getByText(/Google API Services User Data Policy/)).toBeTruthy();
+    expect(
+      screen.getByText(/does not use Google user data to train general-purpose models/),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Privacy Policy' }).getAttribute('href')).toBe(
+      '/privacy',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Connect Google Drive' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Connect account' }));
+    await user.click(screen.getByRole('button', { name: 'Continue to Google' }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/integrations/google_drive/start', {
+      method: 'POST',
+    });
   });
 
   it('keeps a provider connection failure next to the affected account', async () => {

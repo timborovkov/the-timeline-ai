@@ -1,7 +1,7 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { useCommittedRef } from '@/lib/use-committed-ref';
@@ -15,6 +15,7 @@ interface VirtualListProps<T> {
   overscan?: number;
   gap?: number;
   getScrollElement?: () => HTMLElement | null;
+  offsetWithinScrollElement?: boolean;
   className?: string;
   itemClassName?: string;
   ariaLabel?: string;
@@ -30,6 +31,7 @@ export function VirtualList<T>({
   overscan = 8,
   gap = 0,
   getScrollElement,
+  offsetWithinScrollElement = false,
   className,
   itemClassName,
   ariaLabel,
@@ -37,13 +39,46 @@ export function VirtualList<T>({
   onEndReached,
 }: VirtualListProps<T>) {
   const fallbackParentRef = useRef<HTMLDivElement | null>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    if (!offsetWithinScrollElement) return;
+    const list = fallbackParentRef.current;
+    const scrollElement = getScrollElement?.() ?? null;
+    if (!list || !scrollElement) return;
+    const measureOffset = () => {
+      setScrollMargin(
+        list.getBoundingClientRect().top -
+          scrollElement.getBoundingClientRect().top +
+          scrollElement.scrollTop -
+          scrollElement.clientTop,
+      );
+    };
+    const observer = new ResizeObserver(measureOffset);
+    // Changes in preceding groups or dialog controls move this list without
+    // resizing the scrollport. Observe their layout boxes as well.
+    for (let ancestor: Element | null = list; ancestor; ancestor = ancestor.parentElement) {
+      observer.observe(ancestor);
+      if (ancestor.parentElement) {
+        for (const sibling of ancestor.parentElement.children) observer.observe(sibling);
+      }
+      if (ancestor === scrollElement) break;
+    }
+    measureOffset();
+    return () => {
+      observer.disconnect();
+    };
+  }, [getScrollElement, offsetWithinScrollElement]);
   const onEndReachedRef = useCommittedRef(onEndReached);
   const requestedCountRef = useRef(0);
 
   const virtualizer = useVirtualizer({
     count: items.length,
+    scrollMargin: offsetWithinScrollElement ? scrollMargin : 0,
     getScrollElement: () => {
-      if (getScrollElement) return getScrollElement() ?? fallbackParentRef.current;
+      if (getScrollElement) {
+        const element = getScrollElement();
+        return element ?? (offsetWithinScrollElement ? null : fallbackParentRef.current);
+      }
       return getAppMainScrollElement() ?? fallbackParentRef.current;
     },
     estimateSize: (index) => {
@@ -66,6 +101,9 @@ export function VirtualList<T>({
   });
 
   const virtualItems = virtualizer.getVirtualItems();
+  const windowStart = virtualItems[0]?.start ?? 0;
+  const windowEnd = virtualItems.at(-1)?.end ?? 0;
+  const offset = offsetWithinScrollElement ? scrollMargin : 0;
   const firstVisible = virtualItems[0] ? items[virtualItems[0].index] : items[0];
   const lastRenderedIndex = virtualItems.at(-1)?.index;
 
@@ -86,7 +124,16 @@ export function VirtualList<T>({
       aria-label={ariaLabel}
     >
       {renderSticky?.(firstVisible)}
-      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+      <div
+        className="relative w-full"
+        style={{
+          paddingTop: Math.max(0, windowStart - offset),
+          paddingBottom: Math.max(
+            0,
+            virtualizer.getTotalSize() - (virtualItems.length ? windowEnd - offset : 0),
+          ),
+        }}
+      >
         {virtualItems.map((virtualRow) => {
           const item = items[virtualRow.index];
           if (item === undefined) return null;
@@ -95,8 +142,7 @@ export function VirtualList<T>({
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
-              className={cn('absolute top-0 left-0 w-full', itemClassName)}
-              style={{ transform: `translateY(${String(virtualRow.start)}px)` }}
+              className={cn('relative w-full', itemClassName)}
             >
               {/* Virtualizer windows rows through a callback; the item component
                   owns its own state. */}

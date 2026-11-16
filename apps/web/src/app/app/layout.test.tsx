@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   getRequestIdentity: vi.fn(),
   cookies: vi.fn(),
   getCalendarSettings: vi.fn(),
+  getFirstRun: vi.fn(),
   getNavAttentionSummary: vi.fn(),
   getUserLegalAcceptance: vi.fn(),
   hasCurrentLegalAcceptance: vi.fn(),
@@ -34,7 +35,7 @@ function queryResult<T>(value: T) {
 }
 
 const selectResults = [
-  [{ email: 'tim@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
+  [{ email: 'taylor@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
   [],
 ];
 const select = vi.fn(() => queryResult(selectResults.shift() ?? []));
@@ -59,11 +60,16 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: vi.fn().mockResolvedValue('owner'),
-      billing: { getDashboard: vi.fn().mockResolvedValue({ sidebar: null }) },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       objects: {
         listNotifications: fakes.listNotifications,
         unreadNotificationCount: fakes.unreadNotificationCount,
+      },
+      billing: {
+        getDashboard: () => Promise.resolve({ sidebar: null }),
+      },
+      onboarding: {
+        getFirstRun: fakes.getFirstRun,
       },
     }),
   }),
@@ -110,6 +116,14 @@ await vi.mock(
   () => import('@/lib/hub-status'),
 );
 await vi.mock(
+  import.meta.resolve('@/lib/first-run-status'),
+  () => ({
+    firstRunGuideProps: (firstRun: { phase: string; guideHiddenAt: Date | null } | null) =>
+      firstRun ? { phase: firstRun.phase, hidden: Boolean(firstRun.guideHiddenAt) } : null,
+  }),
+  () => import('@/lib/first-run-status'),
+);
+await vi.mock(
   import.meta.resolve('@/lib/legal'),
   () => ({
     getUserLegalAcceptance: fakes.getUserLegalAcceptance,
@@ -133,10 +147,12 @@ beforeEach(() => {
   selectResults.splice(
     0,
     selectResults.length,
-    [{ email: 'tim@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
+    [{ email: 'taylor@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
     [],
   );
-  fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } });
+  fakes.auth.mockResolvedValue({
+    user: { id: 'user-1', name: 'Taylor', email: 'taylor@example.com' },
+  });
   fakes.getRequestIdentity.mockImplementation(() =>
     fakes.auth().then((session) => ({ session, impersonation: null })),
   );
@@ -156,6 +172,7 @@ beforeEach(() => {
     memberships: [],
   });
   fakes.unreadNotificationCount.mockResolvedValue(0);
+  fakes.getFirstRun.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -207,6 +224,18 @@ describe('AppLayout', () => {
 
     await expect(AppLayout({ children: <p>Home</p>, modal: null })).rejects.toThrow(
       'redirect:/sign-in',
+    );
+  });
+
+  it('sends a first-run starter to setup before Home when the team is still on welcome', async () => {
+    fakes.getFirstRun.mockResolvedValue({
+      phase: 'welcome',
+      startedByUserId: 'user-1',
+      guideHiddenAt: null,
+    });
+
+    await expect(AppLayout({ children: <p>Home</p>, modal: null })).rejects.toThrow(
+      'redirect:/onboarding',
     );
   });
 

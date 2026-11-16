@@ -5,7 +5,7 @@ description: Use a connected Timeline workspace through timeline.* MCP tools. Ap
 
 # Timeline
 
-Use Timeline as the workspace evidence layer. The hosted MCP server advertises five tools. Choose the smallest set that can answer the user's question, expand material source records, and make consequential claims traceable.
+Use Timeline as the workspace evidence layer. The hosted MCP server advertises seven tools. Choose the smallest set that can answer the user's question, expand material source records, and make consequential claims traceable.
 
 ## Establish the coworker agreement
 
@@ -87,6 +87,10 @@ For first use with no visible evidence, offer a project brief or handoff from co
 
 Adapt the answer to the request rather than switching skills. For a status update, distinguish outcomes, decisions, blockers, commitments, and source mismatches. For an incident, build the chronology first and label causal claims as confirmed, likely, or unknown. For an exact lookup, answer tersely once the record is verified.
 
-`tools/list` advertises only the five tools above. Prefer those names for new work.
+`tools/list` advertises only the seven tools above. Prefer those names for new work.
 
 If a Timeline-dependent request has no `timeline.*` tools available, stop and direct the user to [agent setup](https://thetimeline.cc/agents/setup.md).
+
+## Website capture
+
+Use `timeline.crawl` only when the user explicitly requests a public website scan and confirms permission and usage (20 source units per captured page, up to five pages; AI/storage additional). It requires `websites:scan`; default grants do not include it. Supply a stable idempotency key, URL, subject and `permissionConfirmed: true`. Poll `timeline.crawl_status` with the returned run ID. Never crawl automatically to answer an ordinary search question.

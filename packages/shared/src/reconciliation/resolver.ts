@@ -8,14 +8,14 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import {
   buildAssociationDedupeKey,
   buildOutputDedupeKey,
   reconciliationDedupeKey,
   type SourceRef,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -568,6 +568,7 @@ async function findMatchingClusterIds(
   teamId: string,
   anchors: AnchorRow[],
 ): Promise<string[]> {
+  if (anchors.length === 0) return [];
   const clauses = anchors.map(
     (anchor) =>
       sql`(${artifactClusterAnchors.anchorType} = ${anchor.anchorType} AND ${artifactClusterAnchors.anchorValue} = ${anchor.anchorValue})`,
@@ -575,7 +576,7 @@ async function findMatchingClusterIds(
   const rows = await db
     .select({ clusterId: artifactClusterAnchors.clusterId })
     .from(artifactClusterAnchors)
-    .where(and(eq(artifactClusterAnchors.teamId, teamId), sql.join(clauses, sql.raw(' OR '))));
+    .where(and(eq(artifactClusterAnchors.teamId, teamId), or(...clauses)));
   return [...new Set(rows.map((row) => row.clusterId))].sort();
 }
 

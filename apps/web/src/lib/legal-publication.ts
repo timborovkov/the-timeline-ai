@@ -1,6 +1,6 @@
 /**
- * Production legal publication is fail-closed until the operator has resolved
- * and evidenced the controller/contracting-entity readiness gate (G-20).
+ * Production legal publication is fail-closed until the operator approves
+ * the legal text for publication.
  * Non-production environments keep the clickwrap flow available for review
  * and automated tests.
  */

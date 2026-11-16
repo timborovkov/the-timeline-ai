@@ -7,12 +7,16 @@ import { PGlite } from '@electric-sql/pglite';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
 
-export async function applyDbMigrations(pg: PGlite): Promise<void> {
+export async function applyDbMigrations(
+  pg: PGlite,
+  beforeMigration?: (filename: string) => Promise<void>,
+): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((file) => file.endsWith('.sql'))
     .sort();
 
   for (const file of files) {
+    await beforeMigration?.(file);
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
     const statements = sql
       .split('--> statement-breakpoint')

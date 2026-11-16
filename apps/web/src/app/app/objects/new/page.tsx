@@ -6,7 +6,6 @@ import type { Metadata } from 'next';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { NewObjectForm } from '@/components/objects/new-object-form';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -52,10 +51,9 @@ export default async function NewObjectPage({
     <div className="space-y-6">
       <PageHeader
         title="New object"
-        subtitle="Create a tracked object for your team."
+        subtitle="Add a person, project, task, or other record. Link evidence and details after creating it."
         leading={objectsBackLink}
       />
-      <WorkSubnav current="/app/objects/new" />
       <NewObjectForm
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         defaultProjectId={defaultProjectId}

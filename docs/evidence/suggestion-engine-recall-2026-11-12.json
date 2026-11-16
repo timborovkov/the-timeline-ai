@@ -1,0 +1,58 @@
+{
+  "date": "2026-11-12",
+  "policy_version": "2026-11-engine-v3-recall",
+  "scope": "Recall-oriented approval proposals; synthetic local validation, no deployment.",
+  "baseline": {
+    "policy_version": "2026-11-engine-v2",
+    "evidence": "suggestion-engine-2026-11-12.json",
+    "observation": "The previous normalization contract discarded an ambiguous company/vendor create. The revised fixture produces an explicit low-confidence company update interpretation without merging aliases. This is a deterministic persistence regression comparison, not a paired live-model benchmark."
+  },
+  "policy": {
+    "primary": "Useful source-backed opportunity coverage",
+    "secondary": ["Precision", "Duplicate burden", "Rejection rate"],
+    "hard_boundaries": [
+      "Private/cross-team source isolation",
+      "No canonical changes before approval",
+      "No similarity-only merges",
+      "No invented owners, deadlines or completion"
+    ]
+  },
+  "live_evaluation": {
+    "configured_model": "deepseek/deepseek-v4.1-flash-1017",
+    "command": "SUGGESTIONS_LIVE_EVAL=1 bun scripts/testing/run.ts --live workers/suggestions.live-eval.test.ts",
+    "unique_new_cases": 2,
+    "repetitions_per_new_case": 3,
+    "positive": "Tentative access-checklist request with no chosen assignee or deadline",
+    "negative": "Explicit non-request mentioning access checklists",
+    "positive_opportunities_found": 3,
+    "positive_attempts": 3,
+    "negative_task_proposals": 0,
+    "negative_attempts": 3,
+    "existing_live_regression_cases": 4,
+    "status": "passed",
+    "usage": "Provider costs were not separately aggregated for this follow-up run.",
+    "passed_tests": 10
+  },
+  "regressions": {
+    "worker_targeted": 4,
+    "review_and_later_evidence": 4,
+    "engine_persistence": 10,
+    "worker_eval": 1,
+    "typecheck": "apps/worker passed",
+    "lint": "Changed TypeScript files passed"
+  },
+  "discovered_bug": "Background replay of a rejected proposal attempted to insert a synthetic worker ID into resolved_by_user_id. Suppressed projections now preserve existing reviewer attribution or leave it null; original rejection records remain intact. Forced reinference of unchanged evidence passes without re-offering the rejected proposal.",
+  "limitations": [
+    "Two unique new synthetic live cases do not establish population recall or precision.",
+    "No paired live comparison against the full previous revision on representative customer events.",
+    "Rejections persist for reviewed labeling; this change does not train models automatically.",
+    "Railway operational and real-event validation remain unavailable."
+  ],
+  "source_sha256": {
+    "apps/worker/src/workers/suggestions.ts": "c99285cc42c73ce35e9f256cf17d3abff9f9e763ce7baf1478aca261d8c2eeb1",
+    "apps/worker/src/workers/suggestions.test.ts": "88a033602d360306d79931652ab474517a97f9e11b4a028c605110cfa485d9fe",
+    "apps/worker/src/workers/suggestions.evals.test.ts": "452ae00fbfdec555be68371ae264d7d4a0af2272db914c7431b98f2c6dd04db9",
+    "apps/worker/src/workers/suggestions.live-eval.test.ts": "3ae701ce9df2a9494de895f5827fea576bf4c124c636411acb08c0e72c4da30f",
+    "packages/shared/src/suggestions/index.ts": "44bdf579a7765ab58b1fc4c2eba7ac5cb3c640c71951d514da6a041c6144ec97"
+  }
+}

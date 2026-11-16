@@ -194,6 +194,7 @@ describe('POST /api/documents/search', () => {
       12,
     ]);
     expect(fakes.fakeSearchDocumentChunksPage).toHaveBeenCalledWith({
+      ranking: 'relevance',
       query: 'roadmap',
       documentId: DOC_ID,
       folderIds: [FOLDER_ID],

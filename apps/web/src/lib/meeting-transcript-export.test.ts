@@ -13,7 +13,7 @@ describe('meeting transcript export', () => {
       summary: 'Launch scope narrowed and follow-up owners were agreed.',
       chunks: [
         {
-          speaker: 'Tim Borovkov',
+          speaker: 'Taylor Bennett',
           text: 'Let us ship the transcript export.',
           startMs: 0,
         },
@@ -32,7 +32,7 @@ describe('meeting transcript export', () => {
     expect(exported).toContain(
       '## Summary\n\nLaunch scope narrowed and follow-up owners were agreed.',
     );
-    expect(exported).toContain('- 00:00 Tim Borovkov: Let us ship the transcript export.');
+    expect(exported).toContain('- 00:00 Taylor Bennett: Let us ship the transcript export.');
     expect(exported).toContain('- 01:02 Unattributed utterance still exports.');
   });
 

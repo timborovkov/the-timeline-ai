@@ -13,6 +13,7 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
 import {
   isSignalClass,
@@ -22,6 +23,7 @@ import {
 import { childLogger } from '#src/logger.js';
 import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+import { qualifyWorkspaceHubs } from '#src/suggestions/hub-context.js';
 import { withTeam } from '#src/team-scope.js';
 
 import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
@@ -256,7 +258,13 @@ export function matchOpenTasksToCapturedWorkItem(
 ): { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] {
   const hard: { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] = [];
   const fuzzy: { task: OpenTaskRow; match: GithubTaskProposalPlan['match'] }[] = [];
-  const aliasNeedles = new Set(workItem.aliases.map((alias) => alias.toLowerCase()));
+  const aliasNeedles = new Set(
+    workItem.aliases
+      // PR numbers are only unique inside one repository. Keep short aliases
+      // for display, but never use them as hard identity across repositories.
+      .filter((alias) => !workItem.github || !/^(?:pr|issue)?\s*#\s*\d+$/i.test(alias.trim()))
+      .map((alias) => alias.toLowerCase()),
+  );
 
   for (const task of tasks) {
     if (canonicalEntityId && task.id === canonicalEntityId) {
@@ -482,7 +490,6 @@ async function proposeGithubTaskUpdates(input: {
     loadTeamMembers(input.db, input.teamId),
     loadGithubLoginsByUserId(input.db, input.teamId),
   ]);
-  if (tasks.length === 0 && pendingCreates.length === 0) return 0;
 
   const scope = withTeam(input.db, input.teamId, PSEUDO_USER, { skipMembershipCheck: true });
   let created = 0;
@@ -529,6 +536,24 @@ async function proposeGithubTaskUpdates(input: {
       source.workItem,
       pendingCreates.map((row) => row.task),
     );
+    if (
+      pendingMatches.length === 0 &&
+      tasks.length < TASK_CANDIDATE_LIMIT &&
+      pendingCreates.length < PENDING_CREATE_LIMIT
+    ) {
+      // A failed ambiguous match is not proof that this is new work. Closed
+      // and archived identities are checked separately before creation.
+      const plausible = [...tasks, ...pendingCreates.map((row) => row.task)].some(
+        (task) =>
+          matchOpenTasksToCapturedWorkItem(source.workItem, [task], source.canonicalEntityId)
+            .length > 0,
+      );
+      if (
+        !plausible &&
+        (await proposeCompletedGithubTask(input.db, input.teamId, scope, source, assigneeUserId))
+      )
+        created += 1;
+    }
     for (const match of pendingMatches) {
       const pending = pendingCreates.find((row) => row.task.id === match.task.id);
       if (!pending || pending.editedByUser) continue;
@@ -561,6 +586,149 @@ async function proposeGithubTaskUpdates(input: {
     }
   }
   return created;
+}
+
+async function proposeCompletedGithubTask(
+  db: Db,
+  teamId: string,
+  scope: ReturnType<typeof withTeam>,
+  source: GithubProposalSource,
+  assigneeUserId: string | null,
+): Promise<boolean> {
+  const work = source.workItem;
+  if (work.github?.kind !== 'pull_request' || work.status !== 'done') return false;
+  // Query the external identity separately: closed history must not consume
+  // the bounded open-task recall budget. Include archived records for replay.
+  const known = await loadOpenTaskCandidates(db, teamId, [source], null, true);
+  if (
+    known.length >= TASK_CANDIDATE_LIMIT ||
+    known.some((task) => {
+      const matches = matchOpenTasksToCapturedWorkItem(work, [task]);
+      if (matches.some((match) => match.match !== 'title')) return true;
+      // A qualified display-name collision does not override another PR identity.
+      const otherPr = stringArray(task.aliases).some(
+        (alias) =>
+          /^[^/\s]+\/[^#\s]+#(?:issue:)?\d+$/i.test(alias) &&
+          !work.aliases.some((value) => value.toLowerCase() === alias.toLowerCase()),
+      );
+      return matches.length > 0 && !otherPr;
+    })
+  )
+    return false;
+  const projects = await scope.objects.listObjects({
+    type: 'project',
+    archived: false,
+    limit: 501,
+  });
+  if (projects.length > 500) return false; // Never infer uniqueness from truncated recall.
+  const qualified = qualifyWorkspaceHubs({
+    hubs: projects
+      .filter((project) => !project.archivedAt)
+      .map((project) => ({
+        id: project.id,
+        type: project.type,
+        name: project.canonicalName,
+        aliases: project.aliases,
+        status: project.status,
+      })),
+    text: work.github.repo,
+  });
+  const project = qualified.uniqueProject;
+  if (!project || ['shipped', 'cancelled'].includes(project.status)) return false;
+  // Canonical uniqueness covers every unmerged task, including archived tasks
+  // outside the provider-identity recall set. Reserve room for the distinguishing
+  // repository/PR suffix before truncating long display titles.
+  const names = [truncate(work.title, 200)];
+  for (let attempt = 1; attempt <= 32; attempt++) {
+    const suffix = ` (${truncate(work.github.repo, 140)}#${work.github.number}${attempt > 1 ? `; ${attempt}` : ''})`;
+    names.push(`${truncate(work.title, 200 - suffix.length)}${suffix}`);
+  }
+  const occupied = await db
+    .select({ name: entities.canonicalName })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        eq(entities.type, 'task'),
+        isNull(entities.mergedIntoId),
+        inArray(
+          sql`lower(${entities.canonicalName})`,
+          names.map((name) => name.toLowerCase()),
+        ),
+      ),
+    );
+  const pendingName = sql<string>`coalesce(nullif(btrim(${agentSuggestionItems.proposedPayload}->>'canonicalName'), ''), ${agentSuggestionItems.title})`;
+  const pending = await db
+    .select({ name: pendingName })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestions.teamId, teamId),
+        documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        inArray(agentSuggestionItems.status, ['pending', 'failed']),
+        eq(agentSuggestionItems.operation, 'create'),
+        or(
+          eq(agentSuggestionItems.targetKind, 'task'),
+          and(
+            eq(agentSuggestionItems.targetKind, 'object'),
+            sql`${agentSuggestionItems.proposedPayload}->>'type' = 'task'`,
+          ),
+        ),
+        // A replay must keep its own reserved name.
+        sql`coalesce(${agentSuggestions.metadata}->>'github_external_id', '') <> ${work.externalId}`,
+        inArray(
+          sql`lower(${pendingName})`,
+          names.map((name) => name.toLowerCase()),
+        ),
+      ),
+    );
+  const occupiedNames = new Set([...occupied, ...pending].map((row) => row.name.toLowerCase()));
+  const canonicalName = names.find((name) => !occupiedNames.has(name.toLowerCase()));
+  if (!canonicalName) return false;
+  const dedupeKey = suggestionDedupeKey({
+    kind: 'github_completed_task',
+    externalId: work.externalId,
+  });
+  await scope.suggestions.createOrMergeSuggestionBundle({
+    source: 'background',
+    title: truncate(`Completed work: ${work.title}`, 200),
+    summary: truncate(source.contentText, 1000),
+    reason:
+      'A merged pull request records completed work in a uniquely identified project repository.',
+    confidence: 'high',
+    dedupeKey,
+    visibility: 'team',
+    evidence: [{ rawEventId: source.rawEventId, quote: truncate(source.contentText, 500) }],
+    metadata: { kind: 'github_completed_task', github_external_id: work.externalId },
+    items: [
+      {
+        operation: 'create',
+        targetKind: 'task',
+        targetId: null,
+        title: canonicalName,
+        description: truncate(source.contentText, 500),
+        dedupeKey: `${dedupeKey}:item`,
+        evidenceRawEventIds: [source.rawEventId],
+        proposedPayload: {
+          canonicalName,
+          status: 'done',
+          aliases: work.aliases,
+          parentObjectId: project.id,
+          projectName: project.name,
+          metadata: {
+            integration_provider: work.provider,
+            integration_external_id: work.externalId,
+            repository: work.github.repo,
+          },
+          ...(assigneeUserId ? { assigneeUserId } : {}),
+        },
+      },
+    ],
+  });
+  return true;
 }
 
 async function writeGithubTaskProposal(input: {
@@ -1023,6 +1191,7 @@ async function loadOpenTaskCandidates(
   teamId: string,
   sources: GithubProposalSource[],
   restrictToObjectId: string | null,
+  includeClosed = false,
 ): Promise<OpenTaskRow[]> {
   const externalIds = [...new Set(sources.map((source) => source.workItem.externalId))];
   const canonicalEntityIds = [
@@ -1046,14 +1215,38 @@ async function loadOpenTaskCandidates(
       sources.flatMap((source) => [source.workItem.externalId, ...source.workItem.aliases]),
     ),
   ].filter((name) => name.length >= 3);
+  const qualifiedAliases = aliasNeedles
+    .filter((name) => !/^(?:pr|issue)?\s*#\s*\d+$/i.test(name.trim()))
+    .map((name) => name.toLowerCase());
+  const titleNumber = or(
+    ...sources.flatMap((source) =>
+      source.workItem.github
+        ? [
+            sql`${entities.canonicalName} ~* ${`#[[:space:]]*${source.workItem.github.number}([^0-9]|$)`}`,
+          ]
+        : [],
+    ),
+  );
   const likeClauses = [
-    ...repoNames.map(
-      (name) => sql`lower(${entities.canonicalName}) like ${`%${escapeLike(name.toLowerCase())}%`}`,
+    ...repoNames.map((name) =>
+      and(
+        sql`lower(${entities.canonicalName}) like ${`%${escapeLike(name.toLowerCase())}%`}`,
+        includeClosed ? titleNumber : undefined,
+      ),
     ),
-    ...aliasNeedles.map(
-      (name) =>
-        sql`lower(coalesce(${entities.aliases}::text, '')) like ${`%${escapeLike(name.toLowerCase())}%`}`,
-    ),
+    ...(includeClosed
+      ? qualifiedAliases.length
+        ? [
+            sql`EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+          WHERE ${inArray(sql`lower(alias.value)`, qualifiedAliases)}
+        )`,
+          ]
+        : []
+      : aliasNeedles.map(
+          (name) =>
+            sql`lower(coalesce(${entities.aliases}::text, '')) like ${`%${escapeLike(name.toLowerCase())}%`}`,
+        )),
   ];
   const providers = [...new Set(sources.map((source) => source.workItem.provider))];
   const identityClauses = [
@@ -1079,15 +1272,18 @@ async function loadOpenTaskCandidates(
       and(
         eq(entities.teamId, teamId),
         eq(entities.type, 'task'),
-        isNull(entities.archivedAt),
+        includeClosed ? undefined : isNull(entities.archivedAt),
         isNull(entities.mergedIntoId),
-        sql`lower(${entities.status}) not in ('done', 'cancelled', 'canceled', 'shipped')`,
+        includeClosed
+          ? undefined
+          : sql`lower(${entities.status}) not in ('done', 'cancelled', 'canceled', 'shipped')`,
         restrictToObjectId ? eq(entities.id, restrictToObjectId) : or(...identityClauses),
       ),
     )
     .limit(TASK_CANDIDATE_LIMIT);
   return rows.filter(
-    (row) => !OPEN_TASK_STATUSES_EXCLUDED.includes(row.status.toLowerCase() as never),
+    (row) =>
+      includeClosed || !OPEN_TASK_STATUSES_EXCLUDED.includes(row.status.toLowerCase() as never),
   );
 }
 

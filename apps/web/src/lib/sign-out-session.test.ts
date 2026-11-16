@@ -54,4 +54,32 @@ describe('signOutAfterClearingLocalSession', () => {
     expect(fakes.signOut).toHaveBeenCalledWith({ redirect: false, redirectTo: '/sign-in' });
     expect(assign).toHaveBeenCalledWith('/sign-in');
   });
+  it('preserves an invitation through sign-out without following an external callback', async () => {
+    const assign = vi.fn();
+    await signOutAfterClearingLocalSession(
+      window.localStorage,
+      assign,
+      '/accept-invite/example-token',
+    );
+    expect(assign).toHaveBeenCalledWith('/sign-in?callbackUrl=%2Faccept-invite%2Fexample-token');
+    for (const callback of [
+      'https://attacker.example/path',
+      '//attacker.example',
+      '/sign-in',
+      '/sign-up',
+    ]) {
+      assign.mockClear();
+      await signOutAfterClearingLocalSession(window.localStorage, assign, callback);
+      expect(assign).toHaveBeenCalledWith('/sign-in');
+    }
+  });
+
+  it('does not navigate when sign-out fails', async () => {
+    const assign = vi.fn();
+    fakes.signOut.mockRejectedValueOnce(new Error('offline'));
+    await expect(signOutAfterClearingLocalSession(window.localStorage, assign)).rejects.toThrow(
+      'offline',
+    );
+    expect(assign).not.toHaveBeenCalled();
+  });
 });

@@ -25,6 +25,9 @@ describe('product tour route', () => {
     expect(html).toContain('data-product-tour');
     expect(html).toContain('Start free');
     expect(html).toContain('See pricing');
+    expect(html).toContain('Lasting record changes wait for your approval.');
+    expect(html).not.toContain('Nothing changes until you approve it.');
+    expect(html).toContain('data-first-run="compact"');
     expect(PRODUCT_TOUR.steps).toHaveLength(8);
 
     for (const step of PRODUCT_TOUR.steps) {
@@ -45,13 +48,15 @@ describe('product tour route', () => {
 
     expect(recap).toContain('data-screenshot-frame="portrait"');
     expect(recap).toContain('aspect-[390/844]');
-    expect(recap).toContain('object-contain');
+    expect(recap).toContain('Loading screenshot');
+    expect(recap).not.toContain('<img');
     expect(recap).not.toContain('aspect-[16/10]');
     expect(recap).not.toContain('object-cover');
 
     expect(handoff).toContain('data-screenshot-frame="landscape"');
     expect(handoff).toContain('aspect-[16/10]');
-    expect(handoff).toContain('object-cover');
+    expect(handoff).toContain('Loading screenshot');
+    expect(handoff).not.toContain('<img');
     expect(handoff).not.toContain('aspect-[390/844]');
 
     for (const step of PRODUCT_TOUR.steps) {

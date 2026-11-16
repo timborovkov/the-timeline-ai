@@ -32,6 +32,9 @@ await vi.mock(
 );
 
 const {
+  documents,
+  documentVersions,
+  documentChunks,
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -139,6 +142,147 @@ describe('suggestion scope', () => {
   let db: ReturnType<typeof drizzle>;
   let testDb: ResettablePGliteTestDb;
 
+  async function documentProposalFixture() {
+    const documentId = crypto.randomUUID(),
+      versionId = crypto.randomUUID(),
+      chunkId = crypto.randomUUID();
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      source: 'document',
+      contentText: 'Uploaded synthetic clients',
+      visibility: 'team',
+      authorUserId: USER_ID,
+      occurredAt: new Date(),
+    });
+    await db.insert(documents).values({
+      id: documentId,
+      teamId: TEAM_ID,
+      name: 'Synthetic clients',
+      ownerUserId: USER_ID,
+      visibility: 'team',
+    });
+    await db.insert(documentVersions).values({
+      id: versionId,
+      teamId: TEAM_ID,
+      documentId,
+      version: 1,
+      objectKey: 'synthetic/clients',
+      sourceEventId: TEAM_RAW_EVENT_ID,
+      processingStatus: 'chunked',
+    });
+    await db.insert(documentChunks).values({
+      id: chunkId,
+      teamId: TEAM_ID,
+      documentId,
+      documentVersionId: versionId,
+      chunkIndex: 0,
+      text: 'Northwind is a confidential client.',
+      tokenCount: 8,
+    });
+    await db
+      .update(documents)
+      .set({ currentVersionId: versionId })
+      .where(eq(documents.id, documentId));
+    const bundle = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Track Northwind',
+      dedupeKey: 'document-privacy',
+      metadata: {
+        document_id: documentId,
+        document_version_id: versionId,
+        document_chunk_id: chunkId,
+      },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID, quote: 'Northwind is a confidential client.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northwind',
+          dedupeKey: 'document-privacy:item',
+          proposedPayload: { type: 'company', canonicalName: 'Northwind' },
+        },
+      ],
+    });
+    return { documentId, bundle };
+  }
+
+  for (const change of ['private', 'deleted', 'superseded'] as const) {
+    it(`hides document-derived proposal reads after the document becomes ${change}`, async () => {
+      const { documentId, bundle } = await documentProposalFixture();
+      const reader = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+      expect(await reader.suggestions.getSuggestion(bundle.id)).not.toBeNull();
+      await db
+        .update(documents)
+        .set(
+          change === 'private'
+            ? { visibility: 'private' }
+            : change === 'deleted'
+              ? { deletedAt: new Date() }
+              : { currentVersionId: null },
+        )
+        .where(eq(documents.id, documentId));
+      expect(await reader.suggestions.listPendingSuggestions()).toHaveLength(0);
+      expect(await reader.suggestions.getSuggestion(bundle.id)).toBeNull();
+      expect(await reader.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).toBe(false);
+      expect(await db.select().from(entities)).toHaveLength(0);
+    });
+  }
+
+  it('revalidates document evidence inside the acceptance transaction after a visibility race', async () => {
+    const { documentId, bundle } = await documentProposalFixture();
+    const reader = withTeam(db as never, TEAM_ID, REVIEWER_ID, {
+      beforeSuggestionApply: async () => {
+        await db
+          .update(documents)
+          .set({ visibility: 'private' })
+          .where(eq(documents.id, documentId));
+      },
+    });
+    expect(await reader.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).toBe(false);
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
+  it('supersedes dependent email identities when their proposed person is rejected', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Track a contact',
+      dedupeKey: 'person-with-email',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Mara Linden',
+          dedupeKey: 'person-with-email:person',
+          proposedPayload: { type: 'person', canonicalName: 'Mara Linden', localRef: 'mara' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Mara email',
+          dedupeKey: 'person-with-email:email',
+          proposedPayload: { entityRef: 'mara', kind: 'email', value: 'mara@example.test' },
+        },
+      ],
+    });
+    const person = bundle.items.find((item) => item.targetKind === 'object');
+    const email = bundle.items.find((item) => item.targetKind === 'identity_facet');
+    if (!person || !email) throw new Error('Missing fixture items');
+    expect(await scope.suggestions.rejectSuggestionItem(person.id)).toBe(true);
+    const [stored] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, email.id));
+    expect(stored?.status).toBe('superseded');
+    expect(await scope.suggestions.acceptSuggestionItem(email.id)).toBe(false);
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
   beforeAll(async () => {
     testDb = await createResettablePGliteTestDb(seed);
     pg = testDb.pg;
@@ -181,6 +325,123 @@ describe('suggestion scope', () => {
 
     expect(bundle.visibilityOwnerUserId).toBeNull();
     expect(bundle.items).toHaveLength(1);
+  });
+
+  it('lists object-targeted pending suggestions beyond the workspace-newest cap', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const objectId = '44444444-4444-4444-8444-444444444444';
+    const [older] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'pending',
+        title: 'Update object stage',
+        dedupeKey: 'older-object-target',
+        visibility: 'team',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!older) throw new Error('expected older object-targeted suggestion');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: older.id,
+      teamId: TEAM_ID,
+      status: 'pending',
+      operation: 'update',
+      targetKind: 'object',
+      targetId: objectId,
+      title: 'Move to proposal',
+      dedupeKey: 'older-object-target:item',
+      proposedPayload: { stage: 'proposal' },
+    });
+    const newer = await db
+      .insert(agentSuggestions)
+      .values(
+        Array.from({ length: 100 }, (_, index) => ({
+          teamId: TEAM_ID,
+          source: 'background' as const,
+          status: 'pending' as const,
+          title: `Unrelated approval ${String(index).padStart(3, '0')}`,
+          dedupeKey: `unrelated-approval-${String(index).padStart(3, '0')}`,
+          visibility: 'team' as const,
+          createdAt: new Date('2026-06-01T00:00:00.000Z'),
+        })),
+      )
+      .returning({ id: agentSuggestions.id });
+    await db.insert(agentSuggestionItems).values(
+      newer.map((row, index) => ({
+        suggestionId: row.id,
+        teamId: TEAM_ID,
+        status: 'pending' as const,
+        operation: 'create' as const,
+        targetKind: 'task' as const,
+        title: `Unrelated task ${String(index).padStart(3, '0')}`,
+        dedupeKey: `unrelated-approval-${String(index).padStart(3, '0')}:item`,
+        proposedPayload: { canonicalName: `Unrelated task ${String(index).padStart(3, '0')}` },
+      })),
+    );
+
+    const workspacePending = await scope.suggestions.listPendingSuggestions();
+    const objectPending = await scope.suggestions.listPendingSuggestionsForObject(objectId);
+    expect(workspacePending.map((bundle) => bundle.id)).not.toContain(older.id);
+    expect(objectPending.map((bundle) => bundle.id)).toEqual([older.id]);
+  });
+
+  it('keeps pending local-ref relationships when sibling object creates are accepted', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const objectId = '55555555-5555-4555-8555-555555555555';
+    const [bundle] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'partially_resolved',
+        title: 'Remember Jonne Granqvist and DFK',
+        dedupeKey: 'accepted-sibling-local-ref',
+        visibility: 'team',
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!bundle) throw new Error('expected local-ref suggestion bundle');
+    await db.insert(agentSuggestionItems).values([
+      {
+        suggestionId: bundle.id,
+        teamId: TEAM_ID,
+        status: 'accepted',
+        operation: 'create',
+        targetKind: 'object',
+        targetId: null,
+        resultId: objectId,
+        title: 'Jonne Granqvist',
+        dedupeKey: 'accepted-sibling-local-ref:person',
+        proposedPayload: {
+          type: 'person',
+          canonicalName: 'Jonne Granqvist',
+          localRef: 'jonne-granqvist',
+        },
+      },
+      {
+        suggestionId: bundle.id,
+        teamId: TEAM_ID,
+        status: 'pending',
+        operation: 'create',
+        targetKind: 'object_relationship',
+        targetId: null,
+        title: 'Relate Jonne Granqvist and DFK',
+        dedupeKey: 'accepted-sibling-local-ref:relationship',
+        proposedPayload: {
+          fromRef: 'jonne-granqvist',
+          toEntityId: '66666666-6666-4666-8666-666666666666',
+          kind: 'related',
+        },
+      },
+    ]);
+
+    const objectPending = await scope.suggestions.listPendingSuggestionsForObject(objectId);
+    expect(objectPending.map((row) => row.id)).toEqual([bundle.id]);
+    expect(objectPending[0]?.items.map((item) => item.status).sort()).toEqual([
+      'accepted',
+      'pending',
+    ]);
   });
 
   it('rejects item evidence that is not included in bundle evidence', async () => {
@@ -2137,6 +2398,45 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.listSuggestions({ status: 'all', limit: 1 })).resolves.toEqual([
       expect.objectContaining({ id: olderPending.id }),
     ]);
+  });
+
+  it('scopes approval lists and counts to capture items before pagination', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundles = [];
+    for (const name of ['starter', 'unrelated']) {
+      bundles.push(
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: name,
+          dedupeKey: `capture:${name}`,
+          visibility: 'team',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title: name,
+              dedupeKey: `capture:${name}:item`,
+              proposedPayload: { canonicalName: name },
+            },
+          ],
+        }),
+      );
+    }
+    const starter = bundles[0];
+    if (!starter) throw new Error('Missing starter fixture');
+    const itemIds = starter.items.map((item) => item.id);
+    await expect(scope.suggestions.listSuggestions({ itemIds, limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: starter.id }),
+    ]);
+    await expect(scope.suggestions.getApprovalItemCounts({ itemIds })).resolves.toEqual({
+      pending: 1,
+      failed: 0,
+    });
+    await expect(scope.suggestions.listSuggestions({ itemIds: [] })).resolves.toEqual([]);
+    await expect(scope.suggestions.getApprovalItemCounts({ itemIds: [] })).resolves.toEqual({
+      pending: 0,
+      failed: 0,
+    });
   });
 
   it('lists pending approvals after a created-at cursor', async () => {
@@ -4948,6 +5248,112 @@ describe('suggestion scope', () => {
     expect(updated.rows[0]?.due_at?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
   });
 
+  it('accepts unassigned tasks when inference supplies null optional human names', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Review policy',
+      dedupeKey: 'null-human-names',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review policy',
+          dedupeKey: 'null-human-names-task',
+          proposedPayload: {
+            canonicalName: 'Review policy',
+            ownerName: null,
+            assigneeName: null,
+            assigneeUserId: null,
+          },
+        },
+      ],
+    });
+    expect(await scope.suggestions.acceptAll(bundle.id)).toMatchObject({ accepted: 1, failed: 0 });
+    const [task] = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
+    expect(task).toMatchObject({
+      canonicalName: 'Review policy',
+      status: 'todo',
+      assigneeUserId: null,
+      ownerUserId: null,
+    });
+  });
+
+  // Task attachment may create its own project; explicit project proposals must resolve first.
+  it('accepts a company project and task together regardless of generated item IDs', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Customer delivery',
+      dedupeKey: 'combined-creation',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Prepare migration checklist',
+          dedupeKey: 'combined-task',
+          proposedPayload: {
+            canonicalName: 'Prepare migration checklist',
+            createProjectName: 'Patient Portal',
+            status: 'todo',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Patient Portal',
+          dedupeKey: 'combined-project',
+          proposedPayload: {
+            type: 'project',
+            canonicalName: 'Patient Portal',
+            localRef: 'portal',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Cedar Dental',
+          dedupeKey: 'combined-company',
+          proposedPayload: { type: 'company', canonicalName: 'Cedar Dental', localRef: 'cedar' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Customer project',
+          dedupeKey: 'combined-relation',
+          proposedPayload: { kind: 'related', fromRef: 'portal', toRef: 'cedar' },
+        },
+      ],
+    });
+    const task = bundle.items.find((item) => item.targetKind === 'task');
+    const project = bundle.items.find((item) => item.proposedPayload.localRef === 'portal');
+    if (!task || !project) throw new Error('Missing fixture items');
+    // Preserve item IDs/FKs while making the task sort before the explicit project.
+    if (task.id.localeCompare(project.id) > 0) {
+      for (const [target, source] of [
+        [task, project],
+        [project, task],
+      ] as const)
+        await db
+          .update(agentSuggestionItems)
+          .set({
+            targetKind: source.targetKind,
+            title: source.title,
+            proposedPayload: source.proposedPayload,
+          })
+          .where(eq(agentSuggestionItems.id, target.id));
+    }
+    expect(await scope.suggestions.acceptAll(bundle.id)).toMatchObject({ accepted: 4, failed: 0 });
+    const nodes = await db.select().from(entities).where(eq(entities.teamId, TEAM_ID));
+    expect(nodes).toHaveLength(3);
+    expect(nodes.find((node) => node.type === 'project')?.status).toBe('planning');
+    const edges = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.teamId, TEAM_ID));
+    expect(edges.map((edge) => edge.kind).sort()).toEqual(['child', 'related']);
+  });
+
   it('creates a proposed project, links the task, and applies a fresh proposed category', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const packet = buildTaskCategoryPacket({
@@ -6131,10 +6537,10 @@ describe('suggestion scope', () => {
       teamId: TEAM_ID,
       authorUserId: REVIEWER_ID,
       source: 'telegram',
-      contentText: '@timbo0 I will register the company with PRH on August 17.',
+      contentText: '@taylo0 I will register the company with PRH on August 17.',
       sourceMetadata: {
-        tg_sender_name: 'Mikael (Miku)',
-        tg_username: 'miku',
+        tg_sender_name: 'Cameron (Casey)',
+        tg_username: 'casey',
         tg_chat_title: 'AuditAI founders',
       },
       occurredAt: new Date('2026-07-23T07:24:00.000Z'),
@@ -6143,14 +6549,14 @@ describe('suggestion scope', () => {
     const chatStructured = vi.fn((_input: { prompt: string }) =>
       Promise.resolve({
         object: {
-          title: 'Miku to register the company with PRH',
-          description: 'Miku plans to submit the company registration on August 17.',
+          title: 'Casey to register the company with PRH',
+          description: 'Casey plans to submit the company registration on August 17.',
           proposedPayload: {
             canonicalName: 'Register the company with PRH',
             ownerUserId: REVIEWER_ID,
             dueAt: '2026-08-17T00:00:00.000Z',
           },
-          explanation: 'Changed the owner from Tim to Miku as directed by the reviewer.',
+          explanation: 'Changed the owner from Taylor to Casey as directed by the reviewer.',
         },
         model: 'test-proposal-revision',
       }),
@@ -6162,12 +6568,12 @@ describe('suggestion scope', () => {
       source: 'background',
       title: 'PRH company registration',
       dedupeKey: 'prh-registration-wrong-owner',
-      evidence: [{ rawEventId, quote: '@timbo0 I will register the company with PRH.' }],
+      evidence: [{ rawEventId, quote: '@taylo0 I will register the company with PRH.' }],
       items: [
         {
           operation: 'create',
           targetKind: 'task',
-          title: 'Tim to register the company with PRH',
+          title: 'Taylor to register the company with PRH',
           dedupeKey: 'prh-registration-wrong-owner:item',
           proposedPayload: {
             canonicalName: 'Register the company with PRH',
@@ -6182,24 +6588,24 @@ describe('suggestion scope', () => {
     await expect(
       scope.suggestions.reviseSuggestionItem({
         itemId,
-        feedback: 'Miku made this promise, not Tim. Keep the date unchanged.',
+        feedback: 'Casey made this promise, not Taylor. Keep the date unchanged.',
       }),
     ).resolves.toMatchObject({
       id: itemId,
       status: 'pending',
-      title: 'Miku to register the company with PRH',
+      title: 'Casey to register the company with PRH',
     });
 
     await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'PRH company registration',
       dedupeKey: 'prh-registration-wrong-owner',
-      evidence: [{ rawEventId, quote: '@timbo0 I will register the company with PRH.' }],
+      evidence: [{ rawEventId, quote: '@taylo0 I will register the company with PRH.' }],
       items: [
         {
           operation: 'create',
           targetKind: 'task',
-          title: 'Tim to register the company with PRH',
+          title: 'Taylor to register the company with PRH',
           dedupeKey: 'prh-registration-wrong-owner:item',
           proposedPayload: {
             canonicalName: 'Register the company with PRH',
@@ -6216,8 +6622,8 @@ describe('suggestion scope', () => {
       .where(eq(agentSuggestionItems.id, itemId));
     expect(item).toMatchObject({
       status: 'pending',
-      title: 'Miku to register the company with PRH',
-      description: 'Miku plans to submit the company registration on August 17.',
+      title: 'Casey to register the company with PRH',
+      description: 'Casey plans to submit the company registration on August 17.',
       proposedPayload: {
         canonicalName: 'Register the company with PRH',
         ownerUserId: REVIEWER_ID,
@@ -6229,28 +6635,28 @@ describe('suggestion scope', () => {
     const history = metadata.proposal_revision_history as unknown[];
     expect(history).toHaveLength(1);
     const revision = history[0] as Record<string, unknown>;
-    expect(revision.feedback).toBe('Miku made this promise, not Tim. Keep the date unchanged.');
+    expect(revision.feedback).toBe('Casey made this promise, not Taylor. Keep the date unchanged.');
     expect(revision.model).toBe('test-proposal-revision');
     const previous = revision.previous as Record<string, unknown>;
-    expect(previous.title).toBe('Tim to register the company with PRH');
+    expect(previous.title).toBe('Taylor to register the company with PRH');
     const previousPayload = previous.proposed_payload as Record<string, unknown>;
     expect(previousPayload.ownerUserId).toBe(USER_ID);
     const prompt = chatStructured.mock.calls[0]?.[0]?.prompt ?? '';
-    expect(prompt).toContain('"senderName":"Mikael (Miku)"');
-    expect(prompt).toContain('"senderHandle":"@miku"');
+    expect(prompt).toContain('"senderName":"Cameron (Casey)"');
+    expect(prompt).toContain('"senderHandle":"@casey"');
     expect(prompt).toContain('"conversationName":"AuditAI founders"');
     const [source] = await db
       .select({ contentText: rawEvents.contentText })
       .from(rawEvents)
       .where(eq(rawEvents.id, rawEventId));
-    expect(source?.contentText).toBe('@timbo0 I will register the company with PRH on August 17.');
+    expect(source?.contentText).toBe('@taylo0 I will register the company with PRH on August 17.');
   });
 
   it('keeps payload-encoded proposal targets fixed during reviewer revisions', async () => {
     const chatStructured = vi.fn(() =>
       Promise.resolve({
         object: {
-          title: 'Miku owns the AuditAI relationship',
+          title: 'Casey owns the AuditAI relationship',
           description: 'Corrected the relationship wording.',
           proposedPayload: {
             fromEntityId: REVIEWER_ID,
@@ -6273,7 +6679,7 @@ describe('suggestion scope', () => {
         {
           operation: 'create',
           targetKind: 'object_relationship',
-          title: 'Tim owns AuditAI',
+          title: 'Taylor owns AuditAI',
           dedupeKey: 'fixed-relationship-target:item',
           proposedPayload: {
             fromEntityId: USER_ID,
@@ -6292,7 +6698,7 @@ describe('suggestion scope', () => {
 
     expect(revised).toMatchObject({
       id: itemId,
-      title: 'Miku owns the AuditAI relationship',
+      title: 'Casey owns the AuditAI relationship',
       proposedPayload: {
         fromEntityId: USER_ID,
         toEntityId: REVIEWER_ID,
@@ -6325,8 +6731,8 @@ describe('suggestion scope', () => {
         source: 'email',
         contentText: 'I will send the forwarded update.',
         sourceMetadata: {
-          from: { name: 'Tim', email: 'tim@example.com' },
-          forwarded_from: { name: 'Mikael', email: 'miku@example.com' },
+          from: { name: 'Taylor', email: 'taylor@example.com' },
+          forwarded_from: { name: 'Cameron', email: 'casey@example.com' },
           subject: 'Fwd: Forwarded update',
         },
         occurredAt: new Date('2026-07-23T08:05:00.000Z'),
@@ -6361,8 +6767,8 @@ describe('suggestion scope', () => {
         }),
         expect.objectContaining({
           rawEventId: forwardedId,
-          senderName: 'Mikael',
-          senderHandle: 'miku@example.com',
+          senderName: 'Cameron',
+          senderHandle: 'casey@example.com',
           conversationName: 'Fwd: Forwarded update',
         }),
       ]),
@@ -7377,16 +7783,16 @@ describe('suggestion scope', () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
-      title: 'Padel with Mikael',
+      title: 'Padel with Cameron',
       dedupeKey: 'calendar-create-startsat-alias',
       items: [
         {
           operation: 'create',
           targetKind: 'calendar_event',
-          title: 'Padel with Mikael',
+          title: 'Padel with Cameron',
           dedupeKey: 'calendar-create-startsat-alias:item',
           proposedPayload: {
-            title: 'Padel with Mikael',
+            title: 'Padel with Cameron',
             startsAt: '2026-08-18T00:00:00.000Z',
             endsAt: '2026-08-19T00:00:00.000Z',
             visibility: 'team',
@@ -7403,7 +7809,7 @@ describe('suggestion scope', () => {
     await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
 
     const result = await pg.query<{ count: string }>(
-      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'Padel with Mikael'`,
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'Padel with Cameron'`,
     );
     expect(result.rows[0]?.count).toBe('1');
   });
@@ -7675,12 +8081,60 @@ describe('suggestion scope', () => {
     expect(rows.rows[0]?.metadata).toEqual({ existing: true });
   });
 
+  it('supersedes a referenced identity facet when its accepted person was archived', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember Alex',
+      dedupeKey: 'archived-reference-facet',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Alex Example',
+          dedupeKey: 'archived-reference-person',
+          proposedPayload: { type: 'person', canonicalName: 'Alex Example', localRef: 'alex' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Alex email',
+          dedupeKey: 'archived-reference-email',
+          proposedPayload: { entityRef: 'alex', kind: 'email', value: 'alex@example.test' },
+        },
+      ],
+    });
+    const personItem = bundle.items.find((item) => item.targetKind === 'object');
+    const facet = bundle.items.find((item) => item.targetKind === 'identity_facet');
+    if (!personItem || !facet) throw new Error('missing items');
+    expect(await scope.suggestions.acceptSuggestionItem(personItem.id)).toBe(true);
+    const [accepted] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, personItem.id));
+    if (!accepted?.resultId) throw new Error('missing accepted person');
+    await scope.objects.archiveObject(accepted.resultId, { kind: 'user', userId: USER_ID });
+    expect(await scope.suggestions.acceptSuggestionItem(facet.id)).toBe(true);
+    const [stale] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, facet.id));
+    expect(stale?.status).toBe('superseded');
+    expect(
+      (
+        await pg.query<{ count: string }>(
+          `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+        )
+      ).rows[0]?.count,
+    ).toBe('0');
+  });
+
   it('applies identity facet suggestions only after approval', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
     const person = await creator.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_ID },
     });
     const bundle = await creator.suggestions.createOrMergeSuggestionBundle({
@@ -7692,12 +8146,12 @@ describe('suggestion scope', () => {
           operation: 'create',
           targetKind: 'identity_facet',
           targetId: person.id,
-          title: 'Link @mikaelrintala to Mikael Rintala',
+          title: 'Link @cameronvale to Cameron Vale',
           dedupeKey: 'identity-facet-telegram:item',
           proposedPayload: {
             entityId: person.id,
             kind: 'telegram',
-            value: '@mikaelrintala',
+            value: '@cameronvale',
             linkedUserId: USER_ID,
           },
         },
@@ -7728,7 +8182,7 @@ describe('suggestion scope', () => {
       {
         entity_id: person.id,
         kind: 'telegram',
-        normalized_value: 'mikaelrintala',
+        normalized_value: 'cameronvale',
         linked_user_id: USER_ID,
         status: 'approved',
       },
@@ -7739,21 +8193,21 @@ describe('suggestion scope', () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const person = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Mikael Rintala',
+      canonicalName: 'Cameron Vale',
       actor: { kind: 'user', userId: USER_ID },
     });
 
     const first = await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'telegram',
-      value: '@mikaelrintala',
+      value: '@cameronvale',
       externalId: '12345',
       actor: { kind: 'user', userId: USER_ID },
     });
     const second = await scope.objects.createIdentityFacet({
       entityId: person.id,
       kind: 'telegram',
-      value: '@miku',
+      value: '@casey',
       externalId: '12345',
       actor: { kind: 'user', userId: USER_ID },
     });
@@ -7771,7 +8225,7 @@ describe('suggestion scope', () => {
     );
     expect(result.rows[0]?.count).toBe('1');
     expect(result.rows[0]).toMatchObject({
-      value: '@miku',
+      value: '@casey',
       external_id: '12345',
       source: 'manual',
     });
@@ -7781,18 +8235,18 @@ describe('suggestion scope', () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existingPerson = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Existing Mikael',
+      canonicalName: 'Existing Cameron',
       actor: { kind: 'user', userId: USER_ID },
     });
     const targetPerson = await scope.objects.createObject({
       type: 'person',
-      canonicalName: 'Target Mikael',
+      canonicalName: 'Target Cameron',
       actor: { kind: 'user', userId: USER_ID },
     });
     await scope.objects.createIdentityFacet({
       entityId: existingPerson.id,
       kind: 'telegram',
-      value: '@mikaelrintala',
+      value: '@cameronvale',
       actor: { kind: 'user', userId: USER_ID },
     });
 
@@ -7800,7 +8254,7 @@ describe('suggestion scope', () => {
       scope.objects.createIdentityFacet({
         entityId: targetPerson.id,
         kind: 'telegram',
-        value: '@mikaelrintala',
+        value: '@cameronvale',
         actor: { kind: 'agent', userId: null },
       }),
     ).rejects.toThrow(/another object/);
@@ -7808,7 +8262,7 @@ describe('suggestion scope', () => {
     const result = await pg.query<{ entity_id: string }>(
       `SELECT entity_id
        FROM object_identity_facets
-       WHERE team_id = '${TEAM_ID}' AND normalized_value = 'mikaelrintala'`,
+       WHERE team_id = '${TEAM_ID}' AND normalized_value = 'cameronvale'`,
     );
     expect(result.rows).toEqual([{ entity_id: existingPerson.id }]);
   });
@@ -8006,7 +8460,7 @@ describe('suggestion scope', () => {
           dedupeKey: 'retry-object-note:item',
           proposedPayload: {
             entityId: object.id,
-            body: 'Miku handles customer follow-up.',
+            body: 'Casey handles customer follow-up.',
           },
         },
       ],
@@ -8029,7 +8483,7 @@ describe('suggestion scope', () => {
        FROM object_notes
        WHERE team_id = '${TEAM_ID}'
          AND entity_id = '${object.id}'
-         AND body = 'Miku handles customer follow-up.'`,
+         AND body = 'Casey handles customer follow-up.'`,
     );
     expect(result.rows[0]?.count).toBe('1');
   });
@@ -9869,10 +10323,10 @@ describe('suggestion scope', () => {
         {
           operation: 'create',
           targetKind: 'calendar_event',
-          title: 'Mikael Rintala resigns from current job',
+          title: 'Cameron Vale resigns from current job',
           dedupeKey: 'calendar-create-date-only-legacy-payload:item',
           proposedPayload: {
-            canonicalName: 'Mikael Rintala resigns from current job',
+            canonicalName: 'Cameron Vale resigns from current job',
             start_date: '2026-06-15',
             visibility: 'team',
           },
@@ -9892,10 +10346,10 @@ describe('suggestion scope', () => {
     }>(
       `SELECT title, start_at, end_at, all_day
        FROM calendar_events
-       WHERE team_id = '${TEAM_ID}' AND title = 'Mikael Rintala resigns from current job'`,
+       WHERE team_id = '${TEAM_ID}' AND title = 'Cameron Vale resigns from current job'`,
     );
     expect(result.rows[0]).toMatchObject({
-      title: 'Mikael Rintala resigns from current job',
+      title: 'Cameron Vale resigns from current job',
       all_day: true,
     });
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-14T21:00:00.000Z');

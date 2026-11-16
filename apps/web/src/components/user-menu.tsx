@@ -1,6 +1,6 @@
 'use client';
 
-import { LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
+import { Bot, LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState } from 'react';
 
@@ -21,9 +21,10 @@ import { signOutAfterClearingLocalSession } from '@/lib/sign-out-session';
 interface Props {
   user: { name?: string | null; email?: string | null; emailVerified?: Date | string | null };
   impersonating?: boolean;
+  platformAdmin?: boolean;
 }
 
-export function UserMenu({ user, impersonating = false }: Props) {
+export function UserMenu({ user, impersonating = false, platformAdmin = false }: Props) {
   const [verificationState, resendVerification, verificationPending] = useActionState<
     EmailVerificationState,
     FormData
@@ -48,6 +49,11 @@ export function UserMenu({ user, impersonating = false }: Props) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
+        {platformAdmin && (
+          <DropdownMenuItem asChild>
+            <Link href="/app/admin">Platform admin</Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col">
             <span className="text-sm font-medium">{user.name ?? 'Account'}</span>
@@ -94,7 +100,10 @@ export function UserMenu({ user, impersonating = false }: Props) {
         <DropdownMenuSeparator />
         {impersonating ? null : (
           <DropdownMenuItem asChild>
-            <Link href="/app/agent-provisioning">Agent provisioning</Link>
+            <Link href="/app/agent-provisioning">
+              <Bot aria-hidden="true" className="size-4" />
+              Agent provisioning
+            </Link>
           </DropdownMenuItem>
         )}
         <form action={reopenOnboardingChecklistAction}>

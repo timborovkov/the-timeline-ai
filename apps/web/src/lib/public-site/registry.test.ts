@@ -7,7 +7,10 @@ import {
   canonicalPublicUrl,
   createPublicDocumentRegistry,
   definePublicDocuments,
+  resolvePublicLlmsResourceHref,
 } from '@/lib/public-site/registry';
+import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
+
 describe('public document registry', () => {
   it('composes document sources and excludes noindex documents from discovery', () => {
     const indexable = document({ canonicalPath: '/guides/one' });
@@ -81,7 +84,8 @@ describe('public document registry', () => {
   it.each([
     ['HTTP', 'http://docs.example.test/guide'],
     ['protocol-relative', '//docs.example.test/guide'],
-    ['relative', '/guide'],
+    ['bare relative', 'help/support'],
+    ['dot relative', './support'],
     ['JavaScript', 'javascript:void(0)'],
   ])('rejects %s LLM section resource links', (_kind, href) => {
     expect(() =>
@@ -102,6 +106,39 @@ describe('public document registry', () => {
         }),
       ]),
     ).toThrow('resource link must be an absolute HTTPS URL');
+  });
+
+  it('resolves origin-relative and internal-scheme LLM resource links before validation', () => {
+    const source = definePublicDocuments('help-guides', [
+      document({
+        canonicalPath: '/help/integrations',
+        llms: {
+          section: 'primary',
+          order: 1,
+          summary: 'Integrations guide.',
+          sections: [
+            {
+              title: 'Resources',
+              body: 'Read more.',
+              links: [
+                { label: 'Support', href: '/help/support' },
+                { label: 'Integrations', href: 'help-guides:/help/integrations' },
+              ],
+            },
+          ],
+        },
+      }),
+    ]);
+    const links = source.documents[0]?.llms && source.documents[0].llms.sections?.[0]?.links;
+
+    expect(links).toEqual([
+      { label: 'Support', href: `${CANONICAL_PUBLIC_ORIGIN}/help/support` },
+      { label: 'Integrations', href: `${CANONICAL_PUBLIC_ORIGIN}/help/integrations` },
+    ]);
+    expect(resolvePublicLlmsResourceHref('/cookies')).toBe(`${CANONICAL_PUBLIC_ORIGIN}/cookies`);
+    expect(resolvePublicLlmsResourceHref('https://docs.example.test/guide')).toBe(
+      'https://docs.example.test/guide',
+    );
   });
 
   it('accepts absolute HTTPS LLM section resource links with URL special characters', () => {

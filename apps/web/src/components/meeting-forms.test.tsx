@@ -278,7 +278,8 @@ describe('SavedMeetingForm', () => {
 
   it('resets the submitted form after the async create action resolves', async () => {
     const user = userEvent.setup();
-    render(<SavedMeetingForm defaultTimezone="UTC" />);
+    const onSuccess = vi.fn();
+    render(<SavedMeetingForm defaultTimezone="UTC" onSuccess={onSuccess} />);
 
     await user.type(screen.getByLabelText('Meeting title'), 'Weekly product sync');
     await user.type(screen.getByLabelText('Meeting URL'), 'https://meet.google.com/abc-defg-hij');
@@ -302,6 +303,7 @@ describe('SavedMeetingForm', () => {
     expect(inputValue('Meeting URL')).toBe('');
     expect(inputValue('Aliases')).toBe('');
     expect(fakes.refresh).toHaveBeenCalledOnce();
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 });
 
@@ -312,7 +314,8 @@ describe('ScheduleMeetingBotForm', () => {
       ok: false,
       error: 'Meeting participants must be informed before you invite the notetaker.',
     });
-    render(<ScheduleMeetingBotForm />);
+    const onSuccess = vi.fn();
+    render(<ScheduleMeetingBotForm onSuccess={onSuccess} />);
 
     const team = screen.getByRole('radio', { name: 'Team' });
     const privateVisibility = screen.getByRole('radio', { name: 'Private' });
@@ -333,6 +336,7 @@ describe('ScheduleMeetingBotForm', () => {
     });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(fakes.push).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 });
 

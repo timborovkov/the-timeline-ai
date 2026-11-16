@@ -873,6 +873,64 @@ describe('createQdrantClient', () => {
     });
   });
 
+  it('filters obsolete website evidence before limits without hiding promoted document chunks', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      sourceKind: ['raw_event', 'fact', 'doc_chunk'],
+      fileKinds: ['captured', 'document'],
+      obsoleteWebsiteEventIds: ['old'],
+      limit: 2,
+    });
+    interface Condition {
+      key?: string;
+      match?: { value?: unknown; any?: unknown[] };
+      must?: Condition[];
+      must_not?: Condition[];
+      should?: Condition[];
+      is_empty?: { key: string };
+    }
+    const search = calls.find((call) => call.url.endsWith('/points/search'));
+    if (!search) throw new Error('No vector search request');
+    const body = search.body as { filter: Condition; limit: number };
+    // Evaluate the public Qdrant filter grammar against ranked candidate payloads.
+    function matches(condition: Condition, payload: Record<string, unknown>): boolean {
+      if (condition.key && condition.match)
+        return condition.match.any
+          ? condition.match.any.includes(payload[condition.key])
+          : condition.match.value === payload[condition.key];
+      if (condition.is_empty)
+        return (
+          payload[condition.is_empty.key] === null || payload[condition.is_empty.key] === undefined
+        );
+      return (
+        (condition.must ?? []).every((part) => matches(part, payload)) &&
+        !(condition.must_not ?? []).some((part) => matches(part, payload)) &&
+        (!condition.should?.length || condition.should.some((part) => matches(part, payload)))
+      );
+    }
+    const candidates = [
+      { id: 'old-event', source_kind: 'raw_event', event_id: 'old' },
+      { id: 'old-fact', source_kind: 'fact', event_id: 'old' },
+      { id: 'old-capture', source_kind: 'doc_chunk', file_kind: 'captured', event_id: 'old' },
+      { id: 'promoted', source_kind: 'doc_chunk', file_kind: 'document', event_id: 'old' },
+      {
+        id: 'current-capture',
+        source_kind: 'doc_chunk',
+        file_kind: 'captured',
+        event_id: 'current',
+      },
+      { id: 'current-event', source_kind: 'raw_event', event_id: 'current' },
+    ].map((candidate) => ({ team_id: 'team-A', visibility: 'team', ...candidate }));
+    expect(body.limit).toBe(2);
+    expect(
+      candidates
+        .filter((candidate) => matches(body.filter, candidate))
+        .slice(0, body.limit)
+        .map((candidate) => candidate.id),
+    ).toEqual(['promoted', 'current-capture']);
+  });
+
   it('document fileKind search admits legacy doc_chunk points without file_kind payloads', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });

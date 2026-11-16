@@ -130,8 +130,8 @@ describe('MeetingDetailPage', () => {
     expect(html.indexOf('transcript export')).toBeLessThan(headerEnd);
     expect(html).toContain('Meeting ID');
     expect(html).not.toContain('Meeting URL');
-    expect(html).toContain('space-y-2 border-y border-border py-4');
-    expect(html).toContain('space-y-2 border-y border-border py-3 text-sm');
+    expect(html).toContain('space-y-2 py-4');
+    expect(html).toContain('space-y-2 py-3 text-sm');
     expect(html).toContain('font-mono text-xs text-fg-muted');
     expect(html).toContain('font-medium text-fg');
   });

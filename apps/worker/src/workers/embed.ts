@@ -12,11 +12,13 @@ import {
   queue,
 } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
+import { completeWebsiteChunk } from '@timeline/shared/websites';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -217,6 +219,7 @@ function isRetryableProviderOutageMessage(message: string): boolean {
     /\b5\d\d\b/.test(message) ||
     message.includes('rate limit') ||
     message.includes('timeout') ||
+    message.includes('timed out') ||
     message.includes('temporar') ||
     message.includes('unavailable') ||
     message.includes('overloaded') ||
@@ -348,6 +351,7 @@ async function finalizeSourceEmbedding(input: {
   sourceId: string;
   model: string;
   chunkCount: number;
+  publishWebsiteVersion: boolean;
 }): Promise<void> {
   await input.client.deletePointsForSourceFromChunk({
     teamId: input.data.teamId,
@@ -356,6 +360,15 @@ async function finalizeSourceEmbedding(input: {
     model: input.model,
     minChunkIndex: input.chunkCount,
   });
+
+  // Shadow-collection rebuilds must not change readiness in the live retrieval index.
+  if (input.publishWebsiteVersion && input.scope === 'doc_chunk' && 'documentChunkId' in input.data)
+    await completeWebsiteChunk(
+      input.db,
+      input.data.teamId,
+      input.data.documentChunkId,
+      input.model,
+    );
 
   // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
   // rationale below. Non-event scopes don't have a single canonical row to
@@ -477,6 +490,8 @@ export async function processEmbedJob(
       sourceId: plan.sourceId,
       model,
       chunkCount: chunks.length,
+      publishWebsiteVersion:
+        !data.targetCollection || data.targetCollection === env.QDRANT_COLLECTION,
     });
     return {
       skipped: true,
@@ -535,6 +550,8 @@ export async function processEmbedJob(
       sourceId: plan.sourceId,
       model,
       chunkCount: chunks.length,
+      publishWebsiteVersion:
+        !data.targetCollection || data.targetCollection === env.QDRANT_COLLECTION,
     });
   }
 
@@ -577,11 +594,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           ),
         workerBillingJobOptions(job, token),
       );
-      if (integrations.isDelayedIngestResult(result)) {
-        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
-        throw new DelayedError();
-      }
-      return result;
+      return finishIngestJob(job, result, token);
     }),
     {
       connection: queue.getRedisConnection(),

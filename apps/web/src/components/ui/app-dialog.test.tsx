@@ -117,3 +117,36 @@ describe('useAppDialog', () => {
     await waitFor(() => expect(screen.getByText('Fresh name')).toBeTruthy());
   });
 });
+
+it('returns keyboard focus to the launcher after Escape closes a confirmation', async () => {
+  const user = userEvent.setup();
+  render(<DialogHarness />);
+  const trigger = screen.getByRole('button', { name: 'Confirm' });
+  await user.click(trigger);
+  await screen.findByRole('dialog');
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Delete item?' }));
+  });
+  await user.keyboard('{Escape}');
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+});
+
+it('keeps the input dialog open while Enter commits IME composition', async () => {
+  const user = userEvent.setup();
+  render(<DialogHarness />);
+  await user.click(screen.getByRole('button', { name: 'Input' }));
+  const input = screen.getByLabelText('Name');
+  fireEvent.change(input, { target: { value: '王秀英' } });
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: false });
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  expect(screen.getByText('王秀英')).toBeTruthy();
+});

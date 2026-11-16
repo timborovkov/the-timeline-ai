@@ -6,7 +6,7 @@ import {
 } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-06' as const;
+const REVIEW_DATE = '2026-11-12' as const;
 
 function worksWithCapability(tool: WorksWithTool): PublicCapabilityState {
   if (tool.status === 'mcp-lookup') return { kind: 'mcp-access', provider: tool.slug };

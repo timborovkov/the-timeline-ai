@@ -39,11 +39,11 @@ const state = vi.hoisted(() => ({
 }));
 
 await vi.mock(
-  import.meta.resolve('#src/queue/connection.js'),
+  import.meta.resolve('#src/redis/connection.js'),
   () => ({
     getRedisConnection: () => ({ eval: state.eval }),
   }),
-  () => import('#src/queue/connection.js'),
+  () => import('#src/redis/connection.js'),
 );
 
 const { adoptMondayAccountBudget, observeMondayRemaining, reserveMondayCall } =

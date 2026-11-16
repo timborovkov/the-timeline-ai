@@ -1,8 +1,7 @@
+import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
 
 import {
   parseArgs,

@@ -14,6 +14,46 @@ const BOARD_ID = '66666666-6666-4666-8666-666666666666';
 const BOARD_ITEM_ID = '77777777-7777-4777-8777-777777777777';
 
 describe('chat tool selection', () => {
+  it('selects direct workspace actions for common phrases and follow-ups', () => {
+    for (const [question, expected] of [
+      ['Create a CRM board', 'execute_board_create'],
+      ['Rename these boards', 'execute_board_update'],
+      ['Restore that company', 'execute_object_restore'],
+      ['Edit this note', 'execute_object_note_update'],
+      ['Unlink these objects', 'execute_object_relationship_remove'],
+    ] as const)
+      expect(selectedNativeToolNames(selectAgentToolGroups({ question }).groups)).toContain(
+        expected,
+      );
+    const followup = selectAgentToolGroups({
+      question: 'Do it',
+      recentMessages: [
+        { id: 'earlier', role: 'user', parts: [{ type: 'text', text: 'Create a CRM board' }] },
+      ],
+    });
+    expect(selectedNativeToolNames(followup.groups)).toContain('get_board');
+    expect(followup.includeMcp).toBe(false);
+    const approval = selectAgentToolGroups({
+      question: 'What is happening?',
+      recentMessages: [
+        {
+          id: 'pending',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-execute_object_note_update',
+              toolCallId: 'c',
+              state: 'approval-responded',
+              input: {},
+              approval: { id: 'a', approved: true },
+            },
+          ],
+        },
+      ],
+    });
+    expect(selectedNativeToolNames(approval.groups)).toContain('execute_object_note_update');
+  });
+
   it('registers every native agent tool in a dashboard chat group', () => {
     const tools = buildAgentTools({} as TeamScope, { allowPinMutations: true });
     // Empty selection means every group is omitted, which is the full catalog.
@@ -33,7 +73,7 @@ describe('chat tool selection', () => {
 
   it('exposes member lookup and board mutation tools for assign-by-name', () => {
     const selection = selectAgentToolGroups({
-      question: 'assign mikael',
+      question: 'assign cameron',
       dashboardContext: {
         pathname: `/app/boards/${BOARD_ID}`,
         routeKind: 'boards',

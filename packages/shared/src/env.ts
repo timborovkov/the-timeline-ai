@@ -38,6 +38,15 @@ const reviewedPostHogServerHost = z.url().refine((value) => {
   return !url.username && !url.password && url.origin === 'https://eu.i.posthog.com';
 }, 'POSTHOG_HOST must use the reviewed EU PostHog ingestion origin');
 
+const reviewedPostHogBrowserHost = z.url().refine((value) => {
+  const url = new URL(value);
+  return (
+    !url.username &&
+    !url.password &&
+    ['https://m.thetimeline.cc', 'https://eu.i.posthog.com'].includes(url.origin)
+  );
+}, 'NEXT_PUBLIC_POSTHOG_HOST must use the managed proxy or reviewed EU PostHog ingestion origin');
+
 const OFFICIAL_RECALL_API_HOSTS = new Set([
   'us-west-2.recall.ai',
   'us-east-1.recall.ai',
@@ -152,6 +161,9 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
   'OLDPWD',
   'COLORTERM',
   'CI',
+  // Non-secret platform telemetry toggle injected into some runtimes even
+  // when it is absent from the service's configured Railway variables.
+  'ANTHROPIC_OPEN_TELEMETRY',
   // Exact, non-secret runtime paths injected by the pinned Bun container.
   'BUN_INSTALL_BIN',
   'BUN_RUNTIME_TRANSPILER_CACHE_PATH',
@@ -214,8 +226,7 @@ const baseSchema = z.object({
    */
   TIMELINE_DEPLOYMENT_MODE: z.enum(['hosted', 'self-managed']).default('hosted'),
   /**
-   * Operator attestation that the contracting/controller identity publication
-   * blocker in docs/security-privacy-trust.md (G-20) is resolved and evidenced.
+   * Operator approval to publish the legal text.
    * The web app otherwise withholds binding terms and legal acceptance.
    */
   LEGAL_PUBLICATION_READY: z.preprocess(booleanString, z.boolean().default(false)),
@@ -360,6 +371,7 @@ const baseSchema = z.object({
    * default-off so a deploy cannot enqueue the backlog.
    */
   TASK_CATEGORY_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  IDENTITY_SEMANTIC_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
@@ -369,6 +381,8 @@ const baseSchema = z.object({
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
   // LangSmith LLM observability (optional)
+  // Enable only after the processor/access/retention review in docs/providers.md.
+  WORKSPACE_EVALUATION_TRACING_READY: z.preprocess(booleanString, z.boolean().default(false)),
   LANGSMITH_TRACING: z.preprocess(booleanString, z.boolean().default(false)),
   LANGSMITH_TRACING_SAMPLING_RATE: z.preprocess(
     emptyStringAsUnset,
@@ -399,6 +413,19 @@ const baseSchema = z.object({
    */
   SUPPORT_EMAIL: z.preprocess(emptyStringAsUnset, z.email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
+  /** Required by web/worker website scanning; validated before enqueue/provider work. */
+  WEBSITE_MAX_SOURCES: z.coerce.number().int().min(1).default(100),
+  WEBSITE_MAX_DAILY_PAGES: z.coerce.number().int().min(5).default(10_000),
+  WEBSITE_COOLDOWN_MS: z.coerce.number().int().min(1).default(3_600_000),
+  WEBSITE_GLOBAL_CONCURRENCY: z.coerce.number().int().min(1).default(2),
+  WEBSITE_HOST_DELAY_MS: z.coerce.number().int().min(1).default(10_000),
+  FIRECRAWL_COST_EUR_PER_CREDIT: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().nonnegative().optional(),
+  ),
+  WEBSITE_CRAWLS_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  WEBSITE_SCHEDULES_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  FIRECRAWL_API_KEY: z.preprocess(emptyStringAsUnset, z.string().trim().min(1).optional()),
   // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
   // forms use it: email/password registration and public support/contact.
   TURNSTILE_SITE_KEY: z.string().optional(),
@@ -443,9 +470,23 @@ const baseSchema = z.object({
   // These public values are used only by the affirmative-consent public-site
   // client. Authenticated routes must not import or initialize that client.
   NEXT_PUBLIC_POSTHOG_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  NEXT_PUBLIC_POSTHOG_UI_HOST: z.preprocess(
+    emptyStringAsUnset,
+    z
+      .url()
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === 'https:' && !url.username && !url.password;
+        } catch {
+          return false;
+        }
+      }, 'NEXT_PUBLIC_POSTHOG_UI_HOST must be an HTTPS URL without credentials')
+      .default('https://eu.posthog.com'),
+  ),
   NEXT_PUBLIC_POSTHOG_HOST: z.preprocess(
     emptyStringAsUnset,
-    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+    reviewedPostHogBrowserHost.default('https://m.thetimeline.cc'),
   ),
 
   // Phase 10 — Meeting bots. The workspace verification secret signs both

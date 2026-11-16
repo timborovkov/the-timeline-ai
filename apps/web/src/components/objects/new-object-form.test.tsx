@@ -91,7 +91,7 @@ describe('NewObjectForm', () => {
   it('shows due status only for schedulable object types', () => {
     render(<NewObjectForm />);
 
-    expect(screen.getByText('No due date')).toBeTruthy();
+    expect(screen.getByLabelText('Due date (optional)')).toBeTruthy();
     expect(screen.getByLabelText(/Due date/)).toBeTruthy();
     fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), {
       target: { value: 'person' },

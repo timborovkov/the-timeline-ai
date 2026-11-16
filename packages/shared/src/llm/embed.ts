@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
 
+import {
+  EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS,
+  customerAiChargeCentsFromOpenRouterUsd,
+} from '#src/billing/catalog.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   attachOpenRouterFinish,
@@ -14,14 +17,10 @@ import {
 } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
-import { asBunFetch } from '#src/http/fetch.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import {
-  OPENROUTER_DISABLE_CACHE_HEADERS,
-  OPENROUTER_OFFICIAL_BASE_URL,
-  openRouterPrivateProviderRouting,
-} from '#src/llm/privacy.js';
+import { openRouterPrivateProviderRouting } from '#src/llm/privacy.js';
+import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
@@ -86,6 +85,20 @@ function encodeEmbeddingText(text: string): number[] {
 
 export function countEmbeddingTokens(text: string): number {
   return encodeEmbeddingText(text).length;
+}
+
+function embeddingReservationCents(texts: readonly string[], maxRetries: number): number {
+  const tokens = texts.reduce((sum, text) => sum + countEmbeddingTokens(text), 0);
+  const providerUsd =
+    (tokens * (1 + maxRetries) * EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS) / 1_000_000;
+  // Round up to the ledger’s six-decimal native-unit precision. Settlement
+  // still uses reported provider cost, including failed attempts.
+  return Math.max(
+    0.000001,
+    Math.ceil(
+      customerAiChargeCentsFromOpenRouterUsd(providerUsd).customerChargeExactCents * 1_000_000,
+    ) / 1_000_000,
+  );
 }
 
 export function truncateEmbeddingTextToTokenBudget(text: string, maxTokens: number): string {
@@ -153,20 +166,10 @@ function buildDefaultModel(
     ...args: Parameters<typeof globalThis.fetch>
   ) => ReturnType<typeof globalThis.fetch> = globalThis.fetch.bind(globalThis),
 ): EmbeddingModel {
-  const env = getEnv();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY is required for llm.embed');
-  }
-  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
-  const provider = createOpenAICompatible({
-    name: 'openrouter',
-    apiKey: env.OPENROUTER_API_KEY,
-    baseURL,
-    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
-    // The installed compatible adapter only serializes `dimensions` and
-    // `user` for embeddings. Inject the OpenRouter routing policy at the HTTP
-    // boundary and fail closed if that request shape changes.
-    fetch: asBunFetch(privateEmbeddingFetch(fetchImpl)),
+  const provider = createOpenRouterProvider({
+    operation: 'llm.embed',
+    // Embedding routing must be injected into the HTTP body: the SDK omits it.
+    fetch: privateEmbeddingFetch(fetchImpl),
   });
   return provider.embeddingModel(modelId);
 }
@@ -360,6 +363,7 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
         operationClass: 'embedding',
         model: modelId,
         stage: 'embed',
+        reservedChargeCents: embeddingReservationCents([text], deps.maxRetries ?? 2),
         callMaterial: [modelId, text],
       },
       async () => {
@@ -403,6 +407,7 @@ export async function embedMany(
         operationClass: 'embedding',
         model: modelId,
         stage: 'embed_many',
+        reservedChargeCents: embeddingReservationCents(texts, deps.maxRetries ?? 2),
         callMaterial: [modelId, String(texts.length), ...texts],
       },
       async () => {

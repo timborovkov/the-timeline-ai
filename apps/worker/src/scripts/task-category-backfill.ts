@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { closeDb, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { withTeam } from '@timeline/shared/team-scope';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -120,7 +121,7 @@ export async function closeTaskCategoryBackfillResources(
 ): Promise<void> {
   await Promise.all([
     (deps.closeQueue ?? queue.closeTaskCategoryQueue)(),
-    (deps.closeRedis ?? queue.closeRedisConnection)(),
+    (deps.closeRedis ?? closeAllRedisConnections)(),
     (deps.closeDatabase ?? closeDb)(),
   ]);
 }

@@ -113,7 +113,7 @@ function McpStatusGrid() {
 
 function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
   return (
-    <section className="space-y-3 border-y border-border py-4">
+    <section className="space-y-3 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SectionHeading>MCP endpoint</SectionHeading>
         <Badge variant="outline" className="rounded-sm">
@@ -190,7 +190,7 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
       );
 
   return (
-    <section className="space-y-3 border-y border-border py-4">
+    <section className="space-y-3 py-4">
       <div className="text-xs text-fg-muted">Connect from clients</div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-3">
@@ -520,12 +520,7 @@ function McpCreateKeyForm({
   onSubmit: (event: SyntheticEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <form
-      className="space-y-3 border-y border-border py-4"
-      noValidate
-      onSubmit={onSubmit}
-      aria-busy={busy}
-    >
+    <form className="space-y-3 py-4" noValidate onSubmit={onSubmit} aria-busy={busy}>
       <div className="space-y-1">
         <Label htmlFor={keyNameId}>
           Label <span aria-hidden="true">(required)</span>
@@ -613,7 +608,7 @@ function McpActiveKeyList({
     );
   }
   return (
-    <ul className="divide-y divide-border border-y border-border">
+    <ul className="divide-y divide-border">
       {keys.map((k) => {
         const mutation = keyMutations[k.id] ?? { busy: false };
         return (

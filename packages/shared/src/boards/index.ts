@@ -10,7 +10,6 @@ import {
   boards,
   entities,
   rawEvents,
-  reconciliationEvidence,
   reconciliationOutputs,
   reconciliationRuns,
   userPins,
@@ -32,8 +31,12 @@ import {
 } from 'drizzle-orm';
 
 import {
-  deleteDueDateCalendarEventEmbeddings,
-  enqueueDueDateCalendarEventEmbeddings,
+  assertBoardObjectType,
+  boardQualificationPolicySchema,
+} from '#src/boards/qualification-policy.js';
+import { defaultBoardLanes, defaultBoardRecommendedTypes } from '#src/boards/templates.js';
+import {
+  dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
   notifyBoardItemDueDate,
   syncBoardItemDueDateCalendarEvent,
@@ -41,10 +44,14 @@ import {
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { childLogger } from '#src/logger.js';
+import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
-import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
+import {
+  buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext,
+  directWriteSourceEnvelope,
+} from '#src/reconciliation/direct-write-source.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
-import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
 import {
@@ -64,35 +71,10 @@ import type {
 import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
+export { buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext } from '#src/reconciliation/direct-write-source.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
-type BoardDirectWriteVisibility = 'private' | 'team' | 'specific_users';
-
-interface BoardDirectWriteSourceContext {
-  sourceRefs: {
-    source: string;
-    rawEventId: string;
-    sourcePayloadRef?: string;
-  }[];
-  sourcePayloadRefs: string[];
-  visibility: BoardDirectWriteVisibility;
-  visibilityOwnerUserId: string | null;
-  visibilityUserIds: string[] | null;
-}
-
-function boardDirectWriteSourceEnvelope(sourceContext: BoardDirectWriteSourceContext) {
-  return {
-    sourceRefs: sourceContext.sourceRefs,
-    sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-    visibility: sourceContext.visibility,
-    visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-    visibilityUserIds: sourceContext.visibilityUserIds,
-    visibilityFloor: sourceContext.visibility,
-    visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-    visibilityFloorUserIds: sourceContext.visibilityUserIds,
-  };
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOARD_TEMPLATES = ['pipeline', 'task_board', 'catalog', 'custom'] as const;
 const BOARD_ITEM_QUERY_LIMIT_MAX = 50_000;
@@ -130,6 +112,9 @@ export interface BoardRow {
   recommendedObjectTypes: ObjectType[];
   strictObjectTypes: boolean;
   candidateFilter: Record<string, unknown>;
+  qualificationEnabled?: boolean;
+  qualificationInstructions?: string;
+  qualificationRevision?: number;
   isShared: boolean;
   archivedAt: Date | null;
   createdBy: string | null;
@@ -238,6 +223,8 @@ export interface CreateBoardInput {
   recommendedObjectTypes?: ObjectType[];
   strictObjectTypes?: boolean;
   candidateFilter?: Record<string, unknown>;
+  qualificationEnabled?: boolean;
+  qualificationInstructions?: string;
   lanes: BoardLaneInput[];
   isShared?: boolean;
 }
@@ -248,6 +235,11 @@ export interface RenameBoardInput {
 }
 
 export interface UpdateBoardSettingsInput {
+  expectedUpdatedAt?: string;
+  qualificationEnabled?: boolean;
+  qualificationInstructions?: string;
+  strictObjectTypes?: boolean;
+  recommendedObjectTypes?: ObjectType[];
   id: string;
   name?: string;
   purpose?: string;
@@ -418,6 +410,9 @@ function toBoardRow(
     recommendedObjectTypes: jsonStringArray(row.recommendedObjectTypes),
     strictObjectTypes: row.strictObjectTypes,
     candidateFilter: jsonObject(row.candidateFilter),
+    qualificationEnabled: row.qualificationEnabled,
+    qualificationInstructions: row.qualificationInstructions,
+    qualificationRevision: row.qualificationRevision,
     isShared: row.isShared,
     archivedAt: row.archivedAt,
     createdBy: row.createdBy,
@@ -655,16 +650,6 @@ function stableEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
-async function afterDueDateCalendarSync(
-  teamId: string,
-  result: DueDateCalendarSyncResult,
-): Promise<void> {
-  await Promise.all([
-    enqueueDueDateCalendarEventEmbeddings(teamId, result.embedEventIds),
-    deleteDueDateCalendarEventEmbeddings(teamId, result.deleteEventIds),
-  ]);
-}
-
 async function normalizeBoardSystemRawEventEvidence(input: {
   db: DbOrTx;
   teamId: string;
@@ -683,69 +668,6 @@ async function normalizeBoardSystemRawEventEvidence(input: {
       'board system raw event reconciliation evidence normalization failed',
     );
   }
-}
-
-export async function buildBoardDirectWriteSourceContext(input: {
-  db: DbOrTx;
-  teamId: string;
-  sourceRawEventId: string;
-}): Promise<BoardDirectWriteSourceContext> {
-  const [raw] = await input.db
-    .select({
-      source: rawEvents.source,
-      sourceMetadata: rawEvents.sourceMetadata,
-      visibility: rawEvents.visibility,
-      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
-      visibilityUserIds: rawEvents.visibilityUserIds,
-    })
-    .from(rawEvents)
-    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceRawEventId)))
-    .limit(1);
-  if (!raw) throw new Error('Source raw event not found for team');
-
-  const [evidence] = await input.db
-    .select({
-      id: reconciliationEvidence.id,
-      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
-      visibility: reconciliationEvidence.visibility,
-      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
-      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
-    })
-    .from(reconciliationEvidence)
-    .where(
-      and(
-        eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceRawEventId),
-      ),
-    )
-    .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
-    .limit(1);
-  const sourcePayloadRef =
-    sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
-  if (!sourcePayloadRef) {
-    throw new Error('Source raw event is missing a replay payload ref');
-  }
-  const sourcePayloadRefs = [
-    ...new Set(
-      [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
-    ),
-  ];
-  const visibility = evidence?.visibility ?? raw.visibility;
-  const visibilityOwnerUserId = evidence?.visibilityOwnerUserId ?? raw.visibilityOwnerUserId;
-  const visibilityUserIds = evidence?.visibilityUserIds ?? raw.visibilityUserIds;
-  return {
-    sourceRefs: [
-      {
-        source: raw.source,
-        rawEventId: input.sourceRawEventId,
-        ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
-      },
-    ],
-    sourcePayloadRefs,
-    visibility,
-    visibilityOwnerUserId,
-    visibilityUserIds,
-  };
 }
 
 async function createBoardSystemRawEvent(input: {
@@ -911,7 +833,7 @@ async function emitBoardDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      ...boardDirectWriteSourceEnvelope(sourceContext),
+      ...directWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: input.targetKind,
@@ -927,7 +849,7 @@ async function emitBoardDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        ...boardDirectWriteSourceEnvelope(sourceContext),
+        ...directWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -1003,51 +925,6 @@ function isBoardItemPatchField(
   );
 }
 
-export function defaultBoardRecommendedTypes(template: BoardTemplateKind): ObjectType[] {
-  if (template === 'pipeline') return ['company', 'deal', 'person', 'project'];
-  if (template === 'task_board') return ['task', 'follow_up'];
-  if (template === 'catalog') return ['project', 'document', 'vendor', 'other'];
-  return [];
-}
-
-export function defaultBoardLanes(template: BoardTemplateKind): BoardLaneInput[] {
-  if (template === 'task_board') {
-    return [
-      { name: 'Backlog', kind: 'active' },
-      { name: 'Ready', kind: 'active' },
-      { name: 'Doing', kind: 'active' },
-      { name: 'Review', kind: 'active' },
-      { name: 'Done', kind: 'done' },
-      { name: 'Blocked', kind: 'blocked' },
-    ];
-  }
-  if (template === 'pipeline') {
-    return [
-      { name: 'New', kind: 'active' },
-      { name: 'Qualified', kind: 'active' },
-      { name: 'Scoping', kind: 'active' },
-      { name: 'Proposal', kind: 'active' },
-      { name: 'Committed', kind: 'done' },
-      { name: 'Active', kind: 'active' },
-      { name: 'Won', kind: 'terminal' },
-      { name: 'Lost', kind: 'lost' },
-    ];
-  }
-  if (template === 'catalog') {
-    return [
-      { name: 'Idea', kind: 'active' },
-      { name: 'Evaluating', kind: 'active' },
-      { name: 'Active', kind: 'active' },
-      { name: 'Deprecated', kind: 'terminal' },
-    ];
-  }
-  return [
-    { name: 'Todo', kind: 'active' },
-    { name: 'Doing', kind: 'active' },
-    { name: 'Done', kind: 'done' },
-  ];
-}
-
 export function createBoardScope({
   db,
   scope,
@@ -1068,7 +945,8 @@ export function createBoardScope({
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new Error('Board not found');
+    if (!row || (!row.isShared && row.createdBy !== scope.userId))
+      throw new Error('Board not found');
     return row;
   }
 
@@ -1155,7 +1033,14 @@ export function createBoardScope({
       .select({ item: boardItems, object: entities })
       .from(boardItems)
       .innerJoin(entities, eq(boardItems.entityId, entities.id))
-      .where(and(eq(boardItems.id, itemId), eq(boardItems.teamId, scope.teamId)))
+      .innerJoin(boards, eq(boardItems.boardId, boards.id))
+      .where(
+        and(
+          eq(boardItems.id, itemId),
+          eq(boardItems.teamId, scope.teamId),
+          or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     return row ? toItemRow(row.item, row.object) : null;
@@ -1381,7 +1266,13 @@ export function createBoardScope({
         db
           .select()
           .from(boards)
-          .where(and(eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)))
+          .where(
+            and(
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+              or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
+            ),
+          )
           .orderBy(desc(boards.updatedAt)),
         db
           .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
@@ -1421,7 +1312,7 @@ export function createBoardScope({
         )
         .limit(1);
       const board = boardRows[0];
-      if (!board) return null;
+      if (!board || (!board.isShared && board.createdBy !== scope.userId)) return null;
       const itemFilterConditions = boardItemFilterConditions(options.itemFilter);
       const itemsQuery = db
         .select({ item: boardItems, object: entities })
@@ -1533,6 +1424,7 @@ export function createBoardScope({
 
     async createBoard(input: CreateBoardInput): Promise<BoardDetail> {
       await scope.requireMembership();
+      boardQualificationPolicySchema.parse(input);
       const name = normalizeName(input.name, 'Board name');
       const templateKind = BOARD_TEMPLATES.includes(input.templateKind)
         ? input.templateKind
@@ -1557,6 +1449,8 @@ export function createBoardScope({
               input.recommendedObjectTypes ?? defaultBoardRecommendedTypes(templateKind),
             strictObjectTypes: input.strictObjectTypes ?? false,
             candidateFilter: input.candidateFilter ?? {},
+            qualificationEnabled: input.qualificationEnabled ?? false,
+            qualificationInstructions: input.qualificationInstructions?.trim() ?? '',
             isShared: input.isShared ?? true,
           })
           .returning();
@@ -1582,10 +1476,21 @@ export function createBoardScope({
       });
     },
 
-    async archiveBoard(boardId: string): Promise<boolean> {
+    async archiveBoard(boardId: string, expectedUpdatedAt?: string): Promise<boolean> {
       await requireBoard(boardId);
       const now = new Date();
       const txResult = await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+          )
+          .for('update');
+        if (!current || (!current.isShared && current.createdBy !== scope.userId))
+          throw new Error('Board not found');
+        if (expectedUpdatedAt && current.updatedAt.toISOString() !== expectedUpdatedAt)
+          throw new StaleWorkspaceStateError();
         const updatedRows = await tx
           .update(boards)
           .set({ archivedAt: now, updatedAt: now })
@@ -1616,7 +1521,7 @@ export function createBoardScope({
           dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
         };
       });
-      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, txResult.dueDateCalendarSync);
       return txResult.rows.length > 0;
     },
 
@@ -1643,7 +1548,7 @@ export function createBoardScope({
           dueDateCalendarSync: await refreshBoardDueDateMetadata(tx, board),
         };
       });
-      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, txResult.dueDateCalendarSync);
       return txResult.renamed;
     },
 
@@ -1658,32 +1563,70 @@ export function createBoardScope({
       if (nextLanes?.length === 0) throw new Error('At least one lane is required');
       if (nextLanes && nextLanes.length > 16) throw new Error('Too many lanes');
 
-      const currentLanes = nextLanes
-        ? await db
-            .select()
-            .from(boardLanes)
-            .where(
-              and(
-                eq(boardLanes.boardId, input.id),
-                eq(boardLanes.teamId, scope.teamId),
-                isNull(boardLanes.archivedAt),
-              ),
-            )
-        : [];
-      const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
-      const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
-      for (const lane of nextLanes ?? []) {
-        if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
-      }
-      const removedLaneIds = currentLanes
-        .map((lane) => lane.id)
-        .filter((laneId) => !keptLaneIds.has(laneId));
-
       const dueDateCalendarSync = await db.transaction(async (tx) => {
+        const [currentBoard] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(
+              eq(boards.id, input.id),
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+            ),
+          )
+          .for('update');
+        if (!currentBoard) throw new Error('Board not found');
+        if (!currentBoard.isShared && currentBoard.createdBy !== scope.userId)
+          throw new Error('Board not found');
+        if (
+          input.expectedUpdatedAt &&
+          currentBoard.updatedAt.toISOString() !== input.expectedUpdatedAt
+        )
+          throw new StaleWorkspaceStateError();
+        const currentLanes = nextLanes
+          ? await tx
+              .select()
+              .from(boardLanes)
+              .where(
+                and(
+                  eq(boardLanes.boardId, input.id),
+                  eq(boardLanes.teamId, scope.teamId),
+                  isNull(boardLanes.archivedAt),
+                ),
+              )
+          : [];
+        const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
+        const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
+        for (const lane of nextLanes ?? []) {
+          if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
+        }
+        const removedLaneIds = currentLanes
+          .map((lane) => lane.id)
+          .filter((laneId) => !keptLaneIds.has(laneId));
+
+        const policy = boardQualificationPolicySchema.parse({ ...currentBoard, ...input });
         const now = new Date();
         const boardPatch: Partial<typeof boards.$inferInsert> = { updatedAt: now };
         if (input.name !== undefined) boardPatch.name = normalizeName(input.name, 'Board name');
         if (input.purpose !== undefined) boardPatch.purpose = input.purpose.trim();
+        if (input.qualificationEnabled !== undefined)
+          boardPatch.qualificationEnabled = policy.qualificationEnabled;
+        if (input.qualificationInstructions !== undefined)
+          boardPatch.qualificationInstructions = policy.qualificationInstructions;
+        if (input.strictObjectTypes !== undefined)
+          boardPatch.strictObjectTypes = policy.strictObjectTypes;
+        if (input.recommendedObjectTypes !== undefined)
+          boardPatch.recommendedObjectTypes = policy.recommendedObjectTypes;
+        if (
+          policy.qualificationEnabled !== currentBoard.qualificationEnabled ||
+          policy.qualificationInstructions !== currentBoard.qualificationInstructions ||
+          policy.strictObjectTypes !== currentBoard.strictObjectTypes ||
+          !stableEqual(policy.recommendedObjectTypes, currentBoard.recommendedObjectTypes) ||
+          (input.purpose !== undefined && input.purpose.trim() !== currentBoard.purpose)
+        ) {
+          boardPatch.qualificationRevision =
+            sql`${boards.qualificationRevision} + 1` as unknown as number;
+        }
         const [updatedBoard] = await tx
           .update(boards)
           .set(boardPatch)
@@ -1753,7 +1696,7 @@ export function createBoardScope({
           ? refreshBoardDueDateMetadata(tx, updatedBoard)
           : mergeDueDateCalendarSyncResults([]);
       });
-      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, dueDateCalendarSync);
       return true;
     },
 
@@ -1780,6 +1723,15 @@ export function createBoardScope({
           throw new Error('Archived suggested projects cannot be added to boards');
         }
         if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
+        const [lockedBoard] = await tx
+          .select()
+          .from(boards)
+          .where(
+            and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+          )
+          .for('update');
+        if (!lockedBoard) throw new Error('Board not found');
+        assertBoardObjectType(lockedBoard, object.type);
         const rows = await tx
           .insert(boardItems)
           .values({
@@ -1858,7 +1810,7 @@ export function createBoardScope({
         await notifyBoardItemDueDate(tx, item, object, board, input.actor);
         return { item: toItemRow(item, object), dueDateCalendarSync };
       });
-      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, txResult.dueDateCalendarSync);
       return txResult.item;
     },
 
@@ -1869,7 +1821,8 @@ export function createBoardScope({
         actor: { kind: ActorKind; userId?: string | null };
       },
     ): Promise<BoardItemRow> {
-      await requireBoard(boardId);
+      const board = await requireBoard(boardId);
+      assertBoardObjectType(board, objectInput.type);
       await requireLane(boardId, itemInput.laneId);
       const created = await objects.createObject({ ...objectInput, actor: itemInput.actor });
       return api.addBoardItem(boardId, { ...itemInput, entityId: created.id });
@@ -1985,7 +1938,7 @@ export function createBoardScope({
         }
         return result;
       });
-      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, dueDateCalendarSync);
       const item = await itemWithObject(itemId);
       if (!item) throw new Error('Board item not found after update');
       return { item, changed: true, changedFields };
@@ -1994,6 +1947,7 @@ export function createBoardScope({
     async removeBoardItem(
       itemId: string,
       actor: { kind: ActorKind; userId?: string | null },
+      approval?: { expectedUpdatedAt: string; suggestionItemId: string },
     ): Promise<BoardItemRow | null> {
       if (!UUID_RE.test(itemId)) return null;
       const current = await itemWithObject(itemId);
@@ -2009,6 +1963,9 @@ export function createBoardScope({
               eq(boardItems.id, itemId),
               eq(boardItems.teamId, scope.teamId),
               isNull(boardItems.archivedAt),
+              approval
+                ? sql`date_trunc('milliseconds', ${boardItems.updatedAt}) = ${approval.expectedUpdatedAt}::timestamptz`
+                : undefined,
             ),
           )
           .returning({ id: boardItems.id });
@@ -2020,6 +1977,7 @@ export function createBoardScope({
           entityId: current.entityId,
           actor,
           field: '__remove__',
+          suggestionItemId: approval?.suggestionItemId ?? null,
           previousValue: { boardId: current.boardId, laneId: current.laneId },
         });
         const sourceEventId = await createBoardSystemRawEvent({
@@ -2062,7 +2020,7 @@ export function createBoardScope({
           board,
         );
       });
-      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, dueDateCalendarSync);
       return { ...current, archivedAt: now };
     },
 
@@ -2092,6 +2050,7 @@ export function createBoardScope({
             eq(boardItems.entityId, entityId),
             isNull(boardItems.archivedAt),
             isNull(boards.archivedAt),
+            or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
           ),
         )
         .orderBy(desc(boardItems.updatedAt));
@@ -2288,8 +2247,9 @@ export function createBoardScope({
       suggestionItemId?: string | null;
       note?: string | null;
     }): Promise<BoardItemChangeRow> {
-      await requireBoard(input.boardId);
-      await requireObject(input.entityId);
+      const board = await requireBoard(input.boardId);
+      const object = await requireObject(input.entityId);
+      assertBoardObjectType(board, object.type);
       await requireLane(input.boardId, input.laneId);
       return writeChange({
         boardId: input.boardId,
@@ -2305,6 +2265,35 @@ export function createBoardScope({
         suggestionItemId: input.suggestionItemId ?? null,
         note: input.note ?? null,
       });
+    },
+
+    async acceptMembershipRemoval(input: {
+      boardId: string;
+      entityId: string;
+      boardItemId: string;
+      expectedUpdatedAt: string;
+      suggestionItemId: string;
+    }) {
+      await requireBoard(input.boardId);
+      const current = await itemWithObject(input.boardItemId);
+      if (
+        !current ||
+        current.archivedAt ||
+        current.boardId !== input.boardId ||
+        current.entityId !== input.entityId ||
+        current.updatedAt.toISOString() !== input.expectedUpdatedAt
+      ) {
+        throw new Error('Board membership changed; review a fresh suggestion.');
+      }
+      // The suggestion acceptance unit of work supplies the outer transaction.
+      const removed = await api.removeBoardItem(
+        current.id,
+        { kind: 'agent', userId: scope.userId },
+        input,
+      );
+      if (!removed) throw new Error('Board item no longer active');
+
+      return current.id;
     },
 
     async proposeBoardItemUpdate(input: {
@@ -2396,6 +2385,19 @@ export function createBoardScope({
             throw new Error('Archived suggested projects cannot be added to boards');
           }
           if (object.archivedAt) throw new Error('Archived objects cannot be added to boards');
+          const [lockedBoard] = await tx
+            .select()
+            .from(boards)
+            .where(
+              and(
+                eq(boards.id, claimedChange.boardId),
+                eq(boards.teamId, scope.teamId),
+                isNull(boards.archivedAt),
+              ),
+            )
+            .for('update');
+          if (!lockedBoard) throw new Error('Board not found');
+          assertBoardObjectType(lockedBoard, object.type);
           const existing = await tx
             .select({ id: boardItems.id })
             .from(boardItems)
@@ -2512,3 +2514,5 @@ export function createBoardScope({
 }
 
 export type BoardScope = ReturnType<typeof createBoardScope>;
+
+export { defaultBoardLanes, defaultBoardRecommendedTypes } from '#src/boards/templates.js';

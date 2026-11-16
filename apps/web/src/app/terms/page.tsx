@@ -65,7 +65,15 @@ function TermsFormationSections() {
         Timeline is an evidence-backed team memory product. It can capture, import, store, organize,
         search, transcribe, summarize, and cite information from web entry, Telegram, Slack, email,
         documents, meetings, calendars, selected third-party integrations, webhooks, and connected
-        MCP servers. Features and supported providers may change over time.
+        MCP servers. A team may add a public website as a source and request manual or scheduled
+        scans. Timeline uses Firecrawl (SideGuide Technologies, Inc.) to fetch up to five public
+        pages of that site. By submitting a website, you confirm that you may submit it for this
+        processing, including any public information about other people. Website crawling uses 20
+        accepted-source units per successfully captured page, including unchanged pages; AI
+        processing and storage are charged separately. Scheduled scans continue until paused,
+        removed, or blocked by applicable limits. Removing a website source stops future scans and
+        retains captured history. Only public pages are read; we do not access pages behind a login.
+        Features and supported providers may change over time.
       </p>
 
       <h2>4. Accounts and credentials</h2>
@@ -128,6 +136,17 @@ function TermsContentAndAiSections() {
 
       <h2>8. AI features</h2>
       <p>
+        Workspace evaluation tracing is optional and off by default. If an authorized owner or admin
+        enables it, you instruct us to send the selected, eligible source-processing samples to
+        LangSmith to investigate quality issues and benchmark improvements, as described in the{' '}
+        <Link href="/privacy">Privacy Policy</Link>. You must have authority to share the selected
+        content and provide required notices or obtain required permissions from affected people.
+        This limited instruction does not authorize model training, unrestricted staff access, or
+        collection of members’ private or restricted records. Administrators can change or withdraw
+        the preference in Team settings. Withdrawal stops new collection under that permission and
+        schedules removal of collected traces, subject to provider cleanup and backup retention.
+      </p>
+      <p>
         The Service uses AI for transcription, extraction, embeddings, media text extraction,
         summarization, classification, suggestions, and agent answers. Hosted AI requests are routed
         under the privacy controls described in the <Link href="/privacy">Privacy Policy</Link>.
@@ -135,8 +154,8 @@ function TermsContentAndAiSections() {
         for retrieval is processing for the Service, not model training.
       </p>
       <p>
-        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList} require zero-data-retention
-        processing and cannot downgrade to weaker retention during an outage.{' '}
+        The following AI roles require zero-data-retention processing and cannot downgrade to weaker
+        retention during an outage: {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList}.{' '}
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
       </p>
       <p>
@@ -165,9 +184,14 @@ function TermsContentAndAiSections() {
       <p>
         Tools made available to an agent may cause external side effects, including creating or
         changing records outside Timeline. Review scopes and approval settings before enabling a
-        tool. Disconnecting a source does not automatically delete evidence already captured into
-        Timeline. We are not responsible for third-party changes, outages, or data practices outside
-        our reasonable control.
+        tool. A member disconnecting a personal provider account removes Timeline&apos;s stored
+        credentials for that account and may disable workspace sources that depended on it. An admin
+        removing a workspace source stops future capture and, where implemented, cancels
+        provider-managed watches or webhooks; Google Drive source removal also deletes Drive change
+        snapshots and extracted text used for change detection. Neither action deletes evidence
+        already captured into Timeline. Deleting a document hides it in the product; it is not a
+        complete erasure of every copy. We are not responsible for third-party changes, outages, or
+        data practices outside our reasonable control.
       </p>
     </>
   );
@@ -227,6 +251,15 @@ function TermsResponsibleUseSections() {
 
       <h2>12. Privacy and data protection</h2>
       <p>
+        To request deletion of captured data, use our <Link href="/help/support">support form</Link>{' '}
+        or contact <SupportMailto />. Requests are handled manually after identity and workspace
+        authority checks. Removing a personal connection or disconnecting a team source does not
+        automatically delete captured history. The <Link href="/privacy">Privacy Policy</Link> and{' '}
+        <Link href="/help/integrations">integration help</Link> explain these actions and applicable
+        retention or backup limitations. We confirm the scope and outcome, including outstanding
+        steps or justified retention.
+      </p>
+      <p>
         Our <Link href="/privacy">Privacy Policy</Link> describes our controller activities. For
         Customer Content where we act as processor, the customer is responsible for its instructions
         and lawful basis. Customers needing a data-processing agreement or transfer terms should
@@ -250,6 +283,13 @@ function TermsResponsibleUseSections() {
         is discarded when the sandbox stops, while Daytona documents three-day retention for its
         observability logs, traces, and metrics.
       </p>
+      <p>
+        Firecrawl fetches public pages of a website URL the team submits for manual or scheduled
+        scans. Firecrawl&apos;s published privacy policy and security overview describe that
+        processing, including United States storage. Broader page-content retention beyond
+        Firecrawl&apos;s documented 24-hour crawl-result API window is to be confirmed. The Privacy
+        Policy has the current processor description.
+      </p>
     </>
   );
 }
@@ -263,8 +303,8 @@ function TermsProductAndLifecycleSections() {
         documentation, trademarks, and service content belong to us or our licensors. These Terms
         grant only the limited right to use the hosted Service while your account is authorized.
         Public availability of source code does not by itself grant permission to copy, modify,
-        redistribute, or self-host it; those rights exist only under an applicable license. Third-
-        party and open-source components remain governed by their own licenses.
+        redistribute, or self-host it; those rights exist only under an applicable license.
+        Third-party and open-source components remain governed by their own licenses.
       </p>
 
       <h2>14. Feedback and contributions</h2>
@@ -330,11 +370,25 @@ function TermsProductAndLifecycleSections() {
         permitted.
       </p>
       <p>
-        Before planned termination, use available export tools or contact us. After termination we
-        may delete Customer Content from active systems after a reasonable retrieval period, unless
-        a written agreement says otherwise or law requires retention. Sections that by nature should
-        survive—including ownership, confidentiality, disclaimers, liability, indemnity, and dispute
-        terms—remain effective.
+        A team owner may request permanent deletion from Team settings. The request immediately
+        disables access for every member and authorizes deletion of all team content, including
+        members’ private content within that team. Export the information you are permitted to
+        access before requesting deletion. Platform administrators review requests and may disable,
+        restore or permanently delete teams. Only platform administrators can cancel a request and
+        restore access before permanent deletion begins; once it begins, it cannot be reversed.
+      </p>
+      <p>
+        Disabling preserves team data, stops new processing and usage accrual, and requests
+        cancellation of subscription renewal. Provider failures are retried. Previously incurred
+        charges remain payable and there are no automatic refunds. Restoration does not resume
+        renewal without an explicit billing action. Permanent deletion removes operational team
+        data, files, search vectors and team connections. User accounts, other teams, shared
+        connections used elsewhere and original files in connected services remain. Limited
+        financial/security records may remain for documented legal, security or contractual
+        purposes; backups and provider copies follow their applicable expiry or deletion process. We
+        report completed removal separately from outstanding work and do not promise immediate
+        erasure of every copy. Sections that by nature should survive—including ownership,
+        confidentiality, disclaimers, liability, indemnity and dispute terms—remain effective.
       </p>
     </>
   );
@@ -429,8 +483,8 @@ export default function TermsPage() {
         description="Binding Terms are not currently being published or presented for acceptance."
       >
         <p>
-          The Terms are unavailable while we review our contracting entity. This page does not form
-          an agreement or introduce a new Terms version, and you will not be asked to accept it.
+          The Terms are unavailable until publication is enabled. This page does not form an
+          agreement or introduce a new Terms version, and you will not be asked to accept it.
         </p>
         <p>
           Existing users may continue under any previously applicable agreement. New account

@@ -43,10 +43,13 @@ const {
   calendarEvents,
   entities,
   rawEvents,
+  userPins,
   reconciliationEvidence,
 } = await import('@timeline/db');
 const { eq, inArray } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
+const { buildTimelineMoments, timelineMomentLookupPlan } =
+  await import('#src/timeline-moments/index.js');
 const { withTeam } = await import('#src/team-scope.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
 
@@ -92,6 +95,72 @@ describe('calendar scope', () => {
   afterEach(async () => {
     await pg.close();
     vi.setSystemTime();
+  });
+
+  it('preserves renamed notice links and keeps occurrence pins independent', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Daily digest',
+      startAt: new Date('2026-07-16T09:00:00Z'),
+      endAt: new Date('2026-07-16T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+    });
+    if (!event.scheduledRawEventId) throw new Error('Expected notice');
+    const rows = await scope.timeline.getEventsByIds([event.scheduledRawEventId]);
+    const original = buildTimelineMoments(rows, new Map())[0];
+    if (!original) throw new Error('Expected moment');
+    const scheduledRow = rows[0];
+    if (!scheduledRow) throw new Error('Expected scheduling row');
+    // Newer notices must not hide the independent occurrence behind a lookup cap.
+    await db.insert(rawEvents).values(
+      Array.from({ length: 105 }, (_, index) => ({
+        ...scheduledRow,
+        id: crypto.randomUUID(),
+        contentText: `Updated: Digest ${index}`,
+        occurredAt: new Date(`2026-07-17T09:00:00Z`),
+        sourceMetadata: { action: 'updated', calendar_event_id: event.id },
+      })),
+    );
+    const occurrenceRef = { kind: 'timeline_moment' as const, key: `moment:calendar:${event.id}` };
+    const occurrencePlan = timelineMomentLookupPlan(occurrenceRef.key);
+    if (!occurrencePlan) throw new Error('Expected occurrence lookup');
+    expect(
+      (await scope.timeline.listEventsForMomentLookup(occurrencePlan)).map((row) => row.id),
+    ).toContain(event.startAtRawEventId);
+    await scope.pins.pin(occurrenceRef);
+    expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: original.id })).toBe(false);
+    expect(await scope.pins.isPinnedMany([{ kind: 'timeline_moment', key: original.id }])).toEqual({
+      [`timeline_moment:${original.id}`]: false,
+    });
+    expect(await scope.pins.unpin({ kind: 'timeline_moment', key: original.id })).toBe(false);
+    expect(await scope.pins.isPinned(occurrenceRef)).toBe(true);
+    await scope.pins.pin({ kind: 'timeline_moment', key: original.id });
+    expect(await db.select().from(userPins)).toHaveLength(2);
+    await scope.calendar.updateCalendarEvent(event.id, { title: 'Renamed digest' });
+    const plan = timelineMomentLookupPlan(original.id);
+    if (!plan) throw new Error('Expected lookup');
+    const renamedRows = await scope.timeline.listEventsForMomentLookup(plan);
+    expect(renamedRows.map((row) => row.id)).toEqual([event.scheduledRawEventId]);
+    const current = buildTimelineMoments(renamedRows, new Map())[0];
+    if (!current) throw new Error('Expected renamed moment');
+    expect(current.id).not.toBe(original.id);
+    expect(current.legacyIds).toContain(original.id);
+    expect(await scope.pins.isPinned({ kind: 'timeline_moment', key: current.id })).toBe(true);
+    expect((await scope.pins.list()).items).toHaveLength(2);
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
+    const teammate = withTeam(db as never, TEAM_ID, USER_B_ID);
+    await scope.calendar.updateCalendarEvent(event.id, { visibility: 'team' });
+    expect(await scope.timeline.listEventsForMomentLookup(plan)).toHaveLength(1);
+    expect(await teammate.timeline.listEventsForMomentLookup(plan)).toHaveLength(1);
+    await scope.calendar.updateCalendarEvent(event.id, { visibility: 'private' });
+    expect(await scope.pins.pruneDeletedTimelineMomentPins()).toBe(0);
+    expect((await scope.pins.list()).items).toHaveLength(2);
+    expect(await teammate.timeline.listEventsForMomentLookup(plan)).toEqual([]);
+    expect(await teammate.pins.isPinned({ kind: 'timeline_moment', key: current.id })).toBe(false);
+    expect(await scope.pins.unpin({ kind: 'timeline_moment', key: current.id })).toBe(true);
+    expect(await db.select().from(userPins)).toHaveLength(1);
+    expect(await scope.pins.isPinned(occurrenceRef)).toBe(true);
   });
 
   it('defaults missing team calendar settings to Helsinki workspace time', async () => {
@@ -359,6 +428,58 @@ describe('calendar scope', () => {
     await expect(
       teammateScope.pins.pin({ kind: 'calendar_event', key: occurrence.id }),
     ).rejects.toThrow('Pinned item not available');
+  });
+
+  it('keeps single and batch calendar pins aligned when a recurring parent becomes hidden', async () => {
+    const owner = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammate = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const parent = await owner.calendar.createCalendarEvent({
+      title: 'Shared recurring meeting',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=WEEKLY;BYDAY=WE',
+    });
+    const occurrence = (
+      await owner.calendar.listCalendarEvents({
+        from: new Date('2026-07-02T00:00:00Z'),
+        to: new Date('2026-08-01T00:00:00Z'),
+        limit: 20,
+      })
+    ).find((event) => event.recurringParentId === parent.id);
+    if (!occurrence) throw new Error('expected recurring occurrence');
+    const pin = await teammate.pins.pin({ kind: 'calendar_event', key: occurrence.id });
+    const refs = [parent.id, occurrence.id, occurrence.id.toUpperCase(), 'invalid-id'].map(
+      (key) => ({ kind: 'calendar_event' as const, key }),
+    );
+    const before = await teammate.pins.isPinnedMany(refs);
+    for (const ref of refs) {
+      expect(before[`${ref.kind}:${ref.key}`] ?? false).toBe(await teammate.pins.isPinned(ref));
+    }
+    expect(before[`calendar_event:${occurrence.id}`]).toBe(true);
+
+    // Model an existing visible occurrence whose parent has since become private.
+    await db
+      .update(calendarEvents)
+      .set({ visibility: 'private' })
+      .where(eq(calendarEvents.id, parent.id));
+    await expect(teammate.calendar.getCalendarEvent(occurrence.id)).resolves.toMatchObject({
+      redacted: false,
+    });
+    const hidden = await teammate.pins.isPinnedMany(refs);
+    for (const ref of refs) {
+      expect(hidden[`${ref.kind}:${ref.key}`] ?? false).toBe(false);
+      await expect(teammate.pins.isPinned(ref)).resolves.toBe(false);
+    }
+    await expect(teammate.pins.pin({ kind: 'calendar_event', key: occurrence.id })).rejects.toThrow(
+      'Pinned item not available',
+    );
+    await expect(teammate.pins.list()).resolves.toMatchObject({ items: [] });
+    await expect(teammate.pins.resolvePin(pin.pinId)).resolves.toBeNull();
+    await expect(owner.calendar.resolveVisibleCalendarSeries([occurrence.id])).resolves.toEqual(
+      new Map([[occurrence.id, parent.id]]),
+    );
   });
 
   it('lists paged calendar events with search without exposing redacted private details', async () => {

@@ -7,8 +7,7 @@ export const BILLING_ENTITLEMENTS_VERSION = 'v1' as const;
 
 export type BillingPlanId = 'free' | 'payg' | 'team' | 'business' | 'enterprise';
 
-export type BillingMeterId =
-  'ai' | 'recall_minutes' | 'email_units' | 'storage_gb_month' | 'accepted_sources' | 'member_days';
+export { polarEventNameForMeter, type BillingMeterId } from '#src/billing/meters.js';
 
 export interface PlanCommercial {
   id: BillingPlanId;
@@ -53,12 +52,12 @@ export const FREE_STORAGE_GB = FREE_STORAGE_MIB / 1024;
 
 /** Free-plan native allowances (also the PAYG included floor before overage). */
 export const FREE_ALLOWANCES = {
-  aiChargeCents: 500,
+  aiChargeCents: 200,
   recallMinutes: 60,
   emailUnits: 500,
   storageGb: FREE_STORAGE_GB,
   acceptedSources: 1_000,
-  agentTurns: 100,
+  agentTurns: 50,
   activeMembers: 3,
 } as const;
 
@@ -87,7 +86,7 @@ export const PLAN_CATALOG: Record<BillingPlanId, PlanCommercial> = {
   free: {
     id: 'free',
     name: 'Free',
-    tagline: 'Useful for a real 1–3 person team. No card.',
+    tagline: 'Enough to try it with one channel.',
     platformFeeCents: 0,
     includedActiveMembers: 3,
     additionalMemberCents: null,
@@ -189,7 +188,7 @@ export interface CapacityEntitlements {
 
 export const CAPACITY_BY_PLAN: Record<BillingPlanId, CapacityEntitlements> = {
   free: {
-    agentTurnsPerMonth: 100,
+    agentTurnsPerMonth: FREE_ALLOWANCES.agentTurns,
     acceptedSourcesPerMonth: 1_000,
     webhookRequestsPerMonth: 10_000,
     inboundEmailPerMonth: 100,
@@ -321,10 +320,13 @@ export const MEETING_MAX_DURATION_MINUTES_BY_PLAN: Record<BillingPlanId, number>
   enterprise: 360,
 };
 
-/** Worst-case customer AI charge reserved before an Ask / web chat turn (€2.50). */
-export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 250;
+/** Small admission hold (0.1 cent), not a worst-case turn cost. Settle actual usage. */
+export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 0.1;
 
-/** Worst-case reservation for background LLM (extract, embed, digest, vision). */
+/** Conservative admission budget for the pinned embedding model, not settlement pricing. */
+export const EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS = 0.1;
+
+/** Worst-case reservation for background LLM (extract, digest, vision). */
 export const BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
 
 /** Reservation TTL for Ask turns (covers long tool loops + presentation pass). */
@@ -350,22 +352,4 @@ export function storageChargeCents(gbMonth: number): number {
 
 export function acceptedSourcesChargeCents(items: number): number {
   return Math.round((items * OVERAGE_RATES.acceptedSourcesCentsPerThousand) / 1000);
-}
-
-export function polarEventNameForMeter(meter: BillingMeterId): string | null {
-  switch (meter) {
-    case 'ai':
-      return 'timeline_ai_eur_cents';
-    case 'recall_minutes':
-      return 'timeline_recall_minutes';
-    case 'email_units':
-      return 'timeline_email_units';
-    case 'storage_gb_month':
-      return 'timeline_storage_gb_month';
-    case 'accepted_sources':
-      return 'timeline_accepted_sources';
-    case 'member_days':
-      // Ingested as member-month fractions against the €2 catalog price.
-      return 'timeline_extra_member_days';
-  }
 }

@@ -1,17 +1,20 @@
 import { directoryPage, listPlatformAudit } from '@timeline/shared/platform-admin';
 
+import type { DirectoryOptions } from '@timeline/shared/platform-admin';
+
 import { PageHeader } from '@/components/page-header';
-import { AdminPagination } from '@/components/platform-admin-directory';
+import { AdminPagination, AdminSearch } from '@/components/platform-admin-directory';
 import { db } from '@/lib/db';
 import { requireAdmin } from '@/lib/platform-admin';
 export default async function AdminAuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<DirectoryOptions & { page?: string; q?: string }>;
 }) {
   const actor = await requireAdmin();
-  const page = directoryPage((await searchParams).page);
-  const rows = await listPlatformAudit(db, actor, page);
+  const params = await searchParams;
+  const page = directoryPage(params.page);
+  const rows = await listPlatformAudit(db, actor, page, params);
   return (
     <div className="space-y-5">
       <PageHeader
@@ -19,6 +22,7 @@ export default async function AdminAuditPage({
         title="Platform audit"
         subtitle="Administrator access and management history"
       />
+      <AdminSearch query={params.q ?? ''} options={params} kind="audit" />
       <ul className="divide-y divide-border">
         {rows.slice(0, 50).map((row) => (
           <li key={row.id} className="space-y-2 py-4">
@@ -46,7 +50,12 @@ export default async function AdminAuditPage({
         ))}
       </ul>
       {rows.length === 0 && <p className="text-sm text-fg-muted">No administrator activity yet.</p>}
-      <AdminPagination page={page} hasNext={rows.length > 50} />
+      <AdminPagination
+        page={page}
+        hasNext={rows.length > 50}
+        options={params}
+        query={params.q ?? ''}
+      />
     </div>
   );
 }

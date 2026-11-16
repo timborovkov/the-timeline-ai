@@ -98,8 +98,9 @@ describe('PageHeader', () => {
 
     const link = screen.getByRole('link', { name: '2 overdue tasks' });
     expect(link.getAttribute('href')).toBe('/app/tasks?due=overdue');
-    expect(link.parentElement?.className).toContain('min-h-10');
-    expect(link.parentElement?.className).toContain('min-w-10');
+    expect(link.className).toContain('min-h-10');
+    expect(link.parentElement?.tagName).toBe('DD');
+    expect(link.className).toContain('min-w-10');
     expect(container.textContent).toContain('Overdue2');
   });
 });

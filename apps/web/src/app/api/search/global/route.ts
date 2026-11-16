@@ -205,6 +205,13 @@ async function searchTimeline(
     if (input.from) args.from = new Date(input.from);
     if (input.to) args.to = new Date(input.to);
     if (source) args.source = source;
+    args.onRanking = (info) => {
+      if (info.candidateLimitReached)
+        warnings.push({
+          source: 'timeline_event',
+          message: 'Timeline search reached its candidate limit; results are not exhaustive.',
+        });
+    };
     const hits = await scope.timeline.searchEvents(args);
     const eventRows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
     const eventsById = new Map(eventRows.map((event) => [event.id, event]));
@@ -226,7 +233,7 @@ async function searchTimeline(
           scoreParts: {
             semantic: hit.score,
             intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
-            recency: scoreRecency(hit.occurredAt),
+            evidenceFreshness: hit.ranking?.freshnessBoost ?? 0,
           },
           metadata: {
             source: hit.source,
@@ -293,6 +300,11 @@ async function searchDocuments(
       from: input.from ? new Date(input.from) : undefined,
       to: input.to ? new Date(input.to) : undefined,
     });
+    if (page.retrieval?.candidateLimitReached)
+      warnings.push({
+        source: 'document_chunk',
+        message: 'Document search reached its candidate limit; results are not exhaustive.',
+      });
     return page.items.map((hit) =>
       finalizeGlobalSearchResult({
         id: `document:${hit.documentChunkId}`,
@@ -303,6 +315,7 @@ async function searchDocuments(
         updatedAt: hit.createdAt.toISOString(),
         scoreParts: {
           semantic: hit.score,
+          evidenceFreshness: hit.ranking?.freshnessBoost ?? 0,
           intent: scoreIntent(input.query, 'document_chunk', [
             hit.documentName,
             hit.fileKind,

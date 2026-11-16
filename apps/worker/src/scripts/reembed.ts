@@ -31,7 +31,6 @@
  */
 import {
   closeDb,
-  entities as entitiesTable,
   facts as factsTable,
   getDb,
   objectChanges as objectChangesTable,
@@ -39,10 +38,15 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PAGE_SIZE = 500;
+import {
+  PAGE_SIZE,
+  enqueueByUpdatedAt,
+  listReembedEntitiesPage,
+} from '#src/scripts/reembed-pages.js';
 
 interface Args {
   teamId: string;
@@ -208,69 +212,12 @@ async function enqueueFacts(args: Args, budget: number): Promise<PhaseResult> {
   return { scanned, enqueued };
 }
 
-/**
- * Page through a table by (updatedAt, id), enqueueing one job per row via the
- * caller-supplied builder. Pulled out so each Phase 8 kind doesn't re-roll
- * the same cursor loop.
- */
-async function enqueueByUpdatedAt(args: {
-  teamId: string;
-  budget: number;
-  dryRun: boolean;
-  fetchPage: (
-    cursor: { updatedAt: Date; id: string } | null,
-  ) => Promise<{ id: string; updatedAt: Date }[]>;
-  enqueueRow: (id: string) => Promise<void>;
-}): Promise<PhaseResult> {
-  if (args.budget <= 0) return { scanned: 0, enqueued: 0 };
-  let cursor: { updatedAt: Date; id: string } | null = null;
-  let enqueued = 0;
-  let scanned = 0;
-  while (enqueued < args.budget) {
-    const page = await args.fetchPage(cursor);
-    if (page.length === 0) break;
-    for (const row of page) {
-      scanned += 1;
-      if (!args.dryRun) await args.enqueueRow(row.id);
-      enqueued += 1;
-      if (enqueued >= args.budget) break;
-    }
-    const last = page[page.length - 1];
-    if (!last) break;
-    cursor = { updatedAt: last.updatedAt, id: last.id };
-    if (page.length < PAGE_SIZE) break;
-  }
-  return { scanned, enqueued };
-}
-
 async function enqueueObjects(args: Args, budget: number): Promise<PhaseResult> {
   const db = getDb();
   return enqueueByUpdatedAt({
-    teamId: args.teamId,
     budget,
     dryRun: args.dryRun,
-    async fetchPage(cursor) {
-      const conditions: SQL[] = [
-        eq(entitiesTable.teamId, args.teamId),
-        isNull(entitiesTable.mergedIntoId),
-      ];
-      if (cursor) {
-        const c = or(
-          sql`${entitiesTable.updatedAt} > ${cursor.updatedAt.toISOString()}::timestamptz`,
-          and(
-            sql`${entitiesTable.updatedAt} = ${cursor.updatedAt.toISOString()}::timestamptz`,
-            gt(entitiesTable.id, cursor.id),
-          ),
-        );
-        if (c) conditions.push(c);
-      }
-      return db
-        .select({ id: entitiesTable.id, updatedAt: entitiesTable.updatedAt })
-        .from(entitiesTable)
-        .where(and(...conditions))
-        .orderBy(asc(entitiesTable.updatedAt), asc(entitiesTable.id))
-        .limit(PAGE_SIZE);
-    },
+    fetchPage: (cursor) => listReembedEntitiesPage(db, args.teamId, cursor),
     async enqueueRow(id) {
       await queue.enqueueObjectEmbedJob(
         args.teamId,
@@ -284,31 +231,9 @@ async function enqueueObjects(args: Args, budget: number): Promise<PhaseResult> 
 async function enqueueEntities(args: Args, budget: number): Promise<PhaseResult> {
   const db = getDb();
   return enqueueByUpdatedAt({
-    teamId: args.teamId,
     budget,
     dryRun: args.dryRun,
-    async fetchPage(cursor) {
-      const conditions: SQL[] = [
-        eq(entitiesTable.teamId, args.teamId),
-        isNull(entitiesTable.mergedIntoId),
-      ];
-      if (cursor) {
-        const c = or(
-          sql`${entitiesTable.updatedAt} > ${cursor.updatedAt.toISOString()}::timestamptz`,
-          and(
-            sql`${entitiesTable.updatedAt} = ${cursor.updatedAt.toISOString()}::timestamptz`,
-            gt(entitiesTable.id, cursor.id),
-          ),
-        );
-        if (c) conditions.push(c);
-      }
-      return db
-        .select({ id: entitiesTable.id, updatedAt: entitiesTable.updatedAt })
-        .from(entitiesTable)
-        .where(and(...conditions))
-        .orderBy(asc(entitiesTable.updatedAt), asc(entitiesTable.id))
-        .limit(PAGE_SIZE);
-    },
+    fetchPage: (cursor) => listReembedEntitiesPage(db, args.teamId, cursor),
     async enqueueRow(id) {
       await queue.enqueueEntityEmbedJob(
         args.teamId,
@@ -322,7 +247,6 @@ async function enqueueEntities(args: Args, budget: number): Promise<PhaseResult>
 async function enqueueNotes(args: Args, budget: number): Promise<PhaseResult> {
   const db = getDb();
   return enqueueByUpdatedAt({
-    teamId: args.teamId,
     budget,
     dryRun: args.dryRun,
     async fetchPage(cursor) {
@@ -458,7 +382,7 @@ async function main(): Promise<void> {
   );
 
   await queue.closeEmbedQueue();
-  await queue.closeRedisConnection();
+  await closeAllRedisConnections();
   await closeDb();
 }
 

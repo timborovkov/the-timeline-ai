@@ -77,7 +77,6 @@ await vi.mock(
 const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
-const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectCleanupSuggestions } = await import('./object-cleanup-suggestions.js');
 
@@ -114,11 +113,27 @@ afterEach(() => {
 });
 
 describe('ObjectCleanupSuggestions', () => {
-  it('opens merge review from the cleanup list instead of linking to the merge page', () => {
+  it('keeps empty cleanup out of the list and restores focus after closing the dialog', async () => {
+    const user = userEvent.setup();
+    render(createElement(ObjectCleanupSuggestions, { suggestions: [] }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const trigger = screen.getByRole('button', { name: 'Cleanup' });
+    await user.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Cleanup suggestions' })).toBeTruthy();
+    expect(screen.getByText('No cleanup suggestions pending.')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
+  it('opens merge review from the cleanup list instead of linking to the merge page', async () => {
     const itemId = 'item-1';
     const survivorId = 'object-a';
     const duplicateId = 'object-b';
-    const html = renderToStaticMarkup(
+    const { baseElement } = render(
       createElement(ObjectCleanupSuggestions, {
         suggestions: [
           {
@@ -178,16 +193,18 @@ describe('ObjectCleanupSuggestions', () => {
       }),
     );
 
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Cleanup/ }));
+    const html = baseElement.innerHTML;
     expect(html).toContain('Review merge for Trade register extract');
     expect(html).toContain('Review');
     expect(html).not.toContain('/app/objects/merge');
   });
 
-  it('keeps merge suggestions reviewable when the modal preview was not preloaded', () => {
+  it('keeps merge suggestions reviewable when the modal preview was not preloaded', async () => {
     const itemId = 'item-1';
     const survivorId = 'object-a';
     const duplicateId = 'object-b';
-    const html = renderToStaticMarkup(
+    const { baseElement } = render(
       createElement(ObjectCleanupSuggestions, {
         suggestions: [
           {
@@ -212,12 +229,14 @@ describe('ObjectCleanupSuggestions', () => {
       }),
     );
 
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Cleanup/ }));
+    const html = baseElement.innerHTML;
     expect(html).toContain('/app/objects/merge?');
     expect(html).toContain(`suggestionItemId=${itemId}`);
     expect(html).not.toContain('disabled=""');
   });
 
-  it('renders every pending cleanup suggestion in one scrolling list', () => {
+  it('renders every pending cleanup suggestion in one scrolling list', async () => {
     const suggestions = Array.from({ length: 12 }, (_, index) => ({
       id: `bundle-${index}`,
       title: 'Object cleanup',
@@ -237,8 +256,10 @@ describe('ObjectCleanupSuggestions', () => {
       ],
     }));
 
-    const html = renderToStaticMarkup(createElement(ObjectCleanupSuggestions, { suggestions }));
+    const { baseElement } = render(createElement(ObjectCleanupSuggestions, { suggestions }));
 
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Cleanup/ }));
+    const html = baseElement.innerHTML;
     expect(html).toContain('Archive object 10');
     expect(html).toContain('Archive object 11');
     expect(html).toContain('Archive object 12');
@@ -273,7 +294,7 @@ describe('ObjectCleanupSuggestions', () => {
       }),
     );
 
-    await user.click(screen.getByText('Open'));
+    await user.click(screen.getByRole('button', { name: /^Cleanup/ }));
     await user.click(screen.getByRole('button', { name: 'Archive' }));
     await waitFor(() => {
       expect(fakes.notifyAction).toHaveBeenCalledWith(

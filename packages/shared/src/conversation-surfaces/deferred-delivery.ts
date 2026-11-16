@@ -8,6 +8,8 @@ import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
 interface ChatDeliveryPrincipal {
   teamId: string;
   userId?: string;
+  /** Workspace digest ledger key for the in-flight send, when one exists. */
+  dedupeKey?: string;
 }
 const principalStorage = new AsyncLocalStorage<ChatDeliveryPrincipal>();
 
@@ -17,6 +19,11 @@ export function withChatDeliveryPrincipal<T>(
   send: () => Promise<T>,
 ): Promise<T> {
   return principalStorage.run(principal, send);
+}
+
+/** Sending workspace attached to the current outbound chat delivery, if any. */
+export function getChatDeliveryPrincipal(): ChatDeliveryPrincipal | undefined {
+  return principalStorage.getStore();
 }
 
 export interface DeferredChatDelivery {

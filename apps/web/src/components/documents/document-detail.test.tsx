@@ -203,8 +203,8 @@ describe('DocumentDetail', () => {
       screen.getAllByText('Visual summary of the Acme launch packet.').length,
     ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('email capture')).toBeTruthy();
-    expect(screen.getAllByText('Chunked').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('2 chunks')).toBeTruthy();
+    expect(screen.getAllByText('Awaiting indexing').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('2 passages')).toBeTruthy();
     expect(screen.getByText('Content excerpts')).toBeTruthy();
     expect(screen.queryByText('Chunk 1')).toBeNull();
     expect(screen.queryByText('source text')).toBeNull();
@@ -262,16 +262,16 @@ describe('DocumentDetail', () => {
 
     const modelUnderstanding = screen.getByRole('heading', {
       level: 3,
-      name: 'Model understanding',
+      name: 'Summary',
     });
     const contentExcerpts = screen.getByRole('heading', {
       level: 3,
       name: 'Content excerpts',
     });
-    expect(screen.getByRole('heading', { level: 3, name: 'Provenance' })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Agent status' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Source' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Search status' })).toBeTruthy();
 
-    const modelRegion = screen.getByRole('region', { name: 'Model understanding' });
+    const modelRegion = screen.getByRole('region', { name: 'Summary' });
     expect(modelRegion.getAttribute('tabindex')).toBe('0');
     modelRegion.focus();
     expect(document.activeElement).toBe(modelRegion);
@@ -297,7 +297,7 @@ describe('DocumentDetail', () => {
 
     expect(screen.getByText('Preview is not available for this file type.')).toBeTruthy();
     expect(screen.getByText('No extracted description is available yet.')).toBeTruthy();
-    expect(screen.getByText('0 chunks')).toBeTruthy();
+    expect(screen.getByText('0 passages')).toBeTruthy();
     expect(screen.getAllByText('Failed').length).toBeGreaterThanOrEqual(1);
     const error = screen.getAllByText(
       'OCR failed because the provider returned unreadable content.',

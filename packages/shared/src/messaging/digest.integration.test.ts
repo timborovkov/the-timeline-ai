@@ -6,6 +6,7 @@ import {
   entities,
   objectChanges,
   teamBillingAccounts,
+  teams,
   users,
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
@@ -298,6 +299,10 @@ describe('workspace digest destinations', () => {
       .update(teamBillingAccounts)
       .set({ securityState: 'normal' })
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, TEAM_ID));
+    expect(await listDailyDigestRecipients(db)).toEqual([]);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([]);
+    await db.update(teams).set({ disabledAt: null }).where(eq(teams.id, TEAM_ID));
     await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, USER_ID));
     expect(await listDailyDigestRecipients(db)).toEqual([]);
     expect(await listWorkspaceDigestTeamIds(db)).toEqual([TEAM_ID]);

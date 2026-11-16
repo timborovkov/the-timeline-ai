@@ -20,22 +20,25 @@ import { listTeamDigestDestinations, getDigestPreference } from '@timeline/share
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { TeamDigestDestination } from '@timeline/shared/messaging';
+import type { TeamWorkStyle } from '@timeline/shared/onboarding';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-import { ActionChip } from '@/components/action-chip';
 import { BillingSettingsPanel } from '@/components/billing-settings-panel';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import {
   DigestDestinationsForm,
   type DigestDestinationOption,
 } from '@/components/digest-destinations';
+import { WorkStylePreference } from '@/components/onboarding/work-style-preference';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
 import { SettingsNav } from '@/components/settings-nav';
+import { TeamDeletionForm } from '@/components/team-deletion-form';
 import {
   InboundEmailPlaceholderNotice,
   InboundEmailWhitelistForm,
@@ -45,6 +48,7 @@ import {
   TeamExportPanel,
 } from '@/components/team-forms';
 import { TeamMembersSettings } from '@/components/team-members-settings';
+import { TeamSupportMetadata } from '@/components/team-support-metadata';
 import { VisibilityDefaultSettings } from '@/components/visibility-default-settings';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -63,7 +67,6 @@ type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 const SETTINGS_ITEMS = [
   { value: 'members', label: 'Members' },
   { value: 'general', label: 'General' },
-  { value: 'preferences', label: 'Preferences' },
   { value: 'visibility', label: 'Visibility' },
   { value: 'email', label: 'Email' },
   { value: 'billing', label: 'Billing', adminOnly: true },
@@ -110,6 +113,7 @@ export default async function TeamSettingsPage({
     showOperatorLink,
     commercial,
     exportRows,
+    workStyle,
   } = await loadTeamSettingsPage({ searchParams });
   return (
     <div className="space-y-4">
@@ -117,7 +121,7 @@ export default async function TeamSettingsPage({
         variant="collection"
         title="Team"
         subtitle="Manage members, defaults, and access."
-        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
+        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} ${memberRows.length === 1 ? 'member' : 'members'}`}
         metadata={[
           { label: 'Team', value: active.teamName },
           { label: 'Role', value: role },
@@ -151,6 +155,7 @@ export default async function TeamSettingsPage({
           showOperatorLink={showOperatorLink}
           commercial={commercial}
           exportRows={exportRows}
+          workStyle={workStyle}
         />
       }
     </div>
@@ -183,6 +188,7 @@ function TeamSettingsSections({
   showOperatorLink,
   commercial,
   exportRows,
+  workStyle,
 }: Omit<Awaited<ReturnType<typeof loadTeamSettingsPage>>, 'role'>) {
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
@@ -203,15 +209,19 @@ function TeamSettingsSections({
             />
           </>
         ) : null}
-        {section === 'general' ? <TeamIdentitySettings isAdmin={isAdmin} active={active} /> : null}
-        {section === 'preferences' ? (
-          <TeamPreferencesSettings
-            digestPreference={digestPreference}
-            isAdmin={isAdmin}
-            digestDestinations={digestDestinations}
-            destinationOptions={destinationOptions}
-            timezoneSettings={timezoneSettings}
-          />
+        {section === 'general' ? (
+          <>
+            <TeamIdentitySettings isAdmin={isAdmin} active={active} />
+            <TeamQualitySettings />
+            <TeamPreferencesSettings
+              digestPreference={digestPreference}
+              isAdmin={isAdmin}
+              digestDestinations={digestDestinations}
+              destinationOptions={destinationOptions}
+              timezoneSettings={timezoneSettings}
+              workStyle={workStyle}
+            />
+          </>
         ) : null}
         {section === 'visibility' ? (
           <SettingsSection title="Visibility defaults">
@@ -256,7 +266,12 @@ function TeamSettingsSections({
             )}
           </SettingsSection>
         ) : null}
-        {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
+        {section === 'advanced' && isAdmin ? (
+          <>
+            <AdminShortcuts isAdmin />
+            {isOwner && <TeamDeletionForm teamId={active.teamId} teamName={active.teamName} />}
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -270,11 +285,54 @@ function TeamIdentitySettings({
 }) {
   return (
     <SettingsSection title="Team identity">
-      {isAdmin ? (
-        <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
-      ) : (
-        <p className="text-sm text-fg-muted">Only team administrators can rename this team.</p>
-      )}
+      <div className="space-y-4">
+        {isAdmin ? (
+          <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+        ) : (
+          <p className="text-sm text-fg-muted">Only team administrators can rename this team.</p>
+        )}
+        <TeamSupportMetadata teamId={active.teamId} teamSlug={active.teamSlug} />
+      </div>
+    </SettingsSection>
+  );
+}
+function TeamQualitySettings() {
+  return (
+    <SettingsSection title="Quality and support">
+      <div className="divide-y divide-border">
+        <Link
+          href="/app/team/evaluation"
+          className="group flex min-h-11 items-center justify-between gap-4 rounded-sm py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div>
+            <span className="text-sm font-medium underline decoration-border underline-offset-4 group-hover:decoration-current">
+              Evaluation tracing
+            </span>
+            <p className="mt-1 text-sm text-fg-muted">
+              Choose whether selected source processing can be shared to help improve accuracy.
+            </p>
+          </div>
+          <span aria-hidden="true" className="shrink-0 text-fg-muted">
+            →
+          </span>
+        </Link>
+        <Link
+          href="/app/diagnostics/settings"
+          className="group flex min-h-11 items-center justify-between gap-4 rounded-sm py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div>
+            <span className="text-sm font-medium underline decoration-border underline-offset-4 group-hover:decoration-current">
+              Conversation report sharing
+            </span>
+            <p className="mt-1 text-sm text-fg-muted">
+              Control whether members can send a reviewed conversation report to support.
+            </p>
+          </div>
+          <span aria-hidden="true" className="shrink-0 text-fg-muted">
+            →
+          </span>
+        </Link>
+      </div>
     </SettingsSection>
   );
 }
@@ -284,15 +342,20 @@ function TeamPreferencesSettings({
   digestDestinations,
   destinationOptions,
   timezoneSettings,
+  workStyle,
 }: {
   digestPreference: { enabled: boolean; hour: number; timezone: string };
   isAdmin: boolean;
   digestDestinations: TeamDigestDestination[];
   destinationOptions: DigestDestinationOption[];
   timezoneSettings: { timezone: string };
+  workStyle: TeamWorkStyle | null;
 }) {
   return (
     <>
+      <SettingsSection title="How the team works">
+        <WorkStylePreference initialWorkStyle={workStyle} />
+      </SettingsSection>
       <MessagingPreferencesCard enabled={digestPreference.enabled} />
       {isAdmin ? (
         <SettingsSection title="Digest destinations">
@@ -406,12 +469,43 @@ function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
 function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
-      <ActionChip href="/app/team/jobs" label="Job recovery" />
-      <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
-      <ActionChip href="/app/team/audit" label="Audit" />
-      <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
-    </div>
+    <SettingsSection title="Workspace maintenance">
+      <div className="divide-y divide-border">
+        {[
+          {
+            href: '/app/team/jobs',
+            label: 'Job recovery',
+            description: 'Review failed processing and retry recoverable jobs.',
+          },
+          {
+            href: '/app/team/reconciliation',
+            label: 'Reconciliation',
+            description: 'Inspect how sources connect to records and preview repairs.',
+          },
+          {
+            href: '/app/team/audit',
+            label: 'Audit',
+            description: 'Review changes to your team and its records.',
+          },
+          {
+            href: '/app/team/integrations/audit',
+            label: 'Integration audit',
+            description: 'Trace connection activity and synchronization issues.',
+          },
+        ].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="block rounded-sm py-3 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="text-sm font-medium underline-offset-4 hover:underline">
+              {item.label}
+            </span>
+            <span className="mt-1 block text-sm text-fg-muted">{item.description}</span>
+          </Link>
+        ))}
+      </div>
+    </SettingsSection>
   );
 }
 
@@ -479,7 +573,9 @@ async function loadTeamSettingsPage({
   const isAdmin = role === 'owner' || role === 'admin';
   const isOwner = role === 'owner';
   const query = await searchParams;
-  const requestedSection = query.section ?? 'members';
+  // Preserve bookmarks to the former Preferences section.
+  const requestedSection =
+    query.section === 'preferences' ? 'general' : (query.section ?? 'members');
   const section = SETTINGS_ITEMS.some(
     (item) => item.value === requestedSection && (!('adminOnly' in item) || isAdmin),
   )
@@ -495,17 +591,24 @@ async function loadTeamSettingsPage({
     }),
     listTeamDigestDestinations(db, active.teamId),
   ]);
-  const inboundEmailSettings: InboundEmailWhitelistSettings = (
+  const teamSettingsRow = (
     await db
       .select({
         inboundEmail: teams.inboundEmail,
         enabled: teams.inboundSenderWhitelistEnabled,
         senders: teams.inboundSenderWhitelist,
+        workStyle: teams.workStyle,
       })
       .from(teams)
       .where(eq(teams.id, active.teamId))
       .limit(1)
-  )[0] ?? { inboundEmail: null, enabled: true, senders: [] };
+  )[0] ?? { inboundEmail: null, enabled: true, senders: [], workStyle: null };
+  const inboundEmailSettings: InboundEmailWhitelistSettings = {
+    inboundEmail: teamSettingsRow.inboundEmail,
+    enabled: teamSettingsRow.enabled,
+    senders: teamSettingsRow.senders,
+  };
+  const workStyle = teamSettingsRow.workStyle ?? null;
   const inboundEmail = displayInboundEmail({
     slug: active.teamSlug,
     inboundEmail: inboundEmailSettings.inboundEmail,
@@ -610,7 +713,8 @@ async function loadTeamSettingsPage({
     const u = userMap.get(m.userId);
     return { id: m.userId, label: displayMemberLabel(u) };
   });
-  const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
+  const destinationOptions =
+    isAdmin && section === 'general' ? await digestDestinationOptions(active.teamId) : [];
   const billingDashboard = isAdmin
     ? await scope.billing.getDashboard({ canManageBilling: true })
     : null;
@@ -651,5 +755,6 @@ async function loadTeamSettingsPage({
     showOperatorLink,
     commercial,
     exportRows,
+    workStyle,
   };
 }

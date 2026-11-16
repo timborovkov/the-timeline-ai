@@ -2,21 +2,21 @@
 
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useTransition } from 'react';
 
 import { markAllNotificationsReadAction } from '@/app/actions/objects';
+import { useInboxReadState } from '@/components/inbox/inbox-read-state';
 import { notifyAction } from '@/lib/notify';
 
 export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [optimisticRead, setOptimisticRead] = useState(false);
+  const { bulkPending: optimisticRead, beginBulkRead, finishBulkRead } = useInboxReadState();
   const disabled = !hasUnread || optimisticRead || pending;
   const busy = optimisticRead || pending;
 
   function markAllRead(): void {
-    setOptimisticRead(true);
-    window.dispatchEvent(new CustomEvent('timeline:notifications-read-all', { detail: true }));
+    const token = beginBulkRead();
     startTransition(async () => {
       const result = await notifyAction({
         id: 'inbox:mark-all-read',
@@ -25,13 +25,11 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
         error: 'Couldn’t mark notifications read',
         run: () => markAllNotificationsReadAction(),
       });
+      finishBulkRead(token, !result.error);
       if (!result.error) {
-        setOptimisticRead(false);
         router.refresh();
         return;
       }
-      setOptimisticRead(false);
-      window.dispatchEvent(new CustomEvent('timeline:notifications-read-all', { detail: false }));
     });
   }
 

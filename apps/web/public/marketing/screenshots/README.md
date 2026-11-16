@@ -1,8 +1,22 @@
 # Product screenshots
 
-Place the Product Screenshots files named in the website copy plan here, using the exact filenames (for example `11-timeline-dark.png`).
+Marketing pages reference exact filenames; `screenshot-inventory.test.ts` checks that the referenced assets exist. Keep captions and filenames aligned with the current UI.
 
-Marketing pages look up each file by name and serve that PNG as-is. If a file is missing, the page shows a labeled placeholder with that filename so the slot stays easy to swap. `screenshot-inventory.test.ts` also fails when any referenced public marketing file is absent, so a missing asset cannot ship as a silent placeholder.
+Capture from the verified fictional [demo corpus](../../../../../docs/demo-corpus.md), never customer data. Keep the fictional-example label on public examples. Recapture affected views when UI/citation behavior changes rather than treating an old image as evidence of current behavior.
 
-Do not commit customer data. The committed set is from a fictional Acme Labs `demo:seed` capture (November 2026 numbered citations). Recapture overdue, dealflow, Ask, and Agent tools slots from a current seed rather than keeping August/clipped library files. Ask screenshots are stored examples from that demo. Keep the fictional-example label on every public product shot.
+## Recapture
 
+Capture matching `<stem>-light.png` and `<stem>-dark.png` files from the same
+fictional seed and framing. Inventory tests require both variants for each public
+slot. [Public design](../../../../../docs/design/public.md) owns theme selection,
+loading frames and presentation.
+
+Export the root `.env`, run `bun run db:migrate` and `bun run demo:seed`, start
+the web app, then run `bun run capture:marketing-screenshots`.
+Desktop shots are 1440×900 at device scale 2 (2880×1800 PNG); mobile shots are
+390×844 at device scale 2 (780×1688 PNG). Both themes are captured in one run.
+The script forces `tl-theme`, rejects public analytics consent, and asserts the
+`html.dark` class on dark captures. Timeline readiness uses a loaded moment, so a
+persisted seed clock does not need to fall on today’s date.
+Copy the PNGs from `/tmp/marketing-screenshots` into this directory. The script
+also copies dark mobile images to the existing unthemed filenames.

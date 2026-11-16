@@ -1,32 +1,31 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import {
+  EVIDENCE_FRESHNESS_FAQS,
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
   HOW_IT_WORKS_ROUTE,
+  GUIDES_ROUTE,
   type GuideRoute,
 } from '@/components/marketing/editorial/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
-const HOW_IT_WORKS_REVIEW_DATE = '2026-11-07' as const;
-const REFRESHED_GUIDE_SLUGS = new Set([
-  'search-slack-and-google-drive-together',
-  'weekly-engineering-updates-from-slack-linear-and-github',
-]);
+const GUIDE_REVIEW_DATE = '2026-11-14' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-11-11' as const;
 
 const howItWorksDocument = {
   canonicalPath: HOW_IT_WORKS_ROUTE,
   kind: 'guide-index',
   title: 'How it works: from conversation to current record',
   description:
-    'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.',
+    'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.',
   indexability: 'index',
   dates: { modified: HOW_IT_WORKS_REVIEW_DATE, reviewed: HOW_IT_WORKS_REVIEW_DATE },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.8 },
   structuredData: [
     { type: 'collection-page' },
+    { type: 'faq', entries: EVIDENCE_FRESHNESS_FAQS },
     {
       type: 'breadcrumbs',
       items: [
@@ -40,11 +39,12 @@ const howItWorksDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.',
+      'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.',
     sections: [
+      ...EVIDENCE_FRESHNESS_FAQS.map((faq) => ({ title: faq.question, body: faq.answer })),
       {
         title: 'Questions covered',
-        body: 'Three detailed walkthroughs apply the same cited-answer method to common cross-tool questions.',
+        body: 'Practical walkthroughs apply the same cited-answer method to common cross-tool questions.',
         items: EDITORIAL_GUIDES.map((guide) => `${guide.title}: ${guide.machineSummary}`),
       },
       {
@@ -61,14 +61,7 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
   title: guide.title,
   description: guide.summary,
   indexability: 'index',
-  dates: {
-    modified: REFRESHED_GUIDE_SLUGS.has(guide.slug)
-      ? HOW_IT_WORKS_REVIEW_DATE
-      : EDITORIAL_REVIEW_DATE,
-    reviewed: REFRESHED_GUIDE_SLUGS.has(guide.slug)
-      ? HOW_IT_WORKS_REVIEW_DATE
-      : EDITORIAL_REVIEW_DATE,
-  },
+  dates: { modified: GUIDE_REVIEW_DATE, reviewed: GUIDE_REVIEW_DATE },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   structuredData: [
@@ -77,7 +70,7 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
       type: 'breadcrumbs',
       items: [
         { name: 'Home', path: '/' },
-        { name: EDITORIAL_PUBLICATION_NAME, path: HOW_IT_WORKS_ROUTE },
+        { name: 'Guides', path: GUIDES_ROUTE },
         { name: guide.shortTitle, path: guide.route },
       ],
     },
@@ -108,6 +101,21 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
             `${boundary.provider}: ${boundary.role}. Includes: ${boundary.includes} Boundary: ${boundary.boundary}`,
         ),
       },
+      ...(guide.toolkit
+        ? [
+            {
+              title: guide.toolkit.title,
+              body: guide.toolkit.introduction,
+              codeBlock: { content: guide.toolkit.template, language: 'text' },
+            },
+            {
+              title: 'Illustrative worked example',
+              body: 'Fictional example; replace source labels with your own evidence links.',
+              codeBlock: { content: guide.toolkit.example, language: 'text' },
+              links: guide.toolkit.links,
+            },
+          ]
+        : []),
       {
         title: 'Limitations',
         body: 'These limitations remain visible when interpreting or sharing the answer.',
@@ -117,13 +125,51 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
   },
 }));
 
+const guidesDocument = {
+  canonicalPath: GUIDES_ROUTE,
+  kind: 'guide-index',
+  title: 'Guides',
+  description:
+    'Practical guides and templates for daily updates, action items, project handovers, Slack summaries, engineering reports and incident reviews.',
+  indexability: 'index',
+  dates: { modified: GUIDE_REVIEW_DATE, reviewed: GUIDE_REVIEW_DATE },
+  capability: { kind: 'current-product' },
+  sitemap: { changeFrequency: 'monthly', priority: 0.7 },
+  structuredData: [
+    { type: 'collection-page' },
+    {
+      type: 'breadcrumbs',
+      items: [
+        { name: 'Home', path: '/' },
+        { name: 'Guides', path: GUIDES_ROUTE },
+      ],
+    },
+  ],
+  llms: {
+    section: 'how-it-works',
+    order: 1,
+    summary:
+      'Browse guides and reusable templates for daily updates, action items, project handovers, Slack summaries, engineering reports and incident reviews.',
+    sections: [
+      {
+        title: 'Available guides',
+        body: 'Choose a workflow and inspect the evidence behind its answer.',
+        items: EDITORIAL_GUIDES.map(
+          (guide) => `${guide.title}: ${guide.route} — ${guide.machineSummary}`,
+        ),
+      },
+    ],
+  },
+} satisfies PublicDocument;
+
 export const EDITORIAL_PUBLIC_DOCUMENTS = definePublicDocuments('how-it-works', [
   howItWorksDocument,
+  guidesDocument,
   ...guideDocuments,
 ]);
 
 export function findEditorialPublicDocument(
-  route: typeof HOW_IT_WORKS_ROUTE | GuideRoute,
+  route: typeof HOW_IT_WORKS_ROUTE | typeof GUIDES_ROUTE | GuideRoute,
 ): PublicDocument {
   const document = EDITORIAL_PUBLIC_DOCUMENTS.documents.find(
     (candidate) => candidate.canonicalPath === route,

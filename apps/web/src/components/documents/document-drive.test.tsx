@@ -53,6 +53,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/app/actions/documents'),
   () => ({
+    suggestDocumentObjectsAction: vi.fn().mockResolvedValue({ ok: true }),
     createFolderAction: fakes.createFolderAction,
     deleteFolderAction: fakes.deleteFolderAction,
     finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,

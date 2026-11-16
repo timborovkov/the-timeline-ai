@@ -68,6 +68,22 @@ export default tseslint.config(
     files: ['apps/worker/**/*.{ts,tsx}'],
     rules: {
       'no-console': 'off',
+      // CI's worker lint ranks `import type` with the module path (external
+      // before `#src`). The root `type` group instead parks every type-only
+      // import last, which inverts `bun run lint` locally vs GitHub Actions.
+      'import-x/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+          pathGroups: [
+            { pattern: 'bun', group: 'external' },
+            { pattern: 'bun:**', group: 'external' },
+          ],
+          pathGroupsExcludedImportTypes: ['type'],
+          'newlines-between': 'always',
+          alphabetize: { order: 'asc', caseInsensitive: true },
+        },
+      ],
     },
   },
   {

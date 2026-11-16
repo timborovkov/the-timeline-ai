@@ -13,13 +13,13 @@ describe('normalizeProposalPayload', () => {
         operation: 'create',
         proposedPayload: {
           canonicalName: 'Fix worksheet',
-          assigneeUserId: 'Mikael',
+          assigneeUserId: 'Cameron',
           ownerUserId: 'owner@example.test',
         },
       }),
     ).toEqual({
       canonicalName: 'Fix worksheet',
-      assigneeName: 'Mikael',
+      assigneeName: 'Cameron',
       ownerName: 'owner@example.test',
     });
   });
@@ -29,9 +29,9 @@ describe('normalizeProposalPayload', () => {
       normalizeProposalPayload({
         targetKind: 'calendar_event',
         operation: 'create',
-        title: 'Padel with Mikael',
+        title: 'Padel with Cameron',
         proposedPayload: {
-          title: 'Padel with Mikael',
+          title: 'Padel with Cameron',
           startsAt: '2026-08-18T00:00:00.000Z',
           endsAt: '2026-08-19T00:00:00.000Z',
         },

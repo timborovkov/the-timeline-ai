@@ -1,6 +1,7 @@
 import type { TeamMemberInfo, TeamMemberRow } from '@/components/team-member-types';
 
 import { CollectionRow } from '@/components/collections/collection-row';
+import { TeamListRow } from '@/components/team-list-row';
 import { MemberRoleForm, RemoveMemberForm } from '@/components/team-member-actions';
 import { Badge } from '@/components/ui/badge';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -25,32 +26,34 @@ export function TeamMemberListItem({
     isAdmin && member.userId !== currentUserId && (isOwner || member.role === 'member');
 
   return (
-    <li>
-      <CollectionRow>
-        <CollectionRow.Title>{memberLabel}</CollectionRow.Title>
-        <CollectionRow.Context>{user?.email ?? undefined}</CollectionRow.Context>
+    <TeamListRow>
+      <CollectionRow.Title>{memberLabel}</CollectionRow.Title>
+      <CollectionRow.Context>
+        {user?.email?.trim() !== memberLabel ? user?.email : undefined}
+      </CollectionRow.Context>
+      {!canManageRole ? (
         <CollectionRow.Metadata>
           <Badge variant="outline" className="capitalize">
             {member.role}
           </Badge>
         </CollectionRow.Metadata>
-        <CollectionRow.Actions>
-          {canManageRole || canRemove ? (
-            <ItemActionGroup label={`Actions for ${memberLabel}`}>
-              {canManageRole ? (
-                <MemberRoleForm
-                  memberLabel={memberLabel}
-                  memberRole={member.role}
-                  userId={member.userId}
-                />
-              ) : null}
-              {canRemove ? (
-                <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} />
-              ) : null}
-            </ItemActionGroup>
-          ) : undefined}
-        </CollectionRow.Actions>
-      </CollectionRow>
-    </li>
+      ) : null}
+      <CollectionRow.Actions>
+        {canManageRole || canRemove ? (
+          <ItemActionGroup label={`Actions for ${memberLabel}`}>
+            {canManageRole ? (
+              <MemberRoleForm
+                memberLabel={memberLabel}
+                memberRole={member.role}
+                userId={member.userId}
+              />
+            ) : null}
+            {canRemove ? (
+              <RemoveMemberForm memberLabel={memberLabel} userId={member.userId} />
+            ) : null}
+          </ItemActionGroup>
+        ) : undefined}
+      </CollectionRow.Actions>
+    </TeamListRow>
   );
 }

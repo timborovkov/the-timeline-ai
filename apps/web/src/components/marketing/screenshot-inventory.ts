@@ -13,6 +13,7 @@ import { CONNECTORS } from '@/components/marketing/integrations/connector-conten
 import { MCP_GUIDE_PAGE } from '@/components/marketing/integrations/mcp-guide-content';
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { PRODUCT_TOUR } from '@/components/marketing/product-tour/content';
+import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 import { SOLUTIONS } from '@/components/marketing/solutions/content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 
@@ -101,5 +102,9 @@ export function listMarketingScreenshotReferences(): MarketingScreenshotReferenc
 export function listMissingMarketingScreenshots(
   refs: readonly MarketingScreenshotReference[] = listMarketingScreenshotReferences(),
 ): MarketingScreenshotReference[] {
-  return refs.filter((ref) => !marketingScreenshotFileExists(ref.file));
+  return refs.flatMap((ref) =>
+    Object.values(marketingScreenshotVariants(ref.file))
+      .filter((file) => !marketingScreenshotFileExists(file))
+      .map((file) => ({ ...ref, file })),
+  );
 }

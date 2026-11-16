@@ -18,7 +18,6 @@ import {
   JOB_RECOVERY_LIST_WINDOW_SIZE,
 } from '@/components/job-recovery/jobs-attention';
 import { JobsPageHeader } from '@/components/job-recovery/jobs-page-header';
-import { jobsMutationToast, postJson } from '@/components/job-recovery/jobs-page-toast';
 import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -27,8 +26,10 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { postJson } from '@/lib/api-response';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { isoTimestamp } from '@/lib/iso-timestamp';
+import { notifyProgress as jobsMutationToast } from '@/lib/notify';
 import { notifyAction } from '@/lib/notify';
 import {
   type FinishedJobArchivePage,
@@ -440,7 +441,10 @@ export function JobRecoveryList({
               }}
             >
               {busy === 'dismiss-older' ? (
-                <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+                />
               ) : (
                 <X aria-hidden="true" className="mr-1 size-3.5" />
               )}
@@ -514,7 +518,7 @@ function JobRecoveryToolbar({
   onSetFilter: (filter: JobRecoveryKind | 'all') => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-2 py-2 md:flex-row md:items-center md:justify-between">
       {filters.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {filters.map((f) => {
@@ -552,7 +556,10 @@ function JobRecoveryToolbar({
           }}
         >
           {busy === 'retry-failed' ? (
-            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+            <LoaderCircle
+              aria-hidden="true"
+              className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+            />
           ) : (
             <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
           )}
@@ -570,7 +577,10 @@ function JobRecoveryToolbar({
           }}
         >
           {busy === 'dismiss-visible' ? (
-            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+            <LoaderCircle
+              aria-hidden="true"
+              className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+            />
           ) : (
             <X aria-hidden="true" className="mr-1 size-3.5" />
           )}
@@ -828,7 +838,10 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
               }}
             >
               {queueing ? (
-                <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+                />
               ) : (
                 <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
               )}
@@ -878,7 +891,10 @@ function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   }
   return (
     <span className="flex items-center gap-1 text-xs text-fg-muted">
-      <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+      <LoaderCircle
+        aria-hidden="true"
+        className="size-3.5 animate-spin motion-reduce:animate-none"
+      />
       Retry queued.
     </span>
   );
@@ -922,7 +938,7 @@ function FinishedJobsArchive({
           body="Recently finished jobs stay here for a short window so you can confirm they completed."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {items.map((item) => {
             const hint = finishedJobHint(item, timezone);
             const iso = isoTimestamp(item.finishedAt);

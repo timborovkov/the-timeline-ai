@@ -6,10 +6,18 @@ import {
   reconciliationEvidence,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 
+import { refreshArtifactAnchorMetadata } from '#src/artifacts/anchor-metadata.js';
+import {
+  createCluster,
+  findClusterByAnchors,
+  findClusterByEntity,
+  teamScopedAnchorWhere,
+  uniqueAnchors,
+} from '#src/artifacts/cluster-store.js';
 import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
-import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
+import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/core.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 
 import type { artifactEvidenceRole } from '@timeline/db';
@@ -34,6 +42,8 @@ export interface ArtifactAnchorInput {
   value: string;
   strength?: EvidenceStrength;
   metadata?: Record<string, unknown>;
+  /** Fields explicitly allowed to refresh when this anchor already exists. */
+  metadataPatch?: Record<string, unknown>;
 }
 
 export interface ArtifactEvidenceInput {
@@ -60,107 +70,8 @@ export interface ArtifactReconcileResult {
   created: boolean;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ARTIFACT_HELPER_NORMALIZER_VERSION = 'artifact-helper-raw-event-2026-06';
 const ARTIFACT_HELPER_ASSOCIATION_POLICY_VERSION = 'artifact-helper-association-2026-06';
-
-function normalizeAnchor(input: ArtifactAnchorInput): ArtifactAnchorInput | null {
-  const type = input.type
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.:-]+/g, '_');
-  const value = input.value.trim().toLowerCase();
-  if (!type || !value) return null;
-  const normalized: ArtifactAnchorInput = {
-    type,
-    value,
-    strength: input.strength ?? 'structured',
-  };
-  if (input.metadata !== undefined) normalized.metadata = input.metadata;
-  return normalized;
-}
-
-function uniqueAnchors(inputs: ArtifactAnchorInput[]): ArtifactAnchorInput[] {
-  const seen = new Set<string>();
-  const result: ArtifactAnchorInput[] = [];
-  for (const input of inputs) {
-    const anchor = normalizeAnchor(input);
-    if (!anchor) continue;
-    const key = `${anchor.type}\0${anchor.value}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(anchor);
-  }
-  return result;
-}
-
-async function findClusterByAnchors(
-  db: Db,
-  teamId: string,
-  anchors: ArtifactAnchorInput[],
-): Promise<string | null> {
-  const matchableAnchors = anchors.filter((anchor) => anchor.strength !== 'semantic');
-  if (matchableAnchors.length === 0) return null;
-  const clauses = matchableAnchors.map(
-    (anchor) =>
-      sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
-  );
-  const rows = await db
-    .select({
-      clusterId: artifactClusterAnchors.clusterId,
-      createdAt: artifactClusterAnchors.createdAt,
-    })
-    .from(artifactClusterAnchors)
-    .where(and(eq(artifactClusterAnchors.teamId, teamId), sql.join(clauses, sql.raw(' OR '))))
-    .orderBy(artifactClusterAnchors.createdAt)
-    .limit(1);
-  return rows[0]?.clusterId ?? null;
-}
-
-async function findClusterByEntity(
-  db: Db,
-  teamId: string,
-  entityId: string | null | undefined,
-): Promise<string | null> {
-  if (!entityId || !UUID_RE.test(entityId)) return null;
-  const rows = await db
-    .select({ id: artifactClusters.id })
-    .from(artifactClusters)
-    .where(
-      and(
-        eq(artifactClusters.teamId, teamId),
-        eq(artifactClusters.canonicalEntityId, entityId),
-        isNull(artifactClusters.archivedAt),
-      ),
-    )
-    .limit(1);
-  return rows[0]?.id ?? null;
-}
-
-async function createCluster(
-  db: Db,
-  input: ArtifactEvidenceInput,
-): Promise<ArtifactReconcileResult> {
-  const inserted = await db
-    .insert(artifactClusters)
-    .values({
-      teamId: input.teamId,
-      artifactClusterKind: input.artifactClusterKind ?? 'other',
-      artifactType: input.artifactType,
-      canonicalName: input.canonicalName,
-      status: input.status ?? 'open',
-      canonicalEntityId: input.canonicalEntityId ?? null,
-      metadata: input.metadata ?? {},
-    })
-    .onConflictDoNothing()
-    .returning({ id: artifactClusters.id });
-  const id = inserted[0]?.id;
-  if (id) return { clusterId: id, created: true };
-
-  const fallback = await findClusterByEntity(db, input.teamId, input.canonicalEntityId);
-  if (fallback) return { clusterId: fallback, created: false };
-  throw new Error('artifact_cluster_create_failed');
-}
 
 async function attachEvidenceAssociation(
   db: Db,
@@ -323,19 +234,22 @@ async function claimAnchors(
       })),
     )
     .onConflictDoNothing();
+  await refreshArtifactAnchorMetadata(db, input.teamId, anchors);
 
   if (claimableAnchors.length === 0) return clusterId;
   const clauses = claimableAnchors.map(
     (anchor) =>
       sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
   );
+  const where = teamScopedAnchorWhere(input.teamId, clauses);
+  if (!where) return clusterId;
   const rows = await db
     .select({
       clusterId: artifactClusterAnchors.clusterId,
       createdAt: artifactClusterAnchors.createdAt,
     })
     .from(artifactClusterAnchors)
-    .where(and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))))
+    .where(where)
     .orderBy(artifactClusterAnchors.createdAt)
     .limit(1);
   return rows[0]?.clusterId ?? clusterId;
@@ -703,6 +617,8 @@ export async function findArtifactClustersByAnchors(
     (anchor) =>
       sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
   );
+  const where = teamScopedAnchorWhere(input.teamId, clauses);
+  if (!where) return [];
   return db
     .select({
       id: artifactClusters.id,
@@ -720,7 +636,5 @@ export async function findArtifactClustersByAnchors(
         eq(artifactClusters.teamId, input.teamId),
       ),
     )
-    .where(
-      and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))),
-    );
+    .where(where);
 }

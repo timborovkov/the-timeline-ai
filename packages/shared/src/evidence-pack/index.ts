@@ -4,7 +4,7 @@ import { fenceExternalContent } from '#src/agent/external-content.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { intersectVisibilityEnvelopes } from '#src/visibility.js';
 
-import type { SourceRef, VisibilityEnvelope } from '#src/reconciliation/index.js';
+import type { SourceRef, VisibilityEnvelope } from '#src/reconciliation/core.js';
 import type { SearchEventArtifactClusterEvidence, TeamScope } from '#src/team-scope.js';
 
 export const EVIDENCE_PACK_VERSION = 'evidence-pack-v1';
@@ -103,12 +103,11 @@ export interface BuildEvidencePackInput {
 }
 
 export class EvidencePackError extends Error {
-  constructor(
-    readonly code: EvidencePackErrorCode,
-    message: string,
-  ) {
+  readonly code: EvidencePackErrorCode;
+  constructor(code: EvidencePackErrorCode, message: string) {
     super(message);
     this.name = 'EvidencePackError';
+    this.code = code;
   }
 }
 

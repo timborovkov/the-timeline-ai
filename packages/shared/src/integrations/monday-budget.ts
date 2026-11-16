@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { ProviderRateLimitError } from '#src/integrations/types.js';
-import { getRedisConnection } from '#src/queue/connection.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 
 const DAILY_CALL_CAP = 100;
 const RESERVE_SCRIPT = `

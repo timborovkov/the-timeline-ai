@@ -1,0 +1,360 @@
+{
+  "datasetName": "timeline-suggestions-development-7786149decba3817",
+  "corpusHash": "7786149decba38170925c28acd6a8f9a8e792e4a62c84784f74473eb41f59197",
+  "revision": "c60d2a9c828ea632e628e9b4567f6b9b9329dca8",
+  "dirty": false,
+  "split": "development",
+  "evaluatedAt": "2026-11-15T13:50:49.880Z",
+  "reports": [
+    {
+      "repetition": 1,
+      "experiment": "suggestions-development-ba025a5a",
+      "complete": false,
+      "benchmarkEvidence": false,
+      "feedbackComplete": true,
+      "summary": {
+        "cases": 9,
+        "passed": 9,
+        "executionFailures": 0,
+        "hardFailures": 0,
+        "expected": 5,
+        "proposed": 5,
+        "matched": 5,
+        "missed": 0,
+        "noise": 0,
+        "recall": 1,
+        "precision": 1,
+        "allowed": 0,
+        "noActionCases": 4,
+        "meanDurationMs": 80.80271411111143,
+        "scenarios": [
+          {
+            "scenario": "delivery",
+            "cases": 9,
+            "correct": 9,
+            "accuracy": 1
+          },
+          {
+            "scenario": "github",
+            "cases": 9,
+            "correct": 9,
+            "accuracy": 1
+          },
+          {
+            "scenario": "github-completion",
+            "cases": 9,
+            "correct": 9,
+            "accuracy": 1
+          }
+        ],
+        "failedCaseIds": []
+      },
+      "rows": [
+        {
+          "actions": [
+            {
+              "operation": "update",
+              "targetKind": "task",
+              "targetId": "44444444-4444-4444-8444-444444444444",
+              "title": "Update Fix keyboard navigation",
+              "proposedPayload": {
+                "status": "done",
+                "aliases": ["PR-example/northstar-42", "example/northstar#42", "PR #42"]
+              },
+              "evidenceIds": ["de6f465f-e583-4d49-8d79-8677a45ff880"]
+            }
+          ],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 172.70217700000103,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-merged-linked",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 49.348511000000144,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-closed-unmerged",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 40.76071899999988,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-already-completed",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [
+            {
+              "operation": "update",
+              "targetKind": "task",
+              "targetId": "44444444-4444-4444-8444-444444444444",
+              "title": "Update Fix keyboard navigation",
+              "proposedPayload": {
+                "status": "done",
+                "aliases": ["PR-example/northstar-42", "example/northstar#42", "PR #42"]
+              },
+              "evidenceIds": ["3f7e728c-7957-435f-8a04-e394e593b160"]
+            }
+          ],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 129.44259600000078,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-duplicate-webhook",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 33.92890299999999,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-ambiguous-tasks",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [
+            {
+              "operation": "create",
+              "targetKind": "task",
+              "targetId": null,
+              "title": "Fix keyboard navigation",
+              "proposedPayload": {
+                "status": "done",
+                "aliases": ["PR-example/northstar-42", "example/northstar#42", "PR #42"],
+                "metadata": {
+                  "repository": "example/northstar",
+                  "integration_provider": "github",
+                  "integration_external_id": "example/northstar#42"
+                },
+                "projectName": "Northstar rollout",
+                "canonicalName": "Fix keyboard navigation",
+                "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                "parentName": "Northstar rollout"
+              },
+              "evidenceIds": ["d2559f72-4f37-4a6f-8a5f-b63510c86648"]
+            }
+          ],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 88.00764499999968,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-partial-work",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [
+            {
+              "operation": "create",
+              "targetKind": "task",
+              "targetId": null,
+              "title": "Fix keyboard navigation",
+              "proposedPayload": {
+                "status": "done",
+                "aliases": ["PR-example/northstar-42", "example/northstar#42", "PR #42"],
+                "metadata": {
+                  "repository": "example/northstar",
+                  "integration_provider": "github",
+                  "integration_external_id": "example/northstar#42"
+                },
+                "projectName": "Northstar rollout",
+                "canonicalName": "Fix keyboard navigation",
+                "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                "parentName": "Northstar rollout"
+              },
+              "evidenceIds": ["16f6bf12-b1ce-4f58-8b12-c0075639dd36"]
+            }
+          ],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 97.67132599999968,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-completed-new-task",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [
+            {
+              "operation": "create",
+              "targetKind": "task",
+              "targetId": null,
+              "title": "Fix keyboard navigation (example/northstar#42)",
+              "proposedPayload": {
+                "status": "done",
+                "aliases": ["PR-example/northstar-42", "example/northstar#42", "PR #42"],
+                "metadata": {
+                  "repository": "example/northstar",
+                  "integration_provider": "github",
+                  "integration_external_id": "example/northstar#42"
+                },
+                "projectName": "Northstar rollout",
+                "canonicalName": "Fix keyboard navigation (example/northstar#42)",
+                "parentObjectId": "33333333-3333-4333-8333-333333333333",
+                "parentName": "Northstar rollout"
+              },
+              "evidenceIds": ["0cbf4a9f-8adc-4104-8a16-2537d80d257f"]
+            }
+          ],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 86.77604600000086,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-other-repository",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        },
+        {
+          "actions": [],
+          "executionErrors": [],
+          "modelCalls": 0,
+          "durationMs": 28.586504000000787,
+          "stages": ["seeded", "events-dispatched", "worker-returned", "visibility-read"],
+          "unauthorizedDisclosure": false,
+          "canonicalMutation": false,
+          "invalidEvidence": false,
+          "id": "github-private-event",
+          "tags": ["github", "github-completion", "delivery"],
+          "score": {
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": true
+          }
+        }
+      ]
+    }
+  ],
+  "inProgress": null,
+  "evidenceNotes": {
+    "scope": "Nine development-only GitHub completion cases starting from synthetic captured event metadata. No model calls or production changes.",
+    "command": "bun run eval:suggestions:compare --tag=github-completion --out=/tmp/github-completion-eval.json",
+    "limitations": [
+      "Raw-event and coalesced worker routes are covered; webhook transport, ingestion and production queue delivery are not.",
+      "Partial-work case uses a separate broader issue identity, not arbitrary natural-language qualification of an exact PR-linked task.",
+      "This is a diagnostic subset, not fresh held-out evidence."
+    ]
+  }
+}

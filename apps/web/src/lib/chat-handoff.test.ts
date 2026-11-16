@@ -10,6 +10,8 @@ import {
   storeChatContextHandoff,
   validateChatHandoffPrompt,
 } from '@/lib/chat-handoff';
+import { buildChatView } from '@/lib/chat-view';
+import { dashboardContextSchema, parseStoredDashboardContext } from '@/lib/dashboard-chat-context';
 function memoryStorage() {
   const values = new Map<string, string>();
   return {
@@ -122,5 +124,27 @@ describe('chat handoff', () => {
     });
     expect(handoff?.context).not.toHaveProperty('objectId');
     expect(handoff?.pinnedEntityId).toBeUndefined();
+  });
+});
+
+describe('dashboard chat context boundary', () => {
+  it('keeps a page context valid through storage and strict request validation', () => {
+    const { dashboardContext } = buildChatView({
+      pathname: '/app/objects/11111111-1111-4111-8111-111111111111',
+      searchParams: new URLSearchParams('tab=activity'),
+    });
+    const storage = memoryStorage();
+    storeChatContextHandoff(storage, 'team-a', { context: dashboardContext }, 1_000);
+    const restored = consumeChatHandoffEntry(storage, 'team-a', 2_000)?.context;
+    expect(dashboardContextSchema.parse(restored)).toEqual(dashboardContext);
+  });
+
+  it('retains tolerant storage recovery without weakening the request boundary', () => {
+    const stored = { pathname: '/app', routeKind: 'home', objectId: 'invalid', unexpected: true };
+    expect(dashboardContextSchema.safeParse(stored).success).toBe(false);
+    expect(parseStoredDashboardContext(stored)).toEqual({ pathname: '/app', routeKind: 'home' });
+    const long = { pathname: '/app', routeKind: 'x'.repeat(100) };
+    expect(dashboardContextSchema.safeParse(long).success).toBe(false);
+    expect(parseStoredDashboardContext(long)?.routeKind).toHaveLength(80);
   });
 });

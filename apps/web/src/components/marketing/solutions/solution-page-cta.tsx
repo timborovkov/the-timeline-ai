@@ -3,8 +3,6 @@ import Link from 'next/link';
 
 import type { SolutionContent } from '@/components/marketing/solutions/content';
 
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
-
 const focusLink =
   'rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
@@ -13,10 +11,9 @@ export function SolutionPageCta({ cta }: { cta: SolutionContent['cta'] }) {
     <section className="border-t border-border bg-surface" aria-labelledby="cta-title">
       <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-14 sm:px-6 sm:py-20 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
-          <EditorialKicker>Start small</EditorialKicker>
           <h2
             id="cta-title"
-            className="mt-5 text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
+            className="text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
           >
             {cta.title}
           </h2>

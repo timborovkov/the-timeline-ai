@@ -1,6 +1,10 @@
 import { calendarEvents, type Db } from '@timeline/db';
 import { childLogger, queue, withTeam } from '@timeline/shared';
-import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
+import {
+  activeWorkspaceCondition,
+  isInactiveWorkspaceError,
+  principalIsActive,
+} from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, gt, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
@@ -25,6 +29,7 @@ export async function processCalendarRecurrenceTick(
 
   for (;;) {
     const conditions: SQL[] = [
+      activeWorkspaceCondition(calendarEvents.teamId),
       isNotNull(calendarEvents.rrule),
       isNull(calendarEvents.recurringParentId),
       isNull(calendarEvents.deletedAt),
@@ -42,7 +47,11 @@ export async function processCalendarRecurrenceTick(
     for (const row of teams) {
       if (!(await principalIsActive(deps.db, row.teamId))) continue;
       const scope = withTeam(deps.db, row.teamId, PSEUDO_USER, { skipMembershipCheck: true });
-      materialized += await scope.calendar.materializeRecurringEvents();
+      try {
+        materialized += await scope.calendar.materializeRecurringEvents();
+      } catch (error) {
+        if (!isInactiveWorkspaceError(error)) throw error;
+      }
     }
 
     if (teams.length < TEAM_PAGE_SIZE) break;

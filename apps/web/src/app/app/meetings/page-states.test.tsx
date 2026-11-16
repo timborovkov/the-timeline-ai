@@ -31,7 +31,6 @@ describe('Meetings route states', () => {
     expect(screen.getByLabelText('Loading meetings').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Meetings' })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Loading meeting views' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Meeting setup loading placeholder' })).toBeTruthy();
     const searchControls = screen.getByRole('region', {
       name: 'Meeting search controls loading placeholder',
     });

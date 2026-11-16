@@ -55,7 +55,7 @@ await vi.mock(
   () => import('next/navigation'),
 );
 
-const { act, cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 
 const { SupportForm } = await import('./support-form.js');
@@ -303,9 +303,45 @@ describe('SupportForm', () => {
     render(<SupportForm requiresTurnstile={false} />);
 
     expect(screen.getByRole('status').textContent).toContain('request-reference');
+    expect(document.activeElement).toBe(screen.getByRole('status'));
     expect(screen.getByRole('status').textContent).toContain(
       'email delivery is currently unavailable',
     );
     expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
+  });
+  it('keeps keyboard and reduced-motion confirmations instant while fading pointer feedback', () => {
+    const animate = vi.fn(() => ({ cancel: vi.fn() }));
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    try {
+      for (const [pointer, reduced] of [
+        [true, false],
+        [false, false],
+        [true, true],
+      ]) {
+        vi.spyOn(window, 'matchMedia').mockReturnValue({
+          matches: reduced,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        } as unknown as MediaQueryList);
+        animate.mockClear();
+        fakes.useActionState.mockReturnValue([{}, fakes.action, false]);
+        const { rerender } = render(<SupportForm requiresTurnstile={false} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Send request' }), {
+          detail: pointer ? 1 : 0,
+        });
+        fakes.useActionState.mockReturnValue([
+          { ok: true, requestReference: 'synthetic-reference' },
+          fakes.action,
+          false,
+        ]);
+        rerender(<SupportForm requiresTurnstile={false} />);
+        expect(document.activeElement).toBe(screen.getByRole('status'));
+        expect(screen.getByText('synthetic-reference')).toBeTruthy();
+        expect(animate).toHaveBeenCalledTimes(pointer && !reduced ? 1 : 0);
+        cleanup();
+      }
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
   });
 });

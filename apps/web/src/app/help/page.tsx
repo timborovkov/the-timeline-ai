@@ -5,7 +5,7 @@ import type { Metadata } from 'next';
 
 import { HelpGuideDirectory } from '@/components/help/help-guide-directory';
 import { SupportMailto } from '@/components/support-email-provider';
-import { publicMetadata } from '@/lib/public-metadata';
+import { PUBLIC_DOCUMENT_REGISTRY, metadataForPublicDocument } from '@/lib/public-site';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
@@ -15,18 +15,15 @@ import {
 const supportLinkClass =
   'rounded-sm text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
-export const metadata: Metadata = publicMetadata({
-  title: 'Help',
-  description:
-    'Guides for The Timeline: capture Slack, Telegram, email and calls, keep records current, and trace every answer to its source.',
-  path: '/help',
-});
+const helpDocument = PUBLIC_DOCUMENT_REGISTRY.get('/help');
+if (!helpDocument) throw new Error('The public document registry is missing the help index');
+
+export const metadata: Metadata = metadataForPublicDocument(helpDocument);
 
 export default function HelpIndexPage() {
   return (
     <article className="space-y-12">
       <header className="max-w-[70ch] space-y-4">
-        <p className="font-mono text-xs tracking-wide text-fg-dim">HELP / PUBLIC GUIDES</p>
         <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           Find the guide for the work in front of you.
         </h1>
@@ -53,7 +50,7 @@ export default function HelpIndexPage() {
           Read the Trust page
           <ArrowRight
             aria-hidden="true"
-            className="size-4 transition-transform group-hover:translate-x-1"
+            className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
           />
         </Link>
       </section>

@@ -176,9 +176,9 @@ function ProviderDetailsBody({
   return (
     <>
       <SheetHeader>
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-start gap-2">
           <ProviderLogo src={provider.logo} />
-          <SheetTitle className="min-w-0 flex-1 truncate">{provider.label}</SheetTitle>
+          <SheetTitle className="min-w-0 flex-1">{provider.label}</SheetTitle>
           <CollectionStatus
             value={provider.status}
             label={provider.statusLabel}
@@ -238,12 +238,7 @@ export function ProviderDetailsPanel({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus();
-        }}
-      >
+      <SheetContent>
         {provider ? (
           <ProviderDetailsBody
             provider={provider}

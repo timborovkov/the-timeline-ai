@@ -5,6 +5,8 @@ import { useActionState, useReducer } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { signInAction, signUpAction, type SignInState, type SignUpState } from '@/app/actions/auth';
+import { LastUsedBadge } from '@/components/last-used-badge';
+import { SupportMailto } from '@/components/support-email-provider';
 import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,23 +22,43 @@ function SubmitButton({ disabled = false, label }: { disabled?: boolean; label: 
   );
 }
 
-export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
+export function SignInForm({
+  callbackUrl,
+  lastUsed = false,
+}: {
+  callbackUrl?: string;
+  lastUsed?: boolean;
+}) {
   const [state, action] = useActionState<SignInState, FormData>(signInAction, {});
   return (
     <form action={action} className="space-y-4">
       {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" autoComplete="email" required />
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="email">Email</Label>
+          {lastUsed ? <LastUsedBadge /> : null}
+        </div>
+        <Input
+          className="text-base sm:text-sm"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+        />
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="password">Password</Label>
-          <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+          <Link
+            href="/forgot-password"
+            className="text-sm text-primary underline underline-offset-4"
+          >
             Forgot password?
           </Link>
         </div>
         <Input
+          className="text-base sm:text-sm"
           id="password"
           name="password"
           type="password"
@@ -60,12 +82,14 @@ export function SignUpForm({
   legalPublicationReady = true,
   requiresTurnstile,
   turnstileSiteKey,
+  lastUsed = false,
 }: {
   callbackUrl?: string;
   inviteToken?: string;
   legalPublicationReady?: boolean;
   requiresTurnstile: boolean;
   turnstileSiteKey?: string;
+  lastUsed?: boolean;
 }) {
   const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
   const [identity, updateIdentity] = useReducer(
@@ -78,8 +102,8 @@ export function SignUpForm({
   if (!legalPublicationReady) {
     return (
       <p role="status" className="text-sm leading-6 text-muted-foreground">
-        We are not accepting new accounts until the contracting-entity review is resolved and the
-        Terms are ready for publication. Existing users can still sign in.
+        New account creation is paused until the Terms are published. Existing users can still sign
+        in.
       </p>
     );
   }
@@ -92,6 +116,7 @@ export function SignUpForm({
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input
+          className="text-base sm:text-sm"
           id="name"
           name="name"
           autoComplete="name"
@@ -103,8 +128,12 @@ export function SignUpForm({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="email">Email</Label>
+          {lastUsed ? <LastUsedBadge /> : null}
+        </div>
         <Input
+          className="text-base sm:text-sm"
           id="email"
           name="email"
           type="email"
@@ -119,6 +148,7 @@ export function SignUpForm({
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
         <Input
+          className="text-base sm:text-sm"
           id="password"
           name="password"
           type="password"
@@ -140,11 +170,11 @@ export function SignUpForm({
         />
         <span>
           I agree to the{' '}
-          <Link href="/terms" className="text-primary hover:underline">
+          <Link href="/terms" className="text-primary underline underline-offset-4">
             Terms of Use
           </Link>{' '}
           and acknowledge the{' '}
-          <Link href="/privacy" className="text-primary hover:underline">
+          <Link href="/privacy" className="text-primary underline underline-offset-4">
             Privacy Policy
           </Link>
           .
@@ -154,7 +184,8 @@ export function SignUpForm({
         <TurnstileWidget action="signup" siteKey={turnstileSiteKey} />
       ) : requiresTurnstile ? (
         <p role="alert" className="text-sm text-destructive">
-          Account creation protection is not configured.
+          Account creation is temporarily unavailable. Try again later or email{' '}
+          <SupportMailto className="underline underline-offset-4" /> for help.
         </p>
       ) : null}
       {state.error ? (

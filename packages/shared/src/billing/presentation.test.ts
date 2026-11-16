@@ -95,7 +95,7 @@ describe('billing presentation', () => {
       });
       expect(result.allowances).toHaveLength(5);
       expect(result.allowances.find((x) => x.meter === 'ai')).toMatchObject({
-        included: 500,
+        included: 200,
         used: 500,
         remaining: 0,
       });

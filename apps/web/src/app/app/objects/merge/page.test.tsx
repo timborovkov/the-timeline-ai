@@ -179,7 +179,6 @@ describe('MergeObjectsPage', () => {
 
     expect(html).toContain('Becca The Other Line owns payroll follow-up.');
     expect(html).toContain('Becca Builder works with vendor onboarding.');
-    expect(html).toContain('aria-label="Work"');
-    expect(html).toContain('aria-current="page"');
+    expect(html).not.toContain('aria-label="Work"');
   });
 });

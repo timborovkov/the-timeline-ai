@@ -71,7 +71,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Invoices, payment changes and cancellation',
-        body: 'Open Manage payment in Billing to use the payment provider’s customer portal. Review its confirmation for the effective cancellation date and any outstanding charges. Disconnecting a source or deleting data is not a billing cancellation. Fees and consumed usage are generally non-refundable, except where law requires otherwise or a refund is agreed. Report suspected billing errors with the workspace and invoice reference; mandatory consumer rights remain unaffected.',
+        body: 'Open Manage payment in Billing to use the payment provider’s customer portal. Review its confirmation for the effective cancellation date and any outstanding charges. Disconnecting a source or deleting individual data is not a billing cancellation. Disabling a team or requesting permanent team deletion stops new usage accrual and requests cancellation of renewal; restoration does not silently resume renewal. Fees and consumed usage are generally non-refundable, except where law requires otherwise or a refund is agreed. Report suspected billing errors with the workspace and invoice reference; mandatory consumer rights remain unaffected.',
         items: [
           'Check the active workspace before opening its payment portal.',
           'Use the portal to review invoices, payment details and available subscription actions.',
@@ -89,7 +89,7 @@ export const HELP_PAGES: HelpPage[] = [
       'Send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     icon: Inbox,
     related: ['work', 'integrations'],
-    updatedAt: '2026-11-03',
+    updatedAt: '2026-11-11',
     sections: [
       {
         title: 'Get your first cited answer',
@@ -109,6 +109,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Text notes and audio uploads from the web app.',
           'Slack and Telegram messages, files, and voice memos from linked spaces.',
+          'A linked Slack channel or Telegram group keeps the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.',
           'Forwarded, CCed, or BCCed email sent to your team address.',
           'Meeting transcripts from consent-gated bots that join calls.',
           'Document uploads that become searchable chunks after extraction.',
@@ -125,6 +126,18 @@ export const HELP_PAGES: HelpPage[] = [
         ],
       },
       {
+        title: 'How answers handle newer and conflicting evidence',
+        body: 'Ask balances relevance with freshness across Telegram and Slack conversations, email, meetings, notes, website captures, integrations, and documents. Newer evidence can rank higher, but newer does not mean correct or approved.',
+        items: [
+          'If an older email says Thursday and a later Telegram reply says “actually, Friday”, inspect the conversation and both citations. Ask distinguishes the current record from a pending proposal to change it.',
+          'A pending proposal does not change the accepted record. Review its sources and accept, revise, or reject it in Approvals.',
+          'An undated file uploaded today gets a smaller freshness boost. Its upload date does not prove its contents are new. Website capture dates likewise describe when a page was observed.',
+          'Historical questions use the requested period. Questions about a particular source describe what that source says.',
+          'Search is bounded and only includes evidence you can access. Linked or retrieved disagreements can be surfaced; absence of a warning does not mean every source agrees. Ask discloses unavailable context when a retrieval adapter fails.',
+        ],
+        resourceLinks: [{ href: '/help/work', label: 'Review changes in Work' }],
+      },
+      {
         title: 'Good capture habits',
         body: 'Use the surface that is closest to the work. A rough voice memo beats a polished recap that never gets written.',
         items: [
@@ -137,7 +150,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'work',
-    updatedAt: '2026-11-03',
+    updatedAt: '2026-11-11',
     title: 'Work surface',
     description:
       'Use tasks, boards, objects, the daily update, on-demand updates and handoffs that stay current from evidence.',
@@ -159,6 +172,9 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'How it stays current',
+        resourceLinks: [
+          { href: '/help/capture', label: 'How answers handle newer and conflicting evidence' },
+        ],
         body: 'Timeline extracts proposed state from conversations, email, meetings, documents, and integrations, then keeps receipts attached so changes can be reviewed.',
         items: [
           'Raw events stay intact; summaries can change without rewriting source evidence.',
@@ -170,6 +186,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'documents',
+    updatedAt: '2026-11-11',
     title: 'Document drive',
     description: 'Upload, version, search, and cite team documents alongside the event timeline.',
     icon: FolderOpen,
@@ -177,11 +194,14 @@ export const HELP_PAGES: HelpPage[] = [
     sections: [
       {
         title: 'How the drive works',
+        resourceLinks: [
+          { href: '/help/capture', label: 'Freshness, source dates, and conflicting evidence' },
+        ],
         body: 'The document drive stores originals and versions while extracted text feeds the same search and agent citation system as events.',
         items: [
           'Folders keep documents browsable without hiding them from search.',
           'Every upload creates a version, so old files stay inspectable.',
-          'Agent answers cite document chunks back to the source version.',
+          'Agent answers cite document passages back to the source version.',
         ],
         appLink: { href: '/app/documents', label: 'Open document drive' },
       },
@@ -230,13 +250,13 @@ export const HELP_PAGES: HelpPage[] = [
     description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'work', 'agents'],
-    updatedAt: '2026-11-06',
+    updatedAt: '2026-11-09',
     sections: [
       {
         title: 'Connected sources',
         body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. MCP is not passive provider sync.',
         items: [
-          'Google Drive syncs selected folders and files into the document drive.',
+          'Google Drive records selected Docs, Sheets, Slides, PDF, and Word changes as cited events. It does not copy those files into the document drive. Removing a personal connection deletes its credentials and disables dependent sources; it does not remove their snapshots or captured history. A team admin can disconnect the team source to clean up its snapshots and temporary extracts. Captured history requires a separate support deletion request.',
           'GitHub and Linear bring engineering and project activity into the operational record.',
           'Monday.com syncs selected boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',
@@ -267,7 +287,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
-          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember. The default OAuth grant is read plus capture (on by default). Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved agent:ask scope for paid, proposal-only turns.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status. The default OAuth grant is read plus capture (on by default). Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved agent:ask scope for paid, proposal-only turns.',
           'Static tla_ team keys remain an Advanced compatibility fallback for manual clients and must never be pasted in chat.',
         ],
         appLink: { href: '/app/connect-agent', label: 'Connect your agent' },
@@ -280,6 +300,18 @@ export const HELP_PAGES: HelpPage[] = [
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code',
             label: 'Install in Claude Code',
           },
+        ],
+      },
+      {
+        title: 'Request deletion of captured data',
+        resourceLinks: [{ href: '/help/support', label: 'Request deletion through support' }],
+        body: 'Team owners can request permanent team deletion from Team settings → Advanced. Export data you can access first. The request immediately disables access for all members, stops new usage accrual, and requests subscription renewal cancellation. Platform admins review and perform deletion. Only platform admins can restore access before permanent deletion starts. For narrower deletion requests, use /help/support. Disconnecting alone does not erase history.',
+        items: [
+          'Tell us the workspace name, the connected provider, and whether you want all captured data from that source or a narrower set removed. Identify files by name or link only when needed; do not send passwords, tokens, or copies of private documents.',
+          'We verify your identity and workspace authority and confirm the scope. For team-controlled data, we may need the workspace administrator’s instructions; individual rights requests are reviewed separately.',
+          'We coordinate stopping affected capture before removal so background work does not recreate the data. Removing a shared personal connection can stop capture in other workspaces, so tell us if only one team is in scope.',
+          'We review retained records and derived data, including search indexes, and handle removal manually. We explain any backup expiry, provider follow-up, or justified retention and confirm completed and outstanding work. We do not promise instant removal from every retained copy.',
+          'Disconnecting Timeline does not delete the original files in Google Drive.',
         ],
       },
     ],
@@ -297,7 +329,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'Install in Codex or Claude Code',
         body: 'Give your agent https://thetimeline.cc/agents/setup.md, or use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
         items: [
-          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status.',
           'The same skill adapts to status updates, exact lookups, recaps, and incident analysis without competing triggers.',
           'It distinguishes current canonical state from activity, expands material sources, and preserves citations and uncertainty.',
           'Restart Codex or Claude Code after installation, start a new task or conversation, and complete Timeline sign-in, team selection, and scope consent when prompted.',
@@ -340,7 +372,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve agent:ask for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve agent:ask for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
             href: 'https://thetimeline.cc/agents/SKILL.md',

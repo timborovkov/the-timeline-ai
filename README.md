@@ -14,8 +14,8 @@
   <a href="./SUPPORT.md">Support</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a> ·
   <a href="./plugins/timeline/skills/README.md">Agent plugins</a> ·
-  <a href="./docs/setup/local.html">Local setup</a> ·
-  <a href="./docs/index.html">Developer docs</a>
+  <a href="docs/setup/local.md">Local setup</a> ·
+  <a href="docs/README.md">Developer docs</a>
 </p>
 
 The Timeline keeps client, deal, task and decision records up to date from Slack,
@@ -36,7 +36,9 @@ The project is under active development; APIs and migrations may change.
 ## Getting started
 
 Use the hosted app at [thetimeline.cc](https://thetimeline.cc), or follow the
-[local development guide](docs/setup/local.html) to work on the code.
+[local development guide](docs/setup/local.md) to work on the code.
+Coding-agent workflows are bundled in [`.agents/skills`](.agents/skills/README.md),
+including cloud setup requirements and the repository-specific React Doctor gate.
 
 Local development requires **Bun 1.4.4** (pinned in `.bun-version`) and **Docker**.
 The setup guide covers dependencies, environment variables, infrastructure,
@@ -64,29 +66,15 @@ calls routed through a shared OpenRouter inference layer.
 
 ## Development
 
-Common commands, after completing local setup:
+Follow [local setup](docs/setup/local.md) and [testing policy](docs/testing/README.md). Commands and dependency versions are owned by `package.json` and `.bun-version`; [AGENTS.md](AGENTS.md) defines the repository operating contract.
 
-| Command | Purpose |
-| --- | --- |
-| `bun run dev` | Start the web app and workers |
-| `bun run validate` | Check formatting, TypeScript, ESLint and Knip |
-| `bun run test` | Run offline unit and integration tests |
-| `bun run doctor` | Run React Doctor |
-
-See [AGENTS.md](AGENTS.md) for repository conventions and change-specific checks.
-
-`main` is the development branch: PRs require static checks, React Doctor and
-smoke checks. Release through a PR from `main` to `production`, which additionally
-requires the full offline unit/integration suite and reconciliation evals. Full
-tests also run on production pushes and manual CI dispatches; browser E2E remains
-manual. See the [deployment guide](docs/railway.html#deploy-flow) for Railway setup.
 
 ## Documentation
 
-- [Developer documentation](docs/index.html)
+- [Developer documentation](docs/README.md)
 - [Architecture and memory model](docs/relational-memory.md)
-- [Integrations and MCP](docs/setup/integrations.html)
-- [Deployment](docs/railway.html) and [operations](docs/operations.md)
+- [Integrations and MCP](docs/setup/integrations.md)
+- [Deployment](docs/railway.md) and [operations](docs/operations.md)
 - [Design system](design.md)
 - [Security and privacy](https://thetimeline.cc/trust)
 
@@ -98,8 +86,14 @@ Report security vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
 ## License
 
-This repository does not currently include an open-source license. Public access
-to the source does not grant general permission to copy, modify, redistribute or
-self-host it. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+This repository is licensed under the [Elastic License 2.0](LICENSE)
+(`Elastic-2.0`), except where otherwise noted. You may use, modify, redistribute
+and self-host the software subject to its terms, including restrictions on
+providing it as a hosted or managed service, circumventing license-key
+functionality, and removing licensing or copyright notices.
+
+Elastic License 2.0 is a source-available license, not an OSI-approved open-source
+license. Third-party components retain their own licenses. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 
 Agent coworker reporting, owner-delegated provisioning and rollout details: [agent coworkers](docs/agent-coworkers.md).

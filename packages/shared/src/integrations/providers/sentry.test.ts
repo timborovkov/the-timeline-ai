@@ -98,7 +98,7 @@ describe('sentryProvider', () => {
       ),
     );
 
-    const resources = await sentryProvider.listSyncableResources({} as never, {
+    const resources = await sentryProvider.browseResources({} as never, {
       access_token: 'token',
     });
 
@@ -134,7 +134,7 @@ describe('sentryProvider', () => {
     vi.stubGlobal('fetch', fetch);
     const ctx = { persistTokens: vi.fn().mockResolvedValue(undefined) };
 
-    const resources = await sentryProvider.listSyncableResources(
+    const resources = await sentryProvider.browseResources(
       {} as never,
       {
         access_token: 'token-old',

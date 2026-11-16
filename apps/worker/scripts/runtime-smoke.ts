@@ -167,6 +167,13 @@ Sentry.init({
   beforeSend(event) {
     const stamped = stampSentryRuntimeContext(event);
     stampedRuntime = stamped.contexts?.runtime;
+    const exceptionText = (stamped.exception?.values ?? [])
+      .map((value) => `${value?.type ?? ''}: ${value?.value ?? ''}`)
+      .join('\n');
+    assert(
+      exceptionText.includes('synthetic Bun runtime smoke'),
+      'captured event must be the synthetic smoke exception',
+    );
     errorEvents++;
     return stamped;
   },

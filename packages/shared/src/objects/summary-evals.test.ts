@@ -21,6 +21,12 @@ await vi.mock(
 const { PGlite } = await import('@electric-sql/pglite');
 
 const {
+  documents,
+  documentVersions,
+  documentChunks,
+  agentSuggestions,
+  agentSuggestionEvidence,
+  agentSuggestionItems,
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
@@ -32,7 +38,9 @@ const {
 } = await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
-const { generateAndStoreObjectSummary } = await import('#src/objects/summaries.js');
+const { generateAndStoreObjectSummary, getObjectSummaryFromSnapshot } =
+  await import('#src/objects/summaries.js');
+const { listReadyObjectSummaries, searchObjectsBySummary } = await import('#src/objects/index.js');
 const { withTeam } = await import('#src/team-scope.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
 
@@ -68,6 +76,301 @@ afterEach(async () => {
 });
 
 describe('object summary evals', () => {
+  it('keeps current document summaries readable and hides them after source restriction', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    const [object] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Source-bound project' })
+      .returning();
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        source: 'document',
+        contentText: 'Uploaded restricted source',
+        occurredAt: new Date(),
+        visibility: 'team',
+        authorUserId: USER_ID,
+      })
+      .returning();
+    const [doc] = await db
+      .insert(documents)
+      .values({ teamId: TEAM_ID, name: 'source.txt', ownerUserId: USER_ID, visibility: 'team' })
+      .returning();
+    if (!object || !event || !doc) throw new Error('missing fixtures');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        version: 2,
+        objectKey: 'synthetic/source.txt',
+        sourceEventId: event.id,
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!version) throw new Error('missing version');
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'Source-bound project: Confidential client detail',
+        tokenCount: 4,
+      })
+      .returning();
+    if (!chunk) throw new Error('missing chunk');
+    const [olderVersion] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        version: 1,
+        objectKey: 'synthetic/old-source.txt',
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!olderVersion) throw new Error('missing older version');
+    await db.insert(documentChunks).values({
+      teamId: TEAM_ID,
+      documentId: doc.id,
+      documentVersionId: olderVersion.id,
+      chunkIndex: 5,
+      text: 'Source-bound project: superseded document details',
+      tokenCount: 8,
+    });
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, doc.id));
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create source-bound project',
+      dedupeKey: 'document-summary-visibility',
+      metadata: {
+        document_id: doc.id,
+        document_version_id: version.id,
+        document_chunk_id: chunk.id,
+      },
+      evidence: [{ rawEventId: event.id, quote: chunk.text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: object.canonicalName,
+          dedupeKey: 'source-bound-create',
+          proposedPayload: { type: 'project', canonicalName: object.canonicalName },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    if (!item) throw new Error('missing item');
+    // A prior chunk generation can leave inaccessible proposals sharing this
+    // lifecycle event. They must not invalidate a fresh chunk-backed summary.
+    const [staleProposal] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        title: 'Prior document chunk proposal',
+        dedupeKey: 'prior-document-chunk',
+        metadata: {
+          document_id: doc.id,
+          document_version_id: version.id,
+          document_chunk_id: crypto.randomUUID(),
+        },
+      })
+      .returning();
+    if (!staleProposal) throw new Error('missing stale proposal');
+    await db.insert(agentSuggestionEvidence).values({
+      teamId: TEAM_ID,
+      suggestionId: staleProposal.id,
+      rawEventId: event.id,
+    });
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'accepted', resultId: object.id })
+      .where(eq(agentSuggestionItems.id, item.id));
+    let documentPrompt = '';
+    const sourceOmittingModel = <TSchema extends z.ZodType>(
+      input: ChatStructuredInput<TSchema>,
+    ): Promise<ChatStructuredResult<TSchema>> => {
+      documentPrompt = input.prompt;
+      return Promise.resolve({
+        model: 'summary-eval-model',
+        object: input.schema.parse({
+          overview: 'Confidential client detail',
+          overviewSourceRefs: [{ kind: 'field', id: 'type' }],
+          currentState: [],
+          openQuestions: [],
+          conflicts: [],
+        }),
+      });
+    };
+    expect(
+      await generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: sourceOmittingModel,
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).toMatchObject({ status: 'ready' });
+    expect(documentPrompt).toContain(chunk.text);
+    expect(documentPrompt).not.toContain('Uploaded restricted source');
+    expect(documentPrompt).not.toContain('superseded document details');
+    const [cached] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(cached?.sourceRefs).toContainEqual({
+      kind: 'document_chunk',
+      id: chunk.id,
+      documentId: doc.id,
+      version: 2,
+    });
+    expect(cached?.sourceRefs).not.toContainEqual({ kind: 'timeline_event', id: event.id });
+    expect((await scope.objects.getObjectSummary(object.id))?.plainText).toContain('Confidential');
+    expect(await listReadyObjectSummaries(db, scope, [object.id])).toHaveLength(1);
+    expect(await searchObjectsBySummary(db, scope, { query: 'Confidential' })).toHaveLength(1);
+    for (const refs of [
+      [{ kind: 'timeline_event', id: event.id }],
+      [{ kind: 'document_chunk', id: chunk.id, documentId: doc.id, version: 2 }],
+    ]) {
+      await db
+        .update(objectSummaries)
+        .set({ sourceRefs: refs })
+        .where(eq(objectSummaries.entityId, object.id));
+      await db.update(documents).set({ visibility: 'private' }).where(eq(documents.id, doc.id));
+      const summary = await scope.objects.getObjectSummary(object.id);
+      expect(summary?.plainText).toBe('');
+      expect(summary?.sourceCounts.events).toBe(0);
+      expect(await listReadyObjectSummaries(db, scope, [object.id])).toHaveLength(0);
+      expect(await searchObjectsBySummary(db, scope, { query: 'Confidential' })).toHaveLength(0);
+      const fast = await getObjectSummaryFromSnapshot(db, scope, object.id, {
+        meaningfulFields: 3,
+        sourceCounts: {
+          fields: 3,
+          facts: 3,
+          events: 1,
+          notes: 0,
+          relationships: 0,
+          tasks: 0,
+          changes: 0,
+        },
+      });
+      expect(fast?.plainText).toBe('');
+    }
+  });
+
+  // Structured integrations skip fact extraction; their associated evidence
+  // must still enable the same summary action shown on the object detail page.
+  it('offers summary generation for a project supported only by artifact evidence', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    const [object] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar rollout',
+        status: 'active',
+        stage: 'renewal',
+      })
+      .returning({ id: entities.id });
+    if (!object) throw new Error('failed to insert object');
+
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Northstar rollout',
+        canonicalEntityId: object.id,
+      })
+      .returning({ id: artifactClusters.id });
+    if (!cluster) throw new Error('failed to insert artifact cluster');
+
+    const [visibleRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Monday item: Northstar approved the rollout renewal packet.',
+        occurredAt: new Date('2026-07-02T10:00:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://board/rollouts/item/northstar-approval',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!visibleRaw) throw new Error('failed to insert visible raw event');
+
+    const [visibleEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: visibleRaw.id,
+        sourcePayloadRef: 'monday://board/rollouts/item/northstar-approval',
+        payloadDigest: 'sha256:northstar-visible-payload',
+        source: 'integration',
+        provider: 'monday',
+        externalObjectId: 'northstar-approval',
+        externalEventId: 'northstar-approval:update',
+        eventType: 'monday.item_update',
+        occurredAt: new Date('2026-07-02T10:00:00.000Z'),
+        visibility: 'team',
+        actor: { kind: 'customer' },
+        contentDigest: 'sha256:northstar-visible-content',
+        title: 'Northstar approved renewal rollout',
+        summary: 'Visible renewal packet signed by Northstar procurement.',
+        metadata: {},
+        normalizerVersion: 'summary-eval',
+        replayState: 'full',
+        dedupeKey: 'summary-eval-visible-evidence',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!visibleEvidence) throw new Error('failed to insert visible evidence');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      evidenceId: visibleEvidence.id,
+      rawEventId: visibleRaw.id,
+      role: 'decision',
+      strength: 'hard',
+      associationSource: 'hard_anchor',
+      sourceRefs: [
+        { source: 'integration', rawEventId: visibleRaw.id, evidenceId: visibleEvidence.id },
+      ],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'summary-eval-visible-association',
+    });
+
+    const detail = await scope.objects.getObject(object.id);
+    expect(detail?.summary?.canGenerate).toBe(true);
+    expect(detail?.summary?.cannotGenerateReason).toBeNull();
+    await db
+      .update(artifactEvidenceAssociations)
+      .set({
+        visibility: 'private',
+        visibilityOwnerUserId: USER_ID,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: USER_ID,
+      })
+      .where(eq(artifactEvidenceAssociations.clusterId, cluster.id));
+    // Team-visible summaries cannot incorporate a private association even for
+    // the owner who can read that source elsewhere.
+    expect((await scope.objects.getObject(object.id))?.summary?.canGenerate).toBe(false);
+  });
+
   it('grounds summaries in visible reconciliation evidence without leaking private sources', async () => {
     const scope = withTeam(db, TEAM_ID, USER_ID);
     const [object] = await db

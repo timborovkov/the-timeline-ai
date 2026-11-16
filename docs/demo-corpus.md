@@ -82,9 +82,11 @@ look like a month of active use.
 
 ### Empty onboarding team
 
-Use this login to capture first-run onboarding screens. Nothing is connected: no
-timeline events, integrations, documents, meetings, objects, proposals, or completed
-checklist steps.
+Use this login to capture first-run onboarding screens. Seed resets it to the
+Welcome phase. Nothing is connected: no timeline events, integrations, documents,
+meetings, objects, proposals, or completed checklist steps. Website scans use the [local provider configuration](setup/local.md) and real
+provider usage; the demo seed does not mock them. Scans save cited pages, while
+canonical records require approval.
 
 | Email | Role | Team |
 | --- | --- | --- |
@@ -189,7 +191,11 @@ These are not production secrets. They exist so settings screens look configured
 
 - **Project Atlas** — customer timeline unification beta
 - **Northstar pilot** — canonical cited evidence cluster
-- **Validate Northstar pilot export** — blocked task (`NORTH-42`)
+- **Validate Northstar pilot export** — blocked task (`NORTH-42`), related to Northstar Works and child of Northstar pilot
+- **Ping Elena Park on field-mapping** / **Move Northstar pilot review** — related to Northstar Works
+- **Send Northwind data room** / **Answer Northwind diligence Q&A** — related to Series A process
+- **Prepare Brightline MSA excerpt** — related to Brightline Health
+- **Crop Northstar screenshot for webinar** — related to Atlas beta webinar, not Northstar Works
 - **Use CSV fallback for Northstar pilot** — accepted decision
 - **CSV preview 500s / ATLAS-218** — resolved incident
 - **Replay CSV preview from stored bytes** — accepted decision

@@ -1,5 +1,6 @@
 import { type Db } from '@timeline/db';
 import { childLogger, integrations as integrationsLib, queue } from '@timeline/shared';
+import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import { DelayedError, Worker, type Job } from 'bullmq';
 
@@ -98,50 +99,50 @@ export async function processWebhookDeliveryJob(
   const provider = integrationsLib.getProvider(work.delivery.provider);
 
   for (const { target, integration } of work.targets) {
-    await integrationsLib.markWebhookDeliveryTargetProcessing(deps.db, target.id);
-    if (!integration) {
-      ignored += 1;
-      await integrationsLib.markWebhookDeliveryTargetIgnored(
-        deps.db,
-        target.id,
-        'integration_missing',
-      );
-      continue;
-    }
-    if (!integration.enabled) {
-      ignored += 1;
-      await integrationsLib.markWebhookDeliveryTargetIgnored(
-        deps.db,
-        target.id,
-        'integration_disabled',
-      );
-      continue;
-    }
-    if (integration.provider !== work.delivery.provider) {
-      ignored += 1;
-      await integrationsLib.markWebhookDeliveryTargetIgnored(
-        deps.db,
-        target.id,
-        'integration_provider_mismatch',
-      );
-      continue;
-    }
-    if (!provider.handleWebhook) {
-      ignored += 1;
-      await integrationsLib.markWebhookDeliveryTargetIgnored(
-        deps.db,
-        target.id,
-        'provider_webhook_normalizer_missing',
-      );
-      continue;
-    }
-
     try {
       await (deps.assertActive ?? assertActivePrincipal)(
         deps.db,
-        integration.teamId,
-        integration.connectedByUserId ?? undefined,
+        target.teamId,
+        integration?.connectedByUserId ?? undefined,
       );
+      await integrationsLib.markWebhookDeliveryTargetProcessing(deps.db, target.id);
+      if (!integration) {
+        ignored += 1;
+        await integrationsLib.markWebhookDeliveryTargetIgnored(
+          deps.db,
+          target.id,
+          'integration_missing',
+        );
+        continue;
+      }
+      if (!integration.enabled) {
+        ignored += 1;
+        await integrationsLib.markWebhookDeliveryTargetIgnored(
+          deps.db,
+          target.id,
+          'integration_disabled',
+        );
+        continue;
+      }
+      if (integration.provider !== work.delivery.provider) {
+        ignored += 1;
+        await integrationsLib.markWebhookDeliveryTargetIgnored(
+          deps.db,
+          target.id,
+          'integration_provider_mismatch',
+        );
+        continue;
+      }
+      if (!provider.handleWebhook) {
+        ignored += 1;
+        await integrationsLib.markWebhookDeliveryTargetIgnored(
+          deps.db,
+          target.id,
+          'provider_webhook_normalizer_missing',
+        );
+        continue;
+      }
+
       if (integration.provider === 'sentry') {
         // Recheck at processing time: selection can change after receipt or
         // before a retry. Legacy installation-only deliveries fail closed.
@@ -231,6 +232,23 @@ export async function processWebhookDeliveryJob(
       });
       processed += 1;
     } catch (err) {
+      // Disabling may race either admission or a guarded status write. Do not
+      // mutate the inactive target or prevent other teams sharing this delivery.
+      if (err instanceof PlatformAccessError) {
+        ignored += 1;
+        continue;
+      }
+      try {
+        await (deps.assertActive ?? assertActivePrincipal)(
+          deps.db,
+          target.teamId,
+          integration?.connectedByUserId ?? undefined,
+        );
+      } catch (admissionError) {
+        if (!(admissionError instanceof PlatformAccessError)) throw admissionError;
+        ignored += 1;
+        continue;
+      }
       if (
         err instanceof Error &&
         'retryAt' in err &&

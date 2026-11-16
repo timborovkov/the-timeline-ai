@@ -15,7 +15,10 @@ import {
   reserveRecallMeetingMinutes,
   runWithConcurrentRecallJoinLock,
 } from '@timeline/shared/billing';
-import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
+import {
+  activeWorkspaceCondition,
+  principalIsActive,
+} from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
 import {
   and,
@@ -151,6 +154,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     .where(
       and(
         eq(meetings.savedMeetingId, savedMeetings.id),
+        activeWorkspaceCondition(meetings.teamId),
         eq(meetings.status, 'scheduled'),
         isNotNull(meetings.scheduledEndAt),
         lte(meetings.scheduledEndAt, now),
@@ -201,6 +205,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     .innerJoin(savedMeetings, eq(meetings.savedMeetingId, savedMeetings.id))
     .where(
       and(
+        activeWorkspaceCondition(meetings.teamId),
         eq(meetings.status, 'scheduled'),
         // Apply suspension before the global batch limit so inactive principals
         // cannot starve eligible captures in another workspace.
@@ -272,6 +277,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
             and(
               eq(meetings.id, meeting.id),
               eq(meetings.teamId, meeting.teamId),
+              activeWorkspaceCondition(meetings.teamId),
               eq(meetings.status, 'scheduled'),
               sql`(
               COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') <> '1'

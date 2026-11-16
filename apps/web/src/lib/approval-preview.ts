@@ -243,6 +243,8 @@ function mergeFieldKeys(
   proposed: Record<string, unknown>,
 ): string[] {
   const skip = new Set([
+    'qualification',
+    'expectedUpdatedAt',
     'metadata',
     'localRef',
     'fromRef',

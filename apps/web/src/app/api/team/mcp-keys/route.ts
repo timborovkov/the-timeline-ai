@@ -14,6 +14,8 @@ export const dynamic = 'force-dynamic';
 
 const createSchema = z.object({
   name: z.string().min(1).max(80),
+  allowWebsiteScan: z.boolean().default(false),
+  allowWebsiteManage: z.boolean().default(false),
   allowAgent: z.boolean().optional().default(false),
   allowCapture: z.boolean().optional().default(true),
 });
@@ -68,6 +70,8 @@ export async function POST(req: Request): Promise<Response> {
     const row = await scope.mcpOutbound.createKey({
       name: parsed.data.name,
       allowCapture: parsed.data.allowCapture,
+      allowWebsiteScan: parsed.data.allowWebsiteScan,
+      allowWebsiteManage: parsed.data.allowWebsiteManage,
       allowAgent: parsed.data.allowAgent,
     });
     trackProductEventBestEffort(

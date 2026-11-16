@@ -96,9 +96,9 @@ beforeEach(() => {
   fakes.fakeSuggestions.reviseSuggestionItem.mockResolvedValue({
     id: ITEM_ID,
     status: 'pending',
-    title: 'Miku to register with PRH',
-    description: 'Miku made the promise.',
-    proposedPayload: { ownerName: 'Miku' },
+    title: 'Casey to register with PRH',
+    description: 'Casey made the promise.',
+    proposedPayload: { ownerName: 'Casey' },
   });
   fakes.fakeSuggestions.reviseTaskSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.listSuggestions.mockResolvedValue([
@@ -189,6 +189,20 @@ describe('suggestion action validation and scope', () => {
 });
 
 describe('suggestion item actions', () => {
+  it('keeps a committed acceptance successful and refreshes remaining surfaces after one refresh fails', async () => {
+    const failure = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw failure;
+    });
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
+    expect(fakes.fakeSuggestions.acceptSuggestionItemWithOutcome).toHaveBeenCalledTimes(1);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/inbox');
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(failure, {
+      surface: 'server_action',
+      operation: 'revalidate_suggestion_surfaces',
+    });
+  });
+
   it('accepts an item and revalidates every approval-dependent surface', async () => {
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
 
@@ -221,22 +235,22 @@ describe('suggestion item actions', () => {
     await expect(
       reviseSuggestionItemAction({
         itemId: ITEM_ID,
-        feedback: 'Miku made this promise, not Tim.',
+        feedback: 'Casey made this promise, not Taylor.',
       }),
     ).resolves.toEqual({
       ok: true,
       revisedItem: {
         id: ITEM_ID,
         status: 'pending',
-        title: 'Miku to register with PRH',
-        description: 'Miku made the promise.',
-        proposedPayload: { ownerName: 'Miku' },
+        title: 'Casey to register with PRH',
+        description: 'Casey made the promise.',
+        proposedPayload: { ownerName: 'Casey' },
       },
     });
 
     expect(fakes.fakeSuggestions.reviseSuggestionItem).toHaveBeenCalledWith({
       itemId: ITEM_ID,
-      feedback: 'Miku made this promise, not Tim.',
+      feedback: 'Casey made this promise, not Taylor.',
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       ANALYTICS_ACTOR,

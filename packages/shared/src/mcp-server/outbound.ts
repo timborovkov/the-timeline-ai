@@ -54,6 +54,8 @@ export function createMcpOutboundScope({ db, teamId, userId, ensureMember }: Mcp
     name: string;
     allowCapture?: boolean;
     allowAgent?: boolean;
+    allowWebsiteScan?: boolean;
+    allowWebsiteManage?: boolean;
   }): Promise<CreatedMcpOutboundKey> {
     await ensureMember('admin');
     const minted = mintKey();
@@ -69,6 +71,8 @@ export function createMcpOutboundScope({ db, teamId, userId, ensureMember }: Mcp
           scopes: mcpStaticKeyScopes({
             allowCapture: input.allowCapture ?? true,
             allowAgent: input.allowAgent ?? false,
+            allowWebsiteScan: input.allowWebsiteScan ?? false,
+            allowWebsiteManage: input.allowWebsiteManage ?? false,
           }),
         })
         .returning();

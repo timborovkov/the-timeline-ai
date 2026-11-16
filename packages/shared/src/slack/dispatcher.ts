@@ -20,6 +20,7 @@ import { askBillingUserMessage } from '#src/billing/admission.js';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '#src/billing/runtime.js';
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -35,7 +36,7 @@ import {
   linkMetadata,
   reconcileLinkArtifactsForRawEvent,
 } from '#src/conversational/link-artifacts.js';
-import { encryptJson, decryptJson, type EncryptedSecret } from '#src/crypto/secrets.js';
+import { encryptJson } from '#src/crypto/secrets.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -44,9 +45,10 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
-import { getRedisConnection } from '#src/queue/connection.js';
+import { activeWorkspaceCondition, assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import { createSlackConversationDeliveryAdapter } from '#src/slack/conversation-adapter.js';
 import {
@@ -55,7 +57,17 @@ import {
   type SlackFile,
   type SlackMessageEvent,
 } from '#src/slack/types.js';
+import {
+  findWorkspaceBySlackTeamId,
+  findWorkspaceInstallForTeam,
+  decryptWorkspaceToken,
+  type SlackTokenJson,
+  type SlackWorkspaceRecord,
+} from '#src/slack/workspace-access.js';
 import { withTeam } from '#src/team-scope.js';
+import { websiteBotCommand } from '#src/websites/bot-command.js';
+
+export type { SlackWorkspaceRecord } from '#src/slack/workspace-access.js';
 
 const log = childLogger('slack');
 const SLACK_SOURCE_SNAPSHOT_VERSION = 'slack-source-snapshot-2026-07';
@@ -66,6 +78,7 @@ const SLACK_HELP_TEXT =
   `/timeline new  start a new DM agent conversation\n` +
   `/timeline team [number]  list or switch eligible teams\n` +
   `/timeline whereami  show the active team\n` +
+  `/timeline crawl <url>  scan a public website (confirmation required)\n` +
   `/timeline join <saved-meeting-alias-or-url> [optional title]  capture a meeting now\n` +
   `/timeline help  show this message`;
 
@@ -74,6 +87,8 @@ type DbOrTx = Db | DbTx;
 
 export interface SlackIngestDeps {
   db: Db;
+  /** Optional controlled transport; workspace routing and authorization still run normally. */
+  api?: SlackApi;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
   agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
@@ -101,24 +116,6 @@ export interface SlackIngestDeps {
   suggestions?: { enqueueSuggestion(input: { rawEventId: string; teamId: string }): Promise<void> };
 }
 
-interface SlackTokenJson {
-  accessToken: string;
-  tokenType?: string;
-  scope?: string;
-  authedUserAccessToken?: string;
-  authedUserScope?: string;
-}
-
-export interface SlackWorkspaceRecord {
-  id: string;
-  slackTeamId: string;
-  appId?: string | null;
-  botUserId: string | null;
-  tokenCiphertext: Buffer;
-  tokenIv: Buffer;
-  tokenTag: Buffer;
-}
-
 function definedString(value: string | undefined): string | null {
   return value ?? null;
 }
@@ -138,7 +135,8 @@ export async function handleSlackEnvelope(
     const workspace = await findWorkspaceBySlackTeamId(deps.db, envelope.team_id);
     if (!workspace) return { ok: true };
     if (workspace.appId && envelope.api_app_id !== workspace.appId) return { ok: false };
-    const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
+    const api =
+      deps.api ?? new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
     const event = envelope.event;
     if (event.type === 'app_mention') {
       await handleAppMention(deps, api, workspace, envelope.event_id, event);
@@ -224,7 +222,15 @@ export async function handleSlackSlashCommand(
     return;
   }
   const subcommand = timelineText.split(/\s+/, 1)[0];
-  const linked = await findActiveSlackLink(deps.db, workspace.id, input.user_id);
+  const crawlBinding =
+    subcommand === 'crawl'
+      ? await findSlackConversationBinding(deps.db, workspace.id, input.channel_id)
+      : null;
+  const linked = crawlBinding
+    ? await findSlackLinkForTeam(deps.db, workspace.id, input.user_id, crawlBinding.teamId).then(
+        (member) => (member ? { ...member, teamId: crawlBinding.teamId } : null),
+      )
+    : await findActiveSlackLink(deps.db, workspace.id, input.user_id);
   if (!linked) {
     if (subcommand === 'team') {
       const identity = await findVerifiedSlackIdentity(deps.db, workspace.id, input.user_id);
@@ -250,6 +256,14 @@ export async function handleSlackSlashCommand(
     return;
   }
   const conversation = await api.conversationsInfo(input.channel_id).catch(() => null);
+  if (subcommand === 'crawl' && !conversation?.is_im && !crawlBinding) {
+    await replyToSlackCommand(
+      api,
+      input,
+      'Bind this channel to a Timeline team before scanning websites.',
+    );
+    return;
+  }
   await handleSlackTimelineCommand(
     deps,
     api,
@@ -301,61 +315,76 @@ async function handleSlackAskCommand(
     );
     return;
   }
-  const question = input.text.trim();
-  if (!question) {
-    await replyToSlackCommand(api, input, 'Usage: /ask what changed with Acme this week?');
-    return;
-  }
-  const claim = await claimSlackAsk(
-    input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${question}`,
+  return withChatDeliveryPrincipal(
+    { teamId: route.teamId, ...(!route.trustedTeamActor ? { userId: route.userId } : {}) },
+    async () => {
+      const question = input.text.trim();
+      if (!question) {
+        await replyToSlackCommand(api, input, 'Usage: /ask what changed with Acme this week?');
+        return;
+      }
+      const claim = await claimSlackAsk(
+        input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${question}`,
+      );
+      if (!claim) return;
+      try {
+        const result = await askAgent(
+          {
+            db: deps.db,
+            teamId: route.teamId,
+            userId: route.userId,
+            deliverySurface: 'slack',
+            userName: route.userName,
+            trustedTeamActor: route.trustedTeamActor,
+            ...(route.trustedTeamActor
+              ? {
+                  toolMode: 'proposal_only' as const,
+                  proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+                }
+              : {}),
+            question,
+          },
+          {
+            ...deps.agentDeps,
+            ...(route.trustedTeamActor ? { includeMcpTools: true } : {}),
+            onToolError: deps.onAgentToolError,
+            onAgentError: deps.onAgentError,
+            sanitizeError: redactConversationError,
+          },
+        );
+        await assertActivePrincipal(
+          deps.db,
+          route.teamId,
+          route.trustedTeamActor ? undefined : route.userId,
+        );
+        await replyToSlackCommand(
+          api,
+          input,
+          result.ok
+            ? result.answer
+            : result.error === 'security_blocked' ||
+                result.error === 'free_allowance_reached' ||
+                result.error === 'usage_limit_reached' ||
+                result.error === 'spend_cap_reached'
+              ? askBillingUserMessage(result.error)
+              : 'Timeline could not answer that right now.',
+        );
+      } catch (err) {
+        if (isBillingAdmissionError(err)) throw err;
+        await assertActivePrincipal(
+          deps.db,
+          route.teamId,
+          route.trustedTeamActor ? undefined : route.userId,
+        );
+        log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
+        await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
+          (postErr: unknown) => {
+            log.error({ err: postErr }, 'slack slash command failure response failed');
+          },
+        );
+      }
+    },
   );
-  if (!claim) return;
-  try {
-    const result = await askAgent(
-      {
-        db: deps.db,
-        teamId: route.teamId,
-        userId: route.userId,
-        deliverySurface: 'slack',
-        userName: route.userName,
-        trustedTeamActor: route.trustedTeamActor,
-        ...(route.trustedTeamActor
-          ? {
-              toolMode: 'proposal_only' as const,
-              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
-            }
-          : {}),
-        question,
-      },
-      {
-        ...deps.agentDeps,
-        ...(route.trustedTeamActor ? { includeMcpTools: true } : {}),
-        onToolError: deps.onAgentToolError,
-        onAgentError: deps.onAgentError,
-        sanitizeError: redactConversationError,
-      },
-    );
-    await replyToSlackCommand(
-      api,
-      input,
-      result.ok
-        ? result.answer
-        : result.error === 'security_blocked' ||
-            result.error === 'free_allowance_reached' ||
-            result.error === 'usage_limit_reached' ||
-            result.error === 'spend_cap_reached'
-          ? askBillingUserMessage(result.error)
-          : 'Timeline could not answer that right now.',
-    );
-  } catch (err) {
-    if (isBillingAdmissionError(err)) throw err;
-    log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
-    await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
-      (postErr: unknown) => {
-        log.error({ err: postErr }, 'slack slash command failure response failed');
-      },
-    );
-  }
 }
 
 async function handleSlackTimelineCommand(
@@ -368,6 +397,31 @@ async function handleSlackTimelineCommand(
 ): Promise<void> {
   const [subcommandRaw = '', targetRaw = '', ...titleParts] = input.text.trim().split(/\s+/);
   const subcommand = subcommandRaw.toLowerCase();
+  if (subcommand === 'crawl') {
+    let text: string;
+    try {
+      text = await websiteBotCommand({
+        db: deps.db,
+        teamId: linked.teamId,
+        userId: linked.userId,
+        arg: [targetRaw, ...titleParts].join(' '),
+        command: '/timeline crawl',
+        requestId: `slack-crawl:${input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${input.text}`}`,
+        delivery: {
+          provider: 'slack',
+          token: decryptWorkspaceToken(workspace).accessToken,
+          accountId: workspace.slackTeamId,
+          method: 'send',
+          body: { channel: input.channel_id },
+        },
+      });
+    } catch {
+      text =
+        'Could not start this website scan. Check the URL, source status, and billing in Website sources.';
+    }
+    await replyToSlackCommand(api, input, text);
+    return;
+  }
   if (subcommand === 'whereami') {
     const rows = await deps.db
       .select({ teamId: teams.id, teamName: teams.name })
@@ -641,6 +695,7 @@ async function listEligibleSlackTeams(
       and(
         eq(teamMembers.userId, userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
         notExists(
           db
             .select({ teamId: teamBillingAccounts.teamId })
@@ -686,6 +741,7 @@ async function activateSlackTeam(input: {
           eq(teamMembers.teamId, input.teamId),
           eq(teamMembers.userId, input.userId),
           isNull(teamMembers.removedAt),
+          activeWorkspaceCondition(teamMembers.teamId),
           notExists(
             tx
               .select({ teamId: teamBillingAccounts.teamId })
@@ -904,35 +960,6 @@ export async function hasSlackInstallForTeam(input: { db: Db; teamId: string }):
   return Boolean(await findWorkspaceInstallForTeam(input.db, input.teamId));
 }
 
-export async function sendTeamSlackMessage(input: {
-  db: Db;
-  teamId: string;
-  channelId: string;
-  text: string;
-}): Promise<void> {
-  const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
-  if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
-  await api.postMessage({ channel: input.channelId, text: input.text });
-}
-
-export async function sendTeamSlackDirectMessage(input: {
-  db: Db;
-  teamId: string;
-  slackUserId: string;
-  text: string;
-}): Promise<void> {
-  const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
-  if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
-  try {
-    await api.postMessage({ channel: input.slackUserId, text: input.text });
-  } catch {
-    const opened = await api.conversationsOpen(input.slackUserId);
-    await api.postMessage({ channel: opened.id, text: input.text });
-  }
-}
-
 export async function bindSlackConversation(input: {
   db: Db;
   teamId: string;
@@ -1014,67 +1041,74 @@ async function handleAppMention(
     event.channel_type,
   );
   if (!route) return;
-  const claimed = await claimSlackAsk(slackEventId);
-  if (!claimed) return;
-  const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
-  if (!question) {
-    await api.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts ?? event.ts,
-      text: 'Ask a question after mentioning Timeline, for example: @Timeline what changed with Acme this week?',
-    });
-    return;
-  }
-  try {
-    const result = await askAgent(
-      {
-        db: deps.db,
-        teamId: route.teamId,
-        userId: route.linkedUserId ?? TEAM_BOT_ACTOR_USER_ID,
-        deliverySurface: 'slack',
-        userName: route.linkedUserName ?? 'a teammate',
-        trustedTeamActor: !route.linkedUserId && !route.isDm,
-        ...(!route.linkedUserId && !route.isDm
-          ? {
-              toolMode: 'proposal_only' as const,
-              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
-            }
-          : {}),
-        question,
-      },
-      {
-        ...deps.agentDeps,
-        ...(!route.linkedUserId && !route.isDm ? { includeMcpTools: true } : {}),
-        onToolError: deps.onAgentToolError,
-        onAgentError: deps.onAgentError,
-        sanitizeError: redactConversationError,
-      },
-    );
-    await api.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts ?? event.ts,
-      text: result.ok
-        ? result.answer
-        : result.error === 'security_blocked' ||
-            result.error === 'free_allowance_reached' ||
-            result.error === 'usage_limit_reached' ||
-            result.error === 'spend_cap_reached'
-          ? askBillingUserMessage(result.error)
-          : 'Timeline could not answer that right now.',
-    });
-  } catch (err) {
-    if (isBillingAdmissionError(err)) throw err;
-    log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');
-    await api
-      .postMessage({
-        channel: event.channel,
-        thread_ts: event.thread_ts ?? event.ts,
-        text: 'Timeline could not answer that right now.',
-      })
-      .catch((postErr: unknown) => {
-        log.error({ err: postErr }, 'slack app mention failure response failed');
-      });
-  }
+  return withChatDeliveryPrincipal(
+    { teamId: route.teamId, ...(route.linkedUserId ? { userId: route.linkedUserId } : {}) },
+    async () => {
+      const send = async (message: Parameters<SlackApi['postMessage']>[0]) => {
+        await assertActivePrincipal(deps.db, route.teamId, route.linkedUserId ?? undefined);
+        return api.postMessage(message);
+      };
+      const claimed = await claimSlackAsk(slackEventId);
+      if (!claimed) return;
+      const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
+      if (!question) {
+        await send({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: 'Ask a question after mentioning Timeline, for example: @Timeline what changed with Acme this week?',
+        });
+        return;
+      }
+      try {
+        const result = await askAgent(
+          {
+            db: deps.db,
+            teamId: route.teamId,
+            userId: route.linkedUserId ?? TEAM_BOT_ACTOR_USER_ID,
+            deliverySurface: 'slack',
+            userName: route.linkedUserName ?? 'a teammate',
+            trustedTeamActor: !route.linkedUserId && !route.isDm,
+            ...(!route.linkedUserId && !route.isDm
+              ? {
+                  toolMode: 'proposal_only' as const,
+                  proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+                }
+              : {}),
+            question,
+          },
+          {
+            ...deps.agentDeps,
+            ...(!route.linkedUserId && !route.isDm ? { includeMcpTools: true } : {}),
+            onToolError: deps.onAgentToolError,
+            onAgentError: deps.onAgentError,
+            sanitizeError: redactConversationError,
+          },
+        );
+        await send({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: result.ok
+            ? result.answer
+            : result.error === 'security_blocked' ||
+                result.error === 'free_allowance_reached' ||
+                result.error === 'usage_limit_reached' ||
+                result.error === 'spend_cap_reached'
+              ? askBillingUserMessage(result.error)
+              : 'Timeline could not answer that right now.',
+        });
+      } catch (err) {
+        if (isBillingAdmissionError(err)) throw err;
+        log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');
+        await send({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: 'Timeline could not answer that right now.',
+        }).catch((postErr: unknown) => {
+          log.error({ err: postErr }, 'slack app mention failure response failed');
+        });
+      }
+    },
+  );
 }
 
 async function handleMessageEvent(
@@ -1301,6 +1335,7 @@ async function queueSlackDmAgentTurn(input: {
               eq(teamMembers.teamId, slackUserTeams.teamId),
               eq(teamMembers.userId, slackUserTeams.userId),
               isNull(teamMembers.removedAt),
+              activeWorkspaceCondition(teamMembers.teamId),
             ),
           )
           .where(
@@ -1870,56 +1905,6 @@ function fileSummary(file: SlackFile): Record<string, unknown> {
   };
 }
 
-async function findWorkspaceBySlackTeamId(
-  db: Db,
-  slackTeamId: string | undefined,
-): Promise<SlackWorkspaceRecord | null> {
-  if (!slackTeamId) return null;
-  const rows = await db
-    .select({
-      id: slackWorkspaces.id,
-      slackTeamId: slackWorkspaces.slackTeamId,
-      appId: slackWorkspaces.appId,
-      botUserId: slackWorkspaces.botUserId,
-      tokenCiphertext: slackWorkspaces.tokenCiphertext,
-      tokenIv: slackWorkspaces.tokenIv,
-      tokenTag: slackWorkspaces.tokenTag,
-    })
-    .from(slackWorkspaces)
-    .where(eq(slackWorkspaces.slackTeamId, slackTeamId))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
-async function findWorkspaceInstallForTeam(
-  db: Db,
-  teamId: string,
-): Promise<SlackWorkspaceRecord | null> {
-  const rows = await db
-    .select({
-      id: slackWorkspaces.id,
-      slackTeamId: slackWorkspaces.slackTeamId,
-      appId: slackWorkspaces.appId,
-      botUserId: slackWorkspaces.botUserId,
-      tokenCiphertext: slackWorkspaces.tokenCiphertext,
-      tokenIv: slackWorkspaces.tokenIv,
-      tokenTag: slackWorkspaces.tokenTag,
-    })
-    .from(slackWorkspaceTeams)
-    .innerJoin(slackWorkspaces, eq(slackWorkspaces.id, slackWorkspaceTeams.workspaceId))
-    .where(and(eq(slackWorkspaceTeams.teamId, teamId), eq(slackWorkspaceTeams.enabled, true)))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
-function decryptWorkspaceToken(workspace: SlackWorkspaceRecord): SlackTokenJson {
-  return decryptJson({
-    ciphertext: workspace.tokenCiphertext,
-    iv: workspace.tokenIv,
-    tag: workspace.tokenTag,
-  } satisfies EncryptedSecret) as SlackTokenJson;
-}
-
 async function upsertSlackUserLink(
   tx: DbOrTx,
   input: { workspaceId: string; slackUserId: string; teamId: string; userId: string },
@@ -2075,6 +2060,7 @@ async function findActiveSlackLink(
         eq(teamMembers.teamId, slackUserTeams.teamId),
         eq(teamMembers.userId, slackUserTeams.userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
       ),
     )
     .where(
@@ -2134,6 +2120,7 @@ async function findSlackLinkForTeam(
         eq(teamMembers.teamId, slackUserTeams.teamId),
         eq(teamMembers.userId, slackUserTeams.userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
       ),
     )
     .where(

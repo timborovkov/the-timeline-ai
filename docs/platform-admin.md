@@ -7,12 +7,10 @@ team owner or team admin does not receive platform access. An empty allowlist
 provides no access. The panel has its own layout, so platform admins need no team
 membership. The workspace header links to it only for eligible administrators.
 
-Users and teams have searchable directories, 50 records per page, and linked
-membership details. Operators can edit display names and team names, change
+Users and teams have searchable, sortable, filterable directories, 50 records per page, visible copyable UUIDs, and linked membership details. Team rows show disabled dates when known. Operators can edit display names and team names, change
 non-owner member/admin roles, remove non-owner members, and suspend or restore
 users and teams. Billing remains at `/app/admin/billing`. Owner changes,
-invitations, email/password changes, permanent deletion, and automatic subscription
-cancellation are not part of this panel. Membership removal reuses the existing
+invitations and email/password changes are not part of this panel. Team disabling, deletion requests, permanent cleanup and retention follow-up are described below. Membership removal reuses the existing
 billing revocation, integration, calendar, and chat-routing cleanup.
 
 ## Impersonation
@@ -49,15 +47,14 @@ resolution, and Telegram/Slack team pickers so a member cannot choose them; the
 team-switch route still rejects those workspaces as defense in depth. A cookie that
 still names a suspended team does not hide the member's remaining selectable teams.
 Security state remains separate from billing; restoration preserves other billing
-restrictions and the prior team security state. Existing provider subscriptions
-are not automatically canceled. System cleanup and billing reconciliation remain
+restrictions and the prior team security state. Disabling a team records cancellation of subscription renewal for retry by the lifecycle worker. New processing, storage and member usage accrual stops. Restoration never silently resumes renewal; previously incurred charges remain payable without automatic refunds. System cleanup and billing reconciliation remain
 available. The panel cannot suspend the operator or another allowlisted admin.
 
 Suspended accounts and teams allow read-only impersonation inspection. The
 request, scoped operation, database-write, and job-admission boundaries block
 mutations and new work. Previously issued external signed URLs retain their
 existing expiry; suspension does not revoke a provider URL already issued.
-Read-only inspection includes team metadata and unread notification counts.
+Read-only inspection includes team metadata and unread notification counts. The Teams directory and team detail show saved evaluation-tracing and conversation-report permissions through the verified, audited directory read. Detail includes selected sources and consent version; configuration readiness refers to the web instance and is not evidence that a worker exported traces. This view exposes no submitted content and cannot grant workspace consent.
 Document preview/download server actions are explicitly classified as reads at
 the server-action boundary; POST alone does not imply a write. Other actions stay
 blocked, and normal scoped visibility checks still apply.
@@ -66,6 +63,12 @@ upload event. Extraction admission recovers that attribution from the document
 version even when janitor recovery reconstructs an otherwise unattributed job;
 expired, ended, or missing sessions cannot resume the work. Global object-cleanup
 sweeps skip suspended teams so active teams continue processing.
+Scoped operations declare exhaustive capabilities in
+`packages/shared/src/platform-admin/workspace-policy.ts`; method names do not
+determine read, write, account-management or maintenance permission. Web identity
+entrypoints explicitly install the request-context resolver before resolving an
+effective identity.
+
 Suspension admission runs at each scoped operation's entry. Nested helpers reuse
 that operation's admission to avoid querying an outer connection from inside a
 transaction; a later operation on the same scope checks current suspension again.
@@ -96,15 +99,7 @@ time comparison even if no later request arrives.
 
 ## Implementation and rollout
 
-Apply migrations `0093_platform_admin` and `0094_platform_admin_retention` before
-deploying web and worker changes.
-Publish the updated Privacy notice and legal version together. Verify the existing
-`LEGAL_PUBLICATION_READY` production gate is enabled only after its contracting-entity
-readiness requirements are satisfied. This pre-launch revision does not trigger renewed acknowledgment.
-The shared platform-admin service owns global directory, session, and audit access;
-workspace content continues through `withTeam`. Configure the allowlist on the web
-and worker processes so queued impersonated work can verify the administrator.
-No production migration or deployment is implied by implementing this feature.
+Current Terms/Privacy versions and renewed-acceptance requirements are owned by `packages/shared/src/legal-versions.ts`. Historical retention approval is recorded in [the dated decision](evidence/platform-retention-decision-2026-11-03.md); it does not override later publication changes.
 
 ## Record retention and legal holds
 
@@ -159,28 +154,35 @@ Apply `0094_platform_admin_retention` after `0093_platform_admin` and before
 starting the updated web and worker processes. This PR does not run production
 cleanup or apply production migrations.
 
-## Legal-owner decision — 3 November 2026
+## Retention authority
 
-The requester approved the retention periods as legal owner in the Codex task
-for PR #465 on 3 November 2026, then clarified that the product is not live.
-That clarification supersedes the earlier material-update/version-bump decision:
+[The dated retention decision](evidence/platform-retention-decision-2026-11-03.md) records approval. Current legal versions are source-owned; do not reuse its historical publication instructions.
 
-- Session records: 30 days after access ends; audit records: 12 months, subject to
-  documented legal holds. Released hold documentation follows the 12-month audit
-  accountability period.
-- Treat the staff-access and retention disclosures as a pre-launch policy revision.
-  Keep Privacy version `2026-11-01` and its effective date unchanged; this change
-  does not require renewed acknowledgment. The normal initial acceptance flow and
-  future version-change gates remain in place.
-- Keep the Terms version `2026-08-21` unchanged: no Terms text or contractual
-  grounds for access or suspension change. Existing confidentiality, permitted
-  support access, and suspension clauses continue to apply.
-- Clarify Trust's distinction between customer team administrators and authorized
-  Timeline personnel. Update Trust and Cookies review dates to 3 November 2026.
-  There is no new processor or optional analytics purpose and no change to
-  optional analytics consent.
+## Team deletion lifecycle
 
-This records the requester's legal-owner approval, not an independent counsel
-review or a production deployment attestation. Operational access reviews,
-customer authorization evidence, emergency review, and the open G-12 controls
-remain required.
+Normal product work ignores inactive workspaces: `disabled_at`, `deletion_started_at`,
+`deleted_at`, or legacy billing security state `suspended`/`terminated` blocks admission.
+Global discovery and recovery scans apply the shared active-workspace predicate before
+batch limits, including reminders, digest recipients, integration polling/renewal,
+deferred enrichment, health checks and janitor recovery. Queued workspace jobs finish
+as skipped on lifecycle denial; unrelated authorization and infrastructure failures
+still fail. Skipping must not update workspace content or send notifications.
+Overdue reminders recheck admission under a workspace lock and insert per workspace.
+A lifecycle denial while inserting one workspace's reminders skips that workspace.
+Other workspaces still receive their reminders, and the scan completes.
+Explicit lifecycle cleanup, credential revocation, retention and reconciliation of
+previously incurred billing remain the documented maintenance exceptions.
+
+Owners request permanent deletion under Team settings → Advanced after typing the team name and acknowledging loss of access for every member. Export first using normal visibility permissions. The request immediately disables the team and persists notifications for platform admins and the requester. After submission, the requester lands on `/team-deletion-requested`, outside the active-workspace shell, with confirmation, the configured support email, and instructions to request restoration before permanent deletion begins. Only platform admins can withdraw the request and restore access. The admin Teams directory has a deletion-request filter.
+
+Platform admins may start permanent deletion with or without an owner request. Confirmation requires the team name and a reason. Once started, deletion cannot be reversed or impersonated. The detail page exposes cleanup status and retries, not workspace content. A one-minute dedicated lifecycle worker polls durable database state, so missing queue publication cannot lose a request.
+
+Cleanup removes legacy board/object provenance history in bounded batches before unlinking its parents. It inventories shared references, confirms pending provider bot leaves even for ended or cancelled meetings, cancels renewal and pending checkouts, disconnects sources, removes team-owned rows, versioned objects, vectors, queue payloads and caches, then verifies after a 24-hour late-producer window. Recoverable failures keep access blocked and retry with bounded backoff. Revoked or inaccessible provider webhook authorization is recorded as a pending processor follow-up with subscription identifiers; local erasure can continue without claiming provider cleanup succeeded. The verification window cannot be bypassed by the retry button. The worker only removes personal connector credentials and Slack installations when other teams do not use them. User accounts, sign-in credentials and original provider files remain.
+
+Verified account-level Slack/Telegram switching can deactivate old routing, cancel its pending turn and archive its session while a team is disabled. This narrow terminal-state exception cannot change identities or content, reactivate routing, or deliver answers.
+
+The team row becomes a minimal tombstone; retired inbound identities cannot be reused. Platform security evidence and financial records remain under their documented retention and applicable holds. Reconnecting a shared personal connection updates only active teams and preserves disabled-team state. A personal connection owner can still remove their credential when another linked team is disabled; that account-owned cleanup disables affected sources without restoring workspace processing or creating notifications in disabled teams. Backups, processor copies and retained records have explicit operator follow-up status, references and expiry/review dates. “Active-system data removed” is distinct from completion of those follow-ups. Never assert all copies are erased based solely on a completed worker stage.
+
+Apply `0104_team_lifecycle` before updated web and workers. Drain old workers before permitting permanent deletion; old binaries do not understand lifecycle admission. Review and publish the accompanying legal versions through the existing publication gate. Source changes and disposable rehearsals do not prove production deployment, backup expiry or processor deletion. Do not roll back to binaries without lifecycle checks after accepting a deletion.
+
+For pre-migration suspended teams without a reliable suspension audit, the migration records an enforcement timestamp and labels the original disable date **Unknown**. Unrecorded daily usage from an unknown suspension history is waived rather than reconstructed from an invented active period; existing financial records remain payable. It schedules renewal cancellation for all historically suspended/terminated teams; deletion of a billing row cannot remove the access block.

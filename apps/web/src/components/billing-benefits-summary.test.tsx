@@ -2,7 +2,10 @@ import { buildBillingPresentation } from '@timeline/shared/billing';
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
+import {
+  BillingBenefitsSummary,
+  BillingUsageOverview,
+} from '@/components/billing-benefits-summary';
 
 function fixture(
   planId: 'free' | 'payg' | 'team' | 'business' | 'enterprise' = 'team',
@@ -92,4 +95,27 @@ it('shows contractual Enterprise limits without a false local pause, while retai
   expect(renderToStaticMarkup(<BillingBenefitsSummary summary={comp} />)).toContain(
     'usage is paused at a €0 cap',
   );
+});
+
+it('keeps credit and cap visible while charge details are collapsed on Usage', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageOverview summary={fixture()}>
+      <p>Meters</p>
+    </BillingUsageOverview>,
+  );
+  const beforeDetails = html.split('<details')[0];
+  expect(beforeDetails).toContain('Included usage credit');
+  expect(beforeDetails).toContain('15 Oct 2026');
+  expect(beforeDetails).toContain('€5');
+  expect(html).toContain('Billing details');
+  expect(html).not.toMatch(/<details[^>]*\sopen/);
+  expect(html).toContain('Polar confirms the final invoice');
+});
+it('does not turn unavailable recorded charges into zero in the Usage overview', () => {
+  const summary = fixture();
+  summary.charges = { ...summary.charges, status: 'unavailable', amounts: null };
+  const html = renderToStaticMarkup(
+    <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
+  );
+  expect(html.split('<details')[0]).toContain('Unavailable');
 });

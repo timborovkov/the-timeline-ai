@@ -10,7 +10,6 @@ import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { PageHeader } from '@/components/page-header';
-import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
@@ -54,13 +53,12 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     calendarSuggestions,
   } = await loadCalendarPage({ searchParams });
   return (
-    <div className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Calendar"
         subtitle="Track deadlines, meetings, and follow-ups."
       />
-      <WorkSubnav current="/app/calendar" />
 
       <CalendarView
         events={serialized}
@@ -104,7 +102,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
               singular: 'pending calendar proposal',
               plural: 'pending calendar proposals',
             },
-            className: 'border-y border-border py-4',
+            className: 'py-4',
           }}
         />
       ) : null}

@@ -1,5 +1,38 @@
 const checks = [
   {
+    name: '@timeline/shared website service and browser-safe usage',
+    run: async () => {
+      const websites = await import('@timeline/shared/websites');
+      const usage = await import('@timeline/shared/websites/usage');
+      const policy = await import('@timeline/shared/websites/policy');
+      if (
+        typeof websites.startWebsiteScan !== 'function' ||
+        typeof websites.tickWebsiteSchedules !== 'function' ||
+        typeof websites.settleCapturedWebsiteRun !== 'function' ||
+        typeof policy.nextWebsiteScan !== 'function' ||
+        usage.websiteSourceUnits(5) !== 100
+      )
+        throw new Error('Website exports or weighted usage are missing');
+    },
+  },
+  {
+    name: '@timeline/shared Drive runtime boundaries',
+    run: async () => {
+      const protocol = await import('@timeline/shared/integrations/drive-extract-protocol');
+      const lifecycle = await import('@timeline/shared/integrations/drive-extract-lifecycle');
+      const scheduling = await import('@timeline/shared/integrations/google-drive-scheduling');
+      const context = await import('@timeline/shared/integrations/google-drive-context');
+      if (
+        typeof protocol.parseDriveTransientExtractResult !== 'function' ||
+        typeof lifecycle.cleanupDriveExtract !== 'function' ||
+        typeof scheduling.planDriveSync !== 'function' ||
+        typeof context.requireDriveContext !== 'function'
+      ) {
+        throw new Error('Drive runtime subpath exports are missing');
+      }
+    },
+  },
+  {
     name: '@timeline/shared platform admin exports',
     run: async () => {
       const service = await import('@timeline/shared/platform-admin');
@@ -20,7 +53,8 @@ const checks = [
     name: '@timeline/shared legal versions',
     run: async () => {
       const legalVersions = await import('@timeline/shared/legal-versions');
-      const versionPattern = /^\d{4}-\d{2}-\d{2}$/;
+      // A positive revision distinguishes material updates published on the same day.
+      const versionPattern = /^\d{4}-\d{2}-\d{2}(?:\.[1-9]\d*)?$/;
       if (
         !versionPattern.test(legalVersions.TERMS_VERSION) ||
         !versionPattern.test(legalVersions.PRIVACY_VERSION)
@@ -246,6 +280,7 @@ const checks = [
             sourceMetadata: {
               provider: 'github',
               event_type: 'workflow_run.success',
+              external_object_id: 'timborovkov/audit-ai#workflow_run:1',
               github: {
                 type: 'workflow_run',
                 repo: 'timborovkov/audit-ai',
@@ -269,7 +304,7 @@ const checks = [
       if (moments[0]?.version !== 'timeline_moment.v1') {
         throw new Error(`Unexpected timeline moment version: ${moments[0]?.version ?? 'missing'}`);
       }
-      if (!moments[0]?.anchorId?.startsWith('tm-moment_3Aintegration_3Agithub')) {
+      if (!moments[0]?.anchorId?.startsWith('tm-moment_3Aworkflow-run')) {
         throw new Error(`Unexpected timeline moment anchor: ${moments[0]?.anchorId ?? 'missing'}`);
       }
 
@@ -336,6 +371,32 @@ const checks = [
         source.includes('node:fs')
       ) {
         throw new Error('messaging/format compiled output pulled Node digest generation');
+      }
+    },
+  },
+  {
+    name: '@timeline/shared onboarding first-run helpers',
+    run: async () => {
+      const firstRun = await import('@timeline/shared/onboarding/first-run');
+      if (firstRun.WEBSITE_SCAN_PAGE_CAP !== 5) {
+        throw new Error('onboarding/first-run page cap export is missing or incorrect');
+      }
+      if ('createOnboardingScope' in firstRun || 'createFirstRunHandlers' in firstRun) {
+        throw new Error('onboarding/first-run must not export Node onboarding scope');
+      }
+      const { readFileSync } = await import('node:fs');
+      const source = readFileSync(
+        new URL('../packages/shared/dist/onboarding/first-run.js', import.meta.url),
+        'utf8',
+      );
+      if (
+        source.includes('drizzle-orm') ||
+        source.includes('first-run-scope.js') ||
+        source.includes('website-scan.js') ||
+        source.includes('external-fetch') ||
+        source.includes('node:crypto')
+      ) {
+        throw new Error('onboarding/first-run compiled output pulled Node onboarding scope');
       }
     },
   },

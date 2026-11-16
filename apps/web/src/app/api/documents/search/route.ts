@@ -78,6 +78,8 @@ async function searchResponse(req: Request): Promise<Response> {
   const page = await cachedJson(key, 30, async () => {
     return scope.documents.searchDocumentChunksPage({
       ...parsed.data,
+      // Keep the existing 500-offset semantic pagination contract.
+      ranking: 'relevance',
       offset,
       limit,
       maxOffset: MAX_OFFSET,

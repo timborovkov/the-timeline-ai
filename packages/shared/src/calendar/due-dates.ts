@@ -339,7 +339,22 @@ async function ensureDueDateRawEvents(
     .where(and(eq(calendarEvents.id, event.id), eq(calendarEvents.teamId, target.teamId)));
 }
 
-export async function enqueueDueDateCalendarEventEmbeddings(
+/** Queue/vector writes must wait for the outer transaction, not merely a nested savepoint. */
+export async function dispatchDueDateCalendarEffects(
+  context: { teamId: string; postCommitEffects?: (() => void | Promise<void>)[] },
+  result: DueDateCalendarSyncResult,
+): Promise<void> {
+  const effect = async () => {
+    await Promise.all([
+      enqueueDueDateCalendarEventEmbeddings(context.teamId, result.embedEventIds),
+      deleteDueDateCalendarEventEmbeddings(context.teamId, result.deleteEventIds),
+    ]);
+  };
+  if (context.postCommitEffects) context.postCommitEffects.push(effect);
+  else await effect();
+}
+
+async function enqueueDueDateCalendarEventEmbeddings(
   teamId: string,
   eventIds: string[],
 ): Promise<void> {
@@ -354,7 +369,7 @@ export async function enqueueDueDateCalendarEventEmbeddings(
   );
 }
 
-export async function deleteDueDateCalendarEventEmbeddings(
+async function deleteDueDateCalendarEventEmbeddings(
   teamId: string,
   eventIds: string[],
 ): Promise<void> {
@@ -419,7 +434,7 @@ export async function syncObjectDueDateCalendarEvent(
 
 export async function tombstoneObjectDueDateCalendarEventsForEntities(
   db: DbOrTx,
-  args: { teamId: string; entityIds: string[] },
+  args: { teamId: string; entityIds: string[]; includeBoardItems?: boolean },
 ): Promise<DueDateCalendarSyncResult> {
   if (args.entityIds.length === 0) return EMPTY_SYNC_RESULT;
   const rows = await db
@@ -433,7 +448,9 @@ export async function tombstoneObjectDueDateCalendarEventsForEntities(
       and(
         eq(calendarEvents.teamId, args.teamId),
         sql`${calendarEvents.metadata} ->> 'kind' = 'due_date'`,
-        sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
+        args.includeBoardItems
+          ? sql`${calendarEvents.metadata} ->> 'source' IN ('object','board_item')`
+          : sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
         sql`${calendarEvents.metadata} ->> 'entity_id' IN (${sql.join(
           args.entityIds.map((id) => sql`${id}`),
           sql`, `,

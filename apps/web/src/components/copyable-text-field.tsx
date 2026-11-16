@@ -31,7 +31,7 @@ export function CopyableTextField({
       <Label htmlFor={id} size="sm">
         {label}
       </Label>
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Input
           id={id}
           type="text"
@@ -39,7 +39,7 @@ export function CopyableTextField({
           value={displayValue}
           aria-describedby={descriptionId}
           className={cn(
-            'min-w-0 flex-1 font-mono text-xs',
+            'min-w-0 flex-1 basis-52 font-mono text-xs',
             configured ? 'text-fg' : 'text-fg-muted',
           )}
           onFocus={(event) => {

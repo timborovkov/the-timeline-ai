@@ -32,6 +32,8 @@ describe('Connect MCP tools route', () => {
     expect(text).toContain('not connectable from hosted Timeline');
     expect(html).toContain('href="/agents"');
     expect(html).toContain('data-inbound-mcp');
+    expect(html).toContain('data-claude-mcp-example');
+    expect(html).toContain('What did we promise Northstar?');
     expect(html).not.toContain('data-agent-loop');
     expect(html).toContain('data-screenshot-file="19-agent-tools-dark.png"');
     expect(html).toContain('data-screenshot-present="true"');
@@ -41,6 +43,11 @@ describe('Connect MCP tools route', () => {
     expect(text).toContain('Connections');
     expect(text).toContain('Agent tools');
     expect(text).toContain('Agent MCP servers');
+    expect(text).toContain('Live lookups, not background sync');
+    expect(text).toContain('does not import its history');
+    expect(html).toContain('data-mcp-plan-limit');
+    expect(text).toContain('The Free plan does not include custom MCP servers');
+    expect(text).toContain('Personal results stay private');
     expect(text).not.toMatch(/native Jira ingest is live|silently sync Notion history/i);
     expect(metadata.alternates).toEqual({ canonical: '/integrations/mcp' });
     expect(metadata.title).toBe(MCP_GUIDE_PAGE.seoTitle);

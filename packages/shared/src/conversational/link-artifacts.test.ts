@@ -5,17 +5,17 @@ import { extractLinksFromText, linkMetadata } from '#src/conversational/link-art
 describe('conversational link artifacts', () => {
   it('extracts and normalizes Slack and bare links without tracking or secret params', () => {
     const links = extractLinksFromText(
-      'Review <https://github.com/Tim/Repo/pull/7?utm_source=slack&token=secret#frag|PR 7> and https://example.com/path/?b=2&a=1.',
+      'Review <https://github.com/Taylor/Repo/pull/7?utm_source=slack&token=secret#frag|PR 7> and https://example.com/path/?b=2&a=1.',
     );
 
     expect(linkMetadata(links)).toEqual([
       {
-        canonical_url: 'https://github.com/Tim/Repo/pull/7',
-        display_url: 'github.com/Tim/Repo/pull/7',
+        canonical_url: 'https://github.com/Taylor/Repo/pull/7',
+        display_url: 'github.com/Taylor/Repo/pull/7',
         domain: 'github.com',
         label: 'PR 7',
         provider: 'github',
-        provider_object_id: 'Tim/Repo#7',
+        provider_object_id: 'Taylor/Repo#7',
       },
       {
         canonical_url: 'https://example.com/path?a=1&b=2',

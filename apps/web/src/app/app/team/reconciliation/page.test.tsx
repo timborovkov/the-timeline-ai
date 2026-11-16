@@ -26,6 +26,7 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: fakes.requireMembership,
+      engineMaintenance: { latestRuns: () => Promise.resolve([]) },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       reconciliation: { getDashboardSnapshot: fakes.getDashboardSnapshot },
     }),

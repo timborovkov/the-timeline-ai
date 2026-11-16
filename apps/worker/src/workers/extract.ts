@@ -20,6 +20,7 @@ import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -46,6 +47,7 @@ async function loadExtractRecentContext(
   teamId: string,
 ): Promise<
   {
+    id: string;
     contentText: string | null;
     occurredAt: Date;
     source: (typeof rawEvents.$inferSelect)['source'];
@@ -64,6 +66,7 @@ async function loadExtractRecentContext(
       .filter((event) => event.id !== row.id)
       .slice(-RECENT_CONTEXT_LIMIT)
       .map((event) => ({
+        id: event.id,
         contentText: event.contentText,
         occurredAt: event.occurredAt,
         source: identity.source,
@@ -82,6 +85,7 @@ async function loadExtractRecentContext(
 
   return db
     .select({
+      id: rawEvents.id,
       contentText: rawEvents.contentText,
       occurredAt: rawEvents.occurredAt,
       source: rawEvents.source,
@@ -291,12 +295,26 @@ export async function processExtractJobForTests(
     llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
   );
 
+  const evaluation = withTeam(deps.db, teamId, ZERO_UUID, {
+    skipMembershipCheck: true,
+  }).evaluationTracing;
+  const ticket = await evaluation
+    .begin([row.id, ...recentRows.map((event) => event.id)])
+    .catch(() => null);
+  const traceBase = { prompt, instructions: extract.EXTRACTION_SYSTEM_PROMPT, model: modelId };
   const result = await (io.chatStructured ?? llm.chatStructured)({
     schema: extract.extractionResultSchema,
+    normalizeOutput: extract.normalizeExtractionModelOutput,
     prompt,
     instructions: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
+  }).catch(async (error: unknown) => {
+    await evaluation.finish(ticket, { ...traceBase, failed: true }).catch(() => undefined);
+    throw error;
   });
+  await evaluation
+    .finish(ticket, { ...traceBase, model: result.model, output: result.object })
+    .catch(() => undefined);
   const resultModelVersion = makeExtractionModelVersion(result.model);
   const extractionResult = {
     facts: extract
@@ -315,14 +333,7 @@ export async function processExtractJobForTests(
     mentions: (typeof extractionResult.facts)[number]['mentions'];
   }[] = [];
   for (const fact of extractionResult.facts) {
-    const entityIds = await extract.resolveMentions(
-      deps.db,
-      teamId,
-      fact.mentions,
-      fact.statement,
-      {},
-      { createIfMissing: false, updateAliases: false },
-    );
+    const entityIds = await extract.lookupMentions(deps.db, teamId, fact.mentions, fact.statement);
     resolvedFacts.push({
       statement: fact.statement,
       confidence: fact.confidence,
@@ -559,11 +570,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         () => processExtractJobForTests(deps, job.data),
         workerBillingJobOptions(job, token),
       );
-      if (integrations.isDelayedIngestResult(result)) {
-        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
-        throw new DelayedError();
-      }
-      return result;
+      return finishIngestJob(job, result, token);
     }),
     {
       connection: queue.getRedisConnection(),

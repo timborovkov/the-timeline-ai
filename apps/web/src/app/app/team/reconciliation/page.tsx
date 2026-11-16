@@ -82,6 +82,7 @@ export default async function ReconciliationDashboardPage({
   const timezone = calendarSettings.defaultTimezone;
 
   const coverage = dashboard.evidenceCoverage;
+  const cleanupRuns = await scope.engineMaintenance.latestRuns();
 
   return (
     <div className="space-y-8">
@@ -97,6 +98,38 @@ export default async function ReconciliationDashboardPage({
         />
       ) : null}
 
+      <section aria-label="Object engine maintenance" className="space-y-2">
+        <h2 className="text-lg font-medium">Object cleanup and document review</h2>
+        <p className="text-sm text-fg-dim">
+          Cleanup is configured for daily runs at 03:00 UTC. Runs resume from their last checkpoint.
+        </p>
+        {cleanupRuns.length ? (
+          cleanupRuns.map((run) => (
+            <p key={run.id} className="text-sm">
+              {run.kind.startsWith('document:')
+                ? 'Document review'
+                : run.kind === 'development_reset'
+                  ? 'Development replay'
+                  : 'Object cleanup'}
+              : {run.status} · {run.examined}
+              {typeof (run.metadata as Record<string, unknown>).totalObjects === 'number'
+                ? ` / ${(run.metadata as Record<string, unknown>).totalObjects as number}`
+                : ''}{' '}
+              examined · {Number((run.metadata as Record<string, unknown>).proposalCount ?? 0)}{' '}
+              proposals · updated {run.updatedAt.toISOString()}
+              {run.completedAt ? ` · completed ${run.completedAt.toISOString()}` : ''}
+              {typeof (run.metadata as Record<string, unknown>).reason === 'string'
+                ? ` · ${(run.metadata as Record<string, unknown>).reason as string}`
+                : ''}
+            </p>
+          ))
+        ) : (
+          <p className="text-sm text-fg-dim">No maintenance run recorded yet.</p>
+        )}
+        <Link href="/app/approvals" className="text-sm underline">
+          Review suggestions
+        </Link>
+      </section>
       <CoverageSection
         failures={coverage.releaseGate.failures}
         coverageLimit={dashboard.coverageLimit}
@@ -125,7 +158,7 @@ function CoverageSection({
   }[];
 }) {
   return (
-    <div className="border-y border-border">
+    <div>
       <RepairAttention failures={failures} />
       <CoverageToolbar coverageLimit={coverageLimit} hasRepairRows={failures.length > 0} />
     </div>
@@ -243,7 +276,7 @@ function RecentClusters({
           body="Clusters appear here as the team reviews overlapping evidence and proposed memory changes."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const hint = reconciliationClusterRowHint({
               artifactClusterKind: row.artifactClusterKind,
@@ -262,7 +295,7 @@ function RecentClusters({
                   <CollectionRow.Title title={hint}>
                     <Link
                       href={`/app/team/reconciliation/clusters/${row.id}`}
-                      className="block truncate hover:underline"
+                      className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
                     >
                       {row.canonicalName}
                     </Link>
@@ -301,7 +334,7 @@ function RecentOutputs({
           body="Accepted or generated outputs will appear here after clusters are reviewed."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const hint = reconciliationOutputRowHint({
               clusterId: row.clusterId,
@@ -333,7 +366,7 @@ function RecentOutputs({
                     {row.clusterId ? (
                       <Link
                         href={`/app/team/reconciliation/clusters/${row.clusterId}`}
-                        className="block truncate hover:underline"
+                        className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
                       >
                         {action}
                       </Link>

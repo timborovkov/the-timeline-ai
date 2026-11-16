@@ -23,17 +23,19 @@ const operations = new AsyncLocalStorage<Operation>();
 const log = childLogger('qdrant');
 
 export class QdrantUnavailableError extends Error {
-  constructor(
-    public readonly operation: string,
-    public readonly status?: number,
-    public readonly outcomeUnknown = false,
-  ) {
+  readonly operation: string;
+  readonly status: number | undefined;
+  readonly outcomeUnknown: boolean;
+  constructor(operation: string, status?: number, outcomeUnknown = false) {
     super(
       outcomeUnknown
         ? 'Qdrant operation outcome is unknown.'
         : 'Search is temporarily unavailable. Try again in a moment.',
     );
     this.name = 'QdrantUnavailableError';
+    this.operation = operation;
+    this.status = status;
+    this.outcomeUnknown = outcomeUnknown;
     const current = operations.getStore();
     if (current) current.unavailable = true;
   }

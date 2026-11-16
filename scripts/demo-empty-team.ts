@@ -1,5 +1,5 @@
 import type { Db } from '@timeline/db';
-import { teamMembers, teams, users } from '@timeline/db';
+import { teamFirstRun, teamMembers, teams, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
 import {
   applyOwnedTeamFreeGrant,
@@ -84,6 +84,31 @@ export async function seedEmptyOnboardingTeam(tx: SeedTx, passwordHash: string):
     .onConflictDoUpdate({
       target: [teamMembers.teamId, teamMembers.userId],
       set: { role: sql`excluded.role`, removedAt: null, removedByUserId: null },
+    });
+
+  await tx
+    .insert(teamFirstRun)
+    .values({
+      teamId: DEMO_IDS.emptyTeam,
+      startedByUserId: EMPTY_DEMO_LOGIN.id,
+      phase: 'welcome',
+    })
+    .onConflictDoUpdate({
+      target: teamFirstRun.teamId,
+      set: {
+        startedByUserId: EMPTY_DEMO_LOGIN.id,
+        phase: 'welcome',
+        starterPath: null,
+        starterSelectedAt: null,
+        captureDocumentId: null,
+        captureEventId: null,
+        websiteUrl: null,
+        websiteHost: null,
+        scanFailureReason: null,
+        guideHiddenAt: null,
+        firstCaptureLandedAt: null,
+        updatedAt: createdAt,
+      },
     });
 
   await insertDefaultDigestDestination(tx, DEMO_IDS.emptyTeam);
@@ -177,6 +202,7 @@ export async function readEmptyDemoWorkspaceSnapshot(db: Db): Promise<EmptyDemoW
       .map((step) => step.step),
     billingPlanId: account.planId,
     billingState: account.billingState,
+    firstRunPhase: (await scope.onboarding.getFirstRun())?.phase ?? null,
   };
 }
 

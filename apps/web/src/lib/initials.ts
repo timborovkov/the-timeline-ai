@@ -6,11 +6,11 @@
  * can't drift on edge cases.
  *
  * Handles three real-world inputs we render avatars for:
- *   1. Plain names: "Tim Borovkov" → "TB"
+ *   1. Plain names: "Taylor Bennett" → "TB"
  *   2. Single-word names: "System" / "Acme" → "S" / "A"
- *   3. Email-tagged labels: "Tim <tim@x.com>" → "T" (the address suffix is
+ *   3. Email-tagged labels: "Taylor <taylor@example.com>" → "T" (the address suffix is
  *      stripped first so we monogram on the human name, not the URL)
- *   4. Bare emails: "tim@x.com" → "T" (local part initial)
+ *   4. Bare emails: "taylor@example.com" → "T" (local part initial)
  *
  * Returns "?" for empty / whitespace input so the avatar slot is never blank.
  */

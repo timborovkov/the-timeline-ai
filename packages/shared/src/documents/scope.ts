@@ -8,6 +8,7 @@ import {
   documentVersions,
   folders,
   rawEvents,
+  websitePages,
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
@@ -18,6 +19,7 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
+import { documentVisibleToUser } from '#src/documents/visibility.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -29,9 +31,20 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
+import {
+  eventEvidenceDate,
+  rankingSummary,
+  balancedRanking,
+  compareEvidence,
+  evidenceRanking,
+  FRESHNESS_CANDIDATE_LIMIT,
+  type RankingInput,
+  type RankingMetadata,
+} from '#src/retrieval/ranking.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
+import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 
 import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
@@ -42,23 +55,8 @@ import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
-/**
- * Phase 9 — document drive methods for the team scope. Factored out of
- * team-scope.ts so that file stays focused on the timeline / entity
- * surface. The returned object is spread into the `withTeam` result so
- * callers see one flat namespace (`scope.listFolders`, `scope.createDocument`).
- *
- * Every mutating method that changes user-visible state (upload, finalise,
- * rename, move, delete, restore, visibility change) writes a `raw_events`
- * row with `source = 'document'` in the same transaction. The timeline UI,
- * search, notifications, and the agent's `list_recent_document_changes`
- * tool all key off that single audit log.
- *
- * Visibility predicate mirrors `withTeam`'s `visibilityFilter`. Folders and
- * documents reuse `event_visibility` so the same `(team / private / specific_users)`
- * rule applies — one predicate definition per column, no enum drift.
- */
-
+/** Document state changes and their timeline events commit together so search,
+ * notifications, and agent activity reads cannot observe an unaudited change. */
 type Visibility = 'private' | 'team' | 'specific_users';
 type FileKind = 'captured' | 'document';
 type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
@@ -246,7 +244,7 @@ export interface PromoteCapturedFileResult {
   reprocessVersionId: string | null;
 }
 
-export interface SearchDocumentChunksInput {
+export interface SearchDocumentChunksInput extends RankingInput {
   operation?: QdrantOperationContext;
   query: string;
   documentId?: string;
@@ -262,6 +260,8 @@ export interface SearchDocumentChunksInput {
 }
 
 export interface DocumentChunkSearchHit {
+  sourceEvidenceEventId?: string | null;
+  ranking?: RankingMetadata;
   documentId: string;
   documentVersionId: string;
   documentChunkId: string;
@@ -281,6 +281,7 @@ export interface DocumentChunkSearchHit {
 }
 
 export interface DocumentChunkSearchPage {
+  retrieval?: ReturnType<typeof rankingSummary>;
   items: DocumentChunkSearchHit[];
   nextOffset: number | null;
 }
@@ -329,14 +330,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       sql`${userId}::uuid = ANY(${folders.visibilityUserIds})`,
     ),
   );
-  const documentVisibility = or(
-    eq(documents.visibility, 'team'),
-    and(eq(documents.visibility, 'private'), eq(documents.ownerUserId, userId)),
-    and(
-      eq(documents.visibility, 'specific_users'),
-      sql`${userId}::uuid = ANY(${documents.visibilityUserIds})`,
-    ),
-  );
+  const documentVisibility = documentVisibleToUser(userId);
 
   async function normalizeDocumentVisibilityUserIds(input: {
     visibility: Visibility;
@@ -931,6 +925,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       return mergeRankedSearchHits(pages, take);
     }
 
+    const balanced = balancedRanking(input, Boolean(input.documentId));
+    const rankingNow = input.rankingNow ?? new Date();
     const limit = input.limit ?? 12;
     const offset = input.offset ?? 0;
     const namedIds = input.name ? await matchingDocumentIds(input) : null;
@@ -938,9 +934,11 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
       operation: input.operation ?? {},
-      limit: offset + limit + 1,
+      limit: balanced ? FRESHNESS_CANDIDATE_LIMIT : offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
+    if (!input.from && !input.to && input.fileKinds?.includes('captured'))
+      searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
     if (input.from) searchOpts.from = input.from;
     if (input.to) searchOpts.to = input.to;
     if (input.rootFolder) searchOpts.rootFolder = true;
@@ -955,14 +953,25 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           vector,
           input.documentId ? { ...searchOpts, documentId: input.documentId } : searchOpts,
         );
-    if (hits.length === 0) return { items: [], nextOffset: null };
+    input.onRanking?.(rankingSummary(balanced, hits.length));
+    if (hits.length === 0)
+      return { items: [], nextOffset: null, retrieval: rankingSummary(balanced, 0) };
     const uncappedNextOffset = offset + limit;
-    const nextOffset =
+    let nextOffset =
       hits.length > uncappedNextOffset &&
       (input.maxOffset === undefined || uncappedNextOffset <= input.maxOffset)
         ? uncappedNextOffset
         : null;
-    const pageHits = hits.slice(offset, offset + limit);
+    const pageHits = balanced
+      ? [
+          ...new Map(
+            [...hits]
+              .filter((hit) => hit.payload.team_id === teamId)
+              .sort((a, b) => a.score - b.score)
+              .map((hit) => [hit.payload.document_chunk_id, hit]),
+          ).values(),
+        ]
+      : hits.slice(offset, offset + limit);
 
     const chunkIds = pageHits
       .map((h) => h.payload.document_chunk_id)
@@ -986,9 +995,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         fileKind: documents.fileKind,
         documentName: documents.name,
         documentMetadata: documents.metadata,
+        originalSourceEventId: documents.sourceRawEventId,
         folderId: documents.folderId,
-        sourceRawEventId: documents.sourceRawEventId,
+        sourceRawEventId: documentVersions.sourceEventId,
         createdAt: documentVersions.createdAt,
+        sourceOccurredAt: rawEvents.occurredAt,
+        sourceType: rawEvents.source,
+        sourceMetadata: rawEvents.sourceMetadata,
       })
       .from(documentChunks)
       .innerJoin(documents, eq(documents.id, documentChunks.documentId))
@@ -1016,6 +1029,41 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           input.to ? lt(documentVersions.createdAt, input.to) : undefined,
         ),
       );
+    const parentIdFor = (row: (typeof rows)[number]): string | null => {
+      const candidate =
+        stringMetadata(metadataRecord(row.sourceMetadata), 'parent_raw_event_id') ??
+        (row.sourceOccurredAt && row.sourceRawEventId === row.originalSourceEventId
+          ? stringMetadata(metadataRecord(row.documentMetadata), 'parent_raw_event_id')
+          : null);
+      return candidate && UUID_RE.test(candidate) ? candidate : null;
+    };
+    const parentIds = [
+      ...new Set(
+        rows.flatMap((row) => {
+          const id = parentIdFor(row);
+          return id ? [id] : [];
+        }),
+      ),
+    ];
+    const parents = parentIds.length
+      ? await db
+          .select({
+            id: rawEvents.id,
+            source: rawEvents.source,
+            occurredAt: rawEvents.occurredAt,
+            metadata: rawEvents.sourceMetadata,
+          })
+          .from(rawEvents)
+          .where(
+            and(
+              inArray(rawEvents.id, parentIds),
+              eq(rawEvents.teamId, teamId),
+              rawEventVisibleToUser(userId),
+              activeRawEventFilter,
+            ),
+          )
+      : [];
+    const parentById = new Map(parents.map((parent) => [parent.id, parent]));
     const byId = new Map(rows.map((r) => [r.chunkId, r]));
 
     const items: DocumentChunkSearchHit[] = [];
@@ -1025,6 +1073,16 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       if (!cid) continue;
       const row = byId.get(cid);
       if (!row) continue;
+      const parent = parentById.get(parentIdFor(row) ?? '');
+      const evidenceDate = parent
+        ? eventEvidenceDate(parent.source, parent.occurredAt, parent.metadata)
+        : row.sourceOccurredAt
+          ? eventEvidenceDate(
+              row.sourceType ?? 'document',
+              row.sourceOccurredAt,
+              row.sourceMetadata,
+            )
+          : { date: row.createdAt, basis: 'uploaded' as const };
       items.push({
         documentId: row.documentId,
         documentVersionId: row.documentVersionId,
@@ -1045,13 +1103,36 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentName: row.documentName,
         folderId: row.folderId,
         sourceRawEventId: row.sourceRawEventId,
+        sourceEvidenceEventId: parent?.id ?? (row.sourceOccurredAt ? row.sourceRawEventId : null),
         createdAt: row.createdAt,
         score: hit.score,
+        ranking: evidenceRanking(
+          hit.score,
+          evidenceDate.date,
+          evidenceDate.basis,
+          rankingNow,
+          balanced,
+          balanced && hits.length >= FRESHNESS_CANDIDATE_LIMIT,
+        ),
       });
     }
 
+    if (balanced) {
+      items.sort((a, b) =>
+        compareEvidence(
+          { ...a, id: a.documentChunkId, ranking: a.ranking },
+          { ...b, id: b.documentChunkId, ranking: b.ranking },
+        ),
+      );
+      nextOffset =
+        items.length > offset + limit &&
+        (input.maxOffset === undefined || offset + limit <= input.maxOffset)
+          ? offset + limit
+          : null;
+    }
     return {
-      items,
+      retrieval: rankingSummary(balanced, hits.length),
+      items: balanced ? items.slice(offset, offset + limit) : items,
       nextOffset,
     };
   }
@@ -1455,6 +1536,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .returning();
         const row = rows[0] as DocumentRow | undefined;
         if (!row) throw new Error('Failed to promote captured file');
+        // Promotion transfers editing to the document drive. Future crawls must own
+        // a fresh capture; historical page/version pointers remain valid evidence.
+        await tx
+          .update(websitePages)
+          .set({ documentId: null })
+          .where(and(eq(websitePages.teamId, teamId), eq(websitePages.documentId, row.id)));
         if (row.currentVersionId) {
           const currentVersions = await tx
             .select({

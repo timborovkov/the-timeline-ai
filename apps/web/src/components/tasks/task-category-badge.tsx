@@ -88,7 +88,7 @@ export function TaskCategoryBadge({
   return (
     <span
       className={cn(
-        'task-category-ui inline-flex max-w-full items-center truncate rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.09em] text-fg-muted',
+        'task-category-ui inline-flex max-w-full items-center rounded-sm bg-surface-2 px-1.5 py-0.5 text-xs leading-5 text-fg-muted',
         status === 'failed' && 'border-danger/40 text-danger',
         className,
       )}

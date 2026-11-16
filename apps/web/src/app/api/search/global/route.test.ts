@@ -690,6 +690,7 @@ describe('POST /api/search/global', () => {
 
     expect(response.status).toBe(200);
     expect(fakes.fakeSearchEvents).toHaveBeenCalledWith({
+      onRanking: expect.any(Function) as unknown,
       query: 'launch',
       limit: 10,
       source: 'slack',

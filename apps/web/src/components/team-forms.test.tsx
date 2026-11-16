@@ -324,7 +324,9 @@ describe('TeamExportPanel', () => {
     render(<TeamExportPanel exports={[]} />);
 
     expect(
-      screen.getByText('Builds a 24-hour archive of team data you are already allowed to see.'),
+      screen.getByText(
+        'Exports team data you are already allowed to see. The download expires after 24 hours.',
+      ),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Start export' })).toBeTruthy();
     expect(screen.queryByRole('list')).toBeNull();

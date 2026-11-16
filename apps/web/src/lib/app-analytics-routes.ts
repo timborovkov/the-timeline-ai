@@ -16,6 +16,8 @@ const STATIC_APP_ROUTES = Object.freeze({
   '/app/meetings': 'meetings',
   '/app/calendar': 'calendar',
   '/app/chat': 'chat',
+  '/app/onboarding/record': 'onboarding',
+  '/app/onboarding/live': 'onboarding',
   '/app/search': 'search',
   '/app/sources': 'sources',
   '/app/connections': 'sources',
@@ -40,6 +42,7 @@ const STATIC_APP_ROUTES = Object.freeze({
 } satisfies Readonly<Record<string, AppSurface>>);
 
 export function classifyAppAnalyticsPath(pathname: string): AppSurface | undefined {
+  if (pathname === '/onboarding') return 'onboarding';
   if (
     !pathname.startsWith('/app') ||
     pathname.includes('?') ||

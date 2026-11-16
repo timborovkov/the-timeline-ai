@@ -301,14 +301,14 @@ describe('live integration canary report formatting', () => {
           detail: 'GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY missing',
           action: 'configure GitHub App installation-token credentials',
           envKeys: ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY'],
-          docs: 'docs/setup/integrations.html#github',
+          docs: 'docs/setup/github.md',
         },
         {
           name: 'Sentry API',
           status: 'warn',
           detail: 'status 403: You do not have permission',
           action: 'grant the Sentry token project:read access to the configured project',
-          docs: 'docs/setup/sentry.html',
+          docs: 'docs/setup/sentry.md',
         },
         {
           name: 'Resend API',
@@ -325,10 +325,10 @@ describe('live integration canary report formatting', () => {
     expect(report).toContain('WARN Sentry API: status 403: You do not have permission');
     expect(report).toContain('Next steps:');
     expect(report).toContain(
-      '- GitHub App: configure GitHub App installation-token credentials; set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY; see docs/setup/integrations.html#github',
+      '- GitHub App: configure GitHub App installation-token credentials; set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY; see docs/setup/github.md',
     );
     expect(report).toContain(
-      '- Sentry API: grant the Sentry token project:read access to the configured project; see docs/setup/sentry.html',
+      '- Sentry API: grant the Sentry token project:read access to the configured project; see docs/setup/sentry.md',
     );
     expect(report).not.toContain('ghp_');
     expect(report).not.toContain('secret=');
@@ -381,7 +381,7 @@ describe('temporary live canary cleanup', () => {
       cleanup: () => Promise.reject(new Error('delete denied')),
       formatError: (error) => (error instanceof Error ? error.message : String(error)),
       action: 'remove the temporary webhook and verify webhook scopes',
-      docs: 'docs/setup/integrations.html#monday',
+      docs: 'docs/setup/monday.md',
     });
 
     expect(result).toEqual({
@@ -389,7 +389,7 @@ describe('temporary live canary cleanup', () => {
       status: 'warn',
       detail: 'cleanup failed: delete denied',
       action: 'remove the temporary webhook and verify webhook scopes',
-      docs: 'docs/setup/integrations.html#monday',
+      docs: 'docs/setup/monday.md',
     });
   });
 });

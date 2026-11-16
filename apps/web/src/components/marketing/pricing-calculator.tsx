@@ -6,6 +6,8 @@ import { useState } from 'react';
 
 import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 
+import styles from '@/components/marketing/pricing-page.module.css';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   CALCULATOR_PLANS,
   EXAMPLE_USAGE,
@@ -20,9 +22,9 @@ import {
 import { cn } from '@/lib/utils';
 
 const CONTROL =
-  'h-9 rounded-sm border border-border bg-surface-2 px-2.5 text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-11 rounded-sm border border-border bg-surface-2 px-2.5 text-base sm:text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const SLIDER =
-  'block h-6 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
+  'block h-11 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
 
 function UsageControl({
   field,
@@ -130,7 +132,7 @@ function PlanResults({
                 </span>
                 <span className="text-xs leading-4 text-fg-muted">/month, excl. VAT</span>
                 {estimate.cheapest === id && (
-                  <span className="mt-2 block text-xs font-medium leading-4 text-signal">
+                  <span className="mt-2 block text-xs font-medium leading-4 text-fg">
                     Lowest estimated cost
                   </span>
                 )}
@@ -140,7 +142,7 @@ function PlanResults({
               </label>
             ))}
           </div>
-          <div className="border-t border-border p-5">
+          <div id="pricing-breakdown" className="scroll-mt-40 border-t border-border p-5">
             <h3 className="text-lg font-semibold">{plan.name} breakdown</h3>
             <dl className="mt-4 space-y-3 text-sm">
               <CostRow label="Platform fee" cents={bill.platformFeeCents} />
@@ -202,7 +204,7 @@ function PlanResults({
         ).join(', ')}
         . Excluding VAT.
       </p>
-      <p className="text-xs leading-4 text-fg-muted">
+      <p className="max-w-[75ch] text-sm leading-6 text-fg-muted">
         Estimates assume a full month at standard published prices on one eligible workspace. Actual
         AI charges vary. Other capacity limits apply, including inbound email, agent turns and
         concurrent meetings. Usage may require raising your spend cap; the estimate is not capped.
@@ -225,10 +227,16 @@ function CostRow({ label, hint, cents }: { label: string; hint?: string; cents: 
 }
 
 export function PricingCalculator() {
+  const [websiteInput, setWebsiteInput] = useState({
+    websites: 0,
+    pages: 5,
+    frequency: 'manual' as 'manual' | 'daily' | 'weekly',
+    manualScans: 1,
+  });
   const [draft, setDraft] = useState<UsageDraft>(EXAMPLE_USAGE);
   const [selected, setSelected] = useState<SelfServePaidPlanId>('payg');
   const { values, errors } = parseUsage(draft);
-  const estimate = values ? estimatePricing(values) : null;
+  const estimate = values ? estimatePricing(values, websiteInput) : null;
   function update(key: UsageKey, value: string) {
     setDraft((previous) => ({ ...previous, [key]: value }));
   }
@@ -242,11 +250,30 @@ export function PricingCalculator() {
           type="button"
           onClick={() => {
             setDraft(EXAMPLE_USAGE);
+            setSelected('payg');
+            setWebsiteInput({ websites: 0, pages: 5, frequency: 'manual', manualScans: 1 });
           }}
-          className="rounded-sm text-sm text-fg-muted underline decoration-border-strong underline-offset-4 outline-none hover:text-fg hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-11 rounded-sm text-sm text-fg-muted underline decoration-border-strong underline-offset-4 outline-none hover:text-fg hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
         >
           Reset example
         </button>
+      </div>
+      <div className={styles.mobileEstimate} data-mobile-estimate>
+        {estimate ? (
+          <>
+            <div>
+              <p>{PLAN_CATALOG[selected].name} estimate</p>
+              <strong>{formatEuroFromCents(estimate.bills[selected].totalCents)}</strong>
+              <span className="ml-2 text-sm text-fg-muted">/mo, excl. VAT</span>
+            </div>
+            <a href="#pricing-breakdown">View breakdown</a>
+            {estimate.capacityWarnings[selected].length > 0 ? (
+              <p className="basis-full">Exceeds this plan’s capacity. Check the breakdown.</p>
+            ) : null}
+          </>
+        ) : (
+          <p>Check your usage fields to see an estimate.</p>
+        )}
       </div>
       <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <div className="space-y-5">
@@ -261,6 +288,109 @@ export function PricingCalculator() {
               }}
             />
           ))}
+          <details className="border-t border-border pt-4">
+            <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Website scans{' '}
+              <span className="font-normal text-fg-muted">
+                · {websiteInput.websites === 0 ? 'Optional' : `${websiteInput.websites} websites`}
+              </span>
+            </summary>
+            <fieldset className="mt-4 grid grid-cols-2 gap-3">
+              <legend className="sr-only">Website scanning</legend>
+              <label className="space-y-1.5 text-sm">
+                Websites{' '}
+                <input
+                  className={`${CONTROL} block w-full min-w-0`}
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={websiteInput.websites}
+                  onChange={(event) => {
+                    setWebsiteInput({
+                      ...websiteInput,
+                      websites: Math.min(
+                        100,
+                        Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                      ),
+                    });
+                  }}
+                />
+              </label>
+              <label className="space-y-1.5 text-sm">
+                Pages per scan{' '}
+                <input
+                  className={`${CONTROL} block w-full min-w-0`}
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={websiteInput.pages}
+                  onChange={(event) => {
+                    setWebsiteInput({
+                      ...websiteInput,
+                      pages: Math.min(5, Math.max(1, Math.floor(Number(event.target.value) || 1))),
+                    });
+                  }}
+                />
+              </label>
+              <label className="space-y-1.5 text-sm">
+                Scan frequency{' '}
+                <NativeSelect
+                  className={`${CONTROL} block w-full min-w-0`}
+                  value={websiteInput.frequency}
+                  onChange={(event) => {
+                    setWebsiteInput({
+                      ...websiteInput,
+                      frequency: event.target.value as 'manual' | 'daily' | 'weekly',
+                    });
+                  }}
+                >
+                  <option value="manual">Manual</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                </NativeSelect>
+              </label>
+              {websiteInput.frequency === 'manual' && (
+                <label className="space-y-1.5 text-sm">
+                  Scans / month{' '}
+                  <input
+                    className={`${CONTROL} block w-full min-w-0`}
+                    type="number"
+                    min={0}
+                    max={720}
+                    value={websiteInput.manualScans}
+                    onChange={(event) => {
+                      setWebsiteInput({
+                        ...websiteInput,
+                        manualScans: Math.min(
+                          720,
+                          Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                        ),
+                      });
+                    }}
+                  />
+                </label>
+              )}
+            </fieldset>
+            {estimate && websiteInput.websites > 0 && (
+              <p className="mt-4 text-sm tabular-nums" aria-live="polite">
+                {estimate.websiteUsage.pages.toLocaleString()} pages / month
+                <span className="block text-fg-muted">
+                  {estimate.websiteUsage.sourceUnits.toLocaleString()} source units · included in
+                  total
+                </span>
+              </p>
+            )}
+            <details className="mt-3 text-xs text-fg-muted">
+              <summary className="w-fit cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                How it’s calculated
+              </summary>
+              <p className="mt-2 leading-5">
+                20 units per captured page, even if unchanged. Daily assumes 30 scans/month; weekly
+                assumes 5. AI and storage are separate. Schedules are available once enabled for the
+                service.
+              </p>
+            </details>
+          </details>
           <details className="border-t border-border pt-4">
             <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
               Advanced usage ·{' '}

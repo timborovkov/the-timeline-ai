@@ -771,11 +771,11 @@ describe('processMeetingFinalizeJob', () => {
       endedAt: new Date('2026-05-25T10:17:00Z'),
       metadata: { partial_capture: true },
     });
-    await seedChunk(db as never, 0, 'We agreed to publish the MVP announcement.', 'Tim');
+    await seedChunk(db as never, 0, 'We agreed to publish the MVP announcement.', 'Taylor');
 
     const chat = makeChatStub(
       'The team aligned on the MVP announcement.',
-      [{ text: 'Publish the MVP announcement', owner: 'Tim' }],
+      [{ text: 'Publish the MVP announcement', owner: 'Taylor' }],
       'MVP announcement planning',
     );
 

@@ -1,6 +1,6 @@
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
-import { getRedisConnection } from '#src/queue/connection.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 
 const log = childLogger('cache');
 

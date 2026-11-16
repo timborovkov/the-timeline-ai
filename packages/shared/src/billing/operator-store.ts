@@ -8,7 +8,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, asc, desc, eq, ilike, isNull, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, isNull, isNotNull, or, sql } from 'drizzle-orm';
 
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -33,6 +33,11 @@ import {
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { getEnv } from '#src/env.js';
+import {
+  directoryOrder,
+  directoryDates,
+  type DirectoryOptions,
+} from '#src/platform-admin/directory.js';
 
 import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 
@@ -569,6 +574,7 @@ export async function setOperatorSpendCap(input: {
 export async function findOperatorTeams(input: {
   db: Db;
   actor: BillingOperatorActor;
+  options?: DirectoryOptions & { q?: string; page?: string };
   query: string;
 }): Promise<{ id: string; name: string; slug: string }[]> {
   await requirePlatformAdmin(input.db, input.actor);
@@ -583,13 +589,22 @@ export async function findOperatorTeams(input: {
         ? or(eq(teams.id, query), ilike(teams.slug, pattern), ilike(teams.name, pattern))
         : or(ilike(teams.slug, pattern), ilike(teams.name, pattern)),
     )
-    .orderBy(teams.name)
-    .limit(20);
+    .orderBy(
+      directoryOrder(
+        input.options ?? {},
+        { name: teams.name, created: teams.createdAt },
+        teams.name,
+      ),
+      teams.id,
+    )
+    .limit(51)
+    .offset((Math.max(1, Math.min(10000, Math.floor(Number(input.options?.page) || 1))) - 1) * 50);
 }
 
 export async function listBillingOperatorAudit(input: {
   db: Db;
   actor: BillingOperatorActor;
+  options?: DirectoryOptions & { q?: string; page?: string };
   teamId: string;
   limit?: number;
 }): Promise<
@@ -611,9 +626,38 @@ export async function listBillingOperatorAudit(input: {
   const rows = await input.db
     .select()
     .from(billingOperatorAudit)
-    .where(eq(billingOperatorAudit.teamId, input.teamId))
-    .orderBy(desc(billingOperatorAudit.createdAt))
-    .limit(input.limit ?? 50);
+    .where(
+      and(
+        eq(billingOperatorAudit.teamId, input.teamId),
+        ...directoryDates(billingOperatorAudit.createdAt, input.options ?? {}),
+        input.options?.q
+          ? ilike(billingOperatorAudit.action, `%${input.options.q.replace(/[%_\\]/g, '')}%`)
+          : undefined,
+        input.options?.actor
+          ? ilike(
+              billingOperatorAudit.actorEmail,
+              `%${input.options.actor.replace(/[%_\\]/g, '')}%`,
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(
+      directoryOrder(
+        input.options ?? {},
+        {
+          created: billingOperatorAudit.createdAt,
+          action: billingOperatorAudit.action,
+          actor: billingOperatorAudit.actorEmail,
+        },
+        billingOperatorAudit.createdAt,
+      ),
+      billingOperatorAudit.id,
+    )
+    .limit(input.limit ?? 51)
+    .offset(
+      (Math.max(1, Math.min(10000, Math.floor(Number(input.options?.page) || 1))) - 1) *
+        (input.limit ?? 50),
+    );
   return rows.map((row) => ({
     id: row.id,
     action: row.action,
@@ -733,7 +777,7 @@ export async function startEnterpriseCheckout(input: {
         userId: prepared.ownerUserId,
         provider: input.provider,
       },
-      async (identity, { db, account: current }) => {
+      async (identity, { db, account: current, recordCheckout }) => {
         await requirePlatformAdmin(db, input.actor);
         assertEnterpriseCheckoutAllowed(current);
         const merged = assertPriceOverride({
@@ -746,7 +790,7 @@ export async function startEnterpriseCheckout(input: {
           ...(input.spendCapCents !== undefined ? { spendCapCents: input.spendCapCents } : {}),
         };
         const discountId = activePolarDiscountId(current, now);
-        return input.provider.createCheckoutSession({
+        const checkout = await input.provider.createCheckoutSession({
           ...identity,
           customerEmail: prepared.email,
           productId: input.productId,
@@ -754,6 +798,8 @@ export async function startEnterpriseCheckout(input: {
           amount: input.platformFeeCents,
           ...(discountId ? { discountId } : {}),
         });
+        await recordCheckout(checkout.id);
+        return checkout;
       },
     );
     const url = polarCheckoutUrl(checkout.url);
@@ -850,6 +896,7 @@ function assertEnterpriseCheckoutAllowed(existing: {
 export async function listOpenUnbilledAlerts(input: {
   db: Db;
   actor: BillingOperatorActor;
+  options?: DirectoryOptions & { q?: string; page?: string };
   teamId: string;
   limit?: number;
 }): Promise<
@@ -881,10 +928,32 @@ export async function listOpenUnbilledAlerts(input: {
     })
     .from(billingUnbilledAlerts)
     .where(
-      and(isNull(billingUnbilledAlerts.resolvedAt), eq(billingUnbilledAlerts.teamId, input.teamId)),
+      and(
+        isNull(billingUnbilledAlerts.resolvedAt),
+        eq(billingUnbilledAlerts.teamId, input.teamId),
+        ...directoryDates(billingUnbilledAlerts.createdAt, input.options ?? {}),
+        input.options?.q
+          ? ilike(billingUnbilledAlerts.reason, `%${input.options.q.replace(/[%_\\]/g, '')}%`)
+          : undefined,
+      ),
     )
-    .orderBy(desc(billingUnbilledAlerts.createdAt))
-    .limit(input.limit ?? 50);
+    .orderBy(
+      directoryOrder(
+        input.options ?? {},
+        {
+          created: billingUnbilledAlerts.createdAt,
+          reason: billingUnbilledAlerts.reason,
+          meter: billingUnbilledAlerts.meterId,
+        },
+        billingUnbilledAlerts.createdAt,
+      ),
+      billingUnbilledAlerts.id,
+    )
+    .limit(input.limit ?? 51)
+    .offset(
+      (Math.max(1, Math.min(10000, Math.floor(Number(input.options?.page) || 1))) - 1) *
+        (input.limit ?? 50),
+    );
   return rows;
 }
 

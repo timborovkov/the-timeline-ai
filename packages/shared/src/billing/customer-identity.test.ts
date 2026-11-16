@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  teams,
   billingPolarMembers,
   teamBillingAccounts,
   teamMembers,
@@ -78,6 +79,19 @@ describe('Polar team identity and revocation', () => {
       ),
     ).rejects.toThrow('checkout outage');
     expect(await assertStoredPolarIdentity(db, teamId, provider)).toBe(a.customerId);
+  });
+  it('records pending checkout identities and rejects disabled billing sessions', async () => {
+    await withTeamBillingIdentity(
+      { db, teamId, userId: owner, provider },
+      async (_identity, context) => {
+        await context.recordCheckout('fixture-checkout');
+      },
+    );
+    const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(team?.lifecycleWork.pendingCheckoutIds).toEqual(['fixture-checkout']);
+    await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, teamId));
+    await expect(resolve()).rejects.toBeInstanceOf(PolarIdentityError);
+    await expect(resolve(owner, secondTeam)).resolves.toBeDefined();
   });
   it('gives admins their own billing manager identity and rejects ordinary members', async () => {
     const a = await resolve();

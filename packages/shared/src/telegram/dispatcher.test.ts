@@ -396,6 +396,31 @@ describe('tgUpdateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts group-to-supergroup migration service messages', () => {
+    expect(
+      tgUpdateSchema.safeParse({
+        update_id: 5,
+        message: {
+          message_id: 12,
+          date: 1700000300,
+          chat: { id: -123456, type: 'group', title: 'Sales' },
+          migrate_to_chat_id: -1004317012921,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      tgUpdateSchema.safeParse({
+        update_id: 6,
+        message: {
+          message_id: 13,
+          date: 1700000301,
+          chat: { id: -1004317012921, type: 'supergroup', title: 'Sales' },
+          migrate_from_chat_id: -123456,
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it('rejects an unknown chat.type', () => {
     const result = tgUpdateSchema.safeParse({
       update_id: 3,
@@ -1972,5 +1997,78 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(all.filter((row) => row.source_metadata.deleted !== true)).toMatchObject([
       { content_text: 'newer edit' },
     ]);
+  });
+
+  it('rewrites the bound chat id when Telegram reports a group upgrade', async () => {
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-123456, '${TEAM_ID}', '${USER_A}', 'Sales');
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label, enabled)
+      VALUES ('${TEAM_ID}', 'telegram_chat', '-123456', 'Sales', true);
+    `);
+
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 500,
+        message: {
+          message_id: 50,
+          date: 1700000000,
+          chat: { id: -123456, type: 'group', title: 'Sales' },
+          migrate_to_chat_id: -1004317012921,
+        },
+      },
+    );
+
+    expect(
+      await pg.query<{ tg_chat_id: string }>('SELECT tg_chat_id::text FROM telegram_chat_bindings'),
+    ).toMatchObject({ rows: [{ tg_chat_id: '-1004317012921' }] });
+    expect(
+      await pg.query<{ target_id: string }>(
+        `SELECT target_id FROM team_digest_destinations WHERE kind = 'telegram_chat'`,
+      ),
+    ).toMatchObject({ rows: [{ target_id: '-1004317012921' }] });
+    expect(await activeTelegramRows(pg)).toHaveLength(0);
+
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 501,
+        message: {
+          message_id: 51,
+          date: 1700000001,
+          chat: { id: -1004317012921, type: 'supergroup', title: 'Sales' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'hello after upgrade',
+        },
+      },
+    );
+
+    expect(await activeTelegramRows(pg)).toMatchObject([{ content_text: 'hello after upgrade' }]);
+  });
+
+  it('rewrites stored chat ids from migrate_from_chat_id on the new supergroup', async () => {
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-123456, '${TEAM_ID}', '${USER_A}', 'Sales');
+    `);
+
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 502,
+        message: {
+          message_id: 52,
+          date: 1700000000,
+          chat: { id: -1004317012921, type: 'supergroup', title: 'Sales' },
+          migrate_from_chat_id: -123456,
+        },
+      },
+    );
+
+    expect(
+      await pg.query<{ tg_chat_id: string }>('SELECT tg_chat_id::text FROM telegram_chat_bindings'),
+    ).toMatchObject({ rows: [{ tg_chat_id: '-1004317012921' }] });
+    expect(await activeTelegramRows(pg)).toHaveLength(0);
   });
 });

@@ -48,6 +48,11 @@ const LOW_SIGNAL_TYPED_OBJECT_NAMES = new Set([
   'financialdata',
 ]);
 
+// These name a category of product, not a bounded initiative. Do not reject
+// concrete scopes such as a partner portal merely because they contain a
+// generic noun.
+const LOW_SIGNAL_PROJECT_NAMES = new Set(['softwareplatform', 'software', 'platform']);
+
 const GENERIC_TOPIC_HEADS = new Set([
   'cost',
   'costs',
@@ -125,6 +130,7 @@ export function isLowSignalObjectName(input: { name: string; type?: string }): b
   const normalized = normalizeObjectName(name);
   if (!normalized) return true;
   if (LOW_SIGNAL_ANY_TYPE_OBJECT_NAMES.has(normalized)) return true;
+  if (type === 'project' && LOW_SIGNAL_PROJECT_NAMES.has(normalized)) return true;
   if (type && !['company', 'vendor', 'topic', 'other'].includes(type)) return false;
   if (LOW_SIGNAL_TYPED_OBJECT_NAMES.has(normalized)) return true;
   const words = name

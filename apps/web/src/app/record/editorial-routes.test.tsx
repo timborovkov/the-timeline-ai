@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs';
 
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import DailyUpdatesGuidePage from '@/app/guides/automate-daily-team-updates-in-slack/page';
 import SentryIncidentGuidePage from '@/app/guides/connect-sentry-incidents-to-releases-discussions-and-fixes/page';
+import GuidesPage from '@/app/guides/page';
 import SlackAndDriveGuidePage from '@/app/guides/search-slack-and-google-drive-together/page';
+import ProjectHandoverGuidePage from '@/app/guides/software-project-handover-checklist-template/page';
+import SlackSummariesGuidePage from '@/app/guides/summarize-slack-channels/page';
+import ActionItemsGuidePage from '@/app/guides/track-action-items-meetings-slack-email/page';
 import WeeklyEngineeringUpdatesGuidePage from '@/app/guides/weekly-engineering-updates-from-slack-linear-and-github/page';
 import HowItWorksPage from '@/app/how-it-works/page';
 import {
@@ -14,7 +19,21 @@ import {
   GUIDE_ROUTES,
 } from '@/components/marketing/editorial/content';
 import { EditorialShell } from '@/components/marketing/editorial/editorial-shell';
+const route = { pathname: '/how-it-works' };
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({ ...(await import('next/navigation')), usePathname: () => route.pathname }),
+  () => import('next/navigation'),
+);
+
 const GUIDE_PAGES = [
+  { guide: findEditorialGuideByRoute(GUIDE_ROUTES.dailyUpdates), Page: DailyUpdatesGuidePage },
+  { guide: findEditorialGuideByRoute(GUIDE_ROUTES.actionItems), Page: ActionItemsGuidePage },
+  {
+    guide: findEditorialGuideByRoute(GUIDE_ROUTES.projectHandover),
+    Page: ProjectHandoverGuidePage,
+  },
+  { guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackSummaries), Page: SlackSummariesGuidePage },
   {
     guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive),
     Page: SlackAndDriveGuidePage,
@@ -44,9 +63,9 @@ describe('how-it-works and guide routes', () => {
     expect(html.indexOf('data-how-it-works-flow="true"')).toBeLessThan(
       html.indexOf('data-how-it-works-evidence="true"'),
     );
-    expect(html).toContain('max-w-[82rem]');
-    expect(html).toContain('lg:grid-cols-[13rem_minmax(0,1fr)]');
-    expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
+    expect(html).toContain('max-w-6xl');
+    expect(html).toContain('data-marketing-container');
+    expect(html).toContain('data-marketing-section');
     expect(html).not.toContain('lg:grid-cols-[0.45fr_1fr]');
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
@@ -54,6 +73,8 @@ describe('how-it-works and guide routes', () => {
     expect(html).toContain('You don’t have to replace the tools your team already uses.');
     expect(html).toContain('How scattered work becomes useful context.');
     expect(html).toContain('Trace one answer to its evidence.');
+    expect(html).toContain('What Timeline preserves');
+    expect(html).toContain('Placed on one chronology');
     expect(html).toContain('Three source records become one answer you can verify.');
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
@@ -76,6 +97,21 @@ describe('how-it-works and guide routes', () => {
     }
   });
 
+  it('renders a server-readable guides directory with all reviewed walkthroughs', () => {
+    const html = renderToStaticMarkup(<GuidesPage />);
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html.match(/<article\b/g)).toHaveLength(7);
+    expect(html.match(/<time dateTime="2026-11-14"/g)).toHaveLength(7);
+    expect(html).toContain('14 November 2026');
+    expect(html).not.toContain('type="search"');
+    for (const guide of EDITORIAL_GUIDES) {
+      expect(html).toContain(`href="${guide.route}"`);
+      expect(html).toContain(guide.title);
+      expect(html).toContain(guide.summary);
+      expect(html).toContain(guide.nativeConnectors.join(' + '));
+    }
+  });
+
   it('keeps the old record URL as a permanent redirect only', () => {
     const legacyRoute = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
 
@@ -83,17 +119,14 @@ describe('how-it-works and guide routes', () => {
     expect(legacyRoute).not.toContain('<main');
   });
 
-  it('uses the shared tactile public canvas without decorative background motion', () => {
+  it('uses the shared public canvas without decorative texture or background motion', () => {
     const styles = readFileSync(
       new URL('../../components/public-site.module.css', import.meta.url),
       'utf8',
     );
 
-    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*fractalNoise/s);
-    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*mix-blend-mode:\s*multiply;/s);
-    expect(styles).toMatch(
-      /:global\(\.dark\) \.canvas::before\s*\{[^}]*mix-blend-mode:\s*normal;/s,
-    );
+    expect(styles).not.toContain('fractalNoise');
+    expect(styles).not.toContain('mix-blend-mode');
     expect(styles).not.toMatch(/animation:/);
   });
 
@@ -110,17 +143,29 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain(`>${guide.diagram.answerTitle}</h3>`);
       expect(html).toContain('What each source contributes');
       expect(html).toContain('What this cannot prove');
-      expect(html).toContain('Fictional Acme example, not customer data.');
+      expect(html).not.toContain('Fictional Acme example, not customer data.');
       for (const shot of guide.screenshots ?? []) {
         expect(html).toContain(`data-screenshot-file="${shot.file}"`);
         expect(html).toContain('data-screenshot-present="true"');
       }
       expect(html).toContain('Try this question');
-      expect(html).toContain('Source roles');
+      for (const boundary of guide.boundaries) {
+        expect(html).toContain(renderToStaticMarkup(<>{boundary.role}</>));
+        expect(html).toContain(renderToStaticMarkup(<>{boundary.boundary}</>));
+      }
       expect(html).not.toMatch(/Native \/|Prompt pattern|Source boundaries/u);
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-up"');
       expect(html).toContain('aria-label="Breadcrumb"');
+      expect(html).toContain('href="/guides"');
+      expect(html).toContain('Browse all guides');
+      if (guide.toolkit) {
+        expect(html).toContain('Reusable template');
+        expect(html).toContain('Worked example · fictional');
+        expect(html).toContain(renderToStaticMarkup(<>{guide.toolkit.template}</>));
+        expect(html).toContain(renderToStaticMarkup(<>{guide.toolkit.example}</>));
+        for (const link of guide.toolkit.links) expect(html).toContain(`href="${link.href}"`);
+      }
       expect(html).not.toMatch(/Publication|Edition 00|field notes|field guide/u);
       for (const connector of guide.nativeConnectors) {
         const slug = connector
@@ -155,9 +200,13 @@ describe('how-it-works and guide routes', () => {
     expect(guideShell).not.toMatch(
       /href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u,
     );
-    expect(recordShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
-    expect(guideShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
-    expect(recordShell).toContain('aria-label="Support and legal"');
+    expect(
+      recordShell.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/how-it-works")[^>]*>/g),
+    ).not.toBeNull();
+    expect(
+      guideShell.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/how-it-works")[^>]*>/g),
+    ).not.toBeNull();
+    expect(recordShell).toContain('aria-label="Legal and privacy"');
     expect(recordShell).toContain('href="/help/support"');
     expect(recordShell).toContain('href="/trust"');
     expect(recordShell).toContain('href="/terms"');
