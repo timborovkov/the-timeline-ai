@@ -182,6 +182,33 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 support = { ...support, quote: sentence };
             }
           }
+          // Link supports sometimes name the endpoint as their subject. The
+          // source clause must still name this exact task and the known endpoint.
+          const taskObject = args.objects?.find(
+            (object) => object.id === item.targetId && object.type === 'task',
+          );
+          const taskName =
+            typeof item.proposedPayload.canonicalName === 'string'
+              ? item.proposedPayload.canonicalName
+              : (taskObject?.name ?? item.title);
+          if (
+            (item.targetKind === 'task' || item.proposedPayload.type === 'task' || taskObject) &&
+            (support.field === 'project' || support.field === 'customer')
+          ) {
+            const endpoint = args.hubs.find(
+              (hub) =>
+                hub.id === support.value &&
+                hub.type === (support.field === 'project' ? 'project' : 'company'),
+            );
+            if (
+              endpoint &&
+              [endpoint.name, ...(endpoint.aliases ?? [])].some(
+                (name) => normalize(name) === normalize(support.subject),
+              ) &&
+              namesTask(support.quote, taskName)
+            )
+              support = { ...support, subject: taskName };
+          }
           if (
             sourceForQuote &&
             support.field === 'assignee' &&
@@ -263,7 +290,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
               (support.field === 'assignee' &&
                 contextValid &&
                 /\b(?:this|it|instead)\b/i.test(support.quote))) &&
-            (item.targetKind === 'object_relationship' || namesTask(item.title, support.subject))
+            (item.targetKind === 'object_relationship' ||
+              namesTask(
+                args.objects?.find((object) => object.id === item.targetId)?.name ?? item.title,
+                support.subject,
+              ))
           );
         });
     const uncertainty = new Set<string>();
@@ -427,7 +458,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 /^(?:we are|we're) (?:planning|building|delivering|tracking) their\b.*\bproject[.!]?$/i.test(
                   second[0].trim(),
                 );
-              if (!engagement && !possessive) return false;
+              const feedbackContinuation =
+                [company.name, ...company.aliases].some((name) => {
+                  const beginning = `${normalize(name)} `;
+                  const statement = normalize(first[0]);
+                  return (
+                    statement.startsWith(beginning) &&
+                    /^(?:liked|reviewed|approved) (?:the|our) (?:latest )?(?:screens|designs|prototype|proposal)[.!]?$/.test(
+                      statement.slice(beginning.length),
+                    )
+                  );
+                }) &&
+                /\bis (?:the|our) project (?:we are|we're) (?:planning|building|delivering|tracking) (?:with|for) them[.!]?$/i.test(
+                  second[0].trim(),
+                );
+              if (!engagement && !possessive && !feedbackContinuation) return false;
               const span = source.text.slice(first.index, second.index + second[0].length);
               return (
                 namesEndpoint(first[0], company) &&
@@ -585,6 +630,27 @@ export function groundCommunicationBundles<T extends Item>(args: {
             : source?.authorUserId === member.userId) &&
           /\bI (?:will|shall|'ll)|\bI'll\b/i.test(clause) &&
           !/\b(?:if|unless|not|cannot)\b/i.test(clause);
+        // A cited, verified assignment is a concrete claim even if the model
+        // omitted its payload field on a new task. Updates and repairs may have
+        // intentionally protected fields removed. Never overwrite a field or choose
+        // between competing supported owners.
+        if (
+          item.operation === 'create' &&
+          !item.targetId &&
+          member &&
+          (named || self) &&
+          !assignment?.quote.includes('?') &&
+          !['assigneeUserId', 'assigneeName', 'ownerUserId', 'ownerName'].some((key) =>
+            Object.hasOwn(payload, key),
+          ) &&
+          new Set(
+            supports
+              .filter((support) => support.field === 'assignee')
+              .map((support) => support.value),
+          ).size === 1
+        ) {
+          payload.assigneeUserId = member.userId;
+        }
         const clearAssignment =
           assignment?.value === 'unassigned' &&
           Boolean(clause) &&
@@ -675,7 +741,20 @@ export function groundCommunicationBundles<T extends Item>(args: {
                   [hub.name, ...(hub.aliases ?? [])].some((name) => mentions(clause, name)),
               )
             : [];
-          if (projects.length !== 1 || projects[0]?.id !== payload.parentObjectId) {
+          const affirmative =
+            clause &&
+            !/[?]|\b(?:not|no|never|unless|if|maybe|perhaps|undecided|or|unrelated)\b/i.test(
+              clause,
+            ) &&
+            (/\b(?:for|under|within|in|on|belongs? to|part of|attach\w* to|link\w* to)\b/i.test(
+              clause,
+            ) ||
+              projects.some((project) =>
+                [project.name, ...(project.aliases ?? [])].some((name) =>
+                  normalize(clause).startsWith(`${normalize(name)}:`),
+                ),
+              ));
+          if (!affirmative || projects.length !== 1 || projects[0]?.id !== payload.parentObjectId) {
             delete payload.parentObjectId;
             delete payload.projectName;
           }

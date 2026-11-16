@@ -20,7 +20,7 @@ afterAll(async () => {
 function supportFromPacket(
   prompt: string,
   quote: string,
-  field: 'dueAt' | 'status' | 'customer' | 'project',
+  field: 'dueAt' | 'status' | 'customer' | 'project' | 'assignee',
   subject: string,
   value: string,
 ) {
@@ -1068,6 +1068,112 @@ test('known customer UUID in a reference field survives normalization and real a
                       'customer',
                       'Prepare Northwind Medical compliance checklist',
                       'Northwind Medical',
+                    ),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('verified named owner survives approval when the checker omits its payload field', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'explicit-assignment-telegram'),
+  );
+  const quote = requireValue(row.messages[0]).text;
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Vendor checklist',
+              confidence: 'high',
+              quote,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare vendor checklist',
+                  proposedPayload: { canonicalName: 'Prepare vendor checklist' },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      quote,
+                      'assignee',
+                      'Prepare vendor checklist',
+                      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                    ),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('per-task project grounding can name its known endpoint without losing separate routing', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'two-project-routing-telegram'),
+  );
+  const quotes = [
+    'For Records Gateway, please write the schema migration.',
+    'Separately, for Staff Console, please test password recovery.',
+  ];
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Routing',
+              confidence: 'high',
+              quote: requireValue(row.messages[0]).text,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Write schema migration',
+                  proposedPayload: {
+                    canonicalName: 'Write schema migration',
+                    parentObjectId: communicationId(row.familyId, 'project'),
+                  },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      requireValue(quotes[0]),
+                      'project',
+                      'Records Gateway',
+                      communicationId(row.familyId, 'project'),
+                    ),
+                  ],
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Test password recovery',
+                  proposedPayload: {
+                    canonicalName: 'Test password recovery',
+                    parentObjectId: communicationId(row.familyId, 'second-project'),
+                  },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      requireValue(quotes[1]),
+                      'project',
+                      'Staff Console',
+                      communicationId(row.familyId, 'second-project'),
                     ),
                   ],
                 },

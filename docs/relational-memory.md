@@ -63,13 +63,14 @@ active members and authorized objects; internal grounding is not a canonical fie
 Prospect support lowers confidence and keeps newly proposed projects in planning.
 Per-task support can repair a missing customer link only when one endpoint is
 unambiguous. Unsupported optional writes are omitted, preserving existing values
-on updates. Ownership is not inferred from being a requester, forwarding an email or being its sole header recipient. Assignment requires the message body to identify the tasked teammate or an attributable commitment.
+on updates. Ownership is not inferred from being a requester, forwarding an email or being its sole header recipient. Assignment requires the message body to identify the tasked teammate or an attributable commitment. On a new task, a uniquely supported assignment can fill an omitted assignee field after the same validation; updates and repairs never auto-fill protected fields; explicit fields are never overwritten and competing owners remain unresolved.
 A pronoun ownership correction requires an immediately preceding, uniquely named
 pending-task context quote; nested email excerpts do not inherit the outer sender.
 Relationship quotes may combine statements within one admitted source when an
 explicit typed reference has exactly one visible authorized candidate, including
 aliases. A deadline pronoun may resolve to the immediately preceding visible task
 sentence. An explicit owner-confirmation sentence can use the immediately preceding uniquely named task, but ownership of another artifact cannot transfer to that task. Both checks reject ambiguous or truncated support. A company–project relationship may also use an immediately adjacent engagement statement and definite project introduction from the same source, with unique visible endpoints and no intervening speaker boundary.
+Task-link grounding may name a known endpoint as its subject only when the source clause also names the task; project attachment requires an affirmative, unambiguous association. Updates use the known target identity rather than their display heading.
 Short entity quotations may use their complete, uniquely located source sentence only when that entire sentence remains in the authorized packet. Known object UUIDs in relationship reference fields normalize to existing-object endpoints; unknown or conflicting identities never do. Supported task cancellation updates the task lifecycle without archiving the canonical task.
 These deterministic checks recognize supported assertion/date forms and fail
 closed on unrecognized forms; they do not establish universal language understanding

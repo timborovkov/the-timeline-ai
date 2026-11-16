@@ -1,7 +1,7 @@
 {
   "recordedAt": "2026-11-16",
-  "status": "Implementation in progress; historical failures are not closed until repeated full development verification passes. Fresh 36-case holdout remains unrun.",
-  "historicalFailedCases": 79,
+  "status": "Live verification blocked by exhausted OpenRouter account credits. Historical failures remain open until repeated full development verification passes. Credit failures are explicitly marked. Fresh 36-case holdout remains unrun.",
+  "historicalFailedCases": 127,
   "cases": [
     {
       "id": "account-alias-link-email",
@@ -37,6 +37,25 @@
             "matched": 1,
             "allowed": 0,
             "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 3,
+            "matched": 3,
+            "allowed": 0,
+            "missed": 0,
             "noise": 0,
             "hardFailure": false,
             "executionFailure": true,
@@ -126,6 +145,25 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 3,
+            "matched": 3,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -137,6 +175,56 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-context-without-work-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-context-without-work-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
           "score": {
             "fieldMismatches": [],
             "uncertaintyViolation": false,
@@ -174,6 +262,317 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-delivery-outcome-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "status",
+                "expected": "done",
+                "observed": "todo"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-delivery-outcome-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "status",
+                "expected": "done",
+                "observed": "todo"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-delivery-outcome-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "status",
+                "expected": "done",
+                "observed": "todo"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-equivalent-date-correction-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-07-12T09:30:00.000Z",
+                "observed": null
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-equivalent-date-correction-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-07-12T09:30:00.000Z",
+                "observed": null
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-equivalent-date-correction-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-07-12T09:30:00.000Z",
+                "observed": null
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-historical-date-only-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-historical-date-only-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-historical-date-only-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-injection-no-work-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -185,6 +584,25 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
           "score": {
             "fieldMismatches": [],
             "uncertaintyViolation": false,
@@ -222,6 +640,125 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 0,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-injection-retains-work-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-injection-retains-work-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-long-unassigned-request-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-long-unassigned-request-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -246,6 +783,121 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-partial-delivery-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "status",
+                "expected": "done",
+                "observed": "todo"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 2,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-partial-delivery-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "status",
+                "expected": "done",
+                "observed": "todo"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 2,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-partial-delivery-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "status",
+                "expected": "done",
+                "observed": "todo"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 2,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -257,6 +909,50 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-prospect-project-recall-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
           "score": {
             "fieldMismatches": [],
             "uncertaintyViolation": false,
@@ -294,6 +990,50 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-separate-link-clauses-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 3,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -305,6 +1045,25 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 3,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
           "score": {
             "fieldMismatches": [],
             "uncertaintyViolation": false,
@@ -337,6 +1096,250 @@
             "matched": 0,
             "allowed": 0,
             "missed": 3,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 3,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-three-deliverables-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 7,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 6,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-three-deliverables-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 7,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 6,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-three-deliverables-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 7,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 6,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-unrelated-known-hubs-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-unrelated-known-hubs-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "audit-unrelated-known-hubs-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "client-association-unresolved-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "client-association-unresolved-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "client-association-unresolved-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 1,
             "noise": 0,
             "hardFailure": false,
             "executionFailure": true,
@@ -462,6 +1465,25 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 3,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": false
+          }
         }
       ]
     },
@@ -504,6 +1526,30 @@
             "executionFailure": false,
             "passed": false
           }
+        }
+      ]
+    },
+    {
+      "id": "company-without-task-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/ownershipBoundaryInterruptedDevelopment/inProgress",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          },
+          "experiment": "communications-development-2ab5fe7a"
         }
       ]
     },
@@ -629,6 +1675,81 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "date-in-history-not-deadline-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "date-in-history-not-deadline-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "date-in-history-not-deadline-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -791,6 +1912,25 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 6,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -885,6 +2025,138 @@
       ]
     },
     {
+      "id": "duplicate-job-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-assignment-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "assignee",
+                "expected": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                "observed": null
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-owner-future-work-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-owner-future-work-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-owner-future-work-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
       "id": "explicit-utc-deadline-email",
       "status": "awaiting repeated development verification",
       "occurrences": [
@@ -904,6 +2176,25 @@
             "uncertaintyViolation": false,
             "expected": 1,
             "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
             "matched": 0,
             "allowed": 0,
             "missed": 1,
@@ -943,6 +2234,25 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -972,6 +2282,100 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "external-requester-no-member-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "external-requester-no-member-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "external-requester-no-member-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -1049,6 +2453,25 @@
             "executionFailure": false,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 1,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -1091,6 +2514,31 @@
       ]
     },
     {
+      "id": "human-edited-pending-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 4,
+            "proposed": 4,
+            "matched": 4,
+            "allowed": 0,
+            "missed": 0,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
       "id": "human-edited-pending-telegram",
       "status": "awaiting repeated development verification",
       "occurrences": [
@@ -1122,6 +2570,25 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 2,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 2,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
           "score": {
             "fieldMismatches": [],
             "uncertaintyViolation": false,
@@ -1203,6 +2670,31 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "injection-with-work-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -1329,6 +2821,32 @@
             "executionFailure": true,
             "passed": false
           }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-06-18T11:00:00.000Z",
+                "observed": "2026-06-17T10:00:00.000Z"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
         }
       ]
     },
@@ -1365,6 +2883,64 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-06-18T11:00:00.000Z",
+                "observed": "2026-06-17T10:00:00.000Z"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [
+              {
+                "key": "task",
+                "field": "dueAt",
+                "expected": "2026-06-18T11:00:00.000Z",
+                "observed": "2026-06-17T10:00:00.000Z"
+              }
+            ],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 1,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "later-deadline-correction-telegram",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
           "score": {
             "fieldMismatches": [
               {
@@ -1560,6 +3136,25 @@
           "evidence": "communications-completeness-2026-11-16.json",
           "report": "reports/firstCompleteDevelopment/reports/0",
           "experiment": "communications-development-f63d6b01",
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 5,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 5,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
           "score": {
             "fieldMismatches": [],
             "uncertaintyViolation": false,
@@ -2450,6 +4045,56 @@
       ]
     },
     {
+      "id": "requester-not-volunteer-email",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "requester-not-volunteer-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
       "id": "requester-not-volunteer-telegram",
       "status": "awaiting repeated development verification",
       "occurrences": [
@@ -2468,6 +4113,25 @@
             "noise": 1,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 1,
+            "proposed": 0,
+            "matched": 0,
+            "allowed": 0,
+            "missed": 1,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }
@@ -2489,6 +4153,31 @@
             "matched": 2,
             "allowed": 0,
             "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
+            "passed": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "separate-customer-reports-slack",
+      "status": "awaiting repeated development verification",
+      "occurrences": [
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": true,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 6,
+            "proposed": 6,
+            "matched": 6,
+            "allowed": 0,
+            "missed": 0,
             "noise": 0,
             "hardFailure": false,
             "executionFailure": true,
@@ -2817,6 +4506,25 @@
             "noise": 0,
             "hardFailure": false,
             "executionFailure": false,
+            "passed": false
+          }
+        },
+        {
+          "evidence": "communications-completeness-2026-11-16.json",
+          "report": "reports/secondCompleteDevelopment/reports/0",
+          "experiment": "communications-development-9bd58555",
+          "providerCreditFailure": false,
+          "score": {
+            "fieldMismatches": [],
+            "uncertaintyViolation": false,
+            "expected": 6,
+            "proposed": 2,
+            "matched": 2,
+            "allowed": 0,
+            "missed": 4,
+            "noise": 0,
+            "hardFailure": false,
+            "executionFailure": true,
             "passed": false
           }
         }

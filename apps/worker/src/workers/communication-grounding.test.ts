@@ -922,3 +922,126 @@ test('a comma does not transfer a different artifact owner to the requested task
       ?.proposedPayload,
   ).toEqual({});
 });
+
+test('verified unique ownership repairs an omitted field without guessing or overriding', () => {
+  const quote = 'Bob, please review retention policy.';
+  expect(run(quote, {}, [support('assignee', quote, bob)])[0]?.items[0]?.proposedPayload).toEqual({
+    assigneeUserId: bob,
+  });
+  expect(
+    run(quote, { assigneeUserId: null }, [support('assignee', quote, bob)])[0]?.items[0]
+      ?.proposedPayload,
+  ).toEqual({});
+  const requester = 'Bob requested that the team review retention policy.';
+  expect(
+    run(requester, {}, [support('assignee', requester, bob)])[0]?.items[0]?.proposedPayload,
+  ).toEqual({});
+  expect(
+    run(quote, {}, [support('assignee', quote, bob)], { packet: '' })[0]?.items[0]?.proposedPayload,
+  ).toEqual({});
+  const other = 'Alice will review retention policy.';
+  expect(
+    run(`${quote} ${other}`, {}, [
+      support('assignee', quote, bob),
+      support('assignee', other, alice),
+    ])[0]?.items[0]?.proposedPayload,
+  ).toEqual({});
+});
+
+test('ownership autofill cannot restore protected fields on updates or repairs', () => {
+  const quote = 'Bob, please review retention policy.';
+  expect(
+    run(quote, { dueAt: null }, [support('assignee', quote, bob)], { operation: 'update' })[0]
+      ?.items,
+  ).toEqual([]);
+});
+
+test('adjacent project delivery pronoun resolves only unique named customer feedback', () => {
+  const quotes = [
+    'Cedar Dental liked the latest screens.',
+    "Patient Portal is the project we're planning with them.",
+  ];
+  expect(relationship(quotes, quotes.join(' '))).toHaveLength(2);
+  for (const first of [
+    'Cedar Dental and Bob liked the latest screens.',
+    'Cedar Dental is on a list.',
+    'Cedar Dental did not like the latest screens.',
+  ]) {
+    const parts = [first, quotes[1] ?? ''];
+    expect(relationship(parts, parts.join(' '))).toHaveLength(1);
+  }
+  expect(relationship(quotes, `${quotes[0]} Separately, a new topic. ${quotes[1]}`)).toHaveLength(
+    1,
+  );
+  expect(relationship(quotes, quotes.join(' '), [], quotes[1])).toHaveLength(1);
+});
+
+test('endpoint-subject normalization cannot reuse another task clause or an unknown project', () => {
+  for (const [quote, value, expected] of [
+    ['For Account Hub, please review retention policy.', 'project', 'project'],
+    ['For Account Hub, please prepare budget forecast.', 'project', undefined],
+    ['Review retention policy is not for Account Hub.', 'project', undefined],
+    ['Review retention policy might be for Account Hub, if approved.', 'project', undefined],
+    ['Review retention policy mentions Account Hub.', 'project', undefined],
+    ['For Account Hub or Other Hub, please review retention policy.', 'project', undefined],
+    ['For Account Hub, please review retention policy.', 'unknown', undefined],
+  ] as const) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title,
+              proposedPayload: { parentObjectId: value },
+              grounding: [
+                { field: 'project', rawEventId: event, quote, subject: 'Account Hub', value },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      members: [],
+      source: 'slack',
+      hubs: [
+        { id: 'project', type: 'project', name: 'Account Hub' },
+        { id: 'other', type: 'project', name: 'Other Hub' },
+      ],
+    });
+    expect(result[0]?.items[0]?.proposedPayload.parentObjectId).toBe(expected);
+  }
+});
+
+test('existing task updates ground against the known target rather than a display heading', () => {
+  const quote = 'Alice will review retention policy.';
+  const result = groundCommunicationBundles({
+    bundles: [
+      {
+        title: 'Ownership update',
+        confidence: 'high',
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: 'task',
+            title: 'Assign work to Alice',
+            proposedPayload: { assigneeUserId: alice },
+            grounding: [support('assignee', quote, alice)],
+          },
+        ],
+      },
+    ],
+    packet: quote,
+    sources: [{ id: event, text: quote }],
+    members: [{ userId: alice, name: 'Alice', email: 'alice@example.test' }],
+    hubs: [],
+    objects: [{ id: 'task', type: 'task', name: title }],
+    source: 'slack',
+  });
+  expect(result[0]?.items[0]?.proposedPayload).toEqual({ assigneeUserId: alice });
+});
