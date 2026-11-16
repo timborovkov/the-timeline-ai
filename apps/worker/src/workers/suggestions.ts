@@ -4093,6 +4093,7 @@ async function runSuggestionExtraction(
       targetKind: agentSuggestionItems.targetKind,
       title: agentSuggestionItems.title,
       payload: agentSuggestionItems.proposedPayload,
+      metadata: agentSuggestionItems.metadata,
       suggestionTitle: agentSuggestions.title,
     })
     .from(agentSuggestionItems)
@@ -4273,6 +4274,7 @@ async function runSuggestionExtraction(
     })),
     pendingTasks: pendingTaskRows.map((item) => ({
       id: item.id,
+      humanEdited: Object.hasOwn(recordFromUnknown(item.metadata), 'proposal_edited_by_user_id'),
       operation: item.operation,
       targetKind: item.targetKind,
       title: item.title,
@@ -4538,6 +4540,15 @@ async function runSuggestionExtraction(
       amendmentIds.some((id) => !amendmentCandidates.some((candidate) => candidate.id === id))
     )
       throw new Error('Communication audit selected an unavailable pending amendment');
+    const pendingTaskIds = new Set(pendingTaskRows.map((item) => item.id));
+    if (
+      audited.bundles.some((bundle) =>
+        bundle.items.some((item) => item.targetId && pendingTaskIds.has(item.targetId)),
+      )
+    )
+      throw new Error(
+        'Communication audit cannot target a pending task approval as a canonical record',
+      );
     selectedAmendments = amendmentCandidates.filter((candidate) =>
       amendmentIds.includes(candidate.id),
     );
@@ -5793,6 +5804,7 @@ function buildPromptParts(args: {
   }[];
   pendingTasks: {
     id: string;
+    humanEdited: boolean;
     operation: string;
     targetKind: string;
     title: string;
@@ -5922,12 +5934,12 @@ function buildPromptParts(args: {
     ),
     '',
     '# Pending task approvals',
-    'Treat these as already proposed but not canonical. Do not create another equivalent task. If later evidence only names the client or project for one of these, return no new create; the attach pass amends the unedited pending item in place.',
+    'Treat these as already proposed but not canonical. Do not create another equivalent task. If later evidence only names the client or project for one of these, return no new create; only an eligible PENDING_AMENDMENTS_JSON candidate may amend an unedited pending item. human_edited=true means preserve the pending payload. Pending approval IDs are not canonical task IDs: never use them as a normal proposal targetId.',
     ...args.pendingTasks.map(
       (item) =>
         `- ${item.id}: ${item.operation} ${item.targetKind} "${item.title}" bundle="${
           item.suggestionTitle
-        }" payload=${JSON.stringify(item.payload)}`,
+        }" human_edited=${item.humanEdited} payload=${JSON.stringify(item.payload)}`,
     ),
     '',
     '# Pending calendar approvals',

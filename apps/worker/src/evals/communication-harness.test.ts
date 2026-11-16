@@ -281,7 +281,10 @@ for (const source of ['email', 'slack', 'telegram']) {
       COMMUNICATION_CASES.find((row) => row.id === `human-edited-pending-${source}`),
     );
     const result = await harness.run(row, {
-      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+      model: async (input) => {
+        expect(input.prompt).toContain('human_edited=true');
+        return { model: 'test', object: { bundles: [] } } as never;
+      },
     });
     expect(result.protectedPendingChanged).toBe(false);
     expect(scoreCommunications(row, result).passed).toBe(true);
@@ -1185,4 +1188,47 @@ test('per-task project grounding can name its known endpoint without losing sepa
   });
   expect(result.executionErrors).toEqual([]);
   expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('pending approval IDs cannot become canonical task update targets', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'human-edited-pending-telegram'),
+  );
+  const result = await harness.run(row, {
+    model: async (input) => {
+      const pendingSection =
+        input.prompt
+          .split('# Pending task approvals')[1]
+          ?.split('# Pending calendar approvals')[0] ?? '';
+      const targetId = requireValue(/- ([a-f0-9-]{36}):/.exec(pendingSection)?.[1]);
+      return {
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Invalid pending target',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId,
+                  title: 'Prepare migration checklist',
+                  proposedPayload: { parentObjectId: communicationId(row.familyId, 'project') },
+                  grounding: [],
+                },
+              ],
+            },
+          ],
+        },
+      } as never;
+    },
+  });
+  expect(result.executionErrors.length).toBeGreaterThan(0);
+  expect(result.executionFailureDetails).toContain(
+    'Communication audit cannot target a pending task approval as a canonical record',
+  );
+  expect(result.protectedPendingChanged).toBe(false);
+  expect(result.acceptanceErrors).toBe(0);
+  expect(scoreCommunications(row, result).passed).toBe(false);
 }, 60_000);

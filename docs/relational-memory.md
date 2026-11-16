@@ -77,7 +77,7 @@ closed on unrecognized forms; they do not establish universal language understan
 or replace approval. Every human communication extraction, including an empty result,
 receives one completeness check through shared inference using the same model and
 authorized evidence. The check returns a complete replacement proposal set and a
-source-cited coverage ledger; it also selects any prepared pending-approval refinements.
+source-cited coverage ledger; it also selects any prepared pending-approval refinements. Pending-task context includes a human-edit boolean; protected approvals remain unchanged. Pending approval IDs cannot be used as canonical task targets. Association-only refinements use eligible prepared amendments; other supported corrections to unedited pending tasks use complete same-identity proposals.
 Coverage belongs directly to each checked item and selected amendment; internal IDs are assigned by the runtime. Source and existing-record IDs are constrained to authorized visible context. The ledger is structurally validated, not treated as proof of semantic completeness.
 Deterministic grounding remains mandatory. A failed check or rejected checked claim
 fails the attempt before new proposals are written; existing approvals are preserved
