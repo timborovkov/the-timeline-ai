@@ -39,7 +39,7 @@ test('corpus coverage and family isolation are validated', () => {
   expect(() => {
     validateCommunicationCases();
   }).not.toThrow();
-  expect(selectCommunications({}).selected).toHaveLength(162);
+  expect(selectCommunications({}).selected).toHaveLength(198);
   expect(selectCommunications({ split: 'held-out', repeats: '3' })).toMatchObject({
     repeats: 3,
     benchmark: true,
@@ -48,7 +48,7 @@ test('corpus coverage and family isolation are validated', () => {
     benchmark: false,
     complete: false,
   });
-  expect(new Set(COMMUNICATION_CASES.map((row) => row.familyId)).size).toBe(72);
+  expect(new Set(COMMUNICATION_CASES.map((row) => row.familyId)).size).toBe(84);
 });
 test('errors cannot turn empty output into successful abstention', () => {
   const row = requireValue(

@@ -83,6 +83,11 @@ export interface CommunicationObservation extends SuggestionObservation {
   packetLoss: string[];
   protectedPendingChanged: boolean;
   uncertaintyMissing: boolean;
+  inferenceTimings?: {
+    stage: 'extraction' | 'completeness-check';
+    latencyMs: number;
+    failed: boolean;
+  }[];
   capturedEvents: number;
   queuedJobs: number;
   source: string;

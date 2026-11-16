@@ -226,7 +226,7 @@ email-policy change and are not new evidence for it.
 ## Communications and approval benchmark
 
 Use `--suite=communications` on the suggestion sync/compare commands for the
-separate 198-case communications corpus. The default remains `--suite=suggestions`;
+separate 234-case communications corpus. The default remains `--suite=suggestions`;
 its historical datasets and experiments are unchanged.
 
 ```sh
@@ -236,12 +236,14 @@ bun run eval:suggestions:compare --suite=communications --out=/tmp/communication
 bun run eval:suggestions:compare --suite=communications --split=held-out --repeats=3 --out=/tmp/communications-held-out.json
 ```
 
-Sixty-three semantic families have email, Slack and Telegram variants; nine additional
-families cover email packaging. There are 162 development cases and 36 held-out
+Seventy-five semantic families have email, Slack and Telegram variants; nine additional
+families cover email packaging. There are 198 development cases and 36 held-out
 cases, with whole families assigned to one split. All 126 previously inspected
 cases are development regressions. The 24 new families cover prospect uncertainty,
 per-deliverable customer routing, ownership and temporal fields, split evenly
-between development and held-out. Earlier datasets and reports remain unchanged.
+between development and held-out. An additional 36 development cases cover completeness, negative controls,
+separate association clauses, date equivalence and partial delivery. Earlier datasets
+and reports remain unchanged.
 Coverage also includes combined object/task creation, aliases and pending objects,
 corrections, privacy, injection, retries, forwarding, multilingual content and long
 inputs. Rationales receive consistency review, not independent human validation.
@@ -291,12 +293,17 @@ ambiguous aliases do not match. Required graph edges and field values are unchan
 Historical results are retained and are not silently rescored under
 stricter assertions; aggregate v5/v6/v7 scores are not directly comparable.
 
-Use `--tag=closure-regression` for the nine inspected cases from the three prior
-failure families. Closure validation runs the full development set once and those
-nine cases twice more, with all targeted cases passing each repetition before a
-fresh held-out run. Then run held-out three times with complete feedback. Execution,
-approval or hard failures block closure, as do failures in the four targeted areas.
-Do not weaken labels or reuse an inspected holdout as fresh evidence after tuning.
+Use `--tag=closure-regression` or `--tag=completeness-regression` for diagnostics.
+Closure validation requires three complete runs of all 198 development cases at
+one frozen implementation and corpus revision, with every case passing and complete
+feedback. Execution, approval or hard failures block closure. Only after this gate
+passes, run the fresh 36-case held-out set three times with complete feedback.
+Retain partial and failed runs; do not weaken labels or reuse an inspected holdout
+as fresh evidence after tuning. Per-call timings distinguish extraction from its
+completeness check; both use shared inference and its billing/tracing controls.
+The [historical failure register](../evidence/communications-completeness-failure-register-2026-11-16.json)
+links every previously failed case to its original report. An implementation change
+alone is not closure evidence.
 
 The inspected family registry in the communications selector prevents subsequent
 runs of these held-out families from claiming `benchmarkEvidence`, even after a

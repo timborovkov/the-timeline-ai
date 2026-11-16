@@ -58,6 +58,13 @@ import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 import {
+  COMMUNICATION_AUDIT_INSTRUCTIONS,
+  COMMUNICATION_AUDIT_VERSION,
+  communicationCoverageSchema,
+  validateCommunicationCoverage,
+  assertCommunicationClaimsRetained,
+} from '#src/workers/communication-audit.js';
+import {
   communicationGroundingSchema,
   groundCommunicationBundles,
 } from '#src/workers/communication-grounding.js';
@@ -99,6 +106,7 @@ interface SuggestionWorkerIO {
   dispatchGlobalCleanup?: boolean;
   getEnv?: typeof getEnv;
   chatStructured?: typeof llm.chatStructured;
+  auditCommunication?: typeof llm.chatStructured;
   planReconciliation?: typeof planReconciliation;
   modelId?: string;
   enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
@@ -140,6 +148,7 @@ const suggestionItemObjectSchema = z.object({
   description: z.string().max(500).nullable().optional(),
   proposedPayload: z.record(z.string(), z.unknown()),
   grounding: z.array(communicationGroundingSchema).max(12).optional(),
+  auditId: z.string().min(1).max(80).optional(),
 });
 
 function refineSuggestionItemTarget(
@@ -664,7 +673,14 @@ async function enrichTaskSuggestionItems(args: {
   }));
 }
 
-async function amendPendingTaskCreatesWithUniqueHubs(args: {
+type PendingTaskAmendment = {
+  id: string;
+  proposal: Parameters<
+    ReturnType<typeof withTeam>['suggestions']['createOrMergeSuggestionBundle']
+  >[0];
+};
+
+async function preparePendingTaskAmendments(args: {
   db: Db;
   teamId: string;
   scope: ReturnType<typeof withTeam>;
@@ -673,15 +689,15 @@ async function amendPendingTaskCreatesWithUniqueHubs(args: {
   evidenceEventIds: string[];
   quoteByEventId: Map<string, string>;
   evidenceText: string;
-}): Promise<number> {
+}): Promise<PendingTaskAmendment[]> {
   if (
     !args.qualified.uniqueProject &&
     !args.qualified.uniqueCompany &&
     !suggestions.uniqueWorkItemAliasesFromText(args.evidenceText)
   ) {
-    return 0;
+    return [];
   }
-  if (args.evidenceEventIds.length === 0) return 0;
+  if (args.evidenceEventIds.length === 0) return [];
 
   const queryCandidates = (onlyOverlapping: boolean) =>
     args.db
@@ -788,7 +804,7 @@ async function amendPendingTaskCreatesWithUniqueHubs(args: {
     ...candidates.filter((row) => row.itemId === uniqueMention),
   ];
   const suggestionIds = [...new Set(overlapping.map((row) => row.suggestionId))];
-  if (suggestionIds.length === 0) return 0;
+  if (suggestionIds.length === 0) return [];
 
   const itemRows = await args.db
     .select({
@@ -819,7 +835,7 @@ async function amendPendingTaskCreatesWithUniqueHubs(args: {
     itemsBySuggestion.set(row.suggestionId, items);
   }
 
-  let amended = 0;
+  const prepared: PendingTaskAmendment[] = [];
   for (const suggestionId of suggestionIds) {
     const header = overlapping.find((row) => row.suggestionId === suggestionId);
     const rows = itemsBySuggestion.get(suggestionId) ?? [];
@@ -866,65 +882,68 @@ async function amendPendingTaskCreatesWithUniqueHubs(args: {
       : null;
     if (!filtered || !suggestions.hubsChanged(before, filtered.items)) continue;
     const usedItemDedupeKeys = new Set<string>();
-    await args.scope.suggestions.createOrMergeSuggestionBundle({
-      source: 'background',
-      title: header.suggestionTitle,
-      summary: header.suggestionSummary,
-      reason:
-        header.suggestionReason ??
-        'Later evidence uniquely names the client or project this pending task belongs to.',
-      confidence:
-        header.suggestionConfidence === 'low' ||
-        header.suggestionConfidence === 'medium' ||
-        header.suggestionConfidence === 'high'
-          ? header.suggestionConfidence
-          : 'medium',
-      dedupeKey: header.suggestionDedupeKey,
-      visibility: 'team',
-      evidence: args.evidenceEventIds.map((rawEventId) => ({
-        rawEventId,
-        quote: args.quoteByEventId.get(rawEventId) ?? null,
-        metadata: { kind: 'mentioned_hub_amend' },
-      })),
-      metadata: { mentioned_hub_amend: true },
-      items: filtered.items.map((item, index) => {
-        const proposedPayload = item.proposedPayload;
-        const existing = rows.find((row) => {
-          if (usedItemDedupeKeys.has(row.dedupeKey)) return false;
-          if (row.operation !== item.operation || row.targetKind !== item.targetKind) return false;
-          if (item.targetKind === 'object_relationship') {
-            const payload = recordFromUnknown(row.payload);
-            return (
-              payload.toEntityId === proposedPayload.toEntityId &&
-              payload.fromRef === proposedPayload.fromRef
-            );
-          }
-          return row.title === item.title;
-        });
-        if (existing) usedItemDedupeKeys.add(existing.dedupeKey);
-        return {
-          operation: item.operation,
-          targetKind: item.targetKind,
-          targetId: existing?.targetId ?? null,
-          title: item.title,
-          description: item.description ?? null,
-          dedupeKey:
-            existing?.dedupeKey ??
-            suggestions.suggestionDedupeKey({
-              kind: 'mentioned_hub_relationship',
-              suggestionId,
-              index,
-              targetKind: item.targetKind,
-              title: item.title,
-              proposedPayload,
-            }),
-          proposedPayload,
-        };
-      }),
+    prepared.push({
+      id: suggestionId,
+      proposal: {
+        source: 'background',
+        title: header.suggestionTitle,
+        summary: header.suggestionSummary,
+        reason:
+          header.suggestionReason ??
+          'Later evidence uniquely names the client or project this pending task belongs to.',
+        confidence:
+          header.suggestionConfidence === 'low' ||
+          header.suggestionConfidence === 'medium' ||
+          header.suggestionConfidence === 'high'
+            ? header.suggestionConfidence
+            : 'medium',
+        dedupeKey: header.suggestionDedupeKey,
+        visibility: 'team',
+        evidence: args.evidenceEventIds.map((rawEventId) => ({
+          rawEventId,
+          quote: args.quoteByEventId.get(rawEventId) ?? null,
+          metadata: { kind: 'mentioned_hub_amend' },
+        })),
+        metadata: { mentioned_hub_amend: true },
+        items: filtered.items.map((item, index) => {
+          const proposedPayload = item.proposedPayload;
+          const existing = rows.find((row) => {
+            if (usedItemDedupeKeys.has(row.dedupeKey)) return false;
+            if (row.operation !== item.operation || row.targetKind !== item.targetKind)
+              return false;
+            if (item.targetKind === 'object_relationship') {
+              const payload = recordFromUnknown(row.payload);
+              return (
+                payload.toEntityId === proposedPayload.toEntityId &&
+                payload.fromRef === proposedPayload.fromRef
+              );
+            }
+            return row.title === item.title;
+          });
+          if (existing) usedItemDedupeKeys.add(existing.dedupeKey);
+          return {
+            operation: item.operation,
+            targetKind: item.targetKind,
+            targetId: existing?.targetId ?? null,
+            title: item.title,
+            description: item.description ?? null,
+            dedupeKey:
+              existing?.dedupeKey ??
+              suggestions.suggestionDedupeKey({
+                kind: 'mentioned_hub_relationship',
+                suggestionId,
+                index,
+                targetKind: item.targetKind,
+                title: item.title,
+                proposedPayload,
+              }),
+            proposedPayload,
+          };
+        }),
+      },
     });
-    amended += 1;
   }
-  return amended;
+  return prepared;
 }
 
 type LifecycleStatusType = 'task' | 'follow_up' | 'project';
@@ -3817,7 +3836,7 @@ async function runSuggestionExtraction(
 ): Promise<number> {
   const { anchor: row, teamId, modelId, io } = args;
   const modelVersion = isHumanCommunication(row.source)
-    ? `${args.modelVersion}-${COMMUNICATION_POLICY_VERSION}`
+    ? `${args.modelVersion}-${COMMUNICATION_POLICY_VERSION}-${COMMUNICATION_AUDIT_VERSION}`
     : args.modelVersion;
   const rawEventId = row.id;
   const text = row.contentText?.trim();
@@ -4341,7 +4360,7 @@ async function runSuggestionExtraction(
         (isHumanCommunication(row.source)
           ? `${COMMUNICATION_CONTEXT_POLICY} ${COMMUNICATION_OUTPUT_POLICY}`
           : 'Create a task/object only when the evidence contains a human commitment or a tracked work item the team owns, and no plausible existing or pending object matches.') +
-        ' Named work the team is tracking is a task, not a follow_up. Do not no-op just because the phrasing is messy or the existing-object list has no match. Do not create tasks from automated review findings (Cursor Bugbot, Copilot, Codex, Dependabot, CI bots) or from a single GitHub/Linear comment that is not a human commitment; those stay evidence on the parent PR/issue. If the only evidence is a finding the same PR/issue already addressed, return no create, or create with status=done. For every create task, set proposedPayload.priority to 1-4 when urgency, severity, a due date, or a blocker is stated (1=urgent/P0/blocker, 2=dated goal or high, 3=ordinary, 4=low/whenever); omit priority only when the evidence is silent. Put provider ids, repo#n, PR/issue URLs, and ticket keys in aliases even though canonicalName stays human. Do not create a company or person object from a one-off mention in a PR, commit, or review; promote mentions only when the conversation treats them as an account, client, or teammate to track. Do not create company/topic objects for broad categories such as audit firms, PE firms, healthcare providers, SaaS tools, AI in robotics, or for everyday tools/platforms such as GitHub, Google Drive, TikTok, LinkedIn, X, Slack, or Zoom; if the durable evidence is a choice about using a tool, represent it as a decision instead. Curated document chunks in the prompt are reference knowledge: they may fill counterparties, dates, constraints, and project names already implied by the conversation, and you may mention [doc:...] citations in reason text, but they must not originate a proposal by themselves and evidence ids stay raw events. For create task/object items, include proposedPayload.canonicalName matching the item title. Every create task should also propose its primary project when the evidence supports one: use proposedPayload.parentObjectId only for one project UUID listed under Existing projects or Mentioned workspace hubs, or proposedPayload.createProjectName for a clearly named new client/internal project that should be created with the task. Never put a company, topic, person, or provider record in parentObjectId. When Mentioned workspace hubs lists an existing company, vendor, or deal uniquely named in this evidence, also add an object_relationship from the new task localRef to that hub. Omit project and company attachments only for standalone internal work or when two clients or projects are named and the owner is ambiguous. An explicit task assignment must set proposedPayload.assigneeUserId (or assigneeName when no member ID resolves); ownerUserId alone does not represent an assignment. A stated task deadline must set proposedPayload.dueAt as an ISO timestamp with timezone, even when also proposing a calendar event. For assignments, use proposedPayload.ownerUserId/assigneeUserId only when a listed team member clearly matches; otherwise use ownerName/assigneeName for a clear human name and omit the id. Keep canonicalName human-facing: do not include external tracker ids, PR numbers, issue keys, URLs, or provider prefixes unless that identifier is the only meaningful name; provider ids belong in aliases, evidence, or provider metadata. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and use fromEntityId/toEntityId for listed existing objects, fromRef/toRef for sibling localRefs, or fromName/toName when the existing objects are clear but the UUIDs are unavailable. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. A uniquely named existing client, vendor, deal, or project in the same evidence is a meaningful connection for a commitment made in that conversation. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from an assertive statement or from later outcome evidence that uniquely matches one listed open task/follow_up: the deliverable exists (brand book captured, naming decision accepted, project already using the name the task was supposed to create), even when nobody said "this is complete". Hedged guesses like "I think it is done" are evidence only. A file/link share that does not uniquely match a listed open task is not a create. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For calendar schedules, create calendar_event items when the evidence clearly names a meeting, call, deadline, or scheduled obligation with enough date/time information. Use proposedPayload.rrule for recurring schedules, including recurring calls; use recurrenceEditMode="single" for one occurrence moves, "this_and_future" for from-now-on changes, and "series" for whole-series changes. For proposed alternative meeting slots, return one create calendar_event item per slot with showAs="tentative", the same proposalGroupId, proposalStatus="tentative", and proposalRole="slot". When a previously proposed slot is confirmed, target the chosen calendar event UUID with operation="update", proposalStatus="confirmed", proposalRole="selected_slot", showAs="busy", and the final title; sibling tentative events in the same group will be cancelled by the accept path. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. For explicitly evidenced person email identities, propose identity_facet create items with kind=email and the exact value, using entityId for an existing person or entityRef matching the localRef on a new person create. Business email domains support a company relationship only when tied to a known company; they do not establish project membership. Use UUIDs only from the prompt when targeting existing records. Favor recall for approval-backed proposals: retain concrete, source-supported requests and proposed next steps even when ownership, project association or identity is uncertain. Use low confidence and explain the specific uncertainty; omit unsupported fields rather than discarding the whole proposal. Do not invent a target, a commitment, a completion, or a merge. Alternative possibilities and tentative requests are proposals for review, not established facts.' +
+        ' Named work the team is tracking is a task, not a follow_up. Do not no-op just because the phrasing is messy or the existing-object list has no match. Do not create tasks from automated review findings (Cursor Bugbot, Copilot, Codex, Dependabot, CI bots) or from a single GitHub/Linear comment that is not a human commitment; those stay evidence on the parent PR/issue. If the only evidence is a finding the same PR/issue already addressed, return no create, or create with status=done. For every create task, set proposedPayload.priority to 1-4 when urgency, severity, a due date, or a blocker is stated (1=urgent/P0/blocker, 2=dated goal or high, 3=ordinary, 4=low/whenever); omit priority only when the evidence is silent. Put provider ids, repo#n, PR/issue URLs, and ticket keys in aliases even though canonicalName stays human. Do not create a company or person object from a one-off mention in a PR, commit, or review; promote mentions only when the conversation treats them as an account, client, or teammate to track. Do not create company/topic objects for broad categories such as audit firms, PE firms, healthcare providers, SaaS tools, AI in robotics, or for everyday tools/platforms such as GitHub, Google Drive, TikTok, LinkedIn, X, Slack, or Zoom; if the durable evidence is a choice about using a tool, represent it as a decision instead. Curated document chunks in the prompt are reference knowledge: they may fill counterparties, dates, constraints, and project names already implied by the conversation, and you may mention [doc:...] citations in reason text, but they must not originate a proposal by themselves and evidence ids stay raw events. For create task/object items, include proposedPayload.canonicalName matching the item title. Every create task should also propose its primary project when the evidence supports one: use proposedPayload.parentObjectId only for one project UUID listed under Existing projects or Mentioned workspace hubs, or proposedPayload.createProjectName for a clearly named new client/internal project that should be created with the task. Never put a company, topic, person, or provider record in parentObjectId. When Mentioned workspace hubs lists an existing company, vendor, or deal uniquely named in this evidence, also add an object_relationship from the new task localRef to that hub. Omit project and company attachments only for standalone internal work or when two clients or projects are named and the owner is ambiguous. An explicit task assignment must set proposedPayload.assigneeUserId (or assigneeName when no member ID resolves); ownerUserId alone does not represent an assignment. A stated task deadline must set proposedPayload.dueAt as an ISO timestamp with timezone, even when also proposing a calendar event. For assignments, use proposedPayload.ownerUserId/assigneeUserId only when a listed team member clearly matches; otherwise use ownerName/assigneeName for a clear human name and omit the id. Keep canonicalName human-facing: do not include external tracker ids, PR numbers, issue keys, URLs, or provider prefixes unless that identifier is the only meaningful name; provider ids belong in aliases, evidence, or provider metadata. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and use fromEntityId/toEntityId for listed existing objects, fromRef/toRef for sibling localRefs, or fromName/toName when the existing objects are clear but the UUIDs are unavailable. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. A uniquely named existing client, vendor, deal, or project in the same evidence is a meaningful connection for a commitment made in that conversation. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from an assertive statement or from later outcome evidence that uniquely matches one listed open task/follow_up: the deliverable exists (brand book captured, naming decision accepted, project already using the name the task was supposed to create), even when nobody said "this is complete". Hedged guesses like "I think it is done" are evidence only. A file/link share that does not uniquely match a listed open task is not a create. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For calendar schedules, create calendar_event items when the evidence clearly names a meeting, call or independently requested scheduled obligation with enough date/time information. A task deadline alone belongs in dueAt, not a duplicate calendar event. Use proposedPayload.rrule for recurring schedules, including recurring calls; use recurrenceEditMode="single" for one occurrence moves, "this_and_future" for from-now-on changes, and "series" for whole-series changes. For proposed alternative meeting slots, return one create calendar_event item per slot with showAs="tentative", the same proposalGroupId, proposalStatus="tentative", and proposalRole="slot". When a previously proposed slot is confirmed, target the chosen calendar event UUID with operation="update", proposalStatus="confirmed", proposalRole="selected_slot", showAs="busy", and the final title; sibling tentative events in the same group will be cancelled by the accept path. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. For explicitly evidenced person email identities, propose identity_facet create items with kind=email and the exact value, using entityId for an existing person or entityRef matching the localRef on a new person create. Business email domains support a company relationship only when tied to a known company; they do not establish project membership. Use UUIDs only from the prompt when targeting existing records. Favor recall for approval-backed proposals: retain concrete, source-supported requests and proposed next steps even when ownership, project association or identity is uncertain. Use low confidence and explain the specific uncertainty; omit unsupported fields rather than discarding the whole proposal. Do not invent a target, a commitment, a completion, or a merge. Alternative possibilities and tentative requests are proposals for review, not established facts.' +
         evidenceCitationSystem +
         websiteInstructions +
         (repairTarget
@@ -4353,7 +4372,13 @@ async function runSuggestionExtraction(
       prompt,
     });
   } catch (err) {
-    if (isBillingAdmissionError(err) || evidencePackEnforced || args.document) throw err;
+    if (
+      isBillingAdmissionError(err) ||
+      evidencePackEnforced ||
+      args.document ||
+      isHumanCommunication(row.source)
+    )
+      throw err;
     log.warn(
       { err, rawEventId, teamId },
       'suggestion extraction failed; using commitment fallback',
@@ -4369,6 +4394,126 @@ async function runSuggestionExtraction(
   }
 
   const relationshipDedupe = await relationshipDedupeContextForTeam(deps.db, teamId);
+  const evidenceEventIds = [
+    ...new Set([rawEventId, ...(args.conversation?.window.map((event) => event.id) ?? [])]),
+  ];
+  const quoteByEventId = new Map<string, string>([
+    [rawEventId, truncate(text, 500)],
+    ...(args.conversation?.window.map(
+      (event) => [event.id, truncate(event.contentText, 500)] as const,
+    ) ?? []),
+  ]);
+  const amendmentArgs = {
+    db: deps.db,
+    teamId,
+    scope,
+    qualified: qualifiedHubs,
+    relationshipDedupe,
+    evidenceEventIds,
+    quoteByEventId,
+    evidenceText,
+  };
+  const amendmentCandidates =
+    !args.document && !args.repairObjectId ? await preparePendingTaskAmendments(amendmentArgs) : [];
+  let selectedAmendments = amendmentCandidates;
+  if (isHumanCommunication(row.source)) {
+    const drafts = result.object.bundles.map((bundle, b) => ({
+      ...bundle,
+      items: bundle.items.map((item, i) => ({ ...item, auditId: `draft-${b}-${i}` })),
+    }));
+    const auditPrompt = `${prompt}\n\nDRAFT_PROPOSALS_JSON\n${JSON.stringify(drafts)}\nEND_DRAFT_PROPOSALS_JSON\nPENDING_AMENDMENTS_JSON\n${JSON.stringify(amendmentCandidates)}\nEND_PENDING_AMENDMENTS_JSON`;
+    // Preserve the original evidence verbatim; never truncate it to make room for a check.
+    if (
+      llm.estimateTextTokens(auditPrompt) >
+      SUGGESTION_PROMPT_MAX_INPUT_TOKENS + SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS
+    )
+      throw new Error('Communication completeness prompt exceeds budget');
+    const auditItemSchema = suggestionItemObjectSchema
+      .extend({
+        auditId: z.string().min(1).max(80),
+        grounding: z.array(communicationGroundingSchema).max(12),
+        evidenceRawEventIds: evidencePackEnforced
+          ? z.array(z.uuid()).min(1).max(32)
+          : z.array(z.uuid()).max(32).optional(),
+      })
+      .superRefine(refineHumanItem);
+    const auditSchema = z.object({
+      bundles: z
+        .array(humanBundleSchema.extend({ items: z.array(auditItemSchema).min(1).max(5) }))
+        .max(5),
+      coverage: communicationCoverageSchema,
+      pendingAmendmentIds: z.array(z.uuid()).max(50),
+    });
+    const checked = await (io.auditCommunication ?? chatStructured)({
+      schema: auditSchema,
+      model: modelId,
+      maxOutputTokens: SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS,
+      abortSignal: AbortSignal.timeout(SUGGESTION_EXTRACTION_TIMEOUT_MS),
+      instructions: `${COMMUNICATION_AUDIT_VERSION}\n${COMMUNICATION_AUDIT_INSTRUCTIONS}\n${COMMUNICATION_CONTEXT_POLICY}\n${COMMUNICATION_OUTPUT_POLICY}${evidenceCitationSystem}`,
+      prompt: auditPrompt,
+    });
+    const audited = auditSchema.parse(checked.object);
+    if (
+      new Set(audited.pendingAmendmentIds).size !== audited.pendingAmendmentIds.length ||
+      audited.pendingAmendmentIds.some(
+        (id) => !amendmentCandidates.some((candidate) => candidate.id === id),
+      )
+    )
+      throw new Error('Communication audit selected an unavailable pending amendment');
+    selectedAmendments = amendmentCandidates.filter((candidate) =>
+      audited.pendingAmendmentIds.includes(candidate.id),
+    );
+    validateCommunicationCoverage({
+      ...audited,
+      bundles: [
+        ...audited.bundles,
+        {
+          items: selectedAmendments.map((candidate) => ({
+            auditId: `pending-${candidate.id}`,
+            proposedPayload: {},
+          })),
+        },
+      ],
+      packet: prompt,
+      sources: [
+        ...(evidencePackEnforced
+          ? (evidencePack?.items ?? []).map((item) => ({
+              id: item.rawEventId,
+              text: item.contentText,
+            }))
+          : []),
+        ...(args.conversation?.window ?? []).map((event) => ({
+          id: event.id,
+          text: event.contentText,
+        })),
+        { id: row.id, text },
+      ],
+      existingIds: [
+        ...matchingEntityRows.map((object) => object.id),
+        ...hubRows.map((hub) => hub.id),
+        ...pendingTaskRows.map((item) => item.id),
+        ...pendingCalendarRows.map((item) => item.id),
+        ...calendarRows.map((item) => item.id),
+      ].filter((id) => prompt.includes(id)),
+    });
+    result = { object: { bundles: audited.bundles }, model: checked.model };
+    if (
+      args.conversation &&
+      !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+    )
+      return 0;
+  }
+
+  const auditedBaseline = isHumanCommunication(row.source)
+    ? structuredClone(result.object.bundles)
+    : [];
+  for (const bundle of auditedBaseline)
+    for (const item of bundle.items) {
+      const objectType = matchingEntityRows.find((object) => object.id === item.targetId)?.type;
+      const type = lifecycleStatusTypeForPayload(item, item.proposedPayload, objectType);
+      if (type && typeof item.proposedPayload.status === 'string')
+        item.proposedPayload.status = normalizeLifecycleStatus(item.proposedPayload.status, type);
+    }
   const modelBundles = args.repairObjectId
     ? result.object.bundles.map((bundle) => ({
         ...bundle,
@@ -4486,7 +4631,8 @@ async function runSuggestionExtraction(
             nameOccupancy,
           ),
         )
-      : !args.repairObjectId &&
+      : !isHumanCommunication(row.source) &&
+          !args.repairObjectId &&
           !args.document &&
           !isWebsiteImport &&
           shouldUseCommitmentFallback({
@@ -4554,8 +4700,25 @@ async function runSuggestionExtraction(
           .filter((item) => item.operation === 'create')
           .map((item) => item.title),
         sources: [
+          ...(evidencePackEnforced
+            ? (evidencePack?.items ?? []).map((item) => ({
+                id: item.rawEventId,
+                source: item.source,
+                text: item.contentText,
+                occurredAt: item.occurredAt,
+                authorUserId: item.authorUserId,
+                speakerContext: sourceContextForPrompt(
+                  item.source,
+                  item.sourceMetadata,
+                  item.authorUserId,
+                  memberRows,
+                  item.rawEventId,
+                ),
+              }))
+            : []),
           ...(args.conversation?.window ?? []).map((event) => ({
             id: event.id,
+            source: row.source,
             text: event.contentText,
             occurredAt: event.occurredAt,
             authorUserId: event.authorUserId,
@@ -4569,6 +4732,7 @@ async function runSuggestionExtraction(
           })),
           {
             id: row.id,
+            source: row.source,
             text,
             occurredAt: row.occurredAt,
             authorUserId: row.authorUserId,
@@ -4602,6 +4766,7 @@ async function runSuggestionExtraction(
         relationshipDedupe.resolveName,
       ),
     );
+  if (isHumanCommunication(row.source)) assertCommunicationClaimsRetained(auditedBaseline, bundles);
   let enforcedEvidenceByBundle: suggestions.SuggestionEvidenceInput[][] | null = null;
   if (evidencePackEnforced && evidencePack) {
     try {
@@ -4636,6 +4801,33 @@ async function runSuggestionExtraction(
       })
     : null;
 
+  if (selectedAmendments.length) {
+    // An amendment is a full pending-item snapshot, so publishing another write
+    // to the same object in this attempt could restore stale fields.
+    const amendedKeys = new Set(
+      selectedAmendments
+        .flatMap((candidate) => candidate.proposal.items.map((item) => endpointKeyForItem(item)))
+        .filter((key): key is string => key !== null),
+    );
+    if (
+      bundles.some((bundle) =>
+        bundle.items.some((item) => {
+          const key = endpointKeyForItem(item);
+          return key !== null && amendedKeys.has(key);
+        }),
+      )
+    )
+      throw new Error('Communication proposals overlap a pending amendment');
+    const current = await preparePendingTaskAmendments(amendmentArgs);
+    if (
+      selectedAmendments.some(
+        (candidate) =>
+          JSON.stringify(candidate.proposal) !==
+          JSON.stringify(current.find((row) => row.id === candidate.id)?.proposal),
+      )
+    )
+      throw new Error('Pending communication amendment changed during inference');
+  }
   let proposalsCreated = 0;
   for (const [bundleIndex, bundle] of bundles.entries()) {
     if (bundle.items.length === 0) continue;
@@ -4753,26 +4945,10 @@ async function runSuggestionExtraction(
     }
   }
 
-  const evidenceEventIds = [
-    ...new Set([rawEventId, ...(args.conversation?.window.map((event) => event.id) ?? [])]),
-  ];
-  const quoteByEventId = new Map<string, string>([
-    [rawEventId, truncate(text, 500)],
-    ...(args.conversation?.window.map(
-      (event) => [event.id, truncate(event.contentText, 500)] as const,
-    ) ?? []),
-  ]);
-  if (!args.document && !args.repairObjectId)
-    proposalsCreated += await amendPendingTaskCreatesWithUniqueHubs({
-      db: deps.db,
-      teamId,
-      scope,
-      qualified: qualifiedHubs,
-      relationshipDedupe,
-      evidenceEventIds,
-      quoteByEventId,
-      evidenceText,
-    });
+  for (const amendment of selectedAmendments) {
+    await scope.suggestions.createOrMergeSuggestionBundle(amendment.proposal);
+    proposalsCreated++;
+  }
 
   // Scoped repairs and document chunks do not consume the full source event.
   // Their maintenance checkpoints own completion; leave ordinary extraction eligible.

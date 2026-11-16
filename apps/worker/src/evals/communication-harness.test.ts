@@ -6,6 +6,7 @@ import { COMMUNICATION_CASES } from '#src/evals/communication-cases.js';
 import { createCommunicationHarness } from '#src/evals/communication-harness.js';
 import { scoreCommunications } from '#src/evals/communication-report.js';
 import { communicationId } from '#src/evals/communication-types.js';
+import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
 
 // Real capture, authorization, scheduling and approval against disposable PostgreSQL.
 // Controlled inference makes delivery failures reproducible; no provider or production access.
@@ -108,7 +109,7 @@ test('acceptance failure preserves canonical state and cannot score a successful
 test('a premature review defers work until the quiet window expires', async () => {
   const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-telegram'));
   const result = await harness.run(row, { model: proposal, delayReview: true });
-  expect(result.modelCalls).toBe(1);
+  expect(result.modelCalls).toBe(2);
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);
 test('a retried email enqueue resumes persisted capture without duplicating work', async () => {
@@ -677,3 +678,270 @@ for (const [name, items] of [
     expect(scoreCommunications(row, result).passed).toBe(false);
   }, 60_000);
 }
+
+for (const source of ['email', 'slack', 'telegram']) {
+  test(`${source}: completeness check restores a task omitted by extraction`, async () => {
+    const row = requireValue(
+      COMMUNICATION_CASES.find((row) => row.id === `duplicate-job-${source}`),
+    );
+    const result = await harness.run(row, {
+      model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+      auditModel: async (args) => {
+        const evidence = supportFromPacket(
+          args.prompt,
+          requireValue(row.messages[0]).text,
+          'status',
+          'Prepare deployment checklist',
+          'todo',
+        );
+        return {
+          model: 'checked',
+          object: {
+            bundles: [
+              {
+                title: 'Deployment checklist',
+                confidence: 'high',
+                items: [
+                  {
+                    auditId: 'checklist',
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: 'Prepare deployment checklist',
+                    grounding: [],
+                    proposedPayload: { canonicalName: 'Prepare deployment checklist' },
+                  },
+                ],
+              },
+            ],
+            pendingAmendmentIds: [],
+            coverage: [
+              {
+                kind: 'task',
+                disposition: 'proposed',
+                evidence: [{ rawEventId: evidence.rawEventId, quote: evidence.quote }],
+                proposalIds: ['checklist'],
+                existingIds: [],
+                reason: 'The explicit task request was missing from the draft.',
+              },
+            ],
+          },
+        } as never;
+      },
+    });
+    expect(result.modelCalls).toBe(2);
+    expect(result.executionErrors).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(true);
+  }, 60_000);
+}
+
+for (const failure of ['timeout', 'malformed', 'dangling-coverage', 'removed-grounding']) {
+  test(`completeness ${failure} cannot publish a partial result`, async () => {
+    const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+    const result = await harness.run(row, {
+      model: proposal,
+      auditModel: async (args) => {
+        if (failure === 'timeout') throw new Error('Synthetic audit timeout');
+        if (failure === 'malformed') return { model: 'test', object: { bundles: [] } } as never;
+        const evidence = supportFromPacket(
+          args.prompt,
+          requireValue(row.messages[0]).text,
+          'status',
+          'Prepare deployment checklist',
+          'done',
+        );
+        return {
+          model: 'test',
+          object: {
+            bundles: [
+              {
+                title: 'Checklist',
+                confidence: 'high',
+                items: [
+                  {
+                    auditId: 'task',
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: 'Prepare deployment checklist',
+                    grounding: [],
+                    proposedPayload: {
+                      canonicalName: 'Prepare deployment checklist',
+                      ...(failure === 'removed-grounding' ? { status: 'done' } : {}),
+                    },
+                  },
+                ],
+              },
+            ],
+            pendingAmendmentIds: [],
+            coverage: [
+              {
+                kind: 'task',
+                disposition: 'proposed',
+                evidence: [{ rawEventId: evidence.rawEventId, quote: evidence.quote }],
+                proposalIds: [failure === 'dangling-coverage' ? 'missing' : 'task'],
+                existingIds: [],
+                reason: 'Controlled invalid check.',
+              },
+            ],
+          },
+        } as never;
+      },
+    });
+    expect(result.executionErrors.length).toBeGreaterThan(0);
+    expect(result.actions).toEqual([]);
+    expect(result.nodes).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(false);
+  }, 60_000);
+}
+
+test('failed checks exhaust the bounded attempts without proposals', async () => {
+  const base = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const row = {
+    ...base,
+    messages: base.messages.map((message) => ({ ...message, replay: false })),
+  };
+  let checks = 0;
+  const result = await harness.run(row, {
+    model: proposal,
+    jobAttempts: 3,
+    auditModel: async () => {
+      checks++;
+      throw new Error('Synthetic check unavailable');
+    },
+  });
+  expect(checks).toBe(3);
+  expect(result.actions).toEqual([]);
+  expect(result.nodes).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(false);
+}, 60_000);
+
+test('checked no-action cannot be overridden by commitment fallback', async () => {
+  const base = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const row = {
+    ...base,
+    messages: [{ text: 'We decided to use a weekly check-in.' }],
+    outcome: { nodes: [], edges: [] },
+  };
+  const result = await harness.run(row, {
+    model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(result.actions).toEqual([]);
+}, 60_000);
+
+test('normalization cannot silently remove an audited item and publish the rest', async () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Checklist and incidental tool',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare deployment checklist',
+                  proposedPayload: { canonicalName: 'Prepare deployment checklist' },
+                  grounding: [],
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'GitHub',
+                  proposedPayload: { type: 'company', canonicalName: 'GitHub' },
+                  grounding: [],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors.length).toBeGreaterThan(0);
+  expect(result.actions).toEqual([]);
+}, 60_000);
+
+test('checked no-action can decline a prepared pending-task amendment', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'pending-task-reuse-email'),
+  );
+  let candidatesSeen = false;
+  const result = await harness.run(row, {
+    model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    auditModel: async (input) => {
+      const checked = await controlledCommunicationAudit(input);
+      const object = checked.object as {
+        bundles: unknown[];
+        pendingAmendmentIds: string[];
+        coverage: { disposition: string; proposalIds: string[]; reason: string }[];
+      };
+      candidatesSeen ||= object.pendingAmendmentIds.length > 0;
+      object.pendingAmendmentIds = [];
+      object.coverage.forEach((entry) => {
+        entry.disposition = 'no_action';
+        entry.proposalIds = [];
+        entry.reason = 'Controlled rejection of a pending amendment.';
+      });
+      return checked;
+    },
+  });
+  expect(candidatesSeen).toBe(true);
+  expect(result.executionErrors).toEqual([]);
+  expect(result.edges).toEqual([]);
+}, 60_000);
+
+test('overlapping pending amendment cannot overwrite a checked correction', async () => {
+  const base = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'pending-task-reuse-email'),
+  );
+  const row = {
+    ...base,
+    messages: [
+      {
+        text: 'Prepare migration checklist is for Patient Portal. Prepare migration checklist is due June 12, 2026 at 09:00 UTC.',
+      },
+    ],
+  };
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Prepare migration checklist',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare migration checklist',
+                  proposedPayload: {
+                    canonicalName: 'Prepare migration checklist',
+                    dueAt: '2026-06-12T09:00:00Z',
+                  },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      'Prepare migration checklist is due June 12, 2026 at 09:00 UTC.',
+                      'dueAt',
+                      'Prepare migration checklist',
+                      '2026-06-12T09:00:00Z',
+                    ),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors.length).toBeGreaterThan(0);
+  expect(result.edges).toEqual([]);
+  expect(
+    result.nodes.find((node) => node.name === 'Prepare migration checklist')?.dueAt,
+  ).toBeNull();
+}, 60_000);

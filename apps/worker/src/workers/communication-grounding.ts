@@ -11,6 +11,7 @@ export const communicationGroundingSchema = z.object({
 });
 type Support = z.infer<typeof communicationGroundingSchema>;
 interface Item {
+  auditId?: string | undefined;
   operation: string;
   targetKind: string;
   title: string;
@@ -117,6 +118,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
   packet: string;
   sources: {
     id: string;
+    source?: string;
     text: string;
     authorUserId?: string | null;
     speakerContext?: string;
@@ -279,18 +281,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
           from &&
           to &&
           linkSupports.some((support) => {
+            const taskEndpoint = from.type === 'task' ? from : to.type === 'task' ? to : null;
+            const assertion = taskEndpoint
+              ? (taskClause(support.quote, taskEndpoint.name) ?? support.quote)
+              : support.quote;
             if (
               !(
                 (support.field === 'customer' && [from.type, to.type].includes('company')) ||
                 (support.field === 'project' && [from.type, to.type].includes('project'))
               ) ||
               ![to.id, to.name, from.id, from.name].includes(support.value) ||
-              /[?]|\b(?:maybe|perhaps|undecided|not|unless|if|separate|unrelated)\b/i.test(
-                support.quote,
-              )
+              /[?]|\b(?:maybe|perhaps|undecided|not|unless|if|unrelated)\b/i.test(assertion) ||
+              (!taskEndpoint && /\bseparate\b/i.test(assertion))
             )
               return false;
-            const direct = namesEndpoint(support.quote, from) && namesEndpoint(support.quote, to);
+            const direct = namesEndpoint(assertion, from) && namesEndpoint(assertion, to);
             if (direct) return true;
             // A typed reference can combine admitted statements from the SAME source only.
             // It must be an explicit link instruction, with exactly one visible candidate.
@@ -336,10 +341,22 @@ export function groundCommunicationBundles<T extends Item>(args: {
         if (!grounded) return [];
       }
       const has = (field: Support['field'], value: unknown) =>
-        supports.find((support) => support.field === field && support.value === value);
+        supports.find(
+          (support) =>
+            support.field === field &&
+            (support.value === value ||
+              (field === 'dueAt' &&
+                typeof value === 'string' &&
+                Number.isFinite(Date.parse(value)) &&
+                Date.parse(support.value) === Date.parse(value))),
+        );
       if (type === 'company' || type === 'project') {
         const tentative = supports.find(
-          (support) => support.field === 'prospect' && prospect(support.quote),
+          (support) =>
+            (support.field === 'prospect' ||
+              (type === 'company' && support.field === 'customer') ||
+              (type === 'project' && support.field === 'project')) &&
+            prospect(support.quote),
         );
         if (tentative) {
           uncertainty.add('prospect');
@@ -396,7 +413,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           assignment &&
           !nested &&
           clause &&
-          (args.source === 'email'
+          ((source?.source ?? args.source) === 'email'
             ? Boolean(
                 member.email &&
                 source?.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`),
@@ -461,8 +478,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const lifecycleClause = lifecycle
           ? taskClause(lifecycle.quote, lifecycle.subject)
           : undefined;
+        const targetName =
+          args.objects?.find((object) => object.id === item.targetId)?.name ??
+          (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
         const sentDeliverable =
-          /^(?:mark )?send\b/i.test(item.title) &&
+          /^(?:mark )?send\b/i.test(targetName) &&
           lifecycleClause &&
           /\b(?:sent|delivery confirmed)\b/i.test(lifecycleClause);
         if (
@@ -508,6 +528,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           payload.localRef = ref;
           extra.push({
             ...item,
+            auditId: undefined,
             operation: 'create',
             targetKind: 'object_relationship',
             title: `${item.title}: customer`,

@@ -2536,5 +2536,8 @@
   },
   "apps/worker/src/workers/communication-grounding.test.ts": {
     "group": "unit"
+  },
+  "apps/worker/src/workers/communication-audit.test.ts": {
+    "group": "unit"
   }
 }

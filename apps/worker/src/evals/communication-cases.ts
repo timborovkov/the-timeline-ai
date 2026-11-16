@@ -1,5 +1,6 @@
 import { selectBenchmark, validateCases } from '@timeline/shared/evals/benchmark';
 
+import { communicationCompletenessFamilies } from '#src/evals/communication-completeness-cases.js';
 import { communicationGapFamilies } from '#src/evals/communication-gap-cases.js';
 import type {
   CommunicationCase,
@@ -705,6 +706,7 @@ const families: Family[] = [
 const expandedFamilies: Family[] = [
   ...families.map((family) => ({ ...family, split: 'development' as const })),
   ...communicationGapFamilies,
+  ...communicationCompletenessFamilies,
 ];
 export const COMMUNICATION_CASES: CommunicationCase[] = expandedFamilies.flatMap((family) =>
   (family.emailOnly ? (['email'] as const) : (['email', 'slack', 'telegram'] as const)).map(
@@ -716,6 +718,7 @@ export const COMMUNICATION_CASES: CommunicationCase[] = expandedFamilies.flatMap
         family.category,
         source,
         'communications',
+        ...(family.id.startsWith('audit-') ? ['completeness-regression'] : []),
         ...([
           'real-prospect',
           'distinct-client-same-deliverable',
@@ -755,11 +758,11 @@ export const COMMUNICATION_CASES: CommunicationCase[] = expandedFamilies.flatMap
 );
 export function validateCommunicationCases() {
   validateCases(COMMUNICATION_CASES);
-  if (expandedFamilies.length !== 72 || COMMUNICATION_CASES.length !== 198)
+  if (expandedFamilies.length !== 84 || COMMUNICATION_CASES.length !== 234)
     throw new Error('Communication coverage changed');
   for (const split of ['development', 'held-out']) {
     const rows = COMMUNICATION_CASES.filter((row) => row.split === split);
-    if (rows.length !== (split === 'development' ? 162 : 36))
+    if (rows.length !== (split === 'development' ? 198 : 36))
       throw new Error('Communication split coverage changed');
     for (const category of ['uncertainty', 'routing', 'attribution', 'temporal'])
       if (!rows.some((row) => row.category === category)) throw new Error(`Missing ${category}`);

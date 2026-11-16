@@ -69,6 +69,8 @@ class SyntheticSlackApi extends SlackApi {
 }
 export interface CommunicationControls {
   model?: IO['chatStructured'];
+  auditModel?: IO['chatStructured'];
+  jobAttempts?: 1 | 2 | 3;
   failEnqueueOnce?: boolean;
   failAcceptance?: boolean;
   delayReview?: boolean;
@@ -122,6 +124,7 @@ export async function createCommunicationHarness() {
       await store.reset();
       const started = performance.now();
       const stages = ['seeded'];
+      const inferenceTimings: NonNullable<CommunicationObservation['inferenceTimings']> = [];
       const executionErrors: string[] = [];
       const ids: string[] = [];
       const jobs: Job[] = [];
@@ -264,6 +267,34 @@ export async function createCommunicationHarness() {
         },
       };
       const io: IO = {
+        ...(controls.model || controls.auditModel
+          ? {
+              auditCommunication: async (input) => {
+                modelCalls++;
+                stages.push('completeness-check');
+                const callStarted = performance.now();
+                let failed = false;
+                const checker =
+                  controls.auditModel ??
+                  (await import('#src/test/communication-audit.js')).controlledCommunicationAudit;
+                try {
+                  const result = await checker(input);
+                  input.schema.parse(result.object);
+                  return result;
+                } catch (error) {
+                  executionErrors.push(error instanceof Error ? error.name : 'AuditError');
+                  failed = true;
+                  throw error;
+                } finally {
+                  inferenceTimings.push({
+                    stage: 'completeness-check',
+                    latencyMs: performance.now() - callStarted,
+                    failed,
+                  });
+                }
+              },
+            }
+          : {}),
         getEnv: () => ({
           ...getEnv(),
           OPENROUTER_API_KEY: 'synthetic',
@@ -287,22 +318,33 @@ export async function createCommunicationHarness() {
             packets.push(input.prompt);
             stages.push('packet-built');
           }
-          stages.push('inference');
+          const stage = input.instructions?.startsWith('communication-completeness-')
+            ? 'completeness-check'
+            : 'extraction';
+          stages.push(stage === 'extraction' ? 'inference' : stage);
+          const callStarted = performance.now();
+          let failed = false;
           try {
             const result = await (controls.model ?? chatStructured)(input);
             input.schema.parse(result.object);
             return result;
           } catch (error) {
             executionErrors.push(error instanceof Error ? error.name : 'InferenceError');
+            failed = true;
             throw error;
+          } finally {
+            inferenceTimings.push({ stage, latencyMs: performance.now() - callStarted, failed });
           }
         },
       };
       const runJob = async (job: Job) => {
-        try {
-          await processSuggestionJobForTests({ db: db as unknown as Db }, job, io);
-        } catch (error) {
-          executionErrors.push(error instanceof Error ? error.name : 'WorkerError');
+        for (let attempt = 0; attempt < (controls.jobAttempts ?? 1); attempt++) {
+          try {
+            await processSuggestionJobForTests({ db: db as unknown as Db }, job, io);
+            return;
+          } catch (error) {
+            executionErrors.push(error instanceof Error ? error.name : 'WorkerError');
+          }
         }
       };
       const drain = async () => {
@@ -600,6 +642,7 @@ export async function createCommunicationHarness() {
         actions,
         executionErrors,
         modelCalls,
+        inferenceTimings,
         durationMs: performance.now() - started,
         unauthorizedDisclosure,
         canonicalMutation,

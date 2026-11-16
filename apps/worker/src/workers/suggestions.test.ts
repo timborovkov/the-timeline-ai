@@ -38,10 +38,19 @@ import {
   assembleSuggestionPrompt,
   preserveDocumentPersonEmails,
   fallbackBundles,
-  processSuggestionJobForTests,
+  processSuggestionJobForTests as processRealSuggestionJobForTests,
   SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
   usableRawEventIds,
 } from '#src/workers/suggestions.js';
+
+import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
+const processSuggestionJobForTests = (
+  ...args: Parameters<typeof processRealSuggestionJobForTests>
+) =>
+  processRealSuggestionJobForTests(args[0], args[1], {
+    auditCommunication: controlledCommunicationAudit,
+    ...args[2],
+  });
 
 /**
  *
@@ -52,12 +61,12 @@ import {
  */
 
 const REFERENCE_DATE = new Date('2026-05-27T10:00:00.000Z');
-const TEAM_ID = '11111111-1111-1111-1111-111111111111';
-const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
-const OWNER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-const MEMBER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-const INACTIVE_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
-const OBJECT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+const TEAM_ID = '56a681a3-d4dc-525d-8426-6aca3bdcff1b';
+const OTHER_TEAM_ID = 'ec0a7061-d1d6-5bed-a82a-b686174485dc';
+const OWNER_ID = 'd65558de-ea8b-52ba-934b-12f9c2314116';
+const MEMBER_ID = 'a4905303-9fc4-537c-a586-bb556ce76b81';
+const INACTIVE_ID = '60a6a6e5-ebc6-510d-9683-9d8dc5972131';
+const OBJECT_ID = '0b179687-a54a-5f5e-87be-9e7ca48f968b';
 const MODEL_ID = 'test-suggestion-model';
 const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
   process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
@@ -195,7 +204,7 @@ describe('fallbackBundles', () => {
       text: "I'll review the next quarter plan tomorrow.",
       timezone: 'UTC',
       occurredAt: REFERENCE_DATE,
-      authorUserId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      authorUserId: 'd65558de-ea8b-52ba-934b-12f9c2314116',
     });
 
     expect(bundle?.items[0]?.title).toBe('Review the next quarter plan');
@@ -3035,7 +3044,7 @@ describe('processSuggestionJobForTests', () => {
   it.each(['own_team', 'other_company'])(
     'does not turn %s website quotes into fallback commitments',
     async (websiteSubject) => {
-      const rawEventId = '10000000-0000-0000-0000-000000000001';
+      const rawEventId = 'e6ff3009-4745-5ed8-a861-9c15588b7429';
       await seedRawEvent(db as never, {
         id: rawEventId,
         text: "I'll send the proposal next Tuesday",
@@ -3056,7 +3065,7 @@ describe('processSuggestionJobForTests', () => {
   );
 
   it('turns a commitment raw event into task and calendar suggestions through fallback', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000001';
+    const rawEventId = 'e6ff3009-4745-5ed8-a861-9c15588b7429';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: "I'll send the proposal next Tuesday",
@@ -3103,7 +3112,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stores model-backed decision object suggestions', async () => {
-    const rawEventId = '10000000-0000-0000-0000-00000000001d';
+    const rawEventId = 'd82478d7-cb73-5869-96e1-d68cf08c2953';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'We decided to sunset Project X.',
@@ -3177,7 +3186,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('lists a week-old branding task in the prompt when later captures name the deliverable', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000bd';
+    const rawEventId = 'c23abe73-31be-5827-9a76-30b80b059d4a';
     await db.insert(entities).values([
       {
         id: OBJECT_ID,
@@ -3220,7 +3229,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('includes related curated document chunks as reference knowledge in the proposal prompt', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000aa';
+    const rawEventId = '6f4c0d44-916a-5337-990d-9ef0a047f082';
     await db.insert(entities).values({
       teamId: TEAM_ID,
       type: 'company',
@@ -3283,7 +3292,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('skips document lifecycle events without calling the suggestion model', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000ab';
+    const rawEventId = '975d7c18-613c-5d34-82d4-de802f9f1f5f';
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'document',
@@ -3308,7 +3317,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not persist model calendar updates that omit the target id', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000002';
+    const rawEventId = '301f05b7-e941-5881-88cd-3b804c201102';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Move the planning call to noon.',
@@ -3343,7 +3352,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stores model-backed recurring calendar suggestions', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000f1';
+    const rawEventId = '696aaa5d-409d-5665-9024-3fdb2a97de8b';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'We agreed the daily call is every day except Saturday at 4pm.',
@@ -4217,7 +4226,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('includes rich existing and pending calendar context in extraction prompts', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c9';
+    const rawEventId = '672725e8-45d8-578d-b4e7-138490bc87ef';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Move the Acme kickoff to Friday at 5pm.',
@@ -4300,7 +4309,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('excludes restricted document-backed pending task and calendar context from model prompts', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000ca';
+    const rawEventId = 'cda9cd44-48b8-540d-a9bb-0a58e7a742a8';
     await seedRawEvent(db as never, { id: rawEventId, text: 'Please review the release plan.' });
     for (const state of ['current', 'private', 'deleted', 'superseded', 'cross-team'] as const) {
       const day = 19 + ['current', 'private', 'deleted', 'superseded', 'cross-team'].indexOf(state);
@@ -4410,7 +4419,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stores grouped tentative slot suggestions from model output', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000f2';
+    const rawEventId = '5dde5d84-eb5e-5a45-a23b-9cf43c08c32a';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Offer Apple Wednesday 3pm or Thursday 4pm for the meeting.',
@@ -4510,7 +4519,7 @@ describe('processSuggestionJobForTests', () => {
       responsibleUserId: OWNER_ID,
       actor: { kind: 'user', userId: OWNER_ID },
     });
-    const rawEventId = '10000000-0000-0000-0000-0000000000b0';
+    const rawEventId = '0fa66cc6-2ef8-5a91-9033-424a4cd15f8b';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Revigo moved into negotiation for the pilot.',
@@ -4540,7 +4549,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stores model-backed bundled relationship proposals with sibling local refs', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000a1';
+    const rawEventId = '8eaf1218-ec40-5a6c-ae9b-517a5bbcf942';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'John Doe from Acme Corporation will review the launch plan.',
@@ -4625,8 +4634,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('suppresses duplicate pending relationship proposals that still use sibling local refs', async () => {
-    const firstRawEventId = '10000000-0000-0000-0000-0000000000a3';
-    const secondRawEventId = '10000000-0000-0000-0000-0000000000a4';
+    const firstRawEventId = '76174055-9d9d-5c20-8a33-dfb35e06468a';
+    const secondRawEventId = 'ad2ef47a-4562-580b-b88f-079cc509a020';
     await seedRawEvent(db as never, {
       id: firstRawEventId,
       text: 'John Doe from Acme Corporation will review the launch plan.',
@@ -4713,7 +4722,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('suppresses name-only model-backed relationship proposals when the edge already exists', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000a2';
+    const rawEventId = 'd988c05c-48dc-52df-b192-9370a76b1c9a';
     const [john, acme] = await db
       .insert(entities)
       .values([
@@ -4781,8 +4790,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('suppresses model-backed relationship proposals after the same edge was rejected', async () => {
-    const firstRawEventId = '10000000-0000-0000-0000-0000000000b3';
-    const secondRawEventId = '10000000-0000-0000-0000-0000000000b4';
+    const firstRawEventId = '6c9e0774-d318-5b60-aadf-b9e169a8736d';
+    const secondRawEventId = '8270f53d-bc9e-52a0-84a4-ab8d8631e0fd';
     const [john, acme] = await db
       .insert(entities)
       .values([
@@ -4890,7 +4899,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('rewrites model-backed duplicate object creates into updates for existing objects', async () => {
-    const rawEventId = '10000000-0000-0000-0000-00000000002d';
+    const rawEventId = 'f197b5aa-a74f-5b76-97ce-9ca66564ccf1';
     const [person] = await db
       .insert(entities)
       .values({
@@ -4963,7 +4972,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('rewrites exact-name creates even when the existing object is outside the recent matching window', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000b1';
+    const rawEventId = '2f574147-8805-5617-9694-d9daa747199d';
     const [stale] = await db
       .insert(entities)
       .values({
@@ -5035,7 +5044,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('sanitizes model-backed assignment, calendar, and relationship payloads before persist', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000b2';
+    const rawEventId = 'ec07a8d1-8ac0-5df9-bb4f-6d60cee3244b';
     const [company] = await db
       .insert(entities)
       .values({
@@ -5153,7 +5162,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000036';
+    const rawEventId = 'dcea0f54-df33-50a7-9820-1ebe71c8744f';
     await db.insert(entities).values([
       {
         teamId: TEAM_ID,
@@ -5225,7 +5234,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('preserves durable scalar fields without carrying metadata when rewriting duplicate creates into updates', async () => {
-    const rawEventId = '10000000-0000-0000-0000-00000000002f';
+    const rawEventId = 'cf4d2d73-cb2f-595c-bd27-afb35c667069';
     const [deal] = await db
       .insert(entities)
       .values({
@@ -5302,7 +5311,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('preserves task assignee, due date, and priority in background proposals', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000030';
+    const rawEventId = 'fe6d034e-03c6-58f7-b6be-da1419d77adf';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Member should send the Acme deck by July 4. Make it urgent.',
@@ -5363,7 +5372,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('enriches a proposed task with a validated category and existing project relation', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c1';
+    const rawEventId = '6c723bec-696a-5c49-8c2d-e01f1dc8cef4';
     const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'project',
       canonicalName: 'Faba website redesign',
@@ -5459,7 +5468,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('canonicalizes and enriches an object-shaped task proposal', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c3';
+    const rawEventId = 'b27dfffc-1318-5316-bb1b-5c07e464becc';
     const project = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'project',
       canonicalName: 'Faba website redesign',
@@ -5532,7 +5541,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('attaches a Faba meeting task to the existing company and project even when they are not in the recency dump', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c4';
+    const rawEventId = '255e893e-f38b-59ec-afd7-d571d1dc2623';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Faba',
@@ -5625,7 +5634,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('attaches an Acme Slack-channel task even when Acme is missing from the recency dump', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000d1';
+    const rawEventId = '5de849ff-5d70-5c07-a246-6bde0da4aac7';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Acme Labs',
@@ -5721,7 +5730,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('attaches a Faba Monday-board task from the board container name', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000d2';
+    const rawEventId = '6697e915-42a5-5981-bbff-0a43d69b61bc';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Faba',
@@ -5804,7 +5813,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('mints and attaches a messy Monday capture when the model returns nothing', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e2';
+    const rawEventId = 'e1b232fb-a6a7-5394-80b6-f0cbb49b4b44';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Faba',
@@ -5859,9 +5868,9 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
-  it('stamps a buried Linear key when conversation review gets an empty model', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e3';
-    const reviewId = '20000000-0000-0000-0000-0000000000e3';
+  it('preserves checked no-action instead of inventing a buried Linear-key task', async () => {
+    const rawEventId = '52931fee-7524-5431-a61a-55e8f39b1a6b';
+    const reviewId = '3bcad31a-58bf-5682-bad7-1b5edb76e319';
     const conversationKey = `slack:${TEAM_ID}:T1:C_NOISE2`;
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -5887,23 +5896,11 @@ describe('processSuggestionJobForTests', () => {
       { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
     );
 
-    const [item] = await db.select().from(agentSuggestionItems);
-    expect(item).toMatchObject({
-      operation: 'create',
-      targetKind: 'task',
-      title: 'Close the loop on ENG-42',
-    });
-    expect(item?.proposedPayload).toMatchObject({
-      aliases: ['ENG-42'],
-    });
-    const aliases = (item?.proposedPayload as { aliases?: unknown }).aliases;
-    expect(Array.isArray(aliases) && aliases.every((alias) => String(alias) !== 'RFC-5545')).toBe(
-      true,
-    );
+    expect(await db.select().from(agentSuggestionItems)).toEqual([]);
   });
 
   it('strips a guessed done when two related open tasks overlap the evidence', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e4';
+    const rawEventId = '0daf8204-367b-583c-95bc-188159eeac98';
     const brandingId = 'b0ad0001-0000-4000-8000-0000000000e4';
     const printId = 'b0ad0002-0000-4000-8000-0000000000e4';
     await db.insert(entities).values([
@@ -5957,7 +5954,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('mints a messy meeting capture after the suggestion model times out', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e5';
+    const rawEventId = '0fb30c34-ad23-5aeb-94cb-c8d853dae33e';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'ok so we should prepare the login page, I can take it, maybe Friday',
@@ -5982,7 +5979,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('mints a messy Monday capture when the suggestion model returns invalid JSON', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e6';
+    const rawEventId = '8e56f7e8-d7e7-57ec-b97b-cbc641c06ca4';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Faba',
@@ -6040,7 +6037,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not attach a client from a generic Slack #general channel', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000d3';
+    const rawEventId = '4b63bd74-47fe-5cef-88cd-f78c6e53353a';
     await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'project',
       canonicalName: 'General website redesign',
@@ -6108,7 +6105,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not guess a client when two companies are named in the same evidence', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c5';
+    const rawEventId = '1fcf1418-0564-5e51-8b1c-0c4845dba52d';
     await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Faba',
@@ -6173,9 +6170,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('amends a pending task create when later conversation evidence uniquely names the client', async () => {
-    const firstEventId = '10000000-0000-0000-0000-0000000000c6';
-    const secondEventId = '10000000-0000-0000-0000-0000000000c7';
-    const reviewId = '20000000-0000-0000-0000-0000000000c6';
+    const firstEventId = 'ada017f8-646f-50dd-b926-71262eb555fe';
+    const secondEventId = '808760f9-6e77-5c25-b6f8-65c7babf4bc3';
+    const reviewId = '95ea85c7-9442-5a48-b789-faf3c671cfc5';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({
       type: 'company',
       canonicalName: 'Faba',
@@ -6278,7 +6275,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('classifies the maximum proposal shape in one bounded batch call', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c2';
+    const rawEventId = '833993df-c17c-5327-9c64-dc7819ca3ae5';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Prepare wireframes, write launch copy, and implement the API.',
@@ -6327,7 +6324,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stamps a suggestion task with task-categories-v1 before storing it', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c3';
+    const rawEventId = 'b27dfffc-1318-5316-bb1b-5c07e464becc';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'I will send the Northstar security questionnaire by Friday.',
@@ -6387,7 +6384,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not store a suggestion task when the classifier drops its prediction', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c4';
+    const rawEventId = '255e893e-f38b-59ec-afd7-d571d1dc2623';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'I will send the Northstar security questionnaire by Friday.',
@@ -6435,7 +6432,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000031';
+    const rawEventId = 'e2a2a77c-ae0e-5486-a0bd-e925941bd592';
     const [oldObject] = await db
       .insert(entities)
       .values({
@@ -6509,7 +6506,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('surfaces an explicit review interpretation when non-person matching is ambiguous', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000032';
+    const rawEventId = '386fe807-4352-5788-9577-e971e6469a92';
     await db.insert(entities).values([
       { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
       { teamId: TEAM_ID, type: 'vendor', canonicalName: 'KPMG' },
@@ -6608,7 +6605,7 @@ describe('processSuggestionJobForTests', () => {
       },
       { teamId: TEAM_ID, type: 'company', canonicalName: 'Northstar Labs', aliases: ['Northstar'] },
     ]);
-    const rawEventId = '10000000-0000-0000-0000-000000000042';
+    const rawEventId = '9897f1b5-fbce-5af4-9bbd-e5c67c15a32b';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Track Northstar as a client and prepare the access checklist for Northstar.',
@@ -6680,7 +6677,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not rewrite numbered non-person objects as duplicate updates', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000033';
+    const rawEventId = 'cd316a36-dbdb-5731-ba59-7f7d9a72fb59';
     await db.insert(entities).values({
       teamId: TEAM_ID,
       type: 'project',
@@ -6745,7 +6742,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not rewrite duplicate creates into archived objects', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000034';
+    const rawEventId = 'f1a4a7d6-ea8a-5523-b1c5-dc116a7a0d21';
     await db.insert(entities).values({
       teamId: TEAM_ID,
       type: 'project',
@@ -6811,7 +6808,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('drops model-backed low-signal platform object creates', async () => {
-    const rawEventId = '10000000-0000-0000-0000-00000000002e';
+    const rawEventId = '28417ae7-12ef-5d2b-9eb8-26718ffef302';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Otto shared a link to an X post by asaadmahmood5.',
@@ -6859,7 +6856,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('drops metadata-only low-signal platform object creates', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000035';
+    const rawEventId = '30f7ed02-07b1-58ba-905a-8463c5d36777';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Otto shared a link to an X post by asaadmahmood5.',
@@ -6907,7 +6904,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('drops durable-looking platform company creates so tool choices become decisions instead', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000030';
+    const rawEventId = 'fe6d034e-03c6-58f7-b6be-da1419d77adf';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'We decided to move GitHub procurement to accepted.',
@@ -6955,7 +6952,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('keeps durable tool choices when the proposal is modeled as a decision', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000036';
+    const rawEventId = 'dcea0f54-df33-50a7-9820-1ebe71c8744f';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'We decided to use GitHub for issue tracking.',
@@ -7015,7 +7012,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('schedules Telegram commitments for debounced conversation review', async () => {
-    const rawEventId = '10000000-0000-0000-0000-00000000000a';
+    const rawEventId = '34a85f36-d07a-5f8a-9f70-35902193cb53';
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -7058,7 +7055,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('skips private conversational events without scheduling a review', async () => {
-    const rawEventId = '10000000-0000-0000-0000-00000000000b';
+    const rawEventId = '26317f7f-d11c-5221-9af8-70d2af39fde9';
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     const chat = emptyModel();
     await seedRawEvent(db as never, {
@@ -7091,8 +7088,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not let out-of-order raw event jobs move a conversation review anchor backward', async () => {
-    const olderId = '10000000-0000-0000-0000-0000000000e1';
-    const newerId = '10000000-0000-0000-0000-0000000000e2';
+    const olderId = '0b161366-b1e6-5556-8d35-ff22c9cb5bcf';
+    const newerId = 'e1b232fb-a6a7-5394-80b6-f0cbb49b4b44';
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     await seedRawEvent(db as never, {
       id: newerId,
@@ -7131,9 +7128,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('reenqueues an existing pending review when a stale retry cannot update the anchor', async () => {
-    const olderId = '10000000-0000-0000-0000-0000000000f1';
-    const newerId = '10000000-0000-0000-0000-0000000000f2';
-    const reviewId = '20000000-0000-0000-0000-0000000000f1';
+    const olderId = '696aaa5d-409d-5665-9024-3fdb2a97de8b';
+    const newerId = '5dde5d84-eb5e-5a45-a23b-9cf43c08c32a';
+    const reviewId = 'f6501ae4-ff8e-5f09-b910-05c430fc9015';
     const conversationKey = `telegram:${TEAM_ID}:chat:retry`;
     const quietUntil = new Date(Date.now() + 10 * 60_000);
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
@@ -7178,8 +7175,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not move a review anchor backward after the current anchor is deleted', async () => {
-    const olderId = '10000000-0000-0000-0000-0000000000f9';
-    const newerId = '10000000-0000-0000-0000-0000000000fa';
+    const olderId = '5224ee2e-a971-5bfe-a68a-c21927353d37';
+    const newerId = '8dce8d80-6ebb-5d3d-af94-b2c4ec9db05c';
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     await seedRawEvent(db as never, {
       id: newerId,
@@ -7223,9 +7220,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not let an older in-flight review complete after the anchor advances', async () => {
-    const olderId = '10000000-0000-0000-0000-0000000000fc';
-    const newerId = '10000000-0000-0000-0000-0000000000fd';
-    const reviewId = '20000000-0000-0000-0000-0000000000fc';
+    const olderId = 'f2735a83-c469-5662-bc32-03cc1f8415f3';
+    const newerId = '16351fbe-e0d9-5977-9576-6560db7e91d8';
+    const reviewId = '0e64415b-0094-548a-82bf-a61b4e2f9664';
     const conversationKey = `telegram:${TEAM_ID}:chat:inflight`;
     await seedRawEvent(db as never, {
       id: olderId,
@@ -7279,8 +7276,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('supersedes a pending Slack channel review when a reply starts a thread review', async () => {
-    const rootId = '10000000-0000-0000-0000-0000000000f3';
-    const replyId = '10000000-0000-0000-0000-0000000000f4';
+    const rootId = 'dd8374b0-95cd-5984-bab7-9b7abec4017d';
+    const replyId = 'ae7bc59d-fcdb-5971-b851-88d1c5b34193';
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     await seedRawEvent(db as never, {
       id: rootId,
@@ -7373,9 +7370,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('supersedes a Slack channel review after an unthreaded message advances the anchor', async () => {
-    const rootId = '10000000-0000-0000-0000-0000000001a1';
-    const unthreadedId = '10000000-0000-0000-0000-0000000001a2';
-    const replyId = '10000000-0000-0000-0000-0000000001a3';
+    const rootId = '6d3be99a-ee4e-5282-adcb-ddfa2dfa21d3';
+    const unthreadedId = '22ecc294-de83-5fe0-ad00-3de694a0110e';
+    const replyId = 'd4516481-a15e-5a6f-9f27-86ea42f83a14';
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     await seedRawEvent(db as never, {
       id: rootId,
@@ -7476,9 +7473,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not reopen a Slack channel review after a thread review superseded it', async () => {
-    const rootId = '10000000-0000-0000-0000-0000000001b1';
-    const laterId = '10000000-0000-0000-0000-0000000001b2';
-    const reviewId = '20000000-0000-0000-0000-0000000001b1';
+    const rootId = 'ed5fba9b-9448-5cd3-af65-f2dca391dbee';
+    const laterId = 'fd56c746-6d6b-5a14-a6da-c2ac623a2c1c';
+    const reviewId = 'd4d5b4ff-cea2-535d-b578-26c07a1ddfc7';
     const channelKey = `slack:${TEAM_ID}:T1:C6`;
     const threadKey = `slack:${TEAM_ID}:T1:C6:thread:1716810000.000100`;
     const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
@@ -7537,8 +7534,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('drops model results when a Slack channel review is superseded in flight', async () => {
-    const rootId = '10000000-0000-0000-0000-0000000000fe';
-    const reviewId = '20000000-0000-0000-0000-0000000000fe';
+    const rootId = '8f838692-14ff-5ea0-a2fd-1ebfffd22a93';
+    const reviewId = 'cbb78679-1702-5531-bfce-4ffdef3deb39';
     const conversationKey = `slack:${TEAM_ID}:T1:C4`;
     await seedRawEvent(db as never, {
       id: rootId,
@@ -7611,9 +7608,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stops persisting conversation proposals when the anchor advances mid-run', async () => {
-    const anchorId = '10000000-0000-0000-0000-0000000001c1';
-    const newerId = '10000000-0000-0000-0000-0000000001c2';
-    const reviewId = '20000000-0000-0000-0000-0000000001c1';
+    const anchorId = 'd46e4b78-2a5b-581e-8b07-30f3e0ec68da';
+    const newerId = '41098e6f-db89-565d-810f-15700f04de8c';
+    const reviewId = '4bc1f289-5bb4-5553-b196-a502ca9f111e';
     await seedRawEvent(db as never, {
       id: anchorId,
       source: 'telegram',
@@ -7709,8 +7706,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('marks a pending conversation review complete when its anchor was deleted', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000d1';
-    const reviewId = '20000000-0000-0000-0000-0000000000d1';
+    const rawEventId = '5de849ff-5d70-5c07-a246-6bde0da4aac7';
+    const reviewId = '4aee8a30-0dce-5400-b126-83ed70fde7f0';
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'telegram',
@@ -7741,8 +7738,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('marks a conversation review complete when the anchor no longer has a conversation identity', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000fb';
-    const reviewId = '20000000-0000-0000-0000-0000000000fb';
+    const rawEventId = '5cb4f705-e6df-564f-8aa1-5de622d50206';
+    const reviewId = '1711cd9f-b4a3-5e2f-8f3d-86c5dab8a5f8';
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'telegram',
@@ -7774,9 +7771,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('includes the Slack thread root and follow-up in the thread evidence window', async () => {
-    const rootId = '10000000-0000-0000-0000-0000000000f5';
-    const replyId = '10000000-0000-0000-0000-0000000000f6';
-    const reviewId = '20000000-0000-0000-0000-0000000000f5';
+    const rootId = 'ec34642e-863d-532c-84ad-18d3433d32f2';
+    const replyId = 'e5cde87c-909a-5de3-b453-e20ce90768c9';
+    const reviewId = '2ba95e98-e685-5546-a683-822fca37e531';
     const conversationKey = `slack:${TEAM_ID}:T1:C2:thread:1716810300.000100`;
     await seedRawEvent(db as never, {
       id: rootId,
@@ -7826,7 +7823,7 @@ describe('processSuggestionJobForTests', () => {
     expect(conversationReview.CONVERSATION_WINDOW_DAYS).toBe(2);
     expect(SUGGESTION_PROMPT_MAX_INPUT_TOKENS).toBe(24_000);
 
-    const reviewId = '20000000-0000-0000-0000-0000000000c1';
+    const reviewId = '46d67b60-846c-5f8b-a07d-18ab9d983f66';
     const conversationKey = `telegram:${TEAM_ID}:chat:cap-window`;
     const longMarker = 'LONG_MARKER_';
     const longTail = 'DEADLINE_FRIDAY_COMMITMENT';
@@ -7890,9 +7887,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('reserves the Slack thread root even when it falls outside the two-day window', async () => {
-    const rootId = '10000000-0000-0000-0000-0000000000c2';
-    const replyId = '10000000-0000-0000-0000-0000000000c3';
-    const reviewId = '20000000-0000-0000-0000-0000000000c2';
+    const rootId = '833993df-c17c-5327-9c64-dc7819ca3ae5';
+    const replyId = 'b27dfffc-1318-5316-bb1b-5c07e464becc';
+    const reviewId = '16d02358-a746-513a-8605-c3212457be62';
     const conversationKey = `slack:${TEAM_ID}:T1:C9:thread:1716400000.000100`;
     await seedRawEvent(db as never, {
       id: rootId,
@@ -7937,8 +7934,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stores high-confidence Telegram Q&A proposals as object-note suggestion items', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000fa';
-    const reviewId = '20000000-0000-0000-0000-0000000000fa';
+    const rawEventId = '8dce8d80-6ebb-5d3d-af94-b2c4ec9db05c';
+    const reviewId = 'a80d9c6d-9038-5706-b121-116511c44786';
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
     const object = await scope.objects.createObject({
       type: 'topic',
@@ -7998,8 +7995,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('includes existing Q&A notes in conversation review prompts for note updates', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000fb';
-    const reviewId = '20000000-0000-0000-0000-0000000000fb';
+    const rawEventId = '5cb4f705-e6df-564f-8aa1-5de622d50206';
+    const reviewId = '1711cd9f-b4a3-5e2f-8f3d-86c5dab8a5f8';
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
     const object = await scope.objects.createObject({
       type: 'topic',
@@ -8065,9 +8062,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('excludes Slack threaded replies from unthreaded channel evidence', async () => {
-    const threadedId = '10000000-0000-0000-0000-0000000000f7';
-    const channelId = '10000000-0000-0000-0000-0000000000f8';
-    const reviewId = '20000000-0000-0000-0000-0000000000f8';
+    const threadedId = '8a59803f-82a1-5562-8f58-57e741b19f0f';
+    const channelId = 'c215183b-e4ab-53de-a067-58f2318b28bc';
+    const reviewId = 'c3b3bb5f-0bc2-51c0-a6f2-04f27871fcc6';
     const conversationKey = `slack:${TEAM_ID}:T1:C3`;
     await seedRawEvent(db as never, {
       id: threadedId,
@@ -8113,9 +8110,9 @@ describe('processSuggestionJobForTests', () => {
 
   it('treats ambiguous contradicted conversation reviews as successful no_action', async () => {
     const chat = emptyModel();
-    const firstId = '10000000-0000-0000-0000-0000000000a1';
-    const lastId = '10000000-0000-0000-0000-0000000000a2';
-    const reviewId = '20000000-0000-0000-0000-0000000000a1';
+    const firstId = '8eaf1218-ec40-5a6c-ae9b-517a5bbcf942';
+    const lastId = 'd988c05c-48dc-52df-b192-9370a76b1c9a';
+    const reviewId = '208f598a-8521-598d-9785-bfcd34b7fca2';
     const conversationKey = `telegram:${TEAM_ID}:chat:456`;
     await seedRawEvent(db as never, {
       id: firstId,
@@ -8230,9 +8227,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('preserves Telegram sender identity and cites the sender commitment instead of a mention', async () => {
-    const promiseId = '10000000-0000-0000-0000-0000000000e7';
-    const errorId = '10000000-0000-0000-0000-0000000000e8';
-    const reviewId = '20000000-0000-0000-0000-0000000000e7';
+    const promiseId = '5f417000-6046-5506-a57c-68664870ecc9';
+    const errorId = '5b92a608-66be-5112-8aff-8c9a344da20b';
+    const reviewId = '2da5f837-e723-5e2f-a4cf-25c86e35ae8b';
     const conversationKey = `telegram:${TEAM_ID}:chat:prh`;
     await pg.query(`UPDATE users SET name = 'Cameron' WHERE id = '${MEMBER_ID}'`);
     await seedRawEvent(db as never, {
@@ -8286,7 +8283,6 @@ describe('processSuggestionJobForTests', () => {
                 title: 'Submit company registration to PRH',
                 proposedPayload: {
                   canonicalName: 'Submit company registration to PRH',
-                  ownerName: 'Casey',
                 },
               },
             ],
@@ -8480,7 +8476,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('identifies the original forwarded email sender in fenced prompt context', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e9';
+    const rawEventId = '166ed57f-2324-5906-9f8a-330e5f9792e3';
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'email',
@@ -8512,9 +8508,9 @@ describe('processSuggestionJobForTests', () => {
   it('revises a pending conversation proposal when a follow-up changes the owner', async () => {
     await db.update(users).set({ name: 'Sarah' }).where(eq(users.id, OWNER_ID));
     await db.update(users).set({ name: 'John' }).where(eq(users.id, MEMBER_ID));
-    const firstId = '10000000-0000-0000-0000-0000000000b1';
-    const secondId = '10000000-0000-0000-0000-0000000000b2';
-    const reviewId = '20000000-0000-0000-0000-0000000000b1';
+    const firstId = '2f574147-8805-5617-9694-d9daa747199d';
+    const secondId = 'ec07a8d1-8ac0-5df9-bb4f-6d60cee3244b';
+    const reviewId = '48325e30-4c7d-5e6a-b5c8-e3135d209d58';
     const conversationKey = `telegram:${TEAM_ID}:chat:789`;
     await seedRawEvent(db as never, {
       id: firstId,
@@ -8633,9 +8629,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('supersedes a stale meeting move approval when the conversation moves it again', async () => {
-    const firstId = '10000000-0000-0000-0000-0000000000e1';
-    const secondId = '10000000-0000-0000-0000-0000000000e2';
-    const reviewId = '20000000-0000-0000-0000-0000000000e1';
+    const firstId = '0b161366-b1e6-5556-8d35-ff22c9cb5bcf';
+    const secondId = 'e1b232fb-a6a7-5394-80b6-f0cbb49b4b44';
+    const reviewId = '4f0ae830-7b13-5770-b238-3aaaadb2ef50';
     await seedTelegramConversationReview(db as never, {
       rawEventId: firstId,
       reviewId,
@@ -8734,8 +8730,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('creates a lifecycle update proposal when evidence clearly completes an existing task', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e3';
-    const reviewId = '20000000-0000-0000-0000-0000000000e3';
+    const rawEventId = '52931fee-7524-5431-a61a-55e8f39b1a6b';
+    const reviewId = '3bcad31a-58bf-5682-bad7-1b5edb76e319';
     await db.insert(entities).values({
       id: OBJECT_ID,
       teamId: TEAM_ID,
@@ -8843,8 +8839,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('normalizes lifecycle aliases returned by the model', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000f1';
-    const reviewId = '20000000-0000-0000-0000-0000000000f1';
+    const rawEventId = '696aaa5d-409d-5665-9024-3fdb2a97de8b';
+    const reviewId = 'f6501ae4-ff8e-5f09-b910-05c430fc9015';
     await db.insert(entities).values({
       id: OBJECT_ID,
       teamId: TEAM_ID,
@@ -8903,8 +8899,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('normalizes object lifecycle aliases to the existing object type vocabulary', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000f6';
-    const reviewId = '20000000-0000-0000-0000-0000000000f6';
+    const rawEventId = 'e5cde87c-909a-5de3-b453-e20ce90768c9';
+    const reviewId = '057a2445-0f91-5dd2-a431-ec41f8a835f4';
     await db.insert(entities).values({
       id: OBJECT_ID,
       teamId: TEAM_ID,
@@ -8960,8 +8956,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('creates supported negative lifecycle proposals from clear evidence', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000f2';
-    const reviewId = '20000000-0000-0000-0000-0000000000f2';
+    const rawEventId = '5dde5d84-eb5e-5a45-a23b-9cf43c08c32a';
+    const reviewId = '3da7dcea-4ef9-5b98-919e-499bfa6708f9';
     await db.insert(entities).values({
       id: OBJECT_ID,
       teamId: TEAM_ID,
@@ -9026,8 +9022,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('creates no lifecycle proposal when completion evidence is ambiguous', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000e4';
-    const reviewId = '20000000-0000-0000-0000-0000000000e4';
+    const rawEventId = '0daf8204-367b-583c-95bc-188159eeac98';
+    const reviewId = 'b90bcd4b-4600-59e2-97f0-7c6a82533794';
     await db.insert(entities).values([
       {
         id: OBJECT_ID,
@@ -9038,7 +9034,7 @@ describe('processSuggestionJobForTests', () => {
         metadata: {},
       },
       {
-        id: 'dddddddd-dddd-dddd-dddd-dddddddddde1',
+        id: '3cab7cd1-f19f-5b3e-b3da-da3ecf65392b',
         teamId: TEAM_ID,
         type: 'task',
         canonicalName: 'Review Acme deck',
@@ -9068,8 +9064,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('instructs the model to ignore weak progress and hedged completion evidence', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000f3';
-    const reviewId = '20000000-0000-0000-0000-0000000000f3';
+    const rawEventId = 'dd8374b0-95cd-5984-bab7-9b7abec4017d';
+    const reviewId = 'deb8786b-0bc7-52bb-8f50-8c22831d592b';
     await db.insert(entities).values({
       id: OBJECT_ID,
       teamId: TEAM_ID,
@@ -9103,9 +9099,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('replaces a meaningful pending create task with create-as-done before acceptance', async () => {
-    const firstId = '10000000-0000-0000-0000-0000000000f4';
-    const secondId = '10000000-0000-0000-0000-0000000000f5';
-    const reviewId = '20000000-0000-0000-0000-0000000000f4';
+    const firstId = 'ae7bc59d-fcdb-5971-b851-88d1c5b34193';
+    const secondId = 'ec34642e-863d-532c-84ad-18d3433d32f2';
+    const reviewId = 'd44a10ac-9282-52c4-9457-a5d824745e99';
     const conversationKey = `telegram:${TEAM_ID}:chat:659`;
     await seedRawEvent(db as never, {
       id: firstId,
@@ -9210,7 +9206,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('does not let private evidence supersede broader approval queues', async () => {
-    const privateRawEventId = '10000000-0000-0000-0000-0000000000e5';
+    const privateRawEventId = '0fb30c34-ad23-5aeb-94cb-c8d853dae33e';
     await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'Move team-visible meeting',
@@ -9252,11 +9248,11 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('includes only explicit object-backed cross-source context in conversation reviews', async () => {
-    const telegramId = '10000000-0000-0000-0000-0000000000d1';
-    const linkedEmailId = '10000000-0000-0000-0000-0000000000d2';
-    const unlinkedEmailId = '10000000-0000-0000-0000-0000000000d3';
-    const privateEmailId = '10000000-0000-0000-0000-0000000000d4';
-    const reviewId = '20000000-0000-0000-0000-0000000000d1';
+    const telegramId = '5de849ff-5d70-5c07-a246-6bde0da4aac7';
+    const linkedEmailId = '6697e915-42a5-5981-bbff-0a43d69b61bc';
+    const unlinkedEmailId = '4b63bd74-47fe-5cef-88cd-f78c6e53353a';
+    const privateEmailId = 'ef89bffe-c496-5b72-bb6a-ed753cce5b65';
+    const reviewId = '4aee8a30-0dce-5400-b126-83ed70fde7f0';
     const conversationKey = `telegram:${TEAM_ID}:chat:222`;
     await db.insert(entities).values({
       id: OBJECT_ID,
@@ -9343,8 +9339,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('creates a correction proposal instead of mutating accepted conversation suggestions', async () => {
-    const rawEventId = '10000000-0000-0000-0000-0000000000c1';
-    const reviewId = '20000000-0000-0000-0000-0000000000c1';
+    const rawEventId = '6c723bec-696a-5c49-8c2d-e01f1dc8cef4';
+    const reviewId = '46d67b60-846c-5f8b-a07d-18ab9d983f66';
     const conversationKey = `telegram:${TEAM_ID}:chat:999`;
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -9373,7 +9369,7 @@ describe('processSuggestionJobForTests', () => {
                 operation: 'create',
                 targetKind: 'task',
                 title: 'Send Acme deck',
-                proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+                proposedPayload: { canonicalName: 'Send Acme deck' },
               },
             ],
           },
@@ -9440,9 +9436,9 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('re-offers a rejected conversation proposal when later evidence confirms it', async () => {
-    const firstId = '10000000-0000-0000-0000-0000000000c2';
-    const secondId = '10000000-0000-0000-0000-0000000000c3';
-    const reviewId = '20000000-0000-0000-0000-0000000000c2';
+    const firstId = '833993df-c17c-5327-9c64-dc7819ca3ae5';
+    const secondId = 'b27dfffc-1318-5316-bb1b-5c07e464becc';
+    const reviewId = '16d02358-a746-513a-8605-c3212457be62';
     const conversationKey = `telegram:${TEAM_ID}:chat:1000`;
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
     await seedRawEvent(db as never, {
@@ -9552,7 +9548,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stores model-backed object update suggestions with existing context in the prompt', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000002';
+    const rawEventId = '301f05b7-e941-5881-88cd-3b804c201102';
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Move Acme renewal to negotiation.',
@@ -9623,8 +9619,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('skips private and specific-user suggestions before calling the model', async () => {
-    const privateEventId = '10000000-0000-0000-0000-000000000003';
-    const specificEventId = '10000000-0000-0000-0000-000000000004';
+    const privateEventId = '2beb3fe1-6cf6-5abb-9655-fd81aba923ea';
+    const specificEventId = '1ce8f42f-7560-5b1a-886f-ff9252577fc4';
     const chat = emptyModel();
     await seedRawEvent(db as never, {
       id: privateEventId,
@@ -9666,8 +9662,8 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('stamps skipped non-team events even when no active reviewer can see them', async () => {
-    const inactivePrivateId = '10000000-0000-0000-0000-000000000005';
-    const emptySpecificId = '10000000-0000-0000-0000-000000000006';
+    const inactivePrivateId = '41b488f1-c874-5c0d-a50f-e304d99e7879';
+    const emptySpecificId = '1ff56304-d735-509f-8442-580a741bcdf0';
     await seedRawEvent(db as never, {
       id: inactivePrivateId,
       text: "I'll do private work tomorrow",
@@ -9707,7 +9703,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('reruns after extraction when the capture-time suggestion job wins the race', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000008';
+    const rawEventId = '16c2b62d-aa34-5f62-b23f-90235261da44';
     const chat = emptyModel();
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -9757,7 +9753,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('is idempotent when the same model version reruns', async () => {
-    const rawEventId = '10000000-0000-0000-0000-000000000007';
+    const rawEventId = 'f6e110b8-9b67-5abf-a796-ebdd3e53a188';
     const chat = emptyModel();
     await seedRawEvent(db as never, {
       id: rawEventId,

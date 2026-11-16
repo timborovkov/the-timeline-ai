@@ -641,3 +641,82 @@ test('verified bundle link clause joins separately quoted endpoint evidence', ()
     relationship(quotes, `${quotes.join(' ')} Do not link the project to Cedar Dental.`),
   ).toHaveLength(1);
 });
+
+test('equivalent ISO deadline representations retain the latest correction', () => {
+  const quote = 'Correction: Review retention policy is due 2026-06-12 at 09:00 UTC, not June 10.';
+  const payload = { dueAt: '2026-06-12T09:00:00.000Z' };
+  expect(
+    run(quote, payload, [support('dueAt', quote, '2026-06-12T09:00:00Z')], {
+      operation: 'update',
+    })[0]?.items[0]?.proposedPayload,
+  ).toEqual(payload);
+});
+
+test('completion uses canonical task identity rather than the update heading', () => {
+  const quote = 'The audit questionnaire has now been sent and delivery confirmed.';
+  const result = groundCommunicationBundles({
+    bundles: [
+      {
+        title: 'Delivered',
+        confidence: 'high',
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: 'task',
+            title: 'Mark task done: Send audit questionnaire',
+            proposedPayload: { status: 'done' },
+            grounding: [support('status', quote, 'done', 'Send audit questionnaire')],
+          },
+        ],
+      },
+    ],
+    packet: quote,
+    sources: [{ id: event, text: quote }],
+    members: [],
+    hubs: [],
+    objects: [{ id: 'task', type: 'task', name: 'Send audit questionnaire' }],
+    source: 'slack',
+  });
+  expect(result[0]?.items[0]?.proposedPayload.status).toBe('done');
+});
+
+test('mixed-source evidence keeps the forwarded email original speaker', () => {
+  const quote = 'I will review retention policy.';
+  const build = (userId: string) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title,
+              proposedPayload: { assigneeUserId: userId },
+              grounding: [support('assignee', quote, userId)],
+            },
+          ],
+        },
+      ],
+      packet: quote,
+      sources: [
+        {
+          id: event,
+          source: 'email',
+          text: quote,
+          authorUserId: alice,
+          speakerContext: '"senderHandle":"bob@example.test"',
+        },
+      ],
+      members: [
+        { userId: alice, name: 'Alice', email: 'alice@example.test' },
+        { userId: bob, name: 'Bob', email: 'bob@example.test' },
+      ],
+      hubs: [],
+      source: 'slack',
+    });
+  expect(build(alice)[0]?.items[0]?.proposedPayload.assigneeUserId).toBeUndefined();
+  expect(build(bob)[0]?.items[0]?.proposedPayload).toEqual({ assigneeUserId: bob });
+});

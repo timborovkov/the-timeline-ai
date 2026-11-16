@@ -72,7 +72,14 @@ aliases. A deadline pronoun may resolve to the immediately preceding visible tas
 sentence. Both checks reject ambiguous or truncated support.
 These deterministic checks recognize supported assertion/date forms and fail
 closed on unrecognized forms; they do not establish universal language understanding
-or replace approval. No additional verification-model call is made.
+or replace approval. Every human communication extraction, including an empty result,
+receives one completeness check through shared inference using the same model and
+authorized evidence. The check returns a complete replacement proposal set and a
+source-cited coverage ledger; it also selects any prepared pending-approval refinements.
+The ledger is structurally validated, not treated as proof of semantic completeness.
+Deterministic grounding remains mandatory. A failed check or rejected checked claim
+fails the attempt before new proposals are written; existing approvals are preserved
+and the job uses its bounded retry policy. There is no recursive checker loop.
 
 Unknown optional name/type/status/project hints encoded as `null` are treated as
 absent. Explicit clears for member IDs, dates, priorities and primary project IDs
