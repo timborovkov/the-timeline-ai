@@ -1389,7 +1389,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.drive.takeDriveExtractSlot).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
@@ -1621,7 +1621,7 @@ describe('googleDriveProvider', () => {
     expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
-  it('audits a visible Drive extract failure then retries after clearing failed state', async () => {
+  it('retains a failed Drive extract for the same revision', async () => {
     const body = Buffer.from('%PDF-1.4 retry');
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
@@ -1662,86 +1662,16 @@ describe('googleDriveProvider', () => {
     });
 
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.drive.takeDriveExtractSlot).toHaveBeenCalledWith({
-      integrationId: 'integration-1',
-      fileId: 'file-1',
-    });
-    expect(ctx.drive.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.takeDriveExtractSlot).not.toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_failed',
       expect.objectContaining({
         file_id: 'file-1',
         error: 'Daytona is not configured for PDF extraction',
-        retrying: true,
       }),
     );
-    expect(ctx.recordAudit).toHaveBeenCalledWith(
-      'drive_extract_enqueued',
-      expect.objectContaining({ file_id: 'file-1' }),
-    );
-  });
-
-  it('does not enqueue a failed Drive extract when the extract budget is exhausted', async () => {
-    const body = Buffer.from('%PDF-1.4 retry');
-    const fetch = vi.fn<
-      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
-    >((input) => {
-      const url = requestUrl(input);
-      if (url.pathname.endsWith('/files/file-1')) {
-        if (url.searchParams.get('alt') === 'media') {
-          return Promise.resolve(new Response(body, { status: 200 }));
-        }
-        return Promise.resolve(
-          jsonResponse({
-            id: 'file-1',
-            name: 'Notes',
-            mimeType: 'application/pdf',
-            parents: ['root'],
-          }),
-        );
-      }
-      if (url.pathname.endsWith('/comments')) {
-        return Promise.resolve(jsonResponse({ comments: [] }));
-      }
-      return Promise.resolve(jsonResponse({ permissions: [] }));
-    });
-    vi.stubGlobal('fetch', fetch);
-    const ctx = syncContext({
-      loadTransientDriveExtract: vi.fn().mockResolvedValue({
-        status: 'failed',
-        error: 'Daytona is not configured for PDF extraction',
-      }),
-      takeDriveExtractSlot: vi.fn().mockResolvedValue({
-        allowed: false,
-        reason: 'file',
-        retryAfterMs: 1_000,
-      }),
-    });
-    const before = Date.now();
-
-    const result = await googleDriveProvider.incrementalSync({
-      integration: { id: 'integration-1', teamId: 'team-1' } as never,
-      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
-      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
-      ctx: ctx,
-      target: { resourceType: 'drive.file', externalId: 'file-1' },
-    });
-
-    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
-    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
-    expect(ctx.recordAudit).toHaveBeenCalledWith(
-      'drive_extract_capped',
-      expect.objectContaining({
-        file_id: 'file-1',
-        reason: 'file',
-        retry_after_ms: 1_000,
-      }),
-    );
-    expectDelayedDriveFileContinuation(result, before, 1_000);
   });
 
   for (const { reason, mimeType, name } of [
