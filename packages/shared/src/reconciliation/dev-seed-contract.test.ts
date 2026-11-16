@@ -40,6 +40,9 @@ function shouldScanSourceFile(path: string): boolean {
     '.live-eval.test.ts',
     '/packages/db/src/schema/',
     '/packages/shared/src/reconciliation/dev-seed-contract.test.ts',
+    // Synthetic eval harnesses seed disposable fixtures; they are not production writers.
+    '/apps/worker/src/evals/',
+    '/packages/shared/src/evals/',
     // Disposable erasure fixtures are not production event writers.
     '/scripts/testing/team-deletion-rehearsal.ts',
   ].some((excluded) => path.includes(excluded));
