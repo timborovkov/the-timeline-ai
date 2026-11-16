@@ -126,6 +126,7 @@ export async function createCommunicationHarness() {
       const stages = ['seeded'];
       const inferenceTimings: NonNullable<CommunicationObservation['inferenceTimings']> = [];
       const executionErrors: string[] = [];
+      const executionFailureDetails: string[] = [];
       const ids: string[] = [];
       const jobs: Job[] = [];
       const reviews: Job[] = [];
@@ -344,6 +345,11 @@ export async function createCommunicationHarness() {
             return;
           } catch (error) {
             executionErrors.push(error instanceof Error ? error.name : 'WorkerError');
+            if (
+              error instanceof Error &&
+              /^(Communication |Pending communication )/.test(error.message)
+            )
+              executionFailureDetails.push(error.message);
           }
         }
       };
@@ -641,6 +647,7 @@ export async function createCommunicationHarness() {
       return {
         actions,
         executionErrors,
+        executionFailureDetails,
         modelCalls,
         inferenceTimings,
         durationMs: performance.now() - started,

@@ -43,5 +43,5 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
       pendingAmendmentIds: candidates.map((candidate) => candidate.id),
     }),
     model: 'controlled-audit',
-  }) as never;
+  });
 };

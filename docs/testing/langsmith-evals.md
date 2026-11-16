@@ -316,3 +316,8 @@ The [dated grounding evidence](../evidence/communications-grounding-2026-11-16.j
 retains the expanded corpus runs, original scorer versions and unexecuted holdout
 status. Use its frozen revision and individual failure reports when diagnosing
 remaining recall or field errors.
+
+The [completeness-check diagnostics](../evidence/communications-completeness-2026-11-16.json)
+retain failed checker-contract runs separately from benchmark evidence. Known-object
+references in a no-action ledger entry do not authorize writes; unavailable IDs
+still reject the complete attempt.

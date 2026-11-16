@@ -673,12 +673,12 @@ async function enrichTaskSuggestionItems(args: {
   }));
 }
 
-type PendingTaskAmendment = {
+interface PendingTaskAmendment {
   id: string;
   proposal: Parameters<
     ReturnType<typeof withTeam>['suggestions']['createOrMergeSuggestionBundle']
   >[0];
-};
+}
 
 async function preparePendingTaskAmendments(args: {
   db: Db;
@@ -4766,7 +4766,21 @@ async function runSuggestionExtraction(
         relationshipDedupe.resolveName,
       ),
     );
-  if (isHumanCommunication(row.source)) assertCommunicationClaimsRetained(auditedBaseline, bundles);
+  if (isHumanCommunication(row.source))
+    assertCommunicationClaimsRetained(
+      auditedBaseline,
+      bundles.map((bundle) => ({
+        ...bundle,
+        items: bundle.items.map((item) => ({
+          ...item,
+          proposedPayload: normalizeSuggestionItemPayload(
+            item,
+            matchingEntityRows.find((object) => object.id === item.targetId)?.type,
+          ),
+        })),
+      })),
+    );
+
   let enforcedEvidenceByBundle: suggestions.SuggestionEvidenceInput[][] | null = null;
   if (evidencePackEnforced && evidencePack) {
     try {

@@ -1,4 +1,6 @@
+import { requireValue } from '@timeline/shared/evals/benchmark';
 import { expect, test } from 'bun:test';
+
 import {
   validateCommunicationCoverage,
   assertCommunicationClaimsRetained,
@@ -25,53 +27,90 @@ const args = {
   existingIds: [],
 };
 test('coverage requires actual visible source evidence and matching proposals', () => {
-  expect(() => validateCommunicationCoverage(args)).not.toThrow();
+  expect(() => {
+    validateCommunicationCoverage(args);
+  }).not.toThrow();
   for (const patch of [
     { packet: '' },
     { sources: [] },
     { bundles: [] },
     { bundles: [...bundles, ...bundles] },
   ])
-    expect(() => validateCommunicationCoverage({ ...args, ...patch })).toThrow();
+    expect(() => {
+      validateCommunicationCoverage({ ...args, ...patch });
+    }).toThrow();
 });
 test('no action must explain itself without referring to proposals', () => {
-  expect(() =>
+  expect(() => {
     validateCommunicationCoverage({
       ...args,
       bundles: [],
       coverage: [
         {
-          ...coverage[0]!,
+          ...requireValue(coverage[0]),
           disposition: 'no_action',
           proposalIds: [],
           reason: 'Hypothetical request only.',
         },
       ],
-    }),
-  ).not.toThrow();
-  expect(() =>
+    });
+  }).not.toThrow();
+  expect(() => {
     validateCommunicationCoverage({
       ...args,
-      coverage: [{ ...coverage[0]!, disposition: 'no_action' }],
-    }),
-  ).toThrow();
+      coverage: [{ ...requireValue(coverage[0]), disposition: 'no_action' }],
+    });
+  }).toThrow();
 });
 test('existing disposition cannot reference an unavailable record', () => {
-  expect(() =>
+  expect(() => {
     validateCommunicationCoverage({
       ...args,
       bundles: [],
       coverage: [
-        { ...coverage[0]!, disposition: 'existing', proposalIds: [], existingIds: [event] },
+        {
+          ...requireValue(coverage[0]),
+          disposition: 'existing',
+          proposalIds: [],
+          existingIds: [event],
+        },
       ],
-    }),
-  ).toThrow();
+    });
+  }).toThrow();
 });
 test('checked field or item removal fails the whole attempt', () => {
   const original = [
     { items: [{ auditId: 'task', proposedPayload: { status: 'done', assigneeUserId: null } }] },
   ];
-  expect(() => assertCommunicationClaimsRetained(original, original)).not.toThrow();
-  expect(() => assertCommunicationClaimsRetained(original, bundles)).toThrow();
-  expect(() => assertCommunicationClaimsRetained(original, [])).toThrow();
+  expect(() => {
+    assertCommunicationClaimsRetained(original, original);
+  }).not.toThrow();
+  expect(() => {
+    assertCommunicationClaimsRetained(original, bundles);
+  }).toThrow();
+  expect(() => {
+    assertCommunicationClaimsRetained(original, []);
+  }).toThrow();
+});
+
+test('no-action may preserve a known object but cannot invent one', () => {
+  const preserved = {
+    ...args,
+    bundles: [],
+    existingIds: [event],
+    coverage: [
+      {
+        ...requireValue(coverage[0]),
+        disposition: 'no_action' as const,
+        proposalIds: [],
+        existingIds: [event],
+      },
+    ],
+  };
+  expect(() => {
+    validateCommunicationCoverage(preserved);
+  }).not.toThrow();
+  expect(() => {
+    validateCommunicationCoverage({ ...preserved, existingIds: [] });
+  }).toThrow();
 });

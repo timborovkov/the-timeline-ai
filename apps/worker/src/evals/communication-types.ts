@@ -71,6 +71,7 @@ export interface ObservedEdge {
 export interface CommunicationObservation extends SuggestionObservation {
   nodes: ObservedNode[];
   edges: ObservedEdge[];
+  executionFailureDetails?: string[];
   acceptanceErrors: number;
   acceptanceFailureReasons: string[];
   approvalOutcomes?: {

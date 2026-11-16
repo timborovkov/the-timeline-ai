@@ -33,6 +33,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   assembleSuggestionPrompt,
@@ -43,7 +44,6 @@ import {
   usableRawEventIds,
 } from '#src/workers/suggestions.js';
 
-import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
 const processSuggestionJobForTests = (
   ...args: Parameters<typeof processRealSuggestionJobForTests>
 ) =>

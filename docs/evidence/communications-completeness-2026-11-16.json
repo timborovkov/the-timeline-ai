@@ -1,0 +1,1445 @@
+{
+  "recordedAt": "2026-11-16T00:48:15.952Z",
+  "status": "Development diagnostics; fresh 36-case holdout unrun. No closure claim.",
+  "reports": {
+    "initialCompletenessDiagnostic": {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "74b5936e116d2d66d70a5abc95f2ab7315479bb7c7604aba42f61e8979001c49",
+      "revision": "13d9ca206edce5fac9f084e34d78c6ecda77beae",
+      "dirty": false,
+      "split": "development",
+      "evaluatedAt": "2026-11-16T00:48:15.952Z",
+      "reports": [
+        {
+          "repetition": 1,
+          "experiment": "communications-development-d5f2cb25",
+          "complete": false,
+          "benchmarkEvidence": false,
+          "feedbackComplete": true,
+          "summary": {
+            "cases": 9,
+            "passed": 6,
+            "executionFailures": 3,
+            "hardFailures": 0,
+            "expected": 36,
+            "proposed": 27,
+            "matched": 27,
+            "missed": 9,
+            "noise": 0,
+            "recall": 0.75,
+            "precision": 1,
+            "allowed": 0,
+            "noActionCases": 0,
+            "meanDurationMs": 49541.03141344444,
+            "scenarios": [
+              {
+                "scenario": "combined",
+                "cases": 3,
+                "correct": 2,
+                "accuracy": 0.6666666666666666
+              },
+              {
+                "scenario": "communications",
+                "cases": 9,
+                "correct": 6,
+                "accuracy": 0.6666666666666666
+              },
+              {
+                "scenario": "completeness-regression",
+                "cases": 9,
+                "correct": 6,
+                "accuracy": 0.6666666666666666
+              },
+              {
+                "scenario": "email",
+                "cases": 3,
+                "correct": 3,
+                "accuracy": 1
+              },
+              {
+                "scenario": "routing",
+                "cases": 6,
+                "correct": 4,
+                "accuracy": 0.6666666666666666
+              },
+              {
+                "scenario": "slack",
+                "cases": 3,
+                "correct": 1,
+                "accuracy": 0.3333333333333333
+              },
+              {
+                "scenario": "telegram",
+                "cases": 3,
+                "correct": 2,
+                "accuracy": 0.6666666666666666
+              }
+            ],
+            "failedCaseIds": [
+              "audit-unrelated-known-hubs-slack",
+              "audit-three-deliverables-telegram",
+              "audit-separate-link-clauses-slack"
+            ],
+            "scoringUnit": "approved-graph-and-field-assertions",
+            "fieldMismatchCases": [],
+            "uncertaintyViolationCases": [],
+            "sources": [
+              {
+                "source": "email",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 12,
+                "proposed": 12,
+                "matched": 12,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 53304.18321233334,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 2,
+                    "correct": 2,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "slack",
+                "cases": 3,
+                "passed": 1,
+                "executionFailures": 2,
+                "hardFailures": 0,
+                "expected": 12,
+                "proposed": 9,
+                "matched": 9,
+                "missed": 3,
+                "noise": 0,
+                "recall": 0.75,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 64634.83385599999,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 1,
+                    "accuracy": 0.3333333333333333
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 1,
+                    "accuracy": 0.3333333333333333
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 2,
+                    "correct": 0,
+                    "accuracy": 0
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 3,
+                    "correct": 1,
+                    "accuracy": 0.3333333333333333
+                  }
+                ],
+                "failedCaseIds": [
+                  "audit-unrelated-known-hubs-slack",
+                  "audit-separate-link-clauses-slack"
+                ]
+              },
+              {
+                "source": "telegram",
+                "cases": 3,
+                "passed": 2,
+                "executionFailures": 1,
+                "hardFailures": 0,
+                "expected": 12,
+                "proposed": 6,
+                "matched": 6,
+                "missed": 6,
+                "noise": 0,
+                "recall": 0.5,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 30684.077172,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 1,
+                    "correct": 0,
+                    "accuracy": 0
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 2,
+                    "correct": 2,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  }
+                ],
+                "failedCaseIds": ["audit-three-deliverables-telegram"]
+              }
+            ],
+            "families": [
+              {
+                "familyId": "audit-separate-link-clauses",
+                "cases": 3,
+                "passed": 2,
+                "executionFailures": 1,
+                "hardFailures": 0,
+                "expected": 9,
+                "proposed": 6,
+                "matched": 6,
+                "missed": 3,
+                "noise": 0,
+                "recall": 0.6666666666666666,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 92018.64898133332,
+                "scenarios": [
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 1,
+                    "correct": 0,
+                    "accuracy": 0
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": ["audit-separate-link-clauses-slack"]
+              },
+              {
+                "familyId": "audit-three-deliverables",
+                "cases": 3,
+                "passed": 2,
+                "executionFailures": 1,
+                "hardFailures": 0,
+                "expected": 21,
+                "proposed": 15,
+                "matched": 15,
+                "missed": 6,
+                "noise": 0,
+                "recall": 0.7142857142857143,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 45757.399352333334,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 1,
+                    "correct": 0,
+                    "accuracy": 0
+                  }
+                ],
+                "failedCaseIds": ["audit-three-deliverables-telegram"]
+              },
+              {
+                "familyId": "audit-unrelated-known-hubs",
+                "cases": 3,
+                "passed": 2,
+                "executionFailures": 1,
+                "hardFailures": 0,
+                "expected": 6,
+                "proposed": 6,
+                "matched": 6,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 10847.045906666664,
+                "scenarios": [
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 3,
+                    "correct": 2,
+                    "accuracy": 0.6666666666666666
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 1,
+                    "correct": 0,
+                    "accuracy": 0
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": ["audit-unrelated-known-hubs-slack"]
+              }
+            ],
+            "packetLossCases": [],
+            "acceptanceFailures": 0
+          },
+          "rows": [
+            {
+              "actions": [],
+              "executionErrors": [],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 2084.5991730000023,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 11433.144786000004,
+                  "failed": false
+                }
+              ],
+              "durationMs": 14237.099810000007,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "6ee51604-5b20-402c-8c9b-41fd7f15da54",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "active",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8e9bfd90-3320-4a08-8d18-483999a1f7f9",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "email",
+              "familyId": "audit-unrelated-known-hubs",
+              "id": "audit-unrelated-known-hubs-email",
+              "tags": ["routing", "email", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 2,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [],
+              "executionErrors": ["Error"],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 2415.6700960000016,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 8006.729354999989,
+                  "failed": false
+                }
+              ],
+              "durationMs": 10546.641685999988,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "6ee51604-5b20-402c-8c9b-41fd7f15da54",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "active",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8e9bfd90-3320-4a08-8d18-483999a1f7f9",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "slack",
+              "familyId": "audit-unrelated-known-hubs",
+              "id": "audit-unrelated-known-hubs-slack",
+              "tags": ["routing", "slack", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 2,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": true,
+                "passed": false
+              }
+            },
+            {
+              "actions": [],
+              "executionErrors": [],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 2938.0295500000066,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 4683.775781000004,
+                  "failed": false
+                }
+              ],
+              "durationMs": 7757.396223999996,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "6ee51604-5b20-402c-8c9b-41fd7f15da54",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "active",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8e9bfd90-3320-4a08-8d18-483999a1f7f9",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "audit-unrelated-known-hubs",
+              "id": "audit-unrelated-known-hubs-telegram",
+              "tags": ["routing", "telegram", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 2,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "7cc85bd0-37af-43de-bc0c-8bfba4849c60",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Juniper Diagnostics",
+                  "proposedPayload": {
+                    "type": "company",
+                    "localRef": "juniper-diagnostics",
+                    "canonicalName": "Juniper Diagnostics"
+                  },
+                  "evidenceIds": ["ecc5cf97-74da-4f02-8f43-371de013708e"]
+                },
+                {
+                  "bundleId": "7cc85bd0-37af-43de-bc0c-8bfba4849c60",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Sample Registry",
+                  "proposedPayload": {
+                    "type": "project",
+                    "status": "planning",
+                    "localRef": "sample-registry",
+                    "canonicalName": "Sample Registry"
+                  },
+                  "evidenceIds": ["ecc5cf97-74da-4f02-8f43-371de013708e"]
+                },
+                {
+                  "bundleId": "7cc85bd0-37af-43de-bc0c-8bfba4849c60",
+                  "operation": "create",
+                  "targetKind": "object_relationship",
+                  "targetId": null,
+                  "title": "Sample Registry linked to Juniper Diagnostics",
+                  "proposedPayload": {
+                    "kind": "related",
+                    "fromRef": "sample-registry",
+                    "toRef": "juniper-diagnostics"
+                  },
+                  "evidenceIds": ["ecc5cf97-74da-4f02-8f43-371de013708e"]
+                }
+              ],
+              "executionErrors": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 10188.096661000003,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 48854.033742,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 6518.816185000003,
+                  "failed": false
+                }
+              ],
+              "durationMs": 66440.84391,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "630f49b9-617c-4e3f-add7-ad162d6b4337",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "open",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "29628df5-62e3-4aba-8e3a-624eb81a0058",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "29628df5-62e3-4aba-8e3a-624eb81a0058",
+                  "to": "630f49b9-617c-4e3f-add7-ad162d6b4337",
+                  "kind": "related"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "630f49b9-617c-4e3f-add7-ad162d6b4337",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry",
+                  "status": "accepted",
+                  "resultId": "29628df5-62e3-4aba-8e3a-624eb81a0058",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry linked to Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "5e588585-f963-4d64-b445-a54a24c66404",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "audit-separate-link-clauses",
+              "id": "audit-separate-link-clauses-telegram",
+              "tags": ["routing", "telegram", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 3,
+                "matched": 3,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "ad101ecf-3715-444e-b646-7ec4ebc88384",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Prepare the connection diagram",
+                  "proposedPayload": {
+                    "status": "todo",
+                    "projectName": "Device Console",
+                    "canonicalName": "Prepare the connection diagram",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["3b22a4e5-38ca-43fe-aa9a-08582015411f"]
+                },
+                {
+                  "bundleId": "1aafef0f-3441-4ef2-924f-6aac735cf2fe",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Review the restore procedure",
+                  "proposedPayload": {
+                    "status": "todo",
+                    "projectName": "Device Console",
+                    "canonicalName": "Review the restore procedure",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["3b22a4e5-38ca-43fe-aa9a-08582015411f"]
+                },
+                {
+                  "bundleId": "4a84fe5d-264c-4998-9446-0874d8f6acab",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Draft the operator checklist",
+                  "proposedPayload": {
+                    "status": "todo",
+                    "projectName": "Device Console",
+                    "canonicalName": "Draft the operator checklist",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["3b22a4e5-38ca-43fe-aa9a-08582015411f"]
+                }
+              ],
+              "executionErrors": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 9849.144786999997,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 24633.15814,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 6186.830436000004,
+                  "failed": false
+                }
+              ],
+              "durationMs": 41125.55589100001,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "type": "project",
+                  "name": "Device Console",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "ed602692-3036-4487-84fd-a2157d32b6d3",
+                  "type": "task",
+                  "name": "Prepare the connection diagram",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "d323ce62-c9c5-45c6-90a6-b2638f8c2ad0",
+                  "type": "task",
+                  "name": "Review the restore procedure",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "ac0fafa6-4b51-46d7-a597-09f899e93867",
+                  "type": "task",
+                  "name": "Draft the operator checklist",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "ed602692-3036-4487-84fd-a2157d32b6d3",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "d323ce62-c9c5-45c6-90a6-b2638f8c2ad0",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "ac0fafa6-4b51-46d7-a597-09f899e93867",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Prepare the connection diagram",
+                  "status": "accepted",
+                  "resultId": "ed602692-3036-4487-84fd-a2157d32b6d3",
+                  "reason": null
+                },
+                {
+                  "title": "Review the restore procedure",
+                  "status": "accepted",
+                  "resultId": "d323ce62-c9c5-45c6-90a6-b2638f8c2ad0",
+                  "reason": null
+                },
+                {
+                  "title": "Draft the operator checklist",
+                  "status": "accepted",
+                  "resultId": "ac0fafa6-4b51-46d7-a597-09f899e93867",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "email",
+              "familyId": "audit-three-deliverables",
+              "id": "audit-three-deliverables-email",
+              "tags": ["combined", "email", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 7,
+                "proposed": 7,
+                "matched": 7,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [],
+              "executionErrors": ["Error"],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 3781.189135000008,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 13940.194011999993,
+                  "failed": false
+                }
+              ],
+              "durationMs": 17853.991382000007,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "type": "project",
+                  "name": "Device Console",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "audit-three-deliverables",
+              "id": "audit-three-deliverables-telegram",
+              "tags": ["combined", "telegram", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 7,
+                "proposed": 1,
+                "matched": 1,
+                "allowed": 0,
+                "missed": 6,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": true,
+                "passed": false
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "97d0920c-f2ea-4c20-96e9-eb4493fbe063",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Juniper Diagnostics",
+                  "proposedPayload": {
+                    "type": "company",
+                    "localRef": "juniper-diagnostics",
+                    "canonicalName": "Juniper Diagnostics"
+                  },
+                  "evidenceIds": ["7bab9027-1f49-495e-aa96-0e274904b4cb"]
+                },
+                {
+                  "bundleId": "97d0920c-f2ea-4c20-96e9-eb4493fbe063",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Sample Registry",
+                  "proposedPayload": {
+                    "type": "project",
+                    "status": "planning",
+                    "localRef": "sample-registry",
+                    "canonicalName": "Sample Registry"
+                  },
+                  "evidenceIds": ["7bab9027-1f49-495e-aa96-0e274904b4cb"]
+                },
+                {
+                  "bundleId": "97d0920c-f2ea-4c20-96e9-eb4493fbe063",
+                  "operation": "create",
+                  "targetKind": "object_relationship",
+                  "targetId": null,
+                  "title": "Link Sample Registry to Juniper Diagnostics",
+                  "proposedPayload": {
+                    "kind": "related",
+                    "fromRef": "sample-registry",
+                    "toRef": "juniper-diagnostics"
+                  },
+                  "evidenceIds": ["7bab9027-1f49-495e-aa96-0e274904b4cb"]
+                }
+              ],
+              "executionErrors": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 20268.630186000002,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 78116.44355400001,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 5256.155160000024,
+                  "failed": false
+                }
+              ],
+              "durationMs": 104549.89393600001,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "7f7e1bdf-3dfd-465b-96d5-49db4ba440b2",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "open",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8ff2fb14-d0dc-4393-beec-897181e9e939",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "7f7e1bdf-3dfd-465b-96d5-49db4ba440b2",
+                  "to": "8ff2fb14-d0dc-4393-beec-897181e9e939",
+                  "kind": "related"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "7f7e1bdf-3dfd-465b-96d5-49db4ba440b2",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry",
+                  "status": "accepted",
+                  "resultId": "8ff2fb14-d0dc-4393-beec-897181e9e939",
+                  "reason": null
+                },
+                {
+                  "title": "Link Sample Registry to Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "ee9c235d-4c85-47e1-9ca1-7550a6e981d5",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "email",
+              "familyId": "audit-separate-link-clauses",
+              "id": "audit-separate-link-clauses-email",
+              "tags": ["routing", "email", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 3,
+                "matched": 3,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [],
+              "executionErrors": ["Error"],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 13480.174127999999,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 91003.17714500001,
+                  "failed": false
+                }
+              ],
+              "durationMs": 105065.20909799999,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "slack",
+              "familyId": "audit-separate-link-clauses",
+              "id": "audit-separate-link-clauses-slack",
+              "tags": ["routing", "slack", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 0,
+                "matched": 0,
+                "allowed": 0,
+                "missed": 3,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": true,
+                "passed": false
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "a5504858-e437-4301-b8b6-4db8fa8f3778",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Draft the operator checklist",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Draft the operator checklist",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["db2df292-c5af-4335-bb65-2ff6f2cdc148"]
+                },
+                {
+                  "bundleId": "a5504858-e437-4301-b8b6-4db8fa8f3778",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Review the restore procedure",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Review the restore procedure",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["db2df292-c5af-4335-bb65-2ff6f2cdc148"]
+                },
+                {
+                  "bundleId": "a5504858-e437-4301-b8b6-4db8fa8f3778",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Prepare the connection diagram",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Prepare the connection diagram",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["db2df292-c5af-4335-bb65-2ff6f2cdc148"]
+                }
+              ],
+              "executionErrors": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 4976.951207999999,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 47267.86528,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 25662.274443000002,
+                  "failed": false
+                }
+              ],
+              "durationMs": 78292.650784,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "type": "project",
+                  "name": "Device Console",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "b42f6c43-7d43-4936-819a-63162e2f59b8",
+                  "type": "task",
+                  "name": "Draft the operator checklist",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "a3b6d5c0-cc3a-4211-a921-954f307fd0a3",
+                  "type": "task",
+                  "name": "Review the restore procedure",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "61258197-d54e-48fc-a79a-14340c01e866",
+                  "type": "task",
+                  "name": "Prepare the connection diagram",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "b42f6c43-7d43-4936-819a-63162e2f59b8",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "a3b6d5c0-cc3a-4211-a921-954f307fd0a3",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "61258197-d54e-48fc-a79a-14340c01e866",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Draft the operator checklist",
+                  "status": "accepted",
+                  "resultId": "b42f6c43-7d43-4936-819a-63162e2f59b8",
+                  "reason": null
+                },
+                {
+                  "title": "Review the restore procedure",
+                  "status": "accepted",
+                  "resultId": "a3b6d5c0-cc3a-4211-a921-954f307fd0a3",
+                  "reason": null
+                },
+                {
+                  "title": "Prepare the connection diagram",
+                  "status": "accepted",
+                  "resultId": "61258197-d54e-48fc-a79a-14340c01e866",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "slack",
+              "familyId": "audit-three-deliverables",
+              "id": "audit-three-deliverables-slack",
+              "tags": ["combined", "slack", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 7,
+                "proposed": 7,
+                "matched": 7,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            }
+          ]
+        }
+      ],
+      "inProgress": null
+    }
+  },
+  "originalReportSha256": {
+    "initialCompletenessDiagnostic": "2e6bb54582008c34d0c4f705d872cd7ebb242ce6154ed7d53927fa1964458b21"
+  },
+  "findings": [
+    "Two failures rejected known-object references in a no-action coverage entry; contract corrected without changing outcome labels or scoring.",
+    "One checker invented an existing-record UUID for a hypothetical reuse entry; correctly rejected. Instructions and schema descriptions strengthened; regression remains open until verified."
+  ]
+}
