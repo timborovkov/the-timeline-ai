@@ -720,3 +720,29 @@ test('mixed-source evidence keeps the forwarded email original speaker', () => {
   expect(build(alice)[0]?.items[0]?.proposedPayload.assigneeUserId).toBeUndefined();
   expect(build(bob)[0]?.items[0]?.proposedPayload).toEqual({ assigneeUserId: bob });
 });
+
+for (const reference of ['this', 'that']) {
+  test(`explicit ${reference} project link requires one visible supported endpoint`, () => {
+    const quotes = [
+      'Cedar Dental is our client.',
+      'We are planning their Patient Portal project.',
+      `Link ${reference} project to Cedar Dental.`,
+    ];
+    const text = quotes.join(' ');
+    expect(relationship(quotes, text)).toHaveLength(2);
+    const ambiguous = `${text} Records Gateway is another project.`;
+    expect(
+      relationship(quotes, ambiguous, [], ambiguous, [
+        { id: 'other', name: 'Records Gateway', type: 'project', aliases: [] },
+      ]),
+    ).toHaveLength(1);
+    expect(relationship(quotes, text, [], quotes[2])).toHaveLength(1);
+    const negative = text.replace('Link ', 'Do not link ');
+    expect(
+      relationship(
+        [quotes[0] ?? '', quotes[1] ?? '', `Do not link ${reference} project to Cedar Dental.`],
+        negative,
+      ),
+    ).toHaveLength(1);
+  });
+}

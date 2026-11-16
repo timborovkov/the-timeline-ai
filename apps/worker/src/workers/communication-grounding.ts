@@ -309,7 +309,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               !other ||
               !['company', 'project'].includes(String(other.type)) ||
               !new RegExp(
-                `\\bthe ${other.type === 'company' ? '(?:company|customer|client)' : 'project'}\\b`,
+                `\\b(?:the|this|that) ${other.type === 'company' ? '(?:company|customer|client)' : 'project'}\\b`,
                 'i',
               ).test(support.quote)
             )

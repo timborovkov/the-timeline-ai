@@ -1433,13 +1433,3495 @@
         }
       ],
       "inProgress": null
+    },
+    "correctedLedgerDiagnostic": {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "63d734683191f4cef49e512334b6fe86aca0dc9c15aa606736b470e773a0fa1a",
+      "revision": "3b8770fa96ea43aab03d26b3ff9fc9d5e785956a",
+      "dirty": false,
+      "split": "development",
+      "evaluatedAt": "2026-11-16T00:53:43.780Z",
+      "reports": [
+        {
+          "repetition": 1,
+          "experiment": "communications-development-6e4d60cc",
+          "complete": false,
+          "benchmarkEvidence": false,
+          "feedbackComplete": true,
+          "summary": {
+            "cases": 9,
+            "passed": 9,
+            "executionFailures": 0,
+            "hardFailures": 0,
+            "expected": 36,
+            "proposed": 36,
+            "matched": 36,
+            "missed": 0,
+            "noise": 0,
+            "recall": 1,
+            "precision": 1,
+            "allowed": 0,
+            "noActionCases": 0,
+            "meanDurationMs": 45912.4708071111,
+            "scenarios": [
+              {
+                "scenario": "combined",
+                "cases": 3,
+                "correct": 3,
+                "accuracy": 1
+              },
+              {
+                "scenario": "communications",
+                "cases": 9,
+                "correct": 9,
+                "accuracy": 1
+              },
+              {
+                "scenario": "completeness-regression",
+                "cases": 9,
+                "correct": 9,
+                "accuracy": 1
+              },
+              {
+                "scenario": "email",
+                "cases": 3,
+                "correct": 3,
+                "accuracy": 1
+              },
+              {
+                "scenario": "routing",
+                "cases": 6,
+                "correct": 6,
+                "accuracy": 1
+              },
+              {
+                "scenario": "slack",
+                "cases": 3,
+                "correct": 3,
+                "accuracy": 1
+              },
+              {
+                "scenario": "telegram",
+                "cases": 3,
+                "correct": 3,
+                "accuracy": 1
+              }
+            ],
+            "failedCaseIds": [],
+            "scoringUnit": "approved-graph-and-field-assertions",
+            "fieldMismatchCases": [],
+            "uncertaintyViolationCases": [],
+            "sources": [
+              {
+                "source": "email",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 12,
+                "proposed": 12,
+                "matched": 12,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 46004.017059,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 2,
+                    "correct": 2,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "slack",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 12,
+                "proposed": 12,
+                "matched": 12,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 48307.256515333334,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 2,
+                    "correct": 2,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "telegram",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 12,
+                "proposed": 12,
+                "matched": 12,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 43426.138847,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 2,
+                    "correct": 2,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              }
+            ],
+            "families": [
+              {
+                "familyId": "audit-separate-link-clauses",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 9,
+                "proposed": 9,
+                "matched": 9,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 73755.08342633332,
+                "scenarios": [
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "familyId": "audit-three-deliverables",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 21,
+                "proposed": 21,
+                "matched": 21,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 49533.73014333333,
+                "scenarios": [
+                  {
+                    "scenario": "combined",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "familyId": "audit-unrelated-known-hubs",
+                "cases": 3,
+                "passed": 3,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 6,
+                "proposed": 6,
+                "matched": 6,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 14448.59885166667,
+                "scenarios": [
+                  {
+                    "scenario": "communications",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              }
+            ],
+            "packetLossCases": [],
+            "acceptanceFailures": 0
+          },
+          "rows": [
+            {
+              "actions": [],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 7611.796187,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 11572.121245999999,
+                  "failed": false
+                }
+              ],
+              "durationMs": 19965.173324000003,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "6ee51604-5b20-402c-8c9b-41fd7f15da54",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "active",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8e9bfd90-3320-4a08-8d18-483999a1f7f9",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "email",
+              "familyId": "audit-unrelated-known-hubs",
+              "id": "audit-unrelated-known-hubs-email",
+              "tags": ["routing", "email", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 2,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 3418.7399570000052,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 9943.004993999995,
+                  "failed": false
+                }
+              ],
+              "durationMs": 13540.565454000003,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "6ee51604-5b20-402c-8c9b-41fd7f15da54",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "active",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8e9bfd90-3320-4a08-8d18-483999a1f7f9",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "slack",
+              "familyId": "audit-unrelated-known-hubs",
+              "id": "audit-unrelated-known-hubs-slack",
+              "tags": ["routing", "slack", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 2,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 3249.988839999998,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 6436.5423200000005,
+                  "failed": false
+                }
+              ],
+              "durationMs": 9840.057777000002,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "6ee51604-5b20-402c-8c9b-41fd7f15da54",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "active",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "8e9bfd90-3320-4a08-8d18-483999a1f7f9",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "audit-unrelated-known-hubs",
+              "id": "audit-unrelated-known-hubs-telegram",
+              "tags": ["routing", "telegram", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 2,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "7a966bc0-1a61-4ed5-9e16-9639a58f30d3",
+                  "operation": "create",
+                  "targetKind": "object_relationship",
+                  "targetId": null,
+                  "title": "Juniper Diagnostics \u2192 Sample Registry",
+                  "proposedPayload": {
+                    "kind": "related",
+                    "fromRef": "juniper-diagnostics",
+                    "toRef": "sample-registry"
+                  },
+                  "evidenceIds": ["3ce60266-7c12-4be7-9219-0b657034421b"]
+                },
+                {
+                  "bundleId": "7a966bc0-1a61-4ed5-9e16-9639a58f30d3",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Sample Registry",
+                  "proposedPayload": {
+                    "type": "project",
+                    "status": "planning",
+                    "localRef": "sample-registry",
+                    "confidence": 0.75,
+                    "canonicalName": "Sample Registry"
+                  },
+                  "evidenceIds": ["3ce60266-7c12-4be7-9219-0b657034421b"]
+                },
+                {
+                  "bundleId": "7a966bc0-1a61-4ed5-9e16-9639a58f30d3",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Juniper Diagnostics",
+                  "proposedPayload": {
+                    "type": "company",
+                    "localRef": "juniper-diagnostics",
+                    "confidence": 0.8,
+                    "canonicalName": "Juniper Diagnostics"
+                  },
+                  "evidenceIds": ["3ce60266-7c12-4be7-9219-0b657034421b"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 16869.166048,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 31238.335358,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 5341.3995769999965,
+                  "failed": false
+                }
+              ],
+              "durationMs": 54447.74844599999,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "350f1f61-340f-411b-87c3-7e2062e722bc",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "fbcd2863-3dab-449f-8f3e-2e43cf488571",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "open",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "350f1f61-340f-411b-87c3-7e2062e722bc",
+                  "to": "fbcd2863-3dab-449f-8f3e-2e43cf488571",
+                  "kind": "related"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Sample Registry",
+                  "status": "accepted",
+                  "resultId": "350f1f61-340f-411b-87c3-7e2062e722bc",
+                  "reason": null
+                },
+                {
+                  "title": "Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "fbcd2863-3dab-449f-8f3e-2e43cf488571",
+                  "reason": null
+                },
+                {
+                  "title": "Juniper Diagnostics \u2192 Sample Registry",
+                  "status": "accepted",
+                  "resultId": "9b5ed47f-5d1d-47e7-a890-a818f4587bf5",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "email",
+              "familyId": "audit-separate-link-clauses",
+              "id": "audit-separate-link-clauses-email",
+              "tags": ["routing", "email", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 3,
+                "matched": 3,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "79e68aa5-641b-4d83-a076-2b696fea3906",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Juniper Diagnostics",
+                  "proposedPayload": {
+                    "type": "company",
+                    "localRef": "juniper-diagnostics",
+                    "canonicalName": "Juniper Diagnostics"
+                  },
+                  "evidenceIds": ["e92079ac-eb06-4526-9af8-01d040786d90"]
+                },
+                {
+                  "bundleId": "79e68aa5-641b-4d83-a076-2b696fea3906",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Sample Registry",
+                  "proposedPayload": {
+                    "type": "project",
+                    "status": "planning",
+                    "localRef": "sample-registry",
+                    "canonicalName": "Sample Registry"
+                  },
+                  "evidenceIds": ["e92079ac-eb06-4526-9af8-01d040786d90"]
+                },
+                {
+                  "bundleId": "79e68aa5-641b-4d83-a076-2b696fea3906",
+                  "operation": "create",
+                  "targetKind": "object_relationship",
+                  "targetId": null,
+                  "title": "Sample Registry linked to Juniper Diagnostics",
+                  "proposedPayload": {
+                    "kind": "related",
+                    "fromRef": "sample-registry",
+                    "toRef": "juniper-diagnostics"
+                  },
+                  "evidenceIds": ["e92079ac-eb06-4526-9af8-01d040786d90"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 32485.964131,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 27177.348067000006,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 1994.9823159999942,
+                  "failed": false
+                }
+              ],
+              "durationMs": 62564.558674,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "54152215-a503-4d01-8e18-ac03fcd839b3",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "open",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "23b82a3e-9c99-4e48-9cfe-e985fbadfc12",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "23b82a3e-9c99-4e48-9cfe-e985fbadfc12",
+                  "to": "54152215-a503-4d01-8e18-ac03fcd839b3",
+                  "kind": "related"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "54152215-a503-4d01-8e18-ac03fcd839b3",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry",
+                  "status": "accepted",
+                  "resultId": "23b82a3e-9c99-4e48-9cfe-e985fbadfc12",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry linked to Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "f8cdf007-2670-4fb7-a164-8733158c84db",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "audit-separate-link-clauses",
+              "id": "audit-separate-link-clauses-telegram",
+              "tags": ["routing", "telegram", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 3,
+                "matched": 3,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "3fb413cb-2e90-4a45-a69e-a62456a126a9",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Review the restore procedure",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Review the restore procedure",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["ea50f7a1-d304-42e2-af69-1ef8fde0bcff"]
+                },
+                {
+                  "bundleId": "3fb413cb-2e90-4a45-a69e-a62456a126a9",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Draft the operator checklist",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Draft the operator checklist",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["ea50f7a1-d304-42e2-af69-1ef8fde0bcff"]
+                },
+                {
+                  "bundleId": "3fb413cb-2e90-4a45-a69e-a62456a126a9",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Prepare the connection diagram",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Prepare the connection diagram",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["ea50f7a1-d304-42e2-af69-1ef8fde0bcff"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 8196.888190999991,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 14940.047361000004,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 3628.328303000002,
+                  "failed": false
+                }
+              ],
+              "durationMs": 27128.260932999998,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "type": "project",
+                  "name": "Device Console",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "db497c2e-02b8-490c-bb05-89de36bf964c",
+                  "type": "task",
+                  "name": "Review the restore procedure",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "bd35af68-2f7a-4068-8e39-8e93cd8599cf",
+                  "type": "task",
+                  "name": "Draft the operator checklist",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "947174e4-51e0-4e44-9f68-f02321b85ce9",
+                  "type": "task",
+                  "name": "Prepare the connection diagram",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "db497c2e-02b8-490c-bb05-89de36bf964c",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "bd35af68-2f7a-4068-8e39-8e93cd8599cf",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "947174e4-51e0-4e44-9f68-f02321b85ce9",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Review the restore procedure",
+                  "status": "accepted",
+                  "resultId": "db497c2e-02b8-490c-bb05-89de36bf964c",
+                  "reason": null
+                },
+                {
+                  "title": "Draft the operator checklist",
+                  "status": "accepted",
+                  "resultId": "bd35af68-2f7a-4068-8e39-8e93cd8599cf",
+                  "reason": null
+                },
+                {
+                  "title": "Prepare the connection diagram",
+                  "status": "accepted",
+                  "resultId": "947174e4-51e0-4e44-9f68-f02321b85ce9",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "slack",
+              "familyId": "audit-three-deliverables",
+              "id": "audit-three-deliverables-slack",
+              "tags": ["combined", "slack", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 7,
+                "proposed": 7,
+                "matched": 7,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "20014153-8aa5-4275-a259-411dcaba5976",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Juniper Diagnostics",
+                  "proposedPayload": {
+                    "type": "company",
+                    "localRef": "juniper-diagnostics",
+                    "confidence": "high",
+                    "canonicalName": "Juniper Diagnostics"
+                  },
+                  "evidenceIds": ["10407de8-46e4-4dfe-a246-a258641c6c4e"]
+                },
+                {
+                  "bundleId": "20014153-8aa5-4275-a259-411dcaba5976",
+                  "operation": "create",
+                  "targetKind": "object",
+                  "targetId": null,
+                  "title": "Sample Registry",
+                  "proposedPayload": {
+                    "type": "project",
+                    "status": "planning",
+                    "localRef": "sample-registry",
+                    "confidence": "high",
+                    "canonicalName": "Sample Registry"
+                  },
+                  "evidenceIds": ["10407de8-46e4-4dfe-a246-a258641c6c4e"]
+                },
+                {
+                  "bundleId": "20014153-8aa5-4275-a259-411dcaba5976",
+                  "operation": "create",
+                  "targetKind": "object_relationship",
+                  "targetId": null,
+                  "title": "Sample Registry linked to Juniper Diagnostics",
+                  "proposedPayload": {
+                    "kind": "related",
+                    "fromRef": "sample-registry",
+                    "toRef": "juniper-diagnostics"
+                  },
+                  "evidenceIds": ["10407de8-46e4-4dfe-a246-a258641c6c4e"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 28277.178288000003,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 64245.508105,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 10816.83834300001,
+                  "failed": false
+                }
+              ],
+              "durationMs": 104252.943159,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "19819df0-ecb5-4ac8-b151-2cfd1cc3712c",
+                  "type": "company",
+                  "name": "Juniper Diagnostics",
+                  "status": "open",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "58705d9f-630e-40b0-a58f-c54ad1a640c3",
+                  "type": "project",
+                  "name": "Sample Registry",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "19819df0-ecb5-4ac8-b151-2cfd1cc3712c",
+                  "to": "58705d9f-630e-40b0-a58f-c54ad1a640c3",
+                  "kind": "related"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "19819df0-ecb5-4ac8-b151-2cfd1cc3712c",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry",
+                  "status": "accepted",
+                  "resultId": "58705d9f-630e-40b0-a58f-c54ad1a640c3",
+                  "reason": null
+                },
+                {
+                  "title": "Sample Registry linked to Juniper Diagnostics",
+                  "status": "accepted",
+                  "resultId": "02723fbe-2145-439f-868e-4a49ef191c10",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "slack",
+              "familyId": "audit-separate-link-clauses",
+              "id": "audit-separate-link-clauses-slack",
+              "tags": ["routing", "slack", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 3,
+                "matched": 3,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "5e5ecead-4c33-4874-b041-886099c5efec",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Prepare connection diagram",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Prepare connection diagram",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["b5e75b20-f2df-410f-adc8-04c5191ed71d"]
+                },
+                {
+                  "bundleId": "5e5ecead-4c33-4874-b041-886099c5efec",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Review restore procedure",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Review restore procedure",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["b5e75b20-f2df-410f-adc8-04c5191ed71d"]
+                },
+                {
+                  "bundleId": "5e5ecead-4c33-4874-b041-886099c5efec",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Draft operator checklist",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Draft operator checklist",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["b5e75b20-f2df-410f-adc8-04c5191ed71d"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 5748.4309189999985,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 27739.352078000004,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 29720.435618999996,
+                  "failed": false
+                }
+              ],
+              "durationMs": 63599.129407,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "type": "project",
+                  "name": "Device Console",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "f0f855d0-5894-4922-8bf3-1a43b11959c1",
+                  "type": "task",
+                  "name": "Prepare connection diagram",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "b7be48c9-9844-454f-aadb-15deef96629b",
+                  "type": "task",
+                  "name": "Review restore procedure",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "5210e1c2-5b4e-48d7-91ba-d4d17500b599",
+                  "type": "task",
+                  "name": "Draft operator checklist",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "f0f855d0-5894-4922-8bf3-1a43b11959c1",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "b7be48c9-9844-454f-aadb-15deef96629b",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "5210e1c2-5b4e-48d7-91ba-d4d17500b599",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Prepare connection diagram",
+                  "status": "accepted",
+                  "resultId": "f0f855d0-5894-4922-8bf3-1a43b11959c1",
+                  "reason": null
+                },
+                {
+                  "title": "Review restore procedure",
+                  "status": "accepted",
+                  "resultId": "b7be48c9-9844-454f-aadb-15deef96629b",
+                  "reason": null
+                },
+                {
+                  "title": "Draft operator checklist",
+                  "status": "accepted",
+                  "resultId": "5210e1c2-5b4e-48d7-91ba-d4d17500b599",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "email",
+              "familyId": "audit-three-deliverables",
+              "id": "audit-three-deliverables-email",
+              "tags": ["combined", "email", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 7,
+                "proposed": 7,
+                "matched": 7,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            },
+            {
+              "actions": [
+                {
+                  "bundleId": "2cb05c56-2b1a-4051-bd98-843902c0a7e4",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Review restore procedure",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Review restore procedure",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["fc43daab-22a2-4e12-838c-7463576d315e"]
+                },
+                {
+                  "bundleId": "2cb05c56-2b1a-4051-bd98-843902c0a7e4",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Draft operator checklist",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Draft operator checklist",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["fc43daab-22a2-4e12-838c-7463576d315e"]
+                },
+                {
+                  "bundleId": "2cb05c56-2b1a-4051-bd98-843902c0a7e4",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Prepare connection diagram",
+                  "proposedPayload": {
+                    "projectName": "Device Console",
+                    "canonicalName": "Prepare connection diagram",
+                    "parentObjectId": "fab30ba6-115e-4d2e-897e-41b809308008",
+                    "parentName": "Device Console"
+                  },
+                  "evidenceIds": ["fc43daab-22a2-4e12-838c-7463576d315e"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 3,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 7599.99279199999,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 46600.79397299999,
+                  "failed": false
+                },
+                {
+                  "stage": "extraction",
+                  "latencyMs": 3225.5707640000037,
+                  "failed": false
+                }
+              ],
+              "durationMs": 57873.80008999999,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "inference",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "type": "project",
+                  "name": "Device Console",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "a9488f49-298d-41fe-a9fb-826b49ae4cbd",
+                  "type": "task",
+                  "name": "Review restore procedure",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "e6f5b123-2c8d-426f-a464-86634b70e8f7",
+                  "type": "task",
+                  "name": "Draft operator checklist",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "b82b9881-eee1-48d4-b9b0-5720c148bcbe",
+                  "type": "task",
+                  "name": "Prepare connection diagram",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [
+                {
+                  "from": "a9488f49-298d-41fe-a9fb-826b49ae4cbd",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "e6f5b123-2c8d-426f-a464-86634b70e8f7",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                },
+                {
+                  "from": "b82b9881-eee1-48d4-b9b0-5720c148bcbe",
+                  "to": "fab30ba6-115e-4d2e-897e-41b809308008",
+                  "kind": "child"
+                }
+              ],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Review restore procedure",
+                  "status": "accepted",
+                  "resultId": "a9488f49-298d-41fe-a9fb-826b49ae4cbd",
+                  "reason": null
+                },
+                {
+                  "title": "Draft operator checklist",
+                  "status": "accepted",
+                  "resultId": "e6f5b123-2c8d-426f-a464-86634b70e8f7",
+                  "reason": null
+                },
+                {
+                  "title": "Prepare connection diagram",
+                  "status": "accepted",
+                  "resultId": "b82b9881-eee1-48d4-b9b0-5720c148bcbe",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "audit-three-deliverables",
+              "id": "audit-three-deliverables-telegram",
+              "tags": ["combined", "telegram", "communications", "completeness-regression"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 7,
+                "proposed": 7,
+                "matched": 7,
+                "allowed": 0,
+                "missed": 0,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": true
+              }
+            }
+          ]
+        }
+      ],
+      "inProgress": null
+    },
+    "interruptedDevelopment": {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "63d734683191f4cef49e512334b6fe86aca0dc9c15aa606736b470e773a0fa1a",
+      "revision": "3b8770fa96ea43aab03d26b3ff9fc9d5e785956a",
+      "dirty": false,
+      "split": "development",
+      "evaluatedAt": "2026-11-16T00:59:33.043Z",
+      "reports": [],
+      "inProgress": {
+        "repetition": 1,
+        "rows": [
+          {
+            "actions": [
+              {
+                "bundleId": "18fa31da-184c-4c39-a488-c57ce08861e1",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Create Cedar Dental company",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["8d9e9c53-551c-4823-808f-41c2cd9756ec"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 7584.083132,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 12448.438205999995,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 7159.420097000002,
+                "failed": false
+              }
+            ],
+            "durationMs": 27891.342937999994,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "0ca02321-7fb9-4d3f-94ea-fb720552ef35",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Create Cedar Dental company",
+                "status": "accepted",
+                "resultId": "0ca02321-7fb9-4d3f-94ea-fb720552ef35",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "company-without-task",
+            "id": "company-without-task-email",
+            "tags": ["combined", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "8c58f38a-b49b-4e06-999a-ef1bce139e32",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Add Cedar Dental as a client company",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["cb1b9778-eca3-49f0-9dfa-d022f78f5fe7"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 4074.1123089999965,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 8008.18103,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 10487.210535999999,
+                "failed": false
+              }
+            ],
+            "durationMs": 22826.160754000004,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "619c0288-22a3-4869-ade5-a90d8e831c2f",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Add Cedar Dental as a client company",
+                "status": "accepted",
+                "resultId": "619c0288-22a3-4869-ade5-a90d8e831c2f",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "company-without-task",
+            "id": "company-without-task-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "4c76f6e0-ea8d-4529-a42a-00b4364d4643",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "patient_portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["0e5e37b1-9f26-4aa4-9bef-eb2b44ffe1ea"]
+              },
+              {
+                "bundleId": "4c76f6e0-ea8d-4529-a42a-00b4364d4643",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare migration checklist for Patient Portal",
+                "proposedPayload": {
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare migration checklist for Patient Portal",
+                  "createProjectName": "Patient Portal"
+                },
+                "evidenceIds": ["0e5e37b1-9f26-4aa4-9bef-eb2b44ffe1ea"]
+              },
+              {
+                "bundleId": "4c76f6e0-ea8d-4529-a42a-00b4364d4643",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar_dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["0e5e37b1-9f26-4aa4-9bef-eb2b44ffe1ea"]
+              },
+              {
+                "bundleId": "4c76f6e0-ea8d-4529-a42a-00b4364d4643",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Link Patient Portal to Cedar Dental",
+                "proposedPayload": {
+                  "localRef": "cedar_dental_patient_portal_link",
+                  "kind": "related",
+                  "fromRef": "cedar_dental",
+                  "toRef": "patient_portal"
+                },
+                "evidenceIds": ["0e5e37b1-9f26-4aa4-9bef-eb2b44ffe1ea"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 6626.910725000002,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 28101.552159,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 32573.77841,
+                "failed": false
+              }
+            ],
+            "durationMs": 68179.21778199999,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "e85c2a51-33a6-48c4-94fb-351d25b75e1b",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "51f89db4-b0c9-4e33-9a7e-ce2cb80dcbcc",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "07e8bbbc-f63f-45d1-a86e-d579a8ef3de0",
+                "type": "task",
+                "name": "Prepare migration checklist for Patient Portal",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "07e8bbbc-f63f-45d1-a86e-d579a8ef3de0",
+                "to": "e85c2a51-33a6-48c4-94fb-351d25b75e1b",
+                "kind": "child"
+              },
+              {
+                "from": "51f89db4-b0c9-4e33-9a7e-ce2cb80dcbcc",
+                "to": "e85c2a51-33a6-48c4-94fb-351d25b75e1b",
+                "kind": "related"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Patient Portal",
+                "status": "accepted",
+                "resultId": "e85c2a51-33a6-48c4-94fb-351d25b75e1b",
+                "reason": null
+              },
+              {
+                "title": "Cedar Dental",
+                "status": "accepted",
+                "resultId": "51f89db4-b0c9-4e33-9a7e-ce2cb80dcbcc",
+                "reason": null
+              },
+              {
+                "title": "Prepare migration checklist for Patient Portal",
+                "status": "accepted",
+                "resultId": "07e8bbbc-f63f-45d1-a86e-d579a8ef3de0",
+                "reason": null
+              },
+              {
+                "title": "Link Patient Portal to Cedar Dental",
+                "status": "accepted",
+                "resultId": "192288a6-a69b-4def-b5d6-4d793680bde9",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "new-customer-project-task",
+            "id": "new-customer-project-task-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "fbcd130c-f60b-49bf-9a54-552ccd245d55",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["d6b6b5ca-2d8a-4e9f-95a5-d90a5ad5385d"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 10117.855410000004,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 15728.14895300001,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 9748.527279000002,
+                "failed": false
+              }
+            ],
+            "durationMs": 35813.783084999995,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "cf719cb6-afb3-4f16-8488-2f7bae9ccf1b",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Cedar Dental",
+                "status": "accepted",
+                "resultId": "cf719cb6-afb3-4f16-8488-2f7bae9ccf1b",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "telegram",
+            "familyId": "company-without-task",
+            "id": "company-without-task-telegram",
+            "tags": ["combined", "telegram", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "ea7a443f-3ab2-4002-a0c4-8cbcbf1e1e6c",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Atlas Migration",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "atlas-migration",
+                  "description": "Internal project Alice says the team is planning. Explicitly framed as a project to track rather than a new action request, so no task is created.",
+                  "canonicalName": "Atlas Migration"
+                },
+                "evidenceIds": ["248f2b51-c115-4710-a7f4-1c276a10c035"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 3172.1392380000034,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 6237.595434000003,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 11079.987703000006,
+                "failed": false
+              }
+            ],
+            "durationMs": 20692.57526299999,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "503d879b-5ffe-4f87-a3d9-3ab1773ae152",
+                "type": "project",
+                "name": "Atlas Migration",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Atlas Migration",
+                "status": "accepted",
+                "resultId": "503d879b-5ffe-4f87-a3d9-3ab1773ae152",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "project-without-company",
+            "id": "project-without-company-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "6165fe4d-8c38-4ae6-b5e1-138083683666",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["0f0719e9-1ce9-497f-a77a-6637187fafdc"]
+              },
+              {
+                "bundleId": "6165fe4d-8c38-4ae6-b5e1-138083683666",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["0f0719e9-1ce9-497f-a77a-6637187fafdc"]
+              },
+              {
+                "bundleId": "6165fe4d-8c38-4ae6-b5e1-138083683666",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare migration checklist for Patient Portal",
+                "proposedPayload": {
+                  "localRef": "migration-checklist-task",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare migration checklist for Patient Portal",
+                  "createProjectName": "Patient Portal"
+                },
+                "evidenceIds": ["0f0719e9-1ce9-497f-a77a-6637187fafdc"]
+              },
+              {
+                "bundleId": "6165fe4d-8c38-4ae6-b5e1-138083683666",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Patient Portal linked to Cedar Dental",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toRef": "cedar-dental"
+                },
+                "evidenceIds": ["0f0719e9-1ce9-497f-a77a-6637187fafdc"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 15794.444894999999,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 93782.34435,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 22735.448420999994,
+                "failed": false
+              }
+            ],
+            "durationMs": 133052.202244,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "1393a191-1008-4145-99a2-a25e1c162561",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "74305947-8066-4771-8eec-692f37dfd116",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "88811f42-6257-4c0c-9d31-83dca7a2aeae",
+                "type": "task",
+                "name": "Prepare migration checklist for Patient Portal",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "88811f42-6257-4c0c-9d31-83dca7a2aeae",
+                "to": "74305947-8066-4771-8eec-692f37dfd116",
+                "kind": "child"
+              },
+              {
+                "from": "1393a191-1008-4145-99a2-a25e1c162561",
+                "to": "74305947-8066-4771-8eec-692f37dfd116",
+                "kind": "related"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Cedar Dental",
+                "status": "accepted",
+                "resultId": "1393a191-1008-4145-99a2-a25e1c162561",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal",
+                "status": "accepted",
+                "resultId": "74305947-8066-4771-8eec-692f37dfd116",
+                "reason": null
+              },
+              {
+                "title": "Prepare migration checklist for Patient Portal",
+                "status": "accepted",
+                "resultId": "88811f42-6257-4c0c-9d31-83dca7a2aeae",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal linked to Cedar Dental",
+                "status": "accepted",
+                "resultId": "60940e17-10a2-4165-bfda-8377450c3821",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "telegram",
+            "familyId": "new-customer-project-task",
+            "id": "new-customer-project-task-telegram",
+            "tags": ["combined", "telegram", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "12d2e36f-a7b7-41ad-b413-86e1b58c516d",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Create project: Atlas Migration",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "atlas-migration",
+                  "canonicalName": "Atlas Migration"
+                },
+                "evidenceIds": ["8f429ce6-41d7-442b-a248-3f4d0dbb8dbc"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 19096.759489000004,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 36621.62964999999,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 22175.102106999984,
+                "failed": false
+              }
+            ],
+            "durationMs": 78573.21286199999,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "15369632-d3c8-43b1-8093-ec5d99343f80",
+                "type": "project",
+                "name": "Atlas Migration",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Create project: Atlas Migration",
+                "status": "accepted",
+                "resultId": "15369632-d3c8-43b1-8093-ec5d99343f80",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "project-without-company",
+            "id": "project-without-company-email",
+            "tags": ["combined", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "4ace4d85-3623-479b-b0c5-8d03abc771e4",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Atlas Migration",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "atlas-migration",
+                  "canonicalName": "Atlas Migration"
+                },
+                "evidenceIds": ["7fc1f606-0e18-41ab-ad5c-e18f067aad14"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 10168.44755099999,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 16123.201008999997,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 26172.419731,
+                "failed": false
+              }
+            ],
+            "durationMs": 52666.79547099999,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "482ed773-dd43-42c9-8d13-5976c39e1826",
+                "type": "project",
+                "name": "Atlas Migration",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Atlas Migration",
+                "status": "accepted",
+                "resultId": "482ed773-dd43-42c9-8d13-5976c39e1826",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "telegram",
+            "familyId": "project-without-company",
+            "id": "project-without-company-telegram",
+            "tags": ["combined", "telegram", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 1,
+              "proposed": 1,
+              "matched": 1,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "63039656-ab26-453e-a329-2e6cdbd99a6d",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare the migration checklist",
+                "proposedPayload": {
+                  "status": "todo",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare the migration checklist",
+                  "parentObjectId": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                  "parentName": "Patient Portal"
+                },
+                "evidenceIds": ["c3c01beb-3298-4054-aff6-e95a06b35c48"]
+              },
+              {
+                "bundleId": "63039656-ab26-453e-a329-2e6cdbd99a6d",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Review the backup procedure",
+                "proposedPayload": {
+                  "status": "todo",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Review the backup procedure",
+                  "parentObjectId": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                  "parentName": "Patient Portal"
+                },
+                "evidenceIds": ["c3c01beb-3298-4054-aff6-e95a06b35c48"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 8207.681301000004,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 16799.344327,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 4665.535371000005,
+                "failed": false
+              }
+            ],
+            "durationMs": 30239.199376999983,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "7f1ab1d1-fae0-4c81-a3ab-1b2381af6dd0",
+                "type": "task",
+                "name": "Prepare the migration checklist",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "7c065038-65de-4a24-a758-03549dffbe92",
+                "type": "task",
+                "name": "Review the backup procedure",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "7f1ab1d1-fae0-4c81-a3ab-1b2381af6dd0",
+                "to": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "kind": "child"
+              },
+              {
+                "from": "7c065038-65de-4a24-a758-03549dffbe92",
+                "to": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "kind": "child"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Prepare the migration checklist",
+                "status": "accepted",
+                "resultId": "7f1ab1d1-fae0-4c81-a3ab-1b2381af6dd0",
+                "reason": null
+              },
+              {
+                "title": "Review the backup procedure",
+                "status": "accepted",
+                "resultId": "7c065038-65de-4a24-a758-03549dffbe92",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "two-deliverables",
+            "id": "two-deliverables-email",
+            "tags": ["combined", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "e19571fa-1564-464e-a97b-247294b5c65b",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Patient Portal linked to Cedar Dental",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toRef": "cedar-dental"
+                },
+                "evidenceIds": ["231be2fb-52a6-4c68-9c1a-e6fdbec3c791"]
+              },
+              {
+                "bundleId": "e19571fa-1564-464e-a97b-247294b5c65b",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Cedar Dental",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "cedar-dental",
+                  "canonicalName": "Cedar Dental"
+                },
+                "evidenceIds": ["231be2fb-52a6-4c68-9c1a-e6fdbec3c791"]
+              },
+              {
+                "bundleId": "e19571fa-1564-464e-a97b-247294b5c65b",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare the migration checklist for Patient Portal",
+                "proposedPayload": {
+                  "status": "todo",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare the migration checklist for Patient Portal",
+                  "createProjectName": "Patient Portal"
+                },
+                "evidenceIds": ["231be2fb-52a6-4c68-9c1a-e6fdbec3c791"]
+              },
+              {
+                "bundleId": "e19571fa-1564-464e-a97b-247294b5c65b",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["231be2fb-52a6-4c68-9c1a-e6fdbec3c791"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 67028.52646800001,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 86441.73750900001,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 16039.030165000004,
+                "failed": false
+              }
+            ],
+            "durationMs": 170281.485389,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "ca0599c5-f737-4f3e-8ab4-5b8ec811c03a",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "a84e4958-3009-40c0-b241-3a288e19f7d7",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "1b7cde60-13bf-4164-a51a-ebcd6acc57f8",
+                "type": "task",
+                "name": "Prepare the migration checklist for Patient Portal",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "1b7cde60-13bf-4164-a51a-ebcd6acc57f8",
+                "to": "a84e4958-3009-40c0-b241-3a288e19f7d7",
+                "kind": "child"
+              },
+              {
+                "from": "a84e4958-3009-40c0-b241-3a288e19f7d7",
+                "to": "ca0599c5-f737-4f3e-8ab4-5b8ec811c03a",
+                "kind": "related"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Cedar Dental",
+                "status": "accepted",
+                "resultId": "ca0599c5-f737-4f3e-8ab4-5b8ec811c03a",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal",
+                "status": "accepted",
+                "resultId": "a84e4958-3009-40c0-b241-3a288e19f7d7",
+                "reason": null
+              },
+              {
+                "title": "Prepare the migration checklist for Patient Portal",
+                "status": "accepted",
+                "resultId": "1b7cde60-13bf-4164-a51a-ebcd6acc57f8",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal linked to Cedar Dental",
+                "status": "accepted",
+                "resultId": "f30a1b96-c381-4b8c-82f7-e1801e54c39a",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "new-customer-project-task",
+            "id": "new-customer-project-task-email",
+            "tags": ["combined", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "7564656f-0684-46e5-83ed-2093a2c84f5c",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Review the backup procedure",
+                "proposedPayload": {
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Review the backup procedure",
+                  "parentObjectId": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                  "parentName": "Patient Portal"
+                },
+                "evidenceIds": ["42434cd5-b970-4189-afde-5aae015948aa"]
+              },
+              {
+                "bundleId": "7564656f-0684-46e5-83ed-2093a2c84f5c",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare the migration checklist",
+                "proposedPayload": {
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare the migration checklist",
+                  "parentObjectId": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                  "parentName": "Patient Portal"
+                },
+                "evidenceIds": ["42434cd5-b970-4189-afde-5aae015948aa"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 26028.390545000002,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 27407.842198,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 10240.90863000002,
+                "failed": false
+              }
+            ],
+            "durationMs": 64247.519012000004,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "92a5a283-0bae-4c9a-9ced-0b453e41722e",
+                "type": "task",
+                "name": "Review the backup procedure",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "7f766627-3151-4fc5-a6fb-620b08f2f1e0",
+                "type": "task",
+                "name": "Prepare the migration checklist",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "92a5a283-0bae-4c9a-9ced-0b453e41722e",
+                "to": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "kind": "child"
+              },
+              {
+                "from": "7f766627-3151-4fc5-a6fb-620b08f2f1e0",
+                "to": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "kind": "child"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Review the backup procedure",
+                "status": "accepted",
+                "resultId": "92a5a283-0bae-4c9a-9ced-0b453e41722e",
+                "reason": null
+              },
+              {
+                "title": "Prepare the migration checklist",
+                "status": "accepted",
+                "resultId": "7f766627-3151-4fc5-a6fb-620b08f2f1e0",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "two-deliverables",
+            "id": "two-deliverables-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "146bc90f-9dd9-4482-92cd-98716d571d9f",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Prepare the migration checklist",
+                "proposedPayload": {
+                  "status": "todo",
+                  "description": "Prepare the migration checklist for the Patient Portal.",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Prepare the migration checklist",
+                  "parentObjectId": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                  "parentName": "Patient Portal"
+                },
+                "evidenceIds": ["a4cc45c0-5863-474f-93f1-341087259dbf"]
+              },
+              {
+                "bundleId": "146bc90f-9dd9-4482-92cd-98716d571d9f",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Review the backup procedure",
+                "proposedPayload": {
+                  "status": "todo",
+                  "description": "Review the backup procedure for the Patient Portal.",
+                  "projectName": "Patient Portal",
+                  "canonicalName": "Review the backup procedure",
+                  "parentObjectId": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                  "parentName": "Patient Portal"
+                },
+                "evidenceIds": ["a4cc45c0-5863-474f-93f1-341087259dbf"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 5841.256541999988,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 94660.02187200001,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 10131.989757000003,
+                "failed": false
+              }
+            ],
+            "durationMs": 110995.322438,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "5777521f-4d83-4c7a-a2cf-89afc0c2b580",
+                "type": "task",
+                "name": "Prepare the migration checklist",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "c805b063-e506-4524-a05b-f121995239ce",
+                "type": "task",
+                "name": "Review the backup procedure",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "5777521f-4d83-4c7a-a2cf-89afc0c2b580",
+                "to": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "kind": "child"
+              },
+              {
+                "from": "c805b063-e506-4524-a05b-f121995239ce",
+                "to": "85c4c0bf-4e72-467b-88d7-7fcbe27ea731",
+                "kind": "child"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Prepare the migration checklist",
+                "status": "accepted",
+                "resultId": "5777521f-4d83-4c7a-a2cf-89afc0c2b580",
+                "reason": null
+              },
+              {
+                "title": "Review the backup procedure",
+                "status": "accepted",
+                "resultId": "c805b063-e506-4524-a05b-f121995239ce",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "telegram",
+            "familyId": "two-deliverables",
+            "id": "two-deliverables-telegram",
+            "tags": ["combined", "telegram", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 5,
+              "matched": 5,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          },
+          {
+            "actions": [],
+            "executionErrors": ["Error"],
+            "executionFailureDetails": ["Communication grounding rejected an audited claim"],
+            "modelCalls": 2,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 15276.59474999999,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 93350.087452,
+                "failed": false
+              }
+            ],
+            "durationMs": 108754.63696799998,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "new-account-launch",
+            "id": "new-account-launch-email",
+            "tags": ["combined", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 5,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": true,
+              "passed": false
+            }
+          },
+          {
+            "actions": [],
+            "executionErrors": ["Error"],
+            "executionFailureDetails": ["Communication grounding rejected an audited claim"],
+            "modelCalls": 2,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 26320.596324000013,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 58732.969125,
+                "failed": false
+              }
+            ],
+            "durationMs": 85172.972038,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [],
+            "edges": [],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "telegram",
+            "familyId": "new-account-launch",
+            "id": "new-account-launch-telegram",
+            "tags": ["combined", "telegram", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 0,
+              "matched": 0,
+              "allowed": 0,
+              "missed": 5,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": true,
+              "passed": false
+            }
+          },
+          {
+            "actions": [
+              {
+                "bundleId": "3b833c27-26d5-4543-b88b-a26484e1c94f",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Patient Portal linked to Cedar",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "patient-portal",
+                  "toEntityId": "9fb65bf7-20aa-4b03-8ed2-df34468b5a23",
+                  "toDisplayName": "Cedar Dental"
+                },
+                "evidenceIds": ["9a0b0a65-47fa-480a-8471-d947f18c9a26"]
+              },
+              {
+                "bundleId": "3b833c27-26d5-4543-b88b-a26484e1c94f",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Patient Portal project",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "patient-portal",
+                  "canonicalName": "Patient Portal"
+                },
+                "evidenceIds": ["9a0b0a65-47fa-480a-8471-d947f18c9a26"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 14958.211974999984,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 31364.128596000024,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 11251.276983999996,
+                "failed": false
+              }
+            ],
+            "durationMs": 57908.937800000014,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "9fb65bf7-20aa-4b03-8ed2-df34468b5a23",
+                "type": "company",
+                "name": "Cedar Dental",
+                "status": "active",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "a668ad9e-6d56-400a-b24f-159894e387a9",
+                "type": "project",
+                "name": "Patient Portal",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "9fb65bf7-20aa-4b03-8ed2-df34468b5a23",
+                "to": "a668ad9e-6d56-400a-b24f-159894e387a9",
+                "kind": "related"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Patient Portal project",
+                "status": "accepted",
+                "resultId": "a668ad9e-6d56-400a-b24f-159894e387a9",
+                "reason": null
+              },
+              {
+                "title": "Patient Portal linked to Cedar",
+                "status": "accepted",
+                "resultId": "ce128935-fb77-409c-9442-724c94930e45",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "email",
+            "familyId": "company-alias",
+            "id": "company-alias-email",
+            "tags": ["reuse", "email", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 3,
+              "proposed": 3,
+              "matched": 3,
+              "allowed": 0,
+              "missed": 0,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": true
+            }
+          }
+        ]
+      }
     }
   },
   "originalReportSha256": {
-    "initialCompletenessDiagnostic": "2e6bb54582008c34d0c4f705d872cd7ebb242ce6154ed7d53927fa1964458b21"
+    "initialCompletenessDiagnostic": "2e6bb54582008c34d0c4f705d872cd7ebb242ce6154ed7d53927fa1964458b21",
+    "correctedLedgerDiagnostic": "53c95d1bc9975bdfdf334a8bb44391a68654a47a96615a20dda3243e4c8814a0",
+    "interruptedDevelopment": "41e32b79c0aa3f1468ebd225fa85d22690e950cf73dc2b4e9dc8f9a4687af4fa"
   },
   "findings": [
     "Two failures rejected known-object references in a no-action coverage entry; contract corrected without changing outcome labels or scoring.",
-    "One checker invented an existing-record UUID for a hypothetical reuse entry; correctly rejected. Instructions and schema descriptions strengthened; regression remains open until verified."
-  ]
+    "One checker invented an existing-record UUID for a hypothetical reuse entry; correctly rejected. Instructions and schema descriptions strengthened; regression remains open until verified.",
+    "Explicit that project references were rejected by a guard recognizing only the project. Extended to the/this/that while retaining one visible candidate, exact support, negation and truncation checks."
+  ],
+  "interruptedDevelopmentReason": "Stopped after reproducing deterministic rejection of explicit link that project references. Partial run and incomplete feedback are diagnostic only; three full development repetitions remain required after the fix."
 }
