@@ -290,6 +290,14 @@ function affirmativeLifecycle(
   if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
     return false;
   if (
+    status === 'done' &&
+    /\b(?:almost|nearly|partly|partially|half|not quite|being|in the process of|basically|practically|essentially)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+
+  if (
     /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:be\s+|have\s+been\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen|restart|unblock)\b/i.test(
       clause,
     )

@@ -570,6 +570,9 @@ describe('explicit completion among recalled candidates', () => {
     'If the access matrix review is finished, tell me.',
     'I think the access matrix review is finished.',
     'The access matrix review is not finished.',
+    'The access matrix review is finished. The access matrix review is not finished.',
+    'The access matrix review is finished. The access matrix review isn’t finished.',
+    'The access matrix review is finished. The access matrix review is still in progress.',
     'The matrix review is finished.',
     'Review access matrix is still pending while the deployment finished.',
   ]) {
@@ -596,6 +599,30 @@ describe('explicit completion among recalled candidates', () => {
       ).toEqual([]);
     });
   }
+  it('preserves the latest affirmative completion after a denial', () => {
+    const bundles = [
+      {
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'object',
+            targetId: 'access',
+            title: 'Access review',
+            proposedPayload: { status: 'done' },
+          },
+        ],
+      },
+    ];
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        evidenceText:
+          'The access matrix review is not finished. The access matrix review is finished.',
+        relatedOpenWork,
+        relatedOpenWorkIds: ['access', 'backup'],
+        bundles,
+      }),
+    ).toEqual(bundles);
+  });
 });
 
 it('does not use a model project name to resolve a broad shared client mention', () => {

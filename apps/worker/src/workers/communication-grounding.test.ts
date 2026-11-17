@@ -164,6 +164,21 @@ test('the latest same-task contrastive correction supersedes the previous status
   }
 });
 
+test('ongoing or nearly completed work cannot be marked done', () => {
+  for (const phrase of [
+    'is almost done',
+    'is being completed',
+    'is partially finished',
+    'is done',
+  ]) {
+    const quote = `Review retention policy ${phrase}.`;
+    expect(
+      run(quote, { status: 'done' }, [support('status', quote, 'done')])[0]?.items[0]
+        ?.proposedPayload,
+    ).toEqual(phrase === 'is done' ? { status: 'done' } : {});
+  }
+});
+
 test('an ended lifecycle state cannot be proposed as current', () => {
   for (const text of [
     'Review retention policy is no longer blocked.',

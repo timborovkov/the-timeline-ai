@@ -543,15 +543,10 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
     );
   const explicit = new Set<string>();
   for (const sentence of (args.evidenceText ?? '').split(/(?<=[.!?])\s+|\n+/u)) {
-    if (
-      !/\b(?:done|complete|completed|finished|shipped)\b/i.test(sentence) ||
-      /[?]|\b(?:not|never|if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)
-    )
-      continue;
-    // Bind the subject directly to a completion predicate. Extra subject words
-    // (such as another artifact in a subordinate clause) fail closed.
+    if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)) continue;
+    // Track the last explicit completion or reversal for each exact subject.
     const assertion =
-      /^(.*?)\s+(?:is|was|has been)\s+(?:done|complete|completed|finished|shipped)[.!]?$/i.exec(
+      /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:not(?: yet)?|never|no longer|almost|nearly|being) )?(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress))[.!]?$/i.exec(
         sentence.trim(),
       );
     if (!assertion?.[1]) continue;
@@ -564,7 +559,12 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
         words.every((word) => tokens.has(word))
       );
     });
-    if (matches.length === 1 && matches[0]) explicit.add(matches[0].id);
+    if (matches.length !== 1 || !matches[0]) continue;
+    const complete =
+      /^(?:done|complete|completed|finished|shipped)$/i.test(assertion[2] ?? '') &&
+      !/\b(?:isn[’']t|wasn[’']t|hasn[’']t)\b/i.test(sentence);
+    if (complete) explicit.add(matches[0].id);
+    else explicit.delete(matches[0].id);
   }
   return args.bundles.flatMap((bundle) => {
     const items: T[] = [];
