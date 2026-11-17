@@ -2587,6 +2587,59 @@ describe('suggestion scope', () => {
     expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
   });
 
+  for (const rollback of [false, true]) {
+    it(`defers task update effects until the outer acceptance commits: rollback=${rollback}`, async () => {
+      const scope = withTeam(db as never, TEAM_ID, USER_ID);
+      const [task] = await db
+        .insert(entities)
+        .values({ teamId: TEAM_ID, type: 'task', canonicalName: 'Original task', status: 'todo' })
+        .returning();
+      if (!task) throw new Error('missing task');
+      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'chat',
+        title: 'Rename task',
+        dedupeKey: 'deferred-update',
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: task.id,
+            title: 'Rename task',
+            dedupeKey: 'deferred-update:item',
+            proposedPayload: { canonicalName: 'Renamed task' },
+          },
+        ],
+      });
+      const item = bundle.items[0];
+      if (!item) throw new Error('missing proposal');
+      const context = {
+        kind: 'transaction' as const,
+        rootDb: db as never,
+        postCommitEffects: [] as (() => void | Promise<void>)[],
+      };
+      queueFakes.enqueueTaskCategoryJob.mockClear();
+      const apply = db.transaction(async (tx) => {
+        const nested = withTeam(tx as never, TEAM_ID, USER_ID, {
+          suggestionAcceptanceTransaction: context,
+        });
+        expect(await nested.suggestions.acceptSuggestionItem(item.id)).toBe(true);
+        expect(queueFakes.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+        expect(context.postCommitEffects.length).toBeGreaterThan(0);
+        if (rollback) throw new Error('outer rollback');
+      });
+      if (rollback) {
+        await expect(apply).rejects.toThrow('outer rollback');
+        expect(queueFakes.enqueueTaskCategoryJob).not.toHaveBeenCalled();
+      } else {
+        await apply;
+        for (const effect of context.postCommitEffects) await effect();
+        expect(queueFakes.enqueueTaskCategoryJob).toHaveBeenCalledTimes(1);
+      }
+      const [current] = await db.select().from(entities).where(eq(entities.id, task.id));
+      expect(current?.canonicalName).toBe(rollback ? 'Original task' : 'Renamed task');
+    });
+  }
+
   it('preserves a later human project choice when accepting a task update', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const [task, proposedProject, humanProject] = await db

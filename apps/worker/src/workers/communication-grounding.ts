@@ -903,15 +903,23 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const clearAssignment =
           assignment?.value === 'unassigned' &&
           Boolean(clause) &&
-          !/\b(?:not|never|if|unless)\b/i.test(clause ?? '') &&
-          /\b(?:unassign|unassigned|remove.*owner)\b/i.test(clause ?? '') &&
-          payload.assigneeUserId === null;
+          !/\b(?:not|never|if|unless|maybe|perhaps|might|could)\b/i.test(clause ?? '');
+        const clearOwner =
+          clearAssignment &&
+          /\b(?:remove|clear|unset|unassign)\b.*\bowner\b|\bowner\b.*\b(?:removed|cleared|unassigned)\b/i.test(
+            clause ?? '',
+          );
+        const clearAssignee =
+          clearAssignment &&
+          (/\b(?:remove|clear|unset)\b.*\bassignee\b/i.test(clause ?? '') ||
+            (/\b(?:unassign|unassigned)\b/i.test(clause ?? '') &&
+              !/\bowner\b/i.test(clause ?? '')));
         const supportedAssignment =
           member && (Boolean(named) || Boolean(self)) && !assignment?.quote.includes('?');
         const retainAssignment = (
           key: 'assigneeUserId' | 'ownerUserId' | 'assigneeName' | 'ownerName',
         ) =>
-          clearAssignment
+          (key.startsWith('owner') ? clearOwner : clearAssignee)
             ? payload[key] === null
             : supportedAssignment &&
               payload[key] === (key.endsWith('UserId') ? member.userId : member.name);
@@ -956,6 +964,27 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const lifecycleClause = lifecycle
           ? taskClause(lifecycle.quote, lifecycle.subject)
           : undefined;
+        const literalLifecycleName = (name: string) => {
+          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(
+            lifecycleClause ?? '',
+          );
+        };
+        const competingTasks = (args.objects ?? []).filter(
+          (object) =>
+            object.id !== item.targetId &&
+            object.type === 'task' &&
+            object.name &&
+            namesTask(lifecycleClause ?? '', object.name),
+        );
+        const lifecycleUnambiguous =
+          !competingTasks.length ||
+          (taskIdentityNames(item).some(literalLifecycleName) &&
+            !competingTasks.some((object) =>
+              [object.name ?? '', ...(object.aliases ?? [])].some(
+                (name) => name && literalLifecycleName(name),
+              ),
+            ));
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
           (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
@@ -969,6 +998,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !(
             lifecycle &&
             lifecycleClause &&
+            lifecycleUnambiguous &&
             (lifecycleWords[typeof payload.status === 'string' ? payload.status : '']?.test(
               lifecycleClause,
             ) ||

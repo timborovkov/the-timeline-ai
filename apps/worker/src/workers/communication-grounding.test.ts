@@ -1,3 +1,4 @@
+import { stripAmbiguousLifecycleUpdates } from '@timeline/shared/suggestions';
 import { expect, test } from 'bun:test';
 
 import {
@@ -1567,4 +1568,91 @@ test('authorized unique task aliases support completion without guessing identit
   expect(
     evaluate('ENG-42', ['ENG-42'], false, 'ENG-420 is done.', 'ENG-420 is done.'),
   ).toBeUndefined();
+});
+
+test('owner-only removal does not require or authorize clearing the assignee', () => {
+  const quote = 'Remove the owner from review retention policy.';
+  for (const payload of [{ ownerUserId: null }, { ownerUserId: null, assigneeUserId: null }]) {
+    expect(
+      run(quote, payload, [support('assignee', quote, 'unassigned')], { operation: 'update' })[0]
+        ?.items[0]?.proposedPayload,
+    ).toEqual({ ownerUserId: null });
+  }
+});
+test('verified adjacent completion survives downstream ambiguity filtering', () => {
+  const quote = 'Review retention policy. It is done.';
+  const relatedOpenWork = [
+    { id: 'review', name: title },
+    { id: 'draft', name: 'Draft retention policy' },
+  ];
+  const bundles = groundCommunicationBundles({
+    bundles: [
+      {
+        title,
+        confidence: 'high',
+        items: [
+          {
+            auditId: 'checked',
+            operation: 'update',
+            targetKind: 'task',
+            targetId: 'review',
+            title,
+            proposedPayload: { status: 'done' },
+            grounding: [support('status', quote, 'done')],
+          },
+        ],
+      },
+    ],
+    packet: quote,
+    sources: [{ id: event, text: quote }],
+    members: [],
+    hubs: [],
+    source: 'slack',
+    objects: relatedOpenWork.map((row) => ({ ...row, type: 'task' })),
+  });
+  const result = stripAmbiguousLifecycleUpdates({
+    bundles,
+    verifiedLifecycleAuditIds: bundles.flatMap((bundle) =>
+      bundle.items.flatMap((item) =>
+        item.auditId && item.proposedPayload.status === 'done' ? [item.auditId] : [],
+      ),
+    ),
+    relatedOpenWorkIds: ['review', 'draft'],
+    relatedOpenWork,
+    evidenceText: quote,
+  });
+  expect(result[0]?.items[0]?.proposedPayload.status).toBe('done');
+});
+
+test('overlapping task names cannot borrow another task completion', () => {
+  const quote = 'Review retention policy. It is done.';
+  const result = groundCommunicationBundles({
+    bundles: [
+      {
+        title,
+        confidence: 'high',
+        items: [
+          {
+            auditId: 'wrong-target',
+            operation: 'update',
+            targetKind: 'task',
+            targetId: 'draft',
+            title: 'Draft retention policy',
+            proposedPayload: { status: 'done' },
+            grounding: [support('status', quote, 'done', 'Draft retention policy')],
+          },
+        ],
+      },
+    ],
+    packet: quote,
+    sources: [{ id: event, text: quote }],
+    members: [],
+    hubs: [],
+    source: 'slack',
+    objects: [
+      { id: 'review', name: title, type: 'task' },
+      { id: 'draft', name: 'Draft retention policy', type: 'task' },
+    ],
+  });
+  expect(result[0]?.items[0]?.proposedPayload.status).toBeUndefined();
 });

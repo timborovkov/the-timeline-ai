@@ -5092,6 +5092,7 @@ async function runSuggestionExtraction(
       });
     }
   }
+  const deduplicatedRelationshipAuditIds = new Set<string>();
   const bundles = suggestions
     .stripAmbiguousLifecycleUpdates({
       bundles: suggestions.stampUniqueWorkItemAliasesOntoBundles({
@@ -5101,19 +5102,40 @@ async function runSuggestionExtraction(
         }),
         text: evidenceText,
       }),
+      verifiedLifecycleAuditIds: isHumanCommunication(row.source)
+        ? groundedBundles.flatMap((bundle) =>
+            bundle.items.flatMap((item) =>
+              item.auditId && typeof item.proposedPayload.status === 'string' ? [item.auditId] : [],
+            ),
+          )
+        : [],
       relatedOpenWorkIds: relatedOpenWork.map((work) => work.id),
       relatedOpenWork,
       evidenceText,
     })
-    .map((bundle) =>
-      repairRelationshipBundle(
-        filterExistingRelationshipItems(bundle as SuggestionBundleOutput, relationshipDedupe),
-        relationshipDedupe.resolveName,
-      ),
-    );
+    .map((bundle) => {
+      const deduplicated = filterExistingRelationshipItems(
+        bundle as SuggestionBundleOutput,
+        relationshipDedupe,
+      );
+      const retained = new Set(deduplicated.items.map((item) => item.auditId));
+      for (const item of bundle.items)
+        if (
+          item.targetKind === 'object_relationship' &&
+          item.auditId &&
+          !retained.has(item.auditId)
+        )
+          deduplicatedRelationshipAuditIds.add(item.auditId);
+      return repairRelationshipBundle(deduplicated, relationshipDedupe.resolveName);
+    });
   if (isHumanCommunication(row.source))
     assertCommunicationClaimsRetained(
-      auditedBaseline,
+      auditedBaseline.map((bundle) => ({
+        ...bundle,
+        items: bundle.items.filter(
+          (item) => !item.auditId || !deduplicatedRelationshipAuditIds.has(item.auditId),
+        ),
+      })),
       bundles.map((bundle) => ({
         ...bundle,
         items: bundle.items.map((item) => ({

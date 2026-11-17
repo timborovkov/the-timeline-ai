@@ -5710,7 +5710,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
-        const postCommitEffects: (() => void)[] = [];
+        const postCommitEffects =
+          deps.acceptance.kind === 'transaction' ? deps.acceptance.postCommitEffects : [];
         await db.transaction(async (tx) => {
           await objects.updateObject(
             targetId,
@@ -5733,7 +5734,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               },
             );
         });
-        for (const effect of postCommitEffects) effect();
+        if (deps.acceptance.kind !== 'transaction')
+          for (const effect of postCommitEffects) await effect();
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });

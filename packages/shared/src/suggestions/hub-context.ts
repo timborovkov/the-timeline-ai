@@ -529,9 +529,12 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
   relatedOpenWorkIds: readonly string[];
   relatedOpenWork?: readonly { id: string; name: string }[];
   evidenceText?: string;
+  /** Runtime audit IDs whose lifecycle writes survived independent grounding, never model flags. */
+  verifiedLifecycleAuditIds?: readonly string[];
 }): HubAttachableBundle<T>[] {
   if (args.relatedOpenWorkIds.length < 2) return args.bundles;
   const ambiguous = new Set(args.relatedOpenWorkIds);
+  const verified = new Set(args.verifiedLifecycleAuditIds ?? []);
   // Full title tokens in an affirmative completion sentence distinguish explicit
   // completion from the loose token recall that assembled the candidate list.
   const titleTokens = (text: string) =>
@@ -571,7 +574,12 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
         continue;
       }
       const targetId = item.targetId;
-      if (typeof targetId !== 'string' || !ambiguous.has(targetId) || explicit.has(targetId)) {
+      if (
+        typeof targetId !== 'string' ||
+        !ambiguous.has(targetId) ||
+        explicit.has(targetId) ||
+        (item.auditId && verified.has(item.auditId))
+      ) {
         items.push(item);
         continue;
       }

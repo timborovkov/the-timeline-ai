@@ -4892,6 +4892,84 @@ describe('processSuggestionJobForTests', () => {
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('accounts for already-satisfied communication relationships during retention', async () => {
+    const rawEventId = 'd988c05c-48dc-52df-b192-9370a76b1c9a';
+    const [john, acme] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'person',
+          canonicalName: 'John Doe',
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'company',
+          canonicalName: 'Acme Corporation',
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!john || !acme) throw new Error('expected object fixtures');
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: john.id < acme.id ? john.id : acme.id,
+      toEntityId: john.id < acme.id ? acme.id : john.id,
+      kind: 'related',
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'email',
+      text: 'John Doe from Acme Corporation joined the renewal call.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Relate John Doe and Acme Corporation',
+            summary: 'John Doe is related to Acme Corporation.',
+            reason: 'The source says John Doe is from Acme Corporation.',
+            confidence: 'high',
+            quote: 'John Doe from Acme Corporation',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object_relationship',
+                title: 'Relate John Doe and Acme Corporation',
+                grounding: [
+                  {
+                    field: 'customer',
+                    rawEventId,
+                    quote: 'John Doe from Acme Corporation joined the renewal call.',
+                    subject: 'John Doe',
+                    value: acme.id,
+                  },
+                ],
+                proposedPayload: {
+                  fromEntityId: john.id,
+                  toEntityId: acme.id,
+                  kind: 'related',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('suppresses model-backed relationship proposals after the same edge was rejected', async () => {
     const firstRawEventId = '6c9e0774-d318-5b60-aadf-b9e169a8736d';
     const secondRawEventId = '8270f53d-bc9e-52a0-84a4-ab8d8631e0fd';
