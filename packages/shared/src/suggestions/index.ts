@@ -5726,33 +5726,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
-        const postCommitEffects =
-          deps.acceptance.kind === 'transaction' ? deps.acceptance.postCommitEffects : [];
-        await db.transaction(async (tx) => {
-          await lockAcceptanceProject(parsed.parentObjectId, tx);
-          await objects.updateObject(
+        await lockAcceptanceProject(parsed.parentObjectId);
+        const mutationOptions =
+          deps.acceptance.kind === 'transaction'
+            ? { postCommitEffects: deps.acceptance.postCommitEffects }
+            : {};
+        await objects.updateObject(
+          targetId,
+          patch,
+          { kind: 'agent', userId: null },
+          {
+            requireActive: true,
+            ...mutationOptions,
+          },
+        );
+        if (parsed.parentObjectId !== undefined)
+          await objects.setTaskProject(
             targetId,
-            patch,
+            parsed.parentObjectId,
             { kind: 'agent', userId: null },
-            { requireActive: true, transactionClient: tx, postCommitEffects },
+            {
+              ...mutationOptions,
+              preserveUserChangesAfter: taskProposalFieldRevisionBoundary(item, 'primaryProjectId'),
+            },
           );
-          if (parsed.parentObjectId !== undefined)
-            await objects.setTaskProject(
-              targetId,
-              parsed.parentObjectId,
-              { kind: 'agent', userId: null },
-              {
-                transactionClient: tx,
-                postCommitEffects,
-                preserveUserChangesAfter: taskProposalFieldRevisionBoundary(
-                  item,
-                  'primaryProjectId',
-                ),
-              },
-            );
-        });
-        if (deps.acceptance.kind !== 'transaction')
-          for (const effect of postCommitEffects) await effect();
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });
@@ -6027,6 +6024,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
       isPackBacked ||
+      (row.item.operation === 'update' &&
+        (row.item.targetKind === 'task' || row.item.targetKind === 'object') &&
+        recordFromUnknown(row.item.proposedPayload).parentObjectId !== undefined) ||
       typeof recordFromUnknown(row.suggestion.metadata).document_version_id === 'string' ||
       row.item.targetKind === 'board_membership';
     if (requiresTransactionalAcceptance && deps.acceptance.kind === 'root') {
