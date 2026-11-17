@@ -301,6 +301,8 @@ stricter assertions; aggregate v5/v6/v7 scores are not directly comparable.
 Use `--tag=closure-regression` or `--tag=completeness-regression` for diagnostics.
 Communication experiments accept `--concurrency=1..8` (default 4), with an isolated database and queue per case and concurrency recorded in reports/experiment metadata. This changes evaluation throughput, not production worker concurrency; latency comparisons must account for it.
 
+Suggestion and communication runners verify stored, completed LangSmith root runs and matching remote evaluator scores after flushing uploads, with a bounded indexing wait. Local evaluator results alone do not establish publication. Missing runs, missing or mismatched feedback, and API failures prevent complete evidence and stop subsequent repetitions. Reports retain the missing IDs/keys; this check does not assert that every nested span was stored.
+
 Closure validation requires three complete runs of all 198 development cases at
 one frozen implementation and corpus revision, with every case passing and complete
 feedback. Execution, approval or hard failures block closure. Only after this gate

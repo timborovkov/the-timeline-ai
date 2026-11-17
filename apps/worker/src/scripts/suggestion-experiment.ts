@@ -33,6 +33,7 @@ import { createSuggestionHarness } from '#src/evals/suggestion-harness.js';
 import {
   scoreSuggestions,
   suggestionRunComplete,
+  verifySuggestionPublication,
   summarizeSuggestions,
   type SuggestionResult,
   type SuggestionObservation,
@@ -137,6 +138,8 @@ if (!values.sync) {
     complete: boolean;
     benchmarkEvidence: boolean;
     feedbackComplete: boolean;
+    localFeedbackComplete: boolean;
+    publication: Awaited<ReturnType<typeof verifySuggestionPublication>>;
     summary: ReturnType<typeof summarizeSuggestions>;
     rows: SuggestionResult[];
   }[] = [];
@@ -252,9 +255,28 @@ if (!values.sync) {
           ],
         },
       );
-      const feedbackComplete =
+      const localFeedbackComplete =
         experiment.results.length === selection.selected.length &&
         experiment.results.every((result) => result.evaluationResults.results.length === 5);
+      const expectedPublication = experiment.results.map((result) => ({
+        runId: result.run.id,
+        scores: result.evaluationResults.results.map(({ key, score }) => ({ key, score })),
+      }));
+      let publication = await verifySuggestionPublication(
+        client,
+        experiment.experimentName,
+        expectedPublication,
+      );
+      // Allow bounded indexing delay; missing remote data never becomes a passing gate.
+      for (let attempt = 1; !publication.complete && attempt < 6; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        publication = await verifySuggestionPublication(
+          client,
+          experiment.experimentName,
+          expectedPublication,
+        );
+      }
+      const feedbackComplete = localFeedbackComplete && publication.complete;
       const complete = suggestionRunComplete(
         rows.map((row) => row.id),
         selection.corpus.map((row) => row.id),
@@ -270,12 +292,15 @@ if (!values.sync) {
         complete,
         benchmarkEvidence: selection.benchmark && complete,
         feedbackComplete,
+        localFeedbackComplete,
+        publication,
         summary,
         rows,
       });
       inProgress = null;
       await checkpoint();
       console.log(JSON.stringify({ repetition, experiment: experiment.experimentName, summary }));
+      if (!publication.complete) break;
     }
   } finally {
     await checkpoint();

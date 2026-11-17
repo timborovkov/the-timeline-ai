@@ -160,3 +160,70 @@ export function suggestionRunComplete(
     expectedIds.every((id) => ids.includes(id))
   );
 }
+
+/** Verify durable root runs and evaluator scores, not only local evaluator output. */
+export async function verifySuggestionPublication(
+  client: {
+    awaitPendingTraceBatches(): Promise<void>;
+    listRuns(options: {
+      projectName: string;
+      isRoot: boolean;
+      id: string[];
+    }): AsyncIterable<{ id: string; end_time?: string | number | null | undefined }>;
+    listFeedback(options: {
+      runIds: string[];
+    }): AsyncIterable<{ run_id: string; key: string; score?: number | boolean | null | undefined }>;
+  },
+  projectName: string,
+  expected: {
+    runId: string;
+    scores: { key: string; score?: number | boolean | null | undefined }[];
+  }[],
+) {
+  const roots = new Set<string>();
+  const feedback = new Map<
+    string,
+    { key: string; score?: number | boolean | null | undefined }[]
+  >();
+  let error: string | null = null;
+  try {
+    await client.awaitPendingTraceBatches();
+    for (let offset = 0; offset < expected.length; offset += 50) {
+      const ids = expected.slice(offset, offset + 50).map((row) => row.runId);
+      for await (const run of client.listRuns({ projectName, isRoot: true, id: ids }))
+        if (run.end_time !== undefined && run.end_time !== null) roots.add(run.id);
+      for await (const item of client.listFeedback({ runIds: ids })) {
+        const entries = feedback.get(item.run_id) ?? [];
+        entries.push(item);
+        feedback.set(item.run_id, entries);
+      }
+    }
+  } catch (cause) {
+    error = cause instanceof Error ? cause.name : 'PublicationError';
+  }
+  const missingRunIds = expected.filter((row) => !roots.has(row.runId)).map((row) => row.runId);
+  const missingFeedback = expected.flatMap((row) =>
+    row.scores
+      .filter(
+        (score) =>
+          score.score === undefined ||
+          score.score === null ||
+          !(feedback.get(row.runId) ?? []).some(
+            (item) => item.key === score.key && item.score === score.score,
+          ),
+      )
+      .map((score) => ({ runId: row.runId, key: score.key })),
+  );
+  return {
+    complete:
+      !error &&
+      expected.length > 0 &&
+      new Set(expected.map((row) => row.runId)).size === expected.length &&
+      expected.every((row) => row.scores.length > 0) &&
+      missingRunIds.length === 0 &&
+      missingFeedback.length === 0,
+    missingRunIds,
+    missingFeedback,
+    error,
+  };
+}
