@@ -1515,3 +1515,67 @@ test('pending amendments require exactly one evidence-backed decision at inferen
   expect(result.executionErrors).toEqual([]);
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);
+
+test('uppercase local references retain their relationship grounding', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'distinct-client-same-deliverable-email'),
+  );
+  const result = await harness.run(row, {
+    model: async (args) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Customer checklists',
+              confidence: 'high',
+              items: [
+                ['River Clinic', 'RIVER', 'company'],
+                ['Mountain Clinic', 'MOUNTAIN', 'second-company'],
+              ].flatMap(([name, ref, key]) => [
+                {
+                  operation: 'create',
+                  grounding: [
+                    supportFromPacket(
+                      args.prompt,
+                      requireValue(row.messages[0]).text,
+                      'customer',
+                      `Prepare onboarding checklist for ${name}`,
+                      communicationId(row.familyId, requireValue(key)),
+                    ),
+                  ],
+                  targetKind: 'task',
+                  title: `Prepare onboarding checklist for ${name}`,
+                  proposedPayload: {
+                    canonicalName: `Prepare onboarding checklist for ${name}`,
+                    status: 'todo',
+                    localRef: ref,
+                  },
+                },
+                {
+                  operation: 'create',
+                  grounding: [
+                    supportFromPacket(
+                      args.prompt,
+                      requireValue(row.messages[0]).text,
+                      'customer',
+                      `Prepare onboarding checklist for ${name}`,
+                      requireValue(ref),
+                    ),
+                  ],
+                  targetKind: 'object_relationship',
+                  title: `Link checklist to ${name}`,
+                  proposedPayload: {
+                    kind: 'related',
+                    fromRef: ref,
+                    toEntityId: communicationId(row.familyId, requireValue(key)),
+                  },
+                },
+              ]),
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);

@@ -2605,6 +2605,20 @@ function normalizeBundleAgainstExistingObjects(
   evidenceText: string,
   nameOccupancy: CreateNameOccupancy[],
 ): SuggestionBundleOutput {
+  const localReferences = new Map<string, string>();
+  for (const item of bundle.items) {
+    const ref = item.proposedPayload.localRef;
+    if (typeof ref === 'string') localReferences.set(ref, localRefSlug(ref) ?? ref);
+  }
+  const remapGrounding = (item: SuggestionItemOutput, references: Map<string, string>) => ({
+    ...item,
+    grounding: item.grounding?.map((support) =>
+      ['customer', 'project', 'relationship'].includes(support.field) &&
+      references.has(support.value)
+        ? { ...support, value: references.get(support.value) ?? support.value }
+        : support,
+    ),
+  });
   const normalizedBundle = {
     ...bundle,
     items: bundle.items.flatMap((item) => {
@@ -2620,7 +2634,9 @@ function normalizeBundleAgainstExistingObjects(
               rows.map((object) => object.id),
             )
           : payload;
-      return normalized ? [{ ...item, proposedPayload: normalized }] : [];
+      return normalized
+        ? [{ ...remapGrounding(item, localReferences), proposedPayload: normalized }]
+        : [];
     }),
   };
   const resolvedRefs = new Map<string, string>();
@@ -2807,6 +2823,7 @@ function normalizeBundleAgainstExistingObjects(
       }
       return { ...item, proposedPayload: payload };
     })
+    .map((item) => remapGrounding(item, resolvedRefs))
     .filter((item) => {
       if (item.targetKind !== 'object_relationship' && item.targetKind !== 'identity_facet')
         return true;

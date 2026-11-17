@@ -1285,6 +1285,7 @@ const generalRelationship = (
     kind?: string;
     foreign?: boolean;
     ambiguous?: boolean;
+    update?: boolean;
   } = {},
 ) => {
   const names = options.names ?? ['Deployment checklist', 'Release checklist'];
@@ -1297,6 +1298,18 @@ const generalRelationship = (
           title: 'Link records',
           confidence: 'high',
           items: [
+            ...(options.update
+              ? [
+                  {
+                    operation: 'update',
+                    targetKind: 'task',
+                    targetId: first,
+                    title: names[0],
+                    proposedPayload: { canonicalName: names[0] },
+                    grounding: [],
+                  },
+                ]
+              : []),
             {
               auditId: 'link',
               title: 'Link records',
@@ -1395,4 +1408,36 @@ test('invalid or unsupported explicit month-name times cannot justify midnight',
       run(text, { dueAt }, [support('dueAt', text, dueAt)])[0]?.items[0]?.proposedPayload,
     ).toEqual({});
   }
+});
+
+test('bare weekday deadlines resolve from the source date', () => {
+  for (const [weekday, dueAt] of [
+    ['Friday', '2026-06-05T00:00:00.000Z'],
+    ['Monday', '2026-06-01T00:00:00.000Z'],
+  ] as const) {
+    const text = `Review retention policy is due by ${weekday}.`;
+    expect(
+      run(text, { dueAt }, [support('dueAt', text, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+  }
+});
+test('an adjacent affirmative completion retains the named task update', () => {
+  const first = 'Review retention policy.';
+  const second = 'It is done.';
+  for (const citation of [
+    support('status', `${first} ${second}`, 'done'),
+    { ...support('status', second, 'done'), context: { rawEventId: event, quote: first } },
+  ]) {
+    expect(
+      run(`${first} ${second}`, { status: 'done' }, [citation], { operation: 'update' })[0]
+        ?.items[0]?.proposedPayload.status,
+    ).toBe('done');
+  }
+});
+test('an update of a relationship endpoint does not create a second identity', () => {
+  expect(
+    generalRelationship('Link Deployment checklist to Release checklist.', { update: true }).some(
+      (item) => item.targetKind === 'object_relationship',
+    ),
+  ).toBe(true);
 });

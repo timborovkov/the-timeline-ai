@@ -123,7 +123,23 @@ function deadlineMatches(
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
-      const resolved = resolveTimePhrase(match[0], { timezone, referenceDate });
+      const phrase = match[0].toLowerCase();
+      const weekdays = [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      const weekday = weekdays.indexOf(phrase) + 1;
+      const relative = weekday
+        ? zonedDateTimeFromDate(referenceDate, timezone).dayOfWeek === weekday
+          ? 'today'
+          : `next ${phrase}`
+        : phrase;
+      const resolved = resolveTimePhrase(relative, { timezone, referenceDate });
       if (resolved?.from.getTime() === target) return true;
     }
   }
@@ -131,7 +147,19 @@ function deadlineMatches(
 }
 function taskClause(quote: string, subject: string): string | undefined {
   if (/^blocked until\b/i.test(quote.trim()) && namesTask(quote, subject)) return quote;
+  const completionNoun =
+    subject
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.at(-1) ?? 'deliverable';
   const connected = quote
+    .replace(
+      new RegExp(
+        `\\.\\s+(?=(?:it|this|that|the (?:task|item|deliverable|${completionNoun})) (?:is|was|has been) (?:delivered|completed|finished|done|shipped)[.!]?$)`,
+        'i',
+      ),
+      ' ',
+    )
     .replace(/\.\s+(?:Its|The task[’']s) (deadline|due date)\b/gi, ' $1')
     .replace(
       /\.\s+(?=[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b))/gu,
@@ -418,7 +446,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ...(args.objects ?? []),
           ...bundle.items
             .filter(
-              (candidate) => candidate.targetKind === 'object' || candidate.targetKind === 'task',
+              (candidate) =>
+                candidate.operation === 'create' &&
+                (candidate.targetKind === 'object' || candidate.targetKind === 'task'),
             )
             .map((candidate) => ({
               id:
