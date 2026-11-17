@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v15';
+export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v16';
 export const communicationCoverageSchema = z
   .array(
     z.object({
@@ -118,8 +118,15 @@ export function communicationCoverageQuotes(args: {
     }
   }
   for (const quote of args.draftQuotes) {
-    if (args.sources.some((source) => normalized(source.text).includes(normalized(quote))))
-      add(quote);
+    const fragment = normalized(quote);
+    const occurrences = args.sources.map((source) => {
+      const text = normalized(source.text);
+      const at = text.indexOf(fragment);
+      return at < 0 ? 0 : text.includes(fragment, at + 1) ? 2 : 1;
+    });
+    // Extraction may cite a bare name repeated in unrelated clauses. Offer the
+    // source sentences above instead of an ambiguous draft-only fragment.
+    if (occurrences.includes(1) && !occurrences.includes(2)) add(quote);
   }
   return [...choices];
 }

@@ -255,3 +255,19 @@ test('draft accounting requires explicit retention or rejection without conflati
   expect(check([{ ...retained, targetKind: 'object' }]).length).toBeGreaterThan(0);
   expect(check([retained], [], [draft, { id: 'draft-0-1', item }]).length).toBeGreaterThan(0);
 });
+
+test('ambiguous draft fragments cannot replace their complete source clauses', () => {
+  const text =
+    'For our client Cedar, we are planning a Patient Portal project. Link Patient Portal to Cedar.';
+  const choices = communicationCoverageQuotes({
+    sources: [{ id: event, text }],
+    packet: text,
+    draftQuotes: ['Cedar', 'Patient Portal', 'our client Cedar'],
+  });
+  expect(choices).not.toContain('Cedar');
+  expect(choices).not.toContain('Patient Portal');
+  expect(choices).toContain('our client Cedar');
+  expect(choices).toContain('For our client Cedar, we are planning a Patient Portal project.');
+  expect(choices).toContain('Link Patient Portal to Cedar.');
+  expect(choices).toContain(text);
+});
