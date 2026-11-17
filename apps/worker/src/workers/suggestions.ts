@@ -4818,34 +4818,6 @@ async function runSuggestionExtraction(
             authorUserId: activeAuthorUserId,
           })
         : [];
-  for (const bundle of extractedBundles) {
-    for (const facet of [...bundle.items]) {
-      if (
-        facet.targetKind !== 'identity_facet' ||
-        facet.proposedPayload.kind !== 'email' ||
-        typeof facet.proposedPayload.value !== 'string'
-      )
-        continue;
-      const email = facet.proposedPayload.value;
-      if (!evidenceText.toLowerCase().includes(email.toLowerCase())) continue;
-      const candidates = await scope.engineMaintenance.affiliationCandidates(PSEUDO_USER, [email]);
-      const result = suggestions.resolveCompanyAffiliation([email], candidates.companies);
-      if (result.kind !== 'existing') continue;
-      const from =
-        typeof facet.proposedPayload.entityId === 'string'
-          ? { fromEntityId: facet.proposedPayload.entityId }
-          : typeof facet.proposedPayload.entityRef === 'string'
-            ? { fromRef: facet.proposedPayload.entityRef }
-            : null;
-      if (!from) continue;
-      bundle.items.push({
-        operation: 'create',
-        targetKind: 'object_relationship',
-        title: 'Link company affiliation',
-        proposedPayload: { ...from, toEntityId: result.objectId, kind: 'related' },
-      });
-    }
-  }
   const enrichedBundles = await enrichTaskSuggestionItems({
     bundles: extractedBundles,
     projects: matchingEntityRows
@@ -4918,6 +4890,40 @@ async function runSuggestionExtraction(
         ],
       })
     : enrichedBundles;
+  // Derive affiliations only from retained identity proposals and visible source evidence.
+  // This scoped, unique domain resolution is deterministic, not a model relationship claim.
+  for (const bundle of groundedBundles) {
+    for (const facet of [...bundle.items]) {
+      if (
+        facet.targetKind !== 'identity_facet' ||
+        facet.proposedPayload.kind !== 'email' ||
+        typeof facet.proposedPayload.value !== 'string'
+      )
+        continue;
+      const email = facet.proposedPayload.value;
+      if (
+        !evidenceText.toLowerCase().includes(email.toLowerCase()) ||
+        !prompt.toLowerCase().includes(email.toLowerCase())
+      )
+        continue;
+      const candidates = await scope.engineMaintenance.affiliationCandidates(PSEUDO_USER, [email]);
+      const result = suggestions.resolveCompanyAffiliation([email], candidates.companies);
+      if (result.kind !== 'existing') continue;
+      const from =
+        typeof facet.proposedPayload.entityId === 'string'
+          ? { fromEntityId: facet.proposedPayload.entityId }
+          : typeof facet.proposedPayload.entityRef === 'string'
+            ? { fromRef: facet.proposedPayload.entityRef }
+            : null;
+      if (!from) continue;
+      bundle.items.push({
+        operation: 'create',
+        targetKind: 'object_relationship',
+        title: 'Link company affiliation',
+        proposedPayload: { ...from, toEntityId: result.objectId, kind: 'related' },
+      });
+    }
+  }
   const bundles = suggestions
     .stripAmbiguousLifecycleUpdates({
       bundles: suggestions.stampUniqueWorkItemAliasesOntoBundles({
