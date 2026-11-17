@@ -1,4 +1,5 @@
 name: CI
+# Warm-cache timing probe (unrelated to check coverage).
 
 on:
   push:
