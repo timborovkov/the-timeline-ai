@@ -336,3 +336,58 @@ test('short literal acknowledgments can receive no-action coverage', () => {
     }),
   ).toEqual([]);
 });
+
+test('create-to-update resolution drops only an unsupported new-task default', () => {
+  const before = [
+    {
+      items: [
+        {
+          auditId: 'task',
+          operation: 'create',
+          targetKind: 'task',
+          proposedPayload: { status: 'todo', parentObjectId: 'project' },
+          grounding: [],
+        },
+      ],
+    },
+  ];
+  const after = [
+    {
+      items: [
+        { auditId: 'task', operation: 'update', proposedPayload: { parentObjectId: 'project' } },
+      ],
+    },
+  ];
+  expect(() => {
+    assertCommunicationClaimsRetained(before, after);
+  }).not.toThrow();
+  expect(() => {
+    assertCommunicationClaimsRetained(
+      [
+        {
+          items: [
+            {
+              ...requireValue(requireValue(before[0]).items[0]),
+              grounding: [{ field: 'status', value: 'todo' }],
+            },
+          ],
+        },
+      ],
+      after,
+    );
+  }).toThrow('status claim');
+  expect(() => {
+    assertCommunicationClaimsRetained(before, [
+      {
+        items: [
+          { auditId: 'task', operation: 'create', proposedPayload: { parentObjectId: 'project' } },
+        ],
+      },
+    ]);
+  }).toThrow('status claim');
+  expect(() => {
+    assertCommunicationClaimsRetained(before, [
+      { items: [{ auditId: 'task', operation: 'update', proposedPayload: {} }] },
+    ]);
+  }).toThrow('parentObjectId claim');
+});

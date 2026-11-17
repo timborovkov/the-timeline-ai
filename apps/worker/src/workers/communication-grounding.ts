@@ -255,9 +255,42 @@ export function groundCommunicationBundles<T extends Item>(args: {
 }): Bundle<T>[] {
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
+    const taskIdentityNames = (item: T) => {
+      const target = args.objects?.find((object) => object.id === item.targetId);
+      const names = [target?.name ?? item.title];
+      if (target?.type !== 'task') return names;
+      return [
+        ...names,
+        ...(target.aliases ?? []).filter(
+          (alias) =>
+            alias.trim() &&
+            !(args.objects ?? []).some(
+              (other) =>
+                other.id !== target.id &&
+                [other.name, ...(other.aliases ?? [])].some(
+                  (name) => name && normalize(name) === normalize(alias),
+                ),
+            ),
+        ),
+      ];
+    };
+    const namesTaskQuote = (item: T, text: string, subject: string) => {
+      const target = args.objects?.find((object) => object.id === item.targetId);
+      const alias = target?.aliases?.find((name) => normalize(name) === normalize(subject));
+      if (!alias || normalize(target?.name ?? '') === normalize(subject))
+        return namesTask(text, subject);
+      if (!taskIdentityNames(item).includes(alias)) return false;
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
+    };
     const verified = (item: T) =>
       (item.grounding ?? [])
         .map((support) => {
+          const names = taskIdentityNames(item);
+          if (names.some((name) => normalize(name) === normalize(support.subject))) {
+            const citedName = names.find((name) => namesTaskQuote(item, support.quote, name));
+            if (citedName) support = { ...support, subject: citedName };
+          }
           const sourceForQuote = args.sources.find((row) => row.id === support.rawEventId);
           const context = support.context;
           const completionNoun = support.subject
@@ -425,15 +458,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
             normalize(args.packet).includes(normalize(support.quote)) &&
             !unsafe(support.quote) &&
             (item.targetKind === 'object_relationship' ||
-              namesTask(support.quote, support.subject) ||
+              namesTaskQuote(item, support.quote, support.subject) ||
               (support.field === 'assignee' &&
                 contextValid &&
                 /\b(?:this|it|instead)\b/i.test(support.quote))) &&
             (item.targetKind === 'object_relationship' ||
-              namesTask(
-                args.objects?.find((object) => object.id === item.targetId)?.name ?? item.title,
-                support.subject,
-              ))
+              taskIdentityNames(item).some((name) => namesTask(name, support.subject)))
           );
         });
     const uncertainty = new Set<string>();

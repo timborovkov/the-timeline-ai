@@ -643,6 +643,7 @@ const objectCreatePayload = z.object({
 
 const objectUpdatePayload = z.object({
   ...objectPayloadFields,
+  parentObjectId: uuid.optional(),
   ownerUserId: blankStringAsUndefined(uuid.nullable()),
   assigneeUserId: blankStringAsUndefined(uuid.nullable()),
   dueAt: blankStringAsUndefined(z.iso.datetime().nullable()),
@@ -5709,12 +5710,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
-        await objects.updateObject(
-          targetId,
-          patch,
-          { kind: 'agent', userId: null },
-          { requireActive: true },
-        );
+        const postCommitEffects: (() => void)[] = [];
+        await db.transaction(async (tx) => {
+          await objects.updateObject(
+            targetId,
+            patch,
+            { kind: 'agent', userId: null },
+            { requireActive: true, transactionClient: tx, postCommitEffects },
+          );
+          if (parsed.parentObjectId !== undefined)
+            await objects.setTaskProject(
+              targetId,
+              parsed.parentObjectId,
+              { kind: 'agent', userId: null },
+              {
+                transactionClient: tx,
+                postCommitEffects,
+                preserveUserChangesAfter: taskProposalFieldRevisionBoundary(
+                  item,
+                  'primaryProjectId',
+                ),
+              },
+            );
+        });
+        for (const effect of postCommitEffects) effect();
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });

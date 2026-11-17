@@ -1519,3 +1519,52 @@ test('yearless deadlines roll forward using the source-local year', () => {
     })[0]?.items[0]?.proposedPayload.dueAt,
   ).toBe(dueAt);
 });
+
+test('authorized unique task aliases support completion without guessing identity', () => {
+  const defaultQuote = 'ENG-42 is done.';
+  const evaluate = (
+    subject: string,
+    aliases: string[],
+    ambiguous = false,
+    packet = defaultQuote,
+    quote = defaultQuote,
+  ) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title: 'Complete task',
+          confidence: 'high',
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'existing-task',
+              title: 'Complete task',
+              proposedPayload: { status: 'done' },
+              grounding: [support('status', quote, 'done', subject)],
+            },
+          ],
+        },
+      ],
+      packet,
+      sources: [{ id: event, text: quote }],
+      members: [],
+      hubs: [],
+      source: 'slack',
+      objects: [
+        { id: 'existing-task', name: title, type: 'task', aliases },
+        ...(ambiguous
+          ? [{ id: 'other-task', name: 'Another task', type: 'task', aliases: ['ENG-42'] }]
+          : []),
+      ],
+    })[0]?.items[0]?.proposedPayload.status;
+  expect(evaluate('ENG-42', ['ENG-42'])).toBe('done');
+  expect(evaluate(title, ['ENG-42'])).toBe('done');
+  expect(evaluate('ENG-42', [])).toBeUndefined();
+  expect(evaluate('ENG-42', ['ENG-42'], true)).toBeUndefined();
+  expect(evaluate(title, ['ENG-42'], true)).toBeUndefined();
+  expect(evaluate('ENG-42', ['ENG-42'], false, '')).toBeUndefined();
+  expect(
+    evaluate('ENG-42', ['ENG-42'], false, 'ENG-420 is done.', 'ENG-420 is done.'),
+  ).toBeUndefined();
+});

@@ -1659,3 +1659,72 @@ test('late-resolved customer identities remain available to relationship groundi
   expect(result.executionErrors).toEqual([]);
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);
+
+test('late-resolved task creates retain their supported project association', async () => {
+  const base = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'two-project-routing-email'),
+  );
+  const existingTask = {
+    ...requireValue(base.outcome.nodes.find((node) => node.type === 'task')),
+    status: 'doing',
+  };
+  const unrelated = Array.from({ length: 501 }, (_, index) => ({
+    key: `older-task-context-${index}`,
+    type: 'project' as const,
+    name: `Unrelated task context ${index}`,
+    status: 'planning',
+    assignee: null,
+    dueAt: null,
+  }));
+  const row = {
+    ...base,
+    seed: [existingTask, ...unrelated, ...base.seed],
+    outcome: {
+      ...base.outcome,
+      nodes: [
+        ...base.outcome.nodes.map((node) => (node.key === existingTask.key ? existingTask : node)),
+        ...unrelated,
+      ],
+    },
+  };
+  const result = await harness.run(row, {
+    model: async (args) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Two project deliverables',
+              confidence: 'high',
+              items: [
+                ['Write schema migration', 'Records Gateway', 'project'],
+                ['Test password recovery', 'Staff Console', 'second-project'],
+              ].map(([name, projectName, key]) => ({
+                operation: 'create',
+                grounding: [
+                  supportFromPacket(
+                    args.prompt,
+                    requireValue(row.messages[0]).text,
+                    'project',
+                    requireValue(name),
+                    communicationId(row.familyId, requireValue(key)),
+                  ),
+                ],
+                targetKind: 'task',
+                title: name,
+                proposedPayload: {
+                  canonicalName: name,
+                  status: 'todo',
+                  projectName,
+                  parentObjectId: communicationId(row.familyId, requireValue(key)),
+                },
+              })),
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(result.acceptanceFailureReasons).toEqual([]);
+  expect(scoreCommunications(row, result)).toMatchObject({ passed: true });
+}, 60_000);

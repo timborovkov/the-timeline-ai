@@ -2587,6 +2587,91 @@ describe('suggestion scope', () => {
     expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
   });
 
+  it('preserves a later human project choice when accepting a task update', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const [task, proposedProject, humanProject] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'task', canonicalName: 'Project choice task', status: 'doing' },
+        { teamId: TEAM_ID, type: 'project', canonicalName: 'Suggested project' },
+        { teamId: TEAM_ID, type: 'project', canonicalName: 'Human project' },
+      ])
+      .returning();
+    if (!task || !proposedProject || !humanProject) throw new Error('missing fixtures');
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Set task project',
+      dedupeKey: 'set-task-project',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Set task project',
+          dedupeKey: 'set-task-project:item',
+          proposedPayload: { parentObjectId: proposedProject.id },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    if (!item) throw new Error('missing proposal');
+    await scope.objects.setTaskProject(task.id, humanProject.id, { kind: 'user', userId: USER_ID });
+    expect(await scope.suggestions.acceptSuggestionItem(item.id)).toBe(true);
+    const edges = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.fromEntityId, task.id));
+    expect(edges.map((edge) => edge.toEntityId)).toEqual([humanProject.id]);
+  });
+
+  it('rolls back task updates when their proposed project is unavailable', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    for (const kind of ['foreign', 'archived', 'wrong-type'] as const) {
+      const [task] = await db
+        .insert(entities)
+        .values({ teamId: TEAM_ID, type: 'task', canonicalName: `Task ${kind}`, status: 'todo' })
+        .returning();
+      const [project] = await db
+        .insert(entities)
+        .values({
+          teamId: kind === 'foreign' ? OTHER_TEAM_ID : TEAM_ID,
+          type: kind === 'wrong-type' ? 'company' : 'project',
+          canonicalName: `Project ${kind}`,
+          archivedAt: kind === 'archived' ? new Date() : null,
+        })
+        .returning();
+      if (!task || !project) throw new Error('missing fixture');
+      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'chat',
+        title: `Update ${kind}`,
+        dedupeKey: `unavailable-project-${kind}`,
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: task.id,
+            title: `Update ${kind}`,
+            dedupeKey: `unavailable-project-${kind}:item`,
+            proposedPayload: { status: 'doing', parentObjectId: project.id },
+          },
+        ],
+      });
+      const item = bundle.items[0];
+      if (!item) throw new Error('missing proposal');
+      await expect(scope.suggestions.acceptSuggestionItem(item.id)).rejects.toThrow(
+        'Project not found',
+      );
+      const [unchanged] = await db.select().from(entities).where(eq(entities.id, task.id));
+      expect(unchanged?.status).toBe('todo');
+      expect(
+        await db
+          .select()
+          .from(entityRelationships)
+          .where(eq(entityRelationships.fromEntityId, task.id)),
+      ).toHaveLength(0);
+    }
+  });
+
   it('deduplicates exact short task names before token filtering', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const [suggestion] = await db

@@ -2595,6 +2595,15 @@ function updatePayloadFromCreate(
   ]) {
     if (payloadHasKey(item.proposedPayload, key)) payload[key] = item.proposedPayload[key];
   }
+  // A new-task default must not reopen an existing task after identity resolution.
+  if (
+    itemCreateType(item) === 'task' &&
+    payload.status === 'todo' &&
+    !item.grounding?.some((support) => support.field === 'status')
+  )
+    delete payload.status;
+  if (itemCreateType(item) === 'task' && payloadHasKey(item.proposedPayload, 'parentObjectId'))
+    payload.parentObjectId = item.proposedPayload.parentObjectId;
   if (aliases.length > 0) payload.aliases = aliases;
   return payload;
 }

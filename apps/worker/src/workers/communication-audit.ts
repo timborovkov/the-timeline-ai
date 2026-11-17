@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v22';
+export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v23';
 export const communicationCoverageSchema = z
   .array(
     z.object({
@@ -25,6 +25,9 @@ export const communicationCoverageSchema = z
 export type CommunicationCoverage = z.infer<typeof communicationCoverageSchema>;
 export interface AuditedItem {
   auditId?: string | undefined;
+  operation?: string | undefined;
+  targetKind?: string | undefined;
+  grounding?: { field: string; value: string }[] | undefined;
   proposedPayload: Record<string, unknown>;
 }
 const normalized = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -261,7 +264,16 @@ export function assertCommunicationClaimsRetained(
           item.proposedPayload[field] === null &&
           ['status', 'assigneeName', 'ownerName'].includes(field)
         ) &&
-        item.proposedPayload[field] !== actual.proposedPayload[field],
+        item.proposedPayload[field] !== actual.proposedPayload[field] &&
+        !(
+          field === 'status' &&
+          item.operation === 'create' &&
+          (item.targetKind === 'task' || item.proposedPayload.type === 'task') &&
+          item.proposedPayload.status === 'todo' &&
+          actual.operation === 'update' &&
+          actual.proposedPayload.status === undefined &&
+          !item.grounding?.some((support) => support.field === 'status')
+        ),
     );
     if (removed) throw new Error(`Communication grounding rejected an audited ${removed} claim`);
   }
