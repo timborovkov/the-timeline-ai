@@ -4983,9 +4983,19 @@ async function runSuggestionExtraction(
         source: row.source,
         timezone: workspaceTime.timezone,
         members: memberRows,
-        hubs: hubRows,
-        objects: matchingEntityRows.map((object) => ({
+        hubs: matchingRowsForCreates
+          .filter((object) =>
+            (suggestions.WORKSPACE_HUB_TYPES as readonly string[]).includes(object.type),
+          )
+          .map((object) => ({
+            id: object.id,
+            type: object.type,
+            name: object.canonicalName,
+            aliases: aliasesForRow(object),
+          })),
+        objects: matchingRowsForCreates.map((object) => ({
           ...object,
+          name: object.canonicalName,
           aliases: Array.isArray(object.aliases)
             ? object.aliases.filter((alias): alias is string => typeof alias === 'string')
             : [],

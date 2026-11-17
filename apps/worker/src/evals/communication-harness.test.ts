@@ -1579,3 +1579,83 @@ test('uppercase local references retain their relationship grounding', async () 
   });
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);
+
+test('late-resolved customer identities remain available to relationship grounding', async () => {
+  const base = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'account-alias-link-email'),
+  );
+  const unrelated = Array.from({ length: 501 }, (_, index) => ({
+    key: `unrelated-${index}`,
+    type: 'project' as const,
+    name: `Unrelated project ${index}`,
+    status: 'planning',
+    assignee: null,
+    dueAt: null,
+  }));
+  const row = {
+    ...base,
+    seed: [...base.seed, ...unrelated],
+    outcome: { ...base.outcome, nodes: [...base.outcome.nodes, ...unrelated] },
+  };
+  const quote = requireValue(row.messages[0]).text;
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Compliance checklist',
+              confidence: 'high',
+              quote,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'NWM',
+                  proposedPayload: {
+                    type: 'company',
+                    localRef: 'CLIENT',
+                    canonicalName: 'NWM',
+                    description: 'Customer account',
+                  },
+                  grounding: [],
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare Northwind Medical compliance checklist',
+                  proposedPayload: {
+                    localRef: 'checklist',
+                    canonicalName: 'Prepare Northwind Medical compliance checklist',
+                  },
+                  grounding: [],
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: 'Link checklist to customer',
+                  proposedPayload: {
+                    fromRef: 'checklist',
+                    toRef: 'CLIENT',
+                    kind: 'related',
+                  },
+                  grounding: [
+                    supportFromPacket(
+                      input.prompt,
+                      quote,
+                      'customer',
+                      'Prepare Northwind Medical compliance checklist',
+                      'CLIENT',
+                    ),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);

@@ -63,6 +63,33 @@ function safeSourceQuote(text: string, quote: string): boolean {
     if (before.lastIndexOf(`<${tag}>`) > before.lastIndexOf(`</${tag}>`)) return false;
   return true;
 }
+function deadlineTimeMatches(day: string, tail: string, target: number, timezone: string): boolean {
+  try {
+    const start = dateOnlyEventRange(day, timezone).startAt;
+    const time =
+      /^(?:T|\s+(?:at\s+)?)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:\s*(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(
+        tail,
+      );
+    if (!time) return !/^(?:T|\s+(?:at\b|\d))/i.test(tail) && start.getTime() === target;
+    const hour = Number(time[1]);
+    const minute = Number(time[2]);
+    const second = Number(time[3] ?? 0);
+    const millisecond = Number((time[4] ?? '').padEnd(3, '0'));
+    if (hour > 23 || minute > 59 || second > 59) return false;
+    // Unsupported zones and AM/PM markers must not silently become workspace time.
+    if (/^\s*(?:[A-Za-z]|[+-]\d)/.test(tail.slice(time[0].length))) return false;
+    const zone = time[5];
+    const instant = zone
+      ? Date.parse(
+          `${day}T${String(hour).padStart(2, '0')}:${time[2]}:${String(second).padStart(2, '0')}.${String(millisecond).padStart(3, '0')}${/^(UTC|GMT|Z)$/i.test(zone) ? 'Z' : zone}`,
+        )
+      : zonedDateTimeFromDate(start, timezone).with({ hour, minute, second, millisecond })
+          .epochMilliseconds;
+    return instant === target;
+  } catch {
+    return false;
+  }
+}
 function deadlineMatches(
   quote: string,
   value: unknown,
@@ -75,49 +102,24 @@ function deadlineMatches(
   )
     return false;
   const target = Date.parse(value);
-  for (const match of quote.matchAll(
-    /\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:\d{2})| at \d{2}:\d{2} UTC)?/g,
-  )) {
-    const raw = match[0].replace(' at ', 'T').replace(' UTC', ':00Z');
-    try {
-      const date = dateOnlyEventRange(raw.slice(0, 10), timezone);
-      if (raw.includes('T') ? Date.parse(raw) === target : date.startAt.getTime() === target)
-        return true;
-    } catch {
-      /* Invalid source dates never support a write. */
-    }
+  for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
+    if (deadlineTimeMatches(match[0], quote.slice(match.index + match[0].length), target, timezone))
+      return true;
   }
   for (const match of quote.matchAll(
     /\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? \d{4}\b/gi,
   )) {
     const date = new Date(`${match[0]} 00:00:00 UTC`);
-    if (!Number.isFinite(date.getTime())) continue;
-    const tail = quote.slice(match.index + match[0].length);
-    const time =
-      /^\s+(?:at\s+)?(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s+(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(tail);
-    try {
-      const day = date.toISOString().slice(0, 10);
-      const start = dateOnlyEventRange(day, timezone).startAt;
-      if (time) {
-        const hour = Number(time[1]);
-        const minute = Number(time[2]);
-        const second = Number(time[3] ?? 0);
-        if (hour > 23 || minute > 59 || second > 59) continue;
-        // Do not silently interpret an unrecognized zone or AM/PM marker as workspace time.
-        if (/^\s*(?:[A-Za-z]|[+-]\d)/.test(tail.slice(time[0].length))) continue;
-        const zone = time[4];
-        const instant = zone
-          ? Date.parse(
-              `${day}T${String(hour).padStart(2, '0')}:${time[2]}:${String(second).padStart(2, '0')}${/^(UTC|GMT|Z)$/i.test(zone) ? 'Z' : zone}`,
-            )
-          : zonedDateTimeFromDate(start, timezone).with({ hour, minute, second }).epochMilliseconds;
-        if (instant === target) return true;
-      } else if (!/^\s+(?:at\b|\d)/i.test(tail) && start.getTime() === target) {
-        return true;
-      }
-    } catch {
-      /* Invalid source dates/times never support a write. */
-    }
+    if (
+      Number.isFinite(date.getTime()) &&
+      deadlineTimeMatches(
+        date.toISOString().slice(0, 10),
+        quote.slice(match.index + match[0].length),
+        target,
+        timezone,
+      )
+    )
+      return true;
   }
   if (referenceDate) {
     for (const match of quote.matchAll(
@@ -140,7 +142,16 @@ function deadlineMatches(
           : `next ${phrase}`
         : phrase;
       const resolved = resolveTimePhrase(relative, { timezone, referenceDate });
-      if (resolved?.from.getTime() === target) return true;
+      if (
+        resolved &&
+        deadlineTimeMatches(
+          zonedDateTimeFromDate(resolved.from, timezone).toPlainDate().toString(),
+          quote.slice(match.index + match[0].length),
+          target,
+          timezone,
+        )
+      )
+        return true;
     }
   }
   return false;
@@ -165,10 +176,30 @@ function taskClause(quote: string, subject: string): string | undefined {
       /\.\s+(?=[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b))/gu,
       ' ',
     );
-  const clauses = connected
-    .split(/(?:[;!?]|\.(?=\s|$)|\band\b|\bwhile\b|\bwhereas\b|\buntil\b|\bpero\b|\by\b)/iu)
-    .filter((clause) => namesTask(clause, subject));
-  return clauses.length === 1 ? clauses[0]?.trim() : undefined;
+  const literalName = subject
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const identities = literalName ? [...connected.matchAll(new RegExp(literalName, 'gi'))] : [];
+  const clauses: string[] = [];
+  let start = 0;
+  for (const boundary of connected.matchAll(
+    /(?:[;!?]|\.(?=\s|$)|\band\b|\bwhile\b|\bwhereas\b|\buntil\b|\bpero\b|\by\b)/giu,
+  )) {
+    if (
+      identities.some(
+        (name) =>
+          boundary.index >= name.index &&
+          boundary.index + boundary[0].length <= name.index + name[0].length,
+      )
+    )
+      continue;
+    clauses.push(connected.slice(start, boundary.index));
+    start = boundary.index + boundary[0].length;
+  }
+  clauses.push(connected.slice(start));
+  const matching = clauses.filter((clause) => namesTask(clause, subject));
+  return matching.length === 1 ? matching[0]?.trim() : undefined;
 }
 
 /** Canonicalize an existing object ID placed in a local-ref slot, never guessing identity. */

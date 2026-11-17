@@ -30,6 +30,7 @@ const run = (
     speakerContext?: string;
     operation?: string;
     timezone?: string;
+    taskTitle?: string;
   } = {},
 ) =>
   groundCommunicationBundles({
@@ -39,7 +40,7 @@ const run = (
         confidence: 'high',
         items: [
           {
-            title,
+            title: options.taskTitle ?? title,
             targetKind: 'task',
             operation: options.operation ?? 'create',
             proposedPayload: payload,
@@ -1440,4 +1441,61 @@ test('an update of a relationship endpoint does not create a second identity', (
       (item) => item.targetKind === 'object_relationship',
     ),
   ).toBe(true);
+});
+
+test('task-name conjunctions preserve ownership and deadline assertions', () => {
+  const name = 'Draft terms and conditions';
+  const quote = 'Bob will draft terms and conditions by 2026-06-12.';
+  const dueAt = '2026-06-12T00:00:00.000Z';
+  expect(
+    run(
+      quote,
+      { assigneeUserId: bob, dueAt },
+      [support('assignee', quote, bob, name), support('dueAt', quote, dueAt, name)],
+      { taskTitle: name },
+    )[0]?.items[0]?.proposedPayload,
+  ).toEqual({ assigneeUserId: bob, dueAt });
+});
+test('ISO local deadline times use the workspace timezone rather than midnight', () => {
+  const quote = 'Review retention policy is due 2026-06-12 at 09:00.';
+  for (const [timezone, dueAt, midnight] of [
+    ['UTC', '2026-06-12T09:00:00.000Z', '2026-06-12T00:00:00.000Z'],
+    ['Europe/Helsinki', '2026-06-12T06:00:00.000Z', '2026-06-11T21:00:00.000Z'],
+  ] as const) {
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone })[0]?.items[0]
+        ?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+    expect(
+      run(quote, { dueAt: midnight }, [support('dueAt', quote, midnight)], { timezone })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBeUndefined();
+  }
+});
+
+test('a task-name conjunction does not absorb a separate task deadline', () => {
+  const name = 'Draft terms and conditions';
+  const quote =
+    'Bob will draft terms and conditions and Alice will review retention policy by 2026-06-12.';
+  const dueAt = '2026-06-12T00:00:00.000Z';
+  expect(
+    run(
+      quote,
+      { assigneeUserId: bob, dueAt },
+      [support('assignee', quote, bob, name), support('dueAt', quote, dueAt, name)],
+      { taskTitle: name },
+    )[0]?.items[0]?.proposedPayload,
+  ).toEqual({ assigneeUserId: bob });
+});
+test('relative dates and ISO timestamps share explicit-time validation', () => {
+  for (const [expression, dueAt] of [
+    ['Friday at 09:00', '2026-06-05T06:00:00.000Z'],
+    ['2026-06-12T09:00:00.123+02:00', '2026-06-12T07:00:00.123Z'],
+  ] as const) {
+    const quote = `Review retention policy is due ${expression}.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+  }
 });
