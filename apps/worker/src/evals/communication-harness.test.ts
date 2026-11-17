@@ -938,13 +938,12 @@ test('checked no-action can decline a prepared pending-task amendment', async ()
           };
         }[];
         coverage: unknown[];
+        rejectedAmendments: { id: string; coverage: unknown }[];
       };
       candidatesSeen ||= object.pendingAmendments.length > 0;
-      object.coverage = object.pendingAmendments.map((candidate) => ({
-        ...candidate.coverage,
-        disposition: 'no_action',
-        existingIds: [],
-        reason: 'Controlled rejection of a pending amendment.',
+      object.rejectedAmendments = object.pendingAmendments.map((candidate) => ({
+        id: candidate.id,
+        coverage: { ...candidate.coverage, reason: 'Controlled rejection of a pending amendment.' },
       }));
       object.pendingAmendments = [];
       return checked;
@@ -1469,6 +1468,50 @@ test('empty audit coverage is rejected at the inference schema boundary', async 
     },
   });
   expect(checked).toBe(true);
+  expect(result.executionErrors).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
+test('pending amendments require exactly one evidence-backed decision at inference', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'pending-task-reuse-telegram'),
+  );
+  let tested = false;
+  const result = await harness.run(row, {
+    model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    auditModel: async (input) => {
+      const checked = await controlledCommunicationAudit(input);
+      const output = checked.object as { pendingAmendments: { id: string; coverage: unknown }[] };
+      const candidate = requireValue(output.pendingAmendments[0]);
+      expect(
+        input.schema.safeParse({ ...output, pendingAmendments: [], rejectedAmendments: [] })
+          .success,
+      ).toBe(false);
+      expect(
+        input.schema.safeParse({ ...output, pendingAmendments: [candidate, candidate] }).success,
+      ).toBe(false);
+      expect(input.schema.safeParse({ ...output, rejectedAmendments: [candidate] }).success).toBe(
+        false,
+      );
+      expect(
+        input.schema.safeParse({
+          ...output,
+          pendingAmendments: [],
+          rejectedAmendments: [{ ...candidate, id: '99999999-9999-4999-8999-999999999999' }],
+        }).success,
+      ).toBe(false);
+      expect(
+        input.schema.safeParse({
+          ...output,
+          pendingAmendments: [],
+          rejectedAmendments: [candidate],
+        }).success,
+      ).toBe(true);
+      tested = true;
+      return checked;
+    },
+  });
+  expect(tested).toBe(true);
   expect(result.executionErrors).toEqual([]);
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);

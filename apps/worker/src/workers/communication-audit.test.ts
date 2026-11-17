@@ -170,6 +170,7 @@ test('audit references normalize only valid literals in coverage and grounding',
     ],
     coverage: [{ evidence: [{ quote: 'fabricated' }] }],
     pendingAmendments: [{ coverage: { evidence: [{ quote: 'quote-0' }] } }],
+    rejectedAmendments: [{ coverage: { evidence: [{ rawEventId: event, quote }] } }],
   };
   const normalized = referenceCommunicationCoverageQuotes(input, [quote]);
   expect(normalized).toEqual({
@@ -185,6 +186,7 @@ test('audit references normalize only valid literals in coverage and grounding',
     ],
     coverage: [{ evidence: [{ quote: 'fabricated' }] }],
     pendingAmendments: [{ coverage: { evidence: [{ quote: 'quote-0' }] } }],
+    rejectedAmendments: [{ coverage: { evidence: [{ rawEventId: event, quote: 'quote-0' }] } }],
   });
   expect(input.bundles[0]?.items[0]?.coverage.evidence[0]?.quote).toBe(quote);
   expect(referenceCommunicationCoverageQuotes(normalized, [quote])).toEqual(normalized);

@@ -4559,6 +4559,12 @@ async function runSuggestionExtraction(
           }),
         ])
       : noActionCoverage;
+    const amendmentDecisionSchema = z.object({
+      id: amendmentCandidates.length
+        ? z.enum(amendmentCandidates.map((candidate) => candidate.id))
+        : z.uuid(),
+      coverage: itemCoverageSchema,
+    });
     const auditSchema = z
       .object({
         bundles: z
@@ -4620,21 +4626,19 @@ async function runSuggestionExtraction(
           .max(draftRecords.length)
           .default([]),
         pendingAmendments: z
-          .array(
-            z.object({
-              id: amendmentCandidates.length
-                ? z.enum(amendmentCandidates.map((candidate) => candidate.id))
-                : z.uuid(),
-              coverage: itemCoverageSchema,
-            }),
-          )
+          .array(amendmentDecisionSchema)
           .max(Math.min(50, amendmentCandidates.length)),
+        rejectedAmendments: z
+          .array(amendmentDecisionSchema)
+          .max(amendmentCandidates.length)
+          .default([]),
       })
       .superRefine((audit, ctx) => {
         const coverageCount =
           audit.coverage.length +
           audit.removedDrafts.length +
           audit.pendingAmendments.length +
+          audit.rejectedAmendments.length +
           audit.bundles.reduce((count, bundle) => count + bundle.items.length, 0);
         if (coverageCount < 1 || coverageCount > 100)
           ctx.addIssue({
@@ -4643,6 +4647,15 @@ async function runSuggestionExtraction(
             message:
               'Return 1–100 total coverage entries, including an evidenced no_action entry when no proposal is needed',
           });
+        const decisions = [...audit.pendingAmendments, ...audit.rejectedAmendments];
+        for (const candidate of amendmentCandidates) {
+          if (decisions.filter((decision) => decision.id === candidate.id).length !== 1)
+            ctx.addIssue({
+              code: 'custom',
+              path: ['pendingAmendments'],
+              message: `Account for pending amendment ${candidate.id} exactly once: select it or reject its proposed changes with source evidence`,
+            });
+        }
         for (const message of communicationDraftAccountingErrors({
           drafts: draftRecords,
           ...audit,
@@ -4695,6 +4708,7 @@ async function runSuggestionExtraction(
       ...audited.removedDrafts.map((draft) => draft.coverage),
       ...audited.bundles.flatMap((bundle) => bundle.items.map((item) => item.coverage)),
       ...audited.pendingAmendments.map((item) => item.coverage),
+      ...audited.rejectedAmendments.map((item) => item.coverage),
     ])
       for (const evidence of coverage.evidence) {
         const quote = quoteOptions[evidence.quote];
@@ -4759,6 +4773,12 @@ async function runSuggestionExtraction(
           proposalIds: [`checked-${b}-${i}`],
         })),
       ),
+      ...audited.rejectedAmendments.map((candidate) => ({
+        ...candidate.coverage,
+        disposition: 'no_action',
+        existingIds: [],
+        proposalIds: [],
+      })),
       ...audited.pendingAmendments.map((candidate) => ({
         ...candidate.coverage,
         disposition: 'proposed',
