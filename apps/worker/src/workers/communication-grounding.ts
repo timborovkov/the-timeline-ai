@@ -121,7 +121,10 @@ function deadlineMatches(
   const target = Date.parse(value);
   const deniedAt = (index: number) =>
     /\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i.test(
-      quote.slice(0, index),
+      quote
+        .slice(0, index)
+        .split(/\bbut\b|,\s*(?:instead|now)\b/i)
+        .at(-1) ?? '',
     );
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
     if (deniedAt(match.index)) continue;
@@ -1028,7 +1031,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             lifecycleUnambiguous &&
             !(
               payload.status === 'done' &&
-              /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to)\b/i.test(
+              /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to)\s+(?:(?:not|never|soon|already|finally)\s+)*(?:be\s+|have\s+been\s+)?(?:finished|complete[ds]?|done|delivered|shipped|sent)\b/i.test(
                 lifecycleClause,
               )
             ) &&

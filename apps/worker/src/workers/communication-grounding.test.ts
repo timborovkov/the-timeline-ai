@@ -1762,3 +1762,26 @@ test('negated deadline assertions cannot retain a date', () => {
     ).toBeUndefined();
   }
 });
+
+test('modal words in task names do not negate affirmative completion', () => {
+  const taskTitle = 'Prepare May report';
+  const quote = `${taskTitle} is done.`;
+  expect(
+    run(quote, { status: 'done' }, [support('status', quote, 'done', taskTitle)], {
+      operation: 'update',
+      taskTitle,
+    })[0]?.items[0]?.proposedPayload.status,
+  ).toBe('done');
+});
+test('a denied deadline does not negate a later affirmative correction', () => {
+  const quote = 'Review retention policy is not due 2026-06-12 but is due 2026-06-15.';
+  for (const [day, expected] of [
+    ['12', undefined],
+    ['15', '2026-06-15T00:00:00.000Z'],
+  ] as const) {
+    const dueAt = `2026-06-${day}T00:00:00.000Z`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
+    ).toBe(expected);
+  }
+});
