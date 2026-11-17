@@ -1722,3 +1722,17 @@ test('trailing prose does not legitimize unsupported time or timezone markers', 
     ).toBeUndefined();
   }
 });
+
+test('explicit delivery completion retains its task while negated delivery does not', () => {
+  const taskTitle = 'Send retention policy';
+  for (const phrase of ['It was delivered.', 'It has been delivered.', 'It was not delivered.']) {
+    const quote = `${taskTitle}. ${phrase}`;
+    const result = run(quote, { status: 'done' }, [support('status', quote, 'done', taskTitle)], {
+      operation: 'update',
+      taskTitle,
+    });
+    expect(result[0]?.items[0]?.proposedPayload.status).toBe(
+      phrase.includes('not') ? undefined : 'done',
+    );
+  }
+});

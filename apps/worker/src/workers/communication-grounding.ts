@@ -976,7 +976,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const lifecycle = has('status', payload.status);
         const lifecycleWords: Record<string, RegExp> = {
           doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
-          done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
+          done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
           cancelled: /\b(?:cancel|cancelled|canceled|cancelada|cancelado|abgesagt)\b/i,
           blocked: /\bblocked\b/i,
           todo: /\b(?:reopen|restart|unblock)\b/i,
