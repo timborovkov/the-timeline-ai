@@ -842,3 +842,10 @@ export function selectCommunications(options: {
   );
   return { ...subset, corpus: full.corpus, complete: false, benchmark: false };
 }
+
+export function communicationConcurrency(value?: string): number {
+  const count = value === undefined ? 4 : Number(value);
+  if (!Number.isSafeInteger(count) || count < 1 || count > 8)
+    throw new Error('--concurrency must be an integer from 1 to 8');
+  return count;
+}

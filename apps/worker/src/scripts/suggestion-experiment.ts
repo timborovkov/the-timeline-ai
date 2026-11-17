@@ -10,6 +10,7 @@ import { evaluate } from 'langsmith/evaluation';
 
 import {
   COMMUNICATION_CASES,
+  communicationConcurrency,
   selectCommunications,
   validateCommunicationCases,
 } from '#src/evals/communication-cases.js';
@@ -46,6 +47,7 @@ const { values } = parseArgs({
     limit: { type: 'string' },
     tag: { type: 'string' },
     cases: { type: 'string' },
+    concurrency: { type: 'string' },
     out: { type: 'string' },
   },
   strict: true,
@@ -58,6 +60,9 @@ if (suite !== 'suggestions' && suite !== 'communications') throw new Error('Inva
 const communications = suite === 'communications';
 if (!communications && values.cases !== undefined)
   throw new Error('--cases requires --suite=communications');
+if (!communications && values.concurrency !== undefined)
+  throw new Error('--concurrency requires --suite=communications');
+const concurrency = communications ? communicationConcurrency(values.concurrency) : 1;
 if (communications) validateCommunicationCases();
 else validateSuggestionCases();
 const selection = communications ? selectCommunications(values) : selectSuggestionCases(values);
@@ -121,7 +126,7 @@ if (!values.sync) {
   const implementationDigest = implementationHash.digest('hex');
   // Each concurrent communication case owns a separate database and queue.
   const harnesses = [];
-  for (let index = 0; index < (communications ? 4 : 1); index++)
+  for (let index = 0; index < concurrency; index++)
     harnesses.push(
       communications ? await createCommunicationHarness() : await createSuggestionHarness(),
     );
@@ -138,7 +143,7 @@ if (!values.sync) {
   let inProgress: { repetition: number; rows: SuggestionResult[] } | null = null;
   let checkpointChain = Promise.resolve();
   const checkpoint = () => {
-    const content = `${JSON.stringify({ suite, datasetName, corpusHash, implementationDigest, revision, dirty, split: selection.split, caseFilter: values.cases ?? null, evaluatedAt: new Date().toISOString(), reports, inProgress }, null, 2)}\n`;
+    const content = `${JSON.stringify({ suite, datasetName, corpusHash, implementationDigest, revision, dirty, concurrency, split: selection.split, caseFilter: values.cases ?? null, evaluatedAt: new Date().toISOString(), reports, inProgress }, null, 2)}\n`;
     checkpointChain = checkpointChain.then(() => writeFile(requireValue(values.out), content));
     return checkpointChain;
   };

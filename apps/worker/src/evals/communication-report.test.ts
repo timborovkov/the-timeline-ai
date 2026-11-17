@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test';
 
 import {
   COMMUNICATION_CASES,
+  communicationConcurrency,
   selectCommunications,
   validateCommunicationCases,
 } from '#src/evals/communication-cases.js';
@@ -294,4 +295,12 @@ test('listing all case IDs still produces a partial diagnostic report', () => {
       selected.complete,
     ),
   ).toBe(false);
+});
+
+test('communication concurrency remains bounded and defaults to four isolated harnesses', () => {
+  expect(communicationConcurrency()).toBe(4);
+  expect(communicationConcurrency('1')).toBe(1);
+  expect(communicationConcurrency('8')).toBe(8);
+  for (const value of ['0', '-1', '9', '1.5', 'NaN', 'Infinity', ''])
+    expect(() => communicationConcurrency(value)).toThrow();
 });
