@@ -256,6 +256,14 @@ function hasProjectAlternative(assertion: string, projectNames: string[]): boole
   );
 }
 
+function taskIdentityPattern(subject: string): string {
+  return normalize(subject)
+    .split(' ')
+    .filter((word) => word && !['the', 'a', 'an', 'of'].includes(word))
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join(' (?:of )?(?:the |a |an )?');
+}
+
 function affirmativeProjectMembership(
   assertion: string,
   subject: string,
@@ -264,11 +272,7 @@ function affirmativeProjectMembership(
 ): boolean {
   const statement = normalize(assertion);
   const project = normalize(name);
-  const task = normalize(subject)
-    .split(' ')
-    .filter((word) => word && !['the', 'a', 'an', 'of'].includes(word))
-    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join(' (?:of )?(?:the |a |an )?');
+  const task = taskIdentityPattern(subject);
   if (
     !project ||
     !task ||
@@ -1206,6 +1210,16 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 'iu',
               ).exec(clause)
             : null;
+        const passiveSubject = assignment ? taskIdentityPattern(assignment.subject) : '';
+        const passiveAssignment =
+          clause &&
+          explicitAssignment &&
+          passiveSubject &&
+          /^(?:re)?assigned\s+to\s+/i.test(explicitAssignment[0]) &&
+          new RegExp(
+            `(?:^|\\s)${passiveSubject}(?: task)? (?:is|was|has been|had been) (?:now )?$`,
+            'iu',
+          ).test(normalize(clause.slice(0, explicitAssignment.index)) + ' ');
         const confirmedOwner =
           name &&
           clause &&
@@ -1223,6 +1237,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 (explicitAssignment[1] ?? '') +
                   clause.slice(explicitAssignment.index + explicitAssignment[0].length),
               )) ||
+            Boolean(passiveAssignment) ||
             confirmedOwner);
         const commitmentQuotes = assignment
           ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {

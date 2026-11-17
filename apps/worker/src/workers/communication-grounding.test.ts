@@ -2156,6 +2156,9 @@ test('assignment evidence cannot borrow a commitment from another artifact', () 
     ['Review retention policy requires Bob to deploy the service.', undefined],
     ['Bob to review retention policy.', bob],
     ['Assign Bob to review retention policy.', bob],
+    ['Review retention policy is assigned to Bob.', bob],
+    ['Review retention policy was reassigned to Bob.', bob],
+    ['Review retention policy requires deployment to be assigned to Bob.', undefined],
     ['Review retention policy depends on deployment, which Bob will handle.', undefined],
     ['Bob will review retention policy because deployment needs it.', bob],
   ] as const) {
