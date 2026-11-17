@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
+import { COMMUNICATION_AUDIT_VERSION } from '#src/workers/communication-audit.js';
 import { COMMUNICATION_POLICY_VERSION } from '#src/workers/communication-policy.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 // Background proposal evals exercise the worker path that turns captured
@@ -111,42 +112,65 @@ describe('background proposal evals', () => {
   });
 
   it('creates grounded Slack conversation proposals without private-window leakage', async () => {
-    const chatStructured = vi.fn().mockImplementation((input: { prompt: string }) => {
-      expect(input.prompt).toContain(
-        'Maya: For the Northstar rollout, I will send the Acme pricing packet by Friday.',
-      );
-      expect(input.prompt).not.toContain('discount floor');
-      return Promise.resolve({
-        model: MODEL_ID,
-        object: {
-          bundles: [
-            {
-              title: 'Send Acme pricing packet',
-              summary: 'Maya committed to sending Acme the pricing packet by Friday.',
-              reason: 'The Slack message contains a clear owner, customer, deliverable, and date.',
-              confidence: 'high',
-              quote: 'I will send the Acme pricing packet by Friday.',
-              items: [
-                {
-                  operation: 'create',
-                  targetKind: 'task',
-                  title: 'Send Acme pricing packet',
-                  description: 'Send Acme the pricing packet by Friday.',
-                  proposedPayload: {
-                    canonicalName: 'Send Acme pricing packet',
+    const chatStructured = vi
+      .fn()
+      .mockImplementation((input: { prompt: string; reasoningEffort?: string }) => {
+        expect(input.reasoningEffort).toBe('low');
+        expect(input.prompt).toContain(
+          'Maya: For the Northstar rollout, I will send the Acme pricing packet by Friday.',
+        );
+        expect(input.prompt).not.toContain('discount floor');
+        return Promise.resolve({
+          model: MODEL_ID,
+          object: {
+            pendingAmendments: [],
+            coverage: [],
+            bundles: [
+              {
+                title: 'Send Acme pricing packet',
+                summary: 'Maya committed to sending Acme the pricing packet by Friday.',
+                reason:
+                  'The Slack message contains a clear owner, customer, deliverable, and date.',
+                confidence: 'high',
+                quote: 'I will send the Acme pricing packet by Friday.',
+                items: [
+                  {
+                    coverage: {
+                      kind: 'task',
+                      evidence: [
+                        {
+                          rawEventId: VISIBLE_EVENT_ID,
+                          quote: 'I will send the Acme pricing packet by Friday.',
+                        },
+                      ],
+                      reason: 'The visible message requests this task.',
+                    },
+                    grounding: [
+                      {
+                        field: 'project',
+                        value: PROJECT_ID,
+                        subject: 'Send Acme pricing packet',
+                        rawEventId: VISIBLE_EVENT_ID,
+                        quote:
+                          'For the Northstar rollout, I will send the Acme pricing packet by Friday.',
+                      },
+                    ],
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: 'Send Acme pricing packet',
                     description: 'Send Acme the pricing packet by Friday.',
-                    status: 'todo',
-                    ownerName: 'Maya',
-                    dueDate: '2026-06-05',
-                    parentObjectId: PROJECT_ID,
+                    proposedPayload: {
+                      canonicalName: 'Send Acme pricing packet',
+                      description: 'Send Acme the pricing packet by Friday.',
+                      parentObjectId: PROJECT_ID,
+                    },
                   },
-                },
-              ],
-            },
-          ],
-        },
+                ],
+              },
+            ],
+          },
+        });
       });
-    });
     const classifyTaskCategory = vi.fn().mockResolvedValue({
       category: 'sales',
       confidence: 0.92,
@@ -159,7 +183,7 @@ describe('background proposal evals', () => {
       { getEnv: env, chatStructured, classifyTaskCategory, modelId: MODEL_ID },
     );
 
-    expect(chatStructured).toHaveBeenCalledOnce();
+    expect(chatStructured).toHaveBeenCalledTimes(2);
     const [bundle] = await withTeam(
       db as never,
       TEAM_ID,
@@ -184,7 +208,6 @@ describe('background proposal evals', () => {
         title: 'Send Acme pricing packet',
         proposedPayload: expect.objectContaining({
           canonicalName: 'Send Acme pricing packet',
-          ownerName: 'Maya',
           parentObjectId: PROJECT_ID,
           projectName: 'Northstar rollout',
           taskCategory: 'sales',
@@ -210,7 +233,7 @@ describe('background proposal evals', () => {
       conversation_key: CONVERSATION_KEY,
       // Slack is a human communication source, so the persisted version includes
       // the shared communication policy pin from processConversationReviewJob.
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall-${COMMUNICATION_POLICY_VERSION}`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall-${COMMUNICATION_POLICY_VERSION}-${COMMUNICATION_AUDIT_VERSION}`,
     });
   });
 });

@@ -1045,3 +1045,23 @@ test('existing task updates ground against the known target rather than a displa
   });
   expect(result[0]?.items[0]?.proposedPayload).toEqual({ assigneeUserId: alice });
 });
+
+for (const payload of [
+  { assigneeUserId: bob, ownerUserId: alice },
+  { assigneeName: 'Bob', assigneeUserId: alice },
+  { assigneeUserId: bob, ownerName: 'Alice' },
+  { assigneeUserId: null, ownerUserId: alice },
+]) {
+  test(`assignment evidence cannot shield conflicting fields: ${JSON.stringify(payload)}`, () => {
+    const clearing = payload.assigneeUserId === null;
+    const quote = clearing
+      ? 'Unassign review retention policy.'
+      : 'Bob will review retention policy.';
+    const result = run(quote, payload, [
+      support('assignee', quote, clearing ? 'unassigned' : bob),
+    ])[0]?.items[0]?.proposedPayload;
+    expect(result?.ownerUserId).toBeUndefined();
+    expect(result?.ownerName).toBeUndefined();
+    if (payload.assigneeUserId === alice) expect(result?.assigneeUserId).toBeUndefined();
+  });
+}

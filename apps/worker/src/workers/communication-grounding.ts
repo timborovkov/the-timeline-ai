@@ -657,20 +657,19 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !/\b(?:not|never|if|unless)\b/i.test(clause ?? '') &&
           /\b(?:unassign|unassigned|remove.*owner)\b/i.test(clause ?? '') &&
           payload.assigneeUserId === null;
-        if (
-          !clearAssignment &&
-          !(
-            member &&
-            (named || self) &&
-            !assignment?.quote.includes('?') &&
-            (payload.assigneeUserId === member.userId || payload.assigneeName === member.name)
-          )
-        ) {
-          delete payload.assigneeUserId;
-          delete payload.assigneeName;
-          delete payload.ownerUserId;
-          delete payload.ownerName;
-        }
+        const supportedAssignment =
+          member && (Boolean(named) || Boolean(self)) && !assignment?.quote.includes('?');
+        const retainAssignment = (
+          key: 'assigneeUserId' | 'ownerUserId' | 'assigneeName' | 'ownerName',
+        ) =>
+          clearAssignment
+            ? payload[key] === null
+            : supportedAssignment &&
+              payload[key] === (key.endsWith('UserId') ? member.userId : member.name);
+        if (!retainAssignment('assigneeUserId')) delete payload.assigneeUserId;
+        if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
+        if (!retainAssignment('assigneeName')) delete payload.assigneeName;
+        if (!retainAssignment('ownerName')) delete payload.ownerName;
         const clearDeadline = supports.some(
           (support) =>
             support.field === 'dueAt' &&

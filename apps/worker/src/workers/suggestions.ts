@@ -4359,6 +4359,7 @@ async function runSuggestionExtraction(
           : suggestionExtractionSchemaLegacy) as typeof suggestionExtractionSchema,
       model: modelId,
       maxOutputTokens: SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS,
+      ...(isHumanCommunication(row.source) ? { reasoningEffort: 'low' as const } : {}),
       abortSignal: AbortSignal.timeout(SUGGESTION_EXTRACTION_TIMEOUT_MS),
       instructions:
         (isHumanCommunication(row.source)
@@ -4529,6 +4530,7 @@ async function runSuggestionExtraction(
       schema: auditSchema,
       model: modelId,
       maxOutputTokens: SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS,
+      ...(isHumanCommunication(row.source) ? { reasoningEffort: 'low' as const } : {}),
       abortSignal: AbortSignal.timeout(SUGGESTION_EXTRACTION_TIMEOUT_MS),
       instructions: `${COMMUNICATION_AUDIT_VERSION}\n${COMMUNICATION_AUDIT_INSTRUCTIONS}\n${COMMUNICATION_CONTEXT_POLICY}\n${COMMUNICATION_OUTPUT_POLICY}${evidenceCitationSystem}`,
       prompt: auditPrompt,
