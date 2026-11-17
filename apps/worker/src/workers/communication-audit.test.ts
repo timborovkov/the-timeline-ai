@@ -153,7 +153,7 @@ test('long source excerpt choices stay bounded and exclude truncated evidence', 
   expect(choices.every((choice) => choice.length <= 1000 && first.includes(choice))).toBe(true);
 });
 
-test('coverage references normalize only valid literals and leave grounding untouched', () => {
+test('audit references normalize only valid literals in coverage and grounding', () => {
   const input = {
     bundles: [
       {
@@ -169,7 +169,7 @@ test('coverage references normalize only valid literals and leave grounding unto
       {
         items: [
           {
-            grounding: [{ quote }],
+            grounding: [{ quote: 'quote-0' }],
             coverage: { evidence: [{ rawEventId: event, quote: 'quote-0' }] },
           },
         ],

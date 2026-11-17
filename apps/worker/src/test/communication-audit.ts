@@ -43,18 +43,19 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
     evidence: [{ rawEventId: evidence[1], quote: quoteRef }],
     reason: 'Controlled checker output for a downstream pipeline test.',
   };
+  const object = {
+    bundles: bundles.map((bundle) => ({
+      ...bundle,
+      items: bundle.items.map((item) => ({ ...item, coverage })),
+    })),
+    coverage:
+      bundles.length || candidates.length
+        ? []
+        : [{ ...coverage, disposition: 'no_action', existingIds: [] }],
+    pendingAmendments: candidates.map((candidate) => ({ id: candidate.id, coverage })),
+  };
   return Promise.resolve({
-    object: input.schema.parse({
-      bundles: bundles.map((bundle) => ({
-        ...bundle,
-        items: bundle.items.map((item) => ({ ...item, coverage })),
-      })),
-      coverage:
-        bundles.length || candidates.length
-          ? []
-          : [{ ...coverage, disposition: 'no_action', existingIds: [] }],
-      pendingAmendments: candidates.map((candidate) => ({ id: candidate.id, coverage })),
-    }),
+    object: input.schema.parse(input.normalizeOutput ? input.normalizeOutput(object) : object),
     model: 'controlled-audit',
   });
 };

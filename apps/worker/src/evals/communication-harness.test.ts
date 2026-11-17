@@ -731,8 +731,11 @@ for (const source of ['email', 'slack', 'telegram']) {
                     operation: 'create',
                     targetKind: 'task',
                     title: 'Prepare deployment checklist',
-                    grounding: [],
-                    proposedPayload: { canonicalName: 'Prepare deployment checklist' },
+                    grounding: [{ ...evidence, quote: quoteRef }],
+                    proposedPayload: {
+                      canonicalName: 'Prepare deployment checklist',
+                      status: 'todo',
+                    },
                   },
                 ],
               },

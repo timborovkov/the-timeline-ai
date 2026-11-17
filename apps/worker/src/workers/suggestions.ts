@@ -4476,11 +4476,17 @@ async function runSuggestionExtraction(
       packet: prompt,
       draftQuotes: drafts.flatMap((bundle) => [
         ...(bundle.quote ? [bundle.quote] : []),
-        ...bundle.items.flatMap((item) => (item.grounding ?? []).map((support) => support.quote)),
+        ...bundle.items.flatMap((item) =>
+          (item.grounding ?? []).flatMap((support) => [
+            support.quote,
+            ...(support.context ? [support.context.quote] : []),
+          ]),
+        ),
       ]),
     });
     if (!coverageQuotes.length) throw new Error('Communication audit has no visible quote');
 
+    const quoteReferenceSchema = z.enum(coverageQuotes.map((_, index) => `quote-${index}`));
     const itemCoverageSchema = communicationCoverageSchema.element
       .pick({ kind: true, evidence: true, reason: true })
       .extend({
@@ -4488,7 +4494,7 @@ async function runSuggestionExtraction(
           .array(
             z.object({
               rawEventId: sourceIdSchema,
-              quote: z.enum(coverageQuotes.map((_, index) => `quote-${index}`)),
+              quote: quoteReferenceSchema,
             }),
           )
           .min(1)
@@ -4502,8 +4508,9 @@ async function runSuggestionExtraction(
           .array(
             communicationGroundingSchema.extend({
               rawEventId: sourceIdSchema,
+              quote: quoteReferenceSchema,
               context: z
-                .object({ rawEventId: sourceIdSchema, quote: z.string().min(3).max(800) })
+                .object({ rawEventId: sourceIdSchema, quote: quoteReferenceSchema })
                 .optional(),
             }),
           )
@@ -4580,6 +4587,20 @@ async function runSuggestionExtraction(
           throw new Error('Communication audit selected an unavailable quote');
         evidence.quote = quote;
       }
+    for (const item of audited.bundles.flatMap((bundle) => bundle.items)) {
+      for (const support of item.grounding) {
+        const quote = quoteOptions[support.quote];
+        if (quote === undefined)
+          throw new Error('Communication audit selected an unavailable grounding quote');
+        support.quote = quote;
+        if (support.context) {
+          const context = quoteOptions[support.context.quote];
+          if (context === undefined)
+            throw new Error('Communication audit selected an unavailable grounding context');
+          support.context.quote = context;
+        }
+      }
+    }
     const amendmentIds = audited.pendingAmendments.map((candidate) => candidate.id);
     if (
       new Set(amendmentIds).size !== amendmentIds.length ||
