@@ -1,9 +1,11 @@
 import { requireValue } from '@timeline/shared/evals/benchmark';
 import { expect, test } from 'bun:test';
+import { z } from 'zod';
 
 import {
   validateCommunicationCoverage,
   communicationCoverageQuotes,
+  communicationCitationVariants,
   referenceCommunicationCoverageQuotes,
   assertCommunicationClaimsRetained,
   type CommunicationCoverage,
@@ -157,7 +159,12 @@ test('audit references normalize only valid literals in coverage and grounding',
   const input = {
     bundles: [
       {
-        items: [{ grounding: [{ quote }], coverage: { evidence: [{ rawEventId: event, quote }] } }],
+        items: [
+          {
+            grounding: [{ rawEventId: event, quote }],
+            coverage: { evidence: [{ rawEventId: event, quote }] },
+          },
+        ],
       },
     ],
     coverage: [{ evidence: [{ quote: 'fabricated' }] }],
@@ -169,7 +176,7 @@ test('audit references normalize only valid literals in coverage and grounding',
       {
         items: [
           {
-            grounding: [{ quote: 'quote-0' }],
+            grounding: [{ citation: { rawEventId: event, quote: 'quote-0' } }],
             coverage: { evidence: [{ rawEventId: event, quote: 'quote-0' }] },
           },
         ],
@@ -179,6 +186,7 @@ test('audit references normalize only valid literals in coverage and grounding',
     pendingAmendments: [{ coverage: { evidence: [{ quote: 'quote-0' }] } }],
   });
   expect(input.bundles[0]?.items[0]?.coverage.evidence[0]?.quote).toBe(quote);
+  expect(referenceCommunicationCoverageQuotes(normalized, [quote])).toEqual(normalized);
 });
 
 test('quote references remain idempotent when source text resembles a reference', () => {
@@ -187,4 +195,25 @@ test('quote references remain idempotent when source text resembles a reference'
   const once = referenceCommunicationCoverageQuotes(input, quotes);
   expect(once).toEqual(input);
   expect(referenceCommunicationCoverageQuotes(once, quotes)).toEqual(input);
+});
+
+test('generation schema binds quote references to their actual event sources', () => {
+  const other = '22222222-2222-4222-8222-222222222222';
+  const quotes = ['Please prepare the checklist.', 'Cancel the checklist.', 'Shared context.'];
+  const schema = z.discriminatedUnion(
+    'rawEventId',
+    communicationCitationVariants(quotes, [
+      { id: event, text: 'Please prepare the checklist. Shared context.' },
+      { id: other, text: 'Cancel the checklist. Shared context.' },
+      { id: event, text: 'Please prepare the checklist. Shared context.' },
+      { id: other, text: 'Extra duplicate snapshot must not expand the validator snapshot.' },
+    ]),
+  );
+  expect(schema.safeParse({ rawEventId: event, quote: 'quote-0' }).success).toBe(true);
+  expect(schema.safeParse({ rawEventId: other, quote: 'quote-1' }).success).toBe(true);
+  expect(schema.safeParse({ rawEventId: event, quote: 'quote-1' }).success).toBe(false);
+  expect(schema.safeParse({ rawEventId: other, quote: 'quote-0' }).success).toBe(false);
+  for (const id of [event, other])
+    expect(schema.safeParse({ rawEventId: id, quote: 'quote-2' }).success).toBe(true);
+  expect(schema.safeParse({ rawEventId: event, quote: 'quote-99' }).success).toBe(false);
 });

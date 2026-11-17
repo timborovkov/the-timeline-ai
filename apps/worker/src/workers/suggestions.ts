@@ -62,6 +62,7 @@ import {
   COMMUNICATION_AUDIT_VERSION,
   communicationCoverageSchema,
   communicationCoverageQuotes,
+  communicationCitationVariants,
   referenceCommunicationCoverageQuotes,
   validateCommunicationCoverage,
   assertCommunicationClaimsRetained,
@@ -155,7 +156,7 @@ const suggestionItemObjectSchema = z.object({
 });
 
 function refineSuggestionItemTarget(
-  item: z.infer<typeof suggestionItemObjectSchema>,
+  item: Pick<z.infer<typeof suggestionItemObjectSchema>, 'operation' | 'targetKind' | 'targetId'>,
   ctx: z.RefinementCtx,
 ): void {
   if (
@@ -203,7 +204,10 @@ const suggestionExtractionSchemaLegacy = z.object({
 });
 
 function refineHumanItem(
-  item: z.infer<typeof suggestionItemObjectSchema>,
+  item: Pick<
+    z.infer<typeof suggestionItemObjectSchema>,
+    'operation' | 'targetKind' | 'targetId' | 'proposedPayload'
+  >,
   ctx: z.RefinementCtx,
 ): void {
   refineSuggestionItemTarget(item, ctx);
@@ -4486,19 +4490,15 @@ async function runSuggestionExtraction(
     });
     if (!coverageQuotes.length) throw new Error('Communication audit has no visible quote');
 
-    const quoteReferenceSchema = z.enum(coverageQuotes.map((_, index) => `quote-${index}`));
+    const citationVariants = communicationCitationVariants(
+      coverageQuotes,
+      auditSources.filter((source) => visibleSourceIds.includes(source.id)),
+    );
+    const citationSchema = z.discriminatedUnion('rawEventId', citationVariants);
     const itemCoverageSchema = communicationCoverageSchema.element
       .pick({ kind: true, evidence: true, reason: true })
       .extend({
-        evidence: z
-          .array(
-            z.object({
-              rawEventId: sourceIdSchema,
-              quote: quoteReferenceSchema,
-            }),
-          )
-          .min(1)
-          .max(12),
+        evidence: z.array(citationSchema).min(1).max(12),
       });
     const auditItemSchema = suggestionItemObjectSchema
       .omit({ auditId: true })
@@ -4506,13 +4506,9 @@ async function runSuggestionExtraction(
         coverage: itemCoverageSchema,
         grounding: z
           .array(
-            communicationGroundingSchema.extend({
-              rawEventId: sourceIdSchema,
-              quote: quoteReferenceSchema,
-              context: z
-                .object({ rawEventId: sourceIdSchema, quote: quoteReferenceSchema })
-                .optional(),
-            }),
+            communicationGroundingSchema
+              .omit({ rawEventId: true, quote: true })
+              .extend({ citation: citationSchema, context: citationSchema.optional() }),
           )
           .max(12),
         evidenceRawEventIds: evidencePackEnforced
@@ -4573,9 +4569,22 @@ async function runSuggestionExtraction(
       instructions: checkedInstructions,
       prompt: checkedPrompt,
     });
-    const audited = auditSchema.parse(
+    const checkedAudit = auditSchema.parse(
       referenceCommunicationCoverageQuotes(checked.object, coverageQuotes),
     );
+    const audited = {
+      ...checkedAudit,
+      bundles: checkedAudit.bundles.map((bundle) => ({
+        ...bundle,
+        items: bundle.items.map((item) => ({
+          ...item,
+          grounding: item.grounding.map(({ citation, ...support }) => ({
+            ...support,
+            ...citation,
+          })),
+        })),
+      })),
+    };
     for (const coverage of [
       ...audited.coverage,
       ...audited.bundles.flatMap((bundle) => bundle.items.map((item) => item.coverage)),
