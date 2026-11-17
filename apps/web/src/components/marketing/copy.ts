@@ -16,7 +16,8 @@ export const FIRST_RUN_STEPS = [
   {
     index: '02',
     title: 'Bring something in',
-    detail: 'Scan a website, upload a document, forward an email, or connect Slack or Telegram.',
+    detail:
+      'Scan a website, upload a document, forward an email, or skip. Connect Slack or Telegram later at go-live.',
   },
   {
     index: '03',

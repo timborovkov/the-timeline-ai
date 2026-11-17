@@ -11,7 +11,7 @@ export const PRODUCT_TOUR = {
     'See how The Timeline brings context from your tools and sources into a living work record, with connected objects, daily updates and proposed changes to review.',
   closingTitle: 'Link one channel. Watch the record fill in.',
   closingBody:
-    'Start with one Slack channel or Telegram group. Read the daily update, approve lasting record changes that The Timeline proposes, and ask what was decided, with the source for every line.',
+    'Scan a website, upload a document, or forward an email—or skip. Connect Slack or Telegram later at go-live. Then read the daily update, approve lasting record changes, and ask with the source for every line.',
   steps: [
     {
       index: '01',
