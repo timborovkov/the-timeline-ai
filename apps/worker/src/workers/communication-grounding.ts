@@ -205,7 +205,7 @@ const lifecycleWords: Record<string, RegExp> = {
 };
 function affirmativeLifecycle(clause: string | undefined, status: unknown, sent = false): boolean {
   if (!clause || typeof status !== 'string') return false;
-  if (/[?]|\b(?:not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
+  if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
     return false;
   if (
     /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:be\s+|have\s+been\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen|restart|unblock)\b/i.test(
@@ -1165,11 +1165,30 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const links = supports.filter((support) => {
           if (support.field !== 'customer') return false;
           const clause = taskClause(support.quote, support.subject);
-          if (!clause || /\b(?:or|maybe|perhaps|undecided|not)\b/i.test(clause)) return false;
+          if (
+            !clause ||
+            support.quote.includes('?') ||
+            /\b(?:or|maybe|perhaps|might|may|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
+              clause,
+            )
+          )
+            return false;
           const candidates = args.hubs.filter(
             (hub) => hub.type === 'company' && mentions(clause, hub.name),
           );
-          return candidates.length === 1 && candidates[0]?.id === support.value;
+          const customer = candidates[0];
+          if (!customer || candidates.length !== 1 || customer.id !== support.value) return false;
+          const name = normalize(customer.name);
+          const statement = normalize(clause);
+          const position = statement.indexOf(name);
+          const before = statement.slice(0, position);
+          const after = statement.slice(position + name.length);
+          if (after && !/^[\s.,:;!'’]/.test(after)) return false;
+          return (
+            /\b(?:for|requested by|commissioned by) (?:our (?:customer|client) )?$/.test(before) ||
+            ((!before || /\s$/.test(before)) &&
+              /^ (?:needs|requests|requested|commissioned)\b/.test(after))
+          );
         });
         const ids = [...new Set(links.map((support) => support.value))];
         if (ids.length === 1 && item.operation === 'create') {
