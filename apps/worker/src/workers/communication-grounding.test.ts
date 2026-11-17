@@ -2153,6 +2153,9 @@ test('contracted negatives cannot assign or clear optional task fields', () => {
 test('assignment evidence cannot borrow a commitment from another artifact', () => {
   for (const [text, expected] of [
     ['Review retention policy is blocked because Bob will deploy the service.', undefined],
+    ['Review retention policy requires Bob to deploy the service.', undefined],
+    ['Bob to review retention policy.', bob],
+    ['Assign Bob to review retention policy.', bob],
     ['Review retention policy depends on deployment, which Bob will handle.', undefined],
     ['Bob will review retention policy because deployment needs it.', bob],
   ] as const) {

@@ -1189,14 +1189,41 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const name = escapedName
           ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
           : undefined;
-        const named =
+        const hasTaskContext = assignment !== undefined && validContexts.has(assignment);
+        const matchesAssignedTask = (action: string) =>
+          assignment !== undefined && (hasTaskContext || namesTask(action, assignment.subject));
+        const namedAction =
+          name && clause
+            ? new RegExp(
+                `(?:${name}\\s+(?:will|shall|owns|is responsible(?: for)?|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)(?![\\p{L}\\p{N}])|${name},?\\s+please\\b)`,
+                'iu',
+              ).exec(clause)
+            : null;
+        const explicitAssignment =
+          name && clause
+            ? new RegExp(
+                `\\b(?:re)?assign(?:ed)?\\b([^.!?]*?)${name}(?=\\s*(?:[.!?,]|$)|\\s+(?:for|to|as|by)\\b)`,
+                'iu',
+              ).exec(clause)
+            : null;
+        const confirmedOwner =
           name &&
           clause &&
           new RegExp(
-            `(?:${name}\\s+(?:will|shall|owns|(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|\\b(?:re)?assign(?:ed)?\\b[^.!?]*${name}(?=\\s*(?:[.!?,]|$)|\\s+(?:for|to|as|by)\\b)|${name},?\\s+please)`,
+            `${name}\\s+(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)`,
             'iu',
-          ).test(clause) &&
-          !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause);
+          ).test(clause);
+        const named =
+          clause &&
+          !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause) &&
+          ((namedAction !== null &&
+            matchesAssignedTask(clause.slice(namedAction.index + namedAction[0].length))) ||
+            (explicitAssignment !== null &&
+              matchesAssignedTask(
+                (explicitAssignment[1] ?? '') +
+                  clause.slice(explicitAssignment.index + explicitAssignment[0].length),
+              )) ||
+            confirmedOwner);
         const commitmentQuotes = assignment
           ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
               const start = /\b(?:I (?:will|shall)|I['’]ll)\b/i.exec(match[0]);
@@ -1239,6 +1266,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               normalize(args.packet).includes(normalize(latestHeader[0].trim()))
             : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
         );
+        const selfAction = clause && /\bI (?:will|shall)\b/i.exec(clause);
         const self =
           member &&
           assignment &&
@@ -1246,7 +1274,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ((source?.source ?? args.source) === 'email'
             ? emailSpeaker
             : source?.authorUserId === member.userId) &&
-          /\bI (?:will|shall|'ll)|\bI'll\b/i.test(clause) &&
+          selfAction &&
+          matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
           !/\b(?:if|unless|not|cannot)\b/i.test(clause);
         // A cited, verified assignment is a concrete claim even if the model
         // omitted its payload field on a new task. Updates and repairs may have
