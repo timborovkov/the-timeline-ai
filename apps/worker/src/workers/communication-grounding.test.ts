@@ -1366,3 +1366,33 @@ test('a forwarded self assignment survives a citation containing adjacent deadli
     })[0]?.items[0]?.proposedPayload,
   ).toEqual({ assigneeUserId: alice });
 });
+
+test('month-name deadlines preserve explicit time and timezone', () => {
+  for (const [suffix, dueAt] of [
+    ['at 09:00 UTC', '2026-06-12T09:00:00.000Z'],
+    ['at 09:00 +02:00', '2026-06-12T07:00:00.000Z'],
+    ['at 09:00', '2026-06-12T06:00:00.000Z'],
+  ] as const) {
+    const text = `Review retention policy is due June 12, 2026 ${suffix}.`;
+    expect(
+      run(text, { dueAt }, [support('dueAt', text, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload,
+    ).toEqual({ dueAt });
+    const midnight = '2026-06-11T21:00:00.000Z';
+    expect(
+      run(text, { dueAt: midnight }, [support('dueAt', text, midnight)], {
+        timezone: 'Europe/Helsinki',
+      })[0]?.items[0]?.proposedPayload,
+    ).toEqual({});
+  }
+});
+
+test('invalid or unsupported explicit month-name times cannot justify midnight', () => {
+  for (const suffix of ['at 25:00 UTC', 'at 09:99 UTC', 'at 9am', 'at 09:00 PST']) {
+    const text = `Review retention policy is due June 12, 2026 ${suffix}.`;
+    const dueAt = '2026-06-12T00:00:00.000Z';
+    expect(
+      run(text, { dueAt }, [support('dueAt', text, dueAt)])[0]?.items[0]?.proposedPayload,
+    ).toEqual({});
+  }
+});

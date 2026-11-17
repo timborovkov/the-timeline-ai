@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import {
   validateCommunicationCoverage,
+  communicationCoverageSchema,
   communicationCoverageQuotes,
   communicationCitationVariants,
   communicationDraftAccountingErrors,
@@ -302,4 +303,36 @@ test('generated vendor relationships preserve the audited task identity', () => 
   expect(() => {
     assertCommunicationClaimsRetained(before, after);
   }).not.toThrow();
+});
+
+test('short literal acknowledgments can receive no-action coverage', () => {
+  for (const text of ['ok', '👍', 'k']) {
+    const sources = [{ id: event, text }];
+    expect(communicationCoverageQuotes({ sources, packet: text, draftQuotes: [] })).toEqual([text]);
+    const shortCoverage = communicationCoverageSchema.parse([
+      {
+        ...coverage[0],
+        disposition: 'no_action',
+        proposalIds: [],
+        evidence: [{ rawEventId: event, quote: text }],
+      },
+    ]);
+    expect(() => {
+      validateCommunicationCoverage({
+        ...args,
+        coverage: shortCoverage,
+        bundles: [],
+        sources,
+        packet: text,
+      });
+    }).not.toThrow();
+    expect(communicationCoverageQuotes({ sources, packet: '', draftQuotes: [] })).toEqual([]);
+  }
+  expect(
+    communicationCoverageQuotes({
+      sources: [{ id: event, text: ' ' }],
+      packet: ' ',
+      draftQuotes: [],
+    }),
+  ).toEqual([]);
 });

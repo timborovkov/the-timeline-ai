@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v18';
+export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v19';
 export const communicationCoverageSchema = z
   .array(
     z.object({
       kind: z.enum(['customer', 'project', 'task', 'relationship', 'correction', 'other']),
       disposition: z.enum(['proposed', 'existing', 'no_action']),
       evidence: z
-        .array(z.object({ rawEventId: z.uuid(), quote: z.string().min(3).max(1000) }))
+        .array(z.object({ rawEventId: z.uuid(), quote: z.string().min(1).max(1000).regex(/\S/u) }))
         .min(1)
         .max(12),
       proposalIds: z.array(z.string().min(1).max(80)).max(25),
@@ -104,7 +104,7 @@ export function communicationCoverageQuotes(args: {
   const choices = new Set<string>();
   const add = (text: string) => {
     const quote = text.trim();
-    if (quote.length >= 3 && quote.length <= 800 && visible.includes(normalized(quote)))
+    if (quote.length >= 1 && quote.length <= 800 && visible.includes(normalized(quote)))
       choices.add(quote);
   };
   for (const source of args.sources) {
@@ -209,6 +209,7 @@ export function validateCommunicationCoverage(args: {
     for (const evidence of entry.evidence) {
       const source = args.sources.find((source) => source.id === evidence.rawEventId);
       if (
+        !normalized(evidence.quote) ||
         !source ||
         !normalized(source.text).includes(normalized(evidence.quote)) ||
         !normalized(args.packet).includes(normalized(evidence.quote))

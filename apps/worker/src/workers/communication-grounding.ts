@@ -1,4 +1,8 @@
-import { dateOnlyEventRange, resolveTimePhrase } from '@timeline/shared/time';
+import {
+  dateOnlyEventRange,
+  resolveTimePhrase,
+  zonedDateTimeFromDate,
+} from '@timeline/shared/time';
 import { z } from 'zod';
 
 export const communicationGroundingSchema = z.object({
@@ -87,11 +91,33 @@ function deadlineMatches(
     /\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? \d{4}\b/gi,
   )) {
     const date = new Date(`${match[0]} 00:00:00 UTC`);
-    if (
-      Number.isFinite(date.getTime()) &&
-      dateOnlyEventRange(date.toISOString().slice(0, 10), timezone).startAt.getTime() === target
-    )
-      return true;
+    if (!Number.isFinite(date.getTime())) continue;
+    const tail = quote.slice(match.index + match[0].length);
+    const time =
+      /^\s+(?:at\s+)?(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s+(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(tail);
+    try {
+      const day = date.toISOString().slice(0, 10);
+      const start = dateOnlyEventRange(day, timezone).startAt;
+      if (time) {
+        const hour = Number(time[1]);
+        const minute = Number(time[2]);
+        const second = Number(time[3] ?? 0);
+        if (hour > 23 || minute > 59 || second > 59) continue;
+        // Do not silently interpret an unrecognized zone or AM/PM marker as workspace time.
+        if (/^\s*(?:[A-Za-z]|[+-]\d)/.test(tail.slice(time[0].length))) continue;
+        const zone = time[4];
+        const instant = zone
+          ? Date.parse(
+              `${day}T${String(hour).padStart(2, '0')}:${time[2]}:${String(second).padStart(2, '0')}${/^(UTC|GMT|Z)$/i.test(zone) ? 'Z' : zone}`,
+            )
+          : zonedDateTimeFromDate(start, timezone).with({ hour, minute, second }).epochMilliseconds;
+        if (instant === target) return true;
+      } else if (!/^\s+(?:at\b|\d)/i.test(tail) && start.getTime() === target) {
+        return true;
+      }
+    } catch {
+      /* Invalid source dates/times never support a write. */
+    }
   }
   if (referenceDate) {
     for (const match of quote.matchAll(
