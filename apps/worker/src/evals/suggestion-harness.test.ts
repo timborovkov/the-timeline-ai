@@ -2,7 +2,6 @@
 import { requireValue } from '@timeline/shared/evals/benchmark';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 
-
 import { SUGGESTION_CASES } from '#src/evals/suggestion-cases.js';
 import { createSuggestionHarness } from '#src/evals/suggestion-harness.js';
 import { scoreSuggestions } from '#src/evals/suggestion-report.js';

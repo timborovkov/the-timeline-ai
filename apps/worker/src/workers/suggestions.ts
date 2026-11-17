@@ -213,13 +213,26 @@ function refineHumanItem(
   refineSuggestionItemTarget(item, ctx);
   if (
     item.operation === 'create' &&
+    (item.targetKind === 'task' || item.targetKind === 'object') &&
+    (typeof item.proposedPayload.canonicalName !== 'string' ||
+      !item.proposedPayload.canonicalName.trim())
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['proposedPayload', 'canonicalName'],
+      message:
+        'Creates require the concrete work or object canonicalName; no-action explanations belong only in coverage',
+    });
+  }
+  if (
+    item.operation === 'create' &&
     item.targetKind === 'object' &&
-    (typeof item.proposedPayload.type !== 'string' || !item.proposedPayload.type.trim())
+    !objects.OBJECT_TYPES.some((type) => type === item.proposedPayload.type)
   ) {
     ctx.addIssue({
       code: 'custom',
       path: ['proposedPayload', 'type'],
-      message: 'Object creates require an explicit type',
+      message: 'Object creates require a supported explicit object type',
     });
   }
   if (item.targetKind === 'object_relationship') {
@@ -555,6 +568,11 @@ function normalizeSuggestionItemPayload(
       if (ref) payload.toRef = ref;
       else delete payload.toRef;
     }
+  }
+  if (item.targetKind === 'identity_facet' && typeof payload.entityRef === 'string') {
+    const ref = localRefSlug(payload.entityRef);
+    if (ref) payload.entityRef = ref;
+    else delete payload.entityRef;
   }
   if (
     item.operation === 'create' &&
@@ -4532,7 +4550,50 @@ async function runSuggestionExtraction(
       : noActionCoverage;
     const auditSchema = z.object({
       bundles: z
-        .array(humanBundleSchema.extend({ items: z.array(auditItemSchema).min(1).max(5) }))
+        .array(
+          humanBundleSchema
+            .extend({ items: z.array(auditItemSchema).min(1).max(5) })
+            .superRefine((bundle, ctx) => {
+              const refs = bundle.items
+                .filter(
+                  (item) =>
+                    item.operation === 'create' &&
+                    (item.targetKind === 'task' || item.targetKind === 'object') &&
+                    item.proposedPayload.localRef !== undefined,
+                )
+                .map((item) => localRefSlug(item.proposedPayload.localRef));
+              if (refs.some((ref) => !ref) || new Set(refs).size !== refs.length)
+                ctx.addIssue({
+                  code: 'custom',
+                  path: ['items'],
+                  message: 'Each localRef must identify exactly one proposal in its bundle',
+                });
+              for (const item of bundle.items) {
+                const keys =
+                  item.targetKind === 'object_relationship'
+                    ? ['fromRef', 'toRef']
+                    : item.targetKind === 'identity_facet'
+                      ? ['entityRef']
+                      : [];
+                for (const key of keys) {
+                  const value = item.proposedPayload[key];
+                  if (value === undefined) continue;
+                  const ref = localRefSlug(value);
+                  const known =
+                    item.targetKind === 'object_relationship' &&
+                    typeof value === 'string' &&
+                    [...matchingEntityRows, ...hubRows].some((object) => object.id === value);
+                  if (!ref || (!refs.includes(ref) && !known))
+                    ctx.addIssue({
+                      code: 'custom',
+                      path: ['items'],
+                      message:
+                        'Dependent references must resolve to a declared localRef in this bundle or a listed existing object',
+                    });
+                }
+              }
+            }),
+        )
         .max(5),
       coverage: z.array(settledCoverage).max(100),
       pendingAmendments: z

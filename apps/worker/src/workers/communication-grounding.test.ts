@@ -1168,3 +1168,44 @@ test('a typed deliverable reference links only one explicitly evidenced task', (
       ?.items,
   ).toHaveLength(1);
 });
+
+test('adjacent context from the same source retains its literal lifecycle assertion', () => {
+  const first = 'Review retention policy is now complete.';
+  const second = 'The policy was delivered.';
+  for (const continuation of [
+    'It is not complete.',
+    'It was reopened.',
+    'It might be delivered.',
+    'It was delivered, but it is not complete.',
+  ]) {
+    const contradicted = {
+      ...support('status', continuation, 'done'),
+      context: { rawEventId: event, quote: first },
+    };
+    expect(
+      run(`${first} ${continuation}`, { status: 'done' }, [contradicted], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBeUndefined();
+  }
+
+  const citation = {
+    ...support('status', second, 'done'),
+    context: { rawEventId: event, quote: first },
+  };
+  expect(
+    run(`${first} ${second}`, { status: 'done' }, [citation], { operation: 'update' })[0]?.items[0]
+      ?.proposedPayload.status,
+  ).toBe('done');
+  for (const text of [`${first} Another matter. ${second}`, `${second} ${first}`])
+    expect(
+      run(text, { status: 'done' }, [citation], { operation: 'update' })[0]?.items[0]
+        ?.proposedPayload.status,
+    ).toBeUndefined();
+  expect(
+    run(`${first} ${second}`, { status: 'done' }, [citation], {
+      operation: 'update',
+      packet: second,
+    })[0]?.items[0]?.proposedPayload.status,
+  ).toBeUndefined();
+});

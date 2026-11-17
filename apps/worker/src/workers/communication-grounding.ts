@@ -161,6 +161,41 @@ export function groundCommunicationBundles<T extends Item>(args: {
       (item.grounding ?? [])
         .map((support) => {
           const sourceForQuote = args.sources.find((row) => row.id === support.rawEventId);
+          const context = support.context;
+          const completionNoun = support.subject
+            .toLowerCase()
+            .match(/[\p{L}\p{N}]+/gu)
+            ?.at(-1);
+          if (
+            sourceForQuote &&
+            context?.rawEventId === support.rawEventId &&
+            support.field === 'status' &&
+            support.value === 'done' &&
+            completionNoun &&
+            new RegExp(
+              `^(?:it|this|that|the (?:task|item|deliverable|${completionNoun})) (?:is|was|has been) (?:delivered|completed|finished|done|shipped)[.!]?$`,
+              'i',
+            ).test(support.quote.trim())
+          ) {
+            const start = sourceForQuote.text.indexOf(context.quote);
+            const end = start + context.quote.length;
+            const at = sourceForQuote.text.indexOf(support.quote, end);
+            if (
+              start >= 0 &&
+              at >= end &&
+              !sourceForQuote.text.slice(end, at).trim() &&
+              !sourceForQuote.text.includes(context.quote, start + 1) &&
+              !sourceForQuote.text.includes(support.quote, at + 1)
+            ) {
+              const quote = sourceForQuote.text.slice(start, at + support.quote.length);
+              if (
+                quote.length <= 800 &&
+                safeSourceQuote(sourceForQuote.text, quote) &&
+                normalize(args.packet).includes(normalize(quote))
+              )
+                support = { ...support, quote };
+            }
+          }
           // Recover visible sentence context for short entity citations. Never cross a
           // source, header, truncated packet, or an ambiguous repeated occurrence.
           if (sourceForQuote && ['customer', 'project', 'prospect'].includes(support.field)) {

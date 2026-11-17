@@ -756,6 +756,8 @@ for (const failure of [
   'timeout',
   'malformed',
   'missing-item-coverage',
+  'non-concrete-create',
+  'invalid-object-type',
   'removed-grounding',
   'unknown-source',
   'fabricated-quote',
@@ -805,13 +807,16 @@ for (const failure of [
                           },
                         }),
                     operation: 'create',
-                    targetKind: 'task',
+                    targetKind: failure === 'invalid-object-type' ? 'object' : 'task',
                     title: 'Prepare deployment checklist',
                     grounding: [],
-                    proposedPayload: {
-                      canonicalName: 'Prepare deployment checklist',
-                      ...(failure === 'removed-grounding' ? { status: 'done' } : {}),
-                    },
+                    proposedPayload:
+                      failure === 'non-concrete-create'
+                        ? { title: 'No new task' }
+                        : {
+                            canonicalName: 'Prepare deployment checklist',
+                            ...(failure === 'removed-grounding' ? { status: 'done' } : {}),
+                          },
                   },
                 ],
               },
@@ -1289,3 +1294,113 @@ test('long forwarded evidence remains admitted with compact coverage references'
   expect(observed.executionErrors).toEqual([]);
   expect(observed.packetLoss).toEqual([]);
 });
+
+for (const [firstRef, secondRef] of [
+  ['same-record', 'same-record'],
+  ['Same Record', 'same-record'],
+  ['shared/ref', 'shared-ref'],
+  ['', 'valid'],
+])
+  test(`invalid local references ${firstRef}/${secondRef} cannot publish an audited bundle`, async () => {
+    const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+    const result = await harness.run(row, {
+      model: proposal,
+      auditModel: async (input) => {
+        const checked = await controlledCommunicationAudit(input);
+        const output = checked.object as {
+          bundles: { items: { proposedPayload: Record<string, unknown> }[] }[];
+        };
+        const items = requireValue(output.bundles[0]).items;
+        const first = requireValue(items[0]);
+        first.proposedPayload.localRef = firstRef;
+        const second = structuredClone(first);
+        second.proposedPayload.localRef = secondRef;
+        items.push(second);
+        return checked;
+      },
+    });
+    expect(result.executionErrors.length).toBeGreaterThan(0);
+    expect(result.actions).toEqual([]);
+    expect(scoreCommunications(row, result).passed).toBe(false);
+  }, 60_000);
+
+test('dangling local references cannot publish an audited relationship', async () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const result = await harness.run(row, {
+    model: proposal,
+    auditModel: async (input) => {
+      const checked = await controlledCommunicationAudit(input);
+      const output = checked.object as {
+        bundles: { items: { targetKind: string; proposedPayload: Record<string, unknown> }[] }[];
+      };
+      const items = requireValue(output.bundles[0]).items;
+      const relation = structuredClone(requireValue(items[0]));
+      relation.targetKind = 'object_relationship';
+      relation.proposedPayload = {
+        fromRef: 'undeclared',
+        toRef: 'also-undeclared',
+        kind: 'related',
+      };
+      items.push(relation);
+      return checked;
+    },
+  });
+  expect(result.executionErrors.length).toBeGreaterThan(0);
+  expect(result.actions).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(false);
+}, 60_000);
+
+test('person identity references normalize with their declared local reference', async () => {
+  const base = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const text = 'Our contact is Alex Example, email alex@example.test.';
+  const row = { ...base, messages: [{ ...requireValue(base.messages[0]), text }] };
+  const result = await harness.run(row, {
+    model: async () =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Remember contact',
+              confidence: 'high',
+              quote: text,
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'Alex Example',
+                  grounding: [],
+                  proposedPayload: {
+                    type: 'person',
+                    canonicalName: 'Alex Example',
+                    localRef: 'Alex Example',
+                  },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'identity_facet',
+                  title: 'Contact email',
+                  grounding: [],
+                  proposedPayload: {
+                    kind: 'email',
+                    value: 'alex@example.test',
+                    entityRef: 'Alex Example',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionFailureDetails).toEqual([]);
+  expect(result.executionErrors).toEqual([]);
+  expect(result.acceptanceErrors).toBe(0);
+  expect(
+    requireValue(result.approvalOutcomes).filter((outcome) => outcome.status === 'accepted'),
+  ).toHaveLength(2);
+  expect(
+    result.actions.find((action) => action.targetKind === 'identity_facet')?.proposedPayload
+      .entityRef,
+  ).toBe('alex-example');
+}, 60_000);
