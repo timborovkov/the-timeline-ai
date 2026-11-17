@@ -50,7 +50,11 @@ export interface CommunicationCase extends SuggestionCase {
   messages: CommunicationMessage[];
   seed: CommunicationNode[];
   pending?: { node: CommunicationNode; edited?: boolean }[];
-  outcome: { nodes: CommunicationExpectedNode[]; edges: CommunicationEdge[] };
+  outcome: {
+    nodes: CommunicationExpectedNode[];
+    edges: CommunicationEdge[];
+    optionalCompanyProjectAssociation?: boolean;
+  };
   packaging?: EmailPackaging;
   prohibitedText?: string[];
   uncertain?: boolean;

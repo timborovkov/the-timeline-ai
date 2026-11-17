@@ -31,6 +31,7 @@ const customer = (from = 'task', to = 'company') => ({ from, to, kind: 'related'
 export const communicationGapFamilies: Family[] = [
   {
     id: 'unsigned-funded-discovery',
+    optionalCompanyProjectAssociation: true,
     category: 'uncertainty',
     split: 'development',
     rationale:
@@ -45,6 +46,7 @@ export const communicationGapFamilies: Family[] = [
   },
   {
     id: 'confirmed-client-new-bid',
+    optionalCompanyProjectAssociation: true,
     category: 'uncertainty',
     split: 'development',
     rationale: 'A new prospective project must not downgrade the existing customer.',
@@ -71,6 +73,7 @@ export const communicationGapFamilies: Family[] = [
   },
   {
     id: 'procurement-shortlist',
+    optionalCompanyProjectAssociation: true,
     category: 'uncertainty',
     split: 'held-out',
     rationale: 'Shortlisting is a real prospective engagement but not a contract.',
@@ -84,6 +87,7 @@ export const communicationGapFamilies: Family[] = [
   },
   {
     id: 'conditional-grant-project',
+    optionalCompanyProjectAssociation: true,
     category: 'uncertainty',
     split: 'held-out',
     rationale: 'A real proposed project contingent on a grant remains tentative.',
@@ -97,6 +101,7 @@ export const communicationGapFamilies: Family[] = [
   },
   {
     id: 'existing-project-prospect-comparison',
+    optionalCompanyProjectAssociation: true,
     category: 'uncertainty',
     split: 'held-out',
     rationale:

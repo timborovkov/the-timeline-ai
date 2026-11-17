@@ -1736,3 +1736,29 @@ test('explicit delivery completion retains its task while negated delivery does 
     );
   }
 });
+
+test('future promises cannot authorize task completion', () => {
+  for (const phrase of [
+    'will be delivered tomorrow',
+    'will be done tomorrow',
+    'should be completed tomorrow',
+    'is going to be shipped tomorrow',
+  ]) {
+    const quote = `Review retention policy ${phrase}.`;
+    expect(
+      run(quote, { status: 'done' }, [support('status', quote, 'done')], { operation: 'update' })[0]
+        ?.items[0]?.proposedPayload.status,
+      phrase,
+    ).toBeUndefined();
+  }
+});
+test('negated deadline assertions cannot retain a date', () => {
+  for (const phrase of ['is not due', "isn't due", 'will not be due', 'is never due']) {
+    const quote = `Review retention policy ${phrase} 2026-06-12.`;
+    const dueAt = '2026-06-12T00:00:00.000Z';
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
+      phrase,
+    ).toBeUndefined();
+  }
+});

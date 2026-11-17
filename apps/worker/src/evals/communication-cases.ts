@@ -20,6 +20,7 @@ export interface Family {
   pending?: CommunicationCase['pending'];
   nodes: CommunicationNode[];
   edges?: CommunicationEdge[];
+  optionalCompanyProjectAssociation?: boolean;
   packaging?: EmailPackaging;
   prohibitedText?: string[];
   uncertain?: boolean;
@@ -307,6 +308,7 @@ const historicalFamilies: Family[] = [
   // Business context: three development, two held-out.
   {
     id: 'real-prospect',
+    optionalCompanyProjectAssociation: true,
     category: 'context',
     split: 'development',
     uncertain: true,
@@ -347,6 +349,7 @@ const historicalFamilies: Family[] = [
   },
   {
     id: 'informal-delivery',
+    optionalCompanyProjectAssociation: true,
     category: 'context',
     split: 'held-out',
     rationale:
@@ -443,6 +446,7 @@ const historicalFamilies: Family[] = [
   },
   {
     id: 'apple-forward',
+    optionalCompanyProjectAssociation: true,
     category: 'packaging',
     split: 'development',
     emailOnly: true,
@@ -748,6 +752,7 @@ export const COMMUNICATION_CASES: CommunicationCase[] = expandedFamilies.flatMap
           };
         }),
         edges: family.edges ?? [],
+        optionalCompanyProjectAssociation: family.optionalCompanyProjectAssociation ?? false,
       },
       ...(family.pending ? { pending: family.pending } : {}),
       ...(family.packaging ? { packaging: family.packaging } : {}),

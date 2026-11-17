@@ -99,19 +99,22 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
       matched++;
     }
   }
-  // A grounded company/project association is optional only when there is exactly one of each.
+  // Optional associations require explicit fixture permission and exactly one of each endpoint.
   const companies = row.outcome.nodes.filter((node) => node.type === 'company'),
     projects = row.outcome.nodes.filter((node) => node.type === 'project');
   const company =
       companies.length === 1 && companies[0] ? assigned.get(companies[0].key) : undefined,
     project = projects.length === 1 && projects[0] ? assigned.get(projects[0].key) : undefined;
-  const allowedEdges = observation.edges.filter(
+  const allowedEdges = observation.edges.some(
     (edge, index) =>
+      row.outcome.optionalCompanyProjectAssociation === true &&
       !requiredEdges.has(index) &&
       company &&
       project &&
       edgeMatches(edge, company.id, project.id, 'related'),
-  ).length;
+  )
+    ? 1
+    : 0;
   const expected = row.outcome.nodes.length + row.outcome.edges.length;
   const proposed = observation.nodes.length + observation.edges.length;
   const calendarCompanions = new Set<string>();

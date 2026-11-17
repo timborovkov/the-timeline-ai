@@ -119,13 +119,19 @@ function deadlineMatches(
   )
     return false;
   const target = Date.parse(value);
+  const deniedAt = (index: number) =>
+    /\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i.test(
+      quote.slice(0, index),
+    );
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
+    if (deniedAt(match.index)) continue;
     if (deadlineTimeMatches(match[0], quote.slice(match.index + match[0].length), target, timezone))
       return true;
   }
   for (const match of quote.matchAll(
     /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
   )) {
+    if (deniedAt(match.index)) continue;
     const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
     let year = match[3] ? Number(match[3]) : reference?.year;
     if (year === undefined) continue;
@@ -155,6 +161,7 @@ function deadlineMatches(
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
+      if (deniedAt(match.index)) continue;
       const phrase = match[0].toLowerCase();
       const weekdays = [
         'monday',
@@ -1019,6 +1026,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
             lifecycle &&
             lifecycleClause &&
             lifecycleUnambiguous &&
+            !(
+              payload.status === 'done' &&
+              /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to)\b/i.test(
+                lifecycleClause,
+              )
+            ) &&
             (lifecycleWords[typeof payload.status === 'string' ? payload.status : '']?.test(
               lifecycleClause,
             ) ||

@@ -263,7 +263,7 @@ status, assignee and deadline assertions, and task/project/account relationships
 recall estimates or independent samples. Named fixture objects use their synthetic
 identity; task intent uses term groups rather than exact prose. Extra objects,
 incorrect relationships, duplicate proposals and unsupported action kinds are
-noise. A uniquely grounded company/project association may be optional. A task
+noise. A company/project association is optional only when the fixture explicitly permits it and has one company and one project. Unrelated-hub negative controls reject extra associations. A task
 deadline may have a matching calendar companion; unsupported dates remain noise.
 Missing work, acceptance failures, lost required packet content and inference
 errors cannot pass. Privacy violations, invalid evidence and automatic changes to

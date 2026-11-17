@@ -304,3 +304,64 @@ test('communication concurrency remains bounded and defaults to four isolated ha
   for (const value of ['0', '-1', '9', '1.5', 'NaN', 'Infinity', ''])
     expect(() => communicationConcurrency(value)).toThrow();
 });
+
+test('unrelated known hubs reject an invented association on every source', () => {
+  for (const row of COMMUNICATION_CASES.filter(
+    (row) => row.familyId === 'audit-unrelated-known-hubs',
+  )) {
+    const nodes = row.outcome.nodes.map((node) => ({
+      id: communicationId(row.familyId, node.key),
+      type: node.type,
+      name: node.name,
+      status: node.status,
+      assigneeUserId: null,
+      dueAt: node.dueAt,
+    }));
+    const observation = {
+      ...empty,
+      nodes,
+      edges: [
+        {
+          from: communicationId(row.familyId, 'company'),
+          to: communicationId(row.familyId, 'project'),
+          kind: 'related',
+        },
+      ],
+    };
+    expect(scoreCommunications(row, { ...observation, edges: [] }).passed).toBe(true);
+    expect(scoreCommunications(row, observation)).toMatchObject({
+      allowed: 0,
+      noise: 1,
+      passed: false,
+    });
+  }
+});
+
+test('explicitly optional associations permit one edge but never duplicates', () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'audit-context-without-work-email'),
+  );
+  const nodes = row.outcome.nodes.map((node) => ({
+    id: communicationId(row.familyId, node.key),
+    type: node.type,
+    name: node.name,
+    status: node.status,
+    assigneeUserId: null,
+    dueAt: node.dueAt,
+  }));
+  const edge = {
+    from: communicationId(row.familyId, 'company'),
+    to: communicationId(row.familyId, 'project'),
+    kind: 'related',
+  };
+  expect(scoreCommunications(row, { ...empty, nodes, edges: [edge] })).toMatchObject({
+    allowed: 1,
+    noise: 0,
+    passed: true,
+  });
+  expect(scoreCommunications(row, { ...empty, nodes, edges: [edge, edge] })).toMatchObject({
+    allowed: 1,
+    noise: 1,
+    passed: false,
+  });
+});

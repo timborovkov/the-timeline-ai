@@ -40,6 +40,7 @@ export const communicationCompletenessFamilies: Family[] = [
   },
   {
     id: 'audit-unrelated-known-hubs',
+    optionalCompanyProjectAssociation: false,
     category: 'routing',
     split: 'development',
     rationale:
@@ -74,6 +75,7 @@ export const communicationCompletenessFamilies: Family[] = [
   },
   {
     id: 'audit-context-without-work',
+    optionalCompanyProjectAssociation: true,
     category: 'context',
     split: 'development',
     rationale:
@@ -185,6 +187,7 @@ export const communicationCompletenessFamilies: Family[] = [
   },
   {
     id: 'audit-prospect-project-recall',
+    optionalCompanyProjectAssociation: true,
     category: 'uncertainty',
     split: 'development',
     uncertain: true,
