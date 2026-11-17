@@ -135,6 +135,9 @@ describe('background proposal evals', () => {
                 quote: 'I will send the Acme pricing packet by Friday.',
                 items: [
                   {
+                    ...(input.prompt.includes('\nDRAFT_PROPOSALS_JSON\n')
+                      ? { sourceDraftId: 'draft-0-0' }
+                      : {}),
                     coverage: {
                       kind: 'task',
                       evidence: [
