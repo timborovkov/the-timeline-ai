@@ -1,7 +1,6 @@
 import { TIMELINE_AI_PRIVACY_POLICY_VERSION } from '@timeline/shared/llm';
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { LegalPage } from '@/components/legal-page';
 import { SupportMailto } from '@/components/support-email-provider';

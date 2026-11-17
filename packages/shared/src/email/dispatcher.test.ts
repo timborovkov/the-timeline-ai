@@ -24,11 +24,10 @@ import {
   handleInbound,
   type EmailAttachmentDeps,
 } from '#src/email/dispatcher.js';
+import type { InboundEmail } from '#src/email/inbound-schema.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
-
-import type { InboundEmail } from '#src/email/inbound-schema.js';
 
 const FREE_DOCUMENT_CAP = CAPACITY_BY_PLAN.free.documents ?? 0;
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';

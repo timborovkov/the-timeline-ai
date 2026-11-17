@@ -1,8 +1,7 @@
-import type { PublicDocument } from '@/lib/public-site';
-
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
 import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
+import type { PublicDocument } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const REVIEW_DATE = '2026-11-13' as const;

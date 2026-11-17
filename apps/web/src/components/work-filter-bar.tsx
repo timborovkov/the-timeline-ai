@@ -1,11 +1,9 @@
 'use client';
 
+import type * as boards from '@timeline/shared/boards';
 import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
 import { ChevronDown, Search, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
-
-import type { MemberFilterOption, WorkFilterState } from '@/lib/work-filters';
-import type * as boards from '@timeline/shared/boards';
 import type { ReactNode } from 'react';
 
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
@@ -15,6 +13,7 @@ import { useProjectSearch } from '@/hooks/use-project-search';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { displayText } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
+import type { MemberFilterOption, WorkFilterState } from '@/lib/work-filters';
 import { NONE_FILTER_VALUE, UNASSIGNED_FILTER_VALUE } from '@/lib/work-filters';
 
 interface Props {

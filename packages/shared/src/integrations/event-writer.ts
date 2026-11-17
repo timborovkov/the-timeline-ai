@@ -44,6 +44,7 @@ import {
   integrationSkipsExtract,
 } from '#src/integrations/ingest-processing.js';
 import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
+import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { activeWorkspaceCondition, assertActivePrincipal } from '#src/platform-admin/runtime.js';
@@ -72,8 +73,6 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
-
-import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
 const log = childLogger('integrations:event-writer');
 

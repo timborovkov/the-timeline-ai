@@ -1,12 +1,12 @@
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
+import type { ToolSet } from 'ai';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type { TeamScope } from '#src/team-scope.js';
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
-import type { PGlite } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
-import type { ToolSet } from 'ai';
 
 const queueFakes = vi.hoisted(() => ({
   enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),

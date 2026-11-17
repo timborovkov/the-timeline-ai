@@ -20,13 +20,12 @@ import {
   objectMapFromUnknown,
   resolveSignalClass,
 } from '#src/integrations/signal-class.js';
+import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { qualifyWorkspaceHubs } from '#src/suggestions/hub-context.js';
 import { withTeam } from '#src/team-scope.js';
-
-import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
 
 const log = childLogger('integrations:github-task-proposals');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';

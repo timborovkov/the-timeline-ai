@@ -2,12 +2,11 @@
 import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import type { FirstRunState } from '#src/onboarding/first-run.js';
 import {
   processWebsiteScanJob,
   type WebsiteScanJobDeps,
 } from '#src/onboarding/website-scan-job.js';
-
-import type { FirstRunState } from '#src/onboarding/first-run.js';
 
 const scanId = '33333333-3333-4333-8333-333333333333';
 const state: FirstRunState = {

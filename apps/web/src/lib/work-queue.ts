@@ -1,7 +1,6 @@
-import { presentDueDate, workspaceDueDateBoundaries } from '@timeline/shared/time';
-
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
+import { presentDueDate, workspaceDueDateBoundaries } from '@timeline/shared/time';
 
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';

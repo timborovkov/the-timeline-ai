@@ -1,6 +1,5 @@
-import { notFound, permanentRedirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound, permanentRedirect } from 'next/navigation';
 
 import { ComparePage } from '@/components/marketing/compare/compare-page';
 import {

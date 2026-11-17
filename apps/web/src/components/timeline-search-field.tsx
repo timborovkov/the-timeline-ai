@@ -2,7 +2,6 @@
 
 import { Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
 import type { KeyboardEvent } from 'react';
 
 interface Props {

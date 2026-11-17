@@ -1,11 +1,11 @@
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import type { z } from 'zod';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
-import type { z } from 'zod';
 type PGlite = PGliteType;
 
 await vi.mock(

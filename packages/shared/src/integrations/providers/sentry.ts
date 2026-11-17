@@ -3,7 +3,6 @@ import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { attachSyncContinuation } from '#src/integrations/types.js';
-
 import type {
   IntegrationEvent,
   IntegrationProvider,

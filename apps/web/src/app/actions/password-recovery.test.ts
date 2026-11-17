@@ -1,7 +1,6 @@
+import type * as RateLimitModule from '@timeline/shared/rate-limit';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 const limit = vi.fn();
 const request = vi.fn();

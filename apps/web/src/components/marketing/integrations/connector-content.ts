@@ -1,9 +1,8 @@
 import { listCatalog } from '@timeline/shared/integrations/registry';
-
-import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 import type { CatalogEntry } from '@timeline/shared/integrations/registry';
 
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 import { GOOGLE_DRIVE_LIMITED_USE_POLICY } from '@/lib/google-drive-limited-use';
 
 export const CONNECTOR_SLUGS = [

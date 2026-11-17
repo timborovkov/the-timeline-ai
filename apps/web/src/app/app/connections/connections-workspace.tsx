@@ -9,8 +9,6 @@ import type {
   InboundEmailSettings,
   TelegramSetupSnapshot,
 } from '@/app/app/connections/connection-directory';
-import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
-
 import {
   connectionsIntegrationIdFallback,
   connectionsTabFromSearch,
@@ -30,6 +28,7 @@ import {
   ConnectionsToolSheets,
 } from '@/app/app/connections/connections-tool-panels';
 import { ProviderDetailsPanel } from '@/app/app/connections/provider-details-panel';
+import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 import { subscribeToClientUrlChanges } from '@/lib/client-url-changes';
 import { connectionsTabFromPathname } from '@/lib/connections';
 

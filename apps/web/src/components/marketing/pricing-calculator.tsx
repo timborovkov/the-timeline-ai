@@ -1,10 +1,9 @@
 'use client';
 
 import { PLAN_CATALOG, formatEuroFromCents } from '@timeline/shared/billing/catalog';
+import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 import Link from 'next/link';
 import { useState } from 'react';
-
-import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 
 import styles from '@/components/marketing/pricing-page.module.css';
 import { NativeSelect } from '@/components/ui/native-select';

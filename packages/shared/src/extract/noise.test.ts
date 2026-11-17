@@ -6,7 +6,6 @@ import {
   isLowSignalObjectName,
   isNoisyExtractedFact,
 } from '#src/extract/noise.js';
-
 import type { ExtractedFact } from '#src/extract/schema.js';
 
 function fact(statement: string): ExtractedFact {

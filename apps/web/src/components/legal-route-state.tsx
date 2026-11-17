@@ -1,7 +1,7 @@
-import type { PublicNavigationSection } from '@/components/public-navigation';
 import type { ReactNode } from 'react';
 
 import { ErrorState } from '@/components/error-state';
+import type { PublicNavigationSection } from '@/components/public-navigation';
 import { PublicShell } from '@/components/public-shell';
 
 interface LegalRouteStateProps {

@@ -1,8 +1,7 @@
+import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-
-import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 
 const ACTIVE_TEAM = '11111111-1111-4111-8111-111111111111';
 const SUSPENDED_TEAM = '22222222-2222-4222-8222-222222222222';

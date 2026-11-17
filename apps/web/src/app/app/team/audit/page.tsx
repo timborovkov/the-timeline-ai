@@ -1,9 +1,8 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { ClipboardList } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { Breadcrumb } from '@/components/breadcrumb';
 import { EmptyState } from '@/components/empty-state';

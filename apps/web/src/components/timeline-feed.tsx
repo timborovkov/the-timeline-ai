@@ -2,6 +2,9 @@
 
 import { useMemo } from 'react';
 
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { InlineError } from '@/components/inline-error';
+import { TimelineList } from '@/components/timeline-list';
 import type {
   ImpactKind,
   ImpactItem,
@@ -9,10 +12,6 @@ import type {
   WebTimelineMomentDto,
 } from '@/lib/timeline-moments';
 import type { TimelineEvent, TimelinePage } from '@/lib/timeline-types';
-
-import { InfiniteScroll } from '@/components/collections/infinite-scroll';
-import { InlineError } from '@/components/inline-error';
-import { TimelineList } from '@/components/timeline-list';
 import { useTimelineInfiniteQuery } from '@/lib/use-paginated-queries';
 
 interface Props {

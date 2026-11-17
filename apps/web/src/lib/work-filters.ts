@@ -1,4 +1,6 @@
+import type { BoardItemFilter } from '@timeline/shared/boards';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
+import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 import {
   TASK_CATEGORIES,
   UNCATEGORIZED_TASK_CATEGORY_FILTER,
@@ -6,9 +8,6 @@ import {
   type TaskCategoryFilterKey,
 } from '@timeline/shared/task-categories/types';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
-
-import type { BoardItemFilter } from '@timeline/shared/boards';
-import type { ObjectListFilter, ObjectType } from '@timeline/shared/objects/types';
 
 import { TASK_OPEN_STATUSES_EXCLUDED } from '@/lib/task-board-config';
 import { taskStatusFilterValues } from '@/lib/task-statuses';

@@ -1,5 +1,4 @@
 import type { ConnectorContent } from '@/components/marketing/integrations/connector-content';
-
 import {
   connectorStructuredData,
   directoryStructuredData,

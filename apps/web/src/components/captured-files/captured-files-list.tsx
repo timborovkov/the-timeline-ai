@@ -4,7 +4,6 @@ import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/docu
 import { FileText, Image as ImageIcon, Link2, Paperclip, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
-
 import type { ReactNode } from 'react';
 
 import { promoteCapturedFileAction } from '@/app/actions/documents';

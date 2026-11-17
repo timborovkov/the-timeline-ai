@@ -1,8 +1,7 @@
 import { teamInvites, teams } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { acceptInviteAction } from '@/app/actions/invites';
 import { AuthShell } from '@/components/auth-shell';

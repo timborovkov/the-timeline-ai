@@ -29,10 +29,9 @@ import {
   suggestionTypeRank,
   websiteProcessingSteps,
 } from '#src/onboarding/first-run.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
-
 import type { SuggestionBundle } from '#src/suggestions/index.js';
 import type { TeamRole } from '#src/team-scope.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 interface FirstRunScopeDeps {
   db: Db;

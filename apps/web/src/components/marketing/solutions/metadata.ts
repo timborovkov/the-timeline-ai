@@ -1,6 +1,6 @@
-import type { SolutionContent } from '@/components/marketing/solutions/content';
 import type { Metadata } from 'next';
 
+import type { SolutionContent } from '@/components/marketing/solutions/content';
 import { findSolutionPublicDocument } from '@/components/marketing/solutions/public-documents';
 import { metadataForPublicDocument } from '@/lib/public-site/metadata';
 import {

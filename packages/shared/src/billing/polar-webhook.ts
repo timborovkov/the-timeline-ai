@@ -22,10 +22,9 @@ import {
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
+import type { BillingProvider } from '#src/billing/provider.js';
 import { childLogger } from '#src/logger.js';
 import { withTeam } from '#src/team-scope.js';
-
-import type { BillingProvider } from '#src/billing/provider.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business' | 'enterprise';
 

@@ -1,9 +1,8 @@
-import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
-
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
 import { TIMELINE_HOSTED_MCP_TOOLS_LIST } from '@/lib/agent-install-content';
 import { buildLlmsAgentSetupPointer, buildLlmsForAgentsSection } from '@/lib/agent-setup';
+import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
 import { PUBLIC_DOCUMENT_REGISTRY, canonicalPublicUrl } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 

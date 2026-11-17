@@ -1,6 +1,5 @@
-import type { WorksWithTool } from '@/components/marketing/integrations/works-with-content';
-
 import styles from '@/components/marketing/integrations/integration-detail.module.css';
+import type { WorksWithTool } from '@/components/marketing/integrations/works-with-content';
 
 export function WorksWithGuidance({ tool }: { tool: WorksWithTool }) {
   return (

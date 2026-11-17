@@ -17,15 +17,14 @@ import {
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
+import type { TeamDigestDestination } from '@timeline/shared/messaging';
+import type { TeamWorkStyle } from '@timeline/shared/onboarding';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { TeamDigestDestination } from '@timeline/shared/messaging';
-import type { TeamWorkStyle } from '@timeline/shared/onboarding';
-import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { BillingSettingsPanel } from '@/components/billing-settings-panel';

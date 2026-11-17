@@ -1,9 +1,8 @@
 'use client';
 
+import type * as objects from '@timeline/shared/objects/types';
 import { useRouter } from 'next/navigation';
 import { createContext, use, useCallback, useRef } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { ObjectMergeForm } from '@/components/objects/object-merge-form';

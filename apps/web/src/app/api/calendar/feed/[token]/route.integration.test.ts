@@ -1,11 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
 
 type PGlite = PGliteType;
 

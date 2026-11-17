@@ -1,7 +1,7 @@
+import type { ToolSet } from 'ai';
+
 import { proposalIdsForTool } from '#src/agent/tool-policy.js';
 import { citationPartToArtifactRef, parseCitations, type ArtifactRef } from '#src/citation.js';
-
-import type { ToolSet } from 'ai';
 
 export type AgentToolGroup =
   | 'timeline'

@@ -4,13 +4,12 @@ import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { z } from 'zod';
 
-import type { SuggestionActionState } from '@/lib/suggestion-action-result';
-
 import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';
 import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import type { SuggestionActionState } from '@/lib/suggestion-action-result';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
 const MAX_VISIBLE_ACCEPT_ITEMS = 500;

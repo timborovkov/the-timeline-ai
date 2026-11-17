@@ -1,8 +1,7 @@
+import type { ObjectListFilter, ObjectRow, ObjectType } from '@timeline/shared/objects/types';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type { ObjectListFilter, ObjectRow, ObjectType } from '@timeline/shared/objects/types';
 
 import {
   boardAddItemTypeOptions,

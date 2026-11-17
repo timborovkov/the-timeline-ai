@@ -1,6 +1,5 @@
 import { type Db, getDb, users } from '@timeline/db';
 import { eq } from 'drizzle-orm';
-
 import type { User } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 

@@ -129,6 +129,7 @@ import {
   type PersonPrimaryCompanyRow,
   type TaskPrimaryProjectRow,
 } from '#src/objects/types.js';
+import type { UpdateActor } from '#src/objects/types.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
@@ -171,11 +172,9 @@ import {
   taskCategorySchema,
   type TaskCategory,
 } from '#src/task-categories/types.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
-
-import type { UpdateActor } from '#src/objects/types.js';
 import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 export type { UpdateActor } from '#src/objects/types.js';
 export {

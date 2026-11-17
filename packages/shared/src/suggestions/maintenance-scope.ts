@@ -29,7 +29,6 @@ import {
   businessEmailDomain,
   IDENTITY_POLICY_VERSION,
 } from '#src/suggestions/identity-resolution.js';
-
 import type { IdentityObject } from '#src/suggestions/identity-resolution.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 

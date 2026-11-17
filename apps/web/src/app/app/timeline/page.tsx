@@ -2,10 +2,9 @@ import { users } from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';

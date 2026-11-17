@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-
 import type * as objects from '@timeline/shared/objects/types';
+import Link from 'next/link';
 
 import { displayText } from '@/lib/display-dates';
 import { objectDetailHref } from '@/lib/object-links';

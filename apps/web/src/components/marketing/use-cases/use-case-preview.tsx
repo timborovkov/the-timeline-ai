@@ -1,7 +1,6 @@
 import { ArrowDown, Check, Link2 } from 'lucide-react';
 
 import type { UseCaseContent } from '@/components/marketing/use-cases/content';
-
 import styles from '@/components/marketing/use-cases/use-case-preview.module.css';
 
 const previews = {

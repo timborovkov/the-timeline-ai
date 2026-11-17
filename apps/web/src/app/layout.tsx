@@ -1,7 +1,6 @@
+import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import Script from 'next/script';
-
-import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 import { PublicAnalyticsBoundary } from '@/components/public-analytics';

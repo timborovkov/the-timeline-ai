@@ -1,5 +1,6 @@
 'use client';
 
+import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import {
   CalendarDays,
   ExternalLink,
@@ -12,8 +13,6 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer } from 'react';
-
-import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps } from 'react';
 
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';

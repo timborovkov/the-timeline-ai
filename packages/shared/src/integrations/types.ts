@@ -1,13 +1,14 @@
+import type {
+  integrations as integrationsTable,
+  providerConnections as providerConnectionsTable,
+} from '@timeline/db';
+
 import type { TimelineEventClass } from '#src/event-class.js';
 import type { DriveCaptureServices } from '#src/integrations/google-drive-context.js';
 import type {
   ProviderResourceAccess,
   ResourceAccessContext,
 } from '#src/integrations/resource-access.js';
-import type {
-  integrations as integrationsTable,
-  providerConnections as providerConnectionsTable,
-} from '@timeline/db';
 
 // Phase 11 — Provider adapter interface.
 //

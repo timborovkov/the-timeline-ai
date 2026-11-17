@@ -1,8 +1,7 @@
+import type { mcpServers as mcpServersTable } from '@timeline/db';
 import ipaddr from 'ipaddr.js';
 
 import { decryptJson } from '#src/crypto/secrets.js';
-
-import type { mcpServers as mcpServersTable } from '@timeline/db';
 
 export type McpServerRow = typeof mcpServersTable.$inferSelect;
 

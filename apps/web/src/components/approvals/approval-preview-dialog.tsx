@@ -3,8 +3,6 @@
 import { Check, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-
-import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
 import type { ComponentProps } from 'react';
 
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
@@ -28,6 +26,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
 import {
   buildApprovalPreviewFields,
   type ApprovalPreviewField,

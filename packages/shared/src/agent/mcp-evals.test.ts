@@ -1,9 +1,9 @@
+import type * as TimelineDb from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
 import type { TeamScope } from '#src/team-scope.js';
-import type * as TimelineDb from '@timeline/db';
 // Fast MCP safety evals: custom MCP servers are admin-connected but external,
 // so their tool output is untrusted. These tests exercise the real agent MCP
 // tool wrapper with a fake manager and assert prompt-injection content is

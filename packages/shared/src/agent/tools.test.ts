@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { instrumentAgentTools } from '#src/agent/observability.js';
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
 import { resetEnvForTests } from '#src/env.js';
+import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 import { type TeamScope } from '#src/team-scope.js';
 
-import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
   process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
 

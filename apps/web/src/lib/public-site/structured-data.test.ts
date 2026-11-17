@@ -1,12 +1,12 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { PublicDocument } from '@/lib/public-site/types';
-
 import {
   buildPublicStructuredData,
   stringifyJsonLdForHtml,
 } from '@/lib/public-site/structured-data';
+import type { PublicDocument } from '@/lib/public-site/types';
+
 describe('public structured data', () => {
   it('builds canonical page, article, breadcrumb, and FAQ nodes', () => {
     const graph = buildPublicStructuredData(document(), 'https://thetimeline.cc/deploy');

@@ -1,5 +1,4 @@
 import { ShieldAlert } from 'lucide-react';
-
 import type { ReactNode } from 'react';
 
 import { EmptyState } from '@/components/empty-state';

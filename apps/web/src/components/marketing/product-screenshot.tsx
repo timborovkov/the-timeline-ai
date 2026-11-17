@@ -6,7 +6,6 @@ import type {
   MarketingScreenshotFrame,
   MarketingScreenshotSlot,
 } from '@/components/marketing/screenshot-slot';
-
 import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 import { ThemedScreenshotImage } from '@/components/marketing/themed-screenshot-image';
 import { cn } from '@/lib/utils';

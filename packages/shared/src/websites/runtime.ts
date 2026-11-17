@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 
+import type { Db } from '@timeline/db';
+
 import { listChargeCentsForMeter } from '#src/billing/charge.js';
+import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 import { cancelWebsiteCrawl } from '#src/onboarding/firecrawl-website-scan.js';
+import type { FirstRunScanFailureReason } from '#src/onboarding/first-run.js';
 import {
   renderWebsitePageContent,
   scanPublicWebsite,
@@ -18,10 +22,6 @@ import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { authorizeWebsitePrincipal } from '#src/websites/authorization.js';
 import { WEBSITE_PAGE_LIMIT, websiteSourceUnits } from '#src/websites/policy.js';
 import { settleCapturedWebsiteRun } from '#src/websites/recovery.js';
-
-import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
-import type { FirstRunScanFailureReason } from '#src/onboarding/first-run.js';
-import type { Db } from '@timeline/db';
 
 export function websiteContentHash(text: string): string {
   return createHash('sha256').update(text.replace(/\r\n/g, '\n').trim()).digest('hex');

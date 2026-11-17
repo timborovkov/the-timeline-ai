@@ -7,7 +7,6 @@ import {
 } from '@timeline/shared/platform-admin';
 import { isInactiveWorkspaceSecurityState } from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-
 import type { NextRequest } from 'next/server';
 import type { Session } from 'next-auth';
 

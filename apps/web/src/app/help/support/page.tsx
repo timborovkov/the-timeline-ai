@@ -7,10 +7,9 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense, type ReactNode } from 'react';
-
-import type { Metadata } from 'next';
 
 import { SupportForm } from '@/components/help/support-form';
 import { SupportRequestForm } from '@/components/help/support-request-form';

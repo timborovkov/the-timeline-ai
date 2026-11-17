@@ -1,8 +1,7 @@
 import { ArrowLeft, ExternalLink } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { AgentInstallGuide } from '@/components/help/agent-install-guide';
 import { HelpAppLink } from '@/components/help/app-link';

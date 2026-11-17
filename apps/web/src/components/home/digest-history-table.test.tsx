@@ -1,9 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-
-import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
 // Test environment: happy-dom

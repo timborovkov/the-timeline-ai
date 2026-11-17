@@ -21,9 +21,6 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-
-import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
-import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
@@ -54,6 +51,7 @@ import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
+import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import {
   buildTimelineMoments,
   actorLabelsByTelegramUserId,
@@ -67,6 +65,7 @@ import {
   type TimelineImpactFilter,
   type TimelineMoment,
 } from '@/lib/timeline-moments';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 import { cn } from '@/lib/utils';
 
 interface Props {

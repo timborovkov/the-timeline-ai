@@ -14,6 +14,7 @@ import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { recordFromUnknown, stringArrayFromUnknown, toObjectRow } from '#src/objects/row.js';
+import type { ObjectRow, UpdateActor } from '#src/objects/types.js';
 import * as embedQueue from '#src/queue/queues.js';
 import {
   buildTaskCategoryPacket,
@@ -31,8 +32,6 @@ import {
   type TaskCategorySource,
   type TaskCategoryStatus,
 } from '#src/task-categories/types.js';
-
-import type { ObjectRow, UpdateActor } from '#src/objects/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];

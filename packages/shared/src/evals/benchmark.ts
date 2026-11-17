@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { stableStringify } from '#src/suggestions/dedupe-key.js';
-
 import type { Client } from 'langsmith';
 import type { Example } from 'langsmith/schemas';
+
+import { stableStringify } from '#src/suggestions/dedupe-key.js';
 
 export type EvalSplit = 'development' | 'held-out';
 export interface BenchmarkCase {

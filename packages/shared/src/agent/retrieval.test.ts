@@ -5,7 +5,6 @@ import { describe, it } from 'bun:test';
 import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { buildAgentTools } from '#src/agent/tools.js';
-
 import type { TeamScope } from '#src/team-scope.js';
 
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

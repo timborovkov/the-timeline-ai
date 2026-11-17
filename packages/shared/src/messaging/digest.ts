@@ -33,22 +33,21 @@ import {
   freshDigestCutoff,
   isDigestWindowExpired,
 } from '#src/messaging/digest-window.js';
+import type {
+  DailyDigestActivity,
+  DailyDigestPayload,
+  DailyDigestSection,
+} from '#src/messaging/types.js';
 import { displayObjectTitle, OBJECT_TYPES } from '#src/objects/types.js';
 import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { withTeam } from '#src/team-scope.js';
+import type { TeamScope } from '#src/team-scope.js';
 import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';
 import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
-
-import type {
-  DailyDigestActivity,
-  DailyDigestPayload,
-  DailyDigestSection,
-} from '#src/messaging/types.js';
-import type { TeamScope } from '#src/team-scope.js';
 
 export { defaultDigestWindow, isDigestWindowExpired } from '#src/messaging/digest-window.js';
 

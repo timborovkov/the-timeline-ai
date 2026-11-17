@@ -5,9 +5,8 @@ import {
   EVIDENCE_PACK_POLICIES,
   evidenceSourceContextForPrompt,
 } from '#src/evidence-pack/index.js';
-import { buildTimelineMoments, timelineMomentLookupPlan } from '#src/timeline-moments/index.js';
-
 import type { TeamScope } from '#src/team-scope.js';
+import { buildTimelineMoments, timelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 /** Expand only scoped moments, never arbitrary semantic neighbors. */
 export async function expandEvidenceConversations(scope: TeamScope, eventIds: string[]) {

@@ -1,8 +1,8 @@
+import type * as ReactQuery from '@tanstack/react-query';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
-import type * as ReactQuery from '@tanstack/react-query';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({

@@ -1,8 +1,7 @@
 'use client';
 
-import { useActionState, useId, useState } from 'react';
-
 import type { AgentReportingPreference } from '@timeline/db';
+import { useActionState, useId, useState } from 'react';
 
 import { updateAgentReportingAction } from '@/app/actions/agent-reporting';
 import { ConnectAgentDisclosure } from '@/components/connect-agent/connect-agent-disclosure';

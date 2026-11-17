@@ -1,7 +1,6 @@
 import { childLogger } from '@timeline/shared/logger';
-import { type TeamScope } from '@timeline/shared/team-scope';
-
 import type * as onboarding from '@timeline/shared/onboarding';
+import { type TeamScope } from '@timeline/shared/team-scope';
 
 import { reportCaughtError } from '@/lib/sentry-report';
 

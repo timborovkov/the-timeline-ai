@@ -1,8 +1,7 @@
 import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
-
 import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 await vi.mock(
   import.meta.resolve('@/components/ui/tooltip'),

@@ -6,7 +6,6 @@ import {
   websiteProcessingSteps,
   type FirstRunPhase,
 } from '@timeline/shared/onboarding/first-run';
-
 import type { ReactNode } from 'react';
 
 import { EmptyState } from '@/components/empty-state';

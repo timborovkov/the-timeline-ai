@@ -1,13 +1,12 @@
 'use client';
 
-import { useActionState, useState, type ReactNode } from 'react';
-
-import type { TeamMembership } from '@/lib/active-team';
 import type { AgentReportingPreference } from '@timeline/db';
+import { useActionState, useState, type ReactNode } from 'react';
 
 import { approveMcpOAuthAction } from '@/app/oauth/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import type { TeamMembership } from '@/lib/active-team';
 
 export type ConsentMembership = TeamMembership & {
   reporting: { defaults: AgentReportingPreference; override: AgentReportingPreference | null };

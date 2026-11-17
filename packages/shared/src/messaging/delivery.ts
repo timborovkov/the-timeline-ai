@@ -10,7 +10,6 @@ import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { renderMessage } from '#src/messaging/templates.js';
-
 import type {
   MessageChannel,
   MessageInput,

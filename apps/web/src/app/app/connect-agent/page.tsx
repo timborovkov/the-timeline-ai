@@ -1,7 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ConnectAgentScreen } from '@/components/connect-agent/connect-agent-screen';

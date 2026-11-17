@@ -2,7 +2,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, it } from 'bun:test';
-
 import type { ReactElement } from 'react';
 const { act, cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');

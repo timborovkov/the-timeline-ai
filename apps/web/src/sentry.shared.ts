@@ -1,11 +1,10 @@
+import type { Breadcrumb, ErrorEvent, EventHint } from '@sentry/nextjs';
 import {
   sanitizeRequestUrl,
   scrubSentryBreadcrumb,
   scrubSentryRequestEvent,
   scrubSentrySpan,
 } from '@timeline/shared/monitoring/sentry-scrub';
-
-import type { Breadcrumb, ErrorEvent, EventHint } from '@sentry/nextjs';
 
 export { sanitizeRequestUrl };
 

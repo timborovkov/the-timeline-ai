@@ -4,10 +4,9 @@ import { useQuery, type Query } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import type { WorkFilterState } from '@/lib/work-filters';
-
 import { loadTaskCategoryFilterStateAction } from '@/app/actions/objects';
 import { taskCategoryPollInterval } from '@/components/tasks/task-category-polling';
+import type { WorkFilterState } from '@/lib/work-filters';
 
 export function TaskCategoryFilterRefresh({
   surface,

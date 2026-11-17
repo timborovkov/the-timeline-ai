@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
 import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
+import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
 import {
   EMBEDDING_AI_RESERVE_USD_PER_MILLION_TOKENS,
@@ -21,8 +22,6 @@ import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { openRouterPrivateProviderRouting } from '#src/llm/privacy.js';
 import { createOpenRouterProvider } from '#src/llm/provider.js';
-
-import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
 export interface EmbedInput {
   text: string;

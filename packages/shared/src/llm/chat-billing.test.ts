@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { billingUsageLedger, type Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
+import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -14,8 +15,6 @@ import { extractionResultSchema } from '#src/extract/schema.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
-import type { LanguageModel } from 'ai';
 
 type ProviderFetch = (
   ...args: Parameters<typeof globalThis.fetch>

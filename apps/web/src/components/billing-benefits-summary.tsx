@@ -1,6 +1,5 @@
-import { formatEuroFromCents, PLAN_CATALOG } from '@timeline/shared/billing/catalog';
-
 import type { BillingPresentation, BillingPeriod, RecordedCharges } from '@timeline/shared/billing';
+import { formatEuroFromCents, PLAN_CATALOG } from '@timeline/shared/billing/catalog';
 import type { ReactNode } from 'react';
 
 function billingDate(value: string): string {

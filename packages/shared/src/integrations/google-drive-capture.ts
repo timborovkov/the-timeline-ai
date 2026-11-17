@@ -26,6 +26,11 @@ import {
 } from '#src/integrations/drive-extract-protocol.js';
 import { parseDriveCommentSnapshots } from '#src/integrations/google-drive-comments.js';
 import { emptyDriveObjectLinkHints } from '#src/integrations/google-drive-contracts.js';
+import type {
+  DrivePermissionGrant,
+  DriveSnapshotRecord,
+  DriveObjectLinkHints,
+} from '#src/integrations/google-drive-contracts.js';
 import {
   hashesOnlyDriveSnapshotLocate,
   parseDriveSnapshotLocate,
@@ -52,12 +57,6 @@ import {
   type RateLimitInput,
   type RateLimitResult,
 } from '#src/rate-limit/index.js';
-
-import type {
-  DrivePermissionGrant,
-  DriveSnapshotRecord,
-  DriveObjectLinkHints,
-} from '#src/integrations/google-drive-contracts.js';
 
 /** Bounded page for orphan sweeps and disconnect S3 cleanup. */
 export const DRIVE_EXTRACT_CURSOR_PAGE_SIZE = 500;

@@ -1,5 +1,6 @@
-import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 import type { TimelineMoment as SharedTimelineMoment } from '@timeline/shared/timeline-moments';
+
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 
 export {
   actorLabelsByTelegramUserId,

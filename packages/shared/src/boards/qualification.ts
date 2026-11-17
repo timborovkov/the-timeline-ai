@@ -22,10 +22,9 @@ import { requestBoardQualification } from '#src/boards/qualification-request.js'
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
-import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
-
 import type { CreateSuggestionInput } from '#src/suggestions/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
+import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 const qualificationResultSchema = z.object({
   decision: z.enum(['add', 'remove', 'no_change', 'insufficient_evidence']),

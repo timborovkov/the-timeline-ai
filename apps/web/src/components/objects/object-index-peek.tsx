@@ -1,8 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-
 import type { ObjectDetail, TaskPrimaryProjectRow } from '@timeline/shared/objects/types';
+import { useRouter } from 'next/navigation';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';

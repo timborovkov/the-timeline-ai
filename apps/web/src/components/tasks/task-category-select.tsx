@@ -1,14 +1,13 @@
 'use client';
 
 import { TASK_CATEGORY_OPTIONS } from '@timeline/shared/task-categories/types';
-import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
-
 import type {
   TaskCategory,
   TaskCategoryMode,
   TaskCategoryStatus,
 } from '@timeline/shared/task-categories/types';
+import { useRouter } from 'next/navigation';
+import { useState, useTransition } from 'react';
 
 import {
   resetTaskCategoryAction,

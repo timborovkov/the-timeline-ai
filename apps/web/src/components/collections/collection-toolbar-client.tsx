@@ -1,7 +1,6 @@
 'use client';
 
 import { SlidersHorizontal, X } from 'lucide-react';
-
 import type { ReactNode } from 'react';
 
 import { readCollectionSlots } from '@/components/collections/collection-slot';

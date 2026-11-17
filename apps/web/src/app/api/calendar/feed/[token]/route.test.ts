@@ -1,9 +1,9 @@
+import type * as TestModule1 from '@timeline/db';
+import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as TestModule1 from '@timeline/db';
-import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 // Calendar apps fetch this route without cookies, so the token must authorize
 // only the subscribing member's visible calendar surface inside the feed window.
 const fakes = vi.hoisted<{

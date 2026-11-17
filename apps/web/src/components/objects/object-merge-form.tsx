@@ -1,11 +1,10 @@
 'use client';
 
+import type * as objects from '@timeline/shared/objects/types';
 import { GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { mergeObjectsAction } from '@/app/actions/objects';
 import { Button } from '@/components/ui/button';

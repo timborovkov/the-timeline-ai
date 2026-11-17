@@ -13,6 +13,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
+import type { Db } from '@timeline/db';
 import {
   completePolarMembershipChange,
   lockTeamBillingIdentity,
@@ -35,8 +36,6 @@ import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { TeamMutationResult } from '@/app/actions/teams';
-import type { Db } from '@timeline/db';
-
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';

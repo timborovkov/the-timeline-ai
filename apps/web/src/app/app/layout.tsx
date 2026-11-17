@@ -4,11 +4,10 @@ import { getEnv } from '@timeline/shared/env';
 import { shouldRedirectToSetup } from '@timeline/shared/onboarding';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
+import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { AppShell } from '@/components/app-shell';

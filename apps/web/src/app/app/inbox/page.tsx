@@ -1,9 +1,8 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { Bell } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';

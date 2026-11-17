@@ -1,13 +1,12 @@
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
+import type { UIMessage } from 'ai';
 import { beforeAll, beforeEach, afterAll, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-import type { PGlite } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
-import type { UIMessage } from 'ai';
 
 // Persisted chat preserves completed/pending tools and admits each approval only once.
 const TEAM_A = '11111111-1111-1111-1111-111111111111';

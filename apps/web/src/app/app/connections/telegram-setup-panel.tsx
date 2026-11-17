@@ -1,11 +1,10 @@
 'use client';
 
 import { Hash, Users } from 'lucide-react';
-
-import type { TelegramSetupSnapshot } from '@/app/app/connections/connection-directory';
 import type { ReactNode } from 'react';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
+import type { TelegramSetupSnapshot } from '@/app/app/connections/connection-directory';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { EmptyState } from '@/components/empty-state';

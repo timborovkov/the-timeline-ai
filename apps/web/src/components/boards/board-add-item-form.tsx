@@ -1,10 +1,9 @@
 'use client';
 
-import { Check, Plus, Search, X } from 'lucide-react';
-import { useEffect, useId, useMemo, useReducer, useState, useTransition } from 'react';
-
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
+import { Check, Plus, Search, X } from 'lucide-react';
+import { useEffect, useId, useMemo, useReducer, useState, useTransition } from 'react';
 import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';

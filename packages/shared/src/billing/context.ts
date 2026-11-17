@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import type { BillingMeterId } from '#src/billing/catalog.js';
 import type { Db } from '@timeline/db';
+
+import type { BillingMeterId } from '#src/billing/catalog.js';
 
 /** Zero UUID used by workers / outbound MCP — cannot match a real member. */
 export const BILLING_SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';

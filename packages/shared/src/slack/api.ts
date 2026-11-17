@@ -6,7 +6,6 @@ import {
   providerFetch,
   withProviderRequestContext,
 } from '#src/integrations/request.js';
-
 import type { SlackFile } from '#src/slack/types.js';
 const externalFetch = providerFetch('slack');
 

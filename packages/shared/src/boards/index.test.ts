@@ -1,10 +1,10 @@
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
-import type { PGlite } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
 const queueFakes = vi.hoisted(() => ({
   enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
 }));

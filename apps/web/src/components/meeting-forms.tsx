@@ -1,10 +1,9 @@
 'use client';
 
+import type { SavedMeetingRow } from '@timeline/shared/meetings';
 import { Archive, LogIn, SkipForward } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
-
-import type { SavedMeetingRow } from '@timeline/shared/meetings';
 
 import {
   archiveSavedMeetingAction,
