@@ -3875,11 +3875,21 @@ describe('processSuggestionJobForTests', () => {
         { ownerUserId: OWNER_ID, assigneeUserId: OWNER_ID },
         { kind: 'user', userId: OWNER_ID },
       );
+      const [project] = await db
+        .insert(entities)
+        .values({
+          teamId: TEAM_ID,
+          type: 'project',
+          canonicalName: 'Current audit project',
+        })
+        .returning();
+      if (!project) throw new Error('missing project');
+      await scope.objects.setTaskProject(task.id, project.id, { kind: 'user', userId: OWNER_ID });
       const rawEventId = crypto.randomUUID();
       await seedRawEvent(db as never, {
         id: rawEventId,
         source: 'email',
-        text: 'Member owns and is assigned the audit outline. The audit outline is complete.',
+        text: 'Member owns and is assigned the audit outline. The audit outline is complete. Clear the project assignment for Prepare audit outline.',
         sourceMetadata: {
           extracted_at: REFERENCE_DATE.toISOString(),
           extraction_model_version: 'fixture',
@@ -3912,6 +3922,13 @@ describe('processSuggestionJobForTests', () => {
                   title: 'Complete audit outline',
                   grounding: [
                     {
+                      field: 'project',
+                      rawEventId,
+                      quote: 'Clear the project assignment for Prepare audit outline.',
+                      subject: 'Prepare audit outline',
+                      value: 'unset',
+                    },
+                    {
                       field: 'status',
                       rawEventId,
                       quote: 'The audit outline is complete.',
@@ -3921,6 +3938,7 @@ describe('processSuggestionJobForTests', () => {
                   ],
                   proposedPayload: {
                     status: 'done',
+                    parentObjectId: null,
                     ownerName: 'Member',
                     assigneeName: 'Member',
                   },
@@ -3945,7 +3963,11 @@ describe('processSuggestionJobForTests', () => {
       expect(proposal.proposedPayload).not.toHaveProperty('assigneeName');
       expect(proposal.proposedPayload).not.toHaveProperty('ownerUserId');
       expect(proposal.proposedPayload).not.toHaveProperty('assigneeUserId');
+      expect(proposal.proposedPayload).not.toHaveProperty('parentObjectId');
       expect(await scope.suggestions.acceptSuggestionItem(proposal.id)).toBe(true);
+      expect(await scope.objects.listPrimaryProjectsForTasks([task.id])).toEqual([
+        expect.objectContaining({ projectId: project.id }),
+      ]);
       const [updated] = await db.select().from(entities).where(eq(entities.id, task.id));
       expect(updated).toMatchObject({
         status: 'done',

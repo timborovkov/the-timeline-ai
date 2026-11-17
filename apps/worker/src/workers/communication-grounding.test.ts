@@ -557,6 +557,17 @@ test('unrelated mentions and hidden association statements cannot ground links',
   expect(relationship([explicit], explicit, [], 'Truncated.')).toHaveLength(1);
 });
 
+test('customer-project links require affirmative association', () => {
+  for (const quote of [
+    'Cedar Dental has no connection to Patient Portal.',
+    'Cedar Dental and Patient Portal are on the agenda.',
+  ]) {
+    expect(relationship([quote], quote)).toHaveLength(1);
+  }
+  const quote = 'Patient Portal is a project for Cedar Dental.';
+  expect(relationship([quote], quote)).toHaveLength(2);
+});
+
 test('a following deadline sentence belongs to its explicitly named task', () => {
   const quote = 'Please review retention policy. Its deadline is 2026-06-16T09:00:00Z.';
   expect(

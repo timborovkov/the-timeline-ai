@@ -809,7 +809,52 @@ export function groundCommunicationBundles<T extends Item>(args: {
             ))
               return false;
             const direct = namesEndpoint(assertion, from) && namesEndpoint(assertion, to);
-            if (direct) return true;
+            if (direct) {
+              const company = from.type === 'company' ? from : to.type === 'company' ? to : null;
+              const project = from.type === 'project' ? from : to.type === 'project' ? to : null;
+              if (!company || !project) return true;
+              // Bind the predicate to these two named endpoints in the same statement.
+              const names = (object: typeof company) =>
+                [object.name, ...object.aliases]
+                  .filter(
+                    (name) =>
+                      name &&
+                      namesEndpoint(name, object) &&
+                      !known.some(
+                        (other) =>
+                          other.id !== object.id &&
+                          other.type === object.type &&
+                          [other.name, ...(other.aliases ?? [])].some(
+                            (alias) => alias && normalize(alias) === normalize(name),
+                          ),
+                      ),
+                  )
+                  .map(normalize);
+              const statement = normalize(assertion).replace(/[.!]$/, '');
+              return names(company).some((client) =>
+                names(project).some((work) => {
+                  return (
+                    [
+                      `link ${work} to ${client}`,
+                      `link ${client} to ${work}`,
+                      `${work} is a project for ${client}`,
+                      `${work} is the project for ${client}`,
+                      `${work} is a project with ${client}`,
+                      `${client}'s project is ${work}`,
+                      `${work} is ${client}'s project`,
+                    ].includes(statement.replace(/^please /, '').replace(/[’]/g, "'")) ||
+                    (statement.endsWith(` ${work}`) &&
+                      [client, `our existing customer ${client}`, `our client ${client}`].some(
+                        (subject) =>
+                          statement.startsWith(`${subject} is `) &&
+                          /^(?:planning|considering|launching) (?:a |the )?(?:new |possible |proposed )?project(?: called| named)?$/.test(
+                            statement.slice(subject.length + 4, -work.length - 1),
+                          ),
+                      ))
+                  );
+                }),
+              );
+            }
             // A typed reference can combine admitted statements from the SAME source only.
             // It must be an explicit link instruction, with exactly one visible candidate.
             if (!/\blink\b/i.test(support.quote)) return false;

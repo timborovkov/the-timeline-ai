@@ -4850,7 +4850,15 @@ async function runSuggestionExtraction(
         item.proposedPayload = Object.fromEntries(
           Object.entries(item.proposedPayload).filter(([key]) => {
             const canonicalField =
-              key === 'ownerName' ? 'ownerUserId' : key === 'assigneeName' ? 'assigneeUserId' : key;
+              (
+                {
+                  ownerName: 'ownerUserId',
+                  assigneeName: 'assigneeUserId',
+                  parentObjectId: 'primaryProjectId',
+                  projectName: 'primaryProjectId',
+                  createProjectName: 'primaryProjectId',
+                } as Record<string, string>
+              )[key] ?? key;
             return !humanFields.some(({ field }) => field === canonicalField);
           }),
         );
