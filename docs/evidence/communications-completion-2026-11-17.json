@@ -1,7 +1,7 @@
 {
   "recordedAt": "2026-11-17",
   "scope": "Synthetic communication development diagnostics and closure attempts; no held-out evaluation.",
-  "status": "Blocked: latest frozen development attempt stopped at 100/103 completed cases after three 150-second provider timeouts. Three complete passing development repetitions and fresh holdout remain unrun.",
+  "status": "Blocked by LangSmith monthly trace quota and an unresolved task-to-project link miss. No passing complete development gate or fresh heldout exists.",
   "findings": [
     "A prior provider call consumed 16000 reasoning tokens with zero text and finish_reason length; communication requests now request low reasoning effort.",
     "4fb0e2b7 full repetition 188/198: six invalid literal coverage quotations and four adjacent project-client grounding rejections; no timeouts or hard/approval failures.",
@@ -13,7 +13,12 @@
     "29e16f75 completed 195/198 with full feedback. Failures: assignment reaffirmation citation omitted task context; empty audit ledger rejected after inference; audit JSON exhausted16,000 tokens and fallback deadline. Targeted corrected diagnostic 7/7.",
     "7d7d1b2c stopped early after company-alias-telegram rejected ambiguous repeated-name citation fragments. Partial evidence retained; no holdout. Generated complete clauses remain available while ambiguous draft-only fragments are excluded.",
     "e469abc3 partial development run: 100/103 completed cases passed. Correction-after-delay-telegram extraction, Outlook forward audit and Apple forward audit each received no provider response before the 150-second deadline. Other in-flight cases were interrupted when the failed attempt stopped; this is incomplete evidence, not a complete benchmark.",
-    "Final scoped checks: 81 deterministic communication harness tests, 68 grounding tests and 12 audit tests passed; worker typechecking and changed-file lint/format passed. Exact implementation e469abc347e0519ae8d471ee866e92a41a47ec7d received a read-only review with no outstanding findings."
+    "Final scoped checks: 81 deterministic communication harness tests, 68 grounding tests and 12 audit tests passed; worker typechecking and changed-file lint/format passed. Exact implementation e469abc347e0519ae8d471ee866e92a41a47ec7d received a read-only review with no outstanding findings.",
+    "Full CI 44099716503 passed after correcting the missing sourceDraftId in a controlled test fixture. No production behavior changed in that fixture correction.",
+    "4bb25b03 completed 198 development cases: 197 passed, one missing pending-task project link, zero execution or hard failures. The auditor silently omitted a supplied pending amendment. c8ced82b requires every candidate to be selected or explicitly rejected with source evidence; 94 deterministic tests and 12/12 live diagnostics passed locally.",
+    "The c8ced82b follow-up stopped at 20/21 after LangSmith rejected trace uploads. new-account-launch-slack persisted its company, project and task but omitted the task-to-project edge. Its intermediate model traces were not stored, so the omission remains unresolved; no label or scoring change was made.",
+    "LangSmith returned HTTP 429 for monthly_longlived_traces exceeding 5,000. Read-only verification found 185/198 stored root runs for the full 4bb experiment, 12/12 roots for the targeted amendment diagnostic with nested-upload failures, and 0 roots for the interrupted c8 experiment. These attempts do not establish complete trace publication.",
+    "Runner 3b15f180 now verifies stored completed root IDs and matching remote evaluator scores after flushing, allows a bounded indexing wait and blocks later repetitions when publication is incomplete. 13 deterministic report tests, worker typechecking and changed-file lint/format passed. A read-only check against an existing stored run verified matching remote feedback. This check does not establish completeness of every nested span."
   ],
   "runs": [
     {
@@ -13567,6 +13572,1025 @@
         "experiment": "communications-development-e4786bae",
         "experimentUrl": "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/dde0d2d5-4d88-4934-8d76-72cd15ef567a/compare?selectedSessions=b8ebb1a7-918f-4d4d-a1bc-a081ca52d830"
       }
+    },
+    {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "60577ad947863c7af46f9434bf9369973f2c62fab7a76a9b2003ef65096f324e",
+      "revision": "4bb25b03a581841972275091afd23c0ca9fda3ed",
+      "dirty": false,
+      "concurrency": 4,
+      "split": "development",
+      "caseFilter": null,
+      "evaluatedAt": "2026-11-17T14:44:20.090Z",
+      "localRawReport": "/tmp/communications-gate-4bb25b03.json",
+      "reports": [
+        {
+          "repetition": 1,
+          "experiment": "communications-development-5cf878cc",
+          "complete": true,
+          "benchmarkEvidence": false,
+          "feedbackComplete": true,
+          "summary": {
+            "cases": 198,
+            "passed": 197,
+            "executionFailures": 0,
+            "hardFailures": 0,
+            "expected": 364,
+            "proposed": 382,
+            "matched": 363,
+            "missed": 1,
+            "noise": 0,
+            "recall": 0.9972527472527473,
+            "precision": 1,
+            "allowed": 19,
+            "noActionCases": 22,
+            "meanDurationMs": 41690.61711285352,
+            "scenarios": [
+              {
+                "scenario": "attribution",
+                "cases": 12,
+                "correct": 12,
+                "accuracy": 1
+              },
+              {
+                "scenario": "chronology",
+                "cases": 24,
+                "correct": 24,
+                "accuracy": 1
+              },
+              {
+                "scenario": "closure-regression",
+                "cases": 9,
+                "correct": 9,
+                "accuracy": 1
+              },
+              {
+                "scenario": "combined",
+                "cases": 24,
+                "correct": 24,
+                "accuracy": 1
+              },
+              {
+                "scenario": "communications",
+                "cases": 198,
+                "correct": 197,
+                "accuracy": 0.9949494949494949
+              },
+              {
+                "scenario": "completeness-regression",
+                "cases": 36,
+                "correct": 36,
+                "accuracy": 1
+              },
+              {
+                "scenario": "context",
+                "cases": 24,
+                "correct": 24,
+                "accuracy": 1
+              },
+              {
+                "scenario": "email",
+                "cases": 72,
+                "correct": 72,
+                "accuracy": 1
+              },
+              {
+                "scenario": "ownership",
+                "cases": 18,
+                "correct": 18,
+                "accuracy": 1
+              },
+              {
+                "scenario": "packaging",
+                "cases": 9,
+                "correct": 9,
+                "accuracy": 1
+              },
+              {
+                "scenario": "reuse",
+                "cases": 18,
+                "correct": 17,
+                "accuracy": 0.9444444444444444
+              },
+              {
+                "scenario": "routing",
+                "cases": 15,
+                "correct": 15,
+                "accuracy": 1
+              },
+              {
+                "scenario": "safety",
+                "cases": 27,
+                "correct": 27,
+                "accuracy": 1
+              },
+              {
+                "scenario": "slack",
+                "cases": 63,
+                "correct": 63,
+                "accuracy": 1
+              },
+              {
+                "scenario": "telegram",
+                "cases": 63,
+                "correct": 62,
+                "accuracy": 0.9841269841269841
+              },
+              {
+                "scenario": "temporal",
+                "cases": 15,
+                "correct": 15,
+                "accuracy": 1
+              },
+              {
+                "scenario": "uncertainty",
+                "cases": 12,
+                "correct": 12,
+                "accuracy": 1
+              }
+            ],
+            "failedCaseIds": ["pending-task-reuse-telegram"],
+            "scoringUnit": "approved-graph-and-field-assertions",
+            "fieldMismatchCases": [],
+            "uncertaintyViolationCases": [],
+            "sources": [
+              {
+                "source": "email",
+                "cases": 72,
+                "passed": 72,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 128,
+                "proposed": 135,
+                "matched": 128,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 7,
+                "noActionCases": 8,
+                "meanDurationMs": 43106.91578833336,
+                "scenarios": [
+                  {
+                    "scenario": "attribution",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "chronology",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "closure-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "combined",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 72,
+                    "correct": 72,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 12,
+                    "correct": 12,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "context",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 72,
+                    "correct": 72,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "ownership",
+                    "cases": 6,
+                    "correct": 6,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "packaging",
+                    "cases": 9,
+                    "correct": 9,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "reuse",
+                    "cases": 6,
+                    "correct": 6,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 5,
+                    "correct": 5,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "safety",
+                    "cases": 9,
+                    "correct": 9,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "temporal",
+                    "cases": 5,
+                    "correct": 5,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "uncertainty",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "slack",
+                "cases": 63,
+                "passed": 63,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 118,
+                "proposed": 124,
+                "matched": 118,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 6,
+                "noActionCases": 7,
+                "meanDurationMs": 39260.58024828571,
+                "scenarios": [
+                  {
+                    "scenario": "attribution",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "chronology",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "closure-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "combined",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 63,
+                    "correct": 63,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 12,
+                    "correct": 12,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "context",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "ownership",
+                    "cases": 6,
+                    "correct": 6,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "reuse",
+                    "cases": 6,
+                    "correct": 6,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 5,
+                    "correct": 5,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "safety",
+                    "cases": 9,
+                    "correct": 9,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 63,
+                    "correct": 63,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "temporal",
+                    "cases": 5,
+                    "correct": 5,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "uncertainty",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "telegram",
+                "cases": 63,
+                "passed": 62,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 118,
+                "proposed": 123,
+                "matched": 117,
+                "missed": 1,
+                "noise": 0,
+                "recall": 0.9915254237288136,
+                "precision": 1,
+                "allowed": 6,
+                "noActionCases": 7,
+                "meanDurationMs": 42502.02691973017,
+                "scenarios": [
+                  {
+                    "scenario": "attribution",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "chronology",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "closure-regression",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "combined",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 63,
+                    "correct": 62,
+                    "accuracy": 0.9841269841269841
+                  },
+                  {
+                    "scenario": "completeness-regression",
+                    "cases": 12,
+                    "correct": 12,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "context",
+                    "cases": 8,
+                    "correct": 8,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "ownership",
+                    "cases": 6,
+                    "correct": 6,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "reuse",
+                    "cases": 6,
+                    "correct": 5,
+                    "accuracy": 0.8333333333333334
+                  },
+                  {
+                    "scenario": "routing",
+                    "cases": 5,
+                    "correct": 5,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "safety",
+                    "cases": 9,
+                    "correct": 9,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 63,
+                    "correct": 62,
+                    "accuracy": 0.9841269841269841
+                  },
+                  {
+                    "scenario": "temporal",
+                    "cases": 5,
+                    "correct": 5,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "uncertainty",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": ["pending-task-reuse-telegram"]
+              }
+            ],
+            "packetLossCases": [],
+            "acceptanceFailures": 0
+          },
+          "failedCases": [
+            {
+              "actions": [
+                {
+                  "bundleId": "efe1e7c9-8e34-447b-885d-5dfe725e31b9",
+                  "operation": "create",
+                  "targetKind": "task",
+                  "targetId": null,
+                  "title": "Prepare migration checklist",
+                  "proposedPayload": {
+                    "status": "todo",
+                    "canonicalName": "Prepare migration checklist"
+                  },
+                  "evidenceIds": ["e820129a-d20f-4d41-895f-77eca52b6f5a"]
+                }
+              ],
+              "executionErrors": [],
+              "executionFailureDetails": [],
+              "modelCalls": 2,
+              "inferenceTimings": [
+                {
+                  "stage": "extraction",
+                  "latencyMs": 4703.901596000011,
+                  "failed": false
+                },
+                {
+                  "stage": "completeness-check",
+                  "latencyMs": 12200.836271999986,
+                  "failed": false
+                }
+              ],
+              "durationMs": 17197.609754000034,
+              "unauthorizedDisclosure": false,
+              "canonicalMutation": false,
+              "invalidEvidence": false,
+              "stages": [
+                "seeded",
+                "packet-built",
+                "inference",
+                "packet-built",
+                "completeness-check",
+                "reviewed",
+                "persisted",
+                "visibility-checked",
+                "approval-checked"
+              ],
+              "nodes": [
+                {
+                  "id": "0bba86ce-b384-4cd6-8c0b-93f93444f387",
+                  "type": "project",
+                  "name": "Patient Portal",
+                  "status": "planning",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                },
+                {
+                  "id": "ad5e0e32-63e9-40b8-b142-87a55154e06f",
+                  "type": "task",
+                  "name": "Prepare migration checklist",
+                  "status": "todo",
+                  "assigneeUserId": null,
+                  "dueAt": null
+                }
+              ],
+              "edges": [],
+              "acceptanceErrors": 0,
+              "acceptanceFailureReasons": [],
+              "approvalOutcomes": [
+                {
+                  "title": "Prepare migration checklist",
+                  "status": "accepted",
+                  "resultId": "ad5e0e32-63e9-40b8-b142-87a55154e06f",
+                  "reason": null
+                }
+              ],
+              "duplicateProposals": 0,
+              "packetLoss": [],
+              "protectedPendingChanged": false,
+              "uncertaintyMissing": false,
+              "capturedEvents": 1,
+              "queuedJobs": 1,
+              "source": "telegram",
+              "familyId": "pending-task-reuse",
+              "id": "pending-task-reuse-telegram",
+              "tags": ["reuse", "telegram", "communications"],
+              "score": {
+                "fieldMismatches": [],
+                "uncertaintyViolation": false,
+                "expected": 3,
+                "proposed": 2,
+                "matched": 2,
+                "allowed": 0,
+                "missed": 1,
+                "noise": 0,
+                "hardFailure": false,
+                "executionFailure": false,
+                "passed": false
+              }
+            }
+          ]
+        }
+      ],
+      "incompleteCheckpoint": {
+        "repetition": 2,
+        "summary": {},
+        "failedCases": [],
+        "completedCases": 0,
+        "passedCases": 0,
+        "executionFailures": 0,
+        "hardFailures": 0,
+        "experiment": "communications-development-d51be03b",
+        "experimentUrl": "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/dde0d2d5-4d88-4934-8d76-72cd15ef567a/compare?selectedSessions=ce25d1e7-b8c0-4af4-850d-e735e8e01d23"
+      },
+      "publicationAssessment": {
+        "complete": false,
+        "storedRootRuns": 185,
+        "expectedCompletedRootRuns": 198,
+        "ingestionError": "HTTP 429: monthly_longlived_traces limit of 5,000 exceeded",
+        "note": "Historical feedbackComplete flags checked local evaluator results only; they do not establish durable publication. Nested trace uploads also reported quota failures. No historical scores or raw report flags were rewritten."
+      }
+    },
+    {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "139ee51cc79634e0c1790db3dd314fbf50ee517a7ab4028d8b2512ad2b33b84a",
+      "revision": "b360915ea52c025a4159dcc606236c07c11c3f8b",
+      "dirty": true,
+      "concurrency": 4,
+      "split": "development",
+      "caseFilter": "pending-task-reuse-email,pending-task-reuse-slack,pending-task-reuse-telegram,human-edited-pending-email,human-edited-pending-slack,human-edited-pending-telegram,pending-deadline-correction-email,pending-deadline-correction-slack,pending-deadline-correction-telegram,pending-ambiguous-project-email,pending-ambiguous-project-slack,pending-ambiguous-project-telegram",
+      "evaluatedAt": "2026-11-17T14:42:06.585Z",
+      "localRawReport": "/tmp/communications-amendments-b360915e.json",
+      "reports": [
+        {
+          "repetition": 1,
+          "experiment": "communications-development-1dc04ddb",
+          "complete": false,
+          "benchmarkEvidence": false,
+          "feedbackComplete": true,
+          "summary": {
+            "cases": 12,
+            "passed": 12,
+            "executionFailures": 0,
+            "hardFailures": 0,
+            "expected": 33,
+            "proposed": 33,
+            "matched": 33,
+            "missed": 0,
+            "noise": 0,
+            "recall": 1,
+            "precision": 1,
+            "allowed": 0,
+            "noActionCases": 0,
+            "meanDurationMs": 31147.799016583336,
+            "scenarios": [
+              {
+                "scenario": "chronology",
+                "cases": 3,
+                "correct": 3,
+                "accuracy": 1
+              },
+              {
+                "scenario": "communications",
+                "cases": 12,
+                "correct": 12,
+                "accuracy": 1
+              },
+              {
+                "scenario": "email",
+                "cases": 4,
+                "correct": 4,
+                "accuracy": 1
+              },
+              {
+                "scenario": "reuse",
+                "cases": 9,
+                "correct": 9,
+                "accuracy": 1
+              },
+              {
+                "scenario": "slack",
+                "cases": 4,
+                "correct": 4,
+                "accuracy": 1
+              },
+              {
+                "scenario": "telegram",
+                "cases": 4,
+                "correct": 4,
+                "accuracy": 1
+              }
+            ],
+            "failedCaseIds": [],
+            "scoringUnit": "approved-graph-and-field-assertions",
+            "fieldMismatchCases": [],
+            "uncertaintyViolationCases": [],
+            "sources": [
+              {
+                "source": "email",
+                "cases": 4,
+                "passed": 4,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 11,
+                "proposed": 11,
+                "matched": 11,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 33720.006588000004,
+                "scenarios": [
+                  {
+                    "scenario": "chronology",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "email",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "reuse",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "slack",
+                "cases": 4,
+                "passed": 4,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 11,
+                "proposed": 11,
+                "matched": 11,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 23893.342986999996,
+                "scenarios": [
+                  {
+                    "scenario": "chronology",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "reuse",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "slack",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              },
+              {
+                "source": "telegram",
+                "cases": 4,
+                "passed": 4,
+                "executionFailures": 0,
+                "hardFailures": 0,
+                "expected": 11,
+                "proposed": 11,
+                "matched": 11,
+                "missed": 0,
+                "noise": 0,
+                "recall": 1,
+                "precision": 1,
+                "allowed": 0,
+                "noActionCases": 0,
+                "meanDurationMs": 35830.04747475,
+                "scenarios": [
+                  {
+                    "scenario": "chronology",
+                    "cases": 1,
+                    "correct": 1,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "communications",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "reuse",
+                    "cases": 3,
+                    "correct": 3,
+                    "accuracy": 1
+                  },
+                  {
+                    "scenario": "telegram",
+                    "cases": 4,
+                    "correct": 4,
+                    "accuracy": 1
+                  }
+                ],
+                "failedCaseIds": []
+              }
+            ],
+            "packetLossCases": [],
+            "acceptanceFailures": 0
+          },
+          "failedCases": []
+        }
+      ],
+      "publicationAssessment": {
+        "complete": false,
+        "storedRootRuns": 12,
+        "expectedCompletedRootRuns": 12,
+        "ingestionError": "HTTP 429: monthly_longlived_traces limit of 5,000 exceeded",
+        "note": "Historical feedbackComplete flags checked local evaluator results only; they do not establish durable publication. Nested trace uploads also reported quota failures. No historical scores or raw report flags were rewritten."
+      },
+      "workingTreeNote": "Isolated diagnostic worktree with untracked dependency symlinks; not qualifying benchmark evidence."
+    },
+    {
+      "suite": "communications",
+      "datasetName": "timeline-communications-development-c2faf4d45560a55f",
+      "corpusHash": "c2faf4d45560a55f75f7873ede2074ed89c071102881f26cfd340c8c1d4cf798",
+      "implementationDigest": "139ee51cc79634e0c1790db3dd314fbf50ee517a7ab4028d8b2512ad2b33b84a",
+      "revision": "c8ced82ba24f0b177d9d93533978d0e51830225c",
+      "dirty": false,
+      "concurrency": 4,
+      "split": "development",
+      "caseFilter": null,
+      "evaluatedAt": "2026-11-17T14:50:34.081Z",
+      "localRawReport": "/tmp/communications-gate-c8ced82b.json",
+      "reports": [],
+      "incompleteCheckpoint": {
+        "repetition": 1,
+        "summary": {},
+        "failedCases": [
+          {
+            "actions": [
+              {
+                "bundleId": "c64bbd05-a230-43c0-b8f1-e85b397f85fe",
+                "operation": "create",
+                "targetKind": "task",
+                "targetId": null,
+                "title": "Draft the catalog import specification for Ordering Hub",
+                "proposedPayload": {
+                  "canonicalName": "Draft the catalog import specification for Ordering Hub"
+                },
+                "evidenceIds": ["aefe264a-4197-4e4d-bfd5-a4f6303c9e74"]
+              },
+              {
+                "bundleId": "c64bbd05-a230-43c0-b8f1-e85b397f85fe",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Harbor Foods",
+                "proposedPayload": {
+                  "type": "company",
+                  "localRef": "harbor-foods",
+                  "canonicalName": "Harbor Foods"
+                },
+                "evidenceIds": ["aefe264a-4197-4e4d-bfd5-a4f6303c9e74"]
+              },
+              {
+                "bundleId": "c64bbd05-a230-43c0-b8f1-e85b397f85fe",
+                "operation": "create",
+                "targetKind": "object",
+                "targetId": null,
+                "title": "Ordering Hub",
+                "proposedPayload": {
+                  "type": "project",
+                  "status": "planning",
+                  "localRef": "ordering-hub",
+                  "canonicalName": "Ordering Hub"
+                },
+                "evidenceIds": ["aefe264a-4197-4e4d-bfd5-a4f6303c9e74"]
+              },
+              {
+                "bundleId": "c64bbd05-a230-43c0-b8f1-e85b397f85fe",
+                "operation": "create",
+                "targetKind": "object_relationship",
+                "targetId": null,
+                "title": "Ordering Hub related to Harbor Foods",
+                "proposedPayload": {
+                  "kind": "related",
+                  "fromRef": "ordering-hub",
+                  "toRef": "harbor-foods"
+                },
+                "evidenceIds": ["aefe264a-4197-4e4d-bfd5-a4f6303c9e74"]
+              }
+            ],
+            "executionErrors": [],
+            "executionFailureDetails": [],
+            "modelCalls": 3,
+            "inferenceTimings": [
+              {
+                "stage": "extraction",
+                "latencyMs": 38924.074716,
+                "failed": false
+              },
+              {
+                "stage": "completeness-check",
+                "latencyMs": 24618.076598999993,
+                "failed": false
+              },
+              {
+                "stage": "extraction",
+                "latencyMs": 5983.976682000008,
+                "failed": false
+              }
+            ],
+            "durationMs": 69890.834199,
+            "unauthorizedDisclosure": false,
+            "canonicalMutation": false,
+            "invalidEvidence": false,
+            "stages": [
+              "seeded",
+              "packet-built",
+              "inference",
+              "packet-built",
+              "completeness-check",
+              "inference",
+              "reviewed",
+              "persisted",
+              "visibility-checked",
+              "approval-checked"
+            ],
+            "nodes": [
+              {
+                "id": "d604a341-70a4-4aaf-a440-29db337c52b2",
+                "type": "company",
+                "name": "Harbor Foods",
+                "status": "open",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "3773eb04-f251-440d-a38a-5c34e6b8e301",
+                "type": "project",
+                "name": "Ordering Hub",
+                "status": "planning",
+                "assigneeUserId": null,
+                "dueAt": null
+              },
+              {
+                "id": "6ec66cdf-9656-4d2b-b710-0a2397905d6c",
+                "type": "task",
+                "name": "Draft the catalog import specification for Ordering Hub",
+                "status": "todo",
+                "assigneeUserId": null,
+                "dueAt": null
+              }
+            ],
+            "edges": [
+              {
+                "from": "3773eb04-f251-440d-a38a-5c34e6b8e301",
+                "to": "d604a341-70a4-4aaf-a440-29db337c52b2",
+                "kind": "related"
+              }
+            ],
+            "acceptanceErrors": 0,
+            "acceptanceFailureReasons": [],
+            "approvalOutcomes": [
+              {
+                "title": "Harbor Foods",
+                "status": "accepted",
+                "resultId": "d604a341-70a4-4aaf-a440-29db337c52b2",
+                "reason": null
+              },
+              {
+                "title": "Ordering Hub",
+                "status": "accepted",
+                "resultId": "3773eb04-f251-440d-a38a-5c34e6b8e301",
+                "reason": null
+              },
+              {
+                "title": "Draft the catalog import specification for Ordering Hub",
+                "status": "accepted",
+                "resultId": "6ec66cdf-9656-4d2b-b710-0a2397905d6c",
+                "reason": null
+              },
+              {
+                "title": "Ordering Hub related to Harbor Foods",
+                "status": "accepted",
+                "resultId": "86789944-6ea3-4bc2-ac18-7e13e33385bd",
+                "reason": null
+              }
+            ],
+            "duplicateProposals": 0,
+            "packetLoss": [],
+            "protectedPendingChanged": false,
+            "uncertaintyMissing": false,
+            "capturedEvents": 1,
+            "queuedJobs": 1,
+            "source": "slack",
+            "familyId": "new-account-launch",
+            "id": "new-account-launch-slack",
+            "tags": ["combined", "slack", "communications"],
+            "score": {
+              "fieldMismatches": [],
+              "uncertaintyViolation": false,
+              "expected": 5,
+              "proposed": 4,
+              "matched": 4,
+              "allowed": 0,
+              "missed": 1,
+              "noise": 0,
+              "hardFailure": false,
+              "executionFailure": false,
+              "passed": false
+            }
+          }
+        ],
+        "completedCases": 21,
+        "passedCases": 20,
+        "executionFailures": 0,
+        "hardFailures": 0,
+        "experiment": "communications-development-e0de1294",
+        "experimentUrl": "https://smith.langchain.com/o/0da3b19d-c891-46af-8961-04045899268c/datasets/dde0d2d5-4d88-4934-8d76-72cd15ef567a/compare?selectedSessions=e2035060-b777-4e61-898b-2eea73bf77db"
+      },
+      "publicationAssessment": {
+        "complete": false,
+        "storedRootRuns": 0,
+        "expectedCompletedRootRuns": 21,
+        "ingestionError": "HTTP 429: monthly_longlived_traces limit of 5,000 exceeded",
+        "note": "Historical feedbackComplete flags checked local evaluator results only; they do not establish durable publication. Nested trace uploads also reported quota failures. No historical scores or raw report flags were rewritten."
+      }
     }
   ],
   "providerReceipts": {
@@ -13723,24 +14747,59 @@
         "cost": 0.40768638375999977,
         "tokens": 1971443
       }
+    ],
+    "latestFullDevelopment": [
+      {
+        "localReport": "communications-gate-4bb25b03",
+        "experiment": "communications-development-5cf878cc",
+        "calls": 555,
+        "receipts": 539,
+        "cost": 0.7816074864400002,
+        "tokens": 3542455
+      }
+    ],
+    "amendmentDiagnostic": [
+      {
+        "localReport": "communications-amendments-b360915e",
+        "experiment": "communications-development-1dc04ddb",
+        "calls": 36,
+        "receipts": 32,
+        "cost": 0.03624079408000001,
+        "tokens": 217795
+      }
     ]
   },
   "limitations": [
     "Development results are diagnostic, not fresh benchmark evidence.",
     "Source variants and repetitions are correlated.",
     "Provider costs exclude Codex session costs.",
-    "Local raw reports and LangSmith experiments preserve complete observations; this evidence file retains summaries and failed cases.",
+    "Local raw reports preserve recorded observations; LangSmith contains only successfully uploaded data. This evidence file retains summaries and failed cases.",
     "Timeout and interrupted provider spans can lack cost receipts; reported costs sum available receipts and are not asserted to include unreported charges.",
-    "Provider timeouts establish execution failure, not a confirmed provider-wide outage. No subsequent passing complete development gate or fresh holdout evidence exists."
+    "Provider timeouts establish execution failure, not a confirmed provider-wide outage. No subsequent passing complete development gate or fresh holdout evidence exists.",
+    "c8ced82b provider costs cannot be fully recovered from LangSmith because its traces were rejected. No zero-cost or complete-cost claim is made.",
+    "The latest local diagnostic scores are preserved separately from durable publication; prior local feedbackComplete fields are not sufficient evidence of successful uploads."
   ],
   "validation": {
-    "implementationRevision": "e469abc347e0519ae8d471ee866e92a41a47ec7d",
-    "staticCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44016052893",
-    "staticCiResult": "passed",
-    "fullCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44016044922",
-    "fullCiResult": "pending at recording",
-    "priorFullSuite": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44009326941",
-    "priorFullSuiteResult": "passed on cc255911; overall workflow failed formatting, subsequently fixed",
+    "productionImplementationRevision": "c8ced82ba24f0b177d9d93533978d0e51830225c",
+    "runnerRevision": "3b15f180bce24106fd8f4fca9fde26c9dcf429b8",
+    "fullCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44109236307",
+    "fullCiResult": "running at recording",
+    "staticCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44109254718",
+    "staticCiResult": "running at recording",
+    "priorFullCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44099716503",
+    "priorFullCiResult": "passed on 4bb25b03",
     "freshHoldoutExecuted": false
-  }
+  },
+  "validationHistory": [
+    {
+      "implementationRevision": "e469abc347e0519ae8d471ee866e92a41a47ec7d",
+      "staticCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44016052893",
+      "staticCiResult": "passed",
+      "fullCi": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44016044922",
+      "fullCiResult": "pending at recording",
+      "priorFullSuite": "https://github.com/timborovkov/the-timeline-ai/actions/runs/44009326941",
+      "priorFullSuiteResult": "passed on cc255911; overall workflow failed formatting, subsequently fixed",
+      "freshHoldoutExecuted": false
+    }
+  ]
 }
