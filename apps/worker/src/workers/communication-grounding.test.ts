@@ -130,6 +130,7 @@ test('verified per-task customer grounding adds a missing relationship', () => {
 test('task customer grounding rejects denied or incidental associations', () => {
   for (const text of [
     'Review retention policy is unrelated to Cedar Labs.',
+    'Review retention policy is blocked because deployment is for Cedar Labs.',
     'Review retention policy mentions Cedar Labs.',
     'Review retention policy for Cedar Labs?',
     'Review retention policy for Cedar LabsWest.',
@@ -634,6 +635,44 @@ test('grounding validates relationship kind and direction independently of the e
     expect(evaluate(project, text, 'child')).toBe(0);
   expect(evaluate(project, membership, 'child', true)).toBe(0);
   expect(evaluate(project, 'Link Review retention policy to Compliance.', 'child')).toBe(0);
+});
+
+test('a different artifact cannot supply the deadline or clear fields on this task', () => {
+  const dueAt = '2026-06-12T00:00:00.000Z';
+  for (const [text, payload, claim, value, expected] of [
+    [
+      'Review retention policy is blocked because deployment is due 2026-06-12.',
+      { dueAt },
+      'dueAt',
+      dueAt,
+      {},
+    ],
+    [
+      'Review retention policy is due 2026-06-12 because deployment needs it.',
+      { dueAt },
+      'dueAt',
+      dueAt,
+      { dueAt },
+    ],
+    [
+      'Review retention policy is blocked, but clear the deadline for deployment.',
+      { dueAt: null },
+      'dueAt',
+      'unset',
+      {},
+    ],
+    [
+      'Review retention policy is blocked, but clear the project assignment for deployment.',
+      { parentObjectId: null },
+      'project',
+      'unset',
+      {},
+    ],
+  ] as const) {
+    expect(
+      run(text, { ...payload }, [support(claim, text, value)])[0]?.items[0]?.proposedPayload,
+    ).toEqual(expected);
+  }
 });
 
 test('a creation date beside a deadline cannot replace it', () => {

@@ -305,9 +305,9 @@ function affirmativeProjectMembership(
 function taskAssertion(clause: string, subject: string): string | undefined {
   // Keep only the assertion describing this task. Causal/dependent
   // clauses can describe a different artifact, and task titles are identifiers.
-  const parts = normalize(clause).split(
-    /\s+\b(because|although|since|whereas|while|until|even though|but|yet|which|who)\b\s+/,
-  );
+  const parts = clause
+    .trim()
+    .split(/\s+\b(because|although|since|whereas|while|until|even though|but|yet|which|who)\b\s+/i);
   const statements = parts.filter((_, index) => index % 2 === 0);
   const named = statements.filter((statement) => namesTask(statement, subject));
   const first = statements.length === 1 ? statements[0] : named.length === 1 ? named[0] : undefined;
@@ -315,12 +315,12 @@ function taskAssertion(clause: string, subject: string): string | undefined {
   let assertion = first;
   const at = parts.indexOf(first);
   for (let index = at + 1; index < parts.length; index += 2) {
-    const conjunction = parts[index];
+    const conjunction = parts[index]?.toLowerCase();
     const next = parts[index + 1];
     if (
       (conjunction !== 'but' && conjunction !== 'yet') ||
       !next ||
-      !/^(?:(?:it|this task|the task) )?(?:is|was|has|had|remains)\b/.test(next)
+      !/^(?:(?:it|this task|the task) )?(?:is|was|has|had|remains)\b/i.test(next)
     )
       break;
     assertion = next;
@@ -335,10 +335,13 @@ function affirmativeLifecycle(
   sendTask = false,
 ): boolean {
   if (!clause || typeof status !== 'string') return false;
-  const assertion = taskAssertion(clause, subject);
+  const assertion =
+    status === 'blocked' && /^blocked until\b/i.test(clause) && namesTask(clause, subject)
+      ? 'blocked'
+      : taskAssertion(clause, subject);
   if (!assertion) return false;
   const identity = normalize(subject);
-  clause = identity ? assertion.replaceAll(identity, '[task]') : assertion;
+  clause = identity ? normalize(assertion).replaceAll(identity, '[task]') : normalize(assertion);
   if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
     return false;
   if (
@@ -413,6 +416,12 @@ function taskClause(quote: string, subject: string): string | undefined {
   clauses.push(connected.slice(start));
   const matching = clauses.filter((clause) => namesTask(clause, subject));
   return matching.length === 1 ? matching[0]?.trim() : undefined;
+}
+
+function supportedTaskAssertion(support: Support | undefined): string | undefined {
+  if (!support) return undefined;
+  const clause = taskClause(support.quote, support.subject);
+  return clause ? taskAssertion(clause, support.subject) : undefined;
 }
 
 /** Canonicalize an existing object ID placed in a local-ref slot, never guessing identity. */
@@ -1010,11 +1019,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
               const project = from.type === 'project' ? from : to.type === 'project' ? to : null;
               if (taskEndpoint) {
                 const hub = from === taskEndpoint ? to : from;
+                const association = taskAssertion(assertion, taskEndpoint.name);
+                if (!association || !namesEndpoint(association, taskEndpoint)) return false;
                 return [hub.name, ...hub.aliases].some(
                   (name) =>
                     namesEndpoint(name, hub) &&
                     affirmativeTaskHub(
-                      assertion,
+                      association,
                       name,
                       typeof hub.type === 'string' ? hub.type : '',
                     ),
@@ -1285,17 +1296,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
         if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
         if (!retainAssignment('assigneeName')) delete payload.assigneeName;
         if (!retainAssignment('ownerName')) delete payload.ownerName;
-        const clearDeadline = supports.some(
-          (support) =>
-            support.field === 'dueAt' &&
-            support.value === 'unset' &&
-            !/\b(?:not|never|if|unless)\b/i.test(
-              taskClause(support.quote, support.subject) ?? '',
-            ) &&
-            /\b(?:remove|clear) (?:the )?deadline\b/i.test(
-              taskClause(support.quote, support.subject) ?? '',
-            ),
-        );
+        const deadlineRemoval = supportedTaskAssertion(has('dueAt', 'unset'));
+        const clearDeadline =
+          deadlineRemoval &&
+          !/\b(?:not|never|if|unless)\b/i.test(deadlineRemoval) &&
+          /\b(?:remove|clear) (?:the )?deadline\b/i.test(deadlineRemoval);
         const deadline = has('dueAt', payload.dueAt);
         if (
           payload.dueAt !== undefined &&
@@ -1303,7 +1308,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !(
             deadline &&
             deadlineMatches(
-              taskClause(deadline.quote, deadline.subject) ?? '',
+              supportedTaskAssertion(deadline) ?? '',
               deadline.subject,
               payload.dueAt,
               args.timezone ?? 'UTC',
@@ -1335,8 +1340,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         )
           delete payload.status;
         if (payload.parentObjectId === null) {
-          const removal = has('project', 'unset');
-          const clause = removal ? taskClause(removal.quote, removal.subject) : undefined;
+          const clause = supportedTaskAssertion(has('project', 'unset'));
           if (
             !clause ||
             /[?]|\b(?:not|never|if|unless|maybe|perhaps|[a-z]+n[’']t)\b/i.test(clause) ||
@@ -1350,13 +1354,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         }
         if (typeof payload.parentObjectId === 'string') {
           const projectSupport = has('project', payload.parentObjectId);
-          const citedClause = projectSupport
-            ? taskClause(projectSupport.quote, projectSupport.subject)
-            : undefined;
-          const clause =
-            citedClause && projectSupport
-              ? taskAssertion(citedClause, projectSupport.subject)
-              : undefined;
+          const clause = supportedTaskAssertion(projectSupport);
           const projects = clause
             ? args.hubs.filter(
                 (hub) =>
@@ -1381,7 +1379,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         }
         const links = supports.filter((support) => {
           if (support.field !== 'customer') return false;
-          const clause = taskClause(support.quote, support.subject);
+          const clause = supportedTaskAssertion(support);
           if (
             !clause ||
             support.quote.includes('?') ||
