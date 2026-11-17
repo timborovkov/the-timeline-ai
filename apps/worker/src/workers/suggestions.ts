@@ -63,6 +63,7 @@ import {
   communicationCoverageSchema,
   communicationCoverageQuotes,
   communicationCitationVariants,
+  communicationDraftAccountingErrors,
   referenceCommunicationCoverageQuotes,
   validateCommunicationCoverage,
   assertCommunicationClaimsRetained,
@@ -4457,7 +4458,14 @@ async function runSuggestionExtraction(
   let selectedAmendments = amendmentCandidates;
   if (isHumanCommunication(row.source)) {
     const drafts = result.object.bundles;
-    const auditPrompt = `${prompt}\n\nDRAFT_PROPOSALS_JSON\n${JSON.stringify(drafts)}\nEND_DRAFT_PROPOSALS_JSON\nPENDING_AMENDMENTS_JSON\n${JSON.stringify(amendmentCandidates)}\nEND_PENDING_AMENDMENTS_JSON`;
+    const draftRecords = drafts.flatMap((bundle, b) =>
+      bundle.items.map((item, i) => ({ id: `draft-${b}-${i}`, item })),
+    );
+    const draftInput = drafts.map((bundle, b) => ({
+      ...bundle,
+      items: bundle.items.map((item, i) => ({ ...item, sourceDraftId: `draft-${b}-${i}` })),
+    }));
+    const auditPrompt = `${prompt}\n\nDRAFT_PROPOSALS_JSON\n${JSON.stringify(draftInput)}\nEND_DRAFT_PROPOSALS_JSON\nPENDING_AMENDMENTS_JSON\n${JSON.stringify(amendmentCandidates)}\nEND_PENDING_AMENDMENTS_JSON`;
     // Preserve the original evidence verbatim; never truncate it to make room for a check.
     if (
       llm.estimateTextTokens(auditPrompt) >
@@ -4522,6 +4530,10 @@ async function runSuggestionExtraction(
       .omit({ auditId: true })
       .extend({
         coverage: itemCoverageSchema,
+        sourceDraftId: (draftRecords.length
+          ? z.enum(draftRecords.map((draft) => draft.id)).nullable()
+          : z.null()
+        ).optional(),
         grounding: z
           .array(
             communicationGroundingSchema
@@ -4548,65 +4560,84 @@ async function runSuggestionExtraction(
           }),
         ])
       : noActionCoverage;
-    const auditSchema = z.object({
-      bundles: z
-        .array(
-          humanBundleSchema
-            .extend({ items: z.array(auditItemSchema).min(1).max(5) })
-            .superRefine((bundle, ctx) => {
-              const refs = bundle.items
-                .filter(
-                  (item) =>
-                    item.operation === 'create' &&
-                    (item.targetKind === 'task' || item.targetKind === 'object') &&
-                    item.proposedPayload.localRef !== undefined,
-                )
-                .map((item) => localRefSlug(item.proposedPayload.localRef));
-              if (refs.some((ref) => !ref) || new Set(refs).size !== refs.length)
-                ctx.addIssue({
-                  code: 'custom',
-                  path: ['items'],
-                  message: 'Each localRef must identify exactly one proposal in its bundle',
-                });
-              for (const item of bundle.items) {
-                const keys =
-                  item.targetKind === 'object_relationship'
-                    ? ['fromRef', 'toRef']
-                    : item.targetKind === 'identity_facet'
-                      ? ['entityRef']
-                      : [];
-                for (const key of keys) {
-                  const value = item.proposedPayload[key];
-                  if (value === undefined) continue;
-                  const ref = localRefSlug(value);
-                  const known =
-                    item.targetKind === 'object_relationship' &&
-                    typeof value === 'string' &&
-                    [...matchingEntityRows, ...hubRows].some((object) => object.id === value);
-                  if (!ref || (!refs.includes(ref) && !known))
-                    ctx.addIssue({
-                      code: 'custom',
-                      path: ['items'],
-                      message:
-                        'Dependent references must resolve to a declared localRef in this bundle or a listed existing object',
-                    });
+    const auditSchema = z
+      .object({
+        bundles: z
+          .array(
+            humanBundleSchema
+              .extend({ items: z.array(auditItemSchema).min(1).max(5) })
+              .superRefine((bundle, ctx) => {
+                const refs = bundle.items
+                  .filter(
+                    (item) =>
+                      item.operation === 'create' &&
+                      (item.targetKind === 'task' || item.targetKind === 'object') &&
+                      item.proposedPayload.localRef !== undefined,
+                  )
+                  .map((item) => localRefSlug(item.proposedPayload.localRef));
+                if (refs.some((ref) => !ref) || new Set(refs).size !== refs.length)
+                  ctx.addIssue({
+                    code: 'custom',
+                    path: ['items'],
+                    message: 'Each localRef must identify exactly one proposal in its bundle',
+                  });
+                for (const item of bundle.items) {
+                  const keys =
+                    item.targetKind === 'object_relationship'
+                      ? ['fromRef', 'toRef']
+                      : item.targetKind === 'identity_facet'
+                        ? ['entityRef']
+                        : [];
+                  for (const key of keys) {
+                    const value = item.proposedPayload[key];
+                    if (value === undefined) continue;
+                    const ref = localRefSlug(value);
+                    const known =
+                      item.targetKind === 'object_relationship' &&
+                      typeof value === 'string' &&
+                      [...matchingEntityRows, ...hubRows].some((object) => object.id === value);
+                    if (!ref || (!refs.includes(ref) && !known))
+                      ctx.addIssue({
+                        code: 'custom',
+                        path: ['items'],
+                        message:
+                          'Dependent references must resolve to a declared localRef in this bundle or a listed existing object',
+                      });
+                  }
                 }
-              }
+              }),
+          )
+          .max(5),
+        coverage: z.array(settledCoverage).max(100),
+        removedDrafts: z
+          .array(
+            z.object({
+              id: draftRecords.length
+                ? z.enum(draftRecords.map((draft) => draft.id))
+                : z.string().min(1).max(80),
+              coverage: itemCoverageSchema,
             }),
-        )
-        .max(5),
-      coverage: z.array(settledCoverage).max(100),
-      pendingAmendments: z
-        .array(
-          z.object({
-            id: amendmentCandidates.length
-              ? z.enum(amendmentCandidates.map((candidate) => candidate.id))
-              : z.uuid(),
-            coverage: itemCoverageSchema,
-          }),
-        )
-        .max(Math.min(50, amendmentCandidates.length)),
-    });
+          )
+          .max(draftRecords.length)
+          .default([]),
+        pendingAmendments: z
+          .array(
+            z.object({
+              id: amendmentCandidates.length
+                ? z.enum(amendmentCandidates.map((candidate) => candidate.id))
+                : z.uuid(),
+              coverage: itemCoverageSchema,
+            }),
+          )
+          .max(Math.min(50, amendmentCandidates.length)),
+      })
+      .superRefine((audit, ctx) => {
+        for (const message of communicationDraftAccountingErrors({
+          drafts: draftRecords,
+          ...audit,
+        }))
+          ctx.addIssue({ code: 'custom', path: ['bundles'], message });
+      });
     const quoteOptions = Object.fromEntries(
       coverageQuotes.map((quote, index) => [`quote-${index}`, quote]),
     );
@@ -4648,6 +4679,7 @@ async function runSuggestionExtraction(
     };
     for (const coverage of [
       ...audited.coverage,
+      ...audited.removedDrafts.map((draft) => draft.coverage),
       ...audited.bundles.flatMap((bundle) => bundle.items.map((item) => item.coverage)),
       ...audited.pendingAmendments.map((item) => item.coverage),
     ])
@@ -4691,13 +4723,21 @@ async function runSuggestionExtraction(
     );
     const auditedBundles = audited.bundles.map((bundle, b) => ({
       ...bundle,
-      items: bundle.items.map(({ coverage: _coverage, ...item }, i) => ({
-        ...item,
-        auditId: `checked-${b}-${i}`,
-      })),
+      items: bundle.items.map(
+        ({ coverage: _coverage, sourceDraftId: _sourceDraftId, ...item }, i) => ({
+          ...item,
+          auditId: `checked-${b}-${i}`,
+        }),
+      ),
     }));
     const coverage = communicationCoverageSchema.parse([
       ...audited.coverage.map((entry) => ({ ...entry, proposalIds: [] })),
+      ...audited.removedDrafts.map((draft) => ({
+        ...draft.coverage,
+        disposition: 'no_action',
+        proposalIds: [],
+        existingIds: [],
+      })),
       ...audited.bundles.flatMap((bundle, b) =>
         bundle.items.map((item, i) => ({
           ...item.coverage,

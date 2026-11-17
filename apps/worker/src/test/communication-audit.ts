@@ -44,6 +44,7 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
     reason: 'Controlled checker output for a downstream pipeline test.',
   };
   const object = {
+    removedDrafts: [],
     bundles: bundles.map((bundle) => ({
       ...bundle,
       items: bundle.items.map((item) => ({ ...item, coverage })),

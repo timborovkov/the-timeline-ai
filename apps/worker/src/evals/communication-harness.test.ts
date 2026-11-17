@@ -1404,3 +1404,43 @@ test('person identity references normalize with their declared local reference',
       .entityRef,
   ).toBe('alex-example');
 }, 60_000);
+
+test('an audit cannot silently omit an extracted proposal', async () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'duplicate-job-email'));
+  const result = await harness.run(row, {
+    model: proposal,
+    auditModel: async (input) => {
+      const checked = await controlledCommunicationAudit(input);
+      const output = checked.object as { bundles: unknown[] };
+      output.bundles = [];
+      return checked;
+    },
+  });
+  expect(result.executionErrors.length).toBeGreaterThan(0);
+  expect(result.actions).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(false);
+}, 60_000);
+
+test('an audit can explicitly reject an unsupported draft with source evidence', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'hypothetical-example-email'),
+  );
+  const result = await harness.run(row, {
+    model: proposal,
+    auditModel: async (input) => {
+      const checked = await controlledCommunicationAudit(input);
+      const output = checked.object as {
+        bundles: { items: { sourceDraftId: string; coverage: unknown }[] }[];
+        removedDrafts: { id: string; coverage: unknown }[];
+      };
+      output.removedDrafts = output.bundles.flatMap((bundle) =>
+        bundle.items.map((item) => ({ id: item.sourceDraftId, coverage: item.coverage })),
+      );
+      output.bundles = [];
+      return checked;
+    },
+  });
+  expect(result.executionFailureDetails).toEqual([]);
+  expect(result.actions).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);

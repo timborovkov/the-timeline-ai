@@ -6,6 +6,7 @@ import {
   validateCommunicationCoverage,
   communicationCoverageQuotes,
   communicationCitationVariants,
+  communicationDraftAccountingErrors,
   referenceCommunicationCoverageQuotes,
   assertCommunicationClaimsRetained,
   type CommunicationCoverage,
@@ -216,4 +217,41 @@ test('generation schema binds quote references to their actual event sources', (
   for (const id of [event, other])
     expect(schema.safeParse({ rawEventId: id, quote: 'quote-2' }).success).toBe(true);
   expect(schema.safeParse({ rawEventId: event, quote: 'quote-99' }).success).toBe(false);
+});
+
+test('draft accounting requires explicit retention or rejection without conflating work', () => {
+  const item = {
+    operation: 'create',
+    targetKind: 'task',
+    proposedPayload: { canonicalName: 'Prepare deployment checklist' },
+  };
+  const draft = { id: 'draft-0-0', item };
+  const retained = { ...item, sourceDraftId: draft.id };
+  const check = (
+    items: (typeof item & { sourceDraftId?: string | null })[],
+    removedDrafts: { id: string }[] = [],
+    drafts = [draft],
+  ) => communicationDraftAccountingErrors({ drafts, bundles: [{ items }], removedDrafts });
+  expect(check([retained])).toEqual([]);
+  expect(check([], [{ id: draft.id }])).toEqual([]);
+  expect(check([retained, { ...item, sourceDraftId: null }])).toEqual([]);
+  expect(
+    check(
+      [
+        {
+          ...item,
+          targetKind: 'object',
+          proposedPayload: { canonicalName: 'Customer' },
+          sourceDraftId: null,
+        },
+      ],
+      [{ id: draft.id }],
+    ),
+  ).toEqual([]);
+  expect(check([]).length).toBeGreaterThan(0);
+  expect(check([retained, retained]).length).toBeGreaterThan(0);
+  expect(check([retained], [{ id: draft.id }]).length).toBeGreaterThan(0);
+  expect(check([{ ...retained, sourceDraftId: 'invented' }]).length).toBeGreaterThan(0);
+  expect(check([{ ...retained, targetKind: 'object' }]).length).toBeGreaterThan(0);
+  expect(check([retained], [], [draft, { id: 'draft-0-1', item }]).length).toBeGreaterThan(0);
 });
