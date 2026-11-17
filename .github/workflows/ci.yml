@@ -89,8 +89,12 @@ jobs:
           restore-keys: |
             eslint-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'eslint.config.js', 'tsconfig.base.json', '**/tsconfig*.json') }}-
 
+      # Keep package lint serial on CI. Parallel type-aware ESLint + import-x
+      # disagrees with local Bun on `import type` ranking (see eslint.config.js
+      # worker note); concurrency=1 matches the prior green Static checks lane
+      # while format/typecheck/smoke still run as sibling jobs.
       - name: Lint
-        run: bun run lint
+        run: bun x --bun --no-install turbo run lint --concurrency=1
 
       - name: Knip
         run: bun run knip
