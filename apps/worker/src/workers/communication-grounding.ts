@@ -240,8 +240,22 @@ function affirmativeTaskHub(clause: string, hubName: string, type: string): bool
   );
 }
 
-function affirmativeLifecycle(clause: string | undefined, status: unknown, sent = false): boolean {
+function affirmativeLifecycle(
+  clause: string | undefined,
+  subject: string,
+  status: unknown,
+  sendTask = false,
+): boolean {
   if (!clause || typeof status !== 'string') return false;
+  // Keep only the status assertion describing this task. Causal/dependent
+  // clauses can describe a different artifact, and task titles are identifiers.
+  const identity = normalize(subject);
+  const parts = normalize(clause).split(
+    /\s+\b(?:because|although|since|whereas|while|until|even though)\b\s+/,
+  );
+  const relevant = parts.length === 1 ? parts : parts.filter((part) => namesTask(part, subject));
+  if (relevant.length !== 1 || !relevant[0]) return false;
+  clause = identity ? relevant[0].replaceAll(identity, '[task]') : relevant[0];
   if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
     return false;
   if (
@@ -250,7 +264,10 @@ function affirmativeLifecycle(clause: string | undefined, status: unknown, sent 
     )
   )
     return false;
-  return (lifecycleWords[status]?.test(clause) ?? false) || (status === 'done' && sent);
+  return (
+    (lifecycleWords[status]?.test(clause) ?? false) ||
+    (status === 'done' && sendTask && /\b(?:sent|delivery confirmed)\b/i.test(clause))
+  );
 }
 
 function taskClause(quote: string, subject: string): string | undefined {
@@ -611,7 +628,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
         );
         if (
           !cancellation ||
-          !affirmativeLifecycle(taskClause(cancellation.quote, cancellation.subject), 'cancelled')
+          !affirmativeLifecycle(
+            taskClause(cancellation.quote, cancellation.subject),
+            cancellation.subject,
+            'cancelled',
+          )
         )
           return [];
       }
@@ -842,6 +863,23 @@ export function groundCommunicationBundles<T extends Item>(args: {
               return false;
             if (taskProjectChild) {
               if (support.field !== 'project' || !namesEndpoint(assertion, from)) return false;
+              const projects = new Set(
+                known
+                  .filter(
+                    (candidate) =>
+                      candidate.type === 'project' &&
+                      [candidate.name, ...(candidate.aliases ?? [])].some(
+                        (name) => name && mentions(assertion, name),
+                      ),
+                  )
+                  .map((candidate) => candidate.id),
+              );
+              if (
+                projects.size !== 1 ||
+                !projects.has(to.id) ||
+                /\b(?:or|either|undecided)\b/i.test(assertion)
+              )
+                return false;
               return [to.name, ...to.aliases].some((name) => {
                 if (!namesEndpoint(name, to)) return false;
                 const statement = normalize(assertion);
@@ -1193,17 +1231,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
           (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
-        const sentDeliverable =
-          /^(?:mark )?send\b/i.test(targetName) &&
-          lifecycleClause &&
-          /\b(?:sent|delivery confirmed)\b/i.test(lifecycleClause);
         if (
           payload.status !== undefined &&
           !(item.operation === 'create' && payload.status === 'todo') &&
           !(
             lifecycle &&
             lifecycleClause &&
-            affirmativeLifecycle(lifecycleClause, payload.status, Boolean(sentDeliverable))
+            affirmativeLifecycle(
+              lifecycleClause,
+              lifecycle.subject,
+              payload.status,
+              /^(?:mark )?send\b/i.test(targetName),
+            )
           )
         )
           delete payload.status;

@@ -133,6 +133,20 @@ test('task customer grounding rejects denied or incidental associations', () => 
   }
 });
 
+test('status evidence excludes task-title words and predicates belonging to other artifacts', () => {
+  for (const [name, text] of [
+    [title, 'Review retention policy is blocked because deployment is done.'],
+    ['Review completed applications', 'Review completed applications is blocked.'],
+  ] as const) {
+    for (const status of ['done', 'blocked']) {
+      const payload = run(text, { status }, [support('status', text, status, name)], {
+        taskTitle: name,
+      })[0]?.items[0]?.proposedPayload;
+      expect(payload).toEqual(status === 'blocked' ? { status } : {});
+    }
+  }
+});
+
 test('an ended lifecycle state cannot be proposed as current', () => {
   for (const text of [
     'Review retention policy is no longer blocked.',
@@ -568,7 +582,7 @@ test('grounding validates relationship kind and direction independently of the e
       members: [],
       source: 'slack',
       objects: [task],
-      hubs: [hub],
+      hubs: [hub, { id: 'second-project', type: 'project', name: 'Operations' }],
     })[0]?.items.length;
   }
   const association = 'Review retention policy is for Cedar Labs.';
@@ -577,6 +591,12 @@ test('grounding validates relationship kind and direction independently of the e
     expect(evaluate(customer, association, kind)).toBe(0);
   const membership = 'Review retention policy belongs to Compliance.';
   expect(evaluate(project, membership, 'child')).toBe(1);
+  for (const text of [
+    'Review retention policy belongs to Compliance or Operations.',
+    'Review retention policy belongs to Compliance or something else.',
+    'Review retention policy belongs to Compliance / Operations.',
+  ])
+    expect(evaluate(project, text, 'child')).toBe(0);
   expect(evaluate(project, membership, 'child', true)).toBe(0);
   expect(evaluate(project, 'Link Review retention policy to Compliance.', 'child')).toBe(0);
 });
