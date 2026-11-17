@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
+import { COMMUNICATION_POLICY_VERSION } from '#src/workers/communication-policy.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 // Background proposal evals exercise the worker path that turns captured
 // conversations into approval-queue proposals. Success means the review window
@@ -207,7 +208,9 @@ describe('background proposal evals', () => {
     expect(suggestion?.metadata).toMatchObject({
       conversation_review_id: REVIEW_ID,
       conversation_key: CONVERSATION_KEY,
-      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      // Slack is a human communication source, so the persisted version includes
+      // the shared communication policy pin from processConversationReviewJob.
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall-${COMMUNICATION_POLICY_VERSION}`,
     });
   });
 });

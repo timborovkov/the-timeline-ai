@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { Client } from 'langsmith';
 import { evaluate } from 'langsmith/evaluation';
 
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { getEnv } from '#src/env.js';
 import { requireValue } from '#src/evals/benchmark.js';
 import { selectBenchmark, syncBenchmark } from '#src/evals/benchmark.js';
@@ -97,7 +98,8 @@ if (!values.sync) {
               durationMs: performance.now() - start,
             });
             return prediction;
-          } catch {
+          } catch (error) {
+            if (isBillingAdmissionError(error)) throw error;
             rows.push({
               id: testCase.id,
               expected: testCase.expected,
