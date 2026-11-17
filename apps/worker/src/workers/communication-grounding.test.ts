@@ -1885,3 +1885,49 @@ test('overlapping tasks cannot borrow assignment or deadline assertions', () => 
     );
   }
 });
+
+test('archive operations require affirmative cancellation evidence', () => {
+  for (const [quote, cited, retained] of [
+    ['Do not cancel Review retention policy.', false, false],
+    ['Do not cancel Review retention policy.', true, false],
+    ['Cancel Review retention policy.', false, false],
+    ['Cancel Review retention policy.', true, true],
+    ['Review retention policy may be cancelled.', true, false],
+  ] as const) {
+    expect(
+      run(quote, {}, cited ? [support('status', quote, 'cancelled')] : [], {
+        operation: 'archive_or_cancel',
+      })[0]?.items.length,
+    ).toBe(retained ? 1 : 0);
+  }
+});
+test('all lifecycle transitions reject future and hypothetical predicates', () => {
+  for (const [phrase, status] of [
+    ['may be cancelled next week', 'cancelled'],
+    ['will be started tomorrow', 'doing'],
+    ['could be blocked tomorrow', 'blocked'],
+    ['will reopen tomorrow', 'todo'],
+    ['will eventually be done tomorrow', 'done'],
+    ['has to be completed tomorrow', 'done'],
+  ] as const) {
+    const quote = `Review retention policy ${phrase}.`;
+    expect(
+      run(quote, { status }, [support('status', quote, status)], { operation: 'update' })[0]
+        ?.items[0]?.proposedPayload.status,
+    ).toBeUndefined();
+  }
+});
+test('same-task pronoun deadline continuations survive a conjunction', () => {
+  const quote = 'Bob will review retention policy and it is due 2026-06-12.';
+  const dueAt = '2026-06-12T00:00:00.000Z';
+  expect(
+    run(quote, { assigneeUserId: bob, dueAt }, [
+      support('assignee', quote, bob),
+      support('dueAt', quote, dueAt),
+    ])[0]?.items[0]?.proposedPayload,
+  ).toEqual({ assigneeUserId: bob, dueAt });
+  const other = 'Bob will review retention policy and draft release notes is due 2026-06-12.';
+  expect(
+    run(other, { dueAt }, [support('dueAt', other, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
+  ).toBeUndefined();
+});

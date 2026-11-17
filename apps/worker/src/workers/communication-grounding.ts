@@ -196,9 +196,31 @@ function deadlineMatches(
   }
   return false;
 }
+const lifecycleWords: Record<string, RegExp> = {
+  doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
+  done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
+  cancelled: /\b(?:cancel|cancelled|canceled|archive|archived|cancelada|cancelado|abgesagt)\b/i,
+  blocked: /\bblocked\b/i,
+  todo: /\b(?:reopen|restart|unblock)\b/i,
+};
+function affirmativeLifecycle(clause: string | undefined, status: unknown, sent = false): boolean {
+  if (!clause || typeof status !== 'string') return false;
+  if (/[?]|\b(?:not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
+    return false;
+  if (
+    /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:be\s+|have\s+been\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen|restart|unblock)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+  return (lifecycleWords[status]?.test(clause) ?? false) || (status === 'done' && sent);
+}
+
 function taskClause(quote: string, subject: string): string | undefined {
   // Keep source citations literal; normalize contractions only for assertion checks.
-  quote = quote.replace(/\b([a-z]+)n[’']t\b/gi, '$1 not');
+  quote = quote
+    .replace(/\b([a-z]+)n[’']t\b/gi, '$1 not')
+    .replace(/\b([a-z]+)[’']ll\b/gi, '$1 will');
   if (/^blocked until\b/i.test(quote.trim()) && namesTask(quote, subject)) return quote;
   const completionNoun =
     subject
@@ -206,6 +228,10 @@ function taskClause(quote: string, subject: string): string | undefined {
       .match(/[\p{L}\p{N}]+/gu)
       ?.at(-1) ?? 'deliverable';
   const connected = quote
+    .replace(
+      /\band\s+(?=(?:it|this task|the task) (?:is|was) due\b|its (?:deadline|due date)\b)/gi,
+      ' ',
+    )
     .replace(
       new RegExp(
         `\\.\\s+(?=(?:it|this|that|the (?:task|item|deliverable|${completionNoun})) (?:is|was|has been) (?:delivered|completed|finished|done|shipped)[.!]?$)`,
@@ -535,6 +561,16 @@ export function groundCommunicationBundles<T extends Item>(args: {
         item.targetKind === 'task'
           ? 'task'
           : (payload.type ?? args.objects?.find((object) => object.id === item.targetId)?.type);
+      if (item.operation === 'archive_or_cancel') {
+        const cancellation = supports.find(
+          (support) => support.field === 'status' && support.value === 'cancelled',
+        );
+        if (
+          !cancellation ||
+          !affirmativeLifecycle(taskClause(cancellation.quote, cancellation.subject), 'cancelled')
+        )
+          return [];
+      }
       if (item.targetKind === 'object_relationship') {
         const normalizedRefs = normalizeKnownRelationshipReferences(
           payload,
@@ -1017,13 +1053,6 @@ export function groundCommunicationBundles<T extends Item>(args: {
         )
           delete payload.dueAt;
         const lifecycle = has('status', payload.status);
-        const lifecycleWords: Record<string, RegExp> = {
-          doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
-          done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
-          cancelled: /\b(?:cancel|cancelled|canceled|cancelada|cancelado|abgesagt)\b/i,
-          blocked: /\bblocked\b/i,
-          todo: /\b(?:reopen|restart|unblock)\b/i,
-        };
         const lifecycleClause = lifecycle
           ? taskClause(lifecycle.quote, lifecycle.subject)
           : undefined;
@@ -1040,17 +1069,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !(
             lifecycle &&
             lifecycleClause &&
-            !(
-              payload.status === 'done' &&
-              /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to)\s+(?:(?:not|never|soon|already|finally)\s+)*(?:be\s+|have\s+been\s+)?(?:finished|complete[ds]?|done|delivered|shipped|sent)\b/i.test(
-                lifecycleClause,
-              )
-            ) &&
-            (lifecycleWords[typeof payload.status === 'string' ? payload.status : '']?.test(
-              lifecycleClause,
-            ) ||
-              (payload.status === 'done' && sentDeliverable)) &&
-            !/[?]|\b(?:not|never|if|might|perhaps|[a-z]+n[’']t)\b/i.test(lifecycleClause)
+            affirmativeLifecycle(lifecycleClause, payload.status, Boolean(sentDeliverable))
           )
         )
           delete payload.status;
