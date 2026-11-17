@@ -655,6 +655,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
         };
         const from = endpoint('from'),
           to = endpoint('to');
+        // Customer and generic link evidence establishes only a related edge. A
+        // directed task → project child edge needs its own project-membership assertion.
+        const taskProjectChild =
+          payload.kind === 'child' && from?.type === 'task' && to?.type === 'project';
+        if (payload.kind !== 'related' && !taskProjectChild) return [];
         const known = [
           ...args.hubs,
           ...(args.objects ?? []),
@@ -835,6 +840,26 @@ export function groundCommunicationBundles<T extends Item>(args: {
               )
             )
               return false;
+            if (taskProjectChild) {
+              if (support.field !== 'project' || !namesEndpoint(assertion, from)) return false;
+              return [to.name, ...to.aliases].some((name) => {
+                if (!namesEndpoint(name, to)) return false;
+                const statement = normalize(assertion);
+                const project = normalize(name);
+                const index = statement.indexOf(project);
+                if (!project || index < 0) return false;
+                const prefix = statement.slice(0, index);
+                const suffix = statement.slice(index + project.length);
+                return (
+                  !/[?]|\b(?:no|without|except|might|may|instead)\b/i.test(statement) &&
+                  (!suffix || /^[\s.,:;!]/.test(suffix)) &&
+                  ((!prefix && suffix.startsWith(':')) ||
+                    /\b(?:under|within|part of|belongs? to|in (?:the )?project) (?:the )?$/.test(
+                      prefix,
+                    ))
+                );
+              });
+            }
             const link =
               /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i.exec(
                 assertion.trim(),

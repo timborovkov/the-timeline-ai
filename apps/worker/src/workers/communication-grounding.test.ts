@@ -536,6 +536,51 @@ test('relationship evidence identifies the intended task among competing names',
   }
 });
 
+test('grounding validates relationship kind and direction independently of the endpoints', () => {
+  const task = { id: 'task', name: 'Review retention policy', type: 'task' };
+  const project = { id: 'project', name: 'Compliance', type: 'project' };
+  const customer = { id: 'customer', name: 'Cedar Labs', type: 'company' };
+  function evaluate(hub: typeof project, text: string, kind: string, reverse = false) {
+    return groundCommunicationBundles({
+      bundles: [
+        {
+          title: 'Association',
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              title: 'Task association',
+              proposedPayload: {
+                kind,
+                fromEntityId: reverse ? hub.id : task.id,
+                toEntityId: reverse ? task.id : hub.id,
+              },
+              grounding: [
+                support(hub.type === 'project' ? 'project' : 'customer', text, hub.id, task.name),
+              ],
+            },
+          ],
+        },
+      ],
+      sources: [{ id: event, text }],
+      packet: text,
+      members: [],
+      source: 'slack',
+      objects: [task],
+      hubs: [hub],
+    })[0]?.items.length;
+  }
+  const association = 'Review retention policy is for Cedar Labs.';
+  expect(evaluate(customer, association, 'related')).toBe(1);
+  for (const kind of ['blocks', 'child', 'parent'])
+    expect(evaluate(customer, association, kind)).toBe(0);
+  const membership = 'Review retention policy belongs to Compliance.';
+  expect(evaluate(project, membership, 'child')).toBe(1);
+  expect(evaluate(project, membership, 'child', true)).toBe(0);
+  expect(evaluate(project, 'Link Review retention policy to Compliance.', 'child')).toBe(0);
+});
+
 test('a creation date beside a deadline cannot replace it', () => {
   const text = 'Review retention policy, created 2026-06-01, is due 2026-06-12.';
   for (const [day, expected] of [
