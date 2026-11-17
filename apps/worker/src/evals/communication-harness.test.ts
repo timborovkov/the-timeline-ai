@@ -697,6 +697,14 @@ for (const source of ['email', 'slack', 'telegram']) {
           'Prepare deployment checklist',
           'todo',
         );
+        const quoteOptions = JSON.parse(
+          requireValue(args.prompt.split('COVERAGE_QUOTE_OPTIONS\n')[1]).split(
+            '\nEND_COVERAGE_QUOTE_OPTIONS',
+          )[0] ?? '{}',
+        ) as Record<string, string>;
+        const quoteRef = requireValue(
+          Object.entries(quoteOptions).find(([, quote]) => quote === evidence.quote)?.[0],
+        );
         return {
           model: 'checked',
           object: {
@@ -711,7 +719,7 @@ for (const source of ['email', 'slack', 'telegram']) {
                       evidence: [
                         {
                           rawEventId: evidence.rawEventId,
-                          quote: evidence.quote,
+                          quote: quoteRef,
                         },
                       ],
                       reason: 'The explicit task request was missing from the draft.',
@@ -1232,3 +1240,14 @@ test('pending approval IDs cannot become canonical task update targets', async (
   expect(result.acceptanceErrors).toBe(0);
   expect(scoreCommunications(row, result).passed).toBe(false);
 }, 60_000);
+
+test('long forwarded evidence remains admitted with compact coverage references', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((item) => item.id === 'long-forward-middle-email'),
+  );
+  const observed = await harness.run(row, {
+    model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+  });
+  expect(observed.executionErrors).toEqual([]);
+  expect(observed.packetLoss).toEqual([]);
+});

@@ -280,8 +280,11 @@ export async function createCommunicationHarness() {
                   (await import('#src/test/communication-audit.js')).controlledCommunicationAudit;
                 try {
                   const result = await checker(input);
-                  input.schema.parse(result.object);
-                  return result;
+                  const object = input.normalizeOutput
+                    ? input.normalizeOutput(result.object)
+                    : result.object;
+                  input.schema.parse(object);
+                  return { ...result, object } as typeof result;
                 } catch (error) {
                   executionErrors.push(error instanceof Error ? error.name : 'AuditError');
                   failed = true;

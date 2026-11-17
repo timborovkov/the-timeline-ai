@@ -24,9 +24,20 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
       input.prompt.lastIndexOf('\nEND_PENDING_AMENDMENTS_JSON'),
     ),
   ) as { id: string }[];
+  const quoteMarker = '\nCOVERAGE_QUOTE_OPTIONS\n';
+  const quoteOptions = JSON.parse(
+    input.prompt.slice(
+      input.prompt.lastIndexOf(quoteMarker) + quoteMarker.length,
+      input.prompt.lastIndexOf('\nEND_COVERAGE_QUOTE_OPTIONS'),
+    ),
+  ) as Record<string, string>;
+  const quoteRef = Object.entries(quoteOptions).find(([, quote]) =>
+    evidence[2]?.includes(quote),
+  )?.[0];
+  if (!quoteRef) throw new Error('Missing controlled audit quote reference');
   const coverage = {
     kind: 'other',
-    evidence: [{ rawEventId: evidence[1], quote: evidence[2].trim().slice(0, 1000) }],
+    evidence: [{ rawEventId: evidence[1], quote: quoteRef }],
     reason: 'Controlled checker output for a downstream pipeline test.',
   };
   return Promise.resolve({

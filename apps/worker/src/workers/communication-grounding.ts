@@ -450,12 +450,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 /^(?:we are |we're )?(?:discussing|considering|exploring|planning) (?:a |the )?(?:(?:potential|possible|prospective|proposed) )?engagement (?:with|for)\b/i.test(
                   first[0].trim(),
                 ) &&
-                /^the (?:(?:concrete|proposed|potential|possible) ){0,2}project is (?:called|named)\b/i.test(
+                /^(?:the|their) (?:(?:concrete|proposed|potential|possible) ){0,2}project is (?:called|named)\b/i.test(
                   second[0].trim(),
                 );
               const possessive =
                 /\bis our (?:new )?(?:client|customer)[.!]?$/i.test(first[0].trim()) &&
                 /^(?:we are|we're) (?:planning|building|delivering|tracking) their\b.*\bproject[.!]?$/i.test(
+                  second[0].trim(),
+                );
+              const namedProjectForClient =
+                /\bis our (?:new )?(?:client|customer)[.!]?$/i.test(first[0].trim()) &&
+                /^(?:we are|we're) (?:planning|building|delivering|tracking) (?:a |the )?(?:named |new |concrete )?project for them, [^.!?]+[.!]?$/i.test(
                   second[0].trim(),
                 );
               const feedbackContinuation =
@@ -472,7 +477,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 /\bis (?:the|our) project (?:we are|we're) (?:planning|building|delivering|tracking) (?:with|for) them[.!]?$/i.test(
                   second[0].trim(),
                 );
-              if (!engagement && !possessive && !feedbackContinuation) return false;
+              if (!engagement && !possessive && !namedProjectForClient && !feedbackContinuation)
+                return false;
               const span = source.text.slice(first.index, second.index + second[0].length);
               return (
                 namesEndpoint(first[0], company) &&

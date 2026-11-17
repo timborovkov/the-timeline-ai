@@ -1065,3 +1065,29 @@ for (const payload of [
     if (payload.assigneeUserId === alice) expect(result?.assigneeUserId).toBeUndefined();
   });
 }
+
+test('a named project for an adjacent client grounds the link without requiring work commitments', () => {
+  const first = 'Cedar Dental is our client.';
+  const second = 'We are planning a named project for them, Patient Portal.';
+  expect(relationship([first, second], `${first} ${second}`)).toHaveLength(2);
+  for (const replacement of [
+    'We are not planning a named project for them, Patient Portal.',
+    'If we are planning a named project for them, Patient Portal.',
+    'We are planning a named project for another client, Patient Portal.',
+  ])
+    expect(relationship([first, replacement], `${first} ${replacement}`)).toHaveLength(1);
+  expect(relationship([first, second], `${first} Different topic. ${second}`)).toHaveLength(1);
+  expect(relationship([first, second], `${first} ${second}`, [], second)).toHaveLength(1);
+});
+
+test('their proposed project refers only to the immediately preceding unique engagement', () => {
+  const first = 'We are discussing a potential engagement with Cedar Dental.';
+  const second = 'Their proposed project is named Patient Portal.';
+  expect(relationship([first, second], `${first} ${second}`)).toHaveLength(2);
+  expect(
+    relationship([first, second], `${first} A separate discussion follows. ${second}`),
+  ).toHaveLength(1);
+  const denied = 'We are not discussing an engagement with Cedar Dental.';
+  expect(relationship([denied, second], `${denied} ${second}`)).toHaveLength(1);
+  expect(relationship([first, second], `${first} ${second}`, [], second)).toHaveLength(1);
+});

@@ -61,6 +61,8 @@ import {
   COMMUNICATION_AUDIT_INSTRUCTIONS,
   COMMUNICATION_AUDIT_VERSION,
   communicationCoverageSchema,
+  communicationCoverageQuotes,
+  referenceCommunicationCoverageQuotes,
   validateCommunicationCoverage,
   assertCommunicationClaimsRetained,
 } from '#src/workers/communication-audit.js';
@@ -4469,11 +4471,26 @@ async function runSuggestionExtraction(
     ];
     if (!visibleSourceIds.length) throw new Error('Communication audit has no visible source');
     const sourceIdSchema = z.enum(visibleSourceIds);
+    const coverageQuotes = communicationCoverageQuotes({
+      sources: auditSources.filter((source) => visibleSourceIds.includes(source.id)),
+      packet: prompt,
+      draftQuotes: drafts.flatMap((bundle) => [
+        ...(bundle.quote ? [bundle.quote] : []),
+        ...bundle.items.flatMap((item) => (item.grounding ?? []).map((support) => support.quote)),
+      ]),
+    });
+    if (!coverageQuotes.length) throw new Error('Communication audit has no visible quote');
+
     const itemCoverageSchema = communicationCoverageSchema.element
       .pick({ kind: true, evidence: true, reason: true })
       .extend({
         evidence: z
-          .array(z.object({ rawEventId: sourceIdSchema, quote: z.string().min(3).max(1000) }))
+          .array(
+            z.object({
+              rawEventId: sourceIdSchema,
+              quote: z.enum(coverageQuotes.map((_, index) => `quote-${index}`)),
+            }),
+          )
           .min(1)
           .max(12),
       });
@@ -4526,16 +4543,43 @@ async function runSuggestionExtraction(
         )
         .max(Math.min(50, amendmentCandidates.length)),
     });
+    const quoteOptions = Object.fromEntries(
+      coverageQuotes.map((quote, index) => [`quote-${index}`, quote]),
+    );
+    const checkedPrompt = `${auditPrompt}\nCOVERAGE_QUOTE_OPTIONS\n${JSON.stringify(quoteOptions)}\nEND_COVERAGE_QUOTE_OPTIONS`;
+    const checkedInstructions = `${COMMUNICATION_AUDIT_VERSION}\n${COMMUNICATION_AUDIT_INSTRUCTIONS}\n${COMMUNICATION_CONTEXT_POLICY}\n${COMMUNICATION_OUTPUT_POLICY}${evidenceCitationSystem}`;
+    // Include the serialized schema and the single quote mapping in the request budget.
+    // The original evidence/draft prompt retains its existing tighter bound above.
+    if (
+      llm.estimateTextTokens(
+        checkedPrompt + checkedInstructions + JSON.stringify(z.toJSONSchema(auditSchema)),
+      ) > 128_000
+    )
+      throw new Error('Communication completeness request exceeds budget');
     const checked = await (io.auditCommunication ?? chatStructured)({
       schema: auditSchema,
+      normalizeOutput: (value) => referenceCommunicationCoverageQuotes(value, coverageQuotes),
       model: modelId,
       maxOutputTokens: SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS,
       ...(isHumanCommunication(row.source) ? { reasoningEffort: 'low' as const } : {}),
       abortSignal: AbortSignal.timeout(SUGGESTION_EXTRACTION_TIMEOUT_MS),
-      instructions: `${COMMUNICATION_AUDIT_VERSION}\n${COMMUNICATION_AUDIT_INSTRUCTIONS}\n${COMMUNICATION_CONTEXT_POLICY}\n${COMMUNICATION_OUTPUT_POLICY}${evidenceCitationSystem}`,
-      prompt: auditPrompt,
+      instructions: checkedInstructions,
+      prompt: checkedPrompt,
     });
-    const audited = auditSchema.parse(checked.object);
+    const audited = auditSchema.parse(
+      referenceCommunicationCoverageQuotes(checked.object, coverageQuotes),
+    );
+    for (const coverage of [
+      ...audited.coverage,
+      ...audited.bundles.flatMap((bundle) => bundle.items.map((item) => item.coverage)),
+      ...audited.pendingAmendments.map((item) => item.coverage),
+    ])
+      for (const evidence of coverage.evidence) {
+        const quote = quoteOptions[evidence.quote];
+        if (quote === undefined)
+          throw new Error('Communication audit selected an unavailable quote');
+        evidence.quote = quote;
+      }
     const amendmentIds = audited.pendingAmendments.map((candidate) => candidate.id);
     if (
       new Set(amendmentIds).size !== amendmentIds.length ||
