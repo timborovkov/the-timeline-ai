@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v47';
+export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v48';
 export const communicationCoverageSchema = z
   .array(
     z.object({
@@ -247,6 +247,7 @@ export function assertCommunicationClaimsRetained(
     'dueAt',
     'status',
     'parentObjectId',
+    'createProjectName',
   ];
   const retained = new Map(
     after.flatMap((bundle) =>
@@ -262,9 +263,17 @@ export function assertCommunicationClaimsRetained(
         Object.hasOwn(item.proposedPayload, field) &&
         !(
           item.proposedPayload[field] === null &&
-          ['status', 'assigneeName', 'ownerName'].includes(field)
+          ['status', 'assigneeName', 'ownerName', 'createProjectName'].includes(field)
         ) &&
         item.proposedPayload[field] !== actual.proposedPayload[field] &&
+        !(
+          field === 'createProjectName' &&
+          typeof item.proposedPayload.createProjectName === 'string' &&
+          typeof actual.proposedPayload.parentObjectId === 'string' &&
+          typeof actual.proposedPayload.projectName === 'string' &&
+          item.proposedPayload.createProjectName.trim().toLowerCase() ===
+            actual.proposedPayload.projectName.trim().toLowerCase()
+        ) &&
         !(
           field === 'status' &&
           item.operation === 'create' &&

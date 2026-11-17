@@ -209,7 +209,7 @@ const lifecycleWords: Record<string, RegExp> = {
   done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
   cancelled: /\b(?:cancel|cancelled|canceled|archive|archived|cancelada|cancelado|abgesagt)\b/i,
   blocked: /\bblocked\b/i,
-  todo: /\b(?:reopen|restart|unblock)\b/i,
+  todo: /\b(?:reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i,
 };
 function affirmativeTaskHub(clause: string, hubName: string, type: string): boolean {
   if (
@@ -357,7 +357,7 @@ function affirmativeLifecycle(
     return false;
 
   if (
-    /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:be\s+|have\s+been\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen|restart|unblock)\b/i.test(
+    /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:be\s+|have\s+been\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i.test(
       clause,
     )
   )
@@ -1397,7 +1397,19 @@ export function groundCommunicationBundles<T extends Item>(args: {
           }
         }
         if (typeof payload.parentObjectId === 'string') {
-          const projectSupport = has('project', payload.parentObjectId);
+          const selected = args.hubs.find(
+            (hub) => hub.type === 'project' && hub.id === payload.parentObjectId,
+          );
+          const projectSupport =
+            has('project', payload.parentObjectId) ??
+            supports.find(
+              (entry) =>
+                entry.field === 'project' &&
+                selected &&
+                [selected.name, ...(selected.aliases ?? [])].some(
+                  (name) => normalize(name) === normalize(entry.value),
+                ),
+            );
           const clause = supportedTaskAssertion(projectSupport);
           const projects = clause
             ? args.hubs.filter(
@@ -1419,6 +1431,33 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ) {
             delete payload.parentObjectId;
             delete payload.projectName;
+          }
+        }
+        if (typeof payload.createProjectName === 'string') {
+          const name = payload.createProjectName;
+          const project = bundle.items.find(
+            (candidate) =>
+              candidate.operation === 'create' &&
+              candidate.proposedPayload.type === 'project' &&
+              typeof candidate.proposedPayload.canonicalName === 'string' &&
+              normalize(candidate.proposedPayload.canonicalName) === normalize(name),
+          );
+          const support = supports.find(
+            (entry) =>
+              entry.field === 'project' &&
+              (normalize(entry.value) === normalize(name) ||
+                entry.value === project?.proposedPayload.localRef),
+          );
+          const clause = supportedTaskAssertion(support);
+          if (
+            item.operation !== 'create' ||
+            !support ||
+            !clause ||
+            hasProjectAlternative(clause, [name]) ||
+            !affirmativeProjectMembership(clause, support.subject, name, true)
+          ) {
+            delete payload.createProjectName;
+            if (payload.parentObjectId === undefined) delete payload.projectName;
           }
         }
         const links = supports.filter((support) => {

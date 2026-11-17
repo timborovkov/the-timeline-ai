@@ -180,6 +180,36 @@ test('ongoing or nearly completed work cannot be marked done', () => {
   }
 });
 
+test('reopened-state wording retains todo only after the transition', () => {
+  for (const [text, expected] of [
+    ['Review retention policy has been reopened.', 'todo'],
+    ['Review retention policy has not been reopened.', undefined],
+    ['Review retention policy will be reopened.', undefined],
+    ['Review retention policy may be unblocked.', undefined],
+  ] as const) {
+    expect(
+      run(text, { status: 'todo' }, [support('status', text, 'todo')], { operation: 'update' })[0]
+        ?.items[0]?.proposedPayload.status,
+    ).toBe(expected);
+  }
+});
+
+test('creating a project through task approval requires affirmative membership', () => {
+  for (const [quote, expected] of [
+    [
+      'Please review retention policy. This is standalone work, not part of the Compliance project.',
+      undefined,
+    ],
+    ['Review retention policy belongs to Compliance / another project.', undefined],
+    ['For Compliance, please review retention policy.', 'Compliance'],
+  ] as const) {
+    expect(
+      run(quote, { createProjectName: 'Compliance' }, [support('project', quote, 'Compliance')])[0]
+        ?.items[0]?.proposedPayload.createProjectName,
+    ).toBe(expected);
+  }
+});
+
 test('an ended lifecycle state cannot be proposed as current', () => {
   for (const text of [
     'Review retention policy is no longer blocked.',

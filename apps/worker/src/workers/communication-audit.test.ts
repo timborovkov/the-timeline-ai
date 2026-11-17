@@ -391,3 +391,35 @@ test('create-to-update resolution drops only an unsupported new-task default', (
     ]);
   }).toThrow('parentObjectId claim');
 });
+
+test('an audited named project attachment cannot disappear or change identity', () => {
+  const before = [
+    {
+      items: [
+        {
+          auditId: 'task',
+          operation: 'create',
+          proposedPayload: { createProjectName: 'Compliance' },
+        },
+      ],
+    },
+  ];
+  const resultingTask = (proposedPayload: Record<string, unknown>) => [
+    { items: [{ auditId: 'task', operation: 'create', proposedPayload }] },
+  ];
+  expect(() => {
+    assertCommunicationClaimsRetained(before, resultingTask({}));
+  }).toThrow('createProjectName claim');
+  expect(() => {
+    assertCommunicationClaimsRetained(
+      before,
+      resultingTask({ parentObjectId: 'project', projectName: 'Operations' }),
+    );
+  }).toThrow('createProjectName claim');
+  expect(() => {
+    assertCommunicationClaimsRetained(
+      before,
+      resultingTask({ parentObjectId: 'project', projectName: 'Compliance' }),
+    );
+  }).not.toThrow();
+});
