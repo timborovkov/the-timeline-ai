@@ -643,7 +643,7 @@ const objectCreatePayload = z.object({
 
 const objectUpdatePayload = z.object({
   ...objectPayloadFields,
-  parentObjectId: uuid.optional(),
+  parentObjectId: uuid.nullable().optional(),
   ownerUserId: blankStringAsUndefined(uuid.nullable()),
   assigneeUserId: blankStringAsUndefined(uuid.nullable()),
   dueAt: blankStringAsUndefined(z.iso.datetime().nullable()),

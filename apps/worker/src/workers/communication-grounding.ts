@@ -197,6 +197,8 @@ function deadlineMatches(
   return false;
 }
 function taskClause(quote: string, subject: string): string | undefined {
+  // Keep source citations literal; normalize contractions only for assertion checks.
+  quote = quote.replace(/\b([a-z]+)n[’']t\b/gi, '$1 not');
   if (/^blocked until\b/i.test(quote.trim()) && namesTask(quote, subject)) return quote;
   const completionNoun =
     subject
@@ -300,6 +302,29 @@ export function groundCommunicationBundles<T extends Item>(args: {
             ),
         ),
       ];
+    };
+    const taskEvidenceUnambiguous = (item: T, text: string) => {
+      const names = taskIdentityNames(item);
+      const literal = (name: string) => {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
+      };
+      const competing = (args.objects ?? []).filter(
+        (object) =>
+          object.type === 'task' &&
+          object.id !== item.targetId &&
+          object.name &&
+          (Boolean(item.targetId) ||
+            !names.some((name) => normalize(name) === normalize(object.name ?? ''))) &&
+          [object.name, ...(object.aliases ?? [])].some((name) => namesTask(text, name)),
+      );
+      return (
+        !competing.length ||
+        (names.some(literal) &&
+          !competing.some((object) =>
+            [object.name ?? '', ...(object.aliases ?? [])].some((name) => name && literal(name)),
+          ))
+      );
     };
     const namesTaskQuote = (item: T, text: string, subject: string) => {
       const target = args.objects?.find((object) => object.id === item.targetId);
@@ -479,7 +504,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
               ),
             ).size === 1;
           if (contextValid) validContexts.add(support);
+          const isTask =
+            item.targetKind === 'task' ||
+            item.proposedPayload.type === 'task' ||
+            args.objects?.some((object) => object.id === item.targetId && object.type === 'task');
+          const identityText =
+            taskClause(support.quote, support.subject) ??
+            (contextValid ? context.quote : support.quote);
           return (
+            (!isTask || taskEvidenceUnambiguous(item, identityText)) &&
             source &&
             safeSourceQuote(source.text, support.quote) &&
             normalize(args.packet).includes(normalize(support.quote)) &&
@@ -994,27 +1027,6 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const lifecycleClause = lifecycle
           ? taskClause(lifecycle.quote, lifecycle.subject)
           : undefined;
-        const literalLifecycleName = (name: string) => {
-          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(
-            lifecycleClause ?? '',
-          );
-        };
-        const competingTasks = (args.objects ?? []).filter(
-          (object) =>
-            object.id !== item.targetId &&
-            object.type === 'task' &&
-            object.name &&
-            namesTask(lifecycleClause ?? '', object.name),
-        );
-        const lifecycleUnambiguous =
-          !competingTasks.length ||
-          (taskIdentityNames(item).some(literalLifecycleName) &&
-            !competingTasks.some((object) =>
-              [object.name ?? '', ...(object.aliases ?? [])].some(
-                (name) => name && literalLifecycleName(name),
-              ),
-            ));
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
           (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
@@ -1028,7 +1040,6 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !(
             lifecycle &&
             lifecycleClause &&
-            lifecycleUnambiguous &&
             !(
               payload.status === 'done' &&
               /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to)\s+(?:(?:not|never|soon|already|finally)\s+)*(?:be\s+|have\s+been\s+)?(?:finished|complete[ds]?|done|delivered|shipped|sent)\b/i.test(

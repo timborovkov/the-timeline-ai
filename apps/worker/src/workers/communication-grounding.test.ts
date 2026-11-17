@@ -1817,3 +1817,71 @@ test('clearing a primary project requires explicit affirmative removal evidence'
     ).toBe(expected);
   }
 });
+
+test('contracted negatives cannot assign or clear optional task fields', () => {
+  for (const [quote, payload, grounding] of [
+    [
+      "Don't remove the deadline from Review retention policy.",
+      { dueAt: null },
+      support('dueAt', "Don't remove the deadline from Review retention policy.", 'unset'),
+    ],
+    [
+      "Don't remove the owner from Review retention policy.",
+      { ownerUserId: null },
+      support('assignee', "Don't remove the owner from Review retention policy.", 'unassigned'),
+    ],
+    [
+      "Don't assign review retention policy to Bob.",
+      { assigneeUserId: bob },
+      support('assignee', "Don't assign review retention policy to Bob.", bob),
+    ],
+    [
+      'Don’t unassign Review retention policy.',
+      { assigneeUserId: null },
+      support('assignee', 'Don’t unassign Review retention policy.', 'unassigned'),
+    ],
+  ] as const) {
+    expect(
+      run(quote, payload, [grounding], { operation: 'update' })[0]?.items[0]?.proposedPayload ?? {},
+    ).toEqual({});
+  }
+});
+test('overlapping tasks cannot borrow assignment or deadline assertions', () => {
+  for (const targetId of ['review', 'draft']) {
+    const taskTitle = targetId === 'review' ? title : 'Draft retention policy';
+    const quote = 'Bob will draft retention policy by 2026-06-12.';
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              targetId,
+              title: taskTitle,
+              proposedPayload: { assigneeUserId: bob, dueAt: '2026-06-12T00:00:00.000Z' },
+              grounding: [
+                support('assignee', quote, bob, taskTitle),
+                support('dueAt', quote, '2026-06-12T00:00:00.000Z', taskTitle),
+              ],
+            },
+          ],
+        },
+      ],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      members: [{ userId: bob, name: 'Bob', email: 'bob@example.test' }],
+      hubs: [],
+      source: 'slack',
+      objects: [
+        { id: 'review', name: title, type: 'task' },
+        { id: 'draft', name: 'Draft retention policy', type: 'task' },
+      ],
+    });
+    expect(result[0]?.items[0]?.proposedPayload ?? {}).toEqual(
+      targetId === 'draft' ? { assigneeUserId: bob, dueAt: '2026-06-12T00:00:00.000Z' } : {},
+    );
+  }
+});

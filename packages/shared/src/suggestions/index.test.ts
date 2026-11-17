@@ -2721,6 +2721,44 @@ describe('suggestion scope', () => {
     });
   }
 
+  it('accepts an explicit primary project clear without losing the task', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Clear project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Clear project task',
+      parentObjectId: project.id,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Clear project assignment',
+      dedupeKey: 'clear-project-assignment',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Clear project assignment',
+          dedupeKey: 'clear-project-assignment:item',
+          proposedPayload: { parentObjectId: null },
+        },
+      ],
+    });
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+    await expect(scope.objects.listPrimaryProjectsForTasks([task.id])).resolves.toEqual([]);
+    await expect(scope.objects.getObject(task.id)).resolves.toMatchObject({
+      id: task.id,
+      canonicalName: 'Clear project task',
+    });
+  });
+
   it('preserves a later human project choice when accepting a task update', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const [task, proposedProject, humanProject] = await db
