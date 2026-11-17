@@ -4991,8 +4991,10 @@ async function runSuggestionExtraction(
       .map((project) => ({ id: project.id, name: project.name, aliases: project.aliases })),
     io,
   });
+  const verifiedLifecycleAuditIds = new Set<string>();
   const groundedBundles = isHumanCommunication(row.source)
     ? groundCommunicationBundles({
+        verifiedLifecycleAuditIds,
         bundles: enrichedBundles,
         packet: prompt,
         source: row.source,
@@ -5110,13 +5112,7 @@ async function runSuggestionExtraction(
         }),
         text: evidenceText,
       }),
-      verifiedLifecycleAuditIds: isHumanCommunication(row.source)
-        ? groundedBundles.flatMap((bundle) =>
-            bundle.items.flatMap((item) =>
-              item.auditId && typeof item.proposedPayload.status === 'string' ? [item.auditId] : [],
-            ),
-          )
-        : [],
+      verifiedLifecycleAuditIds: [...verifiedLifecycleAuditIds],
       relatedOpenWorkIds: relatedOpenWork.map((work) => work.id),
       relatedOpenWork,
       evidenceText,

@@ -240,6 +240,22 @@ function affirmativeTaskHub(clause: string, hubName: string, type: string): bool
   );
 }
 
+function hasProjectAlternative(assertion: string, projectNames: string[]): boolean {
+  const statement = normalize(assertion);
+  return (
+    /\b(?:or|either|undecided)\b/i.test(statement) ||
+    projectNames.some((name) => {
+      const project = normalize(name);
+      if (!project) return false;
+      const fragments = statement.split(project);
+      return (
+        fragments.slice(1).some((suffix) => /^\s*\//.test(suffix)) ||
+        fragments.slice(0, -1).some((prefix) => /\/\s*$/.test(prefix))
+      );
+    })
+  );
+}
+
 function affirmativeLifecycle(
   clause: string | undefined,
   subject: string,
@@ -251,11 +267,26 @@ function affirmativeLifecycle(
   // clauses can describe a different artifact, and task titles are identifiers.
   const identity = normalize(subject);
   const parts = normalize(clause).split(
-    /\s+\b(?:because|although|since|whereas|while|until|even though|but|yet)\b\s+/,
+    /\s+\b(because|although|since|whereas|while|until|even though|but|yet)\b\s+/,
   );
-  const relevant = parts.length === 1 ? parts : parts.filter((part) => namesTask(part, subject));
-  if (relevant.length !== 1 || !relevant[0]) return false;
-  clause = identity ? relevant[0].replaceAll(identity, '[task]') : relevant[0];
+  const statements = parts.filter((_, index) => index % 2 === 0);
+  const named = statements.filter((statement) => namesTask(statement, subject));
+  const first = statements.length === 1 ? statements[0] : named.length === 1 ? named[0] : undefined;
+  if (!first) return false;
+  let assertion = first;
+  const at = parts.indexOf(first);
+  for (let index = at + 1; index < parts.length; index += 2) {
+    const conjunction = parts[index];
+    const next = parts[index + 1];
+    if (
+      (conjunction !== 'but' && conjunction !== 'yet') ||
+      !next ||
+      !/^(?:(?:it|this task|the task) )?(?:is|was|has|had|remains)\b/.test(next)
+    )
+      break;
+    assertion = next;
+  }
+  clause = identity ? assertion.replaceAll(identity, '[task]') : assertion;
   if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
     return false;
   if (
@@ -360,6 +391,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
   source: string;
   timezone?: string;
   pendingNames?: string[];
+  verifiedLifecycleAuditIds?: Set<string>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
   return args.bundles.map((bundle) => {
@@ -877,7 +909,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               if (
                 projects.size !== 1 ||
                 !projects.has(to.id) ||
-                /\b(?:or|either|undecided)\b/i.test(assertion)
+                hasProjectAlternative(assertion, [to.name, ...to.aliases])
               )
                 return false;
               return [to.name, ...to.aliases].some((name) => {
@@ -891,7 +923,6 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 return (
                   !/[?]|\b(?:no|without|except|might|may|instead)\b/i.test(statement) &&
                   (!suffix || /^[\s.,:;!]/.test(suffix)) &&
-                  !/^\s*\//.test(suffix) &&
                   ((!prefix && suffix.startsWith(':')) ||
                     /\b(?:under|within|part of|belongs? to|in (?:the )?project) (?:the )?$/.test(
                       prefix,
@@ -1232,19 +1263,19 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
           (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
+        const lifecycleVerified =
+          lifecycle &&
+          affirmativeLifecycle(
+            lifecycleClause,
+            lifecycle.subject,
+            payload.status,
+            /^(?:mark )?send\b/i.test(targetName),
+          );
+        if (lifecycleVerified && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
         if (
           payload.status !== undefined &&
           !(item.operation === 'create' && payload.status === 'todo') &&
-          !(
-            lifecycle &&
-            lifecycleClause &&
-            affirmativeLifecycle(
-              lifecycleClause,
-              lifecycle.subject,
-              payload.status,
-              /^(?:mark )?send\b/i.test(targetName),
-            )
-          )
+          !lifecycleVerified
         )
           delete payload.status;
         if (payload.parentObjectId === null) {
@@ -1275,9 +1306,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
             : [];
           const affirmative =
             clause &&
-            !/[?]|\b(?:not|no|never|unless|if|maybe|perhaps|undecided|or|unrelated)\b/i.test(
+            !hasProjectAlternative(
               clause,
+              projects.flatMap((project) => [project.name, ...(project.aliases ?? [])]),
             ) &&
+            !/[?]|\b(?:not|no|never|unless|if|maybe|perhaps|unrelated)\b/i.test(clause) &&
             (/\b(?:for|under|within|in|on|belongs? to|part of|attach\w* to|link\w* to)\b/i.test(
               clause,
             ) ||

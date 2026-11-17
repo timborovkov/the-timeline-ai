@@ -153,6 +153,17 @@ test('status evidence excludes task-title words and predicates belonging to othe
   }
 });
 
+test('the latest same-task contrastive correction supersedes the previous status', () => {
+  for (const correction of ['is now done', 'it is now done']) {
+    const text = `Review retention policy was blocked, but ${correction}.`;
+    for (const status of ['blocked', 'done']) {
+      expect(
+        run(text, { status }, [support('status', text, status)])[0]?.items[0]?.proposedPayload,
+      ).toEqual(status === 'done' ? { status } : {});
+    }
+  }
+});
+
 test('an ended lifecycle state cannot be proposed as current', () => {
   for (const text of [
     'Review retention policy is no longer blocked.',
@@ -1741,7 +1752,9 @@ test('verified adjacent completion survives downstream ambiguity filtering', () 
     { id: 'review', name: title },
     { id: 'draft', name: 'Draft retention policy' },
   ];
+  const verifiedLifecycleAuditIds = new Set<string>();
   const bundles = groundCommunicationBundles({
+    verifiedLifecycleAuditIds,
     bundles: [
       {
         title,
@@ -1768,16 +1781,57 @@ test('verified adjacent completion survives downstream ambiguity filtering', () 
   });
   const result = stripAmbiguousLifecycleUpdates({
     bundles,
-    verifiedLifecycleAuditIds: bundles.flatMap((bundle) =>
-      bundle.items.flatMap((item) =>
-        item.auditId && item.proposedPayload.status === 'done' ? [item.auditId] : [],
-      ),
-    ),
+    verifiedLifecycleAuditIds: [...verifiedLifecycleAuditIds],
     relatedOpenWorkIds: ['review', 'draft'],
     relatedOpenWork,
     evidenceText: quote,
   });
   expect(result[0]?.items[0]?.proposedPayload.status).toBe('done');
+});
+
+test('a follow-up status without verified evidence receives no ambiguity exemption', () => {
+  const quote = 'The retention policy follow-up is not done.';
+  const verifiedLifecycleAuditIds = new Set<string>();
+  const result = groundCommunicationBundles({
+    verifiedLifecycleAuditIds,
+    bundles: [
+      {
+        title,
+        confidence: 'high',
+        items: [
+          {
+            auditId: 'unchecked',
+            operation: 'update',
+            targetKind: 'object',
+            title,
+            targetId: 'retention',
+            proposedPayload: { status: 'done' },
+            grounding: [],
+          },
+        ],
+      },
+    ],
+    sources: [{ id: event, text: quote }],
+    members: [],
+    packet: quote,
+    source: 'slack',
+    hubs: [],
+    objects: [{ id: 'retention', name: 'Retention policy follow-up', type: 'follow_up' }],
+  });
+  expect(result[0]?.items[0]?.proposedPayload.status).toBe('done');
+  expect([...verifiedLifecycleAuditIds]).toEqual([]);
+  expect(
+    stripAmbiguousLifecycleUpdates({
+      bundles: result,
+      verifiedLifecycleAuditIds: [...verifiedLifecycleAuditIds],
+      evidenceText: quote,
+      relatedOpenWorkIds: ['retention', 'draft'],
+      relatedOpenWork: [
+        { id: 'retention', name: 'Retention policy follow-up' },
+        { id: 'draft', name: 'Draft policy follow-up' },
+      ],
+    }),
+  ).toEqual([]);
 });
 
 test('overlapping task names cannot borrow another task completion', () => {
@@ -1958,6 +2012,38 @@ test('contracted lifecycle denials cannot authorize completion', () => {
     ).toBeUndefined();
   }
 });
+test('scalar project claims reject a slash alternative even when only one project resolves', () => {
+  for (const [quote, expected] of [
+    ['Review retention policy belongs to Compliance.', 'compliance'],
+    ['Review retention policy belongs to Compliance / another project.', undefined],
+    ['Review retention policy belongs to another project / Compliance.', undefined],
+  ] as const) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              title,
+              proposedPayload: { parentObjectId: 'compliance' },
+              grounding: [support('project', quote, 'compliance')],
+            },
+          ],
+        },
+      ],
+      sources: [{ id: event, text: quote }],
+      members: [],
+      packet: quote,
+      source: 'slack',
+      hubs: [{ id: 'compliance', name: 'Compliance', type: 'project' }],
+    });
+    expect(result[0]?.items[0]?.proposedPayload.parentObjectId).toBe(expected);
+  }
+});
+
 test('clearing a primary project requires explicit affirmative removal evidence', () => {
   for (const [quote, citation, expected] of [
     ['Please review retention policy.', false, undefined],
