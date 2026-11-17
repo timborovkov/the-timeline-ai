@@ -284,23 +284,16 @@ function affirmativeProjectMembership(
   });
 }
 
-function affirmativeLifecycle(
-  clause: string | undefined,
-  subject: string,
-  status: unknown,
-  sendTask = false,
-): boolean {
-  if (!clause || typeof status !== 'string') return false;
-  // Keep only the status assertion describing this task. Causal/dependent
+function taskAssertion(clause: string, subject: string): string | undefined {
+  // Keep only the assertion describing this task. Causal/dependent
   // clauses can describe a different artifact, and task titles are identifiers.
-  const identity = normalize(subject);
   const parts = normalize(clause).split(
     /\s+\b(because|although|since|whereas|while|until|even though|but|yet)\b\s+/,
   );
   const statements = parts.filter((_, index) => index % 2 === 0);
   const named = statements.filter((statement) => namesTask(statement, subject));
   const first = statements.length === 1 ? statements[0] : named.length === 1 ? named[0] : undefined;
-  if (!first) return false;
+  if (!first) return undefined;
   let assertion = first;
   const at = parts.indexOf(first);
   for (let index = at + 1; index < parts.length; index += 2) {
@@ -314,6 +307,19 @@ function affirmativeLifecycle(
       break;
     assertion = next;
   }
+  return assertion;
+}
+
+function affirmativeLifecycle(
+  clause: string | undefined,
+  subject: string,
+  status: unknown,
+  sendTask = false,
+): boolean {
+  if (!clause || typeof status !== 'string') return false;
+  const assertion = taskAssertion(clause, subject);
+  if (!assertion) return false;
+  const identity = normalize(subject);
   clause = identity ? assertion.replaceAll(identity, '[task]') : assertion;
   if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
     return false;
@@ -931,13 +937,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
               return false;
             if (taskProjectChild) {
               if (support.field !== 'project' || !namesEndpoint(assertion, from)) return false;
+              const membership = taskAssertion(assertion, from.name);
+              if (!membership || !namesEndpoint(membership, from)) return false;
               const projects = new Set(
                 known
                   .filter(
                     (candidate) =>
                       candidate.type === 'project' &&
                       [candidate.name, ...(candidate.aliases ?? [])].some(
-                        (name) => name && mentions(assertion, name),
+                        (name) => name && mentions(membership, name),
                       ),
                   )
                   .map((candidate) => candidate.id),
@@ -945,12 +953,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
               if (
                 projects.size !== 1 ||
                 !projects.has(to.id) ||
-                hasProjectAlternative(assertion, [to.name, ...to.aliases])
+                hasProjectAlternative(membership, [to.name, ...to.aliases])
               )
                 return false;
               return [to.name, ...to.aliases].some(
                 (name) =>
-                  namesEndpoint(name, to) && affirmativeProjectMembership(assertion, name, false),
+                  namesEndpoint(name, to) && affirmativeProjectMembership(membership, name, false),
               );
             }
             const link =
@@ -1317,9 +1325,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
         }
         if (typeof payload.parentObjectId === 'string') {
           const projectSupport = has('project', payload.parentObjectId);
-          const clause = projectSupport
+          const citedClause = projectSupport
             ? taskClause(projectSupport.quote, projectSupport.subject)
             : undefined;
+          const clause =
+            citedClause && projectSupport
+              ? taskAssertion(citedClause, projectSupport.subject)
+              : undefined;
           const projects = clause
             ? args.hubs.filter(
                 (hub) =>
