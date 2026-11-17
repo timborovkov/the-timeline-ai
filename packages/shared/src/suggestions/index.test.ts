@@ -1249,70 +1249,86 @@ describe('suggestion scope', () => {
     );
   });
 
-  it('manual project assignment and approval lock task before project', async () => {
-    const transactionQueries: Parameters<Transaction['query']>[] = [];
-    const runTransaction = pg.transaction.bind(pg);
-    const transaction = vi
-      .spyOn(pg, 'transaction')
-      .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
-        runTransaction(async (tx) => {
-          const query = vi.spyOn(tx, 'query');
-          try {
-            return await callback(tx);
-          } finally {
-            transactionQueries.push(...query.mock.calls);
-            query.mockRestore();
-          }
-        }),
-      );
-    try {
-      const scope = withTeam(drizzle(pg) as never, TEAM_ID, USER_ID);
-      const project = await scope.objects.createObject({
-        type: 'project',
-        canonicalName: 'Lock order project',
-        actor: { kind: 'user', userId: USER_ID },
-      });
-      const task = await scope.objects.createObject({
-        type: 'task',
-        canonicalName: 'Lock order task',
-        actor: { kind: 'user', userId: USER_ID },
-      });
-      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
-        source: 'background',
-        title: 'Assign task project',
-        dedupeKey: 'task-project-lock-order',
-        items: [
-          {
-            operation: 'update',
-            targetKind: 'task',
-            targetId: task.id,
-            title: 'Assign task project',
-            dedupeKey: 'task-project-lock-order:item',
-            proposedPayload: { parentObjectId: project.id, status: 'doing' },
-          },
-        ],
-      });
-      for (const action of [
-        () => scope.objects.setTaskProject(task.id, project.id, { kind: 'user', userId: USER_ID }),
-        () => scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
-      ]) {
-        transactionQueries.length = 0;
-        await action();
-        const lockIndex = (id: string) =>
-          transactionQueries.findIndex(
-            ([statement, params]) =>
-              typeof statement === 'string' &&
-              statement.includes('from "entities"') &&
-              statement.includes('for update') &&
-              Boolean(params?.includes(id)),
-          );
-        expect(lockIndex(task.id)).toBeGreaterThanOrEqual(0);
-        expect(lockIndex(project.id)).toBeGreaterThan(lockIndex(task.id));
+  it.each([false, true])(
+    'manual project assignment and approval lock project before task: evidence=%s',
+    async (withEvidence) => {
+      const transactionQueries: Parameters<Transaction['query']>[] = [];
+      const runTransaction = pg.transaction.bind(pg);
+      const transaction = vi
+        .spyOn(pg, 'transaction')
+        .mockImplementation(<T>(callback: (tx: Transaction) => Promise<T>) =>
+          runTransaction(async (tx) => {
+            const query = vi.spyOn(tx, 'query');
+            try {
+              return await callback(tx);
+            } finally {
+              transactionQueries.push(...query.mock.calls);
+              query.mockRestore();
+            }
+          }),
+        );
+      try {
+        const scope = withTeam(drizzle(pg) as never, TEAM_ID, USER_ID);
+        const project = await scope.objects.createObject({
+          type: 'project',
+          canonicalName: 'Lock order project',
+          actor: { kind: 'user', userId: USER_ID },
+        });
+        const task = await scope.objects.createObject({
+          type: 'task',
+          canonicalName: 'Lock order task',
+          actor: { kind: 'user', userId: USER_ID },
+        });
+        if (withEvidence)
+          await db.insert(rawEvents).values({
+            id: TEAM_RAW_EVENT_ID,
+            teamId: TEAM_ID,
+            authorUserId: USER_ID,
+            source: 'web',
+            contentText: 'Assign Lock order task to Lock order project.',
+            occurredAt: new Date(),
+            visibility: 'team',
+          });
+        const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          ...(withEvidence ? { evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }] } : {}),
+          title: 'Assign task project',
+          dedupeKey: 'task-project-lock-order',
+          items: [
+            {
+              operation: 'update',
+              targetKind: 'task',
+              targetId: task.id,
+              title: 'Assign task project',
+              dedupeKey: 'task-project-lock-order:item',
+              ...(withEvidence ? { evidenceRawEventIds: [TEAM_RAW_EVENT_ID] } : {}),
+              proposedPayload: { parentObjectId: project.id, status: 'doing' },
+            },
+          ],
+        });
+        for (const action of [
+          () =>
+            scope.objects.setTaskProject(task.id, project.id, { kind: 'user', userId: USER_ID }),
+          () => scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+        ]) {
+          transactionQueries.length = 0;
+          await action();
+          const lockIndex = (id: string) =>
+            transactionQueries.findIndex(
+              ([statement, params]) =>
+                typeof statement === 'string' &&
+                statement.includes('from "entities"') &&
+                statement.includes('for update') &&
+                Boolean(params?.includes(id)),
+            );
+          expect(lockIndex(project.id)).toBeGreaterThanOrEqual(0);
+          expect(lockIndex(task.id)).toBeGreaterThan(lockIndex(project.id));
+        }
+      } finally {
+        transaction.mockRestore();
       }
-    } finally {
-      transaction.mockRestore();
-    }
-  });
+    },
+  );
 
   it('locks a pack-backed board item target before its due-date evidence row', async () => {
     const transactionQueries: Parameters<Transaction['query']>[] = [];

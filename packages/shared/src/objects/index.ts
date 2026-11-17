@@ -6023,6 +6023,10 @@ export async function setTaskProject(
   }
 
   const result = await (options?.transactionClient ?? db).transaction(async (tx) => {
+    // Match relationship creation and project mutations: project before linked tasks.
+    const project = projectId ? await lockActiveProject(tx, scope.teamId, projectId) : null;
+    if (projectId && !project) throw new Error('Project not found');
+
     const [task] = await tx
       .select({
         id: entities.id,
@@ -6044,11 +6048,6 @@ export async function setTaskProject(
       .for('update')
       .limit(1);
     if (task?.type !== 'task') throw new Error('Task not found');
-
-    // Acceptance already locks its task target. Manual assignment must use the same
-    // task-before-project order to avoid a cycle with that outer transaction.
-    const project = projectId ? await lockActiveProject(tx, scope.teamId, projectId) : null;
-    if (projectId && !project) throw new Error('Project not found');
 
     const existing = await tx
       .select({

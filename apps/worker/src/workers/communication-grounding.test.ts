@@ -1785,3 +1785,35 @@ test('a denied deadline does not negate a later affirmative correction', () => {
     ).toBe(expected);
   }
 });
+
+test('contracted lifecycle denials cannot authorize completion', () => {
+  for (const predicate of [
+    "isn't done",
+    "hasn't been completed",
+    'isn’t delivered',
+    "wasn't shipped",
+    "won't be done",
+  ]) {
+    const quote = `Review retention policy ${predicate}.`;
+    expect(
+      run(quote, { status: 'done' }, [support('status', quote, 'done')], { operation: 'update' })[0]
+        ?.items[0]?.proposedPayload.status,
+      predicate,
+    ).toBeUndefined();
+  }
+});
+test('clearing a primary project requires explicit affirmative removal evidence', () => {
+  for (const [quote, citation, expected] of [
+    ['Please review retention policy.', false, undefined],
+    ['Please review retention policy.', true, undefined],
+    ['Review retention policy: clear the project assignment.', true, null],
+    ["Review retention policy: don't clear the project assignment.", true, undefined],
+    ['Review retention policy: clear the project assignment?', true, undefined],
+  ] as const) {
+    expect(
+      run(quote, { parentObjectId: null }, citation ? [support('project', quote, 'unset')] : [], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.parentObjectId,
+    ).toBe(expected);
+  }
+});

@@ -4023,10 +4023,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function lockAcceptanceProject(projectId: unknown, client: DbOrTx = db): Promise<void> {
+    if (typeof projectId !== 'string' || !UUID_RE.test(projectId)) return;
+    // Project mutations and relationship creation lock project before linked tasks.
+    await client
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(eq(entities.id, projectId), eq(entities.teamId, teamId), eq(entities.type, 'project')),
+      )
+      .for('update');
+  }
+
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     if (deps.acceptance.kind !== 'transaction') return;
+
+    if (item.targetKind === 'object' || item.targetKind === 'task')
+      await lockAcceptanceProject(recordFromUnknown(item.proposedPayload).parentObjectId);
 
     if (
       item.operation !== 'create' &&
@@ -5047,6 +5062,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       };
     }
     try {
+      if (type === 'task') await lockAcceptanceProject(project?.id);
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
         await objects.setTaskProject(
@@ -5713,6 +5729,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         const postCommitEffects =
           deps.acceptance.kind === 'transaction' ? deps.acceptance.postCommitEffects : [];
         await db.transaction(async (tx) => {
+          await lockAcceptanceProject(parsed.parentObjectId, tx);
           await objects.updateObject(
             targetId,
             patch,

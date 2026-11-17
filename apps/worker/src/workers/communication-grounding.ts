@@ -1039,10 +1039,24 @@ export function groundCommunicationBundles<T extends Item>(args: {
               lifecycleClause,
             ) ||
               (payload.status === 'done' && sentDeliverable)) &&
-            !/[?]|\b(?:not|if|might|perhaps)\b/i.test(lifecycleClause)
+            !/[?]|\b(?:not|never|if|might|perhaps|[a-z]+n[’']t)\b/i.test(lifecycleClause)
           )
         )
           delete payload.status;
+        if (payload.parentObjectId === null) {
+          const removal = has('project', 'unset');
+          const clause = removal ? taskClause(removal.quote, removal.subject) : undefined;
+          if (
+            !clause ||
+            /[?]|\b(?:not|never|if|unless|maybe|perhaps|[a-z]+n[’']t)\b/i.test(clause) ||
+            !/\b(?:remove|clear|unset) (?:the |its )?(?:primary )?project(?: assignment| association)?\b/i.test(
+              clause,
+            )
+          ) {
+            delete payload.parentObjectId;
+            delete payload.projectName;
+          }
+        }
         if (typeof payload.parentObjectId === 'string') {
           const projectSupport = has('project', payload.parentObjectId);
           const clause = projectSupport
