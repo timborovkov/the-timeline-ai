@@ -466,36 +466,53 @@ test('date-only and relative deadlines use the workspace day, not UTC midnight',
 test('relationship grounding matches task intent while keeping customer identity exact', () => {
   const text =
     'Cedar Labs needs an interface specification. Please draft that specification for Cedar Labs.';
-  const bundles = groundCommunicationBundles({
-    bundles: [
-      {
-        title: 'Specification',
-        confidence: 'high',
-        items: [
-          {
-            operation: 'create',
-            targetKind: 'task',
-            title: 'Draft interface specification',
-            proposedPayload: { canonicalName: 'Draft interface specification', localRef: 'spec' },
-            grounding: [],
-          },
-          {
-            operation: 'create',
-            targetKind: 'object_relationship',
-            title: 'Customer for specification',
-            proposedPayload: { kind: 'related', fromRef: 'spec', toEntityId: 'customer' },
-            grounding: [support('customer', text, 'customer', 'Draft interface specification')],
-          },
-        ],
-      },
-    ],
-    packet: text,
-    sources: [{ id: event, text }],
-    members: [],
-    hubs: [{ id: 'customer', name: 'Cedar Labs', type: 'company' }],
-    source: 'slack',
-  });
-  expect(bundles[0]?.items).toHaveLength(2);
+  const evaluate = (text: string) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title: 'Specification',
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title: 'Draft interface specification',
+              proposedPayload: { canonicalName: 'Draft interface specification', localRef: 'spec' },
+              grounding: [],
+            },
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              title: 'Customer for specification',
+              proposedPayload: { kind: 'related', fromRef: 'spec', toEntityId: 'customer' },
+              grounding: [support('customer', text, 'customer', 'Draft interface specification')],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      sources: [{ id: event, text }],
+      members: [],
+      hubs: [{ id: 'customer', name: 'Cedar Labs', type: 'company' }],
+      source: 'slack',
+    });
+  expect(evaluate(text)[0]?.items).toHaveLength(2);
+  expect(
+    evaluate('Draft interface specification has no connection to Cedar Labs.')[0]?.items,
+  ).toHaveLength(1);
+});
+
+test('a creation date beside a deadline cannot replace it', () => {
+  const text = 'Review retention policy, created 2026-06-01, is due 2026-06-12.';
+  for (const [day, expected] of [
+    ['01', false],
+    ['12', true],
+  ] as const) {
+    const dueAt = `2026-06-${day}T00:00:00.000Z`;
+    expect(
+      run(text, { dueAt }, [support('dueAt', text, dueAt)])[0]?.items[0]?.proposedPayload,
+    ).toEqual(expected ? { dueAt } : {});
+  }
 });
 
 test('the original forwarded header retains its verified speaker', () => {

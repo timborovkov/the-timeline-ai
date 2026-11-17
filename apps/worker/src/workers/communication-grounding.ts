@@ -109,32 +109,40 @@ function deadlineTimeMatches(day: string, tail: string, target: number, timezone
 }
 function deadlineMatches(
   quote: string,
+  subject: string,
   value: unknown,
   timezone: string,
   referenceDate?: Date,
 ): boolean {
-  if (
-    typeof value !== 'string' ||
-    !/\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis)\b/i.test(quote)
-  )
-    return false;
+  if (typeof value !== 'string') return false;
   const target = Date.parse(value);
-  const deniedAt = (index: number) =>
-    /\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i.test(
+  const deadlineAt = (index: number) => {
+    const prefix =
       quote
         .slice(0, index)
         .split(/\bbut\b|,\s*(?:instead|now)\b/i)
-        .at(-1) ?? '',
+        .at(-1) ?? '';
+    return (
+      (/\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
+        prefix,
+      ) ||
+        ['is', 'to', 'was', 'is now'].some((verb) =>
+          normalize(prefix).endsWith(`deadline for ${normalize(subject)} ${verb}`),
+        )) &&
+      !/\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i.test(
+        prefix,
+      )
     );
+  };
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
-    if (deniedAt(match.index)) continue;
+    if (!deadlineAt(match.index)) continue;
     if (deadlineTimeMatches(match[0], quote.slice(match.index + match[0].length), target, timezone))
       return true;
   }
   for (const match of quote.matchAll(
     /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
   )) {
-    if (deniedAt(match.index)) continue;
+    if (!deadlineAt(match.index)) continue;
     const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
     let year = match[3] ? Number(match[3]) : reference?.year;
     if (year === undefined) continue;
@@ -164,7 +172,7 @@ function deadlineMatches(
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
-      if (deniedAt(match.index)) continue;
+      if (!deadlineAt(match.index)) continue;
       const phrase = match[0].toLowerCase();
       const weekdays = [
         'monday',
@@ -203,6 +211,35 @@ const lifecycleWords: Record<string, RegExp> = {
   blocked: /\bblocked\b/i,
   todo: /\b(?:reopen|restart|unblock)\b/i,
 };
+function affirmativeTaskHub(clause: string, hubName: string, type: string): boolean {
+  if (
+    /[?]|\b(?:or|maybe|perhaps|might|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+  const name = normalize(hubName);
+  const statement = normalize(clause);
+  const position = statement.indexOf(name);
+  if (!name || position < 0) return false;
+  const before = statement.slice(0, position);
+  const after = statement.slice(position + name.length);
+  if (after && !/^[\s.,:;!'’]/.test(after)) return false;
+  if (/\b(?:link|connect|associate|relate)\b[^.!?]*\b(?:to|with) (?:the )?$/.test(before))
+    return true;
+  if (/\b(?:for|requested by|commissioned by) (?:our (?:customer|client) )?$/.test(before))
+    return true;
+  if (
+    type === 'project' &&
+    (/\b(?:under|within|in|on|part of|belongs to) (?:the )?$/.test(before) ||
+      (!before && after.startsWith(':')))
+  )
+    return true;
+  return (
+    (!before || /\s$/.test(before)) && /^ (?:needs|requests|requested|commissioned)\b/.test(after)
+  );
+}
+
 function affirmativeLifecycle(clause: string | undefined, status: unknown, sent = false): boolean {
   if (!clause || typeof status !== 'string') return false;
   if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
@@ -772,6 +809,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               ? (taskClause(support.quote, taskEndpoint.name) ?? support.quote)
               : support.quote;
             if (
+              support.quote.includes('?') ||
               ![to.id, to.name, from.id, from.name].includes(support.value) ||
               /[?]|\b(?:maybe|perhaps|undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i.test(
                 assertion,
@@ -779,13 +817,19 @@ export function groundCommunicationBundles<T extends Item>(args: {
               (!taskEndpoint && /\bseparate\b/i.test(assertion))
             )
               return false;
-            if (support.field === 'relationship') {
-              if (payload.kind !== 'related') return false;
-              const link =
-                /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i.exec(
-                  assertion.trim(),
-                );
-              if (!link) return false;
+            if (
+              support.field !== 'relationship' &&
+              !(
+                (support.field === 'customer' && [from.type, to.type].includes('company')) ||
+                (support.field === 'project' && [from.type, to.type].includes('project'))
+              )
+            )
+              return false;
+            const link =
+              /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i.exec(
+                assertion.trim(),
+              );
+            if (link && payload.kind === 'related') {
               const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
                 [object.name, ...object.aliases].some(
                   (name) =>
@@ -798,21 +842,30 @@ export function groundCommunicationBundles<T extends Item>(args: {
                         ),
                     ),
                 );
-              return (
+              if (
                 (exactEndpoint(link[1] ?? '', from) && exactEndpoint(link[2] ?? '', to)) ||
                 (exactEndpoint(link[1] ?? '', to) && exactEndpoint(link[2] ?? '', from))
-              );
+              )
+                return true;
             }
-            if (!(
-              (support.field === 'customer' && [from.type, to.type].includes('company')) ||
-              (support.field === 'project' && [from.type, to.type].includes('project'))
-            ))
-              return false;
+            if (support.field === 'relationship') return false;
             const direct = namesEndpoint(assertion, from) && namesEndpoint(assertion, to);
             if (direct) {
               const company = from.type === 'company' ? from : to.type === 'company' ? to : null;
               const project = from.type === 'project' ? from : to.type === 'project' ? to : null;
-              if (!company || !project) return true;
+              if (taskEndpoint) {
+                const hub = from === taskEndpoint ? to : from;
+                return [hub.name, ...hub.aliases].some(
+                  (name) =>
+                    namesEndpoint(name, hub) &&
+                    affirmativeTaskHub(
+                      assertion,
+                      name,
+                      typeof hub.type === 'string' ? hub.type : '',
+                    ),
+                );
+              }
+              if (!company || !project) return false;
               // Bind the predicate to these two named endpoints in the same statement.
               const names = (object: typeof company) =>
                 [object.name, ...object.aliases]
@@ -1090,6 +1143,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             deadline &&
             deadlineMatches(
               taskClause(deadline.quote, deadline.subject) ?? '',
+              deadline.subject,
               payload.dueAt,
               args.timezone ?? 'UTC',
               args.sources.find((row) => row.id === deadline.rawEventId)?.occurredAt,
@@ -1178,17 +1232,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           );
           const customer = candidates[0];
           if (!customer || candidates.length !== 1 || customer.id !== support.value) return false;
-          const name = normalize(customer.name);
-          const statement = normalize(clause);
-          const position = statement.indexOf(name);
-          const before = statement.slice(0, position);
-          const after = statement.slice(position + name.length);
-          if (after && !/^[\s.,:;!'’]/.test(after)) return false;
-          return (
-            /\b(?:for|requested by|commissioned by) (?:our (?:customer|client) )?$/.test(before) ||
-            ((!before || /\s$/.test(before)) &&
-              /^ (?:needs|requests|requested|commissioned)\b/.test(after))
-          );
+          return affirmativeTaskHub(clause, customer.name, 'company');
         });
         const ids = [...new Set(links.map((support) => support.value))];
         if (ids.length === 1 && item.operation === 'create') {
