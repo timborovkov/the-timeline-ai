@@ -4546,7 +4546,7 @@ async function runSuggestionExtraction(
     const quoteOptions = Object.fromEntries(
       coverageQuotes.map((quote, index) => [`quote-${index}`, quote]),
     );
-    const checkedPrompt = `${auditPrompt}\nCOVERAGE_QUOTE_OPTIONS\n${JSON.stringify(quoteOptions)}\nEND_COVERAGE_QUOTE_OPTIONS`;
+    const checkedPrompt = `${auditPrompt}\nCOVERAGE_QUOTE_OPTIONS\n${fenceExternalContent(JSON.stringify(quoteOptions), { source: 'communication-coverage-quotes', eventId: row.id })}\nEND_COVERAGE_QUOTE_OPTIONS`;
     const checkedInstructions = `${COMMUNICATION_AUDIT_VERSION}\n${COMMUNICATION_AUDIT_INSTRUCTIONS}\n${COMMUNICATION_CONTEXT_POLICY}\n${COMMUNICATION_OUTPUT_POLICY}${evidenceCitationSystem}`;
     // Include the serialized schema and the single quote mapping in the request budget.
     // The original evidence/draft prompt retains its existing tighter bound above.

@@ -697,10 +697,14 @@ for (const source of ['email', 'slack', 'telegram']) {
           'Prepare deployment checklist',
           'todo',
         );
+        expect(args.prompt).toContain(
+          'COVERAGE_QUOTE_OPTIONS\n<external_content source="communication-coverage-quotes"',
+        );
         const quoteOptions = JSON.parse(
-          requireValue(args.prompt.split('COVERAGE_QUOTE_OPTIONS\n')[1]).split(
-            '\nEND_COVERAGE_QUOTE_OPTIONS',
-          )[0] ?? '{}',
+          requireValue(args.prompt.split('COVERAGE_QUOTE_OPTIONS\n')[1])
+            .split('\nEND_COVERAGE_QUOTE_OPTIONS')[0]
+            ?.replace(/^<external_content[^>]*>/u, '')
+            .replace(/<\/external_content>$/u, '') ?? '{}',
         ) as Record<string, string>;
         const quoteRef = requireValue(
           Object.entries(quoteOptions).find(([, quote]) => quote === evidence.quote)?.[0],

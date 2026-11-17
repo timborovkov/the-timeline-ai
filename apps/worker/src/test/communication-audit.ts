@@ -26,10 +26,13 @@ export const controlledCommunicationAudit: typeof chatStructured = (input) => {
   ) as { id: string }[];
   const quoteMarker = '\nCOVERAGE_QUOTE_OPTIONS\n';
   const quoteOptions = JSON.parse(
-    input.prompt.slice(
-      input.prompt.lastIndexOf(quoteMarker) + quoteMarker.length,
-      input.prompt.lastIndexOf('\nEND_COVERAGE_QUOTE_OPTIONS'),
-    ),
+    input.prompt
+      .slice(
+        input.prompt.lastIndexOf(quoteMarker) + quoteMarker.length,
+        input.prompt.lastIndexOf('\nEND_COVERAGE_QUOTE_OPTIONS'),
+      )
+      .replace(/^<external_content[^>]*>/u, '')
+      .replace(/<\/external_content>$/u, ''),
   ) as Record<string, string>;
   const quoteRef = Object.entries(quoteOptions).find(([, quote]) =>
     evidence[2]?.includes(quote),

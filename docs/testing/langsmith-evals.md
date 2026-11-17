@@ -322,6 +322,8 @@ retains the expanded corpus runs, original scorer versions and unexecuted holdou
 status. Use its frozen revision and individual failure reports when diagnosing
 remaining recall or field errors.
 
+The [completion diagnostics](../evidence/communications-completion-2026-11-17.json) retain subsequent reasoning-budget and citation/link validation attempts, including failed runs.
+
 The [completeness-check diagnostics](../evidence/communications-completeness-2026-11-16.json)
 retain failed checker-contract runs separately from benchmark evidence. Known-object
 references in a no-action ledger entry do not authorize writes; unavailable IDs
