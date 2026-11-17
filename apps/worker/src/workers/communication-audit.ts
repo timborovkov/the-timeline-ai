@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v8';
+export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v9';
 export const communicationCoverageSchema = z
   .array(
     z.object({

@@ -350,7 +350,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ...args.hubs,
           ...(args.objects ?? []),
           ...bundle.items
-            .filter((candidate) => candidate.targetKind === 'object')
+            .filter(
+              (candidate) => candidate.targetKind === 'object' || candidate.targetKind === 'task',
+            )
             .map((candidate) => ({
               id:
                 typeof candidate.proposedPayload.localRef === 'string'
@@ -361,9 +363,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
                   ? candidate.proposedPayload.canonicalName
                   : candidate.title,
               type:
-                typeof candidate.proposedPayload.type === 'string'
-                  ? candidate.proposedPayload.type
-                  : '',
+                candidate.targetKind === 'task'
+                  ? 'task'
+                  : typeof candidate.proposedPayload.type === 'string'
+                    ? candidate.proposedPayload.type
+                    : '',
               aliases: [] as string[],
             })),
         ];
@@ -506,7 +510,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 (support.field === 'project' && [from.type, to.type].includes('project'))
               ) ||
               ![to.id, to.name, from.id, from.name].includes(support.value) ||
-              /[?]|\b(?:maybe|perhaps|undecided|not|unless|if|unrelated)\b/i.test(assertion) ||
+              /[?]|\b(?:maybe|perhaps|undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i.test(
+                assertion,
+              ) ||
               (!taskEndpoint && /\bseparate\b/i.test(assertion))
             )
               return false;
@@ -520,13 +526,20 @@ export function groundCommunicationBundles<T extends Item>(args: {
               : namesEndpoint(support.quote, to)
                 ? from
                 : null;
+            const taskNoun = other?.name
+              .toLowerCase()
+              .match(/[\p{L}\p{N}]+/gu)
+              ?.at(-1);
+            const referenceKind =
+              other?.type === 'task'
+                ? `(?:task|item|deliverable${taskNoun && taskNoun.length > 3 ? `|${taskNoun}` : ''})`
+                : other?.type === 'company'
+                  ? '(?:company|customer|client)'
+                  : 'project';
             if (
               !other ||
-              !['company', 'project'].includes(String(other.type)) ||
-              !new RegExp(
-                `\\b(?:the|this|that) ${other.type === 'company' ? '(?:company|customer|client)' : 'project'}\\b`,
-                'i',
-              ).test(support.quote)
+              !['company', 'project', 'task'].includes(String(other.type)) ||
+              !new RegExp(`\\b(?:the|this|that) ${referenceKind}\\b`, 'i').test(support.quote)
             )
               return false;
             const source = args.sources.find((source) => source.id === support.rawEventId);
@@ -537,9 +550,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
                     candidate.type === other.type &&
                     candidate.name &&
                     source &&
-                    [candidate.name, ...(candidate.aliases ?? [])].some((name) =>
-                      mentions(source.text, name),
-                    ),
+                    (candidate.type === 'task'
+                      ? namesTask(source.text, candidate.name)
+                      : [candidate.name, ...(candidate.aliases ?? [])].some((name) =>
+                          mentions(source.text, name),
+                        )),
                 )
                 .map((candidate) => candidate.id),
             );

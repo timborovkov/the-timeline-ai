@@ -9,7 +9,7 @@ const alice = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const bob = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const title = 'Review retention policy';
 const support = (
-  field: 'assignee' | 'dueAt' | 'customer' | 'prospect' | 'status',
+  field: 'assignee' | 'dueAt' | 'customer' | 'project' | 'prospect' | 'status',
   quote: string,
   value: string,
   subject = title,
@@ -1090,4 +1090,56 @@ test('their proposed project refers only to the immediately preceding unique eng
   const denied = 'We are not discussing an engagement with Cedar Dental.';
   expect(relationship([denied, second], `${denied} ${second}`)).toHaveLength(1);
   expect(relationship([first, second], `${first} ${second}`, [], second)).toHaveLength(1);
+});
+
+test('a typed deliverable reference links only one explicitly evidenced task', () => {
+  const taskName = 'Prepare NWM compliance checklist';
+  const first = 'Please prepare the NWM compliance checklist for Northwind Medical.';
+  const evaluate = (link: string, extra = '') =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title: 'Checklist',
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title: taskName,
+              proposedPayload: { canonicalName: taskName, localRef: 'checklist' },
+              grounding: [],
+            },
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              title: 'Link checklist to Northwind Medical',
+              proposedPayload: { fromRef: 'checklist', toEntityId: 'customer', kind: 'related' },
+              grounding: [
+                support('customer', link, 'customer', 'Link checklist to Northwind Medical'),
+                support('project', first, 'checklist', 'Link checklist to Northwind Medical'),
+              ],
+            },
+          ],
+        },
+      ],
+      packet: `${first} ${link} ${extra}`,
+      sources: [{ id: event, text: `${first} ${link} ${extra}` }],
+      members: [],
+      source: 'email',
+      hubs: [{ id: 'customer', name: 'Northwind Medical', type: 'company' }],
+      objects: extra
+        ? [{ id: 'other-task', name: 'Prepare security checklist', type: 'task' }]
+        : [],
+    });
+  expect(evaluate('Link the checklist to Northwind Medical.')[0]?.items).toHaveLength(2);
+  expect(evaluate('Do not link the checklist to Northwind Medical.')[0]?.items).toHaveLength(1);
+  for (const prefix of ["Don't", 'Don’t', 'Never', "You mustn't", 'We cannot'])
+    expect(evaluate(`${prefix} link the checklist to Northwind Medical.`)[0]?.items).toHaveLength(
+      1,
+    );
+  expect(evaluate('Link the report to Northwind Medical.')[0]?.items).toHaveLength(1);
+  expect(
+    evaluate('Link the checklist to Northwind Medical.', 'Also prepare security checklist.')[0]
+      ?.items,
+  ).toHaveLength(1);
 });
