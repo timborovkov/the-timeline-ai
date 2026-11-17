@@ -4631,6 +4631,18 @@ async function runSuggestionExtraction(
           .max(Math.min(50, amendmentCandidates.length)),
       })
       .superRefine((audit, ctx) => {
+        const coverageCount =
+          audit.coverage.length +
+          audit.removedDrafts.length +
+          audit.pendingAmendments.length +
+          audit.bundles.reduce((count, bundle) => count + bundle.items.length, 0);
+        if (coverageCount < 1 || coverageCount > 100)
+          ctx.addIssue({
+            code: 'custom',
+            path: ['coverage'],
+            message:
+              'Return 1–100 total coverage entries, including an evidenced no_action entry when no proposal is needed',
+          });
         for (const message of communicationDraftAccountingErrors({
           drafts: draftRecords,
           ...audit,
@@ -4654,7 +4666,9 @@ async function runSuggestionExtraction(
       schema: auditSchema,
       normalizeOutput: (value) => referenceCommunicationCoverageQuotes(value, coverageQuotes),
       model: modelId,
-      maxOutputTokens: SUGGESTION_EXTRACTION_MAX_OUTPUT_TOKENS,
+      // Reasoning shares the completion limit. The full replacement plus grounded
+      // coverage needs room even when a provider exceeds the requested low effort.
+      maxOutputTokens: 24_000,
       ...(isHumanCommunication(row.source) ? { reasoningEffort: 'low' as const } : {}),
       abortSignal: AbortSignal.timeout(SUGGESTION_EXTRACTION_TIMEOUT_MS),
       instructions: checkedInstructions,

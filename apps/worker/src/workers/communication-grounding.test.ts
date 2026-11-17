@@ -574,6 +574,32 @@ test('a correction can assign Alice rather than Bob without negating Alice', () 
   ).toEqual({});
 });
 
+test('an assignment reaffirmation requires the same visible task and named owner', () => {
+  const quote = 'Please use Alice as the assignee.';
+  const prefix = 'Alice will review retention policy, not Bob.';
+  const payload = { assigneeUserId: alice };
+  expect(
+    run(`${prefix} ${quote}`, payload, [support('assignee', quote, alice)])[0]?.items[0]
+      ?.proposedPayload,
+  ).toEqual(payload);
+  for (const text of [
+    `Bob will review retention policy. ${quote}`,
+    `Alice will deploy the server. ${quote}`,
+    `Alice will not review retention policy. ${quote}`,
+    `If approved, Alice will review retention policy. ${quote}`,
+    `${prefix} From: Alice ${quote}`,
+    `${prefix} ${quote} ${quote}`,
+  ]) {
+    expect(
+      run(text, payload, [support('assignee', quote, alice)])[0]?.items[0]?.proposedPayload,
+    ).toEqual({});
+  }
+  expect(
+    run(`${prefix} ${quote}`, payload, [support('assignee', quote, alice)], { packet: quote })[0]
+      ?.items[0]?.proposedPayload,
+  ).toEqual({});
+});
+
 test('a short pronoun deadline quote resolves only its visible preceding task', () => {
   const quote = 'Its deadline is 2026-06-16T09:00:00Z.';
   const text = `Please review retention policy. ${quote}`;

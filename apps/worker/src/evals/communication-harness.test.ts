@@ -1446,3 +1446,29 @@ test('an audit can explicitly reject an unsupported draft with source evidence',
   expect(result.actions).toEqual([]);
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);
+
+test('empty audit coverage is rejected at the inference schema boundary', async () => {
+  const row = requireValue(
+    COMMUNICATION_CASES.find((row) => row.id === 'audit-unrelated-known-hubs-email'),
+  );
+  let checked = false;
+  const result = await harness.run(row, {
+    model: async () => ({ model: 'test', object: { bundles: [] } }) as never,
+    auditModel: async (input) => {
+      expect(
+        input.schema.safeParse({
+          bundles: [],
+          coverage: [],
+          pendingAmendments: [],
+          removedDrafts: [],
+        }).success,
+      ).toBe(false);
+      expect(input.maxOutputTokens).toBe(24_000);
+      checked = true;
+      return controlledCommunicationAudit(input);
+    },
+  });
+  expect(checked).toBe(true);
+  expect(result.executionErrors).toEqual([]);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);

@@ -247,9 +247,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
           if (
             sourceForQuote &&
             support.field === 'assignee' &&
-            /^[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b)/u.test(
+            (/^[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b)/u.test(
               support.quote,
-            )
+            ) ||
+              args.members.some(
+                (member) =>
+                  member.userId === support.value &&
+                  member.name &&
+                  support.quote === `Please use ${member.name} as the assignee.`,
+              ))
           ) {
             const at = sourceForQuote.text.indexOf(support.quote);
             const previous =
