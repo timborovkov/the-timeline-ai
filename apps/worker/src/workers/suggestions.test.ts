@@ -4916,6 +4916,7 @@ describe('processSuggestionJobForTests', () => {
 
   it('accounts for already-satisfied communication relationships during retention', async () => {
     const rawEventId = 'd988c05c-48dc-52df-b192-9370a76b1c9a';
+    const instruction = 'Link John Doe to Acme Corporation.';
     const [john, acme] = await db
       .insert(entities)
       .values([
@@ -4941,7 +4942,7 @@ describe('processSuggestionJobForTests', () => {
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'email',
-      text: 'John Doe from Acme Corporation joined the renewal call.',
+      text: instruction,
       sourceMetadata: {
         extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
         extraction_model_version: 'test-extract@1',
@@ -4954,9 +4955,9 @@ describe('processSuggestionJobForTests', () => {
           {
             title: 'Relate John Doe and Acme Corporation',
             summary: 'John Doe is related to Acme Corporation.',
-            reason: 'The source says John Doe is from Acme Corporation.',
+            reason: 'The source explicitly asks to link John Doe and Acme Corporation.',
             confidence: 'high',
-            quote: 'John Doe from Acme Corporation',
+            quote: instruction,
             items: [
               {
                 operation: 'create',
@@ -4964,9 +4965,9 @@ describe('processSuggestionJobForTests', () => {
                 title: 'Relate John Doe and Acme Corporation',
                 grounding: [
                   {
-                    field: 'customer',
+                    field: 'relationship',
                     rawEventId,
-                    quote: 'John Doe from Acme Corporation joined the renewal call.',
+                    quote: instruction,
                     subject: 'John Doe',
                     value: acme.id,
                   },

@@ -2111,6 +2111,21 @@ test('contracted negatives cannot assign or clear optional task fields', () => {
     ).toEqual({});
   }
 });
+test('assignment evidence cannot borrow a commitment from another artifact', () => {
+  for (const [text, expected] of [
+    ['Review retention policy is blocked because Bob will deploy the service.', undefined],
+    ['Review retention policy depends on deployment, which Bob will handle.', undefined],
+    ['Bob will review retention policy because deployment needs it.', bob],
+  ] as const) {
+    for (const payload of [{ assigneeUserId: bob }, {}]) {
+      expect(
+        run(text, payload, [support('assignee', text, bob)])[0]?.items[0]?.proposedPayload
+          .assigneeUserId,
+      ).toBe(expected);
+    }
+  }
+});
+
 test('overlapping tasks cannot borrow assignment or deadline assertions', () => {
   for (const targetId of ['review', 'draft']) {
     const taskTitle = targetId === 'review' ? title : 'Draft retention policy';

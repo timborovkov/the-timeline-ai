@@ -306,7 +306,7 @@ function taskAssertion(clause: string, subject: string): string | undefined {
   // Keep only the assertion describing this task. Causal/dependent
   // clauses can describe a different artifact, and task titles are identifiers.
   const parts = normalize(clause).split(
-    /\s+\b(because|although|since|whereas|while|until|even though|but|yet)\b\s+/,
+    /\s+\b(because|although|since|whereas|while|until|even though|but|yet|which|who)\b\s+/,
   );
   const statements = parts.filter((_, index) => index % 2 === 0);
   const named = statements.filter((statement) => namesTask(statement, subject));
@@ -1152,9 +1152,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const assignment = supports.find((support) => support.field === 'assignee');
         const member = args.members.find((member) => member.userId === assignment?.value);
         const source = args.sources.find((source) => source.id === assignment?.rawEventId);
+        const citedAssignment = assignment
+          ? taskClause(assignment.quote, assignment.subject)
+          : undefined;
         const originalClause = assignment
-          ? (taskClause(assignment.quote, assignment.subject) ??
-            (validContexts.has(assignment) ? assignment.quote : undefined))
+          ? citedAssignment
+            ? taskAssertion(citedAssignment, assignment.subject)
+            : validContexts.has(assignment)
+              ? assignment.quote
+              : undefined
           : undefined;
         const clause = originalClause?.replace(
           /,\s*not\s+([^.!?,]+)\.?$/i,
