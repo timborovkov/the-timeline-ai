@@ -347,8 +347,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
 }): Bundle<T>[] {
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
-    const taskIdentityNames = (item: T) => {
-      const target = args.objects?.find((object) => object.id === item.targetId);
+    const taskIdentityNames = (
+      item: Pick<Item, 'targetId' | 'title'>,
+      objects = args.objects ?? [],
+    ) => {
+      const target = objects.find((object) => object.id === item.targetId);
       const names = [target?.name ?? item.title];
       if (target?.type !== 'task') return names;
       return [
@@ -356,7 +359,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         ...(target.aliases ?? []).filter(
           (alias) =>
             alias.trim() &&
-            !(args.objects ?? []).some(
+            !objects.some(
               (other) =>
                 other.id !== target.id &&
                 [other.name, ...(other.aliases ?? [])].some(
@@ -366,13 +369,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
         ),
       ];
     };
-    const taskEvidenceUnambiguous = (item: T, text: string) => {
-      const names = taskIdentityNames(item);
+    const taskEvidenceUnambiguous = (
+      item: Pick<Item, 'targetId' | 'title'>,
+      text: string,
+      objects = args.objects ?? [],
+    ) => {
+      const names = taskIdentityNames(item, objects);
       const literal = (name: string) => {
         const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
       };
-      const competing = (args.objects ?? []).filter(
+      const competing = objects.filter(
         (object) =>
           object.type === 'task' &&
           object.id !== item.targetId &&
@@ -677,7 +684,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
         ];
         const namesEndpoint = (quote: string, object: NonNullable<typeof from>) =>
           object.type === 'task'
-            ? namesTask(quote, object.name)
+            ? taskEvidenceUnambiguous({ title: object.name, targetId: object.id }, quote, known) &&
+              taskIdentityNames({ title: object.name, targetId: object.id }, known).some((name) =>
+                namesTask(quote, name),
+              )
             : mentions(quote, object.name) ||
               object.aliases.some(
                 (alias) =>

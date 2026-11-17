@@ -502,6 +502,40 @@ test('relationship grounding matches task intent while keeping customer identity
   ).toHaveLength(1);
 });
 
+test('relationship evidence identifies the intended task among competing names', () => {
+  const quote = 'Bob will draft retention policy for Cedar Labs.';
+  const objects = [
+    { id: 'review', name: 'Review retention policy', type: 'task' },
+    { id: 'draft', name: 'Draft retention policy', type: 'task' },
+  ];
+  for (const target of objects) {
+    const items = groundCommunicationBundles({
+      bundles: [
+        {
+          title: 'Customer association',
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              title: 'Task customer',
+              proposedPayload: { kind: 'related', fromEntityId: target.id, toEntityId: 'customer' },
+              grounding: [support('customer', quote, 'customer', target.name)],
+            },
+          ],
+        },
+      ],
+      sources: [{ id: event, text: quote }],
+      packet: quote,
+      members: [],
+      source: 'slack',
+      objects,
+      hubs: [{ id: 'customer', name: 'Cedar Labs', type: 'company' }],
+    })[0]?.items;
+    expect(items).toHaveLength(target.id === 'draft' ? 1 : 0);
+  }
+});
+
 test('a creation date beside a deadline cannot replace it', () => {
   const text = 'Review retention policy, created 2026-06-01, is due 2026-06-12.';
   for (const [day, expected] of [
