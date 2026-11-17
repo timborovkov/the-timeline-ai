@@ -1656,3 +1656,69 @@ test('overlapping task names cannot borrow another task completion', () => {
   });
   expect(result[0]?.items[0]?.proposedPayload.status).toBeUndefined();
 });
+
+test('ordinary prose after an explicit deadline time does not become a timezone', () => {
+  for (const [expression, dueAt] of [
+    ['June 12, 2026 at 09:00 UTC for legal approval', '2026-06-12T09:00:00.000Z'],
+    ['2026-06-12 at 09:00 +02:00 before lunch', '2026-06-12T07:00:00.000Z'],
+    ['June 12 at 09:00 for legal approval', '2026-06-12T06:00:00.000Z'],
+  ] as const) {
+    const quote = `Review retention policy is due ${expression}.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+  }
+});
+test('assignment names use complete identifier boundaries in every form', () => {
+  const evaluate = (quote: string) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title,
+              proposedPayload: { assigneeUserId: alice },
+              grounding: [support('assignee', quote, alice)],
+            },
+          ],
+        },
+      ],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      members: [{ userId: alice, name: 'Ann', email: 'ann@example.test' }],
+      hubs: [],
+      source: 'slack',
+    })[0]?.items[0]?.proposedPayload.assigneeUserId;
+  for (const quote of [
+    'Ann will review retention policy.',
+    'Ann, please review retention policy.',
+    'Assign review retention policy to Ann.',
+  ])
+    expect(evaluate(quote)).toBe(alice);
+  for (const quote of [
+    'Joann will review retention policy.',
+    'Joann, please review retention policy.',
+    'Assign review retention policy to Joann.',
+    'Ann-Marie will review retention policy.',
+    'Unassign Ann from review retention policy.',
+    'Assign review retention policy to Ann Smith.',
+  ])
+    expect(evaluate(quote)).toBeUndefined();
+});
+
+test('trailing prose does not legitimize unsupported time or timezone markers', () => {
+  for (const marker of ['PST', 'pst', 'XYZ', 'America/Atlantis', 'p.m.', 'UTCfoo']) {
+    const quote = `Review retention policy is due June 12 at 09:00 ${marker} for legal approval.`;
+    const dueAt = '2026-06-12T06:00:00.000Z';
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+      marker,
+    ).toBeUndefined();
+  }
+});

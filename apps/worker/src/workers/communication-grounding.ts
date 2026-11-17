@@ -76,8 +76,25 @@ function deadlineTimeMatches(day: string, tail: string, target: number, timezone
     const second = Number(time[3] ?? 0);
     const millisecond = Number((time[4] ?? '').padEnd(3, '0'));
     if (hour > 23 || minute > 59 || second > 59) return false;
-    // Unsupported zones and AM/PM markers must not silently become workspace time.
-    if (/^\s*(?:[A-Za-z]|[+-]\d)/.test(tail.slice(time[0].length))) return false;
+    // A time marker must end at a boundary; ordinary following prose is not a zone.
+    const suffix = tail.slice(time[0].length);
+    if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return false;
+    if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return false;
+    const token = /^\s+([A-Za-z][A-Za-z_/-]*)/.exec(suffix)?.[1];
+    if (token && !/^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) {
+      if (
+        /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
+        /^[A-Z]{2,6}$/.test(token) ||
+        token.includes('/')
+      )
+        return false;
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: token });
+        return false;
+      } catch {
+        // Ordinary words are not timezone identifiers.
+      }
+    }
     const zone = time[5];
     const instant = zone
       ? Date.parse(
@@ -819,13 +836,16 @@ export function groundCommunicationBundles<T extends Item>(args: {
               ? ''
               : phrase,
         );
-        const name = member?.name?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedName = member?.name?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const name = escapedName
+          ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
+          : undefined;
         const named =
           name &&
           clause &&
           new RegExp(
-            `(?:${name}\\s+(?:will|shall|owns|(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|assign[^.!?]*\\b${name}\\b|${name},?\\s+please)`,
-            'i',
+            `(?:${name}\\s+(?:will|shall|owns|(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)|is responsible|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)|\\b(?:re)?assign(?:ed)?\\b[^.!?]*${name}(?=\\s*(?:[.!?,]|$)|\\s+(?:for|to|as|by)\\b)|${name},?\\s+please)`,
+            'iu',
           ).test(clause) &&
           !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause);
         const commitmentQuotes = assignment
