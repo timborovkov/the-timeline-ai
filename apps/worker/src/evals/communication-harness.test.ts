@@ -1205,6 +1205,37 @@ test('per-task project grounding can name its known endpoint without losing sepa
   expect(scoreCommunications(row, result).passed).toBe(true);
 }, 60_000);
 
+test('distinct companies survive identical generic approval titles', async () => {
+  const row = requireValue(COMMUNICATION_CASES.find((row) => row.id === 'two-customers-telegram'));
+  const quote = 'Cedar Dental and Oak Pharmacy are both our clients.';
+  const result = await harness.run(row, {
+    model: async (input) =>
+      ({
+        model: 'test',
+        object: {
+          bundles: [
+            {
+              title: 'Create client companies',
+              confidence: 'high',
+              quote,
+              items: ['Cedar Dental', 'Oak Pharmacy'].map((name) => ({
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Create company',
+                proposedPayload: { canonicalName: name, type: 'company' },
+                grounding: [supportFromPacket(input.prompt, quote, 'customer', name, name)],
+              })),
+            },
+          ],
+        },
+      }) as never,
+  });
+  expect(result.executionErrors).toEqual([]);
+  expect(result.actions).toHaveLength(2);
+  expect(result.nodes.map((node) => node.name).sort()).toEqual(['Cedar Dental', 'Oak Pharmacy']);
+  expect(scoreCommunications(row, result).passed).toBe(true);
+}, 60_000);
+
 test('pending approval IDs cannot become canonical task update targets', async () => {
   const row = requireValue(
     COMMUNICATION_CASES.find((row) => row.id === 'human-edited-pending-telegram'),

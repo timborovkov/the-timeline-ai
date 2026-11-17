@@ -1400,6 +1400,10 @@ function aliasesForPendingItem(item: typeof agentSuggestionItems.$inferSelect): 
 
 function createSubjectCandidates(item: typeof agentSuggestionItems.$inferSelect): string[] {
   const payload = normalizeLifecyclePayload(item);
+  const canonicalName = stringPayloadValue(payload, 'canonicalName');
+  // Approval headings describe actions (e.g. "Create company"), not object identity.
+  // Once a canonical name exists, only that name and explicit aliases can match.
+  if (canonicalName) return [canonicalName, ...aliasesForPendingItem(item)];
   return [
     normalizedPrimaryApprovalName(item),
     item.title,

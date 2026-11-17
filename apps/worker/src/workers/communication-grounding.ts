@@ -561,7 +561,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
             return (
               candidates.size === 1 &&
               candidates.has(other.id) &&
-              supports.some(
+              [
+                ...supports,
+                ...bundle.items
+                  .filter(
+                    (candidate) =>
+                      candidate.targetKind !== 'object_relationship' &&
+                      (candidate.proposedPayload.localRef === other.id ||
+                        candidate.targetId === other.id),
+                  )
+                  .flatMap(verified),
+              ].some(
                 (evidence) =>
                   evidence.rawEventId === support.rawEventId &&
                   namesEndpoint(evidence.quote, other),

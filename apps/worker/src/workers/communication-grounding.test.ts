@@ -1095,7 +1095,11 @@ test('their proposed project refers only to the immediately preceding unique eng
 test('a typed deliverable reference links only one explicitly evidenced task', () => {
   const taskName = 'Prepare NWM compliance checklist';
   const first = 'Please prepare the NWM compliance checklist for Northwind Medical.';
-  const evaluate = (link: string, extra = '') =>
+  const evaluate = (
+    link: string,
+    extra = '',
+    evidenceLocation: 'relationship' | 'task' | 'untrusted-task' = 'relationship',
+  ) =>
     groundCommunicationBundles({
       bundles: [
         {
@@ -1107,7 +1111,15 @@ test('a typed deliverable reference links only one explicitly evidenced task', (
               targetKind: 'task',
               title: taskName,
               proposedPayload: { canonicalName: taskName, localRef: 'checklist' },
-              grounding: [],
+              grounding:
+                evidenceLocation === 'relationship'
+                  ? []
+                  : [
+                      {
+                        ...support('customer', first, 'customer', taskName),
+                        ...(evidenceLocation === 'untrusted-task' ? { rawEventId: alice } : {}),
+                      },
+                    ],
             },
             {
               operation: 'create',
@@ -1116,7 +1128,9 @@ test('a typed deliverable reference links only one explicitly evidenced task', (
               proposedPayload: { fromRef: 'checklist', toEntityId: 'customer', kind: 'related' },
               grounding: [
                 support('customer', link, 'customer', 'Link checklist to Northwind Medical'),
-                support('project', first, 'checklist', 'Link checklist to Northwind Medical'),
+                ...(evidenceLocation === 'relationship'
+                  ? [support('project', first, 'checklist', 'Link checklist to Northwind Medical')]
+                  : []),
               ],
             },
           ],
@@ -1132,6 +1146,17 @@ test('a typed deliverable reference links only one explicitly evidenced task', (
         : [],
     });
   expect(evaluate('Link the checklist to Northwind Medical.')[0]?.items).toHaveLength(2);
+  expect(evaluate('Link the checklist to Northwind Medical.', '', 'task')[0]?.items).toHaveLength(
+    2,
+  );
+  expect(
+    evaluate('Link the checklist to Northwind Medical.', '', 'task')[0]?.items.some(
+      (item) => item.title === 'Link checklist to Northwind Medical',
+    ),
+  ).toBe(true);
+  expect(
+    evaluate('Link the checklist to Northwind Medical.', '', 'untrusted-task')[0]?.items,
+  ).toHaveLength(1);
   expect(evaluate('Do not link the checklist to Northwind Medical.')[0]?.items).toHaveLength(1);
   for (const prefix of ["Don't", 'Don’t', 'Never', "You mustn't", 'We cannot'])
     expect(evaluate(`${prefix} link the checklist to Northwind Medical.`)[0]?.items).toHaveLength(
