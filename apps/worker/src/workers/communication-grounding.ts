@@ -2,7 +2,7 @@ import { dateOnlyEventRange, resolveTimePhrase } from '@timeline/shared/time';
 import { z } from 'zod';
 
 export const communicationGroundingSchema = z.object({
-  field: z.enum(['assignee', 'dueAt', 'status', 'customer', 'project', 'prospect']),
+  field: z.enum(['assignee', 'dueAt', 'status', 'customer', 'project', 'prospect', 'relationship']),
   rawEventId: z.uuid(),
   quote: z.string().min(3).max(800),
   subject: z.string().min(1).max(200),
@@ -546,16 +546,41 @@ export function groundCommunicationBundles<T extends Item>(args: {
               ? (taskClause(support.quote, taskEndpoint.name) ?? support.quote)
               : support.quote;
             if (
-              !(
-                (support.field === 'customer' && [from.type, to.type].includes('company')) ||
-                (support.field === 'project' && [from.type, to.type].includes('project'))
-              ) ||
               ![to.id, to.name, from.id, from.name].includes(support.value) ||
               /[?]|\b(?:maybe|perhaps|undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i.test(
                 assertion,
               ) ||
               (!taskEndpoint && /\bseparate\b/i.test(assertion))
             )
+              return false;
+            if (support.field === 'relationship') {
+              if (payload.kind !== 'related') return false;
+              const link =
+                /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i.exec(
+                  assertion.trim(),
+                );
+              if (!link) return false;
+              const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
+                [object.name, ...object.aliases].some(
+                  (name) =>
+                    [normalize(name), `the ${normalize(name)}`].includes(normalize(reference)) &&
+                    !known.some(
+                      (candidate) =>
+                        candidate.id !== object.id &&
+                        [candidate.name, ...(candidate.aliases ?? [])].some(
+                          (other) => other && normalize(other) === normalize(name),
+                        ),
+                    ),
+                );
+              return (
+                (exactEndpoint(link[1] ?? '', from) && exactEndpoint(link[2] ?? '', to)) ||
+                (exactEndpoint(link[1] ?? '', to) && exactEndpoint(link[2] ?? '', from))
+              );
+            }
+            if (!(
+              (support.field === 'customer' && [from.type, to.type].includes('company')) ||
+              (support.field === 'project' && [from.type, to.type].includes('project'))
+            ))
               return false;
             const direct = namesEndpoint(assertion, from) && namesEndpoint(assertion, to);
             if (direct) return true;
@@ -673,32 +698,54 @@ export function groundCommunicationBundles<T extends Item>(args: {
             'i',
           ).test(clause) &&
           !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause);
+        const commitmentQuotes = assignment
+          ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
+              const start = /\b(?:I (?:will|shall|'ll)|I'll)\b/i.exec(match[0]);
+              return start &&
+                (namesTask(match[0], assignment.subject) || validContexts.has(assignment))
+                ? [match[0].slice(start.index).trim()]
+                : [];
+            })
+          : [];
+        const commitment = commitmentQuotes.length === 1 ? commitmentQuotes[0] : undefined;
+        const quoteAt = source && assignment ? source.text.indexOf(assignment.quote) : -1;
+        const commitmentAt =
+          source && commitment && quoteAt >= 0 ? source.text.indexOf(commitment, quoteAt) : -1;
+        const uniqueCommitment =
+          source &&
+          assignment &&
+          commitment &&
+          commitmentAt >= quoteAt &&
+          commitmentAt >= 0 &&
+          commitmentAt + commitment.length <= quoteAt + assignment.quote.length &&
+          source.text.indexOf(commitment) === commitmentAt &&
+          !source.text.includes(commitment, commitmentAt + 1);
         const headers =
-          source && assignment
-            ? [
-                ...source.text
-                  .slice(0, source.text.indexOf(assignment.quote))
-                  .matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi),
-              ]
+          source && uniqueCommitment
+            ? [...source.text.slice(0, commitmentAt).matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi)]
             : [];
         const latestHeader = headers.at(-1);
-        const nested =
-          latestHeader &&
-          (!member?.email ||
-            normalize(
-              latestHeader[1]?.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? '',
-            ) !== normalize(member.email) ||
-            !normalize(args.packet).includes(normalize(latestHeader[0].trim())));
+        const headerEmails = new Set(
+          [...(latestHeader?.[1] ?? '').matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(
+            (match) => normalize(match[0]),
+          ),
+        );
+        const emailSpeaker = Boolean(
+          member?.email &&
+          uniqueCommitment &&
+          (latestHeader
+            ? headerEmails.size === 1 &&
+              headerEmails.has(normalize(member.email)) &&
+              safeSourceQuote(source.text, latestHeader[0].trim()) &&
+              normalize(args.packet).includes(normalize(latestHeader[0].trim()))
+            : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
+        );
         const self =
           member &&
           assignment &&
-          !nested &&
           clause &&
           ((source?.source ?? args.source) === 'email'
-            ? Boolean(
-                member.email &&
-                source?.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`),
-              )
+            ? emailSpeaker
             : source?.authorUserId === member.userId) &&
           /\bI (?:will|shall|'ll)|\bI'll\b/i.test(clause) &&
           !/\b(?:if|unless|not|cannot)\b/i.test(clause);

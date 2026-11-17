@@ -1,4 +1,5 @@
 import { requireValue } from '@timeline/shared/evals/benchmark';
+import { attachUniqueHubsToBundles, qualifyWorkspaceHubs } from '@timeline/shared/suggestions';
 import { expect, test } from 'bun:test';
 import { z } from 'zod';
 
@@ -272,4 +273,33 @@ test('ambiguous draft fragments cannot replace their complete source clauses', (
   expect(choices).toContain('For our client Cedar, we are planning a Patient Portal project.');
   expect(choices).toContain('Link Patient Portal to Cedar.');
   expect(choices).toContain(text);
+});
+
+test('generated vendor relationships preserve the audited task identity', () => {
+  const before = [
+    {
+      items: [
+        {
+          auditId: 'checked-task',
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Review print proofs',
+          proposedPayload: { assigneeUserId: event, dueAt: '2026-06-12T09:00:00Z', status: 'todo' },
+        },
+      ],
+    },
+  ];
+  const after = attachUniqueHubsToBundles({
+    bundles: before,
+    qualified: qualifyWorkspaceHubs({
+      hubs: [{ id: 'vendor', name: 'Printworks', type: 'vendor', aliases: [], status: 'active' }],
+      text: 'Review print proofs for Printworks.',
+    }),
+  });
+  expect(after[0]?.items).toHaveLength(2);
+  expect(after[0]?.items[0]?.auditId).toBe('checked-task');
+  expect(after[0]?.items[1]?.auditId).toBeUndefined();
+  expect(() => {
+    assertCommunicationClaimsRetained(before, after);
+  }).not.toThrow();
 });

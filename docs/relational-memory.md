@@ -65,7 +65,8 @@ Per-task support can repair a missing customer link only when one endpoint is
 unambiguous. Unsupported optional writes are omitted, preserving existing values
 on updates. Ownership is not inferred from being a requester, forwarding an email or being its sole header recipient. Assignment requires the message body to identify the tasked teammate or an attributable commitment. On a new task, a uniquely supported assignment can fill an omitted assignee field after the same validation; updates and repairs never auto-fill protected fields; explicit fields are never overwritten and competing owners remain unresolved.
 A pronoun ownership correction requires an immediately preceding, uniquely named
-pending-task context quote; nested email excerpts do not inherit the outer sender.
+pending-task context quote; nested email excerpts do not inherit the outer sender. First-person commitments in forwarded chains resolve against the nearest visible original From header with one matching member email; ambiguous, hidden or injected headers and repeated commitment excerpts cannot establish that identity.
+Explicit related links between other authorized object types require a literal link instruction naming both unambiguous endpoints; co-occurrence is insufficient. Runtime-generated hub links do not inherit the source task’s audit ID, so they cannot replace it in claim-retention checks.
 Relationship quotes may combine statements within one admitted source when an
 explicit typed reference has exactly one visible authorized candidate, including
 aliases. A deadline pronoun may resolve to the immediately preceding visible task

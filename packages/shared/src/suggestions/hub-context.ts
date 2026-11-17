@@ -115,6 +115,7 @@ export interface QualifiedWorkspaceHubs {
 }
 
 export interface HubAttachableItem {
+  auditId?: string | undefined;
   operation: string;
   targetKind: string;
   title: string;
@@ -465,6 +466,7 @@ function attachUniqueHubsToTaskItem<T extends HubAttachableItem>(
     if (!alreadyRelated) {
       relationship = {
         ...item,
+        auditId: undefined,
         operation: 'create',
         targetKind: 'object_relationship',
         title: `Relate ${item.title} to ${uniqueCompany.name}`,
