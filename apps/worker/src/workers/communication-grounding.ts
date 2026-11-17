@@ -107,9 +107,22 @@ function deadlineMatches(
       return true;
   }
   for (const match of quote.matchAll(
-    /\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? \d{4}\b/gi,
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
   )) {
-    const date = new Date(`${match[0]} 00:00:00 UTC`);
+    const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
+    let year = match[3] ? Number(match[3]) : reference?.year;
+    if (year === undefined) continue;
+    let date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
+    if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
+    if (
+      !match[3] &&
+      reference &&
+      date.toISOString().slice(0, 10) < reference.toPlainDate().toString()
+    ) {
+      year++;
+      date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
+      if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
+    }
     if (
       Number.isFinite(date.getTime()) &&
       deadlineTimeMatches(

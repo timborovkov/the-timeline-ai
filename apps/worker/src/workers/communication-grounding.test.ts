@@ -31,6 +31,7 @@ const run = (
     operation?: string;
     timezone?: string;
     taskTitle?: string;
+    occurredAt?: Date;
   } = {},
 ) =>
   groundCommunicationBundles({
@@ -55,7 +56,7 @@ const run = (
         id: event,
         text,
         authorUserId: alice,
-        occurredAt: new Date('2026-06-01T10:00:00.000Z'),
+        occurredAt: options.occurredAt ?? new Date('2026-06-01T10:00:00.000Z'),
         ...(options.speakerContext ? { speakerContext: options.speakerContext } : {}),
       },
     ],
@@ -1498,4 +1499,23 @@ test('relative dates and ISO timestamps share explicit-time validation', () => {
         ?.items[0]?.proposedPayload.dueAt,
     ).toBe(dueAt);
   }
+});
+
+test('yearless month-name deadlines resolve against the source date', () => {
+  const quote = 'Review retention policy is due June 12.';
+  const dueAt = '2026-06-12T00:00:00.000Z';
+  expect(
+    run(quote, { dueAt }, [support('dueAt', quote, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
+  ).toBe(dueAt);
+});
+
+test('yearless deadlines roll forward using the source-local year', () => {
+  const quote = 'Review retention policy is due January 5 at 09:00.';
+  const dueAt = '2027-01-05T07:00:00.000Z';
+  expect(
+    run(quote, { dueAt }, [support('dueAt', quote, dueAt)], {
+      timezone: 'Europe/Helsinki',
+      occurredAt: new Date('2026-12-31T23:30:00Z'),
+    })[0]?.items[0]?.proposedPayload.dueAt,
+  ).toBe(dueAt);
 });

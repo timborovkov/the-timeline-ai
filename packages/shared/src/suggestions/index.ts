@@ -1780,8 +1780,11 @@ function compatibleTaskNames(
   left: typeof agentSuggestionItems.$inferSelect,
   right: typeof agentSuggestionItems.$inferSelect,
 ): boolean {
-  const a = [...approvalSubjectTokensFromText(normalizedPrimaryApprovalName(left))];
-  const b = [...approvalSubjectTokensFromText(normalizedPrimaryApprovalName(right))];
+  const leftName = normalizedPrimaryApprovalName(left);
+  const rightName = normalizedPrimaryApprovalName(right);
+  if (leftName && leftName === rightName) return true;
+  const a = [...approvalSubjectTokensFromText(leftName)];
+  const b = [...approvalSubjectTokensFromText(rightName)];
   const matches = (x: string, y: string) => x === y || sameLongTokenFamily(x, y);
   return (
     a.length > 0 &&

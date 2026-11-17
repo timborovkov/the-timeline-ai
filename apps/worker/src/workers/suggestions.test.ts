@@ -3855,6 +3855,109 @@ describe('processSuggestionJobForTests', () => {
     }
   });
 
+  it('retains valid communication repair updates after protecting human fields', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+      const [task] = await db
+        .insert(entities)
+        .values({
+          teamId: TEAM_ID,
+          type: 'task',
+          canonicalName: 'Prepare audit outline',
+          status: 'todo',
+        })
+        .returning();
+      if (!task) throw new Error('missing task');
+      await scope.objects.updateObject(
+        task.id,
+        { ownerUserId: OWNER_ID, assigneeUserId: OWNER_ID },
+        { kind: 'user', userId: OWNER_ID },
+      );
+      const rawEventId = crypto.randomUUID();
+      await seedRawEvent(db as never, {
+        id: rawEventId,
+        source: 'email',
+        text: 'Member owns and is assigned the audit outline. The audit outline is complete.',
+        sourceMetadata: {
+          extracted_at: REFERENCE_DATE.toISOString(),
+          extraction_model_version: 'fixture',
+        },
+      });
+      const [fact] = await db
+        .insert(facts)
+        .values({
+          teamId: TEAM_ID,
+          rawEventId,
+          statement: 'Member completed the audit outline.',
+          confidence: 1,
+          modelVersion: 'fixture',
+        })
+        .returning();
+      if (!fact) throw new Error('missing fact');
+      await db.insert(factEntities).values({ factId: fact.id, entityId: task.id, role: 'subject' });
+      const chat = vi.fn().mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Complete audit outline',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: task.id,
+                  title: 'Complete audit outline',
+                  grounding: [
+                    {
+                      field: 'status',
+                      rawEventId,
+                      quote: 'The audit outline is complete.',
+                      subject: 'Prepare audit outline',
+                      value: 'done',
+                    },
+                  ],
+                  proposedPayload: {
+                    status: 'done',
+                    ownerName: 'Member',
+                    assigneeName: 'Member',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { scope: 'object_cleanup', teamId: TEAM_ID, objectId: task.id },
+        { chatStructured: chat, modelId: MODEL_ID, taskCategoryClassificationEnabled: false },
+      );
+      expect(chat).toHaveBeenCalled();
+      const proposal = (await db.select().from(agentSuggestionItems)).find(
+        (item) => item.targetId === task.id && item.operation === 'update',
+      );
+      if (!proposal) throw new Error('missing repair proposal');
+      expect(proposal.proposedPayload).toMatchObject({ status: 'done' });
+      expect(proposal.proposedPayload).not.toHaveProperty('ownerName');
+      expect(proposal.proposedPayload).not.toHaveProperty('assigneeName');
+      expect(proposal.proposedPayload).not.toHaveProperty('ownerUserId');
+      expect(proposal.proposedPayload).not.toHaveProperty('assigneeUserId');
+      expect(await scope.suggestions.acceptSuggestionItem(proposal.id)).toBe(true);
+      const [updated] = await db.select().from(entities).where(eq(entities.id, task.id));
+      expect(updated).toMatchObject({
+        status: 'done',
+        ownerUserId: OWNER_ID,
+        assigneeUserId: OWNER_ID,
+      });
+    } finally {
+      process.env.IDENTITY_SEMANTIC_ENABLED = 'false';
+      resetEnvForTests();
+    }
+  });
+
   it('allocates a distinct project name around archived canonical occupancy', async () => {
     const [company] = await db
       .insert(entities)

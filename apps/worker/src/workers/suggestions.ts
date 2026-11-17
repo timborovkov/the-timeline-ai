@@ -4826,16 +4826,6 @@ async function runSuggestionExtraction(
       return 0;
   }
 
-  const auditedBaseline = isHumanCommunication(row.source)
-    ? structuredClone(result.object.bundles)
-    : [];
-  for (const bundle of auditedBaseline)
-    for (const item of bundle.items) {
-      const objectType = matchingEntityRows.find((object) => object.id === item.targetId)?.type;
-      const type = lifecycleStatusTypeForPayload(item, item.proposedPayload, objectType);
-      if (type && typeof item.proposedPayload.status === 'string')
-        item.proposedPayload.status = normalizeLifecycleStatus(item.proposedPayload.status, type);
-    }
   const modelBundles = args.repairObjectId
     ? result.object.bundles.map((bundle) => ({
         ...bundle,
@@ -4857,6 +4847,14 @@ async function runSuggestionExtraction(
         );
       }
   }
+  const auditedBaseline = isHumanCommunication(row.source) ? structuredClone(modelBundles) : [];
+  for (const bundle of auditedBaseline)
+    for (const item of bundle.items) {
+      const objectType = matchingEntityRows.find((object) => object.id === item.targetId)?.type;
+      const type = lifecycleStatusTypeForPayload(item, item.proposedPayload, objectType);
+      if (type && typeof item.proposedPayload.status === 'string')
+        item.proposedPayload.status = normalizeLifecycleStatus(item.proposedPayload.status, type);
+    }
   if (args.document) preserveDocumentPersonEmails(modelBundles, text);
   const [matchingRowsForCreates, nameOccupancy]: [CleanupObjectRow[], CreateNameOccupancy[]] =
     modelBundles.length > 0

@@ -334,6 +334,8 @@ These are optional because missing evidence must not become a guessed owner or
 deadline. Priority is not a confidence score. Source actor, addressee, capture owner
 and integration connector are distinct identities.
 
+Yearless month/day deadlines use the next occurrence on or after the source-local date. Historical repair retention checks run after target scoping and human-edit protection, so intentional removal of protected fields does not discard valid remaining repairs. Exact nonempty task names remain eligible for deduplication even when stopword filtering removes every token; audience and identity-conflict checks still apply.
+
 Bare weekday deadlines resolve to that weekday on or after the source date in the workspace timezone. Grounding references follow the same local-reference normalization and existing-object resolution as proposal payloads, using the complete resolved object context. Task-name conjunctions remain part of the identity rather than splitting its assertion. Verified adjacent affirmative completion statements retain their named task context.
 
 Explicit ISO, month-name, and relative deadline times retain their stated timezone, or use the workspace timezone when no zone is supplied; date-only evidence uses the workspace day start. Short literal acknowledgments can receive no-action audit coverage, but empty or unavailable evidence cannot.
