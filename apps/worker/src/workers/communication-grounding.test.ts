@@ -629,6 +629,7 @@ test('grounding validates relationship kind and direction independently of the e
     'Review retention policy belongs to Compliance / Operations.',
     'Review retention policy belongs to Compliance / another project.',
     'Review retention policy is blocked because deployment belongs to Compliance.',
+    'Review retention policy depends on deployment which belongs to Compliance.',
   ])
     expect(evaluate(project, text, 'child')).toBe(0);
   expect(evaluate(project, membership, 'child', true)).toBe(0);
@@ -2033,6 +2034,7 @@ test('scalar project claims need an affirmative predicate naming the project', (
     ['Review retention policy belongs to Compliance.', 'compliance'],
     ['For Compliance, please review retention policy.', 'compliance'],
     ['Review retention policy mentions Compliance in its description.', undefined],
+    ['Review retention policy depends on deployment which belongs to Compliance.', undefined],
     ['Review retention policy is blocked because deployment belongs to Compliance.', undefined],
     ['Review retention policy belongs to Compliance, but deployment is blocked.', 'compliance'],
     ['Review retention policy belongs to ComplianceTracker.', undefined],

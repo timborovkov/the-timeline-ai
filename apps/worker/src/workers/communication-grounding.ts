@@ -258,28 +258,46 @@ function hasProjectAlternative(assertion: string, projectNames: string[]): boole
 
 function affirmativeProjectMembership(
   assertion: string,
+  subject: string,
   name: string,
   allowTaskRouting: boolean,
 ): boolean {
   const statement = normalize(assertion);
   const project = normalize(name);
+  const task = normalize(subject)
+    .split(' ')
+    .filter((word) => word && !['the', 'a', 'an', 'of'].includes(word))
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join(' (?:of )?(?:the |a |an )?');
   if (
     !project ||
+    !task ||
     /[?]|\b(?:not|no|never|unless|if|maybe|perhaps|unrelated|without|except|might|may|instead)\b/i.test(
       statement,
     )
   )
     return false;
+  const membership = '(?:under|within|part of|belongs? to|in (?:the )?project)';
+  const predicate = allowTaskRouting ? `(?:${membership}|for|in|on)` : membership;
+  const followsTask = new RegExp(
+    `(?:^|\\s)${task}(?: task)? (?:(?:is|was|should be|will be) )?${predicate} (?:the )?$`,
+  );
+  const explicitAssignment = new RegExp(
+    `^(?:please )?(?:attach|link|assign|move) (?:the )?${task}(?: task)? to (?:the )?$`,
+  );
+  const startsTask = new RegExp(`^[:,]\\s+(?:please )?(?:the )?${task}(?![\\p{L}\\p{N}])`, 'u');
   const fragments = statement.split(project);
   return fragments.slice(1).some((suffix, index) => {
     const prefix = fragments[index] ?? '';
     if (suffix && !/^[\s.,:;!]/.test(suffix)) return false;
     return (
-      (index === 0 && !prefix && suffix.startsWith(':')) ||
-      /\b(?:under|within|part of|belongs? to|in (?:the )?project) (?:the )?$/.test(prefix) ||
+      (index === 0 && !prefix && suffix.startsWith(':') && startsTask.test(suffix)) ||
+      followsTask.test(prefix) ||
       (allowTaskRouting &&
-        (/\b(?:for|in|on) (?:the )?$/.test(prefix) ||
-          /^(?:please )?(?:attach|link|assign|move)\b.+\bto (?:the )?$/.test(prefix)))
+        (explicitAssignment.test(prefix) ||
+          (index === 0 &&
+            /^(?:separately, )?for (?:the )?$/.test(prefix) &&
+            startsTask.test(suffix))))
     );
   });
 }
@@ -958,7 +976,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 return false;
               return [to.name, ...to.aliases].some(
                 (name) =>
-                  namesEndpoint(name, to) && affirmativeProjectMembership(membership, name, false),
+                  namesEndpoint(name, to) &&
+                  affirmativeProjectMembership(membership, from.name, name, false),
               );
             }
             const link =
@@ -1343,9 +1362,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
           const names = project ? [project.name, ...(project.aliases ?? [])] : [];
           if (
             !clause ||
+            !projectSupport ||
             project?.id !== payload.parentObjectId ||
             hasProjectAlternative(clause, names) ||
-            !names.some((name) => affirmativeProjectMembership(clause, name, true))
+            !names.some((name) =>
+              affirmativeProjectMembership(clause, projectSupport.subject, name, true),
+            )
           ) {
             delete payload.parentObjectId;
             delete payload.projectName;
