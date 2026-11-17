@@ -251,7 +251,7 @@ function affirmativeLifecycle(
   // clauses can describe a different artifact, and task titles are identifiers.
   const identity = normalize(subject);
   const parts = normalize(clause).split(
-    /\s+\b(?:because|although|since|whereas|while|until|even though)\b\s+/,
+    /\s+\b(?:because|although|since|whereas|while|until|even though|but|yet)\b\s+/,
   );
   const relevant = parts.length === 1 ? parts : parts.filter((part) => namesTask(part, subject));
   if (relevant.length !== 1 || !relevant[0]) return false;
@@ -891,6 +891,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 return (
                   !/[?]|\b(?:no|without|except|might|may|instead)\b/i.test(statement) &&
                   (!suffix || /^[\s.,:;!]/.test(suffix)) &&
+                  !/^\s*\//.test(suffix) &&
                   ((!prefix && suffix.startsWith(':')) ||
                     /\b(?:under|within|part of|belongs? to|in (?:the )?project) (?:the )?$/.test(
                       prefix,
@@ -1100,7 +1101,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause);
         const commitmentQuotes = assignment
           ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
-              const start = /\b(?:I (?:will|shall|'ll)|I'll)\b/i.exec(match[0]);
+              const start = /\b(?:I (?:will|shall)|I['’]ll)\b/i.exec(match[0]);
               return start &&
                 (namesTask(match[0], assignment.subject) || validContexts.has(assignment))
                 ? [match[0].slice(start.index).trim()]

@@ -102,16 +102,21 @@ test('explicit named ownership survives without implying progress', () => {
   ).toEqual({ assigneeUserId: bob });
 });
 test('forwarded self commitment uses original sender email rather than forwarder', () => {
-  const text = 'I will review retention policy.';
-  const options = { source: 'email', speakerContext: '"senderHandle":"bob@example.test"' };
-  expect(
-    run(text, { assigneeUserId: bob }, [support('assignee', text, bob)], options)[0]?.items[0]
-      ?.proposedPayload,
-  ).toEqual({ assigneeUserId: bob });
-  expect(
-    run(text, { assigneeUserId: alice }, [support('assignee', text, alice)], options)[0]?.items[0]
-      ?.proposedPayload,
-  ).toEqual({});
+  for (const text of [
+    'I will review retention policy.',
+    "I'll review retention policy.",
+    'I’ll review retention policy.',
+  ]) {
+    const options = { source: 'email', speakerContext: '"senderHandle":"bob@example.test"' };
+    expect(
+      run(text, { assigneeUserId: bob }, [support('assignee', text, bob)], options)[0]?.items[0]
+        ?.proposedPayload,
+    ).toEqual({ assigneeUserId: bob });
+    expect(
+      run(text, { assigneeUserId: alice }, [support('assignee', text, alice)], options)[0]?.items[0]
+        ?.proposedPayload,
+    ).toEqual({});
+  }
 });
 test('verified per-task customer grounding adds a missing relationship', () => {
   const text = 'Please review retention policy for Cedar Labs.';
@@ -136,6 +141,7 @@ test('task customer grounding rejects denied or incidental associations', () => 
 test('status evidence excludes task-title words and predicates belonging to other artifacts', () => {
   for (const [name, text] of [
     [title, 'Review retention policy is blocked because deployment is done.'],
+    [title, 'Review retention policy is blocked, but deployment is done.'],
     ['Review completed applications', 'Review completed applications is blocked.'],
   ] as const) {
     for (const status of ['done', 'blocked']) {
@@ -595,6 +601,7 @@ test('grounding validates relationship kind and direction independently of the e
     'Review retention policy belongs to Compliance or Operations.',
     'Review retention policy belongs to Compliance or something else.',
     'Review retention policy belongs to Compliance / Operations.',
+    'Review retention policy belongs to Compliance / another project.',
   ])
     expect(evaluate(project, text, 'child')).toBe(0);
   expect(evaluate(project, membership, 'child', true)).toBe(0);
