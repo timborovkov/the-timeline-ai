@@ -2027,9 +2027,12 @@ test('contracted lifecycle denials cannot authorize completion', () => {
     ).toBeUndefined();
   }
 });
-test('scalar project claims reject a slash alternative even when only one project resolves', () => {
+test('scalar project claims need an affirmative predicate naming the project', () => {
   for (const [quote, expected] of [
     ['Review retention policy belongs to Compliance.', 'compliance'],
+    ['For Compliance, please review retention policy.', 'compliance'],
+    ['Review retention policy mentions Compliance in its description.', undefined],
+    ['Review retention policy belongs to ComplianceTracker.', undefined],
     ['Review retention policy belongs to Compliance / another project.', undefined],
     ['Review retention policy belongs to another project / Compliance.', undefined],
   ] as const) {

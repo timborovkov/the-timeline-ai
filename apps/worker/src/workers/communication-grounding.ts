@@ -256,6 +256,34 @@ function hasProjectAlternative(assertion: string, projectNames: string[]): boole
   );
 }
 
+function affirmativeProjectMembership(
+  assertion: string,
+  name: string,
+  allowTaskRouting: boolean,
+): boolean {
+  const statement = normalize(assertion);
+  const project = normalize(name);
+  if (
+    !project ||
+    /[?]|\b(?:not|no|never|unless|if|maybe|perhaps|unrelated|without|except|might|may|instead)\b/i.test(
+      statement,
+    )
+  )
+    return false;
+  const fragments = statement.split(project);
+  return fragments.slice(1).some((suffix, index) => {
+    const prefix = fragments[index] ?? '';
+    if (suffix && !/^[\s.,:;!]/.test(suffix)) return false;
+    return (
+      (index === 0 && !prefix && suffix.startsWith(':')) ||
+      /\b(?:under|within|part of|belongs? to|in (?:the )?project) (?:the )?$/.test(prefix) ||
+      (allowTaskRouting &&
+        (/\b(?:for|in|on) (?:the )?$/.test(prefix) ||
+          /^(?:please )?(?:attach|link|assign|move)\b.+\bto (?:the )?$/.test(prefix)))
+    );
+  });
+}
+
 function affirmativeLifecycle(
   clause: string | undefined,
   subject: string,
@@ -920,23 +948,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 hasProjectAlternative(assertion, [to.name, ...to.aliases])
               )
                 return false;
-              return [to.name, ...to.aliases].some((name) => {
-                if (!namesEndpoint(name, to)) return false;
-                const statement = normalize(assertion);
-                const project = normalize(name);
-                const index = statement.indexOf(project);
-                if (!project || index < 0) return false;
-                const prefix = statement.slice(0, index);
-                const suffix = statement.slice(index + project.length);
-                return (
-                  !/[?]|\b(?:no|without|except|might|may|instead)\b/i.test(statement) &&
-                  (!suffix || /^[\s.,:;!]/.test(suffix)) &&
-                  ((!prefix && suffix.startsWith(':')) ||
-                    /\b(?:under|within|part of|belongs? to|in (?:the )?project) (?:the )?$/.test(
-                      prefix,
-                    ))
-                );
-              });
+              return [to.name, ...to.aliases].some(
+                (name) =>
+                  namesEndpoint(name, to) && affirmativeProjectMembership(assertion, name, false),
+              );
             }
             const link =
               /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i.exec(
@@ -1312,22 +1327,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
                   [hub.name, ...(hub.aliases ?? [])].some((name) => mentions(clause, name)),
               )
             : [];
-          const affirmative =
-            clause &&
-            !hasProjectAlternative(
-              clause,
-              projects.flatMap((project) => [project.name, ...(project.aliases ?? [])]),
-            ) &&
-            !/[?]|\b(?:not|no|never|unless|if|maybe|perhaps|unrelated)\b/i.test(clause) &&
-            (/\b(?:for|under|within|in|on|belongs? to|part of|attach\w* to|link\w* to)\b/i.test(
-              clause,
-            ) ||
-              projects.some((project) =>
-                [project.name, ...(project.aliases ?? [])].some((name) =>
-                  normalize(clause).startsWith(`${normalize(name)}:`),
-                ),
-              ));
-          if (!affirmative || projects.length !== 1 || projects[0]?.id !== payload.parentObjectId) {
+          const project = projects.length === 1 ? projects[0] : undefined;
+          const names = project ? [project.name, ...(project.aliases ?? [])] : [];
+          if (
+            !clause ||
+            project?.id !== payload.parentObjectId ||
+            hasProjectAlternative(clause, names) ||
+            !names.some((name) => affirmativeProjectMembership(clause, name, true))
+          ) {
             delete payload.parentObjectId;
             delete payload.projectName;
           }
