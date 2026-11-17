@@ -25,18 +25,20 @@ export default function ChatLoading() {
               ))}
             </ul>
           </aside>
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
-            <div className="mb-3 rounded-sm border border-border p-2 md:hidden">
-              <div className="flex min-h-9 items-center gap-3 px-1">
-                <Skeleton className="h-4 w-40" />
-              </div>
-            </div>
-            <header className="mb-5 flex shrink-0 items-baseline gap-x-3 border-b border-border pb-3">
-              <Skeleton className="h-7 w-16" />
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <header className="flex min-h-12 shrink-0 items-center gap-x-3 border-b border-border px-4 py-2.5 md:px-8">
+              <Skeleton className="h-6 w-12" />
               <Skeleton className="h-4 w-48" />
             </header>
-            <div className="min-h-0 flex-1" />
-            <Skeleton className="h-12 w-full shrink-0 rounded-sm" />
+            <div className="flex min-h-0 flex-1 flex-col px-4 pb-5 pt-4 md:px-8 md:pb-6">
+              <div className="mb-3 rounded-sm border border-border md:hidden">
+                <div className="flex min-h-9 items-center gap-3 px-3">
+                  <Skeleton className="h-4 w-40" />
+                </div>
+              </div>
+              <div className="min-h-0 flex-1" />
+              <Skeleton className="h-10 w-full shrink-0 rounded-sm" />
+            </div>
           </section>
         </div>
       </div>

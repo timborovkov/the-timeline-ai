@@ -191,7 +191,9 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   provider identity must not replace the human-readable session title. Each
   row shows last-activity age; archive stays hidden until hover or focus on
   desktop. A search field under New chat filters history. The Ask heading keeps
-  the selected title on the same row and does not show a session count.
+  the selected title on the same row and does not show a session count. It uses
+  the collection header band (48px, 18px title) with its rule running to the
+  history sidebar; the shell gutters apply to the conversation below it.
 - Task, object, and board previews, inspectors, and Connections drawers share the modal `Sheet` reading surface:
   fixed to the viewport, up to 48rem (768px), full-width on smaller screens.
   Opening or closing an overlay must preserve the underlying page width and
