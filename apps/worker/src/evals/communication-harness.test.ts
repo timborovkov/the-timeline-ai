@@ -718,6 +718,7 @@ for (const source of ['email', 'slack', 'telegram']) {
                 confidence: 'high',
                 items: [
                   {
+                    sourceDraftId: null,
                     coverage: {
                       kind: 'task',
                       evidence: [
@@ -786,6 +787,7 @@ for (const failure of [
                 confidence: 'high',
                 items: [
                   {
+                    sourceDraftId: 'draft-0-0',
                     ...(failure === 'missing-item-coverage'
                       ? {}
                       : {

@@ -4530,10 +4530,9 @@ async function runSuggestionExtraction(
       .omit({ auditId: true })
       .extend({
         coverage: itemCoverageSchema,
-        sourceDraftId: (draftRecords.length
+        sourceDraftId: draftRecords.length
           ? z.enum(draftRecords.map((draft) => draft.id)).nullable()
-          : z.null()
-        ).optional(),
+          : z.null(),
         grounding: z
           .array(
             communicationGroundingSchema
