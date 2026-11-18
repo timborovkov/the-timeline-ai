@@ -558,22 +558,50 @@ export function chronologicalLifecycleEvidence(
     );
 }
 
-export function explicitCompletionState(
-  sentence: string,
-): { subject: string; complete: boolean } | undefined {
+const EXPLICIT_STATES: Record<string, string> = {
+  done: 'done',
+  complete: 'done',
+  completed: 'done',
+  finished: 'done',
+  shipped: 'done',
+  delivered: 'done',
+  blocked: 'blocked',
+  started: 'doing',
+  'working on it': 'doing',
+  'in progress': 'doing',
+  open: 'todo',
+  pending: 'todo',
+  reopened: 'todo',
+  restarted: 'todo',
+  unblocked: 'todo',
+  cancelled: 'cancelled',
+  canceled: 'cancelled',
+};
+
+export function explicitLifecycleState(sentence: string):
+  | {
+      subject: string;
+      status: string;
+      affirmative: boolean;
+    }
+  | undefined {
   if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence))
     return undefined;
-  // Track the last explicit completion or reversal for each exact subject.
   const assertion =
-    /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress|reopened|restarted|unblocked))[.!]?$/i.exec(
+    /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)[.!]?$/i.exec(
       sentence.trim(),
     );
-  if (!assertion?.[1]) return undefined;
-  const complete =
-    /^(?:(?:still|now|already) )*(?:done|complete|completed|finished|shipped)$/i.test(
-      assertion[2] ?? '',
-    ) && !/\b(?:isn[’']t|wasn[’']t|hasn[’']t)\b/i.test(sentence);
-  return { subject: assertion[1], complete };
+  if (!assertion?.[1] || !assertion[2] || !assertion[4]) return undefined;
+  const status = EXPLICIT_STATES[assertion[4].toLowerCase()];
+  return status
+    ? {
+        subject: assertion[1],
+        status,
+        affirmative:
+          /^(?:is|was|has been)$/i.test(assertion[2]) &&
+          /^(?:(?:still|now|already) )*$/i.test(assertion[3] ?? ''),
+      }
+    : undefined;
 }
 
 /**
@@ -606,7 +634,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
         .join('\n')
     : (args.evidenceText ?? '');
   for (const sentence of evidence.split(/(?<=[.!?])\s+|\n+/u)) {
-    const state = explicitCompletionState(sentence);
+    const state = explicitLifecycleState(sentence);
     if (!state) continue;
     const tokens = new Set(titleTokens(state.subject));
     const matches = (args.relatedOpenWork ?? []).filter((work) => {
@@ -618,7 +646,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
       );
     });
     if (matches.length !== 1 || !matches[0]) continue;
-    if (state.complete) explicit.add(matches[0].id);
+    if (state.status === 'done' && state.affirmative) explicit.add(matches[0].id);
     else explicit.delete(matches[0].id);
   }
   return args.bundles.flatMap((bundle) => {

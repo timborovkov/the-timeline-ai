@@ -399,11 +399,12 @@ test('an audited named project attachment cannot disappear or change identity', 
         {
           auditId: 'task',
           operation: 'create',
-          proposedPayload: { createProjectName: 'Compliance' },
+          proposedPayload: { createProjectName: 'Compliance rollout' },
         },
       ],
     },
   ];
+  const projects = [{ id: 'project', name: 'Compliance program', aliases: ['Compliance rollout'] }];
   const resultingTask = (proposedPayload: Record<string, unknown>) => [
     { items: [{ auditId: 'task', operation: 'create', proposedPayload }] },
   ];
@@ -413,13 +414,28 @@ test('an audited named project attachment cannot disappear or change identity', 
   expect(() => {
     assertCommunicationClaimsRetained(
       before,
-      resultingTask({ parentObjectId: 'project', projectName: 'Operations' }),
+      resultingTask({ parentObjectId: 'wrong-project', projectName: 'Compliance rollout' }),
+      projects,
     );
   }).toThrow('createProjectName claim');
   expect(() => {
     assertCommunicationClaimsRetained(
       before,
-      resultingTask({ parentObjectId: 'project', projectName: 'Compliance' }),
+      resultingTask({ parentObjectId: 'project', projectName: 'Compliance program' }),
+      projects,
     );
   }).not.toThrow();
+});
+
+test('coverage offers a literal excerpt when an old message is truncated mid-sentence', () => {
+  const text =
+    'Please prepare the audit checklist ' + 'with supporting details '.repeat(14) + 'hidden tail.';
+  const visibleExcerpt = text.slice(0, 279);
+  const quotes = communicationCoverageQuotes({
+    sources: [{ id: event, text, visibleExcerpt }],
+    packet: `${visibleExcerpt}…\nThanks`,
+    draftQuotes: [],
+  });
+  expect(quotes).toContain(visibleExcerpt);
+  expect(quotes.some((quote) => quote.includes('hidden tail'))).toBe(false);
 });

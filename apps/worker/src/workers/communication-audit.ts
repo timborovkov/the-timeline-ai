@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v56';
+export const COMMUNICATION_AUDIT_VERSION = 'communication-completeness-v57';
 export const communicationCoverageSchema = z
   .array(
     z.object({
@@ -99,7 +99,7 @@ export function communicationDraftAccountingErrors(args: {
 
 /** Supply literal quotation choices from the already-visible evidence, never draft prose alone. */
 export function communicationCoverageQuotes(args: {
-  sources: { id: string; text: string }[];
+  sources: { id: string; text: string; visibleExcerpt?: string }[];
   packet: string;
   draftQuotes: string[];
 }): string[] {
@@ -112,6 +112,8 @@ export function communicationCoverageQuotes(args: {
   };
   for (const source of args.sources) {
     add(source.text);
+    if (source.visibleExcerpt && source.text.startsWith(source.visibleExcerpt))
+      add(source.visibleExcerpt);
     for (const line of source.text.split(/\r?\n/u)) {
       add(line);
       for (const sentence of line.match(/[^.!?]+(?:[.!?]+|$)/gu) ?? []) {
@@ -238,6 +240,7 @@ export function validateCommunicationCoverage(args: {
 export function assertCommunicationClaimsRetained(
   before: { items: AuditedItem[] }[],
   after: { items: AuditedItem[] }[],
+  resolvedProjects: readonly { id: string; name: string; aliases: string[] }[] = [],
 ): void {
   const checkedFields = [
     'assigneeUserId',
@@ -270,9 +273,14 @@ export function assertCommunicationClaimsRetained(
           field === 'createProjectName' &&
           typeof item.proposedPayload.createProjectName === 'string' &&
           typeof actual.proposedPayload.parentObjectId === 'string' &&
-          typeof actual.proposedPayload.projectName === 'string' &&
-          item.proposedPayload.createProjectName.trim().toLowerCase() ===
-            actual.proposedPayload.projectName.trim().toLowerCase()
+          resolvedProjects.some(
+            (project) =>
+              project.id === actual.proposedPayload.parentObjectId &&
+              [project.name, ...project.aliases].some(
+                (name) =>
+                  normalized(name) === normalized(String(item.proposedPayload.createProjectName)),
+              ),
+          )
         ) &&
         !(
           field === 'status' &&

@@ -557,41 +557,49 @@ test('prior context cannot assign a different explicitly named deliverable', () 
 });
 
 test('task grounding rejects a completion superseded by a later visible correction', () => {
-  const quote = 'Review retention policy is done.';
-  const later = 'Review retention policy is still not done.';
-  for (const visible of [true, false]) {
-    const verifiedLifecycleAuditIds = new Set<string>();
-    const result = groundCommunicationBundles({
-      verifiedLifecycleAuditIds,
-      bundles: [
-        {
-          title,
-          confidence: 'high',
-          items: [
-            {
-              title,
-              auditId: 'verified',
-              targetKind: 'task',
-              targetId: 'review',
-              operation: 'update',
-              proposedPayload: { status: 'done' },
-              grounding: [support('status', quote, 'done')],
-            },
-          ],
-        },
-      ],
-      objects: [{ id: 'review', name: title, type: 'task' }],
-      packet: visible ? `${quote}\n${later}` : quote,
-      sources: [
-        { id: 'newer', text: later, occurredAt: new Date('2026-06-12') },
-        { id: event, text: quote, occurredAt: new Date('2026-06-11') },
-      ],
-      members: [],
-      hubs: [],
-      source: 'slack',
-    });
-    expect(result[0]?.items[0]?.proposedPayload.status).toBe(visible ? undefined : 'done');
-    expect([...verifiedLifecycleAuditIds]).toEqual(visible ? [] : ['verified']);
+  for (const [status, quote, later] of [
+    ['done', 'Review retention policy is done.', 'Review retention policy is still not done.'],
+    ['blocked', 'Review retention policy is blocked.', 'Review retention policy is done.'],
+    [
+      'cancelled',
+      'Review retention policy is cancelled.',
+      'Review retention policy has been reopened.',
+    ],
+  ] as const) {
+    for (const visible of [true, false]) {
+      const verifiedLifecycleAuditIds = new Set<string>();
+      const result = groundCommunicationBundles({
+        verifiedLifecycleAuditIds,
+        bundles: [
+          {
+            title,
+            confidence: 'high',
+            items: [
+              {
+                title,
+                auditId: 'verified',
+                targetKind: 'task',
+                targetId: 'review',
+                operation: 'update',
+                proposedPayload: { status },
+                grounding: [support('status', quote, status)],
+              },
+            ],
+          },
+        ],
+        objects: [{ id: 'review', name: title, type: 'task' }],
+        packet: visible ? `${quote}\n${later}` : quote,
+        sources: [
+          { id: 'newer', text: later, occurredAt: new Date('2026-06-12') },
+          { id: event, text: quote, occurredAt: new Date('2026-06-11') },
+        ],
+        members: [],
+        hubs: [],
+        source: 'slack',
+      });
+      expect(result[0]?.items[0]?.proposedPayload.status).toBe(visible ? undefined : status);
+      expect([...verifiedLifecycleAuditIds]).toEqual(visible ? [] : ['verified']);
+    }
   }
 });
 

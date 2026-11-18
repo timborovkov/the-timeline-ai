@@ -1,6 +1,6 @@
 import {
   chronologicalLifecycleEvidence,
-  explicitCompletionState,
+  explicitLifecycleState,
 } from '@timeline/shared/suggestions';
 import {
   dateOnlyEventRange,
@@ -527,13 +527,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
       })),
   );
   const packet = normalize(args.packet);
-  function completionSuperseded(support: Support, names: string[]): boolean {
+  function lifecycleSuperseded(support: Support, names: string[]): boolean {
     const citation = normalize(support.quote);
     const from = chronology.findIndex(
       (event) => event.id === support.rawEventId && normalize(event.contentText).includes(citation),
     );
     if (from < 0) return false;
-    let complete = true;
+    let status: string | undefined = support.value;
     const subjects = names
       .filter((name) => name.trim())
       .map((name) => {
@@ -548,17 +548,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
             )
           : event.contentText;
       for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
-        const state = explicitCompletionState(sentence);
+        const state = explicitLifecycleState(sentence);
         if (
           state &&
           packet.includes(normalize(sentence)) &&
           subjects.some((subject) => subject?.test(normalize(state.subject)))
         ) {
-          complete = state.complete;
+          if (state.affirmative) status = state.status;
+          else if (status === state.status) status = undefined;
         }
       }
     }
-    return !complete;
+    return status !== support.value;
   }
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
@@ -839,7 +840,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
             taskClause(cancellation.quote, cancellation.subject),
             cancellation.subject,
             'cancelled',
-          )
+          ) ||
+          lifecycleSuperseded(cancellation, taskIdentityNames(item))
         )
           return [];
       }
@@ -1494,7 +1496,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             payload.status,
             /^(?:mark )?send\b/i.test(targetName),
           ) &&
-          (payload.status !== 'done' || !completionSuperseded(lifecycle, taskIdentityNames(item)));
+          !lifecycleSuperseded(lifecycle, taskIdentityNames(item));
         if (lifecycleVerified && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
         if (
           payload.status !== undefined &&

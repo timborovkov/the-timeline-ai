@@ -406,6 +406,8 @@ function makeModelVersion(modelId: string): string {
   return `${modelId}@${SUGGESTION_CODE_VERSION}`;
 }
 
+const CONVERSATION_WINDOW_EXCERPT_CHARS = 280;
+
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
@@ -4508,6 +4510,9 @@ async function runSuggestionExtraction(
       ...(args.conversation?.window ?? []).map((event) => ({
         id: event.id,
         text: event.contentText,
+        ...(event.contentText.length > CONVERSATION_WINDOW_EXCERPT_CHARS
+          ? { visibleExcerpt: event.contentText.slice(0, CONVERSATION_WINDOW_EXCERPT_CHARS - 1) }
+          : {}),
       })),
       { id: row.id, text },
     ];
@@ -5164,6 +5169,13 @@ async function runSuggestionExtraction(
           ),
         })),
       })),
+      matchingRowsForCreates
+        .filter((object) => object.type === 'project')
+        .map((object) => ({
+          id: object.id,
+          name: object.canonicalName,
+          aliases: aliasesForRow(object),
+        })),
     );
 
   let enforcedEvidenceByBundle: suggestions.SuggestionEvidenceInput[][] | null = null;
@@ -6276,7 +6288,7 @@ function buildPromptParts(args: {
               r.authorUserId,
               args.members,
               r.id,
-            )}] ${fenceExternalContent(truncate(r.contentText, 280), {
+            )}] ${fenceExternalContent(truncate(r.contentText, CONVERSATION_WINDOW_EXCERPT_CHARS), {
               source: 'raw-event-conversation-window',
               eventId: r.id,
             })}`,

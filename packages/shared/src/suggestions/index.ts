@@ -114,7 +114,7 @@ export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
   attachUniqueHubsToBundles,
   chronologicalLifecycleEvidence,
-  explicitCompletionState,
+  explicitLifecycleState,
   hubEvidenceText,
   hubsChanged,
   qualifyWorkspaceHubs,
