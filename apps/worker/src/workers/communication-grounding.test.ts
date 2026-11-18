@@ -101,6 +101,15 @@ test('explicit named ownership survives without implying progress', () => {
     ])[0]?.items[0]?.proposedPayload,
   ).toEqual({ assigneeUserId: bob });
 });
+test('a new task uses its canonical identity even with a generic approval heading', () => {
+  const quote = 'Bob will review retention policy.';
+  const payload = { canonicalName: title, assigneeUserId: bob };
+  expect(
+    run(quote, payload, [support('assignee', quote, bob)], { taskTitle: 'Create task' })[0]
+      ?.items[0]?.proposedPayload,
+  ).toEqual(payload);
+});
+
 test('forwarded self commitment uses original sender email rather than forwarder', () => {
   for (const text of [
     'I will review retention policy.',

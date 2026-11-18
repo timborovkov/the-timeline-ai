@@ -494,7 +494,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
     const taskIdentityNames = (
-      item: Pick<Item, 'targetId' | 'title'> & Partial<Pick<Item, 'targetKind'>>,
+      item: Pick<Item, 'targetId' | 'title'> &
+        Partial<Pick<Item, 'targetKind' | 'proposedPayload'>>,
       objects = args.objects ?? [],
     ) => {
       if (item.targetKind === 'calendar_event') {
@@ -502,7 +503,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
         return calendar ? [calendar.title] : [];
       }
       const target = objects.find((object) => object.id === item.targetId);
-      const names = [target?.name ?? item.title];
+      const proposedName = item.proposedPayload?.canonicalName;
+      const names = [
+        target?.name ??
+          (typeof proposedName === 'string' && proposedName.trim() ? proposedName : item.title),
+      ];
       if (target?.type !== 'task') return names;
       return [
         ...names,
