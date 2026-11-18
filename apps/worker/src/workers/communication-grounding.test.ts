@@ -228,6 +228,25 @@ test('shortened status and deadline citations retain surrounding modality', () =
   }
 });
 
+test('tentative field removals do not clear approved values', () => {
+  for (const [field, quote, kind, value] of [
+    ['assigneeUserId', `Unassign ${title}.`, 'assignee', 'unassigned'],
+    ['ownerUserId', `Remove the owner for ${title}.`, 'assignee', 'unassigned'],
+    ['dueAt', `Remove the deadline for ${title}.`, 'dueAt', 'unset'],
+  ] as const) {
+    for (const [text, retained] of [
+      [quote, true],
+      [`Probably ${quote}`, false],
+    ] as const) {
+      expect(
+        run(text, { [field]: null }, [support(kind, quote, value)], {
+          operation: 'update',
+        })[0]?.items[0]?.proposedPayload[field],
+      ).toBe(retained ? null : undefined);
+    }
+  }
+});
+
 test('later definite ownership supersedes the cited assignment', () => {
   const earlier = 'Bob will review retention policy.';
   const reassigned = 'Alice will review retention policy instead of Bob.';
@@ -237,7 +256,9 @@ test('later definite ownership supersedes the cited assignment', () => {
     [alice, newer, reassigned, reassigned, true],
     [bob, event, earlier, 'Unassign Bob from Review retention policy.', false],
     [bob, event, earlier, 'Bob will not review retention policy.', false],
+    [bob, event, earlier, 'Bob can’t review retention policy.', false],
     [bob, event, earlier, 'I will not review retention policy.', false],
+    [bob, event, earlier, "I won't review retention policy.", false],
     [bob, event, earlier, 'Unassign Alice from Review retention policy.', true],
     [bob, event, earlier, 'Bob might not review retention policy.', true],
   ] as const) {

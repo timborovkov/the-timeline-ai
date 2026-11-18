@@ -134,6 +134,10 @@ export function emailEvidenceSender(sourceMetadata: unknown) {
   const forwarded = metadataObject(metadata.forwarded_from);
   const original = metadataPerson(forwarded.from ?? metadata.forwarded_from);
   const direct = metadataPerson(metadata.from);
+  const envelopeEmail =
+    direct.email ??
+    metadataString(metadata, 'from_email') ??
+    metadataString(metadata, 'sender_email');
   return {
     name:
       original.name ??
@@ -143,11 +147,8 @@ export function emailEvidenceSender(sourceMetadata: unknown) {
       metadataString(metadata, 'from_name') ??
       metadataString(metadata, 'from_email') ??
       metadataString(metadata, 'sender_email'),
-    email:
-      original.email ??
-      direct.email ??
-      metadataString(metadata, 'from_email') ??
-      metadataString(metadata, 'sender_email'),
+    email: original.email ?? envelopeEmail,
+    envelopeEmail,
   };
 }
 

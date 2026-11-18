@@ -87,7 +87,8 @@ const prospect = (quote: string) =>
 
 // These predicates explicitly identify the speaker even when the language omits “I”.
 const firstPersonCommitment =
-  /(?<![\p{L}\p{N}])(?:I (?:will|shall)|I['’]ll|ich werde|revisaré|prepararé|haré|enviaré|escribiré|terminaré|completaré|tarkistan|valmistelen|lähetän|kirjoitan)(?![\p{L}\p{N}])/iu;
+  /(?<![\p{L}\p{N}])(?:I (?:will|shall|won['’]t|can['’]t|cannot|can(?=\s+not\b))|I['’]ll|ich werde|revisaré|prepararé|haré|enviaré|escribiré|terminaré|completaré|tarkistan|valmistelen|lähetän|kirjoitan)(?![\p{L}\p{N}])/iu;
+const assignmentDenial = /(?:(?:will|shall|can)\s+not|won['’]t|can['’]t|cannot|declines to)\b/i;
 
 function safeSourceQuote(text: string, quote: string): boolean {
   const body = normalize(text),
@@ -145,6 +146,7 @@ export function emailChronologyStatements(
     return part.contentText.split(/(?<=[.!?])\s+|\n+/u).flatMap((sentence) =>
       (explicitLifecycleState(sentence) ||
         firstPersonCommitment.test(sentence) ||
+        assignmentDenial.test(sentence) ||
         /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis|will|shall|owns|owner|responsible|assign|assigned|reassign|reassigned|unassign|remove|declines|cannot)\b/i.test(
           sentence,
         )) &&
@@ -600,6 +602,9 @@ function affirmativeLifecycle(
 function taskClause(quote: string, subject: string): string | undefined {
   // Keep source citations literal; normalize contractions only for assertion checks.
   quote = quote
+    .replace(/\bwon['’]t\b/gi, 'will not')
+    .replace(/\bcan['’]t\b/gi, 'can not')
+    .replace(/\bshan['’]t\b/gi, 'shall not')
     .replace(/\b([a-z]+)n[’']t\b/gi, '$1 not')
     .replace(/\b([a-z]+)[’']ll\b/gi, '$1 will');
   if (/^blocked until\b/i.test(quote.trim()) && namesTask(quote, subject)) return quote;
@@ -686,6 +691,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     text: string;
     authorUserId?: string | null;
     speakerContext?: string;
+    emailEnvelopeSender?: string | null | undefined;
     occurredAt?: Date;
   }[];
   reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
@@ -804,7 +810,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
       occurredAt?: Date,
     ) => {
       if (
-        !/\b(?:not|never|if|unless|maybe|perhaps|might|could)\b/i.test(assertion) &&
+        !tentativeAssertion.test(normalize(assertion).replaceAll(normalize(subject), '[task]')) &&
+        !/\b(?:not|never|if|unless)\b/i.test(assertion) &&
         /\b(?:remove|clear) (?:the )?deadline\b/i.test(assertion)
       )
         return { affirmed: new Set<number | null>([null]), denied: new Set<number>() };
@@ -856,9 +863,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
           source: 'email',
           authorUserId: null,
           speakerContext: undefined,
+          emailEnvelopeSender: compact.senderEmail ?? null,
         }
       : args.sources.find((source) => source.id === assignment?.rawEventId);
-    const unsupported = { clause: undefined, verified: false, withdrawn: false };
+    const unsupported = { clause: undefined, verified: false, withdrawn: false, canClear: false };
     if (!source || !assignment) return unsupported;
     const enclosing = completeSourceAssertion(source.text, assignment.quote);
     if (!enclosing) return unsupported;
@@ -984,14 +992,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
     const emailSpeaker = Boolean(
       member?.email &&
       uniqueCommitment &&
-      (compact
-        ? compact.senderEmail && normalize(compact.senderEmail) === normalize(member.email)
-        : latestHeader
-          ? headerEmails.size === 1 &&
-            headerEmails.has(normalize(member.email)) &&
-            safeSourceQuote(source.text, latestHeader[0].trim()) &&
-            normalize(args.packet).includes(normalize(latestHeader[0].trim()))
-          : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
+      (latestHeader
+        ? headerEmails.size === 1 &&
+          headerEmails.has(normalize(member.email)) &&
+          safeSourceQuote(source.text, latestHeader[0].trim()) &&
+          packet.includes(normalize(latestHeader[0].trim()))
+        : source.emailEnvelopeSender === undefined
+          ? source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)
+          : normalize(source.emailEnvelopeSender ?? '') === normalize(member.email)),
     );
     const selfAction = clause && firstPersonCommitment.exec(clause);
     const attributableSelf =
@@ -1007,16 +1015,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
       !tentative &&
       attributableSelf &&
       selfAction &&
+      !assignmentDenial.test(selfAction[0]) &&
       matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
       !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
         surrounding ?? clause,
       );
     const namedDenial =
       name && clause
-        ? new RegExp(
-            `${name}\\s+(?:(?:will|shall|can)\\s+not|won['’]t|can['’]t|cannot|declines to)\\s+`,
-            'iu',
-          ).exec(clause)
+        ? new RegExp(`${name}\\s+${assignmentDenial.source}\\s+`, 'iu').exec(clause)
         : null;
     const explicitWithdrawal =
       name && clause
@@ -1024,8 +1030,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
         : null;
     const selfDenial =
       attributableSelf && selfAction && clause
-        ? /^\s*(?:not|never)\s+/i.exec(clause.slice(selfAction.index + selfAction[0].length))
-        : null;
+        ? assignmentDenial.test(selfAction[0])
+          ? clause.slice(selfAction.index + selfAction[0].length)
+          : /^\s*(?:not|never)\s+(.+)$/i.exec(
+              clause.slice(selfAction.index + selfAction[0].length),
+            )?.[1]
+        : undefined;
     const withdrawn =
       clause &&
       !tentative &&
@@ -1035,16 +1045,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
         matchesAssignedTask(clause.slice(namedDenial.index + namedDenial[0].length))) ||
         (explicitWithdrawal !== null &&
           matchesAssignedTask(clause.slice(explicitWithdrawal[0].length))) ||
-        (selfDenial !== null &&
-          selfAction &&
-          matchesAssignedTask(
-            clause.slice(selfAction.index + selfAction[0].length + selfDenial[0].length),
-          )));
+        (selfDenial !== undefined && matchesAssignedTask(selfDenial)));
     return {
       clause,
       verified:
         Boolean(member) && (Boolean(named) || Boolean(self)) && !assignment.quote.includes('?'),
       withdrawn: Boolean(withdrawn),
+      canClear:
+        Boolean(clause) &&
+        !tentative &&
+        !unresolvedOwner &&
+        !/\b(?:not|never|if|unless)\b/i.test(surrounding ?? ''),
     };
   }
   function assignmentSuperseded(
@@ -1820,7 +1831,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
       if (type === 'task' || (item.targetKind === 'task' && item.operation === 'update')) {
         const assignment = supports.find((support) => support.field === 'assignee');
         const member = args.members.find((member) => member.userId === assignment?.value);
-        const { clause, verified: citedAssignment } = assignmentProof(
+        const {
+          clause,
+          verified: citedAssignment,
+          canClear,
+        } = assignmentProof(
           assignment,
           member,
           assignment !== undefined && validContexts.has(assignment),
@@ -1854,8 +1869,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
         }
         const clearAssignment =
           assignment?.value === 'unassigned' &&
-          Boolean(clause) &&
-          !/\b(?:not|never|if|unless|maybe|perhaps|might|could)\b/i.test(clause ?? '');
+          canClear &&
+          !assignmentSuperseded(assignment, taskIdentityNames(item), (assertion) =>
+            taskEvidenceUnambiguous(item, assertion),
+          );
         const clearOwner =
           clearAssignment &&
           /\b(?:remove|clear|unset|unassign)\b.*\bowner\b|\bowner\b.*\b(?:removed|cleared|unassigned)\b/i.test(

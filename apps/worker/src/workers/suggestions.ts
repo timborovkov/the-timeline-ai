@@ -5070,6 +5070,10 @@ async function runSuggestionExtraction(
                 text: item.contentText,
                 occurredAt: item.occurredAt,
                 authorUserId: item.authorUserId,
+                emailEnvelopeSender:
+                  item.source === 'email'
+                    ? evidencePacks.emailEvidenceSender(item.sourceMetadata).envelopeEmail
+                    : undefined,
                 speakerContext: sourceContextForPrompt(
                   item.source,
                   item.sourceMetadata,
@@ -5085,6 +5089,10 @@ async function runSuggestionExtraction(
             text: event.contentText,
             occurredAt: event.occurredAt,
             authorUserId: event.authorUserId,
+            emailEnvelopeSender:
+              row.source === 'email'
+                ? evidencePacks.emailEvidenceSender(event.sourceMetadata).envelopeEmail
+                : undefined,
             speakerContext: sourceContextForPrompt(
               row.source,
               event.sourceMetadata,
@@ -5099,6 +5107,10 @@ async function runSuggestionExtraction(
             text,
             occurredAt: row.occurredAt,
             authorUserId: row.authorUserId,
+            emailEnvelopeSender:
+              row.source === 'email'
+                ? evidencePacks.emailEvidenceSender(row.sourceMetadata).envelopeEmail
+                : undefined,
             speakerContext: sourceContextForPrompt(
               row.source,
               row.sourceMetadata,
@@ -5678,7 +5690,7 @@ async function processEmailThreadPages(
               id,
               occurredAt,
               contentText: contentText ?? '',
-              senderEmail: evidencePacks.emailEvidenceSender(sourceMetadata).email,
+              senderEmail: evidencePacks.emailEvidenceSender(sourceMetadata).envelopeEmail,
             }),
           );
         }

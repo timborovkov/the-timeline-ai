@@ -9670,11 +9670,20 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Thanks.');
   });
 
-  const emailScenarios = ['plain', 'paged', 'forward', 'date', 'owner', 'self-withdrawal'];
+  const emailScenarios = [
+    'plain',
+    'paged',
+    'forward',
+    'date',
+    'owner',
+    'self-withdrawal',
+    'contracted',
+  ];
   it.each(emailScenarios)('reviews email (%s)', async (variant) => {
     const corrected = variant !== 'plain';
     const deadline = variant === 'date';
-    const ownership = variant === 'owner' || variant === 'self-withdrawal';
+    const ownership =
+      variant === 'owner' || variant === 'self-withdrawal' || variant === 'contracted';
     const forwarded = variant === 'forward' || deadline || ownership;
     const ids = Array.from({ length: forwarded ? 3 : corrected ? 50 : 26 }, () =>
       crypto.randomUUID(),
@@ -9693,11 +9702,17 @@ describe('processSuggestionJobForTests', () => {
     const correction =
       variant === 'self-withdrawal'
         ? 'I will not review retention policy.'
-        : ownership
-          ? `Unassign Owner from ${taskName}.`
-          : deadline
-            ? `${taskName} is due July 8.`
-            : `${taskName} is not done.`;
+        : variant === 'contracted'
+          ? "Owner won't review retention policy."
+          : ownership
+            ? `Unassign Owner from ${taskName}.`
+            : deadline
+              ? `${taskName} is due July 8.`
+              : `${taskName} is not done.`;
+    const correctionBody =
+      variant === 'self-withdrawal'
+        ? `${correction}\n\nForwarded message 1:\nFrom: Member <member@example.test>\nDate: Wed, 10 Jun 2026 10:00:00 GMT\n\nBackground material.`
+        : correction;
     const forwardedCompletion = [
       'For reference, here is an older email.',
       '',
@@ -9724,13 +9739,16 @@ describe('processSuggestionJobForTests', () => {
               ? completion
               : 'Please prepare the compliance register.'
           : corrected && index === (forwarded ? 1 : 24)
-            ? correction
+            ? correctionBody
             : `Thread message ${index}.`,
       sourceMetadata: {
         thread_root_id: root,
         extracted_at: REFERENCE_DATE.toISOString(),
         extraction_model_version: 'fixture',
         ...(ownership && index === 1 ? { from_email: 'owner@example.test' } : {}),
+        ...(variant === 'self-withdrawal' && index === 1
+          ? { forwarded_from: { from: { email: 'member@example.test' } } }
+          : {}),
         ...(forwarded && id !== last ? { email_thread_review_id: reviewId } : {}),
       },
     }));
