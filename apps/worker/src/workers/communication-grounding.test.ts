@@ -211,6 +211,45 @@ test('uncertain deadlines do not become actionable dates', () => {
   }
 });
 
+test('later visible task deadlines supersede older grounded dates', () => {
+  const earlier = `${title} is due 2026-06-02.`;
+  const later = `${title} is now due 2026-06-08.`;
+  const newer = '33333333-3333-4333-8333-333333333333';
+  for (const [date, rawEventId, quote, retained] of [
+    ['2026-06-02T00:00:00.000Z', event, earlier, false],
+    ['2026-06-08T00:00:00.000Z', newer, later, true],
+  ] as const) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task',
+              proposedPayload: { dueAt: date },
+              grounding: [{ ...support('dueAt', quote, date), rawEventId }],
+            },
+          ],
+        },
+      ],
+      sources: [
+        { id: newer, text: later, occurredAt: new Date('2026-06-02T08:00:00Z') },
+        { id: event, text: earlier, occurredAt: new Date('2026-06-01T08:00:00Z') },
+      ],
+      packet: `${earlier}\n${later}`,
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      members: [],
+      hubs: [],
+      source: 'slack',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.dueAt).toBe(retained ? date : undefined);
+  }
+});
+
 test('later dated forwards supersede older assertions regardless of display order', () => {
   const completion = `${title} is done.`;
   const correction = `${title} is not done.`;

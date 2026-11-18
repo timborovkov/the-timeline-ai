@@ -9670,34 +9670,53 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Thanks.');
   });
 
-  it.each([false, true])('reviews an email backlog (correction=%s)', async (corrected) => {
-    const ids = Array.from({ length: corrected ? 50 : 26 }, () => crypto.randomUUID());
+  it.each(['plain', 'paged', 'forwarded'])('reviews email (%s)', async (variant) => {
+    const corrected = variant !== 'plain';
+    const forwarded = variant === 'forwarded';
+    const ids = Array.from({ length: forwarded ? 3 : corrected ? 50 : 26 }, () =>
+      crypto.randomUUID(),
+    );
     const root = ids[0];
     const last = ids.at(-1);
     if (!root || !last) throw new Error('Missing email thread fixtures');
+    const completedId = forwarded ? last : ids[1];
     const reviewId = crypto.randomUUID();
     const taskName = 'Review retention policy';
     const completion = `${taskName} is done.`;
     const correction = `${taskName} is not done.`;
+    const forwardedCompletion = [
+      'For reference, here is an older email.',
+      '',
+      'Forwarded message 1:',
+      'From: Bob <bob@example.test>',
+      'Date: Mon, 01 Jun 2026 08:00:00 GMT',
+      '',
+      completion,
+    ].join('\n');
     const messages = ids.map((id, index) => ({
       id,
       teamId: TEAM_ID,
       authorUserId: OWNER_ID,
       source: 'email' as const,
       visibility: 'team' as const,
-      occurredAt: new Date(REFERENCE_DATE.getTime() + 60_000 * index),
+      occurredAt: forwarded
+        ? new Date(Date.UTC(2026, 5, index === 2 ? 15 : index === 1 ? 11 : 1, 12))
+        : new Date(REFERENCE_DATE.getTime() + 60_000 * index),
       contentText:
-        index === 1
-          ? corrected
-            ? completion
-            : 'Please prepare the compliance register.'
-          : corrected && index === 24
+        id === completedId
+          ? forwarded
+            ? forwardedCompletion
+            : corrected
+              ? completion
+              : 'Please prepare the compliance register.'
+          : corrected && index === (forwarded ? 1 : 24)
             ? correction
             : `Thread message ${index}.`,
       sourceMetadata: {
         thread_root_id: root,
         extracted_at: REFERENCE_DATE.toISOString(),
         extraction_model_version: 'fixture',
+        ...(forwarded && id !== last ? { email_thread_review_id: reviewId } : {}),
       },
     }));
     await db.insert(rawEvents).values(messages);
@@ -9737,7 +9756,7 @@ describe('processSuggestionJobForTests', () => {
                   grounding: [
                     {
                       field: 'status',
-                      rawEventId: ids[1],
+                      rawEventId: completedId,
                       quote: completion,
                       subject: taskName,
                       value: 'done',
@@ -9767,7 +9786,7 @@ describe('processSuggestionJobForTests', () => {
     expect(prompts[0]).toContain(
       corrected ? completion : 'Please prepare the compliance register.',
     );
-    expect(prompts.at(-1)).toContain(`Thread message ${ids.length - 1}.`);
+    expect(prompts.at(-1)).toContain(forwarded ? completion : `Thread message ${ids.length - 1}.`);
     if (corrected) expect(prompts[0]).toContain(correction);
     const [review] = await db
       .select()

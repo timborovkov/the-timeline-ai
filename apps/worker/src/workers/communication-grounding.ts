@@ -173,23 +173,23 @@ function deadlineReferenceDate(
   }
   return undefined;
 }
-function deadlineTimeMatches(day: string, tail: string, target: number, timezone: string): boolean {
+function deadlineInstant(day: string, tail: string, timezone: string): number | undefined {
   try {
     const start = dateOnlyEventRange(day, timezone).startAt;
     const time =
       /^(?:T|\s+(?:at\s+)?)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:\s*(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(
         tail,
       );
-    if (!time) return !/^(?:T|\s+(?:at\b|\d))/i.test(tail) && start.getTime() === target;
+    if (!time) return /^(?:T|\s+(?:at\b|\d))/i.test(tail) ? undefined : start.getTime();
     const hour = Number(time[1]);
     const minute = Number(time[2]);
     const second = Number(time[3] ?? 0);
     const millisecond = Number((time[4] ?? '').padEnd(3, '0'));
-    if (hour > 23 || minute > 59 || second > 59) return false;
+    if (hour > 23 || minute > 59 || second > 59) return undefined;
     // A time marker must end at a boundary; ordinary following prose is not a zone.
     const suffix = tail.slice(time[0].length);
-    if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return false;
-    if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return false;
+    if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return undefined;
+    if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return undefined;
     const token = /^\s+([A-Za-z][A-Za-z_/-]*)/.exec(suffix)?.[1];
     if (token && !/^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) {
       if (
@@ -197,10 +197,10 @@ function deadlineTimeMatches(day: string, tail: string, target: number, timezone
         /^[A-Z]{2,6}$/.test(token) ||
         token.includes('/')
       )
-        return false;
+        return undefined;
       try {
         new Intl.DateTimeFormat('en-US', { timeZone: token });
-        return false;
+        return undefined;
       } catch {
         // Ordinary words are not timezone identifiers.
       }
@@ -212,20 +212,22 @@ function deadlineTimeMatches(day: string, tail: string, target: number, timezone
         )
       : zonedDateTimeFromDate(start, timezone).with({ hour, minute, second, millisecond })
           .epochMilliseconds;
-    return instant === target;
+    return Number.isFinite(instant) ? instant : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
-function deadlineMatches(
+function deadlineInstants(
   quote: string,
   subject: string,
-  value: unknown,
   timezone: string,
   referenceDate?: Date,
-): boolean {
-  if (typeof value !== 'string') return false;
-  const target = Date.parse(value);
+): Set<number> {
+  const instants = new Set<number>();
+  const add = (day: string, tail: string) => {
+    const instant = deadlineInstant(day, tail, timezone);
+    if (instant !== undefined) instants.add(instant);
+  };
   const deadlineAt = (index: number, length: number) => {
     const prefix =
       quote
@@ -251,8 +253,7 @@ function deadlineMatches(
   };
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
     if (!deadlineAt(match.index, match[0].length)) continue;
-    if (deadlineTimeMatches(match[0], quote.slice(match.index + match[0].length), target, timezone))
-      return true;
+    add(match[0], quote.slice(match.index + match[0].length));
   }
   for (const match of quote.matchAll(
     /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
@@ -272,16 +273,7 @@ function deadlineMatches(
       date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
       if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
     }
-    if (
-      Number.isFinite(date.getTime()) &&
-      deadlineTimeMatches(
-        date.toISOString().slice(0, 10),
-        quote.slice(match.index + match[0].length),
-        target,
-        timezone,
-      )
-    )
-      return true;
+    add(date.toISOString().slice(0, 10), quote.slice(match.index + match[0].length));
   }
   if (referenceDate) {
     for (const match of quote.matchAll(
@@ -305,19 +297,14 @@ function deadlineMatches(
           : `next ${phrase}`
         : phrase;
       const resolved = resolveTimePhrase(relative, { timezone, referenceDate });
-      if (
-        resolved &&
-        deadlineTimeMatches(
+      if (resolved)
+        add(
           zonedDateTimeFromDate(resolved.from, timezone).toPlainDate().toString(),
           quote.slice(match.index + match[0].length),
-          target,
-          timezone,
-        )
-      )
-        return true;
+        );
     }
   }
-  return false;
+  return instants;
 }
 const lifecycleWords: Record<string, RegExp> = {
   doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
@@ -653,20 +640,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
   verifiedLifecycleAuditIds?: Set<string>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
+  const sourceIds = new Set(args.sources.map((source) => source.id));
   const chronology = chronologicalLifecycleEvidence([
     ...args.sources.map((source) => ({
       ...source,
       source: source.source ?? args.source,
       contentText: source.text,
     })),
-    ...(args.emailLifecycleLookahead ?? []),
+    ...(args.emailLifecycleLookahead ?? []).filter((event) => !sourceIds.has(event.id)),
   ]);
   const lifecycleVetoIds = new Set([
     ...(args.reviewedLaterEmailIds ?? []),
     ...(args.emailLifecycleLookahead ?? []).map((event) => event.id),
   ]);
   const packet = normalize(args.packet);
-  function lifecycleSuperseded(support: Support, names: string[]): boolean {
+  function* assertionsFromCitation(support: Support) {
     const citedClause = taskClause(support.quote, support.subject);
     let from = -1;
     let assertionStart = 0;
@@ -685,32 +673,81 @@ export function groundCommunicationBundles<T extends Item>(args: {
         break;
       }
     }
-    if (from < 0) return true;
+    if (from < 0) return;
+    for (const [offset, event] of chronology.slice(from).entries()) {
+      const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
+      for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
+        if (sentence.trim() && safeSourceQuote(event.contentText, sentence.trim()))
+          yield { event, sentence, visible: packet.includes(normalize(sentence)) };
+      }
+    }
+  }
+  function lifecycleSuperseded(support: Support, names: string[]): boolean {
     let status: string | undefined = support.value;
+    let found = false;
     const subjects = names
       .filter((name) => name.trim())
       .map((name) => {
         const identity = taskIdentityPattern(name);
         return identity ? new RegExp(`^(?:(?:the|la|el|die|der|das) )?${identity}$`, 'iu') : null;
       });
-    for (const [offset, event] of chronology.slice(from).entries()) {
-      const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
-      for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
-        const state = explicitLifecycleState(sentence);
-        if (
-          state &&
-          safeSourceQuote(event.contentText, sentence.trim()) &&
-          // The full authorized later email can veto a stale change even
-          // when its body exceeds the prompt's background context budget.
-          ((event.id && lifecycleVetoIds.has(event.id)) || packet.includes(normalize(sentence))) &&
-          subjects.some((subject) => subject?.test(normalize(state.subject)))
-        ) {
-          if (state.affirmative) status = state.status;
-          else if (status === state.status) status = undefined;
-        }
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      found = true;
+      const state = explicitLifecycleState(sentence);
+      if (
+        state &&
+        (visible || (event.id && lifecycleVetoIds.has(event.id))) &&
+        subjects.some((subject) => subject?.test(normalize(state.subject)))
+      ) {
+        if (state.affirmative) status = state.status;
+        else if (status === state.status) status = undefined;
       }
     }
-    return status !== support.value;
+    return !found || status !== support.value;
+  }
+  function deadlineVerified(
+    support: Support,
+    wanted: number | null,
+    names: string[],
+    unambiguous: (assertion: string) => boolean,
+  ): boolean {
+    const deadlineIn = (
+      assertion: string,
+      subject: string,
+      sourceId: string | undefined,
+      quote: string,
+    ) => {
+      if (
+        !/\b(?:not|never|if|unless|maybe|perhaps|might|could)\b/i.test(assertion) &&
+        /\b(?:remove|clear) (?:the )?deadline\b/i.test(assertion)
+      )
+        return new Set([null]);
+      const source = args.sources.find((row) => row.id === sourceId);
+      return deadlineInstants(
+        assertion,
+        subject,
+        args.timezone ?? 'UTC',
+        deadlineReferenceDate(source, source?.source ?? args.source, quote, assertion),
+      );
+    };
+    const cited = deadlineIn(
+      supportedTaskAssertion(support) ?? '',
+      support.subject,
+      support.rawEventId,
+      support.quote,
+    );
+    if (cited.size !== 1 || ![...cited].includes(wanted)) return false;
+    let latest: number | null | undefined = wanted;
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      if (!visible) continue;
+      const subject = names.find((name) => namesTask(sentence, name, true));
+      if (!subject) continue;
+      const assertion = supportedTaskAssertion({ ...support, subject, quote: sentence });
+      if (!assertion || !unambiguous(assertion)) continue;
+      const dates = deadlineIn(assertion, subject, event.id, sentence);
+      if (dates.size > 0) latest = dates.size === 1 ? [...dates][0] : undefined;
+    }
+    return latest === wanted;
   }
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
@@ -1646,30 +1683,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
         if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
         if (!retainAssignment('assigneeName')) delete payload.assigneeName;
         if (!retainAssignment('ownerName')) delete payload.ownerName;
-        const deadlineRemoval = supportedTaskAssertion(has('dueAt', 'unset'));
-        const clearDeadline =
-          deadlineRemoval &&
-          !/\b(?:not|never|if|unless)\b/i.test(deadlineRemoval) &&
-          /\b(?:remove|clear) (?:the )?deadline\b/i.test(deadlineRemoval);
-        const deadline = has('dueAt', payload.dueAt);
-        const deadlineAssertion = supportedTaskAssertion(deadline) ?? '';
-        const deadlineSource = args.sources.find((row) => row.id === deadline?.rawEventId);
+        const deadline = has('dueAt', payload.dueAt === null ? 'unset' : payload.dueAt);
         if (
           payload.dueAt !== undefined &&
-          !(payload.dueAt === null && clearDeadline) &&
           !(
             deadline &&
-            deadlineMatches(
-              deadlineAssertion,
-              deadline.subject,
-              payload.dueAt,
-              args.timezone ?? 'UTC',
-              deadlineReferenceDate(
-                deadlineSource,
-                deadlineSource?.source ?? args.source,
-                deadline.quote,
-                deadlineAssertion,
-              ),
+            (payload.dueAt === null || typeof payload.dueAt === 'string') &&
+            deadlineVerified(
+              deadline,
+              payload.dueAt === null ? null : Date.parse(payload.dueAt),
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
             )
           )
         )

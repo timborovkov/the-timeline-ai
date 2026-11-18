@@ -5641,14 +5641,9 @@ async function processEmailThreadPages(
   let hasProposal =
     metadata.email_page_anchor_id === last.id && metadata.email_page_has_proposal === true;
   const thread = { teamId: review.teamId, identity, through: last };
-  // One keyset scan per review keeps later corrections independent of both
-  // model context and page size. Retain only eligible lifecycle statements.
-  let followups:
-    | {
-        event: Pick<RawEventRow, 'id' | 'occurredAt'>;
-        statements: ReturnType<typeof emailLifecycleStatements>;
-      }[]
-    | undefined;
+  // A newer envelope can contain an older dated assertion. Scan the thread
+  // through the fixed anchor once independently of the model context.
+  let threadLifecycle: ReturnType<typeof emailLifecycleStatements> | undefined;
   const laterThan = (
     event: Pick<RawEventRow, 'id' | 'occurredAt'>,
     anchor: Pick<RawEventRow, 'id' | 'occurredAt'>,
@@ -5660,31 +5655,27 @@ async function processEmailThreadPages(
       ...thread,
       unreviewedBy: review.id,
     });
-    const firstPending = pending[0];
-    if (!firstPending) {
+    if (!pending.length) {
       await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action', {
         ...(sourceRefs.length ? { sourceRefs } : {}),
         expectedQuietUntil: review.quietUntil,
       });
       return;
     }
-    if (!followups) {
-      followups = [];
-      let after = firstPending;
-      while (laterThan(last, after)) {
+    if (!threadLifecycle) {
+      threadLifecycle = [];
+      let after: RawEventRow | undefined;
+      while (!after || laterThan(last, after)) {
         const events = await conversationReview.listEmailThreadEvents(deps.db, {
           ...thread,
-          after,
+          ...(after ? { after } : {}),
         });
         const tail = events.at(-1);
         if (!tail) break;
         for (const { id, occurredAt, contentText } of events) {
-          const statements = emailLifecycleStatements({
-            id,
-            occurredAt,
-            contentText: contentText ?? '',
-          });
-          if (statements.length) followups.push({ event: { id, occurredAt }, statements });
+          threadLifecycle.push(
+            ...emailLifecycleStatements({ id, occurredAt, contentText: contentText ?? '' }),
+          );
         }
         after = tail;
       }
@@ -5744,11 +5735,9 @@ async function processEmailThreadPages(
             linkedContext,
             completeEmailIds,
             reviewedLaterEmailIds,
-            emailLifecycleLookahead: followups
-              .filter(
-                ({ event }) => laterThan(event, anchor) && !reviewedLaterEmailIds.has(event.id),
-              )
-              .flatMap(({ statements }) => statements),
+            emailLifecycleLookahead: threadLifecycle.filter(
+              ({ id }) => !completeEmailIds.has(id) && !reviewedLaterEmailIds.has(id),
+            ),
             reviewAnchorRawEventId: last.id,
             reviewAnchorQuietUntil: review.quietUntil,
           },
@@ -6551,8 +6540,8 @@ function buildPromptParts(args: {
   const evidence = [
     ...(laterDecisions.length
       ? [
-          '# Later email lifecycle decisions',
-          'Use these decisions to rule out stale lifecycle changes from the current page. They cannot support new proposals on this page.',
+          '# Other thread lifecycle decisions',
+          'Compare original statement timestamps to rule out stale changes. These decisions cannot support new proposals on this page.',
           ...laterDecisions,
           '',
         ]

@@ -37,10 +37,11 @@ reserved for delayed replies. Pending emails are read in chronological pages
 with their full bodies. When a late arrival follows longer reviewed messages,
 the prompt keeps the pending body and fits later reviewed excerpts in the
 remaining space, including explicit lifecycle statements when they fit. The
-worker scans authorized later emails through the fixed review anchor and keeps
+worker scans authorized thread emails through the fixed review anchor and keeps
 safe lifecycle statements independently of the prompt window. Corrections can
-reject a stale lifecycle change across any pending page. Pending pages supply
-only lifecycle checks until their own extraction.
+reject a stale lifecycle change across any pending page, including an earlier
+email that supersedes an older forwarded statement. Pending pages supply only
+lifecycle checks until their own extraction.
 Positive claims still require visible citations. Private replies never enter the
 window. Legacy email captures without a thread root retain event-local extraction.
 
@@ -350,7 +351,8 @@ Explicit ISO, month-name, and relative deadline times retain their stated timezo
 
 A source deadline must populate the task's `dueAt`, not only produce a calendar
 entry. Relative and yearless deadlines use the cited message's time and workspace
-timezone. A dated forwarded message supplies its own reference time.
+timezone. A dated forwarded message supplies its own reference time. Later
+visible, definitive assertions supersede older deadlines for the same task.
 An assignee ID must identify an available member; unresolved named people should
 remain named evidence rather than an arbitrary member assignment.
 
