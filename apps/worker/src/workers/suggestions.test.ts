@@ -9670,9 +9670,10 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Thanks.');
   });
 
-  it.each(['plain', 'paged', 'forwarded'])('reviews email (%s)', async (variant) => {
+  it.each(['plain', 'paged', 'forward', 'date'])('reviews email (%s)', async (variant) => {
     const corrected = variant !== 'plain';
-    const forwarded = variant === 'forwarded';
+    const deadline = variant === 'date';
+    const forwarded = variant === 'forward' || deadline;
     const ids = Array.from({ length: forwarded ? 3 : corrected ? 50 : 26 }, () =>
       crypto.randomUUID(),
     );
@@ -9682,8 +9683,8 @@ describe('processSuggestionJobForTests', () => {
     const completedId = forwarded ? last : ids[1];
     const reviewId = crypto.randomUUID();
     const taskName = 'Review retention policy';
-    const completion = `${taskName} is done.`;
-    const correction = `${taskName} is not done.`;
+    const completion = deadline ? `${taskName} is due July 2.` : `${taskName} is done.`;
+    const correction = deadline ? `${taskName} is due July 8.` : `${taskName} is not done.`;
     const forwardedCompletion = [
       'For reference, here is an older email.',
       '',
@@ -9752,14 +9753,16 @@ describe('processSuggestionJobForTests', () => {
                   targetKind: 'task',
                   targetId: taskId,
                   title: taskName,
-                  proposedPayload: { status: 'done' },
+                  proposedPayload: deadline
+                    ? { dueAt: '2026-07-02T00:00:00.000Z' }
+                    : { status: 'done' },
                   grounding: [
                     {
-                      field: 'status',
+                      field: deadline ? 'dueAt' : 'status',
                       rawEventId: completedId,
                       quote: completion,
                       subject: taskName,
-                      value: 'done',
+                      value: deadline ? '2026-07-02T00:00:00.000Z' : 'done',
                     },
                   ],
                 },
