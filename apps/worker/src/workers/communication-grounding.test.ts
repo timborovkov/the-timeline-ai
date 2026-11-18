@@ -4,6 +4,7 @@ import { expect, test } from 'bun:test';
 import {
   groundCommunicationBundles,
   communicationGroundingSchema,
+  emailChronologyStatements,
 } from '#src/workers/communication-grounding.js';
 const event = '11111111-1111-4111-8111-111111111111';
 const alice = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -301,15 +302,16 @@ test('later definite ownership supersedes the cited assignment', () => {
 });
 
 test('independent owner and assignee citations preserve both roles in either support order', () => {
-  const owner = `Alice owns ${title}.`;
   const assignee = 'Bob will review retention policy.';
-  const claims = [support('assignee', owner, alice), support('assignee', assignee, bob)];
   const payload = { ownerUserId: alice, assigneeUserId: bob };
-  for (const grounding of [claims, [...claims].reverse()]) {
-    expect(
-      run(`${owner} ${assignee}`, payload, grounding, { operation: 'update' })[0]?.items[0]
-        ?.proposedPayload,
-    ).toEqual(payload);
+  for (const owner of [`Alice owns ${title}.`, `Alice will own ${title}.`]) {
+    const claims = [support('assignee', owner, alice), support('assignee', assignee, bob)];
+    for (const grounding of [claims, [...claims].reverse()]) {
+      expect(
+        run(`${owner} ${assignee}`, payload, grounding, { operation: 'update' })[0]?.items[0]
+          ?.proposedPayload,
+      ).toEqual(payload);
+    }
   }
 });
 
@@ -337,6 +339,7 @@ test('later definitive project assertions supersede clears and attachments', () 
     [removed, attached, null, false, false],
     [removed, attached, projectId, true, true],
     [attached, removed, projectId, false, false],
+    [attached, `${title} is not part of Cedar Launch.`, projectId, false, false],
     [removed, `Probably ${attached}`, null, false, true],
   ] as const) {
     const result = groundCommunicationBundles({
@@ -372,6 +375,86 @@ test('later definitive project assertions supersede clears and attachments', () 
       source: 'slack',
     });
     expect(result[0]?.items[0]?.proposedPayload.parentObjectId).toBe(retained ? value : undefined);
+  }
+});
+
+test('authorized email chronology retains routing phrases outside the prompt', () => {
+  const clear = `Remove the project assignment for ${title}.`;
+  const projectId = 'cedar-launch';
+  for (const predicate of ['for', 'in', 'on']) {
+    const correction = `${title} is ${predicate} Cedar Launch.`;
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task',
+              proposedPayload: { parentObjectId: null },
+              grounding: [support('project', clear, 'unset')],
+            },
+          ],
+        },
+      ],
+      sources: [{ id: event, text: clear, occurredAt: new Date('2026-06-01T08:00:00Z') }],
+      emailChronologyLookahead: emailChronologyStatements({
+        id: '33333333-3333-4333-8333-333333333333',
+        contentText: correction,
+        occurredAt: new Date('2026-06-11T08:00:00Z'),
+      }),
+      packet: clear,
+      members: [],
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      hubs: [{ id: projectId, name: 'Cedar Launch', type: 'project' }],
+      source: 'email',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.parentObjectId).toBeUndefined();
+  }
+});
+
+test('child relationships respect later primary-project corrections', () => {
+  const attached = `${title} is part of Cedar Launch.`;
+  const projectId = 'cedar-launch';
+  for (const later of [
+    '',
+    `Remove the project assignment for ${title}.`,
+    `${title} is not part of Cedar Launch.`,
+  ]) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              operation: 'create',
+              targetKind: 'object_relationship',
+              proposedPayload: { kind: 'child', fromEntityId: 'task', toEntityId: projectId },
+              grounding: [support('project', attached, projectId)],
+            },
+          ],
+        },
+      ],
+      sources: [
+        { id: event, text: attached, occurredAt: new Date('2026-06-01T08:00:00Z') },
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          text: later,
+          occurredAt: new Date('2026-06-02T08:00:00Z'),
+        },
+      ],
+      packet: `${attached}\n${later}`,
+      members: [],
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      hubs: [{ id: projectId, name: 'Cedar Launch', type: 'project' }],
+      source: 'slack',
+    });
+    expect(result[0]?.items).toHaveLength(later ? 0 : 1);
   }
 });
 

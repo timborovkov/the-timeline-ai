@@ -41,6 +41,9 @@ interface Bundle<T extends Item> {
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const tentativeAssertion =
   /\b(?:maybe|might|perhaps|probably|possibly|tentative(?:ly)?|potentially|provisionally|likely|could)\b/i;
+const projectMembershipTerms = '(?:under|within|part of|belongs? to|in (?:the )?project)';
+const projectRoutingTerms = `(?:${projectMembershipTerms}|for|in|on)`;
+const projectRoutingCue = new RegExp(`\\b${projectRoutingTerms}\\b`, 'i');
 const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
 const TASK_ACTIONS = new Set(['prepare', 'review', 'draft', 'write', 'create', 'send']);
 const namesTask = (text: string, name: string, requireActionIdentity = false) => {
@@ -64,7 +67,7 @@ const namesTask = (text: string, name: string, requireActionIdentity = false) =>
       const artifact = taskIdentityPattern(titleWords.slice(1).join(' '), true);
       if (!artifact) return false;
       const outcome = new RegExp(
-        `^(?:(?:update|correction|status): )?(?:(?:(?:I|we) (?:have )?)?(?:completed|finished|delivered|shipped|sent|reopened|cancelled|canceled) )?(?:(?:the|this|that|our) )?${artifact}(?![\\p{L}\\p{N}])`,
+        `^(?:(?:update|correction|status): )?(?:(?:[\\p{L}][\\p{L}\\p{M}'’.-]* ){0,4}(?:(?:has|have|had) )?(?:completed|finished|delivered|shipped|sent|reopened|cancelled|canceled|(?:am|is|are|was|were) working on) )?(?:(?:the|this|that|our) )?${artifact}(?![\\p{L}\\p{N}])`,
         'iu',
       );
       if (!outcome.test(normalize(text))) return false;
@@ -131,6 +134,7 @@ interface EmailChronologyStatement {
   occurredAt: Date;
   deadlineReferenceAt?: Date | undefined;
   senderEmail?: string | null | undefined;
+  routingOnly?: boolean;
 }
 
 /** Retain candidate corrections with the original time and speaker for veto checks. */
@@ -146,25 +150,30 @@ export function emailChronologyStatements(
     const body = normalize(part.contentText);
     const matchingBodies = messages.filter((message) => message.body === body);
     const matchingBody = matchingBodies.length === 1 ? matchingBodies[0] : undefined;
-    return part.contentText.split(/(?<=[.!?])\s+|\n+/u).flatMap((sentence) =>
-      (explicitLifecycleState(sentence) ||
+    return part.contentText.split(/(?<=[.!?])\s+|\n+/u).flatMap((sentence) => {
+      const explicit =
+        Boolean(explicitLifecycleState(sentence)) ||
         firstPersonCommitment.test(sentence) ||
         assignmentDenial.test(sentence) ||
         /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis|will|shall|owns|owner|responsible|assign|assigned|reassign|reassigned|unassign|remove|declines|cannot|project|under|within|part of|belongs to|attach|move|link)\b/i.test(
           sentence,
-        )) &&
-      safeSourceQuote(part.contentText, sentence.trim())
-        ? [
-            {
-              id: event.id,
-              contentText: sentence.trim(),
-              occurredAt: part.occurredAt ?? event.occurredAt,
-              deadlineReferenceAt: matchingBody?.occurredAt,
-              senderEmail: matchingBody?.senderEmail,
-            },
-          ]
-        : [],
-    );
+        );
+      if (
+        (!explicit && !projectRoutingCue.test(sentence)) ||
+        !safeSourceQuote(part.contentText, sentence.trim())
+      )
+        return [];
+      return [
+        {
+          id: event.id,
+          contentText: sentence.trim(),
+          occurredAt: part.occurredAt ?? event.occurredAt,
+          deadlineReferenceAt: matchingBody?.occurredAt,
+          senderEmail: matchingBody?.senderEmail,
+          routingOnly: !explicit,
+        },
+      ];
+    });
   });
 }
 
@@ -503,8 +512,7 @@ function affirmativeProjectMembership(
     )
   )
     return false;
-  const membership = '(?:under|within|part of|belongs? to|in (?:the )?project)';
-  const predicate = allowTaskRouting ? `(?:${membership}|for|in|on)` : membership;
+  const predicate = allowTaskRouting ? projectRoutingTerms : projectMembershipTerms;
   const followsTask = new RegExp(
     `(?:^|\\s)${task}(?: task)? (?:(?:is|was|should be|will be) )?${predicate} (?:the )?$`,
   );
@@ -526,6 +534,17 @@ function affirmativeProjectMembership(
             startsTask.test(suffix))))
     );
   });
+}
+
+function deniedProjectMembership(assertion: string, subject: string, project: string): boolean {
+  const text = normalize(assertion);
+  const affirmative = text
+    .replace(
+      new RegExp(`\\b(?:is|was) (?:not|no longer) (?=${projectRoutingTerms}\\b)`, 'i'),
+      'is ',
+    )
+    .replace(/\b(?:does not|no longer) belongs? to\b/i, 'belongs to');
+  return affirmative !== text && affirmativeProjectMembership(affirmative, subject, project, true);
 }
 
 function taskAssertion(clause: string, subject: string): string | undefined {
@@ -951,6 +970,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
             'iu',
           ).exec(clause)
         : null;
+    const namedActionRemainder =
+      clause && namedAction ? clause.slice(namedAction.index + namedAction[0].length) : undefined;
     const explicitAssignment =
       name && clause
         ? new RegExp(
@@ -1089,6 +1110,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         (
           namedDenialAction ??
           selfDenial ??
+          namedActionRemainder ??
           (selfAction && clause ? clause.slice(selfAction.index + selfAction[0].length) : '')
         ).trim(),
       )
@@ -1161,7 +1183,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     unambiguous: (assertion: string) => boolean,
     projects: { id: string; name: string; aliases?: string[] }[],
   ): boolean {
-    let latest = wanted;
+    let latest: string | null | undefined = wanted;
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
       const subject = names.find((name) => namesTask(sentence, name, true));
@@ -1177,11 +1199,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const selected = projects.find((project) => mentioned.has(project.id));
       if (!selected) continue;
       const projectNames = [selected.name, ...(selected.aliases ?? [])];
-      if (
-        !hasEndpointAlternative(assertion, projectNames) &&
-        projectNames.some((name) => affirmativeProjectMembership(assertion, subject, name, true))
-      )
+      if (hasEndpointAlternative(assertion, projectNames)) continue;
+      if (projectNames.some((name) => affirmativeProjectMembership(assertion, subject, name, true)))
         latest = selected.id;
+      else if (
+        latest === selected.id &&
+        projectNames.some((name) => deniedProjectMembership(assertion, subject, name))
+      )
+        latest = undefined;
     }
     return latest !== wanted;
   }
@@ -1736,10 +1761,38 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 hasEndpointAlternative(membership, [to.name, ...to.aliases])
               )
                 return false;
-              return [to.name, ...to.aliases].some(
-                (name) =>
-                  namesEndpoint(name, to) &&
-                  affirmativeProjectMembership(membership, taskName ?? from.name, name, false),
+              const fullSource = enclosingAssertion(support);
+              const fullMembership =
+                fullSource &&
+                supportedTaskAssertion({
+                  ...support,
+                  subject: taskName ?? from.name,
+                  quote: fullSource,
+                });
+              const selectedProject = projectCandidates.find(
+                (candidate) =>
+                  candidate.id === to.id || candidate.id === `new:${normalize(to.name)}`,
+              );
+              return (
+                Boolean(fullMembership) &&
+                [to.name, ...to.aliases].some(
+                  (name) =>
+                    namesEndpoint(name, to) &&
+                    affirmativeProjectMembership(membership, taskName ?? from.name, name, false) &&
+                    affirmativeProjectMembership(
+                      fullMembership ?? '',
+                      taskName ?? from.name,
+                      name,
+                      false,
+                    ),
+                ) &&
+                !projectSuperseded(
+                  support,
+                  selectedProject?.id ?? to.id,
+                  taskIdentityNames(taskEndpointIdentity(from), known),
+                  (later) => namesEndpoint(later, from),
+                  selectedProject ? projectCandidates : [...projectCandidates, to],
+                )
               );
             }
             const linkInstruction =

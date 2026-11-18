@@ -6547,18 +6547,24 @@ function buildPromptParts(args: {
     })}`;
   const window = args.conversationWindow ?? [];
   const completeEmails = window.filter((event) => args.completeEmailIds?.has(event.id));
-  const laterDecisions = (args.emailChronologyLookahead ?? []).map(
-    (event) =>
-      `- [${event.id} ${event.occurredAt.toISOString()}] ${fenceExternalContent(event.contentText, {
-        source: 'email-thread-chronology',
-        eventId: event.id,
-      })}`,
-  );
+  const projectNames = args.projects.flatMap((project) => [project.name, ...project.aliases]);
+  const laterDecisions = (args.emailChronologyLookahead ?? [])
+    .filter((event) => !event.routingOnly || textMentionsAnyValue(event.contentText, projectNames))
+    .map(
+      (event) =>
+        `- [${event.id} ${event.occurredAt.toISOString()}] ${fenceExternalContent(
+          event.contentText,
+          {
+            source: 'email-thread-chronology',
+            eventId: event.id,
+          },
+        )}`,
+    );
   const evidence = [
     ...(laterDecisions.length
       ? [
           '# Other thread decisions',
-          'Compare original statement timestamps to rule out stale status, deadline and ownership changes. These decisions cannot support new proposals on this page.',
+          'Compare original statement timestamps to rule out stale status, deadline, ownership and primary-project changes. These decisions cannot support new proposals on this page.',
           ...laterDecisions,
           '',
         ]
