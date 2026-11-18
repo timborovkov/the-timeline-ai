@@ -4058,6 +4058,54 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('retains a standalone task without attaching a tentatively named customer', async () => {
+    await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'Cedar Labs' });
+    const rawEventId = crypto.randomUUID();
+    const title = 'Review retention policy';
+    const quote = `${title} is for Cedar Labs.`;
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'email',
+      text: `Please review the retention policy. Probably ${quote}`,
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const model = emptyModel().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title,
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title,
+                proposedPayload: { canonicalName: title },
+                grounding: [
+                  { field: 'customer', subject: title, value: 'Cedar Labs', quote, rawEventId },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: model, modelId: MODEL_ID },
+    );
+    expect((await db.select().from(agentSuggestionItems)).map((item) => item.targetKind)).toEqual([
+      'task',
+    ]);
+  });
+
   it.each([false, true])('qualifies a scoped task (threaded=%s)', async (threaded) => {
     const north = crypto.randomUUID();
     const south = crypto.randomUUID();

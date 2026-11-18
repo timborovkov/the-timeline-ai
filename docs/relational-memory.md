@@ -360,6 +360,8 @@ named evidence. Owner and assignee claims each need support for their role.
 Later definitive assignments and explicit removals supersede earlier claims
 for the same role in visible context or the authorized email thread.
 Definitive primary-project assignments and removals follow the same chronology.
+Conversation links require affirmative source evidence. A project-scoped
+request can route each explicitly requested deliverable in that statement.
 
 The source window must be interpreted in order. Work introduced and conclusively
 finished in one meeting should yield its final supported state. “After QA, mark it

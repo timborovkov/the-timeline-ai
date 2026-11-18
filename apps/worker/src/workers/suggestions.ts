@@ -5160,10 +5160,12 @@ async function runSuggestionExtraction(
   const bundles = suggestions
     .stripAmbiguousLifecycleUpdates({
       bundles: suggestions.stampUniqueWorkItemAliasesOntoBundles({
-        bundles: suggestions.attachUniqueHubsToBundles({
-          bundles: groundedBundles,
-          qualified: qualifiedHubs,
-        }),
+        bundles: isHumanCommunication(row.source)
+          ? groundedBundles
+          : suggestions.attachUniqueHubsToBundles({
+              bundles: groundedBundles,
+              qualified: qualifiedHubs,
+            }),
         text: evidenceText,
       }),
       verifiedLifecycleAuditIds: [...verifiedLifecycleAuditIds],

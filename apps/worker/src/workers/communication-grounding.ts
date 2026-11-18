@@ -392,6 +392,11 @@ function affirmativeTaskHub(
   type: string,
 ): boolean {
   if (
+    tentativeAssertion.test(
+      normalize(clause)
+        .replaceAll(normalize(subject), '[task]')
+        .replaceAll(normalize(hubName), '[hub]'),
+    ) ||
     hasEndpointAlternative(clause, [hubName]) ||
     /[?]|\b(?:or|maybe|perhaps|might|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
       clause,
@@ -494,6 +499,29 @@ function mentionedProjectIds(
   );
 }
 
+function groupedProjectRequest(assertion: string, subject: string, projectName: string): boolean {
+  const statement = normalize(assertion);
+  if (/[.!?;]\s/u.test(statement)) return false;
+  const project = normalize(projectName);
+  const scopeSuffix = ` for ${project}`;
+  const subjectName = normalize(subject);
+  const task = taskIdentityPattern(
+    subjectName.endsWith(scopeSuffix) ? subjectName.slice(0, -scopeSuffix.length) : subjectName,
+    true,
+  );
+  if (!project || !task) return false;
+  const literalProject = project.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const group = new RegExp(`^(?:separately, )?for (?:the )?${literalProject}[:,]\\s+`, 'iu').exec(
+    statement,
+  );
+  if (!group) return false;
+  const request = new RegExp(`^(?:please )?${task}(?![\\p{L}\\p{N}])`, 'iu');
+  return statement
+    .slice(group[0].length)
+    .split(/\s+and\s+|,\s*/u)
+    .some((part) => request.test(part));
+}
+
 function affirmativeProjectMembership(
   assertion: string,
   subject: string,
@@ -512,6 +540,7 @@ function affirmativeProjectMembership(
     )
   )
     return false;
+  if (allowTaskRouting && groupedProjectRequest(assertion, subject, name)) return true;
   const predicate = allowTaskRouting ? projectRoutingTerms : projectMembershipTerms;
   const followsTask = new RegExp(
     `(?:^|\\s)${task}(?: task)? (?:(?:is|was|should be|will be) )?${predicate} (?:the )?$`,
@@ -770,6 +799,28 @@ export function groundCommunicationBundles<T extends Item>(args: {
     const source = args.sources.find((event) => event.id === support.rawEventId);
     return source && completeSourceAssertion(source.text, support.quote);
   }
+  function groupedProjectEvidence(
+    subject: string,
+    project: { id: string; name: string; aliases?: string[] },
+  ): Support | undefined {
+    const names = [project.name, ...(project.aliases ?? [])];
+    for (const source of args.sources) {
+      for (const sentence of source.text.split(/(?<=[.!?])\s+|\n+/u)) {
+        const quote = sentence.trim();
+        if (
+          safeSourceQuote(source.text, quote) &&
+          packet.includes(normalize(quote)) &&
+          names.some(
+            (name) =>
+              groupedProjectRequest(quote, subject, name) &&
+              affirmativeProjectMembership(quote, subject, name, true),
+          )
+        )
+          return { field: 'project', rawEventId: source.id, quote, subject, value: project.id };
+      }
+    }
+    return undefined;
+  }
   function lifecycleVerified(support: Support, status: unknown, sendTask = false): boolean {
     const enclosing = enclosingAssertion(support);
     return (
@@ -814,22 +865,30 @@ export function groundCommunicationBundles<T extends Item>(args: {
       }
     }
   }
-  function lifecycleSuperseded(support: Support, names: string[]): boolean {
+  function lifecycleSuperseded(
+    support: Support,
+    names: string[],
+    unambiguous: (identity: string) => boolean,
+  ): boolean {
     let status: string | undefined = support.value;
     let found = false;
-    const subjects = names
-      .filter((name) => name.trim())
-      .map((name) => {
-        const identity = taskIdentityPattern(name);
-        return identity ? new RegExp(`^(?:(?:the|la|el|die|der|das) )?${identity}$`, 'iu') : null;
+    const subjects = names.flatMap((name) => {
+      const [action, ...artifact] = name.trim().split(/\s+/u);
+      const identities =
+        action && TASK_ACTIONS.has(action.toLowerCase()) ? [name, artifact.join(' ')] : [name];
+      return identities.flatMap((identity) => {
+        const pattern = taskIdentityPattern(identity);
+        return pattern ? [new RegExp(`^(?:(?:the|la|el|die|der|das) )?${pattern}$`, 'iu')] : [];
       });
+    });
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       found = true;
       const state = explicitLifecycleState(sentence);
       if (
         state &&
         (visible || (event.id && chronologyVetoIds.has(event.id))) &&
-        subjects.some((subject) => subject?.test(normalize(state.subject)))
+        subjects.some((subject) => subject.test(normalize(state.subject))) &&
+        unambiguous(state.subject)
       ) {
         if (state.affirmative) status = state.status;
         else if (status === state.status) status = undefined;
@@ -1505,7 +1564,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
         if (
           !cancellation ||
           !lifecycleVerified(cancellation, 'cancelled') ||
-          lifecycleSuperseded(cancellation, taskIdentityNames(item))
+          lifecycleSuperseded(cancellation, taskIdentityNames(item), (identity) =>
+            taskEvidenceUnambiguous(item, identity),
+          )
         )
           return [];
         if (type === 'task') payload.status = 'cancelled';
@@ -1730,7 +1791,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
             const assertion = taskEndpoint
               ? (taskClause(support.quote, taskName ?? taskEndpoint.name) ?? support.quote)
               : support.quote;
+            const enclosing = enclosingAssertion(support);
             if (
+              !enclosing ||
+              tentativeAssertion.test(
+                normalize(enclosing)
+                  .replaceAll(normalize(from.name), '[endpoint]')
+                  .replaceAll(normalize(to.name), '[endpoint]')
+                  .replaceAll(normalize(taskName ?? support.subject), '[subject]'),
+              ) ||
               support.quote.includes('?') ||
               ![to.id, to.name, from.id, from.name, taskName].includes(support.value) ||
               /[?]|\b(?:maybe|perhaps|undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i.test(
@@ -2095,7 +2164,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const verifiedStatus =
           lifecycle &&
           lifecycleVerified(lifecycle, payload.status, /^(?:mark )?send\b/i.test(targetName)) &&
-          !lifecycleSuperseded(lifecycle, taskIdentityNames(item));
+          !lifecycleSuperseded(lifecycle, taskIdentityNames(item), (identity) =>
+            taskEvidenceUnambiguous(item, identity),
+          );
         if (verifiedStatus && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
         if (
           payload.status !== undefined &&
@@ -2138,13 +2209,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 [selected.name, ...(selected.aliases ?? [])].some(
                   (name) => normalize(name) === normalize(entry.value),
                 ),
-            );
-          const clause = supportedTaskAssertion(projectSupport);
+            ) ??
+            (selected && item.operation === 'create'
+              ? groupedProjectEvidence(taskIdentityNames(item)[0] ?? item.title, selected)
+              : undefined);
+          const enclosedProjectNames = selected ? [selected.name, ...(selected.aliases ?? [])] : [];
+          const projectClause = (support: Support) =>
+            enclosedProjectNames.some((name) =>
+              groupedProjectRequest(support.quote, support.subject, name),
+            )
+              ? support.quote
+              : supportedTaskAssertion(support);
+          const clause = projectSupport && projectClause(projectSupport);
           const enclosing = projectSupport && enclosingAssertion(projectSupport);
           const fullClause =
-            projectSupport &&
-            enclosing &&
-            supportedTaskAssertion({ ...projectSupport, quote: enclosing });
+            projectSupport && enclosing && projectClause({ ...projectSupport, quote: enclosing });
           const projects = clause
             ? mentionedProjectIds(
                 clause,
@@ -2221,8 +2300,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const links = supports.filter((support) => {
           if (support.field !== 'customer') return false;
           const clause = supportedTaskAssertion(support);
+          const enclosing = enclosingAssertion(support);
+          const fullClause = enclosing && supportedTaskAssertion({ ...support, quote: enclosing });
           if (
             !clause ||
+            !fullClause ||
             support.quote.includes('?') ||
             /\b(?:or|maybe|perhaps|might|may|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
               clause,
@@ -2234,7 +2316,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
           );
           const customer = candidates[0];
           if (!customer || candidates.length !== 1 || customer.id !== support.value) return false;
-          return affirmativeTaskHub(clause, support.subject, customer.name, 'company');
+          return (
+            affirmativeTaskHub(clause, support.subject, customer.name, 'company') &&
+            affirmativeTaskHub(fullClause, support.subject, customer.name, 'company')
+          );
         });
         const ids = [...new Set(links.map((support) => support.value))];
         if (ids.length === 1 && item.operation === 'create') {
