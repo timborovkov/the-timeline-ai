@@ -574,7 +574,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
     if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)) continue;
     // Track the last explicit completion or reversal for each exact subject.
     const assertion =
-      /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:not(?: yet)?|never|no longer|almost|nearly|being) )?(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress|reopened|restarted|unblocked))[.!]?$/i.exec(
+      /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress|reopened|restarted|unblocked))[.!]?$/i.exec(
         sentence.trim(),
       );
     if (!assertion?.[1]) continue;
@@ -589,8 +589,9 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
     });
     if (matches.length !== 1 || !matches[0]) continue;
     const complete =
-      /^(?:done|complete|completed|finished|shipped)$/i.test(assertion[2] ?? '') &&
-      !/\b(?:isn[’']t|wasn[’']t|hasn[’']t)\b/i.test(sentence);
+      /^(?:(?:still|now|already) )*(?:done|complete|completed|finished|shipped)$/i.test(
+        assertion[2] ?? '',
+      ) && !/\b(?:isn[’']t|wasn[’']t|hasn[’']t)\b/i.test(sentence);
     if (complete) explicit.add(matches[0].id);
     else explicit.delete(matches[0].id);
   }

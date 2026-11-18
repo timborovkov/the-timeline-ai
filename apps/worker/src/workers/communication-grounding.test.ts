@@ -2098,6 +2098,9 @@ test('explicit delivery completion retains its task while negated delivery does 
 
 test('future promises cannot authorize task completion', () => {
   for (const phrase of [
+    'will be marked done',
+    'is expected to be marked done',
+    'will get marked as complete',
     'will be delivered tomorrow',
     'will be done tomorrow',
     'should be completed tomorrow',

@@ -571,6 +571,8 @@ describe('explicit completion among recalled candidates', () => {
     'I think the access matrix review is finished.',
     'The access matrix review is not finished.',
     'The access matrix review is finished. The access matrix review is not finished.',
+    'The access matrix review is finished. The access matrix review is still not done.',
+    'The access matrix review is finished. The access matrix review is only partially finished.',
     'The access matrix review is finished. The access matrix review isn’t finished.',
     'The access matrix review is finished. The access matrix review is still in progress.',
     'The access matrix review is finished. The access matrix review has been reopened.',
