@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { isExpectedBillingAdmissionFailure } from '@timeline/shared/billing/errors';
 
 import { isStaleServerActionError } from '@/lib/stale-server-action';
 
@@ -28,6 +29,7 @@ export function shouldReportToSentry(
   options?: Pick<ReportOptions, 'surface' | 'operation'>,
 ): boolean {
   if (isStaleServerActionError(err)) return false;
+  if (isExpectedBillingAdmissionFailure(err)) return false;
   if (isExpectedAuthCredentialsRateLimitError(err, options)) return false;
   if (isExpectedAuthCredentialsSigninError(err, options)) return false;
   return true;
@@ -41,6 +43,19 @@ export function reportCaughtError(err: unknown, options: ReportOptions): void {
       surface: options.surface,
       operation: options.operation,
       tags: { reason: 'invalid_credentials' },
+    });
+    return;
+  }
+  if (isExpectedBillingAdmissionFailure(err)) {
+    Sentry.addBreadcrumb({
+      category: 'billing',
+      level: 'warning',
+      message: err instanceof Error ? err.message : String(err),
+      data: {
+        surface: options.surface,
+        operation: options.operation,
+        ...stringifyTags(options.tags),
+      },
     });
     return;
   }

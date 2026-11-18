@@ -6,11 +6,13 @@ await vi.mock(
   () => ({
     captureException: vi.fn(),
     captureMessage: vi.fn(),
+    addBreadcrumb: vi.fn(),
   }),
   () => import('@sentry/nextjs'),
 );
 
 const Sentry = await import('@sentry/nextjs');
+const { BillingAdmissionError } = await import('@timeline/shared/billing');
 const {
   reportCaughtError,
   reportHandledEvent,
@@ -27,6 +29,52 @@ describe('Sentry caught-error reporting', () => {
 
   it('reports unexpected errors passed to the caught-error helper', () => {
     expect(shouldReportToSentry(new Error('database down'))).toBe(true);
+  });
+
+  it('records expected chat tool billing caps as breadcrumbs instead of exceptions', () => {
+    const err = new BillingAdmissionError('free_allowance_reached');
+
+    expect(shouldReportToSentry(err)).toBe(false);
+
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'chat_agent_tool_call',
+      tags: { tool: 'search_timeline_moments' },
+    });
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
+      category: 'billing',
+      level: 'warning',
+      message: 'Billing admission failed: free_allowance_reached',
+      data: {
+        surface: 'api',
+        operation: 'chat_agent_tool_call',
+        tool: 'search_timeline_moments',
+      },
+    });
+  });
+
+  it('still reports unexpected billing admission failures from chat tool calls', () => {
+    const err = new BillingAdmissionError('costly_worker_busy');
+
+    expect(shouldReportToSentry(err)).toBe(true);
+
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'chat_agent_tool_call',
+      tags: { tool: 'search_timeline_moments' },
+    });
+
+    expect(Sentry.addBreadcrumb).not.toHaveBeenCalled();
+    expect(Sentry.captureException).toHaveBeenCalledWith(err, {
+      level: 'error',
+      tags: {
+        surface: 'api',
+        operation: 'chat_agent_tool_call',
+        tool: 'search_timeline_moments',
+      },
+    });
   });
 
   it('does not report stale server-action deployment mismatches', () => {

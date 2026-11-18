@@ -615,6 +615,51 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
   });
 
+  it('returns the admission error when Ask billing reservation hits a free allowance cap', async () => {
+    const { reserveAskAi } = await import('@timeline/shared/billing');
+    vi.mocked(reserveAskAi).mockResolvedValueOnce({
+      ok: false,
+      code: 'free_allowance_reached',
+    });
+
+    const response = await POST(request(validBody()));
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'free_allowance_reached',
+      message: 'free_allowance_reached',
+    });
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+  });
+
+  it('forwards chat tool BillingAdmissionError through reportCaughtError for expected caps', async () => {
+    let onToolError: ((err: unknown, context: { tool: string }) => void) | undefined;
+    fakes.fakeBuildAgentTools.mockImplementation(
+      (_scope: unknown, options?: { onToolError?: typeof onToolError }) => {
+        onToolError = options?.onToolError;
+        return { search_timeline_moments: { type: 'native' } };
+      },
+    );
+
+    const response = await POST(request(validBody()));
+    expect(response.status).toBe(200);
+    expect(onToolError).toBeTypeOf('function');
+
+    const admission = Object.assign(new Error('Billing admission failed: free_allowance_reached'), {
+      name: 'BillingAdmissionError',
+      code: 'free_allowance_reached',
+    });
+    onToolError?.(admission, { tool: 'search_timeline_moments' });
+
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(admission, {
+      surface: 'api',
+      operation: 'chat_agent_tool_call',
+      tags: { tool: 'search_timeline_moments' },
+    });
+  });
+
   it('requires an existing persisted session when sessionId is provided', async () => {
     fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: false, needsTitle: false });
 
