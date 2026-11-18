@@ -211,32 +211,51 @@ const lifecycleWords: Record<string, RegExp> = {
   blocked: /\bblocked\b/i,
   todo: /\b(?:reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i,
 };
-function affirmativeTaskHub(clause: string, hubName: string, type: string): boolean {
+function affirmativeTaskHub(
+  clause: string,
+  subject: string,
+  hubName: string,
+  type: string,
+): boolean {
   if (
     /[?]|\b(?:or|maybe|perhaps|might|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
       clause,
     )
   )
     return false;
+  if (type === 'project') return affirmativeProjectMembership(clause, subject, hubName, true);
   const name = normalize(hubName);
+  const qualifiedSubject = normalize(subject);
+  const qualifier = ` for ${name}`;
+  const deliverable = qualifiedSubject.endsWith(qualifier)
+    ? qualifiedSubject.slice(0, -qualifier.length)
+    : qualifiedSubject;
+  const task = taskIdentityPattern(deliverable, true);
   const statement = normalize(clause);
   const position = statement.indexOf(name);
-  if (!name || position < 0) return false;
+  if (!name || !task || position < 0) return false;
   const before = statement.slice(0, position);
   const after = statement.slice(position + name.length);
   if (after && !/^[\s.,:;!'’]/.test(after)) return false;
-  if (/\b(?:link|connect|associate|relate)\b[^.!?]*\b(?:to|with) (?:the )?$/.test(before))
-    return true;
-  if (/\b(?:for|requested by|commissioned by) (?:our (?:customer|client) )?$/.test(before))
-    return true;
-  if (
-    type === 'project' &&
-    (/\b(?:under|within|in|on|part of|belongs to) (?:the )?$/.test(before) ||
-      (!before && after.startsWith(':')))
-  )
-    return true;
+  const link = new RegExp(
+    `^(?:please )?(?:link|connect|associate|relate) (?:the )?${task} (?:to|with) (?:the )?$`,
+  );
+  const direct = new RegExp(
+    `(?:^|\\s)${task} (?:is )?(?:for|requested by|commissioned by) (?:our (?:customer|client) )?$`,
+  );
+  // In a coordinated request the second item may reuse the first verb:
+  // “prepare a checklist for A and another checklist for B”.
+  const repeatedDeliverable = taskIdentityPattern(
+    deliverable.replace(/^(?:prepare|draft|create|write|review|send|build|test) /, ''),
+  );
+  const coordinated = new RegExp(`^another ${repeatedDeliverable} for $`).test(before);
   return (
-    (!before || /\s$/.test(before)) && /^ (?:needs|requests|requested|commissioned)\b/.test(after)
+    link.test(before) ||
+    direct.test(before) ||
+    coordinated ||
+    (!before &&
+      /^ (?:needs|requests|requested|commissioned)\b/.test(after) &&
+      namesTask(after, subject))
   );
 }
 
@@ -256,12 +275,16 @@ function hasProjectAlternative(assertion: string, projectNames: string[]): boole
   );
 }
 
-function taskIdentityPattern(subject: string): string {
+function taskIdentityPattern(subject: string, allowRequestModifiers = false): string {
   return normalize(subject)
     .split(' ')
     .filter((word) => word && !['the', 'a', 'an', 'of'].includes(word))
     .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join(' (?:of )?(?:the |a |an )?');
+    .join(
+      allowRequestModifiers
+        ? ' (?:of )?(?:the |a |an )?(?:separate |new )?'
+        : ' (?:of )?(?:the |a |an )?',
+    );
 }
 
 function affirmativeProjectMembership(
@@ -464,15 +487,20 @@ export function groundCommunicationBundles<T extends Item>(args: {
   source: string;
   timezone?: string;
   pendingNames?: string[];
+  calendarTargets?: { id: string; title: string }[];
   verifiedLifecycleAuditIds?: Set<string>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
     const taskIdentityNames = (
-      item: Pick<Item, 'targetId' | 'title'>,
+      item: Pick<Item, 'targetId' | 'title'> & Partial<Pick<Item, 'targetKind'>>,
       objects = args.objects ?? [],
     ) => {
+      if (item.targetKind === 'calendar_event') {
+        const calendar = args.calendarTargets?.find((event) => event.id === item.targetId);
+        return calendar ? [calendar.title] : [];
+      }
       const target = objects.find((object) => object.id === item.targetId);
       const names = [target?.name ?? item.title];
       if (target?.type !== 'task') return names;
@@ -1030,6 +1058,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
                     namesEndpoint(name, hub) &&
                     affirmativeTaskHub(
                       association,
+                      taskEndpoint.name,
                       name,
                       typeof hub.type === 'string' ? hub.type : '',
                     ),
@@ -1476,7 +1505,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           );
           const customer = candidates[0];
           if (!customer || candidates.length !== 1 || customer.id !== support.value) return false;
-          return affirmativeTaskHub(clause, customer.name, 'company');
+          return affirmativeTaskHub(clause, support.subject, customer.name, 'company');
         });
         const ids = [...new Set(links.map((support) => support.value))];
         if (ids.length === 1 && item.operation === 'create') {

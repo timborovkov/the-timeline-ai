@@ -5017,6 +5017,9 @@ async function runSuggestionExtraction(
             ? object.aliases.filter((alias): alias is string => typeof alias === 'string')
             : [],
         })),
+        calendarTargets: calendarRows
+          .filter((event) => event.visibility === 'team')
+          .map(({ id, title }) => ({ id, title })),
         pendingNames: pendingTaskRows
           .filter((item) => item.operation === 'create')
           .map((item) => item.title),

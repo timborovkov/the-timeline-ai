@@ -546,7 +546,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
     if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)) continue;
     // Track the last explicit completion or reversal for each exact subject.
     const assertion =
-      /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:not(?: yet)?|never|no longer|almost|nearly|being) )?(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress))[.!]?$/i.exec(
+      /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:not(?: yet)?|never|no longer|almost|nearly|being) )?(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress|reopened|restarted|unblocked))[.!]?$/i.exec(
         sentence.trim(),
       );
     if (!assertion?.[1]) continue;

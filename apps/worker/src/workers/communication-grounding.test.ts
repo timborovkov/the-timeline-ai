@@ -131,6 +131,7 @@ test('task customer grounding rejects denied or incidental associations', () => 
   for (const text of [
     'Review retention policy is unrelated to Cedar Labs.',
     'Review retention policy is blocked because deployment is for Cedar Labs.',
+    'Review retention policy mentions deployment for Cedar Labs.',
     'Review retention policy mentions Cedar Labs.',
     'Review retention policy for Cedar Labs?',
     'Review retention policy for Cedar LabsWest.',
@@ -2238,6 +2239,38 @@ test('overlapping tasks cannot borrow assignment or deadline assertions', () => 
     expect(result[0]?.items[0]?.proposedPayload ?? {}).toEqual(
       targetId === 'draft' ? { assigneeUserId: bob, dueAt: '2026-06-12T00:00:00.000Z' } : {},
     );
+  }
+});
+
+test('calendar cancellation resolves the authorized event name instead of the proposal heading', () => {
+  const title = 'Weekly customer sync';
+  const quote = `Cancel ${title}.`;
+  for (const eventId of ['calendar', 'unknown']) {
+    const bundles = groundCommunicationBundles({
+      calendarTargets: [{ id: 'calendar', title }],
+      bundles: [
+        {
+          title: 'Cancel event',
+          confidence: 'high',
+          items: [
+            {
+              title: 'Cancel event',
+              operation: 'archive_or_cancel',
+              targetKind: 'calendar_event',
+              targetId: eventId,
+              proposedPayload: {},
+              grounding: [support('status', quote, 'cancelled', title)],
+            },
+          ],
+        },
+      ],
+      sources: [{ id: event, text: quote }],
+      packet: quote,
+      hubs: [],
+      members: [],
+      source: 'slack',
+    });
+    expect(bundles[0]?.items).toHaveLength(eventId === 'calendar' ? 1 : 0);
   }
 });
 
