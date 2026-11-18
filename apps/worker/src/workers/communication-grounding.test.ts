@@ -166,6 +166,22 @@ test('assignment grounding preserves the action on the same artifact', () => {
   }
 });
 
+test('unresolved owner alternatives do not authorize an assignment', () => {
+  for (const [quote, assignee, retained] of [
+    ['Either Alice or Bob will review retention policy.', bob, false],
+    ['Alice or Bob will review retention policy.', alice, false],
+    ['Assign review retention policy to Alice/Bob.', bob, false],
+    ['Bob or I will review retention policy.', alice, false],
+    ['Bob will review retention policy.', bob, true],
+  ] as const) {
+    expect(
+      run(quote, { assigneeUserId: assignee }, [support('assignee', quote, assignee)], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.assigneeUserId,
+    ).toBe(retained ? assignee : undefined);
+  }
+});
+
 test('forwarded relative and yearless deadlines resolve from their original date', () => {
   for (const date of ['tomorrow', 'June 2']) {
     const quote = `${title} is due ${date}.`;
@@ -213,11 +229,15 @@ test('uncertain deadlines do not become actionable dates', () => {
 
 test('later visible task deadlines supersede older grounded dates', () => {
   const earlier = `${title} is due 2026-06-02.`;
-  const later = `${title} is now due 2026-06-08.`;
+  const moved = `${title} is now due 2026-06-08.`;
+  const denied = `${title} is not due 2026-06-02.`;
   const newer = '33333333-3333-4333-8333-333333333333';
-  for (const [date, rawEventId, quote, retained] of [
-    ['2026-06-02T00:00:00.000Z', event, earlier, false],
-    ['2026-06-08T00:00:00.000Z', newer, later, true],
+  for (const [date, rawEventId, quote, later, retained] of [
+    ['2026-06-02T00:00:00.000Z', event, earlier, moved, false],
+    ['2026-06-08T00:00:00.000Z', newer, moved, moved, true],
+    ['2026-06-02T00:00:00.000Z', event, earlier, denied, false],
+    ['2026-06-02T00:00:00.000Z', event, earlier, `${title} is not due 2026-06-08.`, true],
+    [null, newer, denied, denied, false],
   ] as const) {
     const result = groundCommunicationBundles({
       bundles: [
@@ -231,7 +251,7 @@ test('later visible task deadlines supersede older grounded dates', () => {
               targetKind: 'task',
               targetId: 'task',
               proposedPayload: { dueAt: date },
-              grounding: [{ ...support('dueAt', quote, date), rawEventId }],
+              grounding: [{ ...support('dueAt', quote, date ?? 'unset'), rawEventId }],
             },
           ],
         },

@@ -229,16 +229,16 @@ function deadlineInstant(day: string, tail: string, timezone: string): number | 
     return undefined;
   }
 }
-function deadlineInstants(
+function deadlineAssertions(
   quote: string,
   subject: string,
   timezone: string,
   referenceDate?: Date,
-): Set<number> {
-  const instants = new Set<number>();
-  const add = (day: string, tail: string) => {
+): { affirmed: Set<number | null>; denied: Set<number> } {
+  const dates = { affirmed: new Set<number | null>(), denied: new Set<number>() };
+  const add = (kind: 'affirmed' | 'denied', day: string, tail: string) => {
     const instant = deadlineInstant(day, tail, timezone);
-    if (instant !== undefined) instants.add(instant);
+    if (instant !== undefined) dates[kind].add(instant);
   };
   const deadlineAt = (index: number, length: number) => {
     const prefix =
@@ -248,29 +248,36 @@ function deadlineInstants(
         .at(-1) ?? '';
     const suffix = quote.slice(index + length).split(/\bbut\b|,\s*(?:instead|now)\b/i)[0] ?? '';
     const assertion = normalize(`${prefix} ${suffix}`).replaceAll(normalize(subject), '[task]');
-    return (
-      (/\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
-        prefix,
+    const negation =
+      /\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i;
+    const affirmedPrefix = normalize(prefix.replace(negation, ' '));
+    const hasDeadlineCue =
+      /\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
+        affirmedPrefix,
       ) ||
-        ['is', 'to', 'was', 'is now'].some((verb) =>
-          normalize(prefix).endsWith(`deadline for ${normalize(subject)} ${verb}`),
-        )) &&
-      !/\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i.test(
-        prefix,
-      ) &&
-      !/\b(?:might|could|possibly|perhaps|maybe|tentative(?:ly)?|provisionally|if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
+      ['is', 'to', 'was', 'is now'].some((verb) =>
+        affirmedPrefix.endsWith(`deadline for ${normalize(subject)} ${verb}`),
+      );
+    if (
+      !hasDeadlineCue ||
+      /\b(?:might|could|possibly|perhaps|maybe|tentative(?:ly)?|provisionally|if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
         assertion,
       )
-    );
+    )
+      return undefined;
+    return negation.test(normalize(prefix).replaceAll(normalize(subject), '[task]'))
+      ? 'denied'
+      : 'affirmed';
   };
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
-    if (!deadlineAt(match.index, match[0].length)) continue;
-    add(match[0], quote.slice(match.index + match[0].length));
+    const kind = deadlineAt(match.index, match[0].length);
+    if (kind) add(kind, match[0], quote.slice(match.index + match[0].length));
   }
   for (const match of quote.matchAll(
     /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
   )) {
-    if (!deadlineAt(match.index, match[0].length)) continue;
+    const kind = deadlineAt(match.index, match[0].length);
+    if (!kind) continue;
     const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
     let year = match[3] ? Number(match[3]) : reference?.year;
     if (year === undefined) continue;
@@ -285,13 +292,14 @@ function deadlineInstants(
       date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
       if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
     }
-    add(date.toISOString().slice(0, 10), quote.slice(match.index + match[0].length));
+    add(kind, date.toISOString().slice(0, 10), quote.slice(match.index + match[0].length));
   }
   if (referenceDate) {
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
-      if (!deadlineAt(match.index, match[0].length)) continue;
+      const kind = deadlineAt(match.index, match[0].length);
+      if (!kind) continue;
       const phrase = match[0].toLowerCase();
       const weekdays = [
         'monday',
@@ -311,12 +319,13 @@ function deadlineInstants(
       const resolved = resolveTimePhrase(relative, { timezone, referenceDate });
       if (resolved)
         add(
+          kind,
           zonedDateTimeFromDate(resolved.from, timezone).toPlainDate().toString(),
           quote.slice(match.index + match[0].length),
         );
     }
   }
-  return instants;
+  return dates;
 }
 const lifecycleWords: Record<string, RegExp> = {
   doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
@@ -740,9 +749,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
         !/\b(?:not|never|if|unless|maybe|perhaps|might|could)\b/i.test(assertion) &&
         /\b(?:remove|clear) (?:the )?deadline\b/i.test(assertion)
       )
-        return new Set([null]);
+        return { affirmed: new Set<number | null>([null]), denied: new Set<number>() };
       const source = args.sources.find((row) => row.id === sourceId);
-      return deadlineInstants(
+      return deadlineAssertions(
         assertion,
         subject,
         args.timezone ?? 'UTC',
@@ -759,7 +768,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       support.rawEventId,
       support.quote,
     );
-    if (cited.size !== 1 || ![...cited].includes(wanted)) return false;
+    if (cited.affirmed.size !== 1 || !cited.affirmed.has(wanted)) return false;
     let latest: number | null | undefined = wanted;
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
@@ -768,7 +777,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const assertion = supportedTaskAssertion({ ...support, subject, quote: sentence });
       if (!assertion || !unambiguous(assertion)) continue;
       const dates = deadlineIn(assertion, subject, event.id, sentence, event.occurredAt);
-      if (dates.size > 0) latest = dates.size === 1 ? [...dates][0] : undefined;
+      if (dates.affirmed.size > 0)
+        latest = dates.affirmed.size === 1 ? [...dates.affirmed][0] : undefined;
+      else if (typeof latest === 'number' && dates.denied.has(latest)) latest = undefined;
     }
     return latest === wanted;
   }
@@ -1550,6 +1561,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const name = escapedName
           ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
           : undefined;
+        const actor = name ? `(?:${name}|\\bI\\b)` : '\\bI\\b';
+        const alternative = '(?:\\s+or\\s+|\\s*/\\s*)';
+        const unresolvedOwner =
+          clause &&
+          new RegExp(
+            `${actor}${alternative}|${alternative}${actor}|\\b(?:either|one of)\\s+(?:[^.!?;]{0,120}\\s+)?${actor}`,
+            'iu',
+          ).test(clause);
         const hasTaskContext = assignment !== undefined && validContexts.has(assignment);
         const matchesAssignedTask = (action: string) =>
           assignment !== undefined &&
@@ -1591,6 +1610,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ).test(clause);
         const named =
           clause &&
+          !unresolvedOwner &&
           !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause) &&
           ((namedAction !== null &&
             matchesAssignedTask(clause.slice(namedAction.index + namedAction[0].length))) ||
@@ -1648,6 +1668,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           member &&
           assignment &&
           clause &&
+          !unresolvedOwner &&
           ((source?.source ?? args.source) === 'email'
             ? emailSpeaker
             : source?.authorUserId === member.userId &&
