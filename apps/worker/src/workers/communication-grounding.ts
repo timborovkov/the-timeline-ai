@@ -300,10 +300,13 @@ function hasEndpointAlternative(assertion: string, names: string[]): boolean {
 }
 
 function taskIdentityPattern(subject: string, allowRequestModifiers = false): string {
-  return normalize(subject)
-    .split(' ')
-    .filter((word) => word && !['the', 'a', 'an', 'of'].includes(word))
-    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return subject
+    .trim()
+    .split(/\s+/)
+    .filter(
+      (word) => word && (word === 'A' || !['the', 'a', 'an', 'of'].includes(word.toLowerCase())),
+    )
+    .map((word) => word.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join(
       allowRequestModifiers
         ? ' (?:of )?(?:the |a |an )?(?:separate |new )?'

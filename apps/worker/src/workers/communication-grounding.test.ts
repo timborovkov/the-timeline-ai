@@ -609,6 +609,45 @@ test('task grounding rejects a completion superseded by a later visible correcti
   }
 });
 
+test('a later correction distinguishes Plan A from Plan B', () => {
+  const taskTitle = 'Review plan A';
+  const quote = 'Review plan A is done.';
+  for (const plan of ['A', 'B']) {
+    const later = `Review plan ${plan} is not done.`;
+    const verifiedLifecycleAuditIds = new Set<string>();
+    groundCommunicationBundles({
+      verifiedLifecycleAuditIds,
+      bundles: [
+        {
+          title: taskTitle,
+          confidence: 'high',
+          items: [
+            {
+              auditId: 'completion',
+              title: taskTitle,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'plan-a',
+              proposedPayload: { status: 'done' },
+              grounding: [support('status', quote, 'done', taskTitle)],
+            },
+          ],
+        },
+      ],
+      objects: [{ id: 'plan-a', name: taskTitle, type: 'task' }],
+      packet: `${quote}\n${later}`,
+      sources: [
+        { id: event, text: quote },
+        { id: 'later', text: later },
+      ],
+      members: [],
+      hubs: [],
+      source: 'slack',
+    });
+    expect([...verifiedLifecycleAuditIds]).toEqual(plan === 'A' ? [] : ['completion']);
+  }
+});
+
 test('questions and negated clears cannot mutate lifecycle, owner or deadline', () => {
   for (const [text, payload, field, value] of [
     ['Review retention policy is done?', { status: 'done' }, 'status', 'done'],
