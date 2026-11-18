@@ -801,6 +801,7 @@ test('reopened-state wording retains todo only after the transition', () => {
     ['Alice has reopened Review retention policy.', 'todo'],
     ['Review retention policy has not been reopened.', undefined],
     ['We did not reopen Review retention policy.', undefined],
+    ['Nobody reopened Review retention policy.', undefined],
     ['Review retention policy will be reopened.', undefined],
     ['Review retention policy may be unblocked.', undefined],
   ] as const) {
@@ -1245,6 +1246,10 @@ test('active lifecycle corrections match the whole task and require a definite o
     `We reopened ${title} if approved.`,
     `Alice might have reopened ${title}.`,
     `Alice said she reopened ${title}.`,
+    `Probably Alice reopened ${title}.`,
+    `Nobody reopened ${title}.`,
+    `No One reopened ${title}.`,
+    `Nobody And Alice reopened ${title}.`,
   ]) {
     expect(
       run(`${quote}\n${later}`, { status: 'done' }, [support('status', quote, 'done')], {

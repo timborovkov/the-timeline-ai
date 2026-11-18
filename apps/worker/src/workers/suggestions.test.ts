@@ -6001,7 +6001,7 @@ describe('processSuggestionJobForTests', () => {
     ['slack', 'yeah we should just ship the login, I can take it', true],
     ['telegram', 'yeah we should just ship the login, I can take it', true],
     ['slack', 'Please ship the login as standalone work.', false],
-    ['slack', 'Please ship the login for Orion Portal.', false],
+    ['slack', 'Please ship the login for orion portal.', false],
     ['telegram', 'Please ship the login. It is probably for Acme Labs.', false],
   ] as const)(
     'routes an Acme container task from %s with text %s (routed=%s)',

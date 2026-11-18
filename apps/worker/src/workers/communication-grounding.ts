@@ -620,7 +620,7 @@ function affirmativeLifecycle(
   clause = identity ? normalize(assertion).replaceAll(identity, '[task]') : normalize(assertion);
   if (
     tentativeAssertion.test(clause) ||
-    /[?]|\b(?:no longer|not|never|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?|ei|eivät|if|unless|[a-z]+n[’']t)\b/i.test(
+    /[?]|\b(?:no longer|not|never|no|nobody|none|nothing|neither|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?|ei|eivät|if|unless|[a-z]+n[’']t)\b/i.test(
       clause,
     )
   )

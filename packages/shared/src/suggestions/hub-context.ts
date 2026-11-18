@@ -304,9 +304,7 @@ export function qualifyWorkspaceContainerHubs(args: {
     /\b(?:standalone|independent|unrelated|not|never|without|if|unless|maybe|might|could|perhaps|probably|possibly|ignore)\b/i.test(
       `${text}\n${args.conversationText}`,
     ) ||
-    /\b(?:for|under|within|belongs to)\s+(?:(?:the|our|their)\s+)?(?:\p{Lu}|(?:new|different|another)\s+(?:customer|client|account|project)\b)/u.test(
-      args.conversationText,
-    ) ||
+    /\b(?:for|under|within|belongs to)\s+\S/iu.test(args.conversationText) ||
     qualifyWorkspaceHubs({ hubs: args.hubs, text: args.conversationText }).mentioned.length
   )
     return undefined;
@@ -648,6 +646,9 @@ export function explicitLifecycleState(sentence: string):
     outcome?.[1] &&
     outcome[2] &&
     outcome[3] &&
+    !/\b(?:no|nobody|none|nothing|neither|not|never|hardly|rarely|who|whether|probably|possibly|potentially|likely|apparently|allegedly|reportedly|supposedly|tentatively|provisionally|said|reported|claimed)\b/i.test(
+      outcome[1],
+    ) &&
     outcome[1]
       .split(/\s+and\s+|\s*&\s*/i)
       .every(
