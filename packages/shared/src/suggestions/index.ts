@@ -62,6 +62,7 @@ import {
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
+import { isObjectNotFoundError } from '#src/mutation-errors.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
@@ -361,10 +362,15 @@ function isEntityCanonicalNameDuplicate(err: unknown): boolean {
 }
 
 function isExpectedApplyFailure(err: unknown): boolean {
-  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+  return (
+    err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err) || isObjectNotFoundError(err)
+  );
 }
 
 function suggestionApplyFailureReason(err: unknown): string {
+  if (isObjectNotFoundError(err)) {
+    return 'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.';
+  }
   if (isEntityCanonicalNameDuplicate(err)) {
     return 'A workspace object with this name already exists. Reject this proposal or update the existing object instead.';
   }

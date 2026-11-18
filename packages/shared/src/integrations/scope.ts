@@ -73,6 +73,7 @@ import {
 } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
+import { ObjectNotFoundError } from '#src/mutation-errors.js';
 import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
@@ -2093,7 +2094,7 @@ export function createIntegrationScope(deps: {
         .from(entities)
         .where(and(eq(entities.id, objectId), eq(entities.teamId, teamId)))
         .limit(1);
-      if (!object) throw new Error('Object not found');
+      if (!object) throw new ObjectNotFoundError();
     }
     await db.transaction(async (tx) => {
       await setIntegrationSelectionObjectLink(tx as unknown as Db, {
