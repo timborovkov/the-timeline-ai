@@ -5118,7 +5118,12 @@ async function runSuggestionExtraction(
       verifiedLifecycleAuditIds: [...verifiedLifecycleAuditIds],
       relatedOpenWorkIds: relatedOpenWork.map((work) => work.id),
       relatedOpenWork,
-      evidenceText,
+      sourceEvidence: [
+        ...(evidencePackEnforced
+          ? (evidencePack?.items ?? [])
+          : [...(args.conversation?.window ?? []), ...(args.conversation?.linkedContext ?? [])]),
+        { contentText: text, occurredAt: row.occurredAt },
+      ],
     })
     .map((bundle) => {
       const deduplicated = filterExistingRelationshipItems(

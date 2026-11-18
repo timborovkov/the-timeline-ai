@@ -177,11 +177,13 @@ test('the latest same-task contrastive correction supersedes the previous status
 });
 
 test('task evidence retains short distinguishing tokens and requires whole words', () => {
-  const taskTitle = 'Review EU policy';
-  for (const [text, expected] of [
-    ['Review US policy is done.', undefined],
-    ['Review Europe policy is done.', undefined],
-    ['Review EU policy is done.', 'done'],
+  for (const [taskTitle, text, expected] of [
+    ['Review EU policy', 'Review US policy is done.', undefined],
+    ['Review EU policy', 'Review Europe policy is done.', undefined],
+    ['Review EU policy', 'Review EU policy is done.', 'done'],
+    ['Review plan B', 'Review plan C is done.', undefined],
+    ['Review plan A', 'Review plan B is done.', undefined],
+    ['Review plan B', 'Review plan B is done.', 'done'],
   ] as const) {
     expect(
       run(text, { status: 'done' }, [support('status', text, 'done', taskTitle)], {

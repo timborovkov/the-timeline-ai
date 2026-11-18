@@ -34,10 +34,11 @@ interface Bundle<T extends Item> {
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
 const namesTask = (text: string, name: string) => {
-  const words = name.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const words = (name.match(/[\p{L}\p{N}]+/gu) ?? [])
+    .filter((word) => word !== 'a')
+    .map((word) => word.toLowerCase());
   const significant = words.filter(
     (word) =>
-      (word.length >= 2 || /^\p{N}$/u.test(word)) &&
       ![
         'an',
         'and',

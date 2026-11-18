@@ -625,6 +625,31 @@ describe('explicit completion among recalled candidates', () => {
       }),
     ).toEqual([]);
   });
+  it('does not let older linked evidence override a later correction', () => {
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        sourceEvidence: [
+          { contentText: 'Review access matrix is not done.', occurredAt: new Date('2026-06-12') },
+          { contentText: 'Review access matrix is done.', occurredAt: new Date('2026-06-11') },
+        ],
+        relatedOpenWork,
+        relatedOpenWorkIds: ['access', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'access',
+                title: 'Access review',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
   it('preserves the latest affirmative completion after a denial', () => {
     const bundles = [
       {

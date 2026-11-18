@@ -528,6 +528,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
   bundles: HubAttachableBundle<T>[];
   relatedOpenWorkIds: readonly string[];
   relatedOpenWork?: readonly { id: string; name: string }[];
+  sourceEvidence?: readonly { contentText: string; occurredAt: Date }[];
   evidenceText?: string;
   /** Runtime audit IDs whose lifecycle writes survived independent grounding, never model flags. */
   verifiedLifecycleAuditIds?: readonly string[];
@@ -542,7 +543,13 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
       (word) => !['the', 'and', 'for', 'with'].includes(word),
     );
   const explicit = new Set<string>();
-  for (const sentence of (args.evidenceText ?? '').split(/(?<=[.!?])\s+|\n+/u)) {
+  const evidence = args.sourceEvidence
+    ? [...args.sourceEvidence]
+        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+        .map((event) => event.contentText)
+        .join('\n')
+    : (args.evidenceText ?? '');
+  for (const sentence of evidence.split(/(?<=[.!?])\s+|\n+/u)) {
     if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)) continue;
     // Track the last explicit completion or reversal for each exact subject.
     const assertion =
