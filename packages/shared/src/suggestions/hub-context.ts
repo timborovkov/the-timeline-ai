@@ -520,6 +520,62 @@ export function attachUniqueHubsToBundles<T extends HubAttachableItem>(args: {
   });
 }
 
+interface LifecycleEvidenceSource {
+  id?: string;
+  contentText: string;
+  occurredAt?: Date | undefined;
+  source?: string | undefined;
+}
+
+export function chronologicalLifecycleEvidence(
+  sources: readonly LifecycleEvidenceSource[],
+): LifecycleEvidenceSource[] {
+  return sources
+    .flatMap((event) => {
+      if (event.source !== 'email') return [event];
+      const { intro, forwarded } = splitStoredEmailContent(event.contentText);
+      return [
+        ...forwarded.reverse().flatMap((message) => {
+          if (!message.body) return [];
+          const sentAt = message.date ? Date.parse(message.date) : Number.NaN;
+          const envelope = event.occurredAt?.getTime();
+          return [
+            {
+              ...event,
+              contentText: message.body,
+              occurredAt:
+                envelope !== undefined && Number.isFinite(sentAt)
+                  ? new Date(Math.min(sentAt, envelope))
+                  : event.occurredAt,
+            },
+          ];
+        }),
+        { ...event, contentText: intro },
+      ];
+    })
+    .sort(
+      (first, second) => (first.occurredAt?.getTime() ?? 0) - (second.occurredAt?.getTime() ?? 0),
+    );
+}
+
+export function explicitCompletionState(
+  sentence: string,
+): { subject: string; complete: boolean } | undefined {
+  if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence))
+    return undefined;
+  // Track the last explicit completion or reversal for each exact subject.
+  const assertion =
+    /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress|reopened|restarted|unblocked))[.!]?$/i.exec(
+      sentence.trim(),
+    );
+  if (!assertion?.[1]) return undefined;
+  const complete =
+    /^(?:(?:still|now|already) )*(?:done|complete|completed|finished|shipped)$/i.test(
+      assertion[2] ?? '',
+    ) && !/\b(?:isn[’']t|wasn[’']t|hasn[’']t)\b/i.test(sentence);
+  return { subject: assertion[1], complete };
+}
+
 /**
  * When related-token recall lists two or more open tasks, a guessed
  * completion is not a unique write. Strip `status: done|shipped|complete`
@@ -545,40 +601,14 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
     );
   const explicit = new Set<string>();
   const evidence = args.sourceEvidence
-    ? args.sourceEvidence
-        .flatMap((event) => {
-          if (event.source !== 'email') return [event];
-          const { intro, forwarded } = splitStoredEmailContent(event.contentText);
-          return [
-            ...forwarded.reverse().flatMap((message) => {
-              if (!message.body) return [];
-              const sentAt = message.date ? Date.parse(message.date) : Number.NaN;
-              const envelope = event.occurredAt.getTime();
-              return [
-                {
-                  contentText: message.body,
-                  occurredAt: new Date(
-                    Number.isFinite(sentAt) ? Math.min(sentAt, envelope) : envelope,
-                  ),
-                },
-              ];
-            }),
-            { contentText: intro, occurredAt: event.occurredAt },
-          ];
-        })
-        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+    ? chronologicalLifecycleEvidence(args.sourceEvidence)
         .map((event) => event.contentText)
         .join('\n')
     : (args.evidenceText ?? '');
   for (const sentence of evidence.split(/(?<=[.!?])\s+|\n+/u)) {
-    if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence)) continue;
-    // Track the last explicit completion or reversal for each exact subject.
-    const assertion =
-      /^(.*?)\s+(?:is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*(?:done|complete|completed|finished|shipped)|(?:still |now )?(?:open|pending|blocked|in progress|reopened|restarted|unblocked))[.!]?$/i.exec(
-        sentence.trim(),
-      );
-    if (!assertion?.[1]) continue;
-    const tokens = new Set(titleTokens(assertion[1]));
+    const state = explicitCompletionState(sentence);
+    if (!state) continue;
+    const tokens = new Set(titleTokens(state.subject));
     const matches = (args.relatedOpenWork ?? []).filter((work) => {
       const words = titleTokens(work.name);
       return (
@@ -588,11 +618,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
       );
     });
     if (matches.length !== 1 || !matches[0]) continue;
-    const complete =
-      /^(?:(?:still|now|already) )*(?:done|complete|completed|finished|shipped)$/i.test(
-        assertion[2] ?? '',
-      ) && !/\b(?:isn[’']t|wasn[’']t|hasn[’']t)\b/i.test(sentence);
-    if (complete) explicit.add(matches[0].id);
+    if (state.complete) explicit.add(matches[0].id);
     else explicit.delete(matches[0].id);
   }
   return args.bundles.flatMap((bundle) => {

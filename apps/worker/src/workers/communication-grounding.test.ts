@@ -141,6 +141,7 @@ test('task customer grounding rejects denied or incidental associations', () => 
     'Review retention policy is unrelated to Cedar Labs.',
     'Review retention policy is blocked because deployment is for Cedar Labs.',
     'Review retention policy mentions deployment for Cedar Labs.',
+    'Review retention policy is for Cedar Labs / another client.',
     'Review retention policy mentions Cedar Labs.',
     'Review retention policy for Cedar Labs?',
     'Review retention policy for Cedar LabsWest.',
@@ -514,6 +515,84 @@ test('a pronoun correction needs the immediately preceding unique pending task c
     groundCommunicationBundles({ ...args, pendingNames: [] })[0]?.items[0]?.proposedPayload
       .assigneeUserId,
   ).toBeUndefined();
+});
+
+test('prior context cannot assign a different explicitly named deliverable', () => {
+  const prior = 'Alice will review retention policy.';
+  const quote = 'Bob will deploy the service instead.';
+  const earlier = '11111111-1111-4111-8111-111111111112';
+  const result = groundCommunicationBundles({
+    bundles: [
+      {
+        title,
+        confidence: 'high',
+        items: [
+          {
+            title,
+            targetKind: 'task',
+            targetId: 'review',
+            operation: 'update',
+            proposedPayload: { assigneeUserId: bob },
+            grounding: [
+              {
+                ...support('assignee', quote, bob),
+                context: { rawEventId: earlier, quote: prior },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    objects: [{ id: 'review', name: title, type: 'task' }],
+    packet: `${prior}\n${quote}`,
+    sources: [
+      { id: earlier, text: prior },
+      { id: event, text: quote },
+    ],
+    members: [{ userId: bob, name: 'Bob', email: 'bob@example.test' }],
+    hubs: [],
+    source: 'slack',
+  });
+  expect(result[0]?.items).toEqual([]);
+});
+
+test('task grounding rejects a completion superseded by a later visible correction', () => {
+  const quote = 'Review retention policy is done.';
+  const later = 'Review retention policy is still not done.';
+  for (const visible of [true, false]) {
+    const verifiedLifecycleAuditIds = new Set<string>();
+    const result = groundCommunicationBundles({
+      verifiedLifecycleAuditIds,
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              auditId: 'verified',
+              targetKind: 'task',
+              targetId: 'review',
+              operation: 'update',
+              proposedPayload: { status: 'done' },
+              grounding: [support('status', quote, 'done')],
+            },
+          ],
+        },
+      ],
+      objects: [{ id: 'review', name: title, type: 'task' }],
+      packet: visible ? `${quote}\n${later}` : quote,
+      sources: [
+        { id: 'newer', text: later, occurredAt: new Date('2026-06-12') },
+        { id: event, text: quote, occurredAt: new Date('2026-06-11') },
+      ],
+      members: [],
+      hubs: [],
+      source: 'slack',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.status).toBe(visible ? undefined : 'done');
+    expect([...verifiedLifecycleAuditIds]).toEqual(visible ? [] : ['verified']);
+  }
 });
 
 test('questions and negated clears cannot mutate lifecycle, owner or deadline', () => {

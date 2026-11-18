@@ -1,4 +1,8 @@
 import {
+  chronologicalLifecycleEvidence,
+  explicitCompletionState,
+} from '@timeline/shared/suggestions';
+import {
   dateOnlyEventRange,
   resolveTimePhrase,
   zonedDateTimeFromDate,
@@ -237,6 +241,7 @@ function affirmativeTaskHub(
   type: string,
 ): boolean {
   if (
+    hasEndpointAlternative(clause, [hubName]) ||
     /[?]|\b(?:or|maybe|perhaps|might|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
       clause,
     )
@@ -278,11 +283,11 @@ function affirmativeTaskHub(
   );
 }
 
-function hasProjectAlternative(assertion: string, projectNames: string[]): boolean {
+function hasEndpointAlternative(assertion: string, names: string[]): boolean {
   const statement = normalize(assertion);
   return (
     /\b(?:or|either|undecided)\b/i.test(statement) ||
-    projectNames.some((name) => {
+    names.some((name) => {
       const project = normalize(name);
       if (!project) return false;
       const fragments = statement.split(project);
@@ -512,6 +517,49 @@ export function groundCommunicationBundles<T extends Item>(args: {
   verifiedLifecycleAuditIds?: Set<string>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
+  const chronology = chronologicalLifecycleEvidence(
+    args.sources
+      .filter((source) => !unsafe(source.text))
+      .map((source) => ({
+        ...source,
+        source: source.source ?? args.source,
+        contentText: source.text,
+      })),
+  );
+  const packet = normalize(args.packet);
+  function completionSuperseded(support: Support, names: string[]): boolean {
+    const citation = normalize(support.quote);
+    const from = chronology.findIndex(
+      (event) => event.id === support.rawEventId && normalize(event.contentText).includes(citation),
+    );
+    if (from < 0) return false;
+    let complete = true;
+    const subjects = names
+      .filter((name) => name.trim())
+      .map((name) => {
+        const identity = taskIdentityPattern(name);
+        return identity ? new RegExp(`^(?:the )?${identity}$`, 'iu') : null;
+      });
+    for (const [offset, event] of chronology.slice(from).entries()) {
+      const text =
+        offset === 0
+          ? normalize(event.contentText).slice(
+              normalize(event.contentText).indexOf(citation) + citation.length,
+            )
+          : event.contentText;
+      for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
+        const state = explicitCompletionState(sentence);
+        if (
+          state &&
+          packet.includes(normalize(sentence)) &&
+          subjects.some((subject) => subject?.test(normalize(state.subject)))
+        ) {
+          complete = state.complete;
+        }
+      }
+    }
+    return !complete;
+  }
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
     const taskIdentityNames = (
@@ -1038,7 +1086,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               if (
                 projects.size !== 1 ||
                 !projects.has(to.id) ||
-                hasProjectAlternative(membership, [to.name, ...to.aliases])
+                hasEndpointAlternative(membership, [to.name, ...to.aliases])
               )
                 return false;
               return [to.name, ...to.aliases].some(
@@ -1260,7 +1308,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
           : undefined;
         const hasTaskContext = assignment !== undefined && validContexts.has(assignment);
         const matchesAssignedTask = (action: string) =>
-          assignment !== undefined && (hasTaskContext || namesTask(action, assignment.subject));
+          assignment !== undefined &&
+          (namesTask(action, assignment.subject) ||
+            (hasTaskContext &&
+              /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
+                action.trim(),
+              )));
         const namedAction =
           name && clause
             ? new RegExp(
@@ -1440,7 +1493,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
             lifecycle.subject,
             payload.status,
             /^(?:mark )?send\b/i.test(targetName),
-          );
+          ) &&
+          (payload.status !== 'done' || !completionSuperseded(lifecycle, taskIdentityNames(item)));
         if (lifecycleVerified && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
         if (
           payload.status !== undefined &&
@@ -1489,7 +1543,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             !clause ||
             !projectSupport ||
             project?.id !== payload.parentObjectId ||
-            hasProjectAlternative(clause, names) ||
+            hasEndpointAlternative(clause, names) ||
             !names.some((name) =>
               affirmativeProjectMembership(clause, projectSupport.subject, name, true),
             )
@@ -1518,7 +1572,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             item.operation !== 'create' ||
             !support ||
             !clause ||
-            hasProjectAlternative(clause, [name]) ||
+            hasEndpointAlternative(clause, [name]) ||
             !affirmativeProjectMembership(clause, support.subject, name, true)
           ) {
             delete payload.createProjectName;

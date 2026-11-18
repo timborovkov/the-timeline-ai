@@ -113,6 +113,8 @@ import type { TeamRole } from '#src/team-scope.js';
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
   attachUniqueHubsToBundles,
+  chronologicalLifecycleEvidence,
+  explicitCompletionState,
   hubEvidenceText,
   hubsChanged,
   qualifyWorkspaceHubs,
