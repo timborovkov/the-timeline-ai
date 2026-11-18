@@ -38,27 +38,30 @@ interface Bundle<T extends Item> {
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
 const TASK_ACTIONS = new Set(['prepare', 'review', 'draft', 'write', 'create', 'send']);
-const namesTask = (text: string, name: string) => {
-  const words = (name.match(/[\p{L}\p{N}]+/gu) ?? [])
-    .filter((word) => word !== 'a')
-    .map((word) => word.toLowerCase());
-  const significant = words.filter(
-    (word) =>
-      !TASK_ACTIONS.has(word) &&
-      !['an', 'and', 'for', 'in', 'of', 'on', 'the', 'to', 'with', 'please'].includes(word),
+const namesTask = (text: string, name: string, lifecycle = false) => {
+  const titleWords = (name.match(/[\p{L}\p{N}]+/gu) ?? []).filter((word) => word !== 'a');
+  const words = titleWords.map((word) => word.toLowerCase());
+  const action = words[0];
+  const actionCanBeOmitted = action !== undefined && TASK_ACTIONS.has(action);
+  const significant = (actionCanBeOmitted ? words.slice(1) : words).filter(
+    (word) => !['an', 'and', 'for', 'in', 'of', 'on', 'the', 'to', 'with', 'please'].includes(word),
   );
   if (!significant.length) return mentions(text, name);
   const evidenceWords: string[] = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-  const action = words[0];
-  // An outcome can name the artifact without restating the action. When
-  // evidence names an action, a different action is a different task.
-  if (
-    action &&
-    TASK_ACTIONS.has(action) &&
-    !evidenceWords.includes(action) &&
-    evidenceWords.some((word) => TASK_ACTIONS.has(word))
-  )
-    return false;
+  if (actionCanBeOmitted && !evidenceWords.includes(action)) {
+    if (evidenceWords.some((word) => TASK_ACTIONS.has(word))) return false;
+    // The artifact can stand on its own as a subject or as the object of
+    // an explicit outcome. Arbitrary prefixes can name a different action.
+    if (lifecycle) {
+      const artifact = taskIdentityPattern(titleWords.slice(1).join(' '), true);
+      if (!artifact) return false;
+      const outcome = new RegExp(
+        `^(?:(?:update|correction|status): )?(?:(?:(?:I|we) (?:have )?)?(?:completed|finished|delivered|shipped|sent|reopened|cancelled|canceled) )?(?:(?:the|this|that|our) )?${artifact}(?![\\p{L}\\p{N}])`,
+        'iu',
+      );
+      if (!outcome.test(normalize(text))) return false;
+    }
+  }
   // Directional arguments must remain ordered. Non-directional identities
   // may vary in word order, e.g. a customer prefix or “for Customer”.
   if (!/\b(?:to|from|into|onto|towards?|through|against|versus|vs)\b/i.test(name))
@@ -426,11 +429,11 @@ function affirmativeLifecycle(
   sendTask = false,
 ): boolean {
   if (!clause || typeof status !== 'string') return false;
-  const assertion =
-    status === 'blocked' && /^blocked until\b/i.test(clause) && namesTask(clause, subject)
-      ? 'blocked'
-      : taskAssertion(clause, subject);
+  const blockedUntil =
+    status === 'blocked' && /^blocked until\b/i.test(clause) && namesTask(clause, subject);
+  const assertion = blockedUntil ? 'blocked' : taskAssertion(clause, subject);
   if (!assertion) return false;
+  if (!blockedUntil && !namesTask(clause, subject, true)) return false;
   const identity = normalize(subject);
   clause = identity ? normalize(assertion).replaceAll(identity, '[task]') : normalize(assertion);
   if (
@@ -556,6 +559,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     speakerContext?: string;
     occurredAt?: Date;
   }[];
+  reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
   members: { userId: string; name: string | null; email: string | null }[];
   hubs: { id: string; name: string; type: string; aliases?: string[] }[];
   source: string;
@@ -607,7 +611,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
         if (
           state &&
           safeSourceQuote(event.contentText, sentence.trim()) &&
-          packet.includes(normalize(sentence)) &&
+          // The full authorized later email can veto a stale change even
+          // when its body exceeds the prompt's background context budget.
+          ((event.id && args.reviewedLaterEmailIds?.has(event.id)) ||
+            packet.includes(normalize(sentence))) &&
           subjects.some((subject) => subject?.test(normalize(state.subject)))
         ) {
           if (state.affirmative) status = state.status;

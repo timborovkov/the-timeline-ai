@@ -9632,12 +9632,15 @@ describe('processSuggestionJobForTests', () => {
     expect(review).toMatchObject({ status: 'completed', reviewedThroughRawEventId: last });
   });
 
-  it('reopens an email review for a late unprocessed message without regressing its anchor', async () => {
+  it.each([false, true])('reopens late email (%s)', async (overflow) => {
     const root = crypto.randomUUID();
     const late = crypto.randomUUID();
     const reviewId = crypto.randomUUID();
     const request = 'Please check the late procurement attachment.';
     const correction = 'The procurement attachment review is not done.';
+    const reviewedBody = overflow
+      ? `${'Ordinary mail context. '.repeat(1_300)}${correction} ${'Later filler. '.repeat(2_000)}`
+      : `Current thread anchor. ${'Ordinary mail context. '.repeat(18)}${correction}`;
     const metadata = {
       thread_root_id: root,
       extracted_at: REFERENCE_DATE.toISOString(),
@@ -9646,9 +9649,18 @@ describe('processSuggestionJobForTests', () => {
     await seedRawEvent(db as never, {
       id: root,
       source: 'email',
-      text: `Current thread anchor. ${'Ordinary mail context. '.repeat(18)}${correction}`,
+      text: reviewedBody,
       sourceMetadata: { ...metadata, email_thread_review_id: reviewId },
     });
+    if (overflow) {
+      await seedRawEvent(db as never, {
+        id: crypto.randomUUID(),
+        source: 'email',
+        text: 'Other reviewed context. '.repeat(2_300),
+        sourceMetadata: { ...metadata, email_thread_review_id: reviewId },
+        occurredAt: new Date(REFERENCE_DATE.getTime() - 1_800_000),
+      });
+    }
     await db.insert(conversationReviews).values({
       id: reviewId,
       teamId: TEAM_ID,
@@ -9698,6 +9710,10 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain(request);
     expect(prompt).toContain(correction);
     expect(prompt?.indexOf(correction) ?? -1).toBeGreaterThan(prompt?.indexOf(request) ?? -1);
+    if (overflow) {
+      expect(prompt).toContain('Later reviewed emails (excerpts');
+      expect(prompt).not.toContain(reviewedBody);
+    }
     const [processed] = await db.select().from(rawEvents).where(eq(rawEvents.id, late));
     expect(processed?.sourceMetadata).toMatchObject({ email_thread_review_id: reviewId });
     const [completed] = await db

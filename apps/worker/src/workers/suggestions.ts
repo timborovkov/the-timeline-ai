@@ -3902,6 +3902,7 @@ async function runSuggestionExtraction(
       window: conversationReview.ConversationEvidenceEvent[];
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
       completeEmailIds?: ReadonlySet<string>;
+      reviewedLaterEmailIds?: ReadonlySet<string>;
       reviewAnchorRawEventId?: string;
       reviewAnchorQuietUntil?: Date;
     };
@@ -4375,6 +4376,7 @@ async function runSuggestionExtraction(
     authorUserId: row.authorUserId,
     conversationWindow: args.conversation?.window ?? null,
     completeEmailIds: args.conversation?.completeEmailIds,
+    reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
     referenceDocuments,
   });
@@ -5020,6 +5022,7 @@ async function runSuggestionExtraction(
   const groundedBundles = isHumanCommunication(row.source)
     ? groundCommunicationBundles({
         verifiedLifecycleAuditIds,
+        reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
         bundles: enrichedBundles,
         packet: prompt,
         source: row.source,
@@ -5650,6 +5653,7 @@ async function processEmailThreadPages(
       if (!anchor) throw new Error('Email thread page has no anchor');
       pageAnchor = anchor;
       const completeEmailIds = new Set(pending.map((event) => event.id));
+      const reviewedLaterEmailIds = new Set<string>();
       const context = await conversationReview.buildConversationEvidenceWindow(deps.db, {
         teamId: review.teamId,
         identity,
@@ -5661,11 +5665,11 @@ async function processEmailThreadPages(
           event.occurredAt > anchor.occurredAt ||
           (event.occurredAt.getTime() === anchor.occurredAt.getTime() && event.id > anchor.id);
         if (!newer) return true;
-        // A late arrival still needs subsequent decisions that this thread
-        // already reviewed. Keep those bodies intact alongside the late page.
+        // Keep later decisions available for chronology without making
+        // already-reviewed bodies part of the pending page's required budget.
         const reviewed =
           recordFromUnknown(event.sourceMetadata).email_thread_review_id === review.id;
-        if (reviewed) completeEmailIds.add(event.id);
+        if (reviewed) reviewedLaterEmailIds.add(event.id);
         return reviewed;
       });
       const window = [
@@ -5696,6 +5700,7 @@ async function processEmailThreadPages(
             window,
             linkedContext,
             completeEmailIds,
+            reviewedLaterEmailIds,
             reviewAnchorRawEventId: last.id,
             reviewAnchorQuietUntil: review.quietUntil,
           },
@@ -6336,6 +6341,7 @@ function buildPromptParts(args: {
   sourceMetadata: unknown;
   authorUserId: string | null;
   completeEmailIds?: ReadonlySet<string> | undefined;
+  reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
   referenceDocuments: {
@@ -6470,28 +6476,36 @@ function buildPromptParts(args: {
     ...args.facts.map((f) => `- ${f}`),
   ].join('\n');
 
-  const formatWindowEvent = (event: conversationReview.ConversationEvidenceEvent, full: boolean) =>
+  const formatWindowEvent = (
+    event: conversationReview.ConversationEvidenceEvent,
+    content: string,
+  ) =>
     `- [${event.id} ${event.occurredAt.toISOString()} ${sourceContextForPrompt(
       args.source,
       event.sourceMetadata,
       event.authorUserId,
       args.members,
       event.id,
-    )}] ${fenceExternalContent(
-      full ? event.contentText : truncate(event.contentText, CONVERSATION_WINDOW_EXCERPT_CHARS),
-      {
-        source: 'raw-event-conversation-window',
-        eventId: event.id,
-      },
-    )}`;
+    )}] ${fenceExternalContent(content, {
+      source: 'raw-event-conversation-window',
+      eventId: event.id,
+    })}`;
   const window = args.conversationWindow ?? [];
   const completeEmails = window.filter((event) => args.completeEmailIds?.has(event.id));
   const evidence = [
     args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
     ...(args.conversationWindow
       ? window
-          .filter((event) => !args.completeEmailIds?.has(event.id))
-          .map((event) => formatWindowEvent(event, false))
+          .filter(
+            (event) =>
+              !args.completeEmailIds?.has(event.id) && !args.reviewedLaterEmailIds?.has(event.id),
+          )
+          .map((event) =>
+            formatWindowEvent(
+              event,
+              truncate(event.contentText, CONVERSATION_WINDOW_EXCERPT_CHARS),
+            ),
+          )
       : args.recent.map((r) => {
           const occurredAt = r.occurredAt.toISOString();
           return `- [${r.id} ${occurredAt} ${sourceContextForPrompt(
@@ -6544,15 +6558,51 @@ function buildPromptParts(args: {
   ].join('\n');
 
   if (args.completeEmailIds?.has(args.sourceEventId)) {
-    const requiredEvidence = [
+    const pendingEvidence = [
       '# Email thread evidence in chronological order',
       ...completeEmails.map((event) =>
         event.id === args.sourceEventId
-          ? `# Anchor raw event (${event.occurredAt.toISOString()})\n${formatWindowEvent(event, true)}`
-          : formatWindowEvent(event, true),
+          ? `# Anchor raw event (${event.occurredAt.toISOString()})\n${formatWindowEvent(event, event.contentText)}`
+          : formatWindowEvent(event, event.contentText),
       ),
+    ];
+    const reviewed = window.filter((event) => args.reviewedLaterEmailIds?.has(event.id));
+    const fullEvidence = [
+      ...pendingEvidence,
+      ...reviewed.map((event) => formatWindowEvent(event, event.contentText)),
     ].join('\n\n');
-    return { workspace, evidence, anchor: '', requiredEvidence };
+    if (llm.estimateTextTokens(fullEvidence) <= SUGGESTION_PROMPT_MAX_INPUT_TOKENS)
+      return { workspace, evidence, anchor: '', requiredEvidence: fullEvidence };
+
+    const heading = '# Later reviewed emails (excerpts; in chronological order)';
+    const requiredEvidence = pendingEvidence.join('\n\n');
+    const perEmailBudget = Math.floor(
+      (SUGGESTION_PROMPT_MAX_INPUT_TOKENS -
+        llm.estimateTextTokens(`${requiredEvidence}\n\n${heading}`)) /
+        reviewed.length,
+    );
+    const excerpts = reviewed.flatMap((event) => {
+      const budget = perEmailBudget - llm.estimateTextTokens(formatWindowEvent(event, '')) - 1;
+      if (budget <= 0) return [];
+      const statements = event.contentText.split(/(?<=[.!?])\s+|\n+/u);
+      const selected = statements.filter(
+        (sentence, index) =>
+          index >= statements.length - 4 || suggestions.explicitLifecycleState(sentence),
+      );
+      const excerpt =
+        llm.estimateTextTokens(event.contentText) <= budget
+          ? event.contentText
+          : llm.truncateTextToTokenBudget(selected.join('\n[… omitted text …]\n'), budget);
+      return [formatWindowEvent(event, excerpt)];
+    });
+    return {
+      workspace,
+      evidence,
+      anchor: '',
+      requiredEvidence: excerpts.length
+        ? [requiredEvidence, heading, ...excerpts].join('\n\n')
+        : requiredEvidence,
+    };
   }
   return { workspace, evidence, anchor };
 }

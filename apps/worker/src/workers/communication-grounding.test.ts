@@ -240,7 +240,10 @@ test('the exact canonical subject cannot borrow completion from a different acti
   const taskTitle = 'Review access matrix';
   for (const [quote, status] of [
     ['Draft access matrix is done.', undefined],
+    ['Delete access matrix is done.', undefined],
     ['Review access matrix is done.', 'done'],
+    ['The access matrix is done.', 'done'],
+    ['I completed the access matrix.', 'done'],
   ] as const) {
     expect(
       run(quote, { status: 'done' }, [support('status', quote, 'done', taskTitle)], {
@@ -669,10 +672,13 @@ test('task grounding rejects a completion superseded by a later visible correcti
       'Review retention policy has been reopened.',
     ],
   ] as const) {
-    for (const visible of [true, false]) {
+    for (const context of ['visible', 'omitted', 'reviewed-email']) {
       const verifiedLifecycleAuditIds = new Set<string>();
+      const visible = context === 'visible';
+      const reviewed = context === 'reviewed-email';
       const result = groundCommunicationBundles({
         verifiedLifecycleAuditIds,
+        reviewedLaterEmailIds: reviewed ? new Set(['newer']) : undefined,
         bundles: [
           {
             title,
@@ -698,10 +704,12 @@ test('task grounding rejects a completion superseded by a later visible correcti
         ],
         members: [],
         hubs: [],
-        source: 'slack',
+        source: reviewed ? 'email' : 'slack',
       });
-      expect(result[0]?.items[0]?.proposedPayload.status).toBe(visible ? undefined : status);
-      expect([...verifiedLifecycleAuditIds]).toEqual(visible ? [] : ['verified']);
+      expect(result[0]?.items[0]?.proposedPayload.status).toBe(
+        visible || reviewed ? undefined : status,
+      );
+      expect([...verifiedLifecycleAuditIds]).toEqual(visible || reviewed ? [] : ['verified']);
     }
   }
 });

@@ -32,9 +32,15 @@ Human discussions in email, Slack and Telegram share the same proposal policy, i
 
 Threaded email uses its stored RFC thread root for the same ten-minute quiet-window
 review as chat. Only team-visible, non-deleted messages from that workspace and
-thread enter the bounded two-day window, with an authorized thread root reserved
-for delayed replies. Private replies do not enter it. Legacy
-email captures without a thread root retain event-local extraction.
+thread enter the bounded two-day context window, with an authorized thread root
+reserved for delayed replies. Pending emails are read in chronological pages
+with their full bodies. When a late arrival follows longer reviewed messages,
+the prompt keeps the pending body and fits later reviewed excerpts in the
+remaining space, including explicit lifecycle statements when they fit. The
+grounding check can use an explicit correction from the full authorized later
+message to reject a stale lifecycle change. Positive claims still require visible
+citations. Private replies never enter the window. Legacy email captures without
+a thread root retain event-local extraction.
 
 A later source may attach an unedited pending task to an existing project when it
 explicitly names and links exactly one pending task to the unambiguous project.
