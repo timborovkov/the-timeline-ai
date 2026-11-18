@@ -349,7 +349,8 @@ Bare weekday deadlines resolve to that weekday on or after the source date in th
 Explicit ISO, month-name, and relative deadline times retain their stated timezone, or use the workspace timezone when no zone is supplied; date-only evidence uses the workspace day start. Short literal acknowledgments can receive no-action audit coverage, but empty or unavailable evidence cannot.
 
 A source deadline must populate the task's `dueAt`, not only produce a calendar
-entry. Relative dates resolve from source occurrence time and workspace timezone.
+entry. Relative and yearless deadlines use the cited message's time and workspace
+timezone. A dated forwarded message supplies its own reference time.
 An assignee ID must identify an available member; unresolved named people should
 remain named evidence rather than an arbitrary member assignment.
 

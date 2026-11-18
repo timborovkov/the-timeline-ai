@@ -1,3 +1,4 @@
+import { splitStoredEmailContent } from '@timeline/shared/email';
 import {
   chronologicalLifecycleEvidence,
   explicitLifecycleState,
@@ -39,7 +40,7 @@ interface Bundle<T extends Item> {
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
 const TASK_ACTIONS = new Set(['prepare', 'review', 'draft', 'write', 'create', 'send']);
-const namesTask = (text: string, name: string, lifecycle = false) => {
+const namesTask = (text: string, name: string, requireActionIdentity = false) => {
   const titleWords = (name.match(/[\p{L}\p{N}]+/gu) ?? []).filter((word) => word !== 'a');
   const words = titleWords.map((word) => word.toLowerCase());
   const action = words[0];
@@ -53,7 +54,7 @@ const namesTask = (text: string, name: string, lifecycle = false) => {
     if (evidenceWords.some((word) => TASK_ACTIONS.has(word))) return false;
     // The artifact can stand on its own as a subject or as the object of
     // an explicit outcome. Arbitrary prefixes can name a different action.
-    if (lifecycle) {
+    if (requireActionIdentity) {
       const artifact = taskIdentityPattern(titleWords.slice(1).join(' '), true);
       if (!artifact) return false;
       const outcome = new RegExp(
@@ -122,16 +123,55 @@ export function emailLifecycleStatements(
   );
 }
 
-function isOriginalChatCommitment(text: string, at: number): boolean {
+function isOriginalChatCommitment(text: string, at: number, memberName: string | null): boolean {
   const before = text.slice(0, at);
-  const linePrefix = before.slice(before.lastIndexOf('\n') + 1);
+  const lines = before.split('\n');
+  const linePrefix = lines.pop() ?? '';
+  const attributionLine = linePrefix.trim() || (lines.at(-1)?.trim() ?? '');
+  const attribution = /^([\p{Lu}][\p{L}'’.-]*(?: [\p{Lu}][\p{L}'’.-]*){0,4})\s*:\s*$/u.exec(
+    attributionLine,
+  )?.[1];
+  const asciiQuotes = before.match(/(?<!\\)"/g)?.length ?? 0;
   return (
+    (!attribution || normalize(attribution) === normalize(memberName ?? '')) &&
     !/^\s*(?:>|&gt;)/u.test(linePrefix) &&
     !/^(?:[\t ]*)(?:>>>|&gt;&gt;&gt;)/mu.test(before) &&
     !/\b(?:said|says|wrote|writes|texted|replied|shared)\s*:\s*["“']?\s*$/iu.test(linePrefix) &&
     !/["“`]\s*$/u.test(linePrefix) &&
+    asciiQuotes % 2 === 0 &&
+    before.lastIndexOf('“') <= before.lastIndexOf('”') &&
+    before.lastIndexOf('«') <= before.lastIndexOf('»') &&
     before.split('```').length % 2 === 1
   );
+}
+
+function deadlineReferenceDate(
+  source: { text: string; occurredAt?: Date } | undefined,
+  kind: string,
+  quote: string,
+  assertion: string,
+): Date | undefined {
+  if (!source || kind !== 'email') return source?.occurredAt;
+  const { intro, forwarded } = splitStoredEmailContent(source.text);
+  const messages = [
+    { body: normalize(intro), occurredAt: source.occurredAt },
+    ...forwarded.map((message) => {
+      const time = message.date ? Date.parse(message.date) : Number.NaN;
+      return {
+        body: normalize(message.body ?? ''),
+        occurredAt:
+          Number.isFinite(time) && (!source.occurredAt || time <= source.occurredAt.getTime())
+            ? new Date(time)
+            : undefined,
+      };
+    }),
+  ];
+  for (const fragment of [quote, assertion]) {
+    if (!fragment.trim()) continue;
+    const containing = messages.filter((message) => message.body.includes(normalize(fragment)));
+    if (containing.length) return containing.length === 1 ? containing[0]?.occurredAt : undefined;
+  }
+  return undefined;
 }
 function deadlineTimeMatches(day: string, tail: string, target: number, timezone: string): boolean {
   try {
@@ -1448,7 +1488,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const hasTaskContext = assignment !== undefined && validContexts.has(assignment);
         const matchesAssignedTask = (action: string) =>
           assignment !== undefined &&
-          (namesTask(action, assignment.subject) ||
+          (namesTask(action, assignment.subject, true) ||
             (hasTaskContext &&
               /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
                 action.trim(),
@@ -1547,7 +1587,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             ? emailSpeaker
             : source?.authorUserId === member.userId &&
               uniqueCommitment &&
-              isOriginalChatCommitment(source.text, commitmentAt)) &&
+              isOriginalChatCommitment(source.text, commitmentAt, member.name)) &&
           selfAction &&
           matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
           !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
@@ -1607,17 +1647,24 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !/\b(?:not|never|if|unless)\b/i.test(deadlineRemoval) &&
           /\b(?:remove|clear) (?:the )?deadline\b/i.test(deadlineRemoval);
         const deadline = has('dueAt', payload.dueAt);
+        const deadlineAssertion = supportedTaskAssertion(deadline) ?? '';
+        const deadlineSource = args.sources.find((row) => row.id === deadline?.rawEventId);
         if (
           payload.dueAt !== undefined &&
           !(payload.dueAt === null && clearDeadline) &&
           !(
             deadline &&
             deadlineMatches(
-              supportedTaskAssertion(deadline) ?? '',
+              deadlineAssertion,
               deadline.subject,
               payload.dueAt,
               args.timezone ?? 'UTC',
-              args.sources.find((row) => row.id === deadline.rawEventId)?.occurredAt,
+              deadlineReferenceDate(
+                deadlineSource,
+                deadlineSource?.source ?? args.source,
+                deadline.quote,
+                deadlineAssertion,
+              ),
             )
           )
         )

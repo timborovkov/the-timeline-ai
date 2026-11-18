@@ -131,6 +131,10 @@ test('quoted chat commitments do not assign the outer sender', () => {
       `Bob shared:\n>>> Earlier message\n${quote}`,
       `Bob wrote: “${quote}”`,
       `Bob says “${quote}”`,
+      `Bob: ${quote}`,
+      `Bob:\n${quote}`,
+      `“Earlier message\n${quote}”`,
+      `"Earlier message\n${quote}"`,
       quote,
     ]) {
       const result = run(
@@ -142,6 +146,48 @@ test('quoted chat commitments do not assign the outer sender', () => {
       expect(result[0]?.items[0]?.proposedPayload.assigneeUserId).toBe(
         text === quote ? alice : undefined,
       );
+    }
+  }
+});
+
+test('assignment grounding preserves the action on the same artifact', () => {
+  const taskTitle = 'Review access matrix';
+  for (const [quote, assignee] of [
+    ['I will delete access matrix.', undefined],
+    ['Alice will delete access matrix.', undefined],
+    ['I will review access matrix.', alice],
+  ] as const) {
+    expect(
+      run(quote, { assigneeUserId: alice }, [support('assignee', quote, alice, taskTitle)], {
+        operation: 'update',
+        taskTitle,
+      })[0]?.items[0]?.proposedPayload.assigneeUserId,
+    ).toBe(assignee);
+  }
+});
+
+test('forwarded relative and yearless deadlines resolve from their original date', () => {
+  for (const date of ['tomorrow', 'June 2']) {
+    const quote = `${title} is due ${date}.`;
+    const forwarded = [
+      'Please see the original request.',
+      '',
+      'Forwarded message 1:',
+      'From: Bob <bob@example.test>',
+      'Date: Mon, 01 Jun 2026 08:00:00 GMT',
+      '',
+      quote,
+    ].join('\n');
+    for (const [dueAt, retained] of [
+      ['2026-06-02T00:00:00.000Z', true],
+      [date === 'tomorrow' ? '2026-06-13T00:00:00.000Z' : '2027-06-02T00:00:00.000Z', false],
+    ] as const) {
+      expect(
+        run(forwarded, { dueAt }, [support('dueAt', quote, dueAt)], {
+          source: 'email',
+          occurredAt: new Date('2026-06-12T12:00:00.000Z'),
+        })[0]?.items[0]?.proposedPayload.dueAt,
+      ).toBe(retained ? dueAt : undefined);
     }
   }
 });
