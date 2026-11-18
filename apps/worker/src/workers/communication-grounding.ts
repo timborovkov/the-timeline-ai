@@ -40,7 +40,7 @@ interface Bundle<T extends Item> {
 }
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const tentativeAssertion =
-  /\b(?:maybe|might|perhaps|probably|possibly|tentative(?:ly)?|potentially|provisionally|likely|could)\b/i;
+  /\b(?:maybe|might|perhaps|probably|possibly|tentative(?:ly)?|potentially|provisionally|likely|could|(?:I|we|they|he|she) (?:think|guess|suspect|believe)s?)\b/i;
 const projectMembershipTerms = '(?:under|within|part of|belongs? to|in (?:the )?project)';
 const projectRoutingTerms = `(?:${projectMembershipTerms}|for|in|on)`;
 const projectRoutingCue = new RegExp(`\\b${projectRoutingTerms}\\b`, 'i');
@@ -1792,20 +1792,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
               ? (taskClause(support.quote, taskName ?? taskEndpoint.name) ?? support.quote)
               : support.quote;
             const enclosing = enclosingAssertion(support);
+            const linkStatement =
+              enclosing && (completeSourceAssertion(enclosing, assertion) ?? enclosing);
+            const deniedOrConditional =
+              /[?]|\b(?:undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i;
             if (
-              !enclosing ||
+              !linkStatement ||
               tentativeAssertion.test(
-                normalize(enclosing)
+                normalize(linkStatement)
                   .replaceAll(normalize(from.name), '[endpoint]')
-                  .replaceAll(normalize(to.name), '[endpoint]')
-                  .replaceAll(normalize(taskName ?? support.subject), '[subject]'),
+                  .replaceAll(normalize(to.name), '[endpoint]'),
               ) ||
-              support.quote.includes('?') ||
+              deniedOrConditional.test(linkStatement) ||
+              deniedOrConditional.test(assertion) ||
               ![to.id, to.name, from.id, from.name, taskName].includes(support.value) ||
-              /[?]|\b(?:maybe|perhaps|undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i.test(
-                assertion,
-              ) ||
-              (!taskEndpoint && /\bseparate\b/i.test(assertion))
+              (!taskEndpoint && /\bseparate\b/i.test(linkStatement))
             )
               return false;
             if (

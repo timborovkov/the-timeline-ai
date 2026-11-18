@@ -574,6 +574,7 @@ const EXPLICIT_STATES: Record<string, string> = {
   unblocked: 'todo',
   cancelled: 'cancelled',
   canceled: 'cancelled',
+  archived: 'cancelled',
 };
 
 export function explicitLifecycleState(sentence: string):
@@ -583,7 +584,11 @@ export function explicitLifecycleState(sentence: string):
       affirmative: boolean;
     }
   | undefined {
-  if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence))
+  if (
+    /[?]|\b(?:if|unless|maybe|perhaps|might|could|(?:I|we|they|he|she) (?:think|guess|suspect|believe)s?)\b/i.test(
+      sentence,
+    )
+  )
     return undefined;
   const command = /^(?:please )?(reopen|restart|unblock|cancel|archive) (.+?)[.!]?$/i.exec(
     sentence.trim(),
@@ -594,6 +599,14 @@ export function explicitLifecycleState(sentence: string):
       status: /^(?:cancel|archive)$/i.test(command[1]) ? 'cancelled' : 'todo',
       affirmative: true,
     };
+  }
+  const outcome =
+    /^(?:I|we|they|he|she|you) (?:(?:has|have|had) )?(completed|finished|shipped|delivered|started|blocked|reopened|restarted|unblocked|cancelled|canceled|archived) (.+?)[.!]?$/i.exec(
+      sentence.trim(),
+    );
+  if (outcome?.[1] && outcome[2]) {
+    const status = EXPLICIT_STATES[outcome[1].toLowerCase()];
+    if (status) return { subject: outcome[2], status, affirmative: true };
   }
   const spanish =
     /^(.*?)\s+(?:(no|nunca|jamás)\s+)?(?:está|estaba|ha sido|fue)\s+(terminad[oa]|completad[oa]|cancelad[oa]|empezad[oa])[.!]?$/iu.exec(

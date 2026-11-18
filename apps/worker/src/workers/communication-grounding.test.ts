@@ -797,7 +797,9 @@ test('Spanish and German negation and future modality cannot verify completion',
 test('reopened-state wording retains todo only after the transition', () => {
   for (const [text, expected] of [
     ['Review retention policy has been reopened.', 'todo'],
+    ['We reopened Review retention policy.', 'todo'],
     ['Review retention policy has not been reopened.', undefined],
+    ['We did not reopen Review retention policy.', undefined],
     ['Review retention policy will be reopened.', undefined],
     ['Review retention policy may be unblocked.', undefined],
   ] as const) {
@@ -806,6 +808,28 @@ test('reopened-state wording retains todo only after the transition', () => {
         ?.items[0]?.proposedPayload.status,
     ).toBe(expected);
   }
+});
+
+test('epistemic language cannot authorize a lifecycle change', () => {
+  const quote = `${title} is done.`;
+  for (const prefix of ['I think', 'I guess', 'We suspect', 'She believes']) {
+    const text = `${prefix} ${quote}`;
+    for (const citation of [text, quote]) {
+      expect(
+        run(text, { status: 'done' }, [support('status', citation, 'done')], {
+          operation: 'update',
+        })[0]?.items,
+      ).toEqual([]);
+    }
+  }
+  const taskTitle = 'Review Guess integration';
+  const definite = `${taskTitle} is done.`;
+  expect(
+    run(definite, { status: 'done' }, [support('status', definite, 'done', taskTitle)], {
+      taskTitle,
+      operation: 'update',
+    })[0]?.items[0]?.proposedPayload.status,
+  ).toBe('done');
 });
 
 test('creating a project through task approval requires affirmative membership', () => {
@@ -1151,6 +1175,8 @@ test('task grounding rejects a completion superseded by a later visible correcti
     ['done', 'Review retention policy is done.', 'Review retention policy is not done yet.'],
     ['done', 'Review retention policy is done.', 'Retention policy is not done.'],
     ['done', 'Review retention policy is done.', 'Retention policy is reopened.'],
+    ['done', 'Review retention policy is done.', 'We reopened Review retention policy.'],
+    ['done', 'Review retention policy is done.', 'We have reopened the retention policy.'],
     ['blocked', 'Review retention policy is blocked.', 'Review retention policy is done.'],
     ['done', 'Review retention policy is done.', 'Reopen Review retention policy.'],
     [
@@ -1199,6 +1225,29 @@ test('task grounding rejects a completion superseded by a later visible correcti
       expect([...verifiedLifecycleAuditIds]).toEqual(visible || reviewed ? [] : ['verified']);
     }
   }
+});
+
+test('active lifecycle corrections match the whole task and require a definite outcome', () => {
+  const quote = `${title} is done.`;
+  for (const later of [
+    'We reopened Review retention policy rollout.',
+    `We did not reopen ${title}.`,
+    `We reopened ${title} if approved.`,
+  ]) {
+    expect(
+      run(`${quote}\n${later}`, { status: 'done' }, [support('status', quote, 'done')], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBe('done');
+  }
+  const later = `We reopened ${title}.`;
+  expect(
+    emailChronologyStatements({
+      id: event,
+      occurredAt: new Date('2026-06-12'),
+      contentText: later,
+    }),
+  ).toMatchObject([{ contentText: later, routingOnly: false }]);
 });
 
 test('a correction using an authorized alias inside the quotation supersedes the claim', () => {
@@ -2506,6 +2555,7 @@ const generalRelationship = (
     names?: [string, string];
     type?: string;
     packet?: string;
+    sourceText?: string;
     kind?: string;
     foreign?: boolean;
     ambiguous?: boolean;
@@ -2549,8 +2599,8 @@ const generalRelationship = (
           ],
         },
       ],
-      packet: options.packet ?? quote,
-      sources: [{ id: event, text: quote }],
+      packet: options.packet ?? options.sourceText ?? quote,
+      sources: [{ id: event, text: options.sourceText ?? quote }],
       members: [],
       hubs: [],
       source: 'slack',
@@ -2584,6 +2634,11 @@ test('explicit related links support authorized non-hub endpoints', () => {
   ])
     expect(generalRelationship(quote)).toHaveLength(0);
   const quote = 'Link Deployment checklist to Release checklist.';
+  expect(generalRelationship(`${quote} Do not combine the reports.`)).toHaveLength(1);
+  for (const prefix of ['Do not', 'If approved,', 'Please never']) {
+    const citation = 'link Deployment checklist to Release checklist.';
+    expect(generalRelationship(citation, { sourceText: `${prefix} ${citation}` })).toHaveLength(0);
+  }
   for (const options of [
     { packet: 'Truncated' },
     { foreign: true },
