@@ -362,6 +362,8 @@ for the same role in visible context or the authorized email thread.
 Definitive primary-project assignments and removals follow the same chronology.
 Conversation links require affirmative source evidence. A project-scoped
 request can route each explicitly requested deliverable in that statement.
+A uniquely named provider container can route unscoped task creates when the
+conversation supplies no competing relationship or standalone cue.
 
 The source window must be interpreted in order. Work introduced and conclusively
 finished in one meeting should yield its final supported state. “After QA, mark it

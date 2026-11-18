@@ -5156,16 +5156,43 @@ async function runSuggestionExtraction(
       });
     }
   }
+  let routedBundles: ReturnType<
+    typeof suggestions.attachUniqueHubsToBundles<SuggestionItemOutput>
+  > = groundedBundles;
+  if (!isHumanCommunication(row.source)) {
+    routedBundles = suggestions.attachUniqueHubsToBundles({
+      bundles: groundedBundles,
+      qualified: qualifiedHubs,
+    });
+  } else {
+    const containerHubs = suggestions.qualifyWorkspaceContainerHubs({
+      hubs: hubRows,
+      sourceMetadata: row.sourceMetadata,
+      conversationText: [
+        text,
+        ...(args.conversation?.window ?? []).map((event) => event.contentText),
+        ...(args.conversation?.linkedContext ?? []).map((event) => event.contentText),
+      ].join('\n'),
+    });
+    if (containerHubs) {
+      routedBundles = groundedBundles.flatMap((bundle) =>
+        bundle.items.every(
+          (item) =>
+            item.operation === 'create' &&
+            item.targetKind === 'task' &&
+            !item.proposedPayload.parentObjectId &&
+            !item.proposedPayload.createProjectName,
+        )
+          ? suggestions.attachUniqueHubsToBundles({ bundles: [bundle], qualified: containerHubs })
+          : [bundle],
+      );
+    }
+  }
   const deduplicatedRelationshipAuditIds = new Set<string>();
   const bundles = suggestions
     .stripAmbiguousLifecycleUpdates({
       bundles: suggestions.stampUniqueWorkItemAliasesOntoBundles({
-        bundles: isHumanCommunication(row.source)
-          ? groundedBundles
-          : suggestions.attachUniqueHubsToBundles({
-              bundles: groundedBundles,
-              qualified: qualifiedHubs,
-            }),
+        bundles: routedBundles,
         text: evidenceText,
       }),
       verifiedLifecycleAuditIds: [...verifiedLifecycleAuditIds],

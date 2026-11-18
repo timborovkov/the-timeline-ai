@@ -163,12 +163,20 @@ function nestedContainerLabels(value: unknown): string[] {
   return labels;
 }
 
-function evidenceLabelsFromMetadata(value: unknown): string[] {
+function containerLabelsFromMetadata(value: unknown): string[] {
   return [
-    ...TITLE_METADATA_KEYS.map((key) => metadataString(value, key)),
     ...CONTAINER_LABEL_METADATA_KEYS.map((key) => metadataString(value, key)),
     ...nestedContainerLabels(value),
   ].filter((text): text is string => typeof text === 'string');
+}
+
+function evidenceLabelsFromMetadata(value: unknown): string[] {
+  return [
+    ...TITLE_METADATA_KEYS.map((key) => metadataString(value, key)).filter(
+      (text): text is string => typeof text === 'string',
+    ),
+    ...containerLabelsFromMetadata(value),
+  ];
 }
 
 export function hubEvidenceText(args: {
@@ -279,6 +287,37 @@ export function qualifyWorkspaceHubs(args: {
     ),
     uniqueCompany: uniqueAccountHub(mentioned),
   };
+}
+
+/** An explicitly named provider container can route otherwise unscoped work. */
+export function qualifyWorkspaceContainerHubs(args: {
+  hubs: readonly WorkspaceHub[];
+  sourceMetadata: unknown;
+  conversationText: string;
+}): QualifiedWorkspaceHubs | undefined {
+  const labels = containerLabelsFromMetadata(args.sourceMetadata).filter((label) =>
+    /^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u.test(label),
+  );
+  const text = labels.join('\n').replace(/[-_]+/g, ' ');
+  if (
+    !text ||
+    /\b(?:standalone|independent|unrelated|not|never|without|if|unless|maybe|might|could|perhaps|probably|possibly|ignore)\b/i.test(
+      `${text}\n${args.conversationText}`,
+    ) ||
+    /\b(?:for|under|within|belongs to)\s+(?:(?:the|our|their)\s+)?(?:\p{Lu}|(?:new|different|another)\s+(?:customer|client|account|project)\b)/u.test(
+      args.conversationText,
+    ) ||
+    qualifyWorkspaceHubs({ hubs: args.hubs, text: args.conversationText }).mentioned.length
+  )
+    return undefined;
+  const qualified = qualifyWorkspaceHubs({ hubs: args.hubs, text });
+  const named = (hub: WorkspaceHub | null) =>
+    qualified.explicitlyNamed?.some((candidate) => candidate.id === hub?.id) ? hub : null;
+  const uniqueProject = named(qualified.uniqueProject);
+  const uniqueCompany = named(qualified.uniqueCompany);
+  return uniqueProject || uniqueCompany
+    ? { ...qualified, uniqueProject, uniqueCompany }
+    : undefined;
 }
 
 export function selectPromptObjects<T extends { id: string }>(args: {
@@ -566,6 +605,7 @@ const EXPLICIT_STATES: Record<string, string> = {
   blocked: 'blocked',
   started: 'doing',
   'working on it': 'doing',
+  'working on': 'doing',
   'in progress': 'doing',
   open: 'todo',
   pending: 'todo',
@@ -601,12 +641,24 @@ export function explicitLifecycleState(sentence: string):
     };
   }
   const outcome =
-    /^(?:I|we|they|he|she|you) (?:(?:has|have|had) )?(completed|finished|shipped|delivered|started|blocked|reopened|restarted|unblocked|cancelled|canceled|archived) (.+?)[.!]?$/i.exec(
+    /^(.+?)\s+(?:(?:has|have|had)\s+)?(?:(?:already|now|just|finally)\s+)?(completed|finished|shipped|delivered|started|blocked|reopened|restarted|unblocked|cancelled|canceled|archived|(?:am|is|are|was|were) working on)\s+(.+?)[.!]?$/iu.exec(
       sentence.trim(),
     );
-  if (outcome?.[1] && outcome[2]) {
-    const status = EXPLICIT_STATES[outcome[1].toLowerCase()];
-    if (status) return { subject: outcome[2], status, affirmative: true };
+  if (
+    outcome?.[1] &&
+    outcome[2] &&
+    outcome[3] &&
+    outcome[1]
+      .split(/\s+and\s+|\s*&\s*/i)
+      .every(
+        (actor) =>
+          /^(?:i|we|they|he|she|you|(?:the|our) (?:team|client|customer))$/i.test(actor) ||
+          /^\p{Lu}[\p{L}\p{M}'’.-]*(?:\s+\p{Lu}[\p{L}\p{M}'’.-]*){0,3}$/u.test(actor),
+      )
+  ) {
+    const predicate = outcome[2].toLowerCase();
+    const status = EXPLICIT_STATES[predicate.endsWith(' working on') ? 'working on' : predicate];
+    if (status) return { subject: outcome[3], status, affirmative: true };
   }
   const spanish =
     /^(.*?)\s+(?:(no|nunca|jamás)\s+)?(?:está|estaba|ha sido|fue)\s+(terminad[oa]|completad[oa]|cancelad[oa]|empezad[oa])[.!]?$/iu.exec(

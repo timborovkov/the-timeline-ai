@@ -117,6 +117,7 @@ export {
   explicitLifecycleState,
   hubEvidenceText,
   hubsChanged,
+  qualifyWorkspaceContainerHubs,
   qualifyWorkspaceHubs,
   recallRelatedOpenWork,
   selectPromptObjects,

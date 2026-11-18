@@ -798,6 +798,7 @@ test('reopened-state wording retains todo only after the transition', () => {
   for (const [text, expected] of [
     ['Review retention policy has been reopened.', 'todo'],
     ['We reopened Review retention policy.', 'todo'],
+    ['Alice has reopened Review retention policy.', 'todo'],
     ['Review retention policy has not been reopened.', undefined],
     ['We did not reopen Review retention policy.', undefined],
     ['Review retention policy will be reopened.', undefined],
@@ -1177,6 +1178,15 @@ test('task grounding rejects a completion superseded by a later visible correcti
     ['done', 'Review retention policy is done.', 'Retention policy is reopened.'],
     ['done', 'Review retention policy is done.', 'We reopened Review retention policy.'],
     ['done', 'Review retention policy is done.', 'We have reopened the retention policy.'],
+    ['done', 'Review retention policy is done.', 'Alice reopened Review retention policy.'],
+    ['done', 'Review retention policy is done.', 'Alice Morgan has reopened the retention policy.'],
+    [
+      'done',
+      'Review retention policy is done.',
+      'Alice and Bob just reopened the retention policy.',
+    ],
+    ['done', 'Review retention policy is done.', 'The team has reopened the retention policy.'],
+    ['done', 'Review retention policy is done.', 'Alice is working on Review retention policy.'],
     ['blocked', 'Review retention policy is blocked.', 'Review retention policy is done.'],
     ['done', 'Review retention policy is done.', 'Reopen Review retention policy.'],
     [
@@ -1233,6 +1243,8 @@ test('active lifecycle corrections match the whole task and require a definite o
     'We reopened Review retention policy rollout.',
     `We did not reopen ${title}.`,
     `We reopened ${title} if approved.`,
+    `Alice might have reopened ${title}.`,
+    `Alice said she reopened ${title}.`,
   ]) {
     expect(
       run(`${quote}\n${later}`, { status: 'done' }, [support('status', quote, 'done')], {
@@ -1240,7 +1252,7 @@ test('active lifecycle corrections match the whole task and require a definite o
       })[0]?.items[0]?.proposedPayload.status,
     ).toBe('done');
   }
-  const later = `We reopened ${title}.`;
+  const later = `Alice reopened ${title}.`;
   expect(
     emailChronologyStatements({
       id: event,
