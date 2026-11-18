@@ -9637,6 +9637,7 @@ describe('processSuggestionJobForTests', () => {
     const late = crypto.randomUUID();
     const reviewId = crypto.randomUUID();
     const request = 'Please check the late procurement attachment.';
+    const correction = 'The procurement attachment review is not done.';
     const metadata = {
       thread_root_id: root,
       extracted_at: REFERENCE_DATE.toISOString(),
@@ -9645,7 +9646,7 @@ describe('processSuggestionJobForTests', () => {
     await seedRawEvent(db as never, {
       id: root,
       source: 'email',
-      text: 'Current thread anchor.',
+      text: `Current thread anchor. ${'Ordinary mail context. '.repeat(18)}${correction}`,
       sourceMetadata: { ...metadata, email_thread_review_id: reviewId },
     });
     await db.insert(conversationReviews).values({
@@ -9695,6 +9696,8 @@ describe('processSuggestionJobForTests', () => {
     );
     const prompt = (chat.mock.calls[0]?.[0] as { prompt: string } | undefined)?.prompt;
     expect(prompt).toContain(request);
+    expect(prompt).toContain(correction);
+    expect(prompt?.indexOf(correction) ?? -1).toBeGreaterThan(prompt?.indexOf(request) ?? -1);
     const [processed] = await db.select().from(rawEvents).where(eq(rawEvents.id, late));
     expect(processed?.sourceMetadata).toMatchObject({ email_thread_review_id: reviewId });
     const [completed] = await db

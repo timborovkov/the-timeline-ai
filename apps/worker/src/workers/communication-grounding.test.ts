@@ -235,12 +235,18 @@ test('ongoing or nearly completed work cannot be marked done', () => {
   }
 });
 
-test('Spanish and German lifecycle negation cannot verify completion', () => {
+test('Spanish and German negation and future modality cannot verify completion', () => {
   for (const [taskTitle, text, status] of [
     ['Política de retención', 'La política de retención no está terminada.', undefined],
     ['Política de retención', 'La política de retención está terminada.', 'done'],
+    ['Política de retención', 'La política de retención estará terminada mañana.', undefined],
     ['Aufbewahrungsrichtlinie', 'Die Aufbewahrungsrichtlinie ist nicht abgeschlossen.', undefined],
     ['Aufbewahrungsrichtlinie', 'Die Aufbewahrungsrichtlinie ist abgeschlossen.', 'done'],
+    [
+      'Aufbewahrungsrichtlinie',
+      'Die Aufbewahrungsrichtlinie wird morgen abgeschlossen.',
+      undefined,
+    ],
   ] as const) {
     expect(
       run(text, { status: 'done' }, [support('status', text, 'done', taskTitle)], {

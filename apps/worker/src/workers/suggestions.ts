@@ -3901,7 +3901,7 @@ async function runSuggestionExtraction(
       key: string;
       window: conversationReview.ConversationEvidenceEvent[];
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
-      unreviewedEmailIds?: ReadonlySet<string>;
+      completeEmailIds?: ReadonlySet<string>;
       reviewAnchorRawEventId?: string;
       reviewAnchorQuietUntil?: Date;
     };
@@ -4374,7 +4374,7 @@ async function runSuggestionExtraction(
     sourceMetadata: row.sourceMetadata,
     authorUserId: row.authorUserId,
     conversationWindow: args.conversation?.window ?? null,
-    unreviewedEmailIds: args.conversation?.unreviewedEmailIds,
+    completeEmailIds: args.conversation?.completeEmailIds,
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
     referenceDocuments,
   });
@@ -4524,7 +4524,7 @@ async function runSuggestionExtraction(
       ...(args.conversation?.window ?? []).map((event) => ({
         id: event.id,
         text: event.contentText,
-        ...(!args.conversation?.unreviewedEmailIds?.has(event.id) &&
+        ...(!args.conversation?.completeEmailIds?.has(event.id) &&
         event.contentText.length > CONVERSATION_WINDOW_EXCERPT_CHARS
           ? { visibleExcerpt: event.contentText.slice(0, CONVERSATION_WINDOW_EXCERPT_CHARS - 1) }
           : {}),
@@ -5649,19 +5649,27 @@ async function processEmailThreadPages(
       const anchor = pending.at(-1);
       if (!anchor) throw new Error('Email thread page has no anchor');
       pageAnchor = anchor;
-      const unreviewedEmailIds = new Set(pending.map((event) => event.id));
+      const completeEmailIds = new Set(pending.map((event) => event.id));
       const context = await conversationReview.buildConversationEvidenceWindow(deps.db, {
         teamId: review.teamId,
         identity,
-        anchorOccurredAt: anchor.occurredAt,
+        anchorOccurredAt: last.occurredAt,
+      });
+      const relevantContext = context.filter((event) => {
+        if (completeEmailIds.has(event.id)) return false;
+        const newer =
+          event.occurredAt > anchor.occurredAt ||
+          (event.occurredAt.getTime() === anchor.occurredAt.getTime() && event.id > anchor.id);
+        if (!newer) return true;
+        // A late arrival still needs subsequent decisions that this thread
+        // already reviewed. Keep those bodies intact alongside the late page.
+        const reviewed =
+          recordFromUnknown(event.sourceMetadata).email_thread_review_id === review.id;
+        if (reviewed) completeEmailIds.add(event.id);
+        return reviewed;
       });
       const window = [
-        ...context.filter(
-          (event) =>
-            !unreviewedEmailIds.has(event.id) &&
-            (event.occurredAt < anchor.occurredAt ||
-              (event.occurredAt.getTime() === anchor.occurredAt.getTime() && event.id < anchor.id)),
-        ),
+        ...relevantContext,
         ...pending.map((event) => ({ ...event, contentText: event.contentText?.trim() ?? '' })),
       ].sort(
         (first, second) =>
@@ -5687,7 +5695,7 @@ async function processEmailThreadPages(
             key: review.conversationKey,
             window,
             linkedContext,
-            unreviewedEmailIds,
+            completeEmailIds,
             reviewAnchorRawEventId: last.id,
             reviewAnchorQuietUntil: review.quietUntil,
           },
@@ -6327,7 +6335,7 @@ function buildPromptParts(args: {
   source: string;
   sourceMetadata: unknown;
   authorUserId: string | null;
-  unreviewedEmailIds?: ReadonlySet<string> | undefined;
+  completeEmailIds?: ReadonlySet<string> | undefined;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
   referenceDocuments: {
@@ -6477,14 +6485,12 @@ function buildPromptParts(args: {
       },
     )}`;
   const window = args.conversationWindow ?? [];
-  const unreviewedEmails = window.filter(
-    (event) => event.id !== args.sourceEventId && args.unreviewedEmailIds?.has(event.id),
-  );
+  const completeEmails = window.filter((event) => args.completeEmailIds?.has(event.id));
   const evidence = [
     args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
     ...(args.conversationWindow
       ? window
-          .filter((event) => !args.unreviewedEmailIds?.has(event.id))
+          .filter((event) => !args.completeEmailIds?.has(event.id))
           .map((event) => formatWindowEvent(event, false))
       : args.recent.map((r) => {
           const occurredAt = r.occurredAt.toISOString();
@@ -6537,11 +6543,14 @@ function buildPromptParts(args: {
     })}`,
   ].join('\n');
 
-  if (args.unreviewedEmailIds?.has(args.sourceEventId)) {
+  if (args.completeEmailIds?.has(args.sourceEventId)) {
     const requiredEvidence = [
-      '# Unreviewed email thread messages',
-      ...unreviewedEmails.map((event) => formatWindowEvent(event, true)),
-      anchor,
+      '# Email thread evidence in chronological order',
+      ...completeEmails.map((event) =>
+        event.id === args.sourceEventId
+          ? `# Anchor raw event (${event.occurredAt.toISOString()})\n${formatWindowEvent(event, true)}`
+          : formatWindowEvent(event, true),
+      ),
     ].join('\n\n');
     return { workspace, evidence, anchor: '', requiredEvidence };
   }

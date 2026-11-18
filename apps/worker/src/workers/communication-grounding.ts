@@ -445,6 +445,12 @@ function affirmativeLifecycle(
   )
     return false;
   if (
+    /(?<![\p{L}\p{N}])(?:estarán?|estarían?|serán?|serían?|van? a (?:estar|ser)|wird|werden|würden?|soll(?:en)?|könnten?|tulee olemaan|on tarkoitus)(?![\p{L}\p{N}])/iu.test(
+      clause,
+    )
+  )
+    return false;
+  if (
     status === 'done' &&
     /\b(?:almost|nearly|partly|partially|half|not quite|being|in the process of|basically|practically|essentially)\b/i.test(
       clause,
