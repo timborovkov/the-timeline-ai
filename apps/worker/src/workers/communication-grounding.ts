@@ -26,6 +26,7 @@ interface Item {
   targetId?: string | null | undefined;
   proposedPayload: Record<string, unknown>;
   grounding?: Support[] | undefined;
+  scopedSourceIdentity?: { name: string; scopeLabels: string[] } | undefined;
 }
 interface Bundle<T extends Item> {
   title: string;
@@ -457,7 +458,7 @@ function affirmativeLifecycle(
     return false;
 
   if (
-    /\b(?:will|shall|should|would|could|may|must|going to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:(?:be|get)\s+|have\s+been\s+)?(?:(?:marked|declared|considered|reported|counted|treated)(?:\s+as)?\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i.test(
+    /\b(?:will|shall|should|would|can|could|may|must|going to|able to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:(?:be|get)\s+|have\s+been\s+)?(?:(?:marked|declared|considered|reported|counted|treated)(?:\s+as)?\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i.test(
       clause,
     )
   )
@@ -560,6 +561,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     occurredAt?: Date;
   }[];
   reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
+  laterPendingEmails?: readonly { id: string; contentText: string; occurredAt: Date }[] | undefined;
   members: { userId: string; name: string | null; email: string | null }[];
   hubs: { id: string; name: string; type: string; aliases?: string[] }[];
   source: string;
@@ -569,13 +571,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
   verifiedLifecycleAuditIds?: Set<string>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
-  const chronology = chronologicalLifecycleEvidence(
-    args.sources.map((source) => ({
+  const chronology = chronologicalLifecycleEvidence([
+    ...args.sources.map((source) => ({
       ...source,
       source: source.source ?? args.source,
       contentText: source.text,
     })),
-  );
+    ...(args.laterPendingEmails ?? []).map((event) => ({ ...event, source: 'email' })),
+  ]);
+  const lifecycleVetoIds = new Set([
+    ...(args.reviewedLaterEmailIds ?? []),
+    ...(args.laterPendingEmails ?? []).map((event) => event.id),
+  ]);
   const packet = normalize(args.packet);
   function lifecycleSuperseded(support: Support, names: string[]): boolean {
     const citedClause = taskClause(support.quote, support.subject);
@@ -613,8 +620,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           safeSourceQuote(event.contentText, sentence.trim()) &&
           // The full authorized later email can veto a stale change even
           // when its body exceeds the prompt's background context budget.
-          ((event.id && args.reviewedLaterEmailIds?.has(event.id)) ||
-            packet.includes(normalize(sentence))) &&
+          ((event.id && lifecycleVetoIds.has(event.id)) || packet.includes(normalize(sentence))) &&
           subjects.some((subject) => subject?.test(normalize(state.subject)))
         ) {
           if (state.affirmative) status = state.status;
@@ -628,7 +634,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     const validContexts = new Set<Support>();
     const taskIdentityNames = (
       item: Pick<Item, 'targetId' | 'title'> &
-        Partial<Pick<Item, 'targetKind' | 'proposedPayload'>>,
+        Partial<Pick<Item, 'targetKind' | 'proposedPayload' | 'scopedSourceIdentity'>>,
       objects = args.objects ?? [],
     ) => {
       if (item.targetKind === 'calendar_event') {
@@ -641,6 +647,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         target?.name ??
           (typeof proposedName === 'string' && proposedName.trim() ? proposedName : item.title),
       ];
+      if (!target && item.scopedSourceIdentity) names.push(item.scopedSourceIdentity.name);
       if (target?.type !== 'task') return names;
       return [
         ...names,
@@ -658,7 +665,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       ];
     };
     const taskEvidenceUnambiguous = (
-      item: Pick<Item, 'targetId' | 'title'>,
+      item: Pick<Item, 'targetId' | 'title'> & Partial<Pick<Item, 'scopedSourceIdentity'>>,
       text: string,
       objects = args.objects ?? [],
     ) => {
@@ -667,12 +674,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
       };
+      const scoped = item.scopedSourceIdentity;
+      const scopeIsCited = scoped?.scopeLabels.some(literal) ?? false;
       const competing = objects.filter(
         (object) =>
           object.type === 'task' &&
           object.id !== item.targetId &&
           object.name &&
           (Boolean(item.targetId) ||
+            (scoped !== undefined && !scopeIsCited) ||
             !names.some((name) => normalize(name) === normalize(object.name ?? ''))) &&
           [object.name, ...(object.aliases ?? [])].some((name) => namesTask(text, name)),
       );

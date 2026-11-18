@@ -4058,6 +4058,65 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('keeps source deadlines after qualifying a distinct scoped task name', async () => {
+    const north = crypto.randomUUID();
+    const south = crypto.randomUUID();
+    const title = 'Review retention policy';
+    await db.insert(entities).values([
+      { id: north, teamId: TEAM_ID, type: 'company', canonicalName: 'Northstar Audit' },
+      { id: south, teamId: TEAM_ID, type: 'company', canonicalName: 'Southstar Audit' },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: title,
+        metadata: { companyId: north },
+      },
+    ]);
+    const rawEventId = crypto.randomUUID();
+    const dueAt = '2026-06-12T09:00:00.000Z';
+    const quote = `${title} for Southstar Audit is due June 12, 2026 at 09:00 UTC.`;
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'email',
+      text: quote,
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = emptyModel().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title,
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title,
+                proposedPayload: { canonicalName: title, metadata: { companyId: south }, dueAt },
+                grounding: [{ field: 'dueAt', subject: title, value: dueAt, quote, rawEventId }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const [task] = await db.select().from(agentSuggestionItems);
+    expect(task).toMatchObject({
+      operation: 'create',
+      targetKind: 'task',
+      proposedPayload: { canonicalName: `${title} (Southstar Audit)`, aliases: [title], dueAt },
+    });
+  });
+
   it('reserves pending project names across different company scopes before acceptance', async () => {
     const companies = await db
       .insert(entities)
@@ -9585,12 +9644,15 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Thanks.');
   });
 
-  it('reviews every email in a backlog before completing the thread checkpoint', async () => {
+  it.each([false, true])('reviews an email backlog (correction=%s)', async (corrected) => {
     const ids = Array.from({ length: 26 }, () => crypto.randomUUID());
     const root = ids[0];
     const last = ids.at(-1);
     if (!root || !last) throw new Error('Missing email thread fixtures');
     const reviewId = crypto.randomUUID();
+    const taskName = 'Review retention policy';
+    const completion = `${taskName} is done.`;
+    const correction = `${taskName} is not done.`;
     const messages = ids.map((id, index) => ({
       id,
       teamId: TEAM_ID,
@@ -9599,7 +9661,13 @@ describe('processSuggestionJobForTests', () => {
       visibility: 'team' as const,
       occurredAt: new Date(REFERENCE_DATE.getTime() + 60_000 * index),
       contentText:
-        index === 1 ? 'Please prepare the compliance register.' : `Thread message ${index}.`,
+        index === 1
+          ? corrected
+            ? completion
+            : 'Please prepare the compliance register.'
+          : corrected && id === last
+            ? correction
+            : `Thread message ${index}.`,
       sourceMetadata: {
         thread_root_id: root,
         extracted_at: REFERENCE_DATE.toISOString(),
@@ -9617,14 +9685,64 @@ describe('processSuggestionJobForTests', () => {
       quietUntil: new Date(0),
     });
     const chat = emptyModel();
+    if (corrected) {
+      const taskId = crypto.randomUUID();
+      await db.insert(entities).values({
+        id: taskId,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: taskName,
+        status: 'open',
+      });
+      chat.mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: taskName,
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: taskId,
+                  title: taskName,
+                  proposedPayload: { status: 'done' },
+                  grounding: [
+                    {
+                      field: 'status',
+                      rawEventId: ids[1],
+                      quote: completion,
+                      subject: taskName,
+                      value: 'done',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      });
+      await expect(
+        processSuggestionJobForTests(
+          { db: db as never },
+          { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+          { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+        ),
+      ).rejects.toThrow(/Communication grounding rejected/);
+      expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+    }
     await processSuggestionJobForTests(
       { db: db as never },
       { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
     const prompts = chat.mock.calls.map(([call]) => (call as { prompt: string }).prompt);
-    expect(prompts[0]).toContain('Please prepare the compliance register.');
-    expect(prompts.some((prompt) => prompt.includes('Thread message 25.'))).toBe(true);
+    expect(prompts[0]).toContain(
+      corrected ? completion : 'Please prepare the compliance register.',
+    );
+    expect(prompts.at(-1)).toContain(corrected ? correction : 'Thread message 25.');
+    if (corrected) expect(prompts[0]).toContain(correction);
     const [review] = await db
       .select()
       .from(conversationReviews)

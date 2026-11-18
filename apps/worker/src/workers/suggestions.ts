@@ -292,8 +292,12 @@ export const SUGGESTION_PROMPT_MAX_INPUT_TOKENS = 24_000;
 
 type RawEventRow = typeof rawEvents.$inferSelect;
 
-type SuggestionBundleOutput = z.infer<typeof suggestionBundleSchema>;
-type SuggestionItemOutput = z.infer<typeof suggestionItemSchema>;
+type SuggestionItemOutput = z.infer<typeof suggestionItemSchema> & {
+  scopedSourceIdentity?: { name: string; scopeLabels: string[] } | undefined;
+};
+type SuggestionBundleOutput = Omit<z.infer<typeof suggestionBundleSchema>, 'items'> & {
+  items: SuggestionItemOutput[];
+};
 type EntityType = (typeof entities.$inferSelect)['type'];
 type PlannerSurface = Parameters<typeof planReconciliation>[0]['observedSurfaces'][number];
 
@@ -2771,6 +2775,9 @@ function normalizeBundleAgainstExistingObjects(
             return {
               ...item,
               title: scopedName,
+              ...(subject.type === 'task' && labels.length > 0
+                ? { scopedSourceIdentity: { name, scopeLabels: labels } }
+                : {}),
               proposedPayload: {
                 ...item.proposedPayload,
                 canonicalName: scopedName,
@@ -3903,6 +3910,7 @@ async function runSuggestionExtraction(
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
       completeEmailIds?: ReadonlySet<string>;
       reviewedLaterEmailIds?: ReadonlySet<string>;
+      laterPendingEmails?: conversationReview.ConversationEvidenceEvent[];
       reviewAnchorRawEventId?: string;
       reviewAnchorQuietUntil?: Date;
     };
@@ -4377,6 +4385,7 @@ async function runSuggestionExtraction(
     conversationWindow: args.conversation?.window ?? null,
     completeEmailIds: args.conversation?.completeEmailIds,
     reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
+    laterPendingEmails: args.conversation?.laterPendingEmails,
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
     referenceDocuments,
   });
@@ -5023,6 +5032,7 @@ async function runSuggestionExtraction(
     ? groundCommunicationBundles({
         verifiedLifecycleAuditIds,
         reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
+        laterPendingEmails: args.conversation?.laterPendingEmails,
         bundles: enrichedBundles,
         packet: prompt,
         source: row.source,
@@ -5654,6 +5664,7 @@ async function processEmailThreadPages(
       pageAnchor = anchor;
       const completeEmailIds = new Set(pending.map((event) => event.id));
       const reviewedLaterEmailIds = new Set<string>();
+      const laterPendingEmails: conversationReview.ConversationEvidenceEvent[] = [];
       const context = await conversationReview.buildConversationEvidenceWindow(deps.db, {
         teamId: review.teamId,
         identity,
@@ -5670,6 +5681,7 @@ async function processEmailThreadPages(
         const reviewed =
           recordFromUnknown(event.sourceMetadata).email_thread_review_id === review.id;
         if (reviewed) reviewedLaterEmailIds.add(event.id);
+        else laterPendingEmails.push(event);
         return reviewed;
       });
       const window = [
@@ -5701,6 +5713,7 @@ async function processEmailThreadPages(
             linkedContext,
             completeEmailIds,
             reviewedLaterEmailIds,
+            laterPendingEmails,
             reviewAnchorRawEventId: last.id,
             reviewAnchorQuietUntil: review.quietUntil,
           },
@@ -6342,6 +6355,7 @@ function buildPromptParts(args: {
   authorUserId: string | null;
   completeEmailIds?: ReadonlySet<string> | undefined;
   reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
+  laterPendingEmails?: conversationReview.ConversationEvidenceEvent[] | undefined;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
   referenceDocuments: {
@@ -6492,7 +6506,21 @@ function buildPromptParts(args: {
     })}`;
   const window = args.conversationWindow ?? [];
   const completeEmails = window.filter((event) => args.completeEmailIds?.has(event.id));
+  const laterDecisions = (args.laterPendingEmails ?? []).flatMap((event) => {
+    const statements = event.contentText
+      .split(/(?<=[.!?])\s+|\n+/u)
+      .filter((sentence) => suggestions.explicitLifecycleState(sentence));
+    return statements.length ? [formatWindowEvent(event, statements.join('\n'))] : [];
+  });
   const evidence = [
+    ...(laterDecisions.length
+      ? [
+          '# Later pending email decisions',
+          'Use these later decisions to rule out stale lifecycle changes from the current page. These emails receive their own review and cannot support new proposals on this page.',
+          ...laterDecisions,
+          '',
+        ]
+      : []),
     args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
     ...(args.conversationWindow
       ? window

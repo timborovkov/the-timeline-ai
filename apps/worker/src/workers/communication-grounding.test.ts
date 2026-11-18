@@ -2822,6 +2822,8 @@ test('all lifecycle transitions reject future and hypothetical predicates', () =
     ['will reopen tomorrow', 'todo'],
     ['will eventually be done tomorrow', 'done'],
     ['has to be completed tomorrow', 'done'],
+    ['can be completed tomorrow', 'done'],
+    ['is able to be completed tomorrow', 'done'],
   ] as const) {
     const quote = `Review retention policy ${phrase}.`;
     expect(
