@@ -682,6 +682,42 @@ describe('explicit completion among recalled candidates', () => {
       ).toEqual([]);
     }
   });
+  it('orders an undated nested forward before the dated enclosing message', () => {
+    const contentText = [
+      'Forwarded message 1:',
+      'From: Jordan <jordan@example.test>',
+      'Date: Thu, 11 Jun 2026 08:00:00 GMT',
+      '',
+      'Review access matrix is not done.',
+      '',
+      'Forwarded message 2:',
+      'From: Lee <lee@example.test>',
+      '',
+      'Review access matrix is done.',
+    ].join('\n');
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        sourceEvidence: [
+          { source: 'email', occurredAt: new Date('2026-06-12T08:00:00Z'), contentText },
+        ],
+        relatedOpenWork,
+        relatedOpenWorkIds: ['access', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'access',
+                title: 'Access review',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
   it('preserves the latest affirmative completion after a denial', () => {
     const bundles = [
       {

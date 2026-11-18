@@ -534,24 +534,21 @@ export function chronologicalLifecycleEvidence(
     .flatMap((event) => {
       if (event.source !== 'email') return [event];
       const { intro, forwarded } = splitStoredEmailContent(event.contentText);
-      return [
-        ...forwarded.reverse().flatMap((message) => {
-          if (!message.body) return [];
-          const sentAt = message.date ? Date.parse(message.date) : Number.NaN;
-          const envelope = event.occurredAt?.getTime();
-          return [
-            {
-              ...event,
-              contentText: message.body,
-              occurredAt:
-                envelope !== undefined && Number.isFinite(sentAt)
-                  ? new Date(Math.min(sentAt, envelope))
-                  : event.occurredAt,
-            },
-          ];
-        }),
-        { ...event, contentText: intro },
-      ];
+      let enclosingTime = event.occurredAt?.getTime();
+      const nested = forwarded.flatMap((message) => {
+        const sentAt = message.date ? Date.parse(message.date) : Number.NaN;
+        if (Number.isFinite(sentAt)) enclosingTime = Math.min(sentAt, enclosingTime ?? sentAt);
+        return message.body
+          ? [
+              {
+                ...event,
+                contentText: message.body,
+                occurredAt: enclosingTime === undefined ? undefined : new Date(enclosingTime),
+              },
+            ]
+          : [];
+      });
+      return [...nested.reverse(), { ...event, contentText: intro }];
     })
     .sort(
       (first, second) => (first.occurredAt?.getTime() ?? 0) - (second.occurredAt?.getTime() ?? 0),

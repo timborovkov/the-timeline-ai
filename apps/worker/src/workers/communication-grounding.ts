@@ -547,13 +547,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
   const chronology = chronologicalLifecycleEvidence(
-    args.sources
-      .filter((source) => !unsafe(source.text))
-      .map((source) => ({
-        ...source,
-        source: source.source ?? args.source,
-        contentText: source.text,
-      })),
+    args.sources.map((source) => ({
+      ...source,
+      source: source.source ?? args.source,
+      contentText: source.text,
+    })),
   );
   const packet = normalize(args.packet);
   function lifecycleSuperseded(support: Support, names: string[]): boolean {
@@ -580,6 +578,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const state = explicitLifecycleState(sentence);
         if (
           state &&
+          safeSourceQuote(event.contentText, sentence.trim()) &&
           packet.includes(normalize(sentence)) &&
           subjects.some((subject) => subject?.test(normalize(state.subject)))
         ) {
