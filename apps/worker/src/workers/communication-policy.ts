@@ -1,5 +1,5 @@
 /** Shared meaning for human communications; capture, attribution and permissions remain source-specific. */
-export const COMMUNICATION_POLICY_VERSION = 'communication-context-v65';
+export const COMMUNICATION_POLICY_VERSION = 'communication-context-v66';
 export function isHumanCommunication(source: string): boolean {
   return source === 'email' || source === 'slack' || source === 'telegram';
 }

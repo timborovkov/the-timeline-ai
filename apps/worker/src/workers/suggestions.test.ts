@@ -4058,7 +4058,7 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
-  it('keeps source deadlines after qualifying a distinct scoped task name', async () => {
+  it('keeps source deadlines and links when qualifying a scoped task', async () => {
     const north = crypto.randomUUID();
     const south = crypto.randomUUID();
     const title = 'Review retention policy';
@@ -4075,10 +4075,11 @@ describe('processSuggestionJobForTests', () => {
     const rawEventId = crypto.randomUUID();
     const dueAt = '2026-06-12T09:00:00.000Z';
     const quote = `${title} for Southstar Audit is due June 12, 2026 at 09:00 UTC.`;
+    const relationship = `${title} is for Southstar Audit.`;
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'email',
-      text: quote,
+      text: `${relationship}\n${quote}`,
       sourceMetadata: {
         extracted_at: REFERENCE_DATE.toISOString(),
         extraction_model_version: 'fixture',
@@ -4096,8 +4097,28 @@ describe('processSuggestionJobForTests', () => {
                 operation: 'create',
                 targetKind: 'task',
                 title,
-                proposedPayload: { canonicalName: title, metadata: { companyId: south }, dueAt },
+                proposedPayload: {
+                  canonicalName: title,
+                  localRef: 'review-policy',
+                  metadata: { companyId: south },
+                  dueAt,
+                },
                 grounding: [{ field: 'dueAt', subject: title, value: dueAt, quote, rawEventId }],
+              },
+              {
+                operation: 'create',
+                targetKind: 'object_relationship',
+                title: 'Link the retention review to Southstar Audit',
+                proposedPayload: { kind: 'related', fromRef: 'review-policy', toEntityId: south },
+                grounding: [
+                  {
+                    field: 'customer',
+                    subject: title,
+                    value: south,
+                    quote: relationship,
+                    rawEventId,
+                  },
+                ],
               },
             ],
           },
@@ -4109,11 +4130,16 @@ describe('processSuggestionJobForTests', () => {
       { teamId: TEAM_ID, rawEventId },
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
-    const [task] = await db.select().from(agentSuggestionItems);
+    const results = await db.select().from(agentSuggestionItems);
+    const task = results.find((item) => item.targetKind === 'task');
     expect(task).toMatchObject({
       operation: 'create',
       targetKind: 'task',
       proposedPayload: { canonicalName: `${title} (Southstar Audit)`, aliases: [title], dueAt },
+    });
+    expect(results.find((item) => item.targetKind === 'object_relationship')).toMatchObject({
+      operation: 'create',
+      proposedPayload: { kind: 'related', fromRef: 'review-policy', toEntityId: south },
     });
   });
 
@@ -9645,7 +9671,7 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it.each([false, true])('reviews an email backlog (correction=%s)', async (corrected) => {
-    const ids = Array.from({ length: 26 }, () => crypto.randomUUID());
+    const ids = Array.from({ length: corrected ? 50 : 26 }, () => crypto.randomUUID());
     const root = ids[0];
     const last = ids.at(-1);
     if (!root || !last) throw new Error('Missing email thread fixtures');
@@ -9665,7 +9691,7 @@ describe('processSuggestionJobForTests', () => {
           ? corrected
             ? completion
             : 'Please prepare the compliance register.'
-          : corrected && id === last
+          : corrected && index === 24
             ? correction
             : `Thread message ${index}.`,
       sourceMetadata: {
@@ -9741,7 +9767,7 @@ describe('processSuggestionJobForTests', () => {
     expect(prompts[0]).toContain(
       corrected ? completion : 'Please prepare the compliance register.',
     );
-    expect(prompts.at(-1)).toContain(corrected ? correction : 'Thread message 25.');
+    expect(prompts.at(-1)).toContain(`Thread message ${ids.length - 1}.`);
     if (corrected) expect(prompts[0]).toContain(correction);
     const [review] = await db
       .select()

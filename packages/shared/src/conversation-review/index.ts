@@ -269,14 +269,15 @@ export async function buildConversationEvidenceWindow(
   return [reservedRoot, ...history];
 }
 
-/** Read pending email in chronological order independently of the bounded context window. */
-export async function listUnreviewedEmailEvents(
+/** Read one authorized email page through an exact review anchor. */
+export async function listEmailThreadEvents(
   db: Db,
   args: {
     teamId: string;
     identity: ConversationIdentity;
     through: { id: string; occurredAt: Date };
-    reviewId: string;
+    after?: { id: string; occurredAt: Date };
+    unreviewedBy?: string;
   },
 ): Promise<(typeof rawEvents.$inferSelect)[]> {
   return db
@@ -290,7 +291,12 @@ export async function listUnreviewedEmailEvents(
         sql`length(btrim(${rawEvents.contentText})) > 0`,
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
         sql`(${rawEvents.occurredAt}, ${rawEvents.id}) <= (${args.through.occurredAt.toISOString()}::timestamptz, ${args.through.id}::uuid)`,
-        sql`(${rawEvents.sourceMetadata} ->> 'email_thread_review_id') IS DISTINCT FROM ${args.reviewId}`,
+        args.after
+          ? sql`(${rawEvents.occurredAt}, ${rawEvents.id}) > (${args.after.occurredAt.toISOString()}::timestamptz, ${args.after.id}::uuid)`
+          : undefined,
+        args.unreviewedBy
+          ? sql`(${rawEvents.sourceMetadata} ->> 'email_thread_review_id') IS DISTINCT FROM ${args.unreviewedBy}`
+          : undefined,
       ),
     )
     .orderBy(asc(rawEvents.occurredAt), asc(rawEvents.id))

@@ -122,6 +122,30 @@ test('first-person commitments in Spanish attribute only the verified speaker', 
   }
 });
 
+test('quoted chat commitments do not assign the outer sender', () => {
+  const title = 'Review access matrix';
+  const quote = 'I will review access matrix.';
+  for (const source of ['slack', 'telegram']) {
+    for (const text of [
+      `Bob wrote:\n> ${quote}`,
+      `Bob shared:\n>>> Earlier message\n${quote}`,
+      `Bob wrote: “${quote}”`,
+      `Bob says “${quote}”`,
+      quote,
+    ]) {
+      const result = run(
+        text,
+        { assigneeUserId: alice },
+        [support('assignee', quote, alice, title)],
+        { source, taskTitle: title },
+      );
+      expect(result[0]?.items[0]?.proposedPayload.assigneeUserId).toBe(
+        text === quote ? alice : undefined,
+      );
+    }
+  }
+});
+
 test('negated first-person commitments cannot assign the speaker', () => {
   for (const [taskTitle, text] of [
     ['Política de retención', 'No revisaré la política de retención.'],

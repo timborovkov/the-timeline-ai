@@ -96,6 +96,43 @@ function safeSourceQuote(text: string, quote: string): boolean {
     if (before.lastIndexOf(`<${tag}>`) > before.lastIndexOf(`</${tag}>`)) return false;
   return true;
 }
+
+interface EmailLifecycleStatement {
+  id: string;
+  contentText: string;
+  occurredAt: Date;
+}
+
+/** Retain safe lifecycle statements with their actual forwarded-message times. */
+export function emailLifecycleStatements(
+  event: EmailLifecycleStatement,
+): EmailLifecycleStatement[] {
+  return chronologicalLifecycleEvidence([{ ...event, source: 'email' }]).flatMap((part) =>
+    part.contentText.split(/(?<=[.!?])\s+|\n+/u).flatMap((sentence) =>
+      explicitLifecycleState(sentence) && safeSourceQuote(part.contentText, sentence.trim())
+        ? [
+            {
+              id: event.id,
+              contentText: sentence.trim(),
+              occurredAt: part.occurredAt ?? event.occurredAt,
+            },
+          ]
+        : [],
+    ),
+  );
+}
+
+function isOriginalChatCommitment(text: string, at: number): boolean {
+  const before = text.slice(0, at);
+  const linePrefix = before.slice(before.lastIndexOf('\n') + 1);
+  return (
+    !/^\s*(?:>|&gt;)/u.test(linePrefix) &&
+    !/^(?:[\t ]*)(?:>>>|&gt;&gt;&gt;)/mu.test(before) &&
+    !/\b(?:said|says|wrote|writes|texted|replied|shared)\s*:\s*["“']?\s*$/iu.test(linePrefix) &&
+    !/["“`]\s*$/u.test(linePrefix) &&
+    before.split('```').length % 2 === 1
+  );
+}
 function deadlineTimeMatches(day: string, tail: string, target: number, timezone: string): boolean {
   try {
     const start = dateOnlyEventRange(day, timezone).startAt;
@@ -561,7 +598,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     occurredAt?: Date;
   }[];
   reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
-  laterPendingEmails?: readonly { id: string; contentText: string; occurredAt: Date }[] | undefined;
+  emailLifecycleLookahead?: readonly EmailLifecycleStatement[] | undefined;
   members: { userId: string; name: string | null; email: string | null }[];
   hubs: { id: string; name: string; type: string; aliases?: string[] }[];
   source: string;
@@ -577,11 +614,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
       source: source.source ?? args.source,
       contentText: source.text,
     })),
-    ...(args.laterPendingEmails ?? []).map((event) => ({ ...event, source: 'email' })),
+    ...(args.emailLifecycleLookahead ?? []),
   ]);
   const lifecycleVetoIds = new Set([
     ...(args.reviewedLaterEmailIds ?? []),
-    ...(args.laterPendingEmails ?? []).map((event) => event.id),
+    ...(args.emailLifecycleLookahead ?? []).map((event) => event.id),
   ]);
   const packet = normalize(args.packet);
   function lifecycleSuperseded(support: Support, names: string[]): boolean {
@@ -647,7 +684,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         target?.name ??
           (typeof proposedName === 'string' && proposedName.trim() ? proposedName : item.title),
       ];
-      if (!target && item.scopedSourceIdentity) names.push(item.scopedSourceIdentity.name);
+      if (!target && item.scopedSourceIdentity) names.unshift(item.scopedSourceIdentity.name);
       if (target?.type !== 'task') return names;
       return [
         ...names,
@@ -935,6 +972,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
         if (!('fromRef' in normalizedRefs)) delete payload.fromRef;
         if (!('toRef' in normalizedRefs)) delete payload.toRef;
         Object.assign(payload, normalizedRefs);
+        const localEndpoint = (object: T, id: string) => ({
+          id,
+          aliases: [] as string[],
+          type:
+            object.targetKind === 'task'
+              ? 'task'
+              : typeof object.proposedPayload.type === 'string'
+                ? object.proposedPayload.type
+                : '',
+          name:
+            typeof object.proposedPayload.canonicalName === 'string'
+              ? object.proposedPayload.canonicalName
+              : object.title,
+          scopedSourceIdentity: object.scopedSourceIdentity,
+        });
         const endpoint = (side: 'from' | 'to') => {
           const id = payload[`${side}EntityId`];
           if (typeof id === 'string') {
@@ -942,24 +994,20 @@ export function groundCommunicationBundles<T extends Item>(args: {
               args.objects?.find((object) => object.id === id) ??
               args.hubs.find((hub) => hub.id === id);
             return object?.name
-              ? { id, name: object.name, type: object.type, aliases: object.aliases ?? [] }
+              ? {
+                  id,
+                  name: object.name,
+                  type: object.type,
+                  aliases: object.aliases ?? [],
+                  scopedSourceIdentity: undefined,
+                }
               : null;
           }
           const ref = payload[`${side}Ref`];
           const object = bundle.items.find(
             (candidate) => candidate.proposedPayload.localRef === ref && typeof ref === 'string',
           );
-          return object
-            ? {
-                id: String(ref),
-                aliases: [] as string[],
-                type: object.targetKind === 'task' ? 'task' : object.proposedPayload.type,
-                name:
-                  typeof object.proposedPayload.canonicalName === 'string'
-                    ? object.proposedPayload.canonicalName
-                    : object.title,
-              }
-            : null;
+          return object ? localEndpoint(object, String(ref)) : null;
         };
         const from = endpoint('from'),
           to = endpoint('to');
@@ -977,28 +1025,24 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 candidate.operation === 'create' &&
                 (candidate.targetKind === 'object' || candidate.targetKind === 'task'),
             )
-            .map((candidate) => ({
-              id:
+            .map((candidate) =>
+              localEndpoint(
+                candidate,
                 typeof candidate.proposedPayload.localRef === 'string'
                   ? candidate.proposedPayload.localRef
                   : '',
-              name:
-                typeof candidate.proposedPayload.canonicalName === 'string'
-                  ? candidate.proposedPayload.canonicalName
-                  : candidate.title,
-              type:
-                candidate.targetKind === 'task'
-                  ? 'task'
-                  : typeof candidate.proposedPayload.type === 'string'
-                    ? candidate.proposedPayload.type
-                    : '',
-              aliases: [] as string[],
-            })),
+              ),
+            ),
         ];
+        const taskEndpointIdentity = (object: NonNullable<typeof from>) => ({
+          title: object.name,
+          targetId: object.scopedSourceIdentity ? undefined : object.id,
+          scopedSourceIdentity: object.scopedSourceIdentity,
+        });
         const namesEndpoint = (quote: string, object: NonNullable<typeof from>) =>
           object.type === 'task'
-            ? taskEvidenceUnambiguous({ title: object.name, targetId: object.id }, quote, known) &&
-              taskIdentityNames({ title: object.name, targetId: object.id }, known).some((name) =>
+            ? taskEvidenceUnambiguous(taskEndpointIdentity(object), quote, known) &&
+              taskIdentityNames(taskEndpointIdentity(object), known).some((name) =>
                 namesTask(quote, name),
               )
             : mentions(quote, object.name) ||
@@ -1128,12 +1172,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
           to &&
           linkSupports.some((support) => {
             const taskEndpoint = from.type === 'task' ? from : to.type === 'task' ? to : null;
+            const taskName = taskEndpoint
+              ? (taskIdentityNames(taskEndpointIdentity(taskEndpoint), known).find((name) =>
+                  namesTask(support.quote, name),
+                ) ?? taskEndpoint.name)
+              : undefined;
             const assertion = taskEndpoint
-              ? (taskClause(support.quote, taskEndpoint.name) ?? support.quote)
+              ? (taskClause(support.quote, taskName ?? taskEndpoint.name) ?? support.quote)
               : support.quote;
             if (
               support.quote.includes('?') ||
-              ![to.id, to.name, from.id, from.name].includes(support.value) ||
+              ![to.id, to.name, from.id, from.name, taskName].includes(support.value) ||
               /[?]|\b(?:maybe|perhaps|undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i.test(
                 assertion,
               ) ||
@@ -1150,7 +1199,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               return false;
             if (taskProjectChild) {
               if (support.field !== 'project' || !namesEndpoint(assertion, from)) return false;
-              const membership = taskAssertion(assertion, from.name);
+              const membership = taskAssertion(assertion, taskName ?? from.name);
               if (!membership || !namesEndpoint(membership, from)) return false;
               const projects = mentionedProjectIds(
                 membership,
@@ -1165,13 +1214,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
               return [to.name, ...to.aliases].some(
                 (name) =>
                   namesEndpoint(name, to) &&
-                  affirmativeProjectMembership(membership, from.name, name, false),
+                  affirmativeProjectMembership(membership, taskName ?? from.name, name, false),
               );
             }
             const linkInstruction =
               /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i;
             const link = linkInstruction.exec(assertion.trim());
             const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
+              (object.scopedSourceIdentity !== undefined &&
+                [object.scopedSourceIdentity.name, `the ${object.scopedSourceIdentity.name}`].some(
+                  (name) => normalize(name) === normalize(reference),
+                ) &&
+                namesEndpoint(assertion, object)) ||
               [object.name, ...object.aliases].some(
                 (name) =>
                   [normalize(name), `the ${normalize(name)}`].includes(normalize(reference)) &&
@@ -1197,13 +1251,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
               const project = from.type === 'project' ? from : to.type === 'project' ? to : null;
               if (taskEndpoint) {
                 const hub = from === taskEndpoint ? to : from;
-                const association = taskAssertion(assertion, taskEndpoint.name);
+                const identity = taskName ?? taskEndpoint.name;
+                const association = taskAssertion(assertion, identity);
                 if (!association || !namesEndpoint(association, taskEndpoint)) return false;
                 const type = typeof hub.type === 'string' ? hub.type : '';
                 return [hub.name, ...hub.aliases].some(
                   (name) =>
                     namesEndpoint(name, hub) &&
-                    affirmativeTaskHub(association, taskEndpoint.name, name, type) &&
+                    affirmativeTaskHub(association, identity, name, type) &&
                     !(
                       type === 'company' &&
                       known.some(
@@ -1214,7 +1269,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
                             (otherName) =>
                               otherName &&
                               normalize(otherName).startsWith(`${normalize(name)} `) &&
-                              affirmativeTaskHub(association, taskEndpoint.name, otherName, type),
+                              affirmativeTaskHub(association, identity, otherName, type),
                           ),
                       )
                     ),
@@ -1490,7 +1545,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
           clause &&
           ((source?.source ?? args.source) === 'email'
             ? emailSpeaker
-            : source?.authorUserId === member.userId) &&
+            : source?.authorUserId === member.userId &&
+              uniqueCommitment &&
+              isOriginalChatCommitment(source.text, commitmentAt)) &&
           selfAction &&
           matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
           !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(

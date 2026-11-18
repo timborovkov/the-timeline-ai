@@ -70,6 +70,7 @@ import {
 } from '#src/workers/communication-audit.js';
 import {
   communicationGroundingSchema,
+  emailLifecycleStatements,
   groundCommunicationBundles,
   normalizeKnownRelationshipReferences,
 } from '#src/workers/communication-grounding.js';
@@ -3910,7 +3911,7 @@ async function runSuggestionExtraction(
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
       completeEmailIds?: ReadonlySet<string>;
       reviewedLaterEmailIds?: ReadonlySet<string>;
-      laterPendingEmails?: conversationReview.ConversationEvidenceEvent[];
+      emailLifecycleLookahead?: ReturnType<typeof emailLifecycleStatements>;
       reviewAnchorRawEventId?: string;
       reviewAnchorQuietUntil?: Date;
     };
@@ -4385,7 +4386,7 @@ async function runSuggestionExtraction(
     conversationWindow: args.conversation?.window ?? null,
     completeEmailIds: args.conversation?.completeEmailIds,
     reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
-    laterPendingEmails: args.conversation?.laterPendingEmails,
+    emailLifecycleLookahead: args.conversation?.emailLifecycleLookahead,
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
     referenceDocuments,
   });
@@ -5032,7 +5033,7 @@ async function runSuggestionExtraction(
     ? groundCommunicationBundles({
         verifiedLifecycleAuditIds,
         reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
-        laterPendingEmails: args.conversation?.laterPendingEmails,
+        emailLifecycleLookahead: args.conversation?.emailLifecycleLookahead,
         bundles: enrichedBundles,
         packet: prompt,
         source: row.source,
@@ -5639,19 +5640,54 @@ async function processEmailThreadPages(
   const metadata = recordFromUnknown(review.metadata);
   let hasProposal =
     metadata.email_page_anchor_id === last.id && metadata.email_page_has_proposal === true;
+  const thread = { teamId: review.teamId, identity, through: last };
+  // One keyset scan per review keeps later corrections independent of both
+  // model context and page size. Retain only eligible lifecycle statements.
+  let followups:
+    | {
+        event: Pick<RawEventRow, 'id' | 'occurredAt'>;
+        statements: ReturnType<typeof emailLifecycleStatements>;
+      }[]
+    | undefined;
+  const laterThan = (
+    event: Pick<RawEventRow, 'id' | 'occurredAt'>,
+    anchor: Pick<RawEventRow, 'id' | 'occurredAt'>,
+  ) =>
+    event.occurredAt > anchor.occurredAt ||
+    (event.occurredAt.getTime() === anchor.occurredAt.getTime() && event.id > anchor.id);
   while (await isConversationReviewCurrent(deps.db, review.id, last.id, review.quietUntil)) {
-    let pending = await conversationReview.listUnreviewedEmailEvents(deps.db, {
-      teamId: review.teamId,
-      identity,
-      through: last,
-      reviewId: review.id,
+    let pending = await conversationReview.listEmailThreadEvents(deps.db, {
+      ...thread,
+      unreviewedBy: review.id,
     });
-    if (!pending.length) {
+    const firstPending = pending[0];
+    if (!firstPending) {
       await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action', {
         ...(sourceRefs.length ? { sourceRefs } : {}),
         expectedQuietUntil: review.quietUntil,
       });
       return;
+    }
+    if (!followups) {
+      followups = [];
+      let after = firstPending;
+      while (laterThan(last, after)) {
+        const events = await conversationReview.listEmailThreadEvents(deps.db, {
+          ...thread,
+          after,
+        });
+        const tail = events.at(-1);
+        if (!tail) break;
+        for (const { id, occurredAt, contentText } of events) {
+          const statements = emailLifecycleStatements({
+            id,
+            occurredAt,
+            contentText: contentText ?? '',
+          });
+          if (statements.length) followups.push({ event: { id, occurredAt }, statements });
+        }
+        after = tail;
+      }
     }
 
     let pageAnchor: typeof rawEvents.$inferSelect;
@@ -5664,7 +5700,6 @@ async function processEmailThreadPages(
       pageAnchor = anchor;
       const completeEmailIds = new Set(pending.map((event) => event.id));
       const reviewedLaterEmailIds = new Set<string>();
-      const laterPendingEmails: conversationReview.ConversationEvidenceEvent[] = [];
       const context = await conversationReview.buildConversationEvidenceWindow(deps.db, {
         teamId: review.teamId,
         identity,
@@ -5672,16 +5707,12 @@ async function processEmailThreadPages(
       });
       const relevantContext = context.filter((event) => {
         if (completeEmailIds.has(event.id)) return false;
-        const newer =
-          event.occurredAt > anchor.occurredAt ||
-          (event.occurredAt.getTime() === anchor.occurredAt.getTime() && event.id > anchor.id);
-        if (!newer) return true;
+        if (!laterThan(event, anchor)) return true;
         // Keep later decisions available for chronology without making
         // already-reviewed bodies part of the pending page's required budget.
         const reviewed =
           recordFromUnknown(event.sourceMetadata).email_thread_review_id === review.id;
         if (reviewed) reviewedLaterEmailIds.add(event.id);
-        else laterPendingEmails.push(event);
         return reviewed;
       });
       const window = [
@@ -5713,7 +5744,11 @@ async function processEmailThreadPages(
             linkedContext,
             completeEmailIds,
             reviewedLaterEmailIds,
-            laterPendingEmails,
+            emailLifecycleLookahead: followups
+              .filter(
+                ({ event }) => laterThan(event, anchor) && !reviewedLaterEmailIds.has(event.id),
+              )
+              .flatMap(({ statements }) => statements),
             reviewAnchorRawEventId: last.id,
             reviewAnchorQuietUntil: review.quietUntil,
           },
@@ -6355,7 +6390,7 @@ function buildPromptParts(args: {
   authorUserId: string | null;
   completeEmailIds?: ReadonlySet<string> | undefined;
   reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
-  laterPendingEmails?: conversationReview.ConversationEvidenceEvent[] | undefined;
+  emailLifecycleLookahead?: ReturnType<typeof emailLifecycleStatements> | undefined;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
   referenceDocuments: {
@@ -6506,17 +6541,18 @@ function buildPromptParts(args: {
     })}`;
   const window = args.conversationWindow ?? [];
   const completeEmails = window.filter((event) => args.completeEmailIds?.has(event.id));
-  const laterDecisions = (args.laterPendingEmails ?? []).flatMap((event) => {
-    const statements = event.contentText
-      .split(/(?<=[.!?])\s+|\n+/u)
-      .filter((sentence) => suggestions.explicitLifecycleState(sentence));
-    return statements.length ? [formatWindowEvent(event, statements.join('\n'))] : [];
-  });
+  const laterDecisions = (args.emailLifecycleLookahead ?? []).map(
+    (event) =>
+      `- [${event.id} ${event.occurredAt.toISOString()}] ${fenceExternalContent(event.contentText, {
+        source: 'email-thread-lifecycle',
+        eventId: event.id,
+      })}`,
+  );
   const evidence = [
     ...(laterDecisions.length
       ? [
-          '# Later pending email decisions',
-          'Use these later decisions to rule out stale lifecycle changes from the current page. These emails receive their own review and cannot support new proposals on this page.',
+          '# Later email lifecycle decisions',
+          'Use these decisions to rule out stale lifecycle changes from the current page. They cannot support new proposals on this page.',
           ...laterDecisions,
           '',
         ]

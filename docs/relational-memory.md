@@ -37,9 +37,10 @@ reserved for delayed replies. Pending emails are read in chronological pages
 with their full bodies. When a late arrival follows longer reviewed messages,
 the prompt keeps the pending body and fits later reviewed excerpts in the
 remaining space, including explicit lifecycle statements when they fit. The
-grounding check can use an explicit correction from the full authorized later
-message to reject a stale lifecycle change, including corrections from a pending
-page. Pending pages supply only lifecycle checks until their own extraction.
+worker scans authorized later emails through the fixed review anchor and keeps
+safe lifecycle statements independently of the prompt window. Corrections can
+reject a stale lifecycle change across any pending page. Pending pages supply
+only lifecycle checks until their own extraction.
 Positive claims still require visible citations. Private replies never enter the
 window. Legacy email captures without a thread root retain event-local extraction.
 
