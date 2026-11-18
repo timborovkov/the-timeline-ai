@@ -361,7 +361,7 @@ Later definitive assignments and explicit removals supersede earlier claims
 for the same role in visible context or the authorized email thread.
 Definitive primary-project assignments and removals follow the same chronology.
 Conversation links require affirmative source evidence. A project-scoped
-request can route each explicitly requested deliverable in that statement.
+request or commitment can route each explicitly named deliverable in that statement.
 A uniquely named provider container can route unscoped task creates when the
 conversation supplies no explicit routing language or standalone cue.
 

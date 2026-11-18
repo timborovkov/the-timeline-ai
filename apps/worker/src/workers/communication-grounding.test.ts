@@ -349,6 +349,7 @@ test('later definitive project assertions supersede clears and attachments', () 
   const projectId = 'cedar-launch';
   for (const [first, later, value, selectedLater, retained] of [
     [removed, attached, null, false, false],
+    [removed, 'Maya: For Cedar Launch, I will review the retention policy.', null, false, false],
     [removed, attached, projectId, true, true],
     [attached, removed, projectId, false, false],
     [attached, `${title} is not part of Cedar Launch.`, projectId, false, false],
@@ -842,6 +843,9 @@ test('creating a project through task approval requires affirmative membership',
     ],
     ['Review retention policy belongs to Compliance / another project.', undefined],
     ['For Compliance, please review retention policy.', 'Compliance'],
+    ['Maya: For Compliance, I will review the retention policy.', 'Compliance'],
+    ['Maya: For Compliance, I might review the retention policy.', undefined],
+    ['Example: For Compliance, I will review the retention policy.', undefined],
   ] as const) {
     expect(
       run(quote, { createProjectName: 'Compliance' }, [support('project', quote, 'Compliance')])[0]

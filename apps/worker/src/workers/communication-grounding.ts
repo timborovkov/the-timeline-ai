@@ -500,7 +500,14 @@ function mentionedProjectIds(
 }
 
 function groupedProjectRequest(assertion: string, subject: string, projectName: string): boolean {
-  const statement = normalize(assertion);
+  const original = assertion.trim();
+  const speaker =
+    /^(?:\p{Lu}[\p{L}\p{M}'’-]* ){0,2}\p{Lu}[\p{L}\p{M}'’-]*:\s+(?=[Ff][Oo][Rr]\s)/u.exec(original);
+  const statement = normalize(
+    speaker && !/\b(?:example|hypothetical|scenario|template)\b/i.test(speaker[0])
+      ? original.slice(speaker[0].length)
+      : original,
+  );
   if (/[.!?;]\s/u.test(statement)) return false;
   const project = normalize(projectName);
   const scopeSuffix = ` for ${project}`;
@@ -515,7 +522,10 @@ function groupedProjectRequest(assertion: string, subject: string, projectName: 
     statement,
   );
   if (!group) return false;
-  const request = new RegExp(`^(?:please )?${task}(?![\\p{L}\\p{N}])`, 'iu');
+  const request = new RegExp(
+    `^(?:(?:please|(?:i|we) (?:will|shall)|(?:i|we)[’']ll) )?${task}(?![\\p{L}\\p{N}])`,
+    'iu',
+  );
   return statement
     .slice(group[0].length)
     .split(/\s+and\s+|,\s*/u)
