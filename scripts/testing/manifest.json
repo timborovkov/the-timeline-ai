@@ -1799,6 +1799,9 @@
   "packages/shared/src/billing/customer-identity.test.ts": {
     "group": "pglite"
   },
+  "packages/shared/src/billing/errors.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/billing/openrouter-usage.test.ts": {
     "group": "unit"
   },
