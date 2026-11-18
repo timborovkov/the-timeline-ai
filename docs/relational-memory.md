@@ -354,10 +354,10 @@ entry. Relative and yearless deadlines use the cited message's time and workspac
 timezone. A dated forwarded message supplies its own reference time. Later
 definitive assertions from visible context or the authorized email thread
 supersede older deadlines for the same task.
-An assignee ID must identify an available member; unresolved named people should
-remain named evidence rather than an arbitrary member assignment. Later
-definite assignments in visible context or the authorized email thread
-supersede earlier commitments. Explicit withdrawals invalidate the affected owner.
+An assignee ID must identify an available member. Unresolved named people remain
+named evidence. Owner and assignee claims each need support for their role.
+Later definitive assignments and explicit removals supersede earlier claims
+for the same role in visible context or the authorized email thread.
 
 The source window must be interpreted in order. Work introduced and conclusively
 finished in one meeting should yield its final supported state. “After QA, mark it

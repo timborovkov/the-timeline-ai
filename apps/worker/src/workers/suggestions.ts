@@ -5001,7 +5001,7 @@ async function runSuggestionExtraction(
           normalizeBundleAgainstExistingObjects(
             bundle,
             matchingRowsForCreates,
-            text,
+            evidenceText,
             nameOccupancy,
           ),
         )

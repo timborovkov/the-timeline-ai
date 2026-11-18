@@ -233,6 +233,7 @@ test('tentative field removals do not clear approved values', () => {
     ['assigneeUserId', `Unassign ${title}.`, 'assignee', 'unassigned'],
     ['ownerUserId', `Remove the owner for ${title}.`, 'assignee', 'unassigned'],
     ['dueAt', `Remove the deadline for ${title}.`, 'dueAt', 'unset'],
+    ['parentObjectId', `Remove the project assignment for ${title}.`, 'project', 'unset'],
   ] as const) {
     for (const [text, retained] of [
       [quote, true],
@@ -255,6 +256,9 @@ test('later definite ownership supersedes the cited assignment', () => {
     [bob, event, earlier, reassigned, false],
     [alice, newer, reassigned, reassigned, true],
     [bob, event, earlier, 'Unassign Bob from Review retention policy.', false],
+    [bob, event, earlier, 'Unassign Review retention policy.', false],
+    [bob, event, earlier, 'Probably unassign Review retention policy.', true],
+    [bob, event, earlier, 'Remove the owner from Review retention policy.', true],
     [bob, event, earlier, 'Bob will not review retention policy.', false],
     [bob, event, earlier, 'Bob can’t review retention policy.', false],
     [bob, event, earlier, 'I will not review retention policy.', false],
@@ -293,6 +297,34 @@ test('later definite ownership supersedes the cited assignment', () => {
       source: 'slack',
     });
     expect(result[0]?.items[0]?.proposedPayload.assigneeUserId).toBe(retained ? member : undefined);
+  }
+});
+
+test('independent owner and assignee citations preserve both roles in either support order', () => {
+  const owner = `Alice owns ${title}.`;
+  const assignee = 'Bob will review retention policy.';
+  const claims = [support('assignee', owner, alice), support('assignee', assignee, bob)];
+  const payload = { ownerUserId: alice, assigneeUserId: bob };
+  for (const grounding of [claims, [...claims].reverse()]) {
+    expect(
+      run(`${owner} ${assignee}`, payload, grounding, { operation: 'update' })[0]?.items[0]
+        ?.proposedPayload,
+    ).toEqual(payload);
+  }
+});
+
+test('directional task identity distinguishes recipients from sources', () => {
+  const taskTitle = 'Send report to Alice';
+  for (const [quote, expected] of [
+    ['Send report from Alice is done.', undefined],
+    ['Send report to Alice is done.', 'done'],
+  ] as const) {
+    expect(
+      run(quote, { status: 'done' }, [support('status', quote, 'done', taskTitle)], {
+        operation: 'update',
+        taskTitle,
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBe(expected);
   }
 });
 

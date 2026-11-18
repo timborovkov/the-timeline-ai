@@ -4058,7 +4058,7 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
-  it('keeps source deadlines and links when qualifying a scoped task', async () => {
+  it.each([false, true])('qualifies a scoped task (threaded=%s)', async (threaded) => {
     const north = crypto.randomUUID();
     const south = crypto.randomUUID();
     const title = 'Review retention policy';
@@ -4073,6 +4073,7 @@ describe('processSuggestionJobForTests', () => {
       },
     ]);
     const rawEventId = crypto.randomUUID();
+    const reviewId = crypto.randomUUID();
     const dueAt = '2026-06-12T09:00:00.000Z';
     const quote = `${title} for Southstar Audit is due June 12, 2026 at 09:00 UTC.`;
     const relationship = `${title} is for Southstar Audit.`;
@@ -4083,8 +4084,32 @@ describe('processSuggestionJobForTests', () => {
       sourceMetadata: {
         extracted_at: REFERENCE_DATE.toISOString(),
         extraction_model_version: 'fixture',
+        ...(threaded ? { thread_root_id: rawEventId, email_thread_review_id: reviewId } : {}),
       },
     });
+    if (threaded) {
+      const anchor = crypto.randomUUID();
+      await seedRawEvent(db as never, {
+        id: anchor,
+        source: 'email',
+        text: 'Thanks.',
+        occurredAt: new Date(REFERENCE_DATE.getTime() + 60_000),
+        sourceMetadata: {
+          thread_root_id: rawEventId,
+          extracted_at: REFERENCE_DATE.toISOString(),
+          extraction_model_version: 'fixture',
+        },
+      });
+      await db.insert(conversationReviews).values({
+        id: reviewId,
+        teamId: TEAM_ID,
+        source: 'email',
+        status: 'pending',
+        lastRawEventId: anchor,
+        conversationKey: `email:${TEAM_ID}:thread:${rawEventId}`,
+        quietUntil: new Date(0),
+      });
+    }
     const chat = emptyModel().mockResolvedValue({
       model: MODEL_ID,
       object: {
@@ -4127,7 +4152,9 @@ describe('processSuggestionJobForTests', () => {
     });
     await processSuggestionJobForTests(
       { db: db as never },
-      { teamId: TEAM_ID, rawEventId },
+      threaded
+        ? { scope: 'conversation_review', teamId: TEAM_ID, conversationReviewId: reviewId }
+        : { teamId: TEAM_ID, rawEventId },
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
     const results = await db.select().from(agentSuggestionItems);

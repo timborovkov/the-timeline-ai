@@ -19,6 +19,7 @@ export const communicationGroundingSchema = z.object({
   context: z.object({ rawEventId: z.uuid(), quote: z.string().min(3).max(800) }).optional(),
 });
 type Support = z.infer<typeof communicationGroundingSchema>;
+type AssignmentRole = 'owner' | 'assignee';
 interface Item {
   auditId?: string | undefined;
   operation: string;
@@ -46,9 +47,12 @@ const namesTask = (text: string, name: string, requireActionIdentity = false) =>
   const titleWords = (name.match(/[\p{L}\p{N}]+/gu) ?? []).filter((word) => word !== 'a');
   const words = titleWords.map((word) => word.toLowerCase());
   const action = words[0];
+  const directional = /\b(?:to|from|into|onto|towards?|through|against|versus|vs)\b/i.test(name);
   const actionCanBeOmitted = action !== undefined && TASK_ACTIONS.has(action);
   const significant = (actionCanBeOmitted ? words.slice(1) : words).filter(
-    (word) => !['an', 'and', 'for', 'in', 'of', 'on', 'the', 'to', 'with', 'please'].includes(word),
+    (word) =>
+      !['an', 'and', 'for', 'in', 'of', 'on', 'the', 'with', 'please'].includes(word) &&
+      (directional || word !== 'to'),
   );
   if (!significant.length) return mentions(text, name);
   const evidenceWords: string[] = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -68,8 +72,7 @@ const namesTask = (text: string, name: string, requireActionIdentity = false) =>
   }
   // Directional arguments must remain ordered. Non-directional identities
   // may vary in word order, e.g. a customer prefix or “for Customer”.
-  if (!/\b(?:to|from|into|onto|towards?|through|against|versus|vs)\b/i.test(name))
-    return significant.every((word) => evidenceWords.includes(word));
+  if (!directional) return significant.every((word) => evidenceWords.includes(word));
   let previous = -1;
   return significant.every((word) => {
     previous = evidenceWords.indexOf(word, previous + 1);
@@ -662,6 +665,15 @@ function supportedTaskAssertion(support: Support | undefined): string | undefine
   return clause ? taskAssertion(clause, support.subject) : undefined;
 }
 
+function affirmativeFieldClear(assertion: string, subject: string): boolean {
+  const text = normalize(assertion).replaceAll(normalize(subject), '[task]');
+  return (
+    Boolean(text) &&
+    !tentativeAssertion.test(text) &&
+    !/[?]|\b(?:not|never|if|unless|[a-z]+n[’']t)\b/i.test(text)
+  );
+}
+
 /** Canonicalize an existing object ID placed in a local-ref slot, never guessing identity. */
 export function normalizeKnownRelationshipReferences(
   input: Record<string, unknown>,
@@ -810,8 +822,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       occurredAt?: Date,
     ) => {
       if (
-        !tentativeAssertion.test(normalize(assertion).replaceAll(normalize(subject), '[task]')) &&
-        !/\b(?:not|never|if|unless)\b/i.test(assertion) &&
+        affirmativeFieldClear(assertion, subject) &&
         /\b(?:remove|clear) (?:the )?deadline\b/i.test(assertion)
       )
         return { affirmed: new Set<number | null>([null]), denied: new Set<number>() };
@@ -866,7 +877,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
           emailEnvelopeSender: compact.senderEmail ?? null,
         }
       : args.sources.find((source) => source.id === assignment?.rawEventId);
-    const unsupported = { clause: undefined, verified: false, withdrawn: false, canClear: false };
+    const unsupported = {
+      role: undefined,
+      clearRole: undefined,
+      verified: false,
+      withdrawn: false,
+    };
     if (!source || !assignment) return unsupported;
     const enclosing = completeSourceAssertion(source.text, assignment.quote);
     if (!enclosing) return unsupported;
@@ -942,13 +958,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
         `(?:^|\\s)${passiveSubject}(?: task)? (?:is|was|has been|had been) (?:now )?$`,
         'iu',
       ).test(normalize(clause.slice(0, explicitAssignment.index)) + ' ');
+    const ownerAssertion =
+      name && clause
+        ? new RegExp(
+            `${name}\\s+(?:remains|is(?: still)?) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+(?:and|of|for)\\b)`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const ownerTask =
+      clause && ownerAssertion
+        ? /^\s+(?:of|for)\s+(.+)$/i.exec(
+            clause.slice(ownerAssertion.index + ownerAssertion[0].length),
+          )
+        : null;
     const confirmedOwner =
-      name &&
-      clause &&
-      new RegExp(
-        `${name}\\s+(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)`,
-        'iu',
-      ).test(clause);
+      ownerAssertion !== null && (ownerTask === null || matchesAssignedTask(ownerTask[1] ?? ''));
     const named =
       clause &&
       !unresolvedOwner &&
@@ -1046,20 +1070,48 @@ export function groundCommunicationBundles<T extends Item>(args: {
         (explicitWithdrawal !== null &&
           matchesAssignedTask(clause.slice(explicitWithdrawal[0].length))) ||
         (selfDenial !== undefined && matchesAssignedTask(selfDenial)));
+    const role: AssignmentRole =
+      confirmedOwner ||
+      /\bowns\s*$/i.test(namedAction?.[0] ?? '') ||
+      (Boolean(explicitAssignment) && /\bas (?:the )?owner\b/i.test(clause ?? '')) ||
+      /^(?:own|take ownership of|be the owner)\b/i.test(
+        selfAction && clause ? clause.slice(selfAction.index + selfAction[0].length).trim() : '',
+      )
+        ? 'owner'
+        : 'assignee';
+    let clearRole: AssignmentRole | undefined;
+    if (
+      clause &&
+      !unresolvedOwner &&
+      affirmativeFieldClear(surrounding ?? clause, assignment.subject)
+    ) {
+      const clear = normalize(clause);
+      if (
+        /\b(?:remove|clear|unset|unassign) (?:the |its )?owner\b|\bowner\b (?:is |was |has been )?(?:removed|cleared|unassigned)\b/i.test(
+          clear,
+        )
+      )
+        clearRole = 'owner';
+      else if (
+        /\b(?:remove|clear|unset) (?:the |its )?assignee\b/i.test(clear) ||
+        new RegExp(
+          `^(?:please )?unassign (?:the )?${passiveSubject}(?![\\p{L}\\p{N}])|^(?:the )?${passiveSubject} (?:is |was |has been )(?:now )?unassigned\\b`,
+          'iu',
+        ).test(clear)
+      )
+        clearRole = 'assignee';
+    }
     return {
-      clause,
+      role,
+      clearRole,
       verified:
         Boolean(member) && (Boolean(named) || Boolean(self)) && !assignment.quote.includes('?'),
       withdrawn: Boolean(withdrawn),
-      canClear:
-        Boolean(clause) &&
-        !tentative &&
-        !unresolvedOwner &&
-        !/\b(?:not|never|if|unless)\b/i.test(surrounding ?? ''),
     };
   }
   function assignmentSuperseded(
     support: Support,
+    role: AssignmentRole,
     names: string[],
     unambiguous: (assertion: string) => boolean,
   ): boolean {
@@ -1074,9 +1126,12 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const compact = emailStatementByQuote.get(
         `${event.id}:${event.occurredAt?.getTime()}:${normalize(sentence)}`,
       );
+      if (assignmentProof(sentenceSupport, undefined, false, compact).clearRole === role)
+        latest = 'unassigned';
       const owners: string[] = [];
       for (const member of args.members) {
         const proof = assignmentProof(sentenceSupport, member, false, compact);
+        if (proof.role !== role) continue;
         if (proof.withdrawn && latest === member.userId) latest = undefined;
         if (proof.verified) owners.push(member.userId);
       }
@@ -1829,70 +1884,84 @@ export function groundCommunicationBundles<T extends Item>(args: {
         }
       }
       if (type === 'task' || (item.targetKind === 'task' && item.operation === 'update')) {
-        const assignment = supports.find((support) => support.field === 'assignee');
-        const member = args.members.find((member) => member.userId === assignment?.value);
-        const {
-          clause,
-          verified: citedAssignment,
-          canClear,
-        } = assignmentProof(
-          assignment,
-          member,
-          assignment !== undefined && validContexts.has(assignment),
-        );
-        const supportedAssignment =
-          member &&
-          assignment &&
-          citedAssignment &&
-          !assignmentSuperseded(assignment, taskIdentityNames(item), (assertion) =>
-            taskEvidenceUnambiguous(item, assertion),
+        const assignmentSupports = supports.filter((support) => support.field === 'assignee');
+        const assignments = assignmentSupports.flatMap((support) => {
+          const member = args.members.find((member) => member.userId === support.value);
+          const proof = assignmentProof(support, member, validContexts.has(support));
+          const role =
+            support.value === 'unassigned'
+              ? proof.clearRole
+              : proof.verified
+                ? proof.role
+                : undefined;
+          if (
+            !role ||
+            assignmentSuperseded(support, role, taskIdentityNames(item), (assertion) =>
+              taskEvidenceUnambiguous(item, assertion),
+            )
+          )
+            return [];
+          return [{ role, member, value: support.value, support }];
+        });
+        const assignmentFields = [
+          'assigneeUserId',
+          'assigneeName',
+          'ownerUserId',
+          'ownerName',
+        ] as const;
+        // Legacy assignee-only proposals can cite explicit ownership when
+        // the source supplies no separate assignment.
+        if (
+          !Object.hasOwn(payload, 'ownerUserId') &&
+          !Object.hasOwn(payload, 'ownerName') &&
+          !assignments.some((assignment) => assignment.role === 'assignee')
+        ) {
+          const fallback = assignments.filter(
+            (assignment) =>
+              assignment.role === 'owner' &&
+              assignment.member !== undefined &&
+              !assignmentSuperseded(
+                assignment.support,
+                'assignee',
+                taskIdentityNames(item),
+                (assertion) => taskEvidenceUnambiguous(item, assertion),
+              ),
           );
-        // A cited, verified assignment is a concrete claim even if the model
-        // omitted its payload field on a new task. Updates and repairs may have
-        // intentionally protected fields removed. Never overwrite a field or choose
-        // between competing supported owners.
+          assignments.push(
+            ...fallback.map((assignment) => ({ ...assignment, role: 'assignee' as const })),
+          );
+        }
+        const assignees = new Set(
+          assignments.flatMap(({ role, member }) =>
+            role === 'assignee' && member ? [member.userId] : [],
+          ),
+        );
+        // Only creates can infer an absent assignee from a uniquely supported
+        // claim. Updates and repairs may have intentionally protected fields.
         if (
           item.operation === 'create' &&
           !item.targetId &&
-          member &&
-          supportedAssignment &&
-          !['assigneeUserId', 'assigneeName', 'ownerUserId', 'ownerName'].some((key) =>
-            Object.hasOwn(payload, key),
-          ) &&
-          new Set(
-            supports
-              .filter((support) => support.field === 'assignee')
-              .map((support) => support.value),
-          ).size === 1
+          assignees.size === 1 &&
+          new Set(assignmentSupports.map((support) => support.value)).size === 1 &&
+          !assignmentFields.some((key) => Object.hasOwn(payload, key))
         ) {
-          payload.assigneeUserId = member.userId;
+          payload.assigneeUserId = [...assignees][0];
         }
-        const clearAssignment =
-          assignment?.value === 'unassigned' &&
-          canClear &&
-          !assignmentSuperseded(assignment, taskIdentityNames(item), (assertion) =>
-            taskEvidenceUnambiguous(item, assertion),
+        const retainAssignment = (key: (typeof assignmentFields)[number]) => {
+          const role = key.startsWith('owner') ? 'owner' : 'assignee';
+          return assignments.some(
+            (assignment) =>
+              assignment.role === role &&
+              (payload[key] === null
+                ? assignment.value === 'unassigned'
+                : assignment.member !== undefined &&
+                  payload[key] ===
+                    (key.endsWith('UserId') ? assignment.member.userId : assignment.member.name)),
           );
-        const clearOwner =
-          clearAssignment &&
-          /\b(?:remove|clear|unset|unassign)\b.*\bowner\b|\bowner\b.*\b(?:removed|cleared|unassigned)\b/i.test(
-            clause ?? '',
-          );
-        const clearAssignee =
-          clearAssignment &&
-          (/\b(?:remove|clear|unset)\b.*\bassignee\b/i.test(clause ?? '') ||
-            (/\b(?:unassign|unassigned)\b/i.test(clause ?? '') &&
-              !/\bowner\b/i.test(clause ?? '')));
-        const retainAssignment = (
-          key: 'assigneeUserId' | 'ownerUserId' | 'assigneeName' | 'ownerName',
-        ) =>
-          (key.startsWith('owner') ? clearOwner : clearAssignee)
-            ? payload[key] === null
-            : supportedAssignment &&
-              payload[key] === (key.endsWith('UserId') ? member.userId : member.name);
+        };
         if (!retainAssignment('assigneeUserId')) delete payload.assigneeUserId;
-        if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
         if (!retainAssignment('assigneeName')) delete payload.assigneeName;
+        if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
         if (!retainAssignment('ownerName')) delete payload.ownerName;
         const deadline = has('dueAt', payload.dueAt === null ? 'unset' : payload.dueAt);
         if (
@@ -1925,13 +1994,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
         )
           delete payload.status;
         if (payload.parentObjectId === null) {
-          const clause = supportedTaskAssertion(has('project', 'unset'));
+          const support = has('project', 'unset');
+          const enclosing = support && enclosingAssertion(support);
           if (
-            !clause ||
-            /[?]|\b(?:not|never|if|unless|maybe|perhaps|[a-z]+n[’']t)\b/i.test(clause) ||
-            !/\b(?:remove|clear|unset) (?:the |its )?(?:primary )?project(?: assignment| association)?\b/i.test(
-              clause,
-            )
+            !support ||
+            !enclosing ||
+            ![support.quote, enclosing].every((quote) => {
+              const clause = supportedTaskAssertion({ ...support, quote });
+              return (
+                clause &&
+                affirmativeFieldClear(clause, support.subject) &&
+                /\b(?:remove|clear|unset) (?:the |its )?(?:primary )?project(?: assignment| association)?\b/i.test(
+                  clause,
+                )
+              );
+            })
           ) {
             delete payload.parentObjectId;
             delete payload.projectName;
