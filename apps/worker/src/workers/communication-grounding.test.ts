@@ -192,6 +192,59 @@ test('forwarded relative and yearless deadlines resolve from their original date
   }
 });
 
+test('uncertain deadlines do not become actionable dates', () => {
+  const value = '2026-06-02T00:00:00.000Z';
+  for (const [statement, retained] of [
+    ['might be due 2026-06-02', false],
+    ['may be due 2026-06-02', false],
+    ['is due 2026-06-02 if we proceed', false],
+    ['is due 2026-06-02, perhaps', false],
+    ['will be due 2026-06-02', true],
+    ['is due 2026-06-02', true],
+  ] as const) {
+    const quote = `${title} ${statement}.`;
+    expect(
+      run(quote, { dueAt: value }, [support('dueAt', quote, value)], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.dueAt,
+    ).toBe(retained ? value : undefined);
+  }
+});
+
+test('later dated forwards supersede older assertions regardless of display order', () => {
+  const completion = `${title} is done.`;
+  const correction = `${title} is not done.`;
+  for (const messages of [
+    [
+      [completion, 'Mon, 01 Jun 2026'],
+      [correction, 'Thu, 11 Jun 2026'],
+    ],
+    [
+      [correction, 'Thu, 11 Jun 2026'],
+      [completion, 'Mon, 01 Jun 2026'],
+    ],
+  ]) {
+    const text = messages
+      .map(([body, day], index) =>
+        [
+          `Forwarded message ${index + 1}:`,
+          'From: Bob <bob@example.test>',
+          `Date: ${day} 08:00:00 GMT`,
+          '',
+          body,
+        ].join('\n'),
+      )
+      .join('\n\n');
+    expect(
+      run(text, { status: 'done' }, [support('status', completion, 'done')], {
+        source: 'email',
+        operation: 'update',
+        occurredAt: new Date('2026-06-12T12:00:00.000Z'),
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBeUndefined();
+  }
+});
+
 test('negated first-person commitments cannot assign the speaker', () => {
   for (const [taskTitle, text] of [
     ['Política de retención', 'No revisaré la política de retención.'],

@@ -226,12 +226,14 @@ function deadlineMatches(
 ): boolean {
   if (typeof value !== 'string') return false;
   const target = Date.parse(value);
-  const deadlineAt = (index: number) => {
+  const deadlineAt = (index: number, length: number) => {
     const prefix =
       quote
         .slice(0, index)
         .split(/\bbut\b|,\s*(?:instead|now)\b/i)
         .at(-1) ?? '';
+    const suffix = quote.slice(index + length).split(/\bbut\b|,\s*(?:instead|now)\b/i)[0] ?? '';
+    const assertion = normalize(`${prefix} ${suffix}`).replaceAll(normalize(subject), '[task]');
     return (
       (/\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
         prefix,
@@ -241,18 +243,21 @@ function deadlineMatches(
         )) &&
       !/\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i.test(
         prefix,
+      ) &&
+      !/\b(?:might|could|possibly|perhaps|maybe|tentative(?:ly)?|provisionally|if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
+        assertion,
       )
     );
   };
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
-    if (!deadlineAt(match.index)) continue;
+    if (!deadlineAt(match.index, match[0].length)) continue;
     if (deadlineTimeMatches(match[0], quote.slice(match.index + match[0].length), target, timezone))
       return true;
   }
   for (const match of quote.matchAll(
     /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
   )) {
-    if (!deadlineAt(match.index)) continue;
+    if (!deadlineAt(match.index, match[0].length)) continue;
     const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
     let year = match[3] ? Number(match[3]) : reference?.year;
     if (year === undefined) continue;
@@ -282,7 +287,7 @@ function deadlineMatches(
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
-      if (!deadlineAt(match.index)) continue;
+      if (!deadlineAt(match.index, match[0].length)) continue;
       const phrase = match[0].toLowerCase();
       const weekdays = [
         'monday',
