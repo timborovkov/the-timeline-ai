@@ -1,3 +1,4 @@
+import { splitStoredEmailContent } from '#src/email/parser.js';
 import { textMentionsAnyValue } from '#src/sql-like.js';
 
 export const WORKSPACE_HUB_TYPES = ['project', 'company', 'vendor', 'deal'] as const;
@@ -528,7 +529,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
   bundles: HubAttachableBundle<T>[];
   relatedOpenWorkIds: readonly string[];
   relatedOpenWork?: readonly { id: string; name: string }[];
-  sourceEvidence?: readonly { contentText: string; occurredAt: Date }[];
+  sourceEvidence?: readonly { contentText: string; occurredAt: Date; source?: string }[];
   evidenceText?: string;
   /** Runtime audit IDs whose lifecycle writes survived independent grounding, never model flags. */
   verifiedLifecycleAuditIds?: readonly string[];
@@ -544,7 +545,27 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
     );
   const explicit = new Set<string>();
   const evidence = args.sourceEvidence
-    ? [...args.sourceEvidence]
+    ? args.sourceEvidence
+        .flatMap((event) => {
+          if (event.source !== 'email') return [event];
+          const { intro, forwarded } = splitStoredEmailContent(event.contentText);
+          return [
+            ...forwarded.reverse().flatMap((message) => {
+              if (!message.body) return [];
+              const sentAt = message.date ? Date.parse(message.date) : Number.NaN;
+              const envelope = event.occurredAt.getTime();
+              return [
+                {
+                  contentText: message.body,
+                  occurredAt: new Date(
+                    Number.isFinite(sentAt) ? Math.min(sentAt, envelope) : envelope,
+                  ),
+                },
+              ];
+            }),
+            { contentText: intro, occurredAt: event.occurredAt },
+          ];
+        })
         .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
         .map((event) => event.contentText)
         .join('\n')

@@ -5121,8 +5121,14 @@ async function runSuggestionExtraction(
       sourceEvidence: [
         ...(evidencePackEnforced
           ? (evidencePack?.items ?? [])
-          : [...(args.conversation?.window ?? []), ...(args.conversation?.linkedContext ?? [])]),
-        { contentText: text, occurredAt: row.occurredAt },
+          : [
+              ...(args.conversation?.window ?? []).map((event) => ({
+                ...event,
+                source: row.source,
+              })),
+              ...(args.conversation?.linkedContext ?? []),
+            ]),
+        { contentText: text, occurredAt: row.occurredAt, source: row.source },
       ],
     })
     .map((bundle) => {

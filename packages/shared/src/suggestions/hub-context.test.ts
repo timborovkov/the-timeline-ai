@@ -650,6 +650,36 @@ describe('explicit completion among recalled candidates', () => {
       }),
     ).toEqual([]);
   });
+  it('does not let a forwarded body override the envelope introduction', () => {
+    for (const date of ['', 'Date: Thu, 11 Jun 2026 08:00:00 GMT\n']) {
+      expect(
+        stripAmbiguousLifecycleUpdates({
+          sourceEvidence: [
+            {
+              source: 'email',
+              occurredAt: new Date('2026-06-12T08:00:00Z'),
+              contentText: `Review access matrix is not done.\n\nForwarded message 1:\nFrom: Jordan <jordan@example.test>\n${date}Subject: Review access matrix\n\nReview access matrix is done.`,
+            },
+          ],
+          relatedOpenWork,
+          relatedOpenWorkIds: ['access', 'backup'],
+          bundles: [
+            {
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'object',
+                  targetId: 'access',
+                  title: 'Access review',
+                  proposedPayload: { status: 'done' },
+                },
+              ],
+            },
+          ],
+        }),
+      ).toEqual([]);
+    }
+  });
   it('preserves the latest affirmative completion after a denial', () => {
     const bundles = [
       {
