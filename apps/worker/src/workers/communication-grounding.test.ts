@@ -110,6 +110,18 @@ test('a new task uses its canonical identity even with a generic approval headin
   ).toEqual(payload);
 });
 
+test('first-person commitments in Spanish attribute only the verified speaker', () => {
+  const text = 'Revisaré la política de retención.';
+  const taskTitle = 'Política de retención';
+  for (const member of [alice, bob]) {
+    expect(
+      run(text, { assigneeUserId: member }, [support('assignee', text, member, taskTitle)], {
+        taskTitle,
+      })[0]?.items[0]?.proposedPayload,
+    ).toEqual(member === alice ? { assigneeUserId: alice } : {});
+  }
+});
+
 test('forwarded self commitment uses original sender email rather than forwarder', () => {
   for (const text of [
     'I will review retention policy.',
@@ -642,6 +654,52 @@ test('a correction using an authorized alias inside the quotation supersedes the
       source: 'slack',
     });
     expect([...verifiedLifecycleAuditIds]).toEqual([...expected]);
+  }
+});
+
+test('supersession preserves message line breaks and resolves split forwarded quotes', () => {
+  const email = [
+    'SEC-42 is not done.',
+    '',
+    'Forwarded message 1:',
+    'From: Jordan <jordan@example.test>',
+    'Date: Thu, 11 Jun 2026 08:00:00 GMT',
+    '',
+    'Review retention policy is done.',
+  ].join('\n');
+  const slack = 'Review retention policy is done\nSEC-42 is not done.';
+  for (const [source, text, quote] of [
+    ['slack', slack, 'Review retention policy is done'],
+    ['email', email, email],
+  ] as const) {
+    const verifiedLifecycleAuditIds = new Set<string>();
+    groundCommunicationBundles({
+      verifiedLifecycleAuditIds,
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              auditId: 'completion',
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'review',
+              proposedPayload: { status: 'done' },
+              grounding: [support('status', quote, 'done')],
+            },
+          ],
+        },
+      ],
+      objects: [{ id: 'review', name: title, type: 'task', aliases: ['SEC-42'] }],
+      packet: text,
+      sources: [{ id: event, text, occurredAt: new Date('2026-06-12T08:00:00Z') }],
+      members: [],
+      hubs: [],
+      source,
+    });
+    expect([...verifiedLifecycleAuditIds]).toEqual([]);
   }
 });
 

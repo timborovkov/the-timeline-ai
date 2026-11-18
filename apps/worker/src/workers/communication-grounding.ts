@@ -76,6 +76,10 @@ const prospect = (quote: string) =>
     quote,
   );
 
+// These predicates explicitly identify the speaker even when the language omits “I”.
+const firstPersonCommitment =
+  /(?<![\p{L}\p{N}])(?:I (?:will|shall)|I['’]ll|ich werde|revisaré|prepararé|haré|enviaré|escribiré|terminaré|completaré|tarkistan|valmistelen|lähetän|kirjoitan)(?![\p{L}\p{N}])/iu;
+
 function safeSourceQuote(text: string, quote: string): boolean {
   const body = normalize(text),
     fragment = normalize(quote);
@@ -558,11 +562,25 @@ export function groundCommunicationBundles<T extends Item>(args: {
   );
   const packet = normalize(args.packet);
   function lifecycleSuperseded(support: Support, names: string[]): boolean {
-    const citation = normalize(support.quote);
-    const from = chronology.findIndex(
-      (event) => event.id === support.rawEventId && normalize(event.contentText).includes(citation),
-    );
-    if (from < 0) return false;
+    const citedClause = taskClause(support.quote, support.subject);
+    let from = -1;
+    let assertionStart = 0;
+    for (const quote of [citedClause, support.quote]) {
+      if (!quote?.trim()) continue;
+      const literal = quote
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\s+/g, '\\s+');
+      const pattern = new RegExp(literal, 'iu');
+      from = chronology.findIndex(
+        (event) => event.id === support.rawEventId && pattern.test(event.contentText),
+      );
+      if (from >= 0) {
+        assertionStart = pattern.exec(chronology[from]?.contentText ?? '')?.index ?? 0;
+        break;
+      }
+    }
+    if (from < 0) return true;
     let status: string | undefined = support.value;
     const subjects = names
       .filter((name) => name.trim())
@@ -570,14 +588,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const identity = taskIdentityPattern(name);
         return identity ? new RegExp(`^(?:the )?${identity}$`, 'iu') : null;
       });
-    const citedClause = taskClause(support.quote, support.subject);
-    const assertionStart = citedClause ? Math.max(0, citation.indexOf(normalize(citedClause))) : 0;
     for (const [offset, event] of chronology.slice(from).entries()) {
-      const normalizedText = normalize(event.contentText);
-      const text =
-        offset === 0
-          ? normalizedText.slice(normalizedText.indexOf(citation) + assertionStart)
-          : event.contentText;
+      const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
       for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
         const state = explicitLifecycleState(sentence);
         if (
@@ -1386,7 +1398,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             confirmedOwner);
         const commitmentQuotes = assignment
           ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
-              const start = /\b(?:I (?:will|shall)|I['’]ll)\b/i.exec(match[0]);
+              const start = firstPersonCommitment.exec(match[0]);
               return start &&
                 (namesTask(match[0], assignment.subject) || validContexts.has(assignment))
                 ? [match[0].slice(start.index).trim()]
@@ -1426,7 +1438,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               normalize(args.packet).includes(normalize(latestHeader[0].trim()))
             : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
         );
-        const selfAction = clause && /\bI (?:will|shall)\b/i.exec(clause);
+        const selfAction = clause && firstPersonCommitment.exec(clause);
         const self =
           member &&
           assignment &&
