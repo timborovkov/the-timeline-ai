@@ -355,7 +355,8 @@ timezone. A dated forwarded message supplies its own reference time. Later
 definitive assertions from visible context or the authorized email thread
 supersede older deadlines for the same task.
 An assignee ID must identify an available member; unresolved named people should
-remain named evidence rather than an arbitrary member assignment.
+remain named evidence rather than an arbitrary member assignment. Later
+definite assignments in visible context supersede earlier commitments.
 
 The source window must be interpreted in order. Work introduced and conclusively
 finished in one meeting should yield its final supported state. “After QA, mark it

@@ -182,6 +182,66 @@ test('unresolved owner alternatives do not authorize an assignment', () => {
   }
 });
 
+test('tentative and delegated commitments do not assign the task', () => {
+  for (const [quote, member] of [
+    ['Maybe Bob will review retention policy.', bob],
+    ['Bob will probably review retention policy.', bob],
+    ['I will probably review retention policy.', alice],
+    ['Bob will ask Alice to review retention policy.', bob],
+    ['Bob will remind Alice to review retention policy.', bob],
+    ['I will ask Bob to review retention policy.', alice],
+    ['Bob will ask Alice to review retention policy.', alice],
+  ] as const) {
+    expect(
+      run(quote, { assigneeUserId: member }, [support('assignee', quote, member)], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.assigneeUserId,
+    ).toBeUndefined();
+  }
+});
+
+test('later definite ownership supersedes the cited assignment', () => {
+  const earlier = 'Bob will review retention policy.';
+  const later = 'Alice will review retention policy instead of Bob.';
+  const newer = '33333333-3333-4333-8333-333333333333';
+  for (const [member, rawEventId, quote, retained] of [
+    [bob, event, earlier, false],
+    [alice, newer, later, true],
+  ] as const) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task',
+              proposedPayload: { assigneeUserId: member },
+              grounding: [{ ...support('assignee', quote, member), rawEventId }],
+            },
+          ],
+        },
+      ],
+      sources: [
+        { id: newer, text: later, occurredAt: new Date('2026-06-02T08:00:00Z') },
+        { id: event, text: earlier, occurredAt: new Date('2026-06-01T08:00:00Z') },
+      ],
+      packet: `${earlier}\n${later}`,
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      members: [
+        { userId: alice, name: 'Alice', email: null },
+        { userId: bob, name: 'Bob', email: null },
+      ],
+      hubs: [],
+      source: 'slack',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.assigneeUserId).toBe(retained ? member : undefined);
+  }
+});
+
 test('forwarded relative and yearless deadlines resolve from their original date', () => {
   for (const date of ['tomorrow', 'June 2']) {
     const quote = `${title} is due ${date}.`;

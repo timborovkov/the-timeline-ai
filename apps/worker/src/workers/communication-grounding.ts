@@ -783,6 +783,192 @@ export function groundCommunicationBundles<T extends Item>(args: {
     }
     return latest === wanted;
   }
+  function assignmentProof(
+    assignment: Support | undefined,
+    member: (typeof args.members)[number] | undefined,
+    hasTaskContext: boolean,
+  ) {
+    const source = args.sources.find((source) => source.id === assignment?.rawEventId);
+    const citedAssignment = assignment
+      ? taskClause(assignment.quote, assignment.subject)
+      : undefined;
+    const originalClause = assignment
+      ? citedAssignment
+        ? taskAssertion(citedAssignment, assignment.subject)
+        : hasTaskContext
+          ? assignment.quote
+          : undefined
+      : undefined;
+    const clause = originalClause?.replace(
+      /,\s*not\s+([^.!?,]+)\.?$/i,
+      (phrase, alternative: string) =>
+        args.members.some(
+          (other) =>
+            other.userId !== member?.userId &&
+            other.name &&
+            normalize(other.name) === normalize(alternative),
+        )
+          ? ''
+          : phrase,
+    );
+    const escapedName = member?.name?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const name = escapedName
+      ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
+      : undefined;
+    const actor = name ? `(?:${name}|\\bI\\b)` : '\\bI\\b';
+    const alternative = '(?:\\s+or\\s+|\\s*/\\s*)';
+    const unresolvedOwner =
+      clause &&
+      new RegExp(
+        `${actor}${alternative}|${alternative}${actor}|\\b(?:either|one of)\\s+(?:[^.!?;]{0,120}\\s+)?${actor}`,
+        'iu',
+      ).test(clause);
+    const tentative =
+      clause &&
+      /\b(?:maybe|perhaps|probably|possibly|tentatively|potentially|likely|might|could)\b/i.test(
+        normalize(clause).replaceAll(normalize(assignment?.subject ?? ''), '[task]'),
+      );
+    const delegation =
+      /\b(?:ask(?:ed|ing)?|remind(?:ed|ing)?|tell(?:ing)?|request(?:ed|ing)?|assign(?:ed|ing)?|expect(?:ed|ing)?|allow(?:ed|ing)?)\b[^.!?;]{0,120}\bto\b/i;
+    const matchesAssignedTask = (action: string) =>
+      assignment !== undefined &&
+      ((namesTask(action, assignment.subject, true) &&
+        (!delegation.test(action) ||
+          normalize(action).startsWith(normalize(assignment.subject)))) ||
+        (hasTaskContext &&
+          /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
+            action.trim(),
+          )));
+    const namedAction =
+      name && clause
+        ? new RegExp(
+            `(?:${name}\\s+(?:will|shall|owns|is responsible(?: for)?|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)(?![\\p{L}\\p{N}])|${name},?\\s+please\\b)`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const explicitAssignment =
+      name && clause
+        ? new RegExp(
+            `\\b(?:re)?assign(?:ed)?\\b([^.!?]*?)${name}(?=\\s*(?:[.!?,]|$)|\\s+(?:for|to|as|by)\\b)`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const passiveSubject = assignment ? taskIdentityPattern(assignment.subject) : '';
+    const passiveAssignment =
+      clause &&
+      explicitAssignment &&
+      passiveSubject &&
+      /^(?:re)?assigned\s+to\s+/i.test(explicitAssignment[0]) &&
+      new RegExp(
+        `(?:^|\\s)${passiveSubject}(?: task)? (?:is|was|has been|had been) (?:now )?$`,
+        'iu',
+      ).test(normalize(clause.slice(0, explicitAssignment.index)) + ' ');
+    const confirmedOwner =
+      name &&
+      clause &&
+      new RegExp(
+        `${name}\\s+(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)`,
+        'iu',
+      ).test(clause);
+    const named =
+      clause &&
+      !unresolvedOwner &&
+      !tentative &&
+      !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause) &&
+      ((namedAction !== null &&
+        !delegation.test(clause.slice(0, namedAction.index + namedAction[0].length)) &&
+        matchesAssignedTask(clause.slice(namedAction.index + namedAction[0].length))) ||
+        (explicitAssignment !== null &&
+          matchesAssignedTask(
+            (explicitAssignment[1] ?? '') +
+              clause.slice(explicitAssignment.index + explicitAssignment[0].length),
+          )) ||
+        Boolean(passiveAssignment) ||
+        confirmedOwner);
+    const commitmentQuotes = assignment
+      ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
+          const start = firstPersonCommitment.exec(match[0]);
+          return start && (namesTask(match[0], assignment.subject) || hasTaskContext)
+            ? [match[0].slice(start.index).trim()]
+            : [];
+        })
+      : [];
+    const commitment = commitmentQuotes.length === 1 ? commitmentQuotes[0] : undefined;
+    const quoteAt = source && assignment ? source.text.indexOf(assignment.quote) : -1;
+    const commitmentAt =
+      source && commitment && quoteAt >= 0 ? source.text.indexOf(commitment, quoteAt) : -1;
+    const uniqueCommitment =
+      source &&
+      assignment &&
+      commitment &&
+      commitmentAt >= quoteAt &&
+      commitmentAt >= 0 &&
+      commitmentAt + commitment.length <= quoteAt + assignment.quote.length &&
+      source.text.indexOf(commitment) === commitmentAt &&
+      !source.text.includes(commitment, commitmentAt + 1);
+    const headers =
+      source && uniqueCommitment
+        ? [...source.text.slice(0, commitmentAt).matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi)]
+        : [];
+    const latestHeader = headers.at(-1);
+    const headerEmails = new Set(
+      [...(latestHeader?.[1] ?? '').matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(
+        (match) => normalize(match[0]),
+      ),
+    );
+    const emailSpeaker = Boolean(
+      member?.email &&
+      uniqueCommitment &&
+      (latestHeader
+        ? headerEmails.size === 1 &&
+          headerEmails.has(normalize(member.email)) &&
+          safeSourceQuote(source.text, latestHeader[0].trim()) &&
+          normalize(args.packet).includes(normalize(latestHeader[0].trim()))
+        : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
+    );
+    const selfAction = clause && firstPersonCommitment.exec(clause);
+    const self =
+      member &&
+      assignment &&
+      clause &&
+      !unresolvedOwner &&
+      !tentative &&
+      ((source?.source ?? args.source) === 'email'
+        ? emailSpeaker
+        : source?.authorUserId === member.userId &&
+          uniqueCommitment &&
+          isOriginalChatCommitment(source.text, commitmentAt, member.name)) &&
+      selfAction &&
+      matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
+      !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
+        clause,
+      );
+    return {
+      clause,
+      verified:
+        Boolean(member) && (Boolean(named) || Boolean(self)) && !assignment?.quote.includes('?'),
+    };
+  }
+  function assignmentSuperseded(
+    support: Support,
+    names: string[],
+    unambiguous: (assertion: string) => boolean,
+  ): boolean {
+    let latest: string | undefined = support.value;
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      if (!visible || !event.id) continue;
+      const subject = names.find((name) => namesTask(sentence, name, true));
+      if (!subject) continue;
+      const assertion = taskClause(sentence, subject);
+      if (!assertion || !unambiguous(assertion)) continue;
+      const sentenceSupport = { ...support, subject, quote: sentence.trim(), rawEventId: event.id };
+      const owners = args.members.filter(
+        (member) => assignmentProof(sentenceSupport, member, false).verified,
+      );
+      if (owners.length) latest = owners.length === 1 ? owners[0]?.userId : undefined;
+    }
+    return latest !== support.value;
+  }
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
     const taskIdentityNames = (
@@ -1534,150 +1720,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
       if (type === 'task' || (item.targetKind === 'task' && item.operation === 'update')) {
         const assignment = supports.find((support) => support.field === 'assignee');
         const member = args.members.find((member) => member.userId === assignment?.value);
-        const source = args.sources.find((source) => source.id === assignment?.rawEventId);
-        const citedAssignment = assignment
-          ? taskClause(assignment.quote, assignment.subject)
-          : undefined;
-        const originalClause = assignment
-          ? citedAssignment
-            ? taskAssertion(citedAssignment, assignment.subject)
-            : validContexts.has(assignment)
-              ? assignment.quote
-              : undefined
-          : undefined;
-        const clause = originalClause?.replace(
-          /,\s*not\s+([^.!?,]+)\.?$/i,
-          (phrase, alternative: string) =>
-            args.members.some(
-              (other) =>
-                other.userId !== member?.userId &&
-                other.name &&
-                normalize(other.name) === normalize(alternative),
-            )
-              ? ''
-              : phrase,
+        const { clause, verified: citedAssignment } = assignmentProof(
+          assignment,
+          member,
+          assignment !== undefined && validContexts.has(assignment),
         );
-        const escapedName = member?.name?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const name = escapedName
-          ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
-          : undefined;
-        const actor = name ? `(?:${name}|\\bI\\b)` : '\\bI\\b';
-        const alternative = '(?:\\s+or\\s+|\\s*/\\s*)';
-        const unresolvedOwner =
-          clause &&
-          new RegExp(
-            `${actor}${alternative}|${alternative}${actor}|\\b(?:either|one of)\\s+(?:[^.!?;]{0,120}\\s+)?${actor}`,
-            'iu',
-          ).test(clause);
-        const hasTaskContext = assignment !== undefined && validContexts.has(assignment);
-        const matchesAssignedTask = (action: string) =>
-          assignment !== undefined &&
-          (namesTask(action, assignment.subject, true) ||
-            (hasTaskContext &&
-              /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
-                action.trim(),
-              )));
-        const namedAction =
-          name && clause
-            ? new RegExp(
-                `(?:${name}\\s+(?:will|shall|owns|is responsible(?: for)?|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)(?![\\p{L}\\p{N}])|${name},?\\s+please\\b)`,
-                'iu',
-              ).exec(clause)
-            : null;
-        const explicitAssignment =
-          name && clause
-            ? new RegExp(
-                `\\b(?:re)?assign(?:ed)?\\b([^.!?]*?)${name}(?=\\s*(?:[.!?,]|$)|\\s+(?:for|to|as|by)\\b)`,
-                'iu',
-              ).exec(clause)
-            : null;
-        const passiveSubject = assignment ? taskIdentityPattern(assignment.subject) : '';
-        const passiveAssignment =
-          clause &&
-          explicitAssignment &&
-          passiveSubject &&
-          /^(?:re)?assigned\s+to\s+/i.test(explicitAssignment[0]) &&
-          new RegExp(
-            `(?:^|\\s)${passiveSubject}(?: task)? (?:is|was|has been|had been) (?:now )?$`,
-            'iu',
-          ).test(normalize(clause.slice(0, explicitAssignment.index)) + ' ');
-        const confirmedOwner =
-          name &&
-          clause &&
-          new RegExp(
-            `${name}\\s+(?:remains|is still) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+and\\b)`,
-            'iu',
-          ).test(clause);
-        const named =
-          clause &&
-          !unresolvedOwner &&
-          !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause) &&
-          ((namedAction !== null &&
-            matchesAssignedTask(clause.slice(namedAction.index + namedAction[0].length))) ||
-            (explicitAssignment !== null &&
-              matchesAssignedTask(
-                (explicitAssignment[1] ?? '') +
-                  clause.slice(explicitAssignment.index + explicitAssignment[0].length),
-              )) ||
-            Boolean(passiveAssignment) ||
-            confirmedOwner);
-        const commitmentQuotes = assignment
-          ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
-              const start = firstPersonCommitment.exec(match[0]);
-              return start &&
-                (namesTask(match[0], assignment.subject) || validContexts.has(assignment))
-                ? [match[0].slice(start.index).trim()]
-                : [];
-            })
-          : [];
-        const commitment = commitmentQuotes.length === 1 ? commitmentQuotes[0] : undefined;
-        const quoteAt = source && assignment ? source.text.indexOf(assignment.quote) : -1;
-        const commitmentAt =
-          source && commitment && quoteAt >= 0 ? source.text.indexOf(commitment, quoteAt) : -1;
-        const uniqueCommitment =
-          source &&
-          assignment &&
-          commitment &&
-          commitmentAt >= quoteAt &&
-          commitmentAt >= 0 &&
-          commitmentAt + commitment.length <= quoteAt + assignment.quote.length &&
-          source.text.indexOf(commitment) === commitmentAt &&
-          !source.text.includes(commitment, commitmentAt + 1);
-        const headers =
-          source && uniqueCommitment
-            ? [...source.text.slice(0, commitmentAt).matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi)]
-            : [];
-        const latestHeader = headers.at(-1);
-        const headerEmails = new Set(
-          [...(latestHeader?.[1] ?? '').matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(
-            (match) => normalize(match[0]),
-          ),
-        );
-        const emailSpeaker = Boolean(
-          member?.email &&
-          uniqueCommitment &&
-          (latestHeader
-            ? headerEmails.size === 1 &&
-              headerEmails.has(normalize(member.email)) &&
-              safeSourceQuote(source.text, latestHeader[0].trim()) &&
-              normalize(args.packet).includes(normalize(latestHeader[0].trim()))
-            : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
-        );
-        const selfAction = clause && firstPersonCommitment.exec(clause);
-        const self =
+        const supportedAssignment =
           member &&
           assignment &&
-          clause &&
-          !unresolvedOwner &&
-          ((source?.source ?? args.source) === 'email'
-            ? emailSpeaker
-            : source?.authorUserId === member.userId &&
-              uniqueCommitment &&
-              isOriginalChatCommitment(source.text, commitmentAt, member.name)) &&
-          selfAction &&
-          matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
-          !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
-            clause,
+          citedAssignment &&
+          !assignmentSuperseded(assignment, taskIdentityNames(item), (assertion) =>
+            taskEvidenceUnambiguous(item, assertion),
           );
         // A cited, verified assignment is a concrete claim even if the model
         // omitted its payload field on a new task. Updates and repairs may have
@@ -1687,8 +1740,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           item.operation === 'create' &&
           !item.targetId &&
           member &&
-          (named || self) &&
-          !assignment?.quote.includes('?') &&
+          supportedAssignment &&
           !['assigneeUserId', 'assigneeName', 'ownerUserId', 'ownerName'].some((key) =>
             Object.hasOwn(payload, key),
           ) &&
@@ -1714,8 +1766,6 @@ export function groundCommunicationBundles<T extends Item>(args: {
           (/\b(?:remove|clear|unset)\b.*\bassignee\b/i.test(clause ?? '') ||
             (/\b(?:unassign|unassigned)\b/i.test(clause ?? '') &&
               !/\bowner\b/i.test(clause ?? '')));
-        const supportedAssignment =
-          member && (Boolean(named) || Boolean(self)) && !assignment?.quote.includes('?');
         const retainAssignment = (
           key: 'assigneeUserId' | 'ownerUserId' | 'assigneeName' | 'ownerName',
         ) =>
