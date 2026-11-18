@@ -93,7 +93,7 @@ import { getEnv } from '#src/env.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
-import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
+import { ObjectNotFoundError, StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import { createChatTurnScope } from '#src/objects/chat-turns.js';
 import {
   normalizeIdentityFacet,
@@ -4477,7 +4477,7 @@ export async function updateObject(
       .for('update')
       .limit(1);
     const currentRow = currentRows[0];
-    if (!currentRow) throw new Error('Object not found');
+    if (!currentRow) throw new ObjectNotFoundError();
     const current: EntityRow = currentRow;
     if (options?.expectedUpdatedAt && current.updatedAt.toISOString() !== options.expectedUpdatedAt)
       throw new StaleWorkspaceStateError();
@@ -4949,7 +4949,7 @@ export async function archiveObject(
       ),
     )
     .limit(1);
-  if (!current) throw new Error('Object not found');
+  if (!current) throw new ObjectNotFoundError();
   if (current.archivedAt) return { ...toObjectRow(current), changedFields: [] };
 
   const result = await updateObject(
@@ -6914,7 +6914,7 @@ export async function createNote(
       )
       .for('update')
       .limit(1);
-    if (!ent[0]) throw new Error('Object not found');
+    if (!ent[0]) throw new ObjectNotFoundError();
     if (
       ent[0].archivedAt !== null &&
       typeof recordFromUnknown(ent[0].metadata).agent_suggestion_project_for_item_id === 'string'
@@ -7152,7 +7152,7 @@ export async function createIdentityFacet(
       )
       .for('update')
       .limit(1);
-    if (!ent[0]) throw new Error('Object not found');
+    if (!ent[0]) throw new ObjectNotFoundError();
     if (!objectSupportsIdentityFacets(ent[0].type)) {
       throw new Error('Identity facets can only be added to people and companies');
     }
@@ -8734,7 +8734,7 @@ export async function proposeObjectChange(
       )
       .limit(1);
     const ent = entRows[0];
-    if (!ent) throw new Error('Object not found');
+    if (!ent) throw new ObjectNotFoundError();
 
     const previousValue = (ent as Record<string, unknown>)[input.field] ?? null;
 
