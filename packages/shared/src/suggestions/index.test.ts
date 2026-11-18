@@ -2847,6 +2847,7 @@ describe('suggestion scope', () => {
   it.each([
     ['Call QA', 'Call QA', []],
     ['Review retention policy', 'Audit data retention controls', ['SEC-42']],
+    ['Проверить политику хранения', 'Проверить политику хранения', []],
   ] as const)(
     'deduplicates %s and %s by explicit identity',
     async (olderName, newerName, aliases) => {

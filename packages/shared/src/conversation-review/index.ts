@@ -1,5 +1,18 @@
 import { type Db, entities, factEntities, facts, rawEvents } from '@timeline/db';
-import { and, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 export const CONVERSATION_REVIEW_DEBOUNCE_MS = 10 * 60 * 1000;
 export const CONVERSATION_WINDOW_DAYS = 2;
@@ -254,6 +267,36 @@ export async function buildConversationEvidenceWindow(
   if (!reservedRoot) return history;
   if (history.some((row) => row.id === reservedRoot.id)) return history;
   return [reservedRoot, ...history];
+}
+
+/** Read pending email in chronological order independently of the bounded context window. */
+export async function listUnreviewedEmailEvents(
+  db: Db,
+  args: {
+    teamId: string;
+    identity: ConversationIdentity;
+    through: { id: string; occurredAt: Date };
+    after: { id: string; occurredAt: Date } | undefined;
+  },
+): Promise<(typeof rawEvents.$inferSelect)[]> {
+  return db
+    .select()
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, args.teamId),
+        eq(rawEvents.visibility, 'team'),
+        conversationCondition(args.identity),
+        sql`length(btrim(${rawEvents.contentText})) > 0`,
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        sql`(${rawEvents.occurredAt}, ${rawEvents.id}) <= (${args.through.occurredAt.toISOString()}::timestamptz, ${args.through.id}::uuid)`,
+        args.after
+          ? sql`(${rawEvents.occurredAt}, ${rawEvents.id}) > (${args.after.occurredAt.toISOString()}::timestamptz, ${args.after.id}::uuid)`
+          : undefined,
+      ),
+    )
+    .orderBy(asc(rawEvents.occurredAt), asc(rawEvents.id))
+    .limit(CONVERSATION_WINDOW_LIMIT);
 }
 
 export async function buildLinkedContextWindow(

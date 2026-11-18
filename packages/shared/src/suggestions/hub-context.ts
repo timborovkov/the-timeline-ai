@@ -631,9 +631,10 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
   // Full title tokens in an affirmative completion sentence distinguish explicit
   // completion from the loose token recall that assembled the candidate list.
   const titleTokens = (text: string) =>
-    (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(
-      (word) => !['the', 'and', 'for', 'with'].includes(word),
-    );
+    text
+      .toLowerCase()
+      .replace(/^the\s+/, '')
+      .match(/[\p{L}\p{N}]+/gu) ?? [];
   const explicit = new Set<string>();
   const evidence = args.sourceEvidence
     ? chronologicalLifecycleEvidence(args.sourceEvidence)
@@ -643,13 +644,13 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
   for (const sentence of evidence.split(/(?<=[.!?])\s+|\n+/u)) {
     const state = explicitLifecycleState(sentence);
     if (!state) continue;
-    const tokens = new Set(titleTokens(state.subject));
+    const tokens = titleTokens(state.subject);
     const matches = (args.relatedOpenWork ?? []).filter((work) => {
       const words = titleTokens(work.name);
       return (
         words.length >= 2 &&
-        tokens.size === new Set(words).size &&
-        words.every((word) => tokens.has(word))
+        tokens.length === words.length &&
+        words.every((word, index) => tokens[index] === word)
       );
     });
     if (matches.length !== 1 || !matches[0]) continue;

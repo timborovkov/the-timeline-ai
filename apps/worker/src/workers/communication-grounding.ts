@@ -431,7 +431,11 @@ function affirmativeLifecycle(
   if (!assertion) return false;
   const identity = normalize(subject);
   clause = identity ? normalize(assertion).replaceAll(identity, '[task]') : normalize(assertion);
-  if (/[?]|\b(?:no longer|not|never|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(clause))
+  if (
+    /[?]|\b(?:no longer|not|never|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?|ei|eivät|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(
+      clause,
+    )
+  )
     return false;
   if (
     status === 'done' &&

@@ -570,12 +570,12 @@ describe('explicit completion among recalled candidates', () => {
     'If the access matrix review is finished, tell me.',
     'I think the access matrix review is finished.',
     'The access matrix review is not finished.',
-    'The access matrix review is finished. The access matrix review is not finished.',
-    'The access matrix review is finished. The access matrix review is still not done.',
-    'The access matrix review is finished. The access matrix review is only partially finished.',
-    'The access matrix review is finished. The access matrix review isn’t finished.',
-    'The access matrix review is finished. The access matrix review is still in progress.',
-    'The access matrix review is finished. The access matrix review has been reopened.',
+    'Review access matrix is finished. Review access matrix is not finished.',
+    'Review access matrix is finished. Review access matrix is still not done.',
+    'Review access matrix is finished. Review access matrix is only partially finished.',
+    'Review access matrix is finished. Review access matrix isn’t finished.',
+    'Review access matrix is finished. Review access matrix is still in progress.',
+    'Review access matrix is finished. Review access matrix has been reopened.',
     'The matrix review is finished.',
     'Review access matrix is still pending while the deployment finished.',
   ]) {
@@ -718,6 +718,31 @@ describe('explicit completion among recalled candidates', () => {
       }),
     ).toEqual([]);
   });
+  it('cannot complete a migration in the opposite direction', () => {
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        evidenceText: 'Migrate US to EU is done.',
+        relatedOpenWork: [
+          { id: 'eu-to-us', name: 'Migrate EU to US' },
+          { id: 'backup', name: 'Review backup matrix' },
+        ],
+        relatedOpenWorkIds: ['eu-to-us', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'eu-to-us',
+                title: 'Migrate EU to US',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
   it('preserves the latest affirmative completion after a denial', () => {
     const bundles = [
       {
@@ -734,8 +759,7 @@ describe('explicit completion among recalled candidates', () => {
     ];
     expect(
       stripAmbiguousLifecycleUpdates({
-        evidenceText:
-          'The access matrix review is not finished. The access matrix review is finished.',
+        evidenceText: 'Review access matrix is not finished. Review access matrix is finished.',
         relatedOpenWork,
         relatedOpenWorkIds: ['access', 'backup'],
         bundles,

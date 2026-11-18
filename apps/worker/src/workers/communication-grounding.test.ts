@@ -235,6 +235,22 @@ test('ongoing or nearly completed work cannot be marked done', () => {
   }
 });
 
+test('Spanish and German lifecycle negation cannot verify completion', () => {
+  for (const [taskTitle, text, status] of [
+    ['Política de retención', 'La política de retención no está terminada.', undefined],
+    ['Política de retención', 'La política de retención está terminada.', 'done'],
+    ['Aufbewahrungsrichtlinie', 'Die Aufbewahrungsrichtlinie ist nicht abgeschlossen.', undefined],
+    ['Aufbewahrungsrichtlinie', 'Die Aufbewahrungsrichtlinie ist abgeschlossen.', 'done'],
+  ] as const) {
+    expect(
+      run(text, { status: 'done' }, [support('status', text, 'done', taskTitle)], {
+        taskTitle,
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBe(status);
+  }
+});
+
 test('reopened-state wording retains todo only after the transition', () => {
   for (const [text, expected] of [
     ['Review retention policy has been reopened.', 'todo'],

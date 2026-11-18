@@ -1416,10 +1416,24 @@ function createSubjectCandidates(item: typeof agentSuggestionItems.$inferSelect)
   ].filter((value) => value.trim().length > 0);
 }
 
+function normalizedExactApprovalName(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function sameExactCreateIdentity(
+  olderItem: typeof agentSuggestionItems.$inferSelect,
+  newerItem: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const left = createSubjectCandidates(olderItem).map(normalizedExactApprovalName);
+  const right = new Set(createSubjectCandidates(newerItem).map(normalizedExactApprovalName));
+  return left.some((name) => name.length > 0 && right.has(name));
+}
+
 function sameCreateSubject(
   olderItem: typeof agentSuggestionItems.$inferSelect,
   newerItem: typeof agentSuggestionItems.$inferSelect,
 ): boolean {
+  if (sameExactCreateIdentity(olderItem, newerItem)) return true;
   const olderCandidates = createSubjectCandidates(olderItem);
   const newerCandidates = createSubjectCandidates(newerItem);
   return olderCandidates.some((older) =>
@@ -1778,23 +1792,6 @@ function sameConversationReview(
   );
 }
 
-function sharesExactTaskAlias(
-  left: typeof agentSuggestionItems.$inferSelect,
-  right: typeof agentSuggestionItems.$inferSelect,
-): boolean {
-  const matchesAlias = (
-    item: typeof agentSuggestionItems.$inferSelect,
-    other: typeof agentSuggestionItems.$inferSelect,
-  ) => {
-    const identities = new Set(createSubjectCandidates(other).map(normalizedApprovalText));
-    return aliasesForPendingItem(item).some((alias) => {
-      const normalized = normalizedApprovalText(alias);
-      return normalized.length > 0 && identities.has(normalized);
-    });
-  };
-  return matchesAlias(left, right) || matchesAlias(right, left);
-}
-
 /** Similar task text is recall, not identity, when both names add distinct terms. */
 function compatibleTaskNames(
   left: typeof agentSuggestionItems.$inferSelect,
@@ -1855,7 +1852,8 @@ function shouldSupersedePendingItem(args: {
     normalizedObjectCreateType(olderItem) === 'task' &&
     normalizedObjectCreateType(newerItem) === 'task' &&
     !compatibleTaskNames(olderItem, newerItem) &&
-    !sharesExactTaskAlias(olderItem, newerItem)
+    olderItem.dedupeKey !== newerItem.dedupeKey &&
+    !sameExactCreateIdentity(olderItem, newerItem)
   )
     return false;
 

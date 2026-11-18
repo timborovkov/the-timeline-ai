@@ -9585,6 +9585,53 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Thanks.');
   });
 
+  it('reviews every email in a backlog before completing the thread checkpoint', async () => {
+    const ids = Array.from({ length: 26 }, () => crypto.randomUUID());
+    const root = ids[0];
+    const last = ids.at(-1);
+    if (!root || !last) throw new Error('Missing email thread fixtures');
+    const reviewId = crypto.randomUUID();
+    const messages = ids.map((id, index) => ({
+      id,
+      teamId: TEAM_ID,
+      authorUserId: OWNER_ID,
+      source: 'email' as const,
+      visibility: 'team' as const,
+      occurredAt: new Date(REFERENCE_DATE.getTime() + 60_000 * index),
+      contentText:
+        index === 1 ? 'Please prepare the compliance register.' : `Thread message ${index}.`,
+      sourceMetadata: {
+        thread_root_id: root,
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    }));
+    await db.insert(rawEvents).values(messages);
+    await db.insert(conversationReviews).values({
+      id: reviewId,
+      teamId: TEAM_ID,
+      source: 'email',
+      status: 'pending',
+      lastRawEventId: last,
+      conversationKey: `email:${TEAM_ID}:thread:${root}`,
+      quietUntil: new Date(0),
+    });
+    const chat = emptyModel();
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const prompts = chat.mock.calls.map(([call]) => (call as { prompt: string }).prompt);
+    expect(prompts[0]).toContain('Please prepare the compliance register.');
+    expect(prompts.some((prompt) => prompt.includes('Thread message 25.'))).toBe(true);
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review).toMatchObject({ status: 'completed', reviewedThroughRawEventId: last });
+  });
+
   it('creates a correction proposal instead of mutating accepted conversation suggestions', async () => {
     const rawEventId = '6c723bec-696a-5c49-8c2d-e01f1dc8cef4';
     const reviewId = '46d67b60-846c-5f8b-a07d-18ab9d983f66';

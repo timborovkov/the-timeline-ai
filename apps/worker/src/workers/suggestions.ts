@@ -3897,6 +3897,7 @@ async function runSuggestionExtraction(
       window: conversationReview.ConversationEvidenceEvent[];
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
       unreviewedEmailIds?: ReadonlySet<string>;
+      reviewAnchorRawEventId?: string;
     };
   },
 ): Promise<number> {
@@ -4458,7 +4459,11 @@ async function runSuggestionExtraction(
 
   if (
     args.conversation &&
-    !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+    !(await isConversationReviewCurrent(
+      deps.db,
+      args.conversation.reviewId,
+      args.conversation.reviewAnchorRawEventId ?? rawEventId,
+    ))
   ) {
     return 0;
   }
@@ -4838,7 +4843,11 @@ async function runSuggestionExtraction(
     result = { object: { bundles: auditedBundles }, model: checked.model };
     if (
       args.conversation &&
-      !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+      !(await isConversationReviewCurrent(
+        deps.db,
+        args.conversation.reviewId,
+        args.conversation.reviewAnchorRawEventId ?? rawEventId,
+      ))
     )
       return 0;
   }
@@ -5247,7 +5256,11 @@ async function runSuggestionExtraction(
     if (bundle.items.length === 0) continue;
     if (
       args.conversation &&
-      !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+      !(await isConversationReviewCurrent(
+        deps.db,
+        args.conversation.reviewId,
+        args.conversation.reviewAnchorRawEventId ?? rawEventId,
+      ))
     ) {
       return proposalsCreated;
     }
@@ -5542,6 +5555,10 @@ async function processConversationReviewJob(
     await markReviewComplete(deps.db, review.id, last, 'identity_missing');
     return;
   }
+  if (identity.source === 'email') {
+    await processEmailThreadPages(deps, { review, last, identity, io, modelVersion });
+    return;
+  }
   const window = await conversationReview.buildConversationEvidenceWindow(deps.db, {
     teamId: review.teamId,
     identity,
@@ -5558,18 +5575,6 @@ async function processConversationReviewJob(
   });
   if (!(await isConversationReviewCurrent(deps.db, review.id, last.id))) return;
 
-  const reviewedThrough = review.reviewedThroughOccurredAt?.getTime();
-  const unreviewedEmailIds =
-    identity.source === 'email'
-      ? new Set(
-          window
-            .filter(
-              (event) =>
-                reviewedThrough === undefined || event.occurredAt.getTime() >= reviewedThrough,
-            )
-            .map((event) => event.id),
-        )
-      : undefined;
   const proposalsCreated = await runSuggestionExtraction(deps, {
     anchor: last,
     teamId: review.teamId,
@@ -5581,7 +5586,6 @@ async function processConversationReviewJob(
       key: review.conversationKey,
       window,
       linkedContext,
-      ...(unreviewedEmailIds ? { unreviewedEmailIds } : {}),
     },
   });
   await markReviewComplete(
@@ -5595,6 +5599,130 @@ async function processConversationReviewJob(
           sourceRefs: window.map((event) => conversationWindowSourceRef(identity.source, event)),
         },
   );
+}
+
+async function processEmailThreadPages(
+  deps: SuggestionWorkerDeps,
+  args: {
+    review: typeof conversationReviews.$inferSelect;
+    last: typeof rawEvents.$inferSelect;
+    identity: conversationReview.ConversationIdentity;
+    io: SuggestionWorkerIO;
+    modelVersion: string;
+  },
+): Promise<void> {
+  const { review, last, identity, io, modelVersion } = args;
+  let after =
+    review.reviewedThroughRawEventId && review.reviewedThroughOccurredAt
+      ? { id: review.reviewedThroughRawEventId, occurredAt: review.reviewedThroughOccurredAt }
+      : undefined;
+  const metadata = recordFromUnknown(review.metadata);
+  let hasProposal =
+    metadata.email_page_anchor_id === last.id && metadata.email_page_has_proposal === true;
+  while (await isConversationReviewCurrent(deps.db, review.id, last.id)) {
+    let pending = await conversationReview.listUnreviewedEmailEvents(deps.db, {
+      teamId: review.teamId,
+      identity,
+      through: last,
+      after,
+    });
+    if (!pending.length) {
+      await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action');
+      return;
+    }
+
+    let pageAnchor: typeof rawEvents.$inferSelect;
+    let pageProposals: number;
+    // Required evidence never truncates an unreviewed email. Split the page
+    // before inference if the complete set cannot fit in one input.
+    for (;;) {
+      const anchor = pending.at(-1);
+      if (!anchor) throw new Error('Email thread page has no anchor');
+      pageAnchor = anchor;
+      const unreviewedEmailIds = new Set(pending.map((event) => event.id));
+      const context = await conversationReview.buildConversationEvidenceWindow(deps.db, {
+        teamId: review.teamId,
+        identity,
+        anchorOccurredAt: anchor.occurredAt,
+      });
+      const window = [
+        ...context.filter(
+          (event) =>
+            !unreviewedEmailIds.has(event.id) &&
+            (event.occurredAt < anchor.occurredAt ||
+              (event.occurredAt.getTime() === anchor.occurredAt.getTime() && event.id < anchor.id)),
+        ),
+        ...pending.map((event) => ({ ...event, contentText: event.contentText?.trim() ?? '' })),
+      ].sort(
+        (first, second) =>
+          first.occurredAt.getTime() - second.occurredAt.getTime() ||
+          first.id.localeCompare(second.id),
+      );
+      const linkedContext = await conversationReview.buildLinkedContextWindow(deps.db, {
+        teamId: review.teamId,
+        identity,
+        evidenceWindow: window,
+      });
+      if (!(await isConversationReviewCurrent(deps.db, review.id, last.id))) return;
+      try {
+        pageProposals = await runSuggestionExtraction(deps, {
+          anchor,
+          teamId: review.teamId,
+          modelVersion,
+          modelId: io.modelId ?? llm.TIMELINE_MODELS.extraction.id,
+          io,
+          conversation: {
+            reviewId: review.id,
+            key: review.conversationKey,
+            window,
+            linkedContext,
+            unreviewedEmailIds,
+            reviewAnchorRawEventId: last.id,
+          },
+        });
+        break;
+      } catch (error) {
+        if (!(error instanceof RequiredEvidenceBudgetError) || pending.length === 1) throw error;
+        pending = pending.slice(0, Math.ceil(pending.length / 2));
+      }
+    }
+    hasProposal ||= pageProposals > 0;
+    if (pageAnchor.id === last.id) {
+      await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action', {
+        sourceRefs: pending.map((event) =>
+          conversationWindowSourceRef(identity.source, {
+            ...event,
+            contentText: event.contentText?.trim() ?? '',
+          }),
+        ),
+      });
+      return;
+    }
+    const [advanced] = await deps.db
+      .update(conversationReviews)
+      .set({
+        reviewedThroughRawEventId: pageAnchor.id,
+        reviewedThroughOccurredAt: pageAnchor.occurredAt,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+          email_page_anchor_id: last.id,
+          email_page_has_proposal: hasProposal,
+        })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(conversationReviews.id, review.id),
+          eq(conversationReviews.status, 'pending'),
+          eq(conversationReviews.lastRawEventId, last.id),
+          after
+            ? eq(conversationReviews.reviewedThroughRawEventId, after.id)
+            : isNull(conversationReviews.reviewedThroughRawEventId),
+        ),
+      )
+      .returning({ id: conversationReviews.id });
+    if (!advanced) return;
+    after = { id: pageAnchor.id, occurredAt: pageAnchor.occurredAt };
+  }
 }
 
 async function supersedePendingSlackChannelReviewForThreadReply(
@@ -6013,6 +6141,8 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
+class RequiredEvidenceBudgetError extends Error {}
+
 export interface SuggestionPromptParts {
   workspace: string;
   evidence: string;
@@ -6032,7 +6162,9 @@ export function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens
   if (parts.requiredEvidence) {
     const requiredTokens = estimate(parts.requiredEvidence);
     if (requiredTokens > maxTokens) {
-      throw new Error('suggestions: required evidence exceeds the prompt token budget');
+      throw new RequiredEvidenceBudgetError(
+        'suggestions: required evidence exceeds the prompt token budget',
+      );
     }
     const selected = {
       workspace: '',
@@ -6374,7 +6506,7 @@ function buildPromptParts(args: {
     })}`,
   ].join('\n');
 
-  if (unreviewedEmails.length > 0) {
+  if (args.unreviewedEmailIds?.has(args.sourceEventId)) {
     const requiredEvidence = [
       '# Unreviewed email thread messages',
       ...unreviewedEmails.map((event) => formatWindowEvent(event, true)),
