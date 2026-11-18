@@ -122,6 +122,19 @@ test('first-person commitments in Spanish attribute only the verified speaker', 
   }
 });
 
+test('negated first-person commitments cannot assign the speaker', () => {
+  for (const [taskTitle, text] of [
+    ['Política de retención', 'No revisaré la política de retención.'],
+    ['Aufbewahrungsrichtlinie', 'Ich werde die Aufbewahrungsrichtlinie nicht prüfen.'],
+  ] as const) {
+    expect(
+      run(text, { assigneeUserId: alice }, [support('assignee', text, alice, taskTitle)], {
+        taskTitle,
+      })[0]?.items[0]?.proposedPayload,
+    ).toEqual({});
+  }
+});
+
 test('forwarded self commitment uses original sender email rather than forwarder', () => {
   for (const text of [
     'I will review retention policy.',
@@ -1738,6 +1751,40 @@ test('a typed deliverable reference links only one explicitly evidenced task', (
     evaluate('Link the checklist to Northwind Medical.', 'Also prepare security checklist.')[0]
       ?.items,
   ).toHaveLength(1);
+});
+
+test('a typed customer must actually be an endpoint of the link command', () => {
+  const intro = 'Cedar Labs is our customer.';
+  for (const [command, expected] of [
+    ['Link Review retention policy to this customer.', 1],
+    ['Link Review retention policy to deployment and notify this customer.', 0],
+  ] as const) {
+    const quote = `${intro} ${command}`;
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              title: 'Customer link',
+              proposedPayload: { kind: 'related', fromEntityId: 'review', toEntityId: 'customer' },
+              grounding: [support('customer', quote, 'customer')],
+            },
+          ],
+        },
+      ],
+      objects: [{ id: 'review', name: title, type: 'task' }],
+      hubs: [{ id: 'customer', name: 'Cedar Labs', type: 'company' }],
+      members: [],
+      source: 'slack',
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+    });
+    expect(result[0]?.items).toHaveLength(expected);
+  }
 });
 
 test('adjacent context from the same source retains its literal lifecycle assertion', () => {

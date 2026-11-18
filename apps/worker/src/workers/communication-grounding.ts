@@ -1134,29 +1134,28 @@ export function groundCommunicationBundles<T extends Item>(args: {
                   affirmativeProjectMembership(membership, from.name, name, false),
               );
             }
-            const link =
-              /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i.exec(
-                assertion.trim(),
+            const linkInstruction =
+              /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i;
+            const link = linkInstruction.exec(assertion.trim());
+            const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
+              [object.name, ...object.aliases].some(
+                (name) =>
+                  [normalize(name), `the ${normalize(name)}`].includes(normalize(reference)) &&
+                  !known.some(
+                    (candidate) =>
+                      candidate.id !== object.id &&
+                      [candidate.name, ...(candidate.aliases ?? [])].some(
+                        (other) => other && normalize(other) === normalize(name),
+                      ),
+                  ),
               );
-            if (link && payload.kind === 'related') {
-              const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
-                [object.name, ...object.aliases].some(
-                  (name) =>
-                    [normalize(name), `the ${normalize(name)}`].includes(normalize(reference)) &&
-                    !known.some(
-                      (candidate) =>
-                        candidate.id !== object.id &&
-                        [candidate.name, ...(candidate.aliases ?? [])].some(
-                          (other) => other && normalize(other) === normalize(name),
-                        ),
-                    ),
-                );
-              if (
-                (exactEndpoint(link[1] ?? '', from) && exactEndpoint(link[2] ?? '', to)) ||
-                (exactEndpoint(link[1] ?? '', to) && exactEndpoint(link[2] ?? '', from))
-              )
-                return true;
-            }
+            if (
+              link &&
+              payload.kind === 'related' &&
+              ((exactEndpoint(link[1] ?? '', from) && exactEndpoint(link[2] ?? '', to)) ||
+                (exactEndpoint(link[1] ?? '', to) && exactEndpoint(link[2] ?? '', from)))
+            )
+              return true;
             if (support.field === 'relationship') return false;
             const direct = namesEndpoint(assertion, from) && namesEndpoint(assertion, to);
             if (direct) {
@@ -1232,28 +1231,40 @@ export function groundCommunicationBundles<T extends Item>(args: {
             }
             // A typed reference can combine admitted statements from the SAME source only.
             // It must be an explicit link instruction, with exactly one visible candidate.
-            if (!/\blink\b/i.test(support.quote)) return false;
-            const other = namesEndpoint(support.quote, from)
-              ? to
-              : namesEndpoint(support.quote, to)
-                ? from
-                : null;
-            const taskNoun = other?.name
-              .toLowerCase()
-              .match(/[\p{L}\p{N}]+/gu)
-              ?.at(-1);
-            const referenceKind =
-              other?.type === 'task'
-                ? `(?:task|item|deliverable${taskNoun && taskNoun.length > 3 ? `|${taskNoun}` : ''})`
-                : other?.type === 'company'
-                  ? '(?:company|customer|client)'
-                  : 'project';
-            if (
-              !other ||
-              !['company', 'project', 'task'].includes(String(other.type)) ||
-              !new RegExp(`\\b(?:the|this|that) ${referenceKind}\\b`, 'i').test(support.quote)
-            )
-              return false;
+            const typedEndpoint = (name: string, object: NonNullable<typeof from>) => {
+              const taskNoun = object.name
+                .toLowerCase()
+                .match(/[\p{L}\p{N}]+/gu)
+                ?.at(-1);
+              const type =
+                object.type === 'task'
+                  ? `(?:task|item|deliverable${taskNoun && taskNoun.length > 3 ? `|${taskNoun}` : ''})`
+                  : object.type === 'company'
+                    ? '(?:company|customer|client)'
+                    : object.type === 'project'
+                      ? 'project'
+                      : null;
+              return (
+                type !== null && new RegExp(`^(?:the|this|that) ${type}$`, 'i').test(name.trim())
+              );
+            };
+            const other = (support.quote.match(/[^.!?\n]+[.!?]?/g) ?? []).flatMap((sentence) => {
+              const command = linkInstruction.exec(sentence.trim());
+              if (!command?.[1] || !command[2]) return [];
+              const [left, right] = [command[1], command[2]];
+              if (
+                (exactEndpoint(left, from) && typedEndpoint(right, to)) ||
+                (exactEndpoint(right, from) && typedEndpoint(left, to))
+              )
+                return [to];
+              if (
+                (exactEndpoint(left, to) && typedEndpoint(right, from)) ||
+                (exactEndpoint(right, to) && typedEndpoint(left, from))
+              )
+                return [from];
+              return [];
+            })[0];
+            if (!other) return false;
             const source = args.sources.find((source) => source.id === support.rawEventId);
             const candidates = new Set(
               known
@@ -1448,7 +1459,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
             : source?.authorUserId === member.userId) &&
           selfAction &&
           matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
-          !/\b(?:if|unless|not|cannot)\b/i.test(clause);
+          !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
+            clause,
+          );
         // A cited, verified assignment is a concrete claim even if the model
         // omitted its payload field on a new task. Updates and repairs may have
         // intentionally protected fields removed. Never overwrite a field or choose
