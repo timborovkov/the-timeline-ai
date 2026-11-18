@@ -334,7 +334,9 @@ function taskAssertion(clause: string, subject: string): string | undefined {
   // clauses can describe a different artifact, and task titles are identifiers.
   const parts = clause
     .trim()
-    .split(/\s+\b(because|although|since|whereas|while|until|even though|but|yet|which|who)\b\s+/i);
+    .split(
+      /\s+\b(because|although|since|whereas|while|until|even though|but|yet|which|who|that(?=\s+(?:is|are|was|were|has|have|had|will|would|may|must|can|could|should)\b))\b\s+/i,
+    );
   const statements = parts.filter((_, index) => index % 2 === 0);
   const named = statements.filter((statement) => namesTask(statement, subject));
   const first = statements.length === 1 ? statements[0] : named.length === 1 ? named[0] : undefined;
@@ -1058,14 +1060,24 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 const hub = from === taskEndpoint ? to : from;
                 const association = taskAssertion(assertion, taskEndpoint.name);
                 if (!association || !namesEndpoint(association, taskEndpoint)) return false;
+                const type = typeof hub.type === 'string' ? hub.type : '';
                 return [hub.name, ...hub.aliases].some(
                   (name) =>
                     namesEndpoint(name, hub) &&
-                    affirmativeTaskHub(
-                      association,
-                      taskEndpoint.name,
-                      name,
-                      typeof hub.type === 'string' ? hub.type : '',
+                    affirmativeTaskHub(association, taskEndpoint.name, name, type) &&
+                    !(
+                      type === 'company' &&
+                      known.some(
+                        (other) =>
+                          other.id !== hub.id &&
+                          other.type === 'company' &&
+                          [other.name, ...(other.aliases ?? [])].some(
+                            (otherName) =>
+                              otherName &&
+                              normalize(otherName).startsWith(`${normalize(name)} `) &&
+                              affirmativeTaskHub(association, taskEndpoint.name, otherName, type),
+                          ),
+                      )
                     ),
                 );
               }

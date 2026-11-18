@@ -539,7 +539,7 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
   // completion from the loose token recall that assembled the candidate list.
   const titleTokens = (text: string) =>
     (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(
-      (word) => word.length >= 3 && !['the', 'and', 'for', 'with'].includes(word),
+      (word) => !['the', 'and', 'for', 'with'].includes(word),
     );
   const explicit = new Set<string>();
   for (const sentence of (args.evidenceText ?? '').split(/(?<=[.!?])\s+|\n+/u)) {

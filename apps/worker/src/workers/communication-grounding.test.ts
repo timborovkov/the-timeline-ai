@@ -153,6 +153,7 @@ test('status evidence excludes task-title words and predicates belonging to othe
   for (const [name, text] of [
     [title, 'Review retention policy is blocked because deployment is done.'],
     [title, 'Review retention policy is blocked, but deployment is done.'],
+    [title, 'Review retention policy is blocked by deployment that is done.'],
     ['Review completed applications', 'Review completed applications is blocked.'],
   ] as const) {
     for (const status of ['done', 'blocked']) {
@@ -712,6 +713,40 @@ test('a different artifact cannot supply the deadline or clear fields on this ta
     expect(
       run(text, { ...payload }, [support(claim, text, value)])[0]?.items[0]?.proposedPayload,
     ).toEqual(expected);
+  }
+});
+
+test('a customer link cannot resolve to the prefix of the named customer', () => {
+  const quote = 'Review retention policy is for Cedar Labs.';
+  const customers = [
+    { id: 'cedar', name: 'Cedar', type: 'company' },
+    { id: 'labs', name: 'Cedar Labs', type: 'company' },
+  ];
+  for (const customer of customers) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'object_relationship',
+              title: 'Customer link',
+              proposedPayload: { kind: 'related', fromEntityId: 'task', toEntityId: customer.id },
+              grounding: [support('customer', quote, customer.id)],
+            },
+          ],
+        },
+      ],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      members: [],
+      hubs: customers,
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      source: 'slack',
+    });
+    expect(result[0]?.items).toHaveLength(customer.id === 'labs' ? 1 : 0);
   }
 });
 

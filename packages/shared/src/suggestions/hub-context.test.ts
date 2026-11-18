@@ -600,6 +600,31 @@ describe('explicit completion among recalled candidates', () => {
       ).toEqual([]);
     });
   }
+  it('does not lose short words that distinguish two identities', () => {
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        evidenceText: 'Review US policy is done.',
+        relatedOpenWork: [
+          { id: 'eu', name: 'Review EU policy' },
+          { id: 'backup', name: 'Review backup matrix' },
+        ],
+        relatedOpenWorkIds: ['eu', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'eu',
+                title: 'Review EU policy',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
   it('preserves the latest affirmative completion after a denial', () => {
     const bundles = [
       {
