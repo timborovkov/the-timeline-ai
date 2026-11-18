@@ -609,6 +609,42 @@ test('task grounding rejects a completion superseded by a later visible correcti
   }
 });
 
+test('a correction using an authorized alias inside the quotation supersedes the claim', () => {
+  for (const [quote, expected] of [
+    ['Review retention policy is done. SEC-42 is not done.', []],
+    ['SEC-42 is not done. Review retention policy is done.', ['completion']],
+  ] as const) {
+    const verifiedLifecycleAuditIds = new Set<string>();
+    groundCommunicationBundles({
+      verifiedLifecycleAuditIds,
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              auditId: 'completion',
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'review',
+              proposedPayload: { status: 'done' },
+              grounding: [support('status', quote, 'done')],
+            },
+          ],
+        },
+      ],
+      objects: [{ id: 'review', name: title, type: 'task', aliases: ['SEC-42'] }],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      members: [],
+      hubs: [],
+      source: 'slack',
+    });
+    expect([...verifiedLifecycleAuditIds]).toEqual([...expected]);
+  }
+});
+
 test('a later correction distinguishes Plan A from Plan B', () => {
   const taskTitle = 'Review plan A';
   const quote = 'Review plan A is done.';

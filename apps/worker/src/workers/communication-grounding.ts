@@ -570,12 +570,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const identity = taskIdentityPattern(name);
         return identity ? new RegExp(`^(?:the )?${identity}$`, 'iu') : null;
       });
+    const citedClause = taskClause(support.quote, support.subject);
+    const assertionStart = citedClause ? Math.max(0, citation.indexOf(normalize(citedClause))) : 0;
     for (const [offset, event] of chronology.slice(from).entries()) {
+      const normalizedText = normalize(event.contentText);
       const text =
         offset === 0
-          ? normalize(event.contentText).slice(
-              normalize(event.contentText).indexOf(citation) + citation.length,
-            )
+          ? normalizedText.slice(normalizedText.indexOf(citation) + assertionStart)
           : event.contentText;
       for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
         const state = explicitLifecycleState(sentence);
