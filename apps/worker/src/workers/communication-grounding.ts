@@ -879,7 +879,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 contextValid &&
                 /\b(?:this|it|instead)\b/i.test(support.quote))) &&
             (item.targetKind === 'object_relationship' ||
-              taskIdentityNames(item).some((name) => namesTask(name, support.subject)))
+              taskIdentityNames(item).some((name) =>
+                isTask
+                  ? normalize(name) === normalize(support.subject)
+                  : namesTask(name, support.subject),
+              ))
           );
         });
     const uncertainty = new Set<string>();
@@ -890,7 +894,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const type =
         item.targetKind === 'task'
           ? 'task'
-          : (payload.type ?? args.objects?.find((object) => object.id === item.targetId)?.type);
+          : (args.objects?.find((object) => object.id === item.targetId)?.type ?? payload.type);
       if (item.operation === 'archive_or_cancel') {
         const cancellation = supports.find(
           (support) => support.field === 'status' && support.value === 'cancelled',
@@ -905,6 +909,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           lifecycleSuperseded(cancellation, taskIdentityNames(item))
         )
           return [];
+        if (type === 'task') payload.status = 'cancelled';
       }
       if (item.targetKind === 'object_relationship') {
         const normalizedRefs = normalizeKnownRelationshipReferences(

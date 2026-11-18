@@ -202,6 +202,40 @@ test('the latest same-task contrastive correction supersedes the previous status
   }
 });
 
+test('a generic subject cannot replace the known identity of a task', () => {
+  const taskTitle = 'Review access matrix';
+  const quote = 'Review payroll is done.';
+  const verifiedLifecycleAuditIds = new Set<string>();
+  const result = groundCommunicationBundles({
+    verifiedLifecycleAuditIds,
+    bundles: [
+      {
+        title: taskTitle,
+        confidence: 'high',
+        items: [
+          {
+            auditId: 'wrong',
+            title: taskTitle,
+            operation: 'update',
+            targetKind: 'task',
+            targetId: 'review',
+            proposedPayload: { status: 'done' },
+            grounding: [support('status', quote, 'done', 'Review')],
+          },
+        ],
+      },
+    ],
+    objects: [{ id: 'review', name: taskTitle, type: 'task' }],
+    packet: quote,
+    sources: [{ id: event, text: quote }],
+    source: 'slack',
+    members: [],
+    hubs: [],
+  });
+  expect(result[0]?.items).toEqual([]);
+  expect(verifiedLifecycleAuditIds.size).toBe(0);
+});
+
 test('task evidence retains short distinguishing tokens and requires whole words', () => {
   for (const [taskTitle, text, expected] of [
     ['Review EU policy', 'Review US policy is done.', undefined],
@@ -1529,13 +1563,15 @@ test('known existing IDs in reference slots normalize without guessing or overri
 
 test('grounded task cancellation updates its lifecycle rather than archiving the record', () => {
   const quote = 'Cancel Review retention policy; the launch was withdrawn.';
-  const result = run(quote, { status: 'cancelled' }, [support('status', quote, 'cancelled')], {
-    operation: 'archive_or_cancel',
-  });
-  expect(result[0]?.items[0]).toMatchObject({
-    operation: 'update',
-    proposedPayload: { status: 'cancelled' },
-  });
+  for (const payload of [{ status: 'cancelled' }, {}]) {
+    const result = run(quote, payload, [support('status', quote, 'cancelled')], {
+      operation: 'archive_or_cancel',
+    });
+    expect(result[0]?.items[0]).toMatchObject({
+      operation: 'update',
+      proposedPayload: { status: 'cancelled' },
+    });
+  }
 });
 
 test('owner confirmation needs adjacent visible task context and explicit ownership', () => {
