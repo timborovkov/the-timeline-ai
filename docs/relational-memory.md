@@ -38,7 +38,8 @@ with their full bodies. When a late arrival follows longer reviewed messages,
 the prompt keeps the pending body and fits later reviewed excerpts in the
 remaining space, including explicit lifecycle statements when they fit. The
 worker scans authorized thread emails through the fixed review anchor and keeps
-safe lifecycle, deadline and ownership assertions independently of the prompt window.
+safe lifecycle, deadline, ownership and project assertions independently of the
+prompt window.
 Corrections can reject stale changes across pending pages, including an earlier
 email that supersedes an older forwarded statement. Pending pages supply
 chronology checks until their own extraction.
@@ -358,6 +359,7 @@ An assignee ID must identify an available member. Unresolved named people remain
 named evidence. Owner and assignee claims each need support for their role.
 Later definitive assignments and explicit removals supersede earlier claims
 for the same role in visible context or the authorized email thread.
+Definitive primary-project assignments and removals follow the same chronology.
 
 The source window must be interpreted in order. Work introduced and conclusively
 finished in one meeting should yield its final supported state. “After QA, mark it

@@ -150,7 +150,7 @@ export function emailChronologyStatements(
       (explicitLifecycleState(sentence) ||
         firstPersonCommitment.test(sentence) ||
         assignmentDenial.test(sentence) ||
-        /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis|will|shall|owns|owner|responsible|assign|assigned|reassign|reassigned|unassign|remove|declines|cannot)\b/i.test(
+        /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis|will|shall|owns|owner|responsible|assign|assigned|reassign|reassigned|unassign|remove|declines|cannot|project|under|within|part of|belongs to|attach|move|link)\b/i.test(
           sentence,
         )) &&
       safeSourceQuote(part.contentText, sentence.trim())
@@ -497,6 +497,7 @@ function affirmativeProjectMembership(
   if (
     !project ||
     !task ||
+    tentativeAssertion.test(statement.replaceAll(normalize(subject), '[task]')) ||
     /[?]|\b(?:not|no|never|unless|if|maybe|perhaps|unrelated|without|except|might|may|instead)\b/i.test(
       statement,
     )
@@ -671,6 +672,15 @@ function affirmativeFieldClear(assertion: string, subject: string): boolean {
     Boolean(text) &&
     !tentativeAssertion.test(text) &&
     !/[?]|\b(?:not|never|if|unless|[a-z]+n[’']t)\b/i.test(text)
+  );
+}
+
+function explicitProjectClear(assertion: string, subject: string): boolean {
+  return (
+    affirmativeFieldClear(assertion, subject) &&
+    /\b(?:remove|clear|unset) (?:the |its )?(?:primary )?project(?: assignment| association)?\b/i.test(
+      assertion,
+    )
   );
 }
 
@@ -1048,6 +1058,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
       name && clause
         ? new RegExp(`${name}\\s+${assignmentDenial.source}\\s+`, 'iu').exec(clause)
         : null;
+    const namedDenialAction =
+      clause && namedDenial ? clause.slice(namedDenial.index + namedDenial[0].length) : undefined;
     const explicitWithdrawal =
       name && clause
         ? new RegExp(`^(?:please )?(?:unassign|remove) ${name} from\\s+`, 'iu').exec(clause)
@@ -1065,8 +1077,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       !tentative &&
       !unresolvedOwner &&
       !/\b(?:if|unless)\b/i.test(surrounding ?? clause) &&
-      ((namedDenial !== null &&
-        matchesAssignedTask(clause.slice(namedDenial.index + namedDenial[0].length))) ||
+      ((namedDenialAction !== undefined && matchesAssignedTask(namedDenialAction)) ||
         (explicitWithdrawal !== null &&
           matchesAssignedTask(clause.slice(explicitWithdrawal[0].length))) ||
         (selfDenial !== undefined && matchesAssignedTask(selfDenial)));
@@ -1075,7 +1086,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
       /\bowns\s*$/i.test(namedAction?.[0] ?? '') ||
       (Boolean(explicitAssignment) && /\bas (?:the )?owner\b/i.test(clause ?? '')) ||
       /^(?:own|take ownership of|be the owner)\b/i.test(
-        selfAction && clause ? clause.slice(selfAction.index + selfAction[0].length).trim() : '',
+        (
+          namedDenialAction ??
+          selfDenial ??
+          (selfAction && clause ? clause.slice(selfAction.index + selfAction[0].length) : '')
+        ).trim(),
       )
         ? 'owner'
         : 'assignee';
@@ -1139,8 +1154,50 @@ export function groundCommunicationBundles<T extends Item>(args: {
     }
     return latest !== support.value;
   }
+  function projectSuperseded(
+    support: Support,
+    wanted: string | null,
+    names: string[],
+    unambiguous: (assertion: string) => boolean,
+    projects: { id: string; name: string; aliases?: string[] }[],
+  ): boolean {
+    let latest = wanted;
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
+      const subject = names.find((name) => namesTask(sentence, name, true));
+      if (!subject) continue;
+      const assertion = supportedTaskAssertion({ ...support, subject, quote: sentence });
+      if (!assertion || !unambiguous(assertion)) continue;
+      if (explicitProjectClear(assertion, subject)) {
+        latest = null;
+        continue;
+      }
+      const mentioned = mentionedProjectIds(assertion, projects);
+      if (mentioned.size !== 1) continue;
+      const selected = projects.find((project) => mentioned.has(project.id));
+      if (!selected) continue;
+      const projectNames = [selected.name, ...(selected.aliases ?? [])];
+      if (
+        !hasEndpointAlternative(assertion, projectNames) &&
+        projectNames.some((name) => affirmativeProjectMembership(assertion, subject, name, true))
+      )
+        latest = selected.id;
+    }
+    return latest !== wanted;
+  }
   return args.bundles.map((bundle) => {
     const validContexts = new Set<Support>();
+    const projectCandidates = args.hubs.filter((hub) => hub.type === 'project');
+    for (const candidate of bundle.items) {
+      const name = candidate.proposedPayload.canonicalName;
+      if (
+        candidate.operation === 'create' &&
+        candidate.proposedPayload.type === 'project' &&
+        typeof name === 'string' &&
+        !projectCandidates.some((project) => normalize(project.name) === normalize(name))
+      )
+        projectCandidates.push({ id: `new:${normalize(name)}`, type: 'project', name });
+    }
     const taskIdentityNames = (
       item: Pick<Item, 'targetId' | 'title'> &
         Partial<Pick<Item, 'targetKind' | 'proposedPayload' | 'scopedSourceIdentity'>>,
@@ -2001,14 +2058,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
             !enclosing ||
             ![support.quote, enclosing].every((quote) => {
               const clause = supportedTaskAssertion({ ...support, quote });
-              return (
-                clause &&
-                affirmativeFieldClear(clause, support.subject) &&
-                /\b(?:remove|clear|unset) (?:the |its )?(?:primary )?project(?: assignment| association)?\b/i.test(
-                  clause,
-                )
-              );
-            })
+              return clause && explicitProjectClear(clause, support.subject);
+            }) ||
+            projectSuperseded(
+              support,
+              null,
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              projectCandidates,
+            )
           ) {
             delete payload.parentObjectId;
             delete payload.projectName;
@@ -2029,6 +2087,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 ),
             );
           const clause = supportedTaskAssertion(projectSupport);
+          const enclosing = projectSupport && enclosingAssertion(projectSupport);
+          const fullClause =
+            projectSupport &&
+            enclosing &&
+            supportedTaskAssertion({ ...projectSupport, quote: enclosing });
           const projects = clause
             ? mentionedProjectIds(
                 clause,
@@ -2040,11 +2103,20 @@ export function groundCommunicationBundles<T extends Item>(args: {
           const names = project ? [project.name, ...(project.aliases ?? [])] : [];
           if (
             !clause ||
-            !projectSupport ||
+            !fullClause ||
             project?.id !== payload.parentObjectId ||
             hasEndpointAlternative(clause, names) ||
-            !names.some((name) =>
-              affirmativeProjectMembership(clause, projectSupport.subject, name, true),
+            !names.some(
+              (name) =>
+                affirmativeProjectMembership(clause, projectSupport.subject, name, true) &&
+                affirmativeProjectMembership(fullClause, projectSupport.subject, name, true),
+            ) ||
+            projectSuperseded(
+              projectSupport,
+              payload.parentObjectId,
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              projectCandidates,
             )
           ) {
             delete payload.parentObjectId;
@@ -2067,12 +2139,27 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 entry.value === project?.proposedPayload.localRef),
           );
           const clause = supportedTaskAssertion(support);
+          const enclosing = support && enclosingAssertion(support);
+          const fullClause =
+            support && enclosing && supportedTaskAssertion({ ...support, quote: enclosing });
+          const projectId = `new:${normalize(name)}`;
           if (
             item.operation !== 'create' ||
             !support ||
             !clause ||
+            !fullClause ||
             hasEndpointAlternative(clause, [name]) ||
-            !affirmativeProjectMembership(clause, support.subject, name, true)
+            !affirmativeProjectMembership(clause, support.subject, name, true) ||
+            !affirmativeProjectMembership(fullClause, support.subject, name, true) ||
+            projectSuperseded(
+              support,
+              projectId,
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              projectCandidates.some((project) => project.id === projectId)
+                ? projectCandidates
+                : [...projectCandidates, { id: projectId, name }],
+            )
           ) {
             delete payload.createProjectName;
             if (payload.parentObjectId === undefined) delete payload.projectName;

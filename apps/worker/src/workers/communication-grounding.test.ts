@@ -313,6 +313,68 @@ test('independent owner and assignee citations preserve both roles in either sup
   }
 });
 
+test('ownership withdrawals revoke only the owner role', () => {
+  const earlier = `Alice owns ${title}.`;
+  for (const [later, retained] of [
+    [`Alice will not own ${title}.`, false],
+    [`I will not own ${title}.`, false],
+    ['Alice will not review retention policy.', true],
+  ] as const) {
+    expect(
+      run(`${earlier}\n${later}`, { ownerUserId: alice }, [support('assignee', earlier, alice)], {
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.ownerUserId,
+    ).toBe(retained ? alice : undefined);
+  }
+});
+
+test('later definitive project assertions supersede clears and attachments', () => {
+  const removed = `Remove the project assignment for ${title}.`;
+  const attached = `${title} is part of Cedar Launch.`;
+  const newer = '33333333-3333-4333-8333-333333333333';
+  const projectId = 'cedar-launch';
+  for (const [first, later, value, selectedLater, retained] of [
+    [removed, attached, null, false, false],
+    [removed, attached, projectId, true, true],
+    [attached, removed, projectId, false, false],
+    [removed, `Probably ${attached}`, null, false, true],
+  ] as const) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task',
+              proposedPayload: { parentObjectId: value },
+              grounding: [
+                {
+                  ...support('project', selectedLater ? later : first, value ?? 'unset'),
+                  rawEventId: selectedLater ? newer : event,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      sources: [
+        { id: event, text: first, occurredAt: new Date('2026-06-01T08:00:00Z') },
+        { id: newer, text: later, occurredAt: new Date('2026-06-02T08:00:00Z') },
+      ],
+      packet: `${first}\n${later}`,
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      members: [],
+      hubs: [{ id: projectId, name: 'Cedar Launch', type: 'project' }],
+      source: 'slack',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.parentObjectId).toBe(retained ? value : undefined);
+  }
+});
+
 test('directional task identity distinguishes recipients from sources', () => {
   const taskTitle = 'Send report to Alice';
   for (const [quote, expected] of [
