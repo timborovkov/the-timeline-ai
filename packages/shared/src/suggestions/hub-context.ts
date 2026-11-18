@@ -627,7 +627,7 @@ export function explicitLifecycleState(sentence: string):
     return { subject: finnish[1], status: 'done', affirmative: !/^ei\b/i.test(finnish[2]) };
   }
   const assertion =
-    /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)[.!]?$/i.exec(
+    /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)(?:\s+(yet|already|now|anymore))?[.!]?$/i.exec(
       sentence.trim(),
     );
   if (!assertion?.[1] || !assertion[2] || !assertion[4]) return undefined;
@@ -638,7 +638,8 @@ export function explicitLifecycleState(sentence: string):
         status,
         affirmative:
           /^(?:is|was|has been)$/i.test(assertion[2]) &&
-          /^(?:(?:still|now|already) )*$/i.test(assertion[3] ?? ''),
+          /^(?:(?:still|now|already) )*$/i.test(assertion[3] ?? '') &&
+          !/^(?:yet|anymore)$/i.test(assertion[5] ?? ''),
       }
     : undefined;
 }

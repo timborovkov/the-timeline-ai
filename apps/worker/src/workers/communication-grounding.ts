@@ -37,33 +37,28 @@ interface Bundle<T extends Item> {
 }
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
+const TASK_ACTIONS = new Set(['prepare', 'review', 'draft', 'write', 'create', 'send']);
 const namesTask = (text: string, name: string) => {
   const words = (name.match(/[\p{L}\p{N}]+/gu) ?? [])
     .filter((word) => word !== 'a')
     .map((word) => word.toLowerCase());
   const significant = words.filter(
     (word) =>
-      ![
-        'an',
-        'and',
-        'for',
-        'in',
-        'of',
-        'on',
-        'the',
-        'to',
-        'with',
-        'prepare',
-        'review',
-        'please',
-        'draft',
-        'write',
-        'create',
-        'send',
-      ].includes(word),
+      !TASK_ACTIONS.has(word) &&
+      !['an', 'and', 'for', 'in', 'of', 'on', 'the', 'to', 'with', 'please'].includes(word),
   );
   if (!significant.length) return mentions(text, name);
   const evidenceWords: string[] = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const action = words[0];
+  // An outcome can name the artifact without restating the action. When
+  // evidence names an action, a different action is a different task.
+  if (
+    action &&
+    TASK_ACTIONS.has(action) &&
+    !evidenceWords.includes(action) &&
+    evidenceWords.some((word) => TASK_ACTIONS.has(word))
+  )
+    return false;
   // Directional arguments must remain ordered. Non-directional identities
   // may vary in word order, e.g. a customer prefix or “for Customer”.
   if (!/\b(?:to|from|into|onto|towards?|through|against|versus|vs)\b/i.test(name))
