@@ -1343,6 +1343,11 @@ export async function processSuggestionJobForTests(
     if (!env.OPENROUTER_API_KEY) {
       throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
     }
+    if (
+      identity.source === 'email' &&
+      typeof recordFromUnknown(row.sourceMetadata).email_thread_review_id === 'string'
+    )
+      return;
     await scheduleConversationReview(deps, row, identity, effectiveIo);
     return;
   }
@@ -3898,6 +3903,7 @@ async function runSuggestionExtraction(
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
       unreviewedEmailIds?: ReadonlySet<string>;
       reviewAnchorRawEventId?: string;
+      reviewAnchorQuietUntil?: Date;
     };
   },
 ): Promise<number> {
@@ -4463,6 +4469,7 @@ async function runSuggestionExtraction(
       deps.db,
       args.conversation.reviewId,
       args.conversation.reviewAnchorRawEventId ?? rawEventId,
+      args.conversation.reviewAnchorQuietUntil,
     ))
   ) {
     return 0;
@@ -4847,6 +4854,7 @@ async function runSuggestionExtraction(
         deps.db,
         args.conversation.reviewId,
         args.conversation.reviewAnchorRawEventId ?? rawEventId,
+        args.conversation.reviewAnchorQuietUntil,
       ))
     )
       return 0;
@@ -5260,6 +5268,7 @@ async function runSuggestionExtraction(
         deps.db,
         args.conversation.reviewId,
         args.conversation.reviewAnchorRawEventId ?? rawEventId,
+        args.conversation.reviewAnchorQuietUntil,
       ))
     ) {
       return proposalsCreated;
@@ -5425,6 +5434,21 @@ async function scheduleConversationReview(
     last_anchor_raw_event_id: row.id,
     last_anchor_occurred_at: row.occurredAt.toISOString(),
   };
+  const isNewerAnchor = sql`(
+          COALESCE(
+            (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+            (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+          ) IS NULL OR (
+            COALESCE(
+              (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+              (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+            ),
+            COALESCE(
+              ${conversationReviews.lastRawEventId},
+              (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
+            )
+          ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)
+        )`;
   const [review] = await deps.db
     .insert(conversationReviews)
     .values({
@@ -5440,27 +5464,13 @@ async function scheduleConversationReview(
       target: [conversationReviews.teamId, conversationReviews.conversationKey],
       set: {
         status: 'pending',
-        lastRawEventId: row.id,
+        lastRawEventId: sql`CASE WHEN ${isNewerAnchor} THEN ${row.id}::uuid ELSE COALESCE(${conversationReviews.lastRawEventId}, ${row.id}::uuid) END`,
         quietUntil,
-        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
+        metadata: sql`CASE WHEN ${isNewerAnchor} THEN ${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb ELSE ${conversationReviews.metadata} END`,
         updatedAt: new Date(),
       },
       setWhere: sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
-        AND (
-          COALESCE(
-            (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
-            (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
-          ) IS NULL OR (
-            COALESCE(
-              (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
-              (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
-            ),
-            COALESCE(
-              ${conversationReviews.lastRawEventId},
-              (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
-            )
-          ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)
-        )`,
+        AND (${isNewerAnchor} OR ${identity.source === 'email'})`,
     })
     .returning({
       id: conversationReviews.id,
@@ -5548,7 +5558,7 @@ async function processConversationReviewJob(
     );
     return;
   }
-  if (review.reviewedThroughRawEventId === last.id) return;
+  if (last.source !== 'email' && review.reviewedThroughRawEventId === last.id) return;
 
   const identity = conversationReview.conversationIdentityForRawEvent(last);
   if (!identity) {
@@ -5612,22 +5622,22 @@ async function processEmailThreadPages(
   },
 ): Promise<void> {
   const { review, last, identity, io, modelVersion } = args;
-  let after =
-    review.reviewedThroughRawEventId && review.reviewedThroughOccurredAt
-      ? { id: review.reviewedThroughRawEventId, occurredAt: review.reviewedThroughOccurredAt }
-      : undefined;
+  let sourceRefs: reconciliation.SourceRef[] = [];
   const metadata = recordFromUnknown(review.metadata);
   let hasProposal =
     metadata.email_page_anchor_id === last.id && metadata.email_page_has_proposal === true;
-  while (await isConversationReviewCurrent(deps.db, review.id, last.id)) {
+  while (await isConversationReviewCurrent(deps.db, review.id, last.id, review.quietUntil)) {
     let pending = await conversationReview.listUnreviewedEmailEvents(deps.db, {
       teamId: review.teamId,
       identity,
       through: last,
-      after,
+      reviewId: review.id,
     });
     if (!pending.length) {
-      await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action');
+      await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action', {
+        ...(sourceRefs.length ? { sourceRefs } : {}),
+        expectedQuietUntil: review.quietUntil,
+      });
       return;
     }
 
@@ -5663,7 +5673,8 @@ async function processEmailThreadPages(
         identity,
         evidenceWindow: window,
       });
-      if (!(await isConversationReviewCurrent(deps.db, review.id, last.id))) return;
+      if (!(await isConversationReviewCurrent(deps.db, review.id, last.id, review.quietUntil)))
+        return;
       try {
         pageProposals = await runSuggestionExtraction(deps, {
           anchor,
@@ -5678,6 +5689,7 @@ async function processEmailThreadPages(
             linkedContext,
             unreviewedEmailIds,
             reviewAnchorRawEventId: last.id,
+            reviewAnchorQuietUntil: review.quietUntil,
           },
         });
         break;
@@ -5687,41 +5699,55 @@ async function processEmailThreadPages(
       }
     }
     hasProposal ||= pageProposals > 0;
-    if (pageAnchor.id === last.id) {
-      await markReviewComplete(deps.db, review.id, last, hasProposal ? 'proposal' : 'no_action', {
-        sourceRefs: pending.map((event) =>
-          conversationWindowSourceRef(identity.source, {
-            ...event,
-            contentText: event.contentText?.trim() ?? '',
-          }),
-        ),
-      });
-      return;
-    }
-    const [advanced] = await deps.db
-      .update(conversationReviews)
-      .set({
-        reviewedThroughRawEventId: pageAnchor.id,
-        reviewedThroughOccurredAt: pageAnchor.occurredAt,
-        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
-          email_page_anchor_id: last.id,
-          email_page_has_proposal: hasProposal,
-        })}::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(conversationReviews.id, review.id),
-          eq(conversationReviews.status, 'pending'),
-          eq(conversationReviews.lastRawEventId, last.id),
-          after
-            ? eq(conversationReviews.reviewedThroughRawEventId, after.id)
-            : isNull(conversationReviews.reviewedThroughRawEventId),
-        ),
-      )
-      .returning({ id: conversationReviews.id });
+    const advanced = await deps.db.transaction(async (tx) => {
+      const [current] = await tx
+        .update(conversationReviews)
+        .set({
+          reviewedThroughRawEventId: sql`CASE WHEN (${conversationReviews.reviewedThroughOccurredAt}, ${conversationReviews.reviewedThroughRawEventId}) > (${pageAnchor.occurredAt.toISOString()}::timestamptz, ${pageAnchor.id}::uuid) THEN ${conversationReviews.reviewedThroughRawEventId} ELSE ${pageAnchor.id}::uuid END`,
+          reviewedThroughOccurredAt: sql`GREATEST(${conversationReviews.reviewedThroughOccurredAt}, ${pageAnchor.occurredAt.toISOString()}::timestamptz)`,
+          metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+            email_page_anchor_id: last.id,
+            email_page_has_proposal: hasProposal,
+          })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(conversationReviews.id, review.id),
+            eq(conversationReviews.status, 'pending'),
+            eq(conversationReviews.lastRawEventId, last.id),
+            eq(conversationReviews.quietUntil, review.quietUntil),
+          ),
+        )
+        .returning({ id: conversationReviews.id });
+      if (!current) return false;
+      await tx
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
+            {
+              email_thread_review_id: review.id,
+            },
+          )}::jsonb`,
+        })
+        .where(
+          and(
+            eq(rawEvents.teamId, review.teamId),
+            inArray(
+              rawEvents.id,
+              pending.map((event) => event.id),
+            ),
+          ),
+        );
+      return true;
+    });
     if (!advanced) return;
-    after = { id: pageAnchor.id, occurredAt: pageAnchor.occurredAt };
+    sourceRefs = pending.map((event) =>
+      conversationWindowSourceRef(identity.source, {
+        ...event,
+        contentText: event.contentText?.trim() ?? '',
+      }),
+    );
   }
 }
 
@@ -5773,6 +5799,7 @@ async function isConversationReviewCurrent(
   db: Db,
   reviewId: string,
   lastRawEventId: string,
+  expectedQuietUntil?: Date,
 ): Promise<boolean> {
   const [review] = await db
     .select({ id: conversationReviews.id })
@@ -5782,6 +5809,7 @@ async function isConversationReviewCurrent(
         eq(conversationReviews.id, reviewId),
         eq(conversationReviews.status, 'pending'),
         eq(conversationReviews.lastRawEventId, lastRawEventId),
+        expectedQuietUntil ? eq(conversationReviews.quietUntil, expectedQuietUntil) : undefined,
       ),
     )
     .limit(1);
@@ -5813,7 +5841,7 @@ async function markReviewComplete(
   reviewId: string,
   last: typeof rawEvents.$inferSelect,
   outcome = 'no_action',
-  opts: { sourceRefs?: reconciliation.SourceRef[] } = {},
+  opts: { sourceRefs?: reconciliation.SourceRef[]; expectedQuietUntil?: Date } = {},
 ): Promise<void> {
   const reviewedAt = new Date();
   await db.transaction(async (tx) => {
@@ -5834,6 +5862,9 @@ async function markReviewComplete(
           eq(conversationReviews.id, reviewId),
           eq(conversationReviews.status, 'pending'),
           eq(conversationReviews.lastRawEventId, last.id),
+          opts.expectedQuietUntil
+            ? eq(conversationReviews.quietUntil, opts.expectedQuietUntil)
+            : undefined,
         ),
       )
       .returning({

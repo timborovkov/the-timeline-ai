@@ -771,6 +771,69 @@ test('a later correction distinguishes Plan A from Plan B', () => {
   }
 });
 
+test('the order of task arguments distinguishes migration directions', () => {
+  const taskTitle = 'Migrate EU to US';
+  for (const [text, status] of [
+    ['Migrate US to EU is done.', undefined],
+    ['Migrate EU to US is done.', 'done'],
+  ] as const) {
+    expect(
+      run(text, { status: 'done' }, [support('status', text, 'done', taskTitle)], {
+        taskTitle,
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBe(status);
+  }
+});
+
+test('a multilingual denial revokes an earlier verified completion', () => {
+  for (const [name, quote, correction] of [
+    [
+      'Política de retención',
+      'La política de retención está terminada.',
+      'La política de retención no está terminada.',
+    ],
+    [
+      'Aufbewahrungsrichtlinie',
+      'Die Aufbewahrungsrichtlinie ist abgeschlossen.',
+      'Die Aufbewahrungsrichtlinie ist nicht abgeschlossen.',
+    ],
+  ] as const) {
+    const verifiedLifecycleAuditIds = new Set<string>();
+    const result = groundCommunicationBundles({
+      verifiedLifecycleAuditIds,
+      bundles: [
+        {
+          title: name,
+          confidence: 'high',
+          items: [
+            {
+              auditId: 'old',
+              title: name,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'review',
+              proposedPayload: { status: 'done' },
+              grounding: [support('status', quote, 'done', name)],
+            },
+          ],
+        },
+      ],
+      objects: [{ id: 'review', name, type: 'task' }],
+      packet: `${quote}\n${correction}`,
+      sources: [
+        { id: event, text: quote },
+        { id: 'later', text: correction },
+      ],
+      source: 'slack',
+      members: [],
+      hubs: [],
+    });
+    expect(verifiedLifecycleAuditIds.size).toBe(0);
+    expect(result[0]?.items).toEqual([]);
+  }
+});
+
 test('questions and negated clears cannot mutate lifecycle, owner or deadline', () => {
   for (const [text, payload, field, value] of [
     ['Review retention policy is done?', { status: 'done' }, 'status', 'done'],

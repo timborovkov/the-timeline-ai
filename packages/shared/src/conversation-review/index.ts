@@ -276,7 +276,7 @@ export async function listUnreviewedEmailEvents(
     teamId: string;
     identity: ConversationIdentity;
     through: { id: string; occurredAt: Date };
-    after: { id: string; occurredAt: Date } | undefined;
+    reviewId: string;
   },
 ): Promise<(typeof rawEvents.$inferSelect)[]> {
   return db
@@ -290,9 +290,7 @@ export async function listUnreviewedEmailEvents(
         sql`length(btrim(${rawEvents.contentText})) > 0`,
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
         sql`(${rawEvents.occurredAt}, ${rawEvents.id}) <= (${args.through.occurredAt.toISOString()}::timestamptz, ${args.through.id}::uuid)`,
-        args.after
-          ? sql`(${rawEvents.occurredAt}, ${rawEvents.id}) > (${args.after.occurredAt.toISOString()}::timestamptz, ${args.after.id}::uuid)`
-          : undefined,
+        sql`(${rawEvents.sourceMetadata} ->> 'email_thread_review_id') IS DISTINCT FROM ${args.reviewId}`,
       ),
     )
     .orderBy(asc(rawEvents.occurredAt), asc(rawEvents.id))

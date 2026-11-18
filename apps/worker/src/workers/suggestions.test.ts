@@ -9632,6 +9632,88 @@ describe('processSuggestionJobForTests', () => {
     expect(review).toMatchObject({ status: 'completed', reviewedThroughRawEventId: last });
   });
 
+  it('reopens an email review for a late unprocessed message without regressing its anchor', async () => {
+    const root = crypto.randomUUID();
+    const late = crypto.randomUUID();
+    const reviewId = crypto.randomUUID();
+    const request = 'Please check the late procurement attachment.';
+    const metadata = {
+      thread_root_id: root,
+      extracted_at: REFERENCE_DATE.toISOString(),
+      extraction_model_version: 'fixture',
+    };
+    await seedRawEvent(db as never, {
+      id: root,
+      source: 'email',
+      text: 'Current thread anchor.',
+      sourceMetadata: { ...metadata, email_thread_review_id: reviewId },
+    });
+    await db.insert(conversationReviews).values({
+      id: reviewId,
+      teamId: TEAM_ID,
+      source: 'email',
+      status: 'completed',
+      lastRawEventId: root,
+      reviewedThroughRawEventId: root,
+      reviewedThroughOccurredAt: REFERENCE_DATE,
+      conversationKey: `email:${TEAM_ID}:thread:${root}`,
+      quietUntil: new Date(0),
+    });
+    await seedRawEvent(db as never, {
+      id: late,
+      source: 'email',
+      text: request,
+      sourceMetadata: metadata,
+      occurredAt: new Date(REFERENCE_DATE.getTime() - 3_600_000),
+    });
+    const chat = emptyModel();
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    const io = { getEnv: env, chatStructured: chat, modelId: MODEL_ID, enqueueSuggestionJob };
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: late, teamId: TEAM_ID },
+      io,
+    );
+    const [pending] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(pending).toMatchObject({
+      status: 'pending',
+      lastRawEventId: root,
+      reviewedThroughRawEventId: root,
+    });
+    expect(enqueueSuggestionJob).toHaveBeenCalledOnce();
+    await db
+      .update(conversationReviews)
+      .set({ quietUntil: new Date(0) })
+      .where(eq(conversationReviews.id, reviewId));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      io,
+    );
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string } | undefined)?.prompt;
+    expect(prompt).toContain(request);
+    const [processed] = await db.select().from(rawEvents).where(eq(rawEvents.id, late));
+    expect(processed?.sourceMetadata).toMatchObject({ email_thread_review_id: reviewId });
+    const [completed] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(completed).toMatchObject({
+      status: 'completed',
+      lastRawEventId: root,
+      reviewedThroughRawEventId: root,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: late, teamId: TEAM_ID },
+      io,
+    );
+    expect(enqueueSuggestionJob).toHaveBeenCalledOnce();
+  });
+
   it('creates a correction proposal instead of mutating accepted conversation suggestions', async () => {
     const rawEventId = '6c723bec-696a-5c49-8c2d-e01f1dc8cef4';
     const reviewId = '46d67b60-846c-5f8b-a07d-18ab9d983f66';

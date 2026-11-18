@@ -594,6 +594,38 @@ export function explicitLifecycleState(sentence: string):
       affirmative: true,
     };
   }
+  const spanish =
+    /^(.*?)\s+(?:(no|nunca|jamás)\s+)?(?:está|estaba|ha sido|fue)\s+(terminad[oa]|completad[oa]|cancelad[oa]|empezad[oa])[.!]?$/iu.exec(
+      sentence.trim(),
+    );
+  if (spanish?.[1] && spanish[3]) {
+    const predicate = spanish[3].toLowerCase();
+    return {
+      subject: spanish[1],
+      status: predicate.startsWith('cancel')
+        ? 'cancelled'
+        : predicate.startsWith('empez')
+          ? 'doing'
+          : 'done',
+      affirmative: !spanish[2],
+    };
+  }
+  const german =
+    /^(.*?)\s+(?:ist|war|wurde)\s+(?:(nicht)\s+)?(abgeschlossen|abgesagt|begonnen)[.!]?$/iu.exec(
+      sentence.trim(),
+    );
+  if (german?.[1] && german[3]) {
+    const predicate = german[3].toLowerCase();
+    return {
+      subject: german[1],
+      status: predicate === 'abgesagt' ? 'cancelled' : predicate === 'begonnen' ? 'doing' : 'done',
+      affirmative: !german[2],
+    };
+  }
+  const finnish = /^(.*?)\s+(on|oli|ei ole|ei ollut)\s+valmis[.!]?$/iu.exec(sentence.trim());
+  if (finnish?.[1] && finnish[2]) {
+    return { subject: finnish[1], status: 'done', affirmative: !/^ei\b/i.test(finnish[2]) };
+  }
   const assertion =
     /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)[.!]?$/i.exec(
       sentence.trim(),

@@ -62,10 +62,17 @@ const namesTask = (text: string, name: string) => {
         'send',
       ].includes(word),
   );
-  const evidenceWords = new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
-  return significant.length > 0
-    ? significant.every((word) => evidenceWords.has(word))
-    : mentions(text, name);
+  if (!significant.length) return mentions(text, name);
+  const evidenceWords: string[] = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  // Directional arguments must remain ordered. Non-directional identities
+  // may vary in word order, e.g. a customer prefix or “for Customer”.
+  if (!/\b(?:to|from|into|onto|towards?|through|against|versus|vs)\b/i.test(name))
+    return significant.every((word) => evidenceWords.includes(word));
+  let previous = -1;
+  return significant.every((word) => {
+    previous = evidenceWords.indexOf(word, previous + 1);
+    return previous >= 0;
+  });
 };
 const unsafe = (quote: string) =>
   /<\/?(?:system|developer)>|ignore (?:all|previous)|assign all tasks|disclose|reveal.*(?:secret|prompt)/i.test(
@@ -590,7 +597,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       .filter((name) => name.trim())
       .map((name) => {
         const identity = taskIdentityPattern(name);
-        return identity ? new RegExp(`^(?:the )?${identity}$`, 'iu') : null;
+        return identity ? new RegExp(`^(?:(?:the|la|el|die|der|das) )?${identity}$`, 'iu') : null;
       });
     for (const [offset, event] of chronology.slice(from).entries()) {
       const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
