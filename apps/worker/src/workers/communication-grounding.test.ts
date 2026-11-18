@@ -176,6 +176,22 @@ test('the latest same-task contrastive correction supersedes the previous status
   }
 });
 
+test('task evidence retains short distinguishing tokens and requires whole words', () => {
+  const taskTitle = 'Review EU policy';
+  for (const [text, expected] of [
+    ['Review US policy is done.', undefined],
+    ['Review Europe policy is done.', undefined],
+    ['Review EU policy is done.', 'done'],
+  ] as const) {
+    expect(
+      run(text, { status: 'done' }, [support('status', text, 'done', taskTitle)], {
+        taskTitle,
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.status,
+    ).toBe(expected);
+  }
+});
+
 test('ongoing or nearly completed work cannot be marked done', () => {
   for (const phrase of [
     'is almost done',

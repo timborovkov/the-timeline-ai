@@ -37,11 +37,29 @@ const namesTask = (text: string, name: string) => {
   const words = name.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   const significant = words.filter(
     (word) =>
-      word.length > 3 &&
-      !['prepare', 'review', 'please', 'draft', 'write', 'create', 'send'].includes(word),
+      (word.length >= 2 || /^\p{N}$/u.test(word)) &&
+      ![
+        'an',
+        'and',
+        'for',
+        'in',
+        'of',
+        'on',
+        'the',
+        'to',
+        'with',
+        'prepare',
+        'review',
+        'please',
+        'draft',
+        'write',
+        'create',
+        'send',
+      ].includes(word),
   );
+  const evidenceWords = new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
   return significant.length > 0
-    ? significant.every((word) => mentions(text, word))
+    ? significant.every((word) => evidenceWords.has(word))
     : mentions(text, name);
 };
 const unsafe = (quote: string) =>
