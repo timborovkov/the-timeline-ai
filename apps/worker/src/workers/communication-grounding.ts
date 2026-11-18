@@ -98,6 +98,27 @@ function safeSourceQuote(text: string, quote: string): boolean {
   return true;
 }
 
+function completeSourceAssertion(text: string, quote: string): string | undefined {
+  if (!quote.trim()) return undefined;
+  const literal = quote
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const matches = [...text.matchAll(new RegExp(literal, 'giu'))];
+  const match = matches[0];
+  if (!match || matches.length !== 1) return undefined;
+  const end = match.index + match[0].length;
+  const boundaries = [...text.matchAll(/(?:[.!?](?=\s|$)|\r?\n+)/gu)];
+  const before = boundaries.filter((boundary) => boundary.index < match.index).at(-1);
+  const after = boundaries.find((boundary) => boundary.index + boundary[0].length >= end);
+  return text
+    .slice(
+      before ? before.index + before[0].length : 0,
+      after ? after.index + after[0].length : undefined,
+    )
+    .trim();
+}
+
 interface EmailChronologyStatement {
   id: string;
   contentText: string;
@@ -789,16 +810,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
     hasTaskContext: boolean,
   ) {
     const source = args.sources.find((source) => source.id === assignment?.rawEventId);
-    const citedAssignment = assignment
-      ? taskClause(assignment.quote, assignment.subject)
-      : undefined;
-    const originalClause = assignment
-      ? citedAssignment
-        ? taskAssertion(citedAssignment, assignment.subject)
-        : hasTaskContext
-          ? assignment.quote
-          : undefined
-      : undefined;
+    const unsupported = { clause: undefined, verified: false, withdrawn: false };
+    if (!source || !assignment) return unsupported;
+    const enclosing = completeSourceAssertion(source.text, assignment.quote);
+    if (!enclosing) return unsupported;
+    const expanded = packet.includes(normalize(enclosing));
+    const quote = expanded ? enclosing : assignment.quote;
+    const citedAssignment = taskClause(quote, assignment.subject);
+    const originalClause = citedAssignment
+      ? taskAssertion(citedAssignment, assignment.subject)
+      : hasTaskContext
+        ? assignment.quote
+        : undefined;
     const clause = originalClause?.replace(
       /,\s*not\s+([^.!?,]+)\.?$/i,
       (phrase, alternative: string) =>
@@ -811,6 +834,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           ? ''
           : phrase,
     );
+    const surrounding = expanded ? clause : enclosing;
     const escapedName = member?.name?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const name = escapedName
       ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
@@ -818,27 +842,26 @@ export function groundCommunicationBundles<T extends Item>(args: {
     const actor = name ? `(?:${name}|\\bI\\b)` : '\\bI\\b';
     const alternative = '(?:\\s+or\\s+|\\s*/\\s*)';
     const unresolvedOwner =
-      clause &&
+      surrounding &&
       new RegExp(
         `${actor}${alternative}|${alternative}${actor}|\\b(?:either|one of)\\s+(?:[^.!?;]{0,120}\\s+)?${actor}`,
         'iu',
-      ).test(clause);
+      ).test(surrounding);
     const tentative =
-      clause &&
+      surrounding &&
       /\b(?:maybe|perhaps|probably|possibly|tentatively|potentially|likely|might|could)\b/i.test(
-        normalize(clause).replaceAll(normalize(assignment?.subject ?? ''), '[task]'),
+        normalize(surrounding).replaceAll(normalize(assignment.subject), '[task]'),
       );
     const delegation =
       /\b(?:ask(?:ed|ing)?|remind(?:ed|ing)?|tell(?:ing)?|request(?:ed|ing)?|assign(?:ed|ing)?|expect(?:ed|ing)?|allow(?:ed|ing)?)\b[^.!?;]{0,120}\bto\b/i;
     const matchesAssignedTask = (action: string) =>
-      assignment !== undefined &&
-      ((namesTask(action, assignment.subject, true) &&
+      (namesTask(action, assignment.subject, true) &&
         (!delegation.test(action) ||
           normalize(action).startsWith(normalize(assignment.subject)))) ||
-        (hasTaskContext &&
-          /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
-            action.trim(),
-          )));
+      (hasTaskContext &&
+        /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
+          action.trim(),
+        ));
     const namedAction =
       name && clause
         ? new RegExp(
@@ -853,7 +876,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             'iu',
           ).exec(clause)
         : null;
-    const passiveSubject = assignment ? taskIdentityPattern(assignment.subject) : '';
+    const passiveSubject = taskIdentityPattern(assignment.subject);
     const passiveAssignment =
       clause &&
       explicitAssignment &&
@@ -874,7 +897,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       clause &&
       !unresolvedOwner &&
       !tentative &&
-      !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(clause) &&
+      !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(surrounding ?? clause) &&
       ((namedAction !== null &&
         !delegation.test(clause.slice(0, namedAction.index + namedAction[0].length)) &&
         matchesAssignedTask(clause.slice(namedAction.index + namedAction[0].length))) ||
@@ -885,31 +908,25 @@ export function groundCommunicationBundles<T extends Item>(args: {
           )) ||
         Boolean(passiveAssignment) ||
         confirmedOwner);
-    const commitmentQuotes = assignment
-      ? [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
-          const start = firstPersonCommitment.exec(match[0]);
-          return start && (namesTask(match[0], assignment.subject) || hasTaskContext)
-            ? [match[0].slice(start.index).trim()]
-            : [];
-        })
-      : [];
+    const commitmentQuotes = [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
+      const start = firstPersonCommitment.exec(match[0]);
+      return start && (namesTask(match[0], assignment.subject) || hasTaskContext)
+        ? [match[0].slice(start.index).trim()]
+        : [];
+    });
     const commitment = commitmentQuotes.length === 1 ? commitmentQuotes[0] : undefined;
-    const quoteAt = source && assignment ? source.text.indexOf(assignment.quote) : -1;
-    const commitmentAt =
-      source && commitment && quoteAt >= 0 ? source.text.indexOf(commitment, quoteAt) : -1;
+    const quoteAt = source.text.indexOf(assignment.quote);
+    const commitmentAt = commitment && quoteAt >= 0 ? source.text.indexOf(commitment, quoteAt) : -1;
     const uniqueCommitment =
-      source &&
-      assignment &&
       commitment &&
       commitmentAt >= quoteAt &&
       commitmentAt >= 0 &&
       commitmentAt + commitment.length <= quoteAt + assignment.quote.length &&
       source.text.indexOf(commitment) === commitmentAt &&
       !source.text.includes(commitment, commitmentAt + 1);
-    const headers =
-      source && uniqueCommitment
-        ? [...source.text.slice(0, commitmentAt).matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi)]
-        : [];
+    const headers = uniqueCommitment
+      ? [...source.text.slice(0, commitmentAt).matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi)]
+      : [];
     const latestHeader = headers.at(-1);
     const headerEmails = new Set(
       [...(latestHeader?.[1] ?? '').matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(
@@ -927,26 +944,57 @@ export function groundCommunicationBundles<T extends Item>(args: {
         : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
     );
     const selfAction = clause && firstPersonCommitment.exec(clause);
-    const self =
+    const attributableSelf =
       member &&
-      assignment &&
+      ((source.source ?? args.source) === 'email'
+        ? emailSpeaker
+        : source.authorUserId === member.userId &&
+          uniqueCommitment &&
+          isOriginalChatCommitment(source.text, commitmentAt, member.name));
+    const self =
       clause &&
       !unresolvedOwner &&
       !tentative &&
-      ((source?.source ?? args.source) === 'email'
-        ? emailSpeaker
-        : source?.authorUserId === member.userId &&
-          uniqueCommitment &&
-          isOriginalChatCommitment(source.text, commitmentAt, member.name)) &&
+      attributableSelf &&
       selfAction &&
       matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
       !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
-        clause,
+        surrounding ?? clause,
       );
+    const namedDenial =
+      name && clause
+        ? new RegExp(
+            `${name}\\s+(?:(?:will|shall|can)\\s+not|won['’]t|can['’]t|cannot|declines to)\\s+`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const explicitWithdrawal =
+      name && clause
+        ? new RegExp(`^(?:please )?(?:unassign|remove) ${name} from\\s+`, 'iu').exec(clause)
+        : null;
+    const selfDenial =
+      attributableSelf && selfAction && clause
+        ? /^\s*(?:not|never)\s+/i.exec(clause.slice(selfAction.index + selfAction[0].length))
+        : null;
+    const withdrawn =
+      clause &&
+      !tentative &&
+      !unresolvedOwner &&
+      !/\b(?:if|unless)\b/i.test(surrounding ?? clause) &&
+      ((namedDenial !== null &&
+        matchesAssignedTask(clause.slice(namedDenial.index + namedDenial[0].length))) ||
+        (explicitWithdrawal !== null &&
+          matchesAssignedTask(clause.slice(explicitWithdrawal[0].length))) ||
+        (selfDenial !== null &&
+          selfAction &&
+          matchesAssignedTask(
+            clause.slice(selfAction.index + selfAction[0].length + selfDenial[0].length),
+          )));
     return {
       clause,
       verified:
-        Boolean(member) && (Boolean(named) || Boolean(self)) && !assignment?.quote.includes('?'),
+        Boolean(member) && (Boolean(named) || Boolean(self)) && !assignment.quote.includes('?'),
+      withdrawn: Boolean(withdrawn),
     };
   }
   function assignmentSuperseded(
@@ -962,10 +1010,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const assertion = taskClause(sentence, subject);
       if (!assertion || !unambiguous(assertion)) continue;
       const sentenceSupport = { ...support, subject, quote: sentence.trim(), rawEventId: event.id };
-      const owners = args.members.filter(
-        (member) => assignmentProof(sentenceSupport, member, false).verified,
-      );
-      if (owners.length) latest = owners.length === 1 ? owners[0]?.userId : undefined;
+      const owners: string[] = [];
+      for (const member of args.members) {
+        const proof = assignmentProof(sentenceSupport, member, false);
+        if (proof.withdrawn && latest === member.userId) latest = undefined;
+        if (proof.verified) owners.push(member.userId);
+      }
+      if (owners.length) latest = owners.length === 1 ? owners[0] : undefined;
     }
     return latest !== support.value;
   }

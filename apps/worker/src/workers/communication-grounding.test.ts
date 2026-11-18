@@ -200,13 +200,30 @@ test('tentative and delegated commitments do not assign the task', () => {
   }
 });
 
+test('a shortened assignment citation retains its surrounding modality', () => {
+  const quote = 'Bob will review retention policy.';
+  for (const packet of [quote, `Maybe ${quote}`]) {
+    expect(
+      run(`Maybe ${quote}`, { assigneeUserId: bob }, [support('assignee', quote, bob)], {
+        packet,
+        operation: 'update',
+      })[0]?.items[0]?.proposedPayload.assigneeUserId,
+    ).toBeUndefined();
+  }
+});
+
 test('later definite ownership supersedes the cited assignment', () => {
   const earlier = 'Bob will review retention policy.';
-  const later = 'Alice will review retention policy instead of Bob.';
+  const reassigned = 'Alice will review retention policy instead of Bob.';
   const newer = '33333333-3333-4333-8333-333333333333';
-  for (const [member, rawEventId, quote, retained] of [
-    [bob, event, earlier, false],
-    [alice, newer, later, true],
+  for (const [member, rawEventId, quote, later, retained] of [
+    [bob, event, earlier, reassigned, false],
+    [alice, newer, reassigned, reassigned, true],
+    [bob, event, earlier, 'Unassign Bob from Review retention policy.', false],
+    [bob, event, earlier, 'Bob will not review retention policy.', false],
+    [bob, event, earlier, 'I will not review retention policy.', false],
+    [bob, event, earlier, 'Unassign Alice from Review retention policy.', true],
+    [bob, event, earlier, 'Bob might not review retention policy.', true],
   ] as const) {
     const result = groundCommunicationBundles({
       bundles: [
@@ -226,7 +243,7 @@ test('later definite ownership supersedes the cited assignment', () => {
         },
       ],
       sources: [
-        { id: newer, text: later, occurredAt: new Date('2026-06-02T08:00:00Z') },
+        { id: newer, text: later, authorUserId: bob, occurredAt: new Date('2026-06-02T08:00:00Z') },
         { id: event, text: earlier, occurredAt: new Date('2026-06-01T08:00:00Z') },
       ],
       packet: `${earlier}\n${later}`,
