@@ -212,6 +212,22 @@ test('a shortened assignment citation retains its surrounding modality', () => {
   }
 });
 
+test('shortened status and deadline citations retain surrounding modality', () => {
+  for (const [field, quote, value] of [
+    ['status', `${title} is done.`, 'done'],
+    ['dueAt', `${title} is due 2026-06-02.`, '2026-06-02T00:00:00.000Z'],
+  ] as const) {
+    for (const packet of [quote, `Maybe ${quote}`]) {
+      expect(
+        run(`Maybe ${quote}`, { [field]: value }, [support(field, quote, value)], {
+          packet,
+          operation: 'update',
+        })[0]?.items[0]?.proposedPayload[field],
+      ).toBeUndefined();
+    }
+  }
+});
+
 test('later definite ownership supersedes the cited assignment', () => {
   const earlier = 'Bob will review retention policy.';
   const reassigned = 'Alice will review retention policy instead of Bob.';

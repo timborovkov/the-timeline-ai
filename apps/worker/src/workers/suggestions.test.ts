@@ -9670,10 +9670,12 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).toContain('Thanks.');
   });
 
-  it.each(['plain', 'paged', 'forward', 'date'])('reviews email (%s)', async (variant) => {
+  const emailScenarios = ['plain', 'paged', 'forward', 'date', 'owner', 'self-withdrawal'];
+  it.each(emailScenarios)('reviews email (%s)', async (variant) => {
     const corrected = variant !== 'plain';
     const deadline = variant === 'date';
-    const forwarded = variant === 'forward' || deadline;
+    const ownership = variant === 'owner' || variant === 'self-withdrawal';
+    const forwarded = variant === 'forward' || deadline || ownership;
     const ids = Array.from({ length: forwarded ? 3 : corrected ? 50 : 26 }, () =>
       crypto.randomUUID(),
     );
@@ -9683,8 +9685,19 @@ describe('processSuggestionJobForTests', () => {
     const completedId = forwarded ? last : ids[1];
     const reviewId = crypto.randomUUID();
     const taskName = 'Review retention policy';
-    const completion = deadline ? `${taskName} is due July 2.` : `${taskName} is done.`;
-    const correction = deadline ? `${taskName} is due July 8.` : `${taskName} is not done.`;
+    const completion = ownership
+      ? 'Owner will review retention policy.'
+      : deadline
+        ? `${taskName} is due July 2.`
+        : `${taskName} is done.`;
+    const correction =
+      variant === 'self-withdrawal'
+        ? 'I will not review retention policy.'
+        : ownership
+          ? `Unassign Owner from ${taskName}.`
+          : deadline
+            ? `${taskName} is due July 8.`
+            : `${taskName} is not done.`;
     const forwardedCompletion = [
       'For reference, here is an older email.',
       '',
@@ -9717,6 +9730,7 @@ describe('processSuggestionJobForTests', () => {
         thread_root_id: root,
         extracted_at: REFERENCE_DATE.toISOString(),
         extraction_model_version: 'fixture',
+        ...(ownership && index === 1 ? { from_email: 'owner@example.test' } : {}),
         ...(forwarded && id !== last ? { email_thread_review_id: reviewId } : {}),
       },
     }));
@@ -9755,14 +9769,16 @@ describe('processSuggestionJobForTests', () => {
                   title: taskName,
                   proposedPayload: deadline
                     ? { dueAt: '2026-07-02T00:00:00.000Z' }
-                    : { status: 'done' },
+                    : ownership
+                      ? { assigneeUserId: OWNER_ID }
+                      : { status: 'done' },
                   grounding: [
                     {
-                      field: deadline ? 'dueAt' : 'status',
+                      field: deadline ? 'dueAt' : ownership ? 'assignee' : 'status',
                       rawEventId: completedId,
                       quote: completion,
                       subject: taskName,
-                      value: deadline ? '2026-07-02T00:00:00.000Z' : 'done',
+                      value: deadline ? '2026-07-02T00:00:00.000Z' : ownership ? OWNER_ID : 'done',
                     },
                   ],
                 },

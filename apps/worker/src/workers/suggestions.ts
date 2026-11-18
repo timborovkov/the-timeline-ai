@@ -5672,9 +5672,14 @@ async function processEmailThreadPages(
         });
         const tail = events.at(-1);
         if (!tail) break;
-        for (const { id, occurredAt, contentText } of events) {
+        for (const { id, occurredAt, contentText, sourceMetadata } of events) {
           threadChronology.push(
-            ...emailChronologyStatements({ id, occurredAt, contentText: contentText ?? '' }),
+            ...emailChronologyStatements({
+              id,
+              occurredAt,
+              contentText: contentText ?? '',
+              senderEmail: evidencePacks.emailEvidenceSender(sourceMetadata).email,
+            }),
           );
         }
         after = tail;
@@ -6540,8 +6545,8 @@ function buildPromptParts(args: {
   const evidence = [
     ...(laterDecisions.length
       ? [
-          '# Other thread status and deadline decisions',
-          'Compare original statement timestamps to rule out stale changes. These decisions cannot support new proposals on this page.',
+          '# Other thread decisions',
+          'Compare original statement timestamps to rule out stale status, deadline and ownership changes. These decisions cannot support new proposals on this page.',
           ...laterDecisions,
           '',
         ]

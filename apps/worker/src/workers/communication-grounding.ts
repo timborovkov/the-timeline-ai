@@ -38,6 +38,8 @@ interface Bundle<T extends Item> {
   items: T[];
 }
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
+const tentativeAssertion =
+  /\b(?:maybe|might|perhaps|probably|possibly|tentative(?:ly)?|potentially|provisionally|likely|could)\b/i;
 const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
 const TASK_ACTIONS = new Set(['prepare', 'review', 'draft', 'write', 'create', 'send']);
 const namesTask = (text: string, name: string, requireActionIdentity = false) => {
@@ -124,28 +126,36 @@ interface EmailChronologyStatement {
   contentText: string;
   occurredAt: Date;
   deadlineReferenceAt?: Date | undefined;
+  senderEmail?: string | null | undefined;
 }
 
-/** Retain safe status and deadline assertions with their original message times. */
+/** Retain candidate corrections with the original time and speaker for veto checks. */
 export function emailChronologyStatements(
   event: EmailChronologyStatement,
 ): EmailChronologyStatement[] {
-  const messages = datedEmailBodies({ text: event.contentText, occurredAt: event.occurredAt });
+  const messages = datedEmailBodies({
+    text: event.contentText,
+    occurredAt: event.occurredAt,
+    senderEmail: event.senderEmail,
+  });
   return chronologicalLifecycleEvidence([{ ...event, source: 'email' }]).flatMap((part) => {
     const body = normalize(part.contentText);
     const matchingBodies = messages.filter((message) => message.body === body);
-    const deadlineReferenceAt =
-      matchingBodies.length === 1 ? matchingBodies[0]?.occurredAt : undefined;
+    const matchingBody = matchingBodies.length === 1 ? matchingBodies[0] : undefined;
     return part.contentText.split(/(?<=[.!?])\s+|\n+/u).flatMap((sentence) =>
       (explicitLifecycleState(sentence) ||
-        /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis)\b/i.test(sentence)) &&
+        firstPersonCommitment.test(sentence) ||
+        /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis|will|shall|owns|owner|responsible|assign|assigned|reassign|reassigned|unassign|remove|declines|cannot)\b/i.test(
+          sentence,
+        )) &&
       safeSourceQuote(part.contentText, sentence.trim())
         ? [
             {
               id: event.id,
               contentText: sentence.trim(),
               occurredAt: part.occurredAt ?? event.occurredAt,
-              deadlineReferenceAt,
+              deadlineReferenceAt: matchingBody?.occurredAt,
+              senderEmail: matchingBody?.senderEmail,
             },
           ]
         : [],
@@ -175,14 +185,19 @@ function isOriginalChatCommitment(text: string, at: number, memberName: string |
   );
 }
 
-function datedEmailBodies(source: { text: string; occurredAt?: Date }) {
+function datedEmailBodies(source: {
+  text: string;
+  occurredAt?: Date;
+  senderEmail?: string | null | undefined;
+}) {
   const { intro, forwarded } = splitStoredEmailContent(source.text);
   return [
-    { body: normalize(intro), occurredAt: source.occurredAt },
+    { body: normalize(intro), occurredAt: source.occurredAt, senderEmail: source.senderEmail },
     ...forwarded.map((message) => {
       const time = message.date ? Date.parse(message.date) : Number.NaN;
       return {
         body: normalize(message.body ?? ''),
+        senderEmail: message.from.email,
         occurredAt:
           Number.isFinite(time) && (!source.occurredAt || time <= source.occurredAt.getTime())
             ? new Date(time)
@@ -281,7 +296,8 @@ function deadlineAssertions(
       );
     if (
       !hasDeadlineCue ||
-      /\b(?:might|could|possibly|perhaps|maybe|tentative(?:ly)?|provisionally|if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
+      tentativeAssertion.test(assertion) ||
+      /\b(?:if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
         assertion,
       )
     )
@@ -549,7 +565,8 @@ function affirmativeLifecycle(
   const identity = normalize(subject);
   clause = identity ? normalize(assertion).replaceAll(identity, '[task]') : normalize(assertion);
   if (
-    /[?]|\b(?:no longer|not|never|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?|ei|eivät|if|unless|maybe|might|perhaps|[a-z]+n[’']t)\b/i.test(
+    tentativeAssertion.test(clause) ||
+    /[?]|\b(?:no longer|not|never|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?|ei|eivät|if|unless|[a-z]+n[’']t)\b/i.test(
       clause,
     )
   )
@@ -695,13 +712,33 @@ export function groundCommunicationBundles<T extends Item>(args: {
     ...(args.reviewedLaterEmailIds ?? []),
     ...(args.emailChronologyLookahead ?? []).map((event) => event.id),
   ]);
-  const deadlineReferenceByQuote = new Map(
+  const emailStatementByQuote = new Map(
     (args.emailChronologyLookahead ?? []).map((statement) => [
       `${statement.id}:${statement.occurredAt.getTime()}:${normalize(statement.contentText)}`,
-      statement.deadlineReferenceAt,
+      statement,
     ]),
   );
   const packet = normalize(args.packet);
+  function enclosingAssertion(support: Support): string | undefined {
+    const source = args.sources.find((event) => event.id === support.rawEventId);
+    return source && completeSourceAssertion(source.text, support.quote);
+  }
+  function lifecycleVerified(support: Support, status: unknown, sendTask = false): boolean {
+    const enclosing = enclosingAssertion(support);
+    return (
+      Boolean(enclosing) &&
+      [support.quote, enclosing].every(
+        (quote) =>
+          quote &&
+          affirmativeLifecycle(
+            taskClause(quote, support.subject),
+            support.subject,
+            status,
+            sendTask,
+          ),
+      )
+    );
+  }
   function* assertionsFromCitation(support: Support) {
     const citedClause = taskClause(support.quote, support.subject);
     let from = -1;
@@ -778,18 +815,21 @@ export function groundCommunicationBundles<T extends Item>(args: {
         args.timezone ?? 'UTC',
         source
           ? deadlineReferenceDate(source, source.source ?? args.source, quote, assertion)
-          : deadlineReferenceByQuote.get(
-              `${sourceId}:${occurredAt?.getTime()}:${normalize(quote)}`,
-            ),
+          : emailStatementByQuote.get(`${sourceId}:${occurredAt?.getTime()}:${normalize(quote)}`)
+              ?.deadlineReferenceAt,
       );
     };
-    const cited = deadlineIn(
-      supportedTaskAssertion(support) ?? '',
-      support.subject,
-      support.rawEventId,
-      support.quote,
-    );
-    if (cited.affirmed.size !== 1 || !cited.affirmed.has(wanted)) return false;
+    const enclosing = enclosingAssertion(support);
+    if (!enclosing) return false;
+    for (const quote of new Set([support.quote, enclosing])) {
+      const cited = deadlineIn(
+        supportedTaskAssertion({ ...support, quote }) ?? '',
+        support.subject,
+        support.rawEventId,
+        quote,
+      );
+      if (cited.affirmed.size !== 1 || !cited.affirmed.has(wanted)) return false;
+    }
     let latest: number | null | undefined = wanted;
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
@@ -808,8 +848,16 @@ export function groundCommunicationBundles<T extends Item>(args: {
     assignment: Support | undefined,
     member: (typeof args.members)[number] | undefined,
     hasTaskContext: boolean,
+    compact?: EmailChronologyStatement,
   ) {
-    const source = args.sources.find((source) => source.id === assignment?.rawEventId);
+    const source = compact
+      ? {
+          text: compact.contentText,
+          source: 'email',
+          authorUserId: null,
+          speakerContext: undefined,
+        }
+      : args.sources.find((source) => source.id === assignment?.rawEventId);
     const unsupported = { clause: undefined, verified: false, withdrawn: false };
     if (!source || !assignment) return unsupported;
     const enclosing = completeSourceAssertion(source.text, assignment.quote);
@@ -849,7 +897,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       ).test(surrounding);
     const tentative =
       surrounding &&
-      /\b(?:maybe|perhaps|probably|possibly|tentatively|potentially|likely|might|could)\b/i.test(
+      tentativeAssertion.test(
         normalize(surrounding).replaceAll(normalize(assignment.subject), '[task]'),
       );
     const delegation =
@@ -936,12 +984,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
     const emailSpeaker = Boolean(
       member?.email &&
       uniqueCommitment &&
-      (latestHeader
-        ? headerEmails.size === 1 &&
-          headerEmails.has(normalize(member.email)) &&
-          safeSourceQuote(source.text, latestHeader[0].trim()) &&
-          normalize(args.packet).includes(normalize(latestHeader[0].trim()))
-        : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
+      (compact
+        ? compact.senderEmail && normalize(compact.senderEmail) === normalize(member.email)
+        : latestHeader
+          ? headerEmails.size === 1 &&
+            headerEmails.has(normalize(member.email)) &&
+            safeSourceQuote(source.text, latestHeader[0].trim()) &&
+            normalize(args.packet).includes(normalize(latestHeader[0].trim()))
+          : source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)),
     );
     const selfAction = clause && firstPersonCommitment.exec(clause);
     const attributableSelf =
@@ -1004,15 +1054,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
   ): boolean {
     let latest: string | undefined = support.value;
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
-      if (!visible || !event.id) continue;
+      if (!event.id || (!visible && !chronologyVetoIds.has(event.id))) continue;
       const subject = names.find((name) => namesTask(sentence, name, true));
       if (!subject) continue;
       const assertion = taskClause(sentence, subject);
       if (!assertion || !unambiguous(assertion)) continue;
       const sentenceSupport = { ...support, subject, quote: sentence.trim(), rawEventId: event.id };
+      const compact = emailStatementByQuote.get(
+        `${event.id}:${event.occurredAt?.getTime()}:${normalize(sentence)}`,
+      );
       const owners: string[] = [];
       for (const member of args.members) {
-        const proof = assignmentProof(sentenceSupport, member, false);
+        const proof = assignmentProof(sentenceSupport, member, false, compact);
         if (proof.withdrawn && latest === member.userId) latest = undefined;
         if (proof.verified) owners.push(member.userId);
       }
@@ -1303,11 +1356,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         );
         if (
           !cancellation ||
-          !affirmativeLifecycle(
-            taskClause(cancellation.quote, cancellation.subject),
-            cancellation.subject,
-            'cancelled',
-          ) ||
+          !lifecycleVerified(cancellation, 'cancelled') ||
           lifecycleSuperseded(cancellation, taskIdentityNames(item))
         )
           return [];
@@ -1844,26 +1893,18 @@ export function groundCommunicationBundles<T extends Item>(args: {
         )
           delete payload.dueAt;
         const lifecycle = has('status', payload.status);
-        const lifecycleClause = lifecycle
-          ? taskClause(lifecycle.quote, lifecycle.subject)
-          : undefined;
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
           (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
-        const lifecycleVerified =
+        const verifiedStatus =
           lifecycle &&
-          affirmativeLifecycle(
-            lifecycleClause,
-            lifecycle.subject,
-            payload.status,
-            /^(?:mark )?send\b/i.test(targetName),
-          ) &&
+          lifecycleVerified(lifecycle, payload.status, /^(?:mark )?send\b/i.test(targetName)) &&
           !lifecycleSuperseded(lifecycle, taskIdentityNames(item));
-        if (lifecycleVerified && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
+        if (verifiedStatus && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
         if (
           payload.status !== undefined &&
           !(item.operation === 'create' && payload.status === 'todo') &&
-          !lifecycleVerified
+          !verifiedStatus
         )
           delete payload.status;
         if (payload.parentObjectId === null) {
