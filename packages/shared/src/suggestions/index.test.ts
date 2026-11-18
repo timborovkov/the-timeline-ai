@@ -2844,64 +2844,71 @@ describe('suggestion scope', () => {
     }
   });
 
-  it('deduplicates exact short task names before token filtering', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_ID);
-    const [suggestion] = await db
-      .insert(agentSuggestions)
-      .values({
-        teamId: TEAM_ID,
-        source: 'background',
-        title: 'Call Talousvahvistus',
-        dedupeKey: 'manual-duplicate-sweep',
-        visibility: 'team',
-        metadata: { conversation_review_id: 'review-talousvahvistus-sweep' },
-      })
-      .returning();
-    expect(suggestion).toBeDefined();
-    await db.insert(agentSuggestionItems).values([
-      {
-        suggestionId: suggestion?.id ?? '',
-        teamId: TEAM_ID,
-        operation: 'create',
-        targetKind: 'task',
-        title: 'Call QA',
-        dedupeKey: 'manual-duplicate-sweep:english',
-        proposedPayload: {
-          canonicalName: 'Call QA',
+  it.each([
+    ['Call QA', 'Call QA', []],
+    ['Review retention policy', 'Audit data retention controls', ['SEC-42']],
+  ] as const)(
+    'deduplicates %s and %s by explicit identity',
+    async (olderName, newerName, aliases) => {
+      const scope = withTeam(db as never, TEAM_ID, USER_ID);
+      const [suggestion] = await db
+        .insert(agentSuggestions)
+        .values({
+          teamId: TEAM_ID,
+          source: 'background',
+          title: 'Call Talousvahvistus',
+          dedupeKey: 'manual-duplicate-sweep',
+          visibility: 'team',
+          metadata: { conversation_review_id: 'review-talousvahvistus-sweep' },
+        })
+        .returning();
+      expect(suggestion).toBeDefined();
+      await db.insert(agentSuggestionItems).values([
+        {
+          suggestionId: suggestion?.id ?? '',
+          teamId: TEAM_ID,
+          operation: 'create',
+          targetKind: 'task',
+          title: olderName,
+          dedupeKey: 'manual-duplicate-sweep:english',
+          proposedPayload: {
+            canonicalName: olderName,
+            aliases: [...aliases],
+          },
         },
-      },
-      {
-        suggestionId: suggestion?.id ?? '',
-        teamId: TEAM_ID,
-        operation: 'create',
-        targetKind: 'task',
-        title: 'Call QA',
+        {
+          suggestionId: suggestion?.id ?? '',
+          teamId: TEAM_ID,
+          operation: 'create',
+          targetKind: 'task',
+          title: newerName,
 
-        dedupeKey: 'manual-duplicate-sweep:finnish',
-        proposedPayload: { canonicalName: 'Call QA' },
-      },
-    ]);
+          dedupeKey: 'manual-duplicate-sweep:finnish',
+          proposedPayload: { canonicalName: newerName, aliases: [...aliases] },
+        },
+      ]);
 
-    const dryRun = await scope.suggestions.reconcileDuplicatePendingApprovals({ dryRun: true });
-    expect(dryRun).toMatchObject({ scanned: 2, superseded: 1 });
-    await expect(
-      db.select().from(agentSuggestionItems).where(eq(agentSuggestionItems.status, 'pending')),
-    ).resolves.toHaveLength(2);
+      const dryRun = await scope.suggestions.reconcileDuplicatePendingApprovals({ dryRun: true });
+      expect(dryRun).toMatchObject({ scanned: 2, superseded: 1 });
+      await expect(
+        db.select().from(agentSuggestionItems).where(eq(agentSuggestionItems.status, 'pending')),
+      ).resolves.toHaveLength(2);
 
-    const applied = await scope.suggestions.reconcileDuplicatePendingApprovals();
-    expect(applied).toMatchObject({ scanned: 2, superseded: 1 });
-    const rows = await db.select().from(agentSuggestionItems);
-    expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
-    const pending = rows.find((row) => row.status === 'pending');
-    if (!pending) throw new Error('missing pending task');
-    expect(await scope.suggestions.acceptSuggestionItem(pending.id)).toBe(true);
-    expect(
-      await db
-        .select()
-        .from(agentSuggestionItems)
-        .where(eq(agentSuggestionItems.status, 'pending')),
-    ).toHaveLength(0);
-  });
+      const applied = await scope.suggestions.reconcileDuplicatePendingApprovals();
+      expect(applied).toMatchObject({ scanned: 2, superseded: 1 });
+      const rows = await db.select().from(agentSuggestionItems);
+      expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
+      const pending = rows.find((row) => row.status === 'pending');
+      if (!pending) throw new Error('missing pending task');
+      expect(await scope.suggestions.acceptSuggestionItem(pending.id)).toBe(true);
+      expect(
+        await db
+          .select()
+          .from(agentSuggestionItems)
+          .where(eq(agentSuggestionItems.status, 'pending')),
+      ).toHaveLength(0);
+    },
+  );
 
   it('merges semi-identical decision proposals across review runs with all evidence', async () => {
     const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });

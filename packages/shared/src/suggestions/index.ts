@@ -1778,6 +1778,23 @@ function sameConversationReview(
   );
 }
 
+function sharesExactTaskAlias(
+  left: typeof agentSuggestionItems.$inferSelect,
+  right: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const matchesAlias = (
+    item: typeof agentSuggestionItems.$inferSelect,
+    other: typeof agentSuggestionItems.$inferSelect,
+  ) => {
+    const identities = new Set(createSubjectCandidates(other).map(normalizedApprovalText));
+    return aliasesForPendingItem(item).some((alias) => {
+      const normalized = normalizedApprovalText(alias);
+      return normalized.length > 0 && identities.has(normalized);
+    });
+  };
+  return matchesAlias(left, right) || matchesAlias(right, left);
+}
+
 /** Similar task text is recall, not identity, when both names add distinct terms. */
 function compatibleTaskNames(
   left: typeof agentSuggestionItems.$inferSelect,
@@ -1837,7 +1854,8 @@ function shouldSupersedePendingItem(args: {
     isObjectTaskCreatePair &&
     normalizedObjectCreateType(olderItem) === 'task' &&
     normalizedObjectCreateType(newerItem) === 'task' &&
-    !compatibleTaskNames(olderItem, newerItem)
+    !compatibleTaskNames(olderItem, newerItem) &&
+    !sharesExactTaskAlias(olderItem, newerItem)
   )
     return false;
 

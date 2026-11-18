@@ -311,6 +311,35 @@ function taskIdentityPattern(subject: string, allowRequestModifiers = false): st
     );
 }
 
+function mentionedProjectIds(
+  clause: string,
+  projects: readonly { id: string; name?: string; aliases?: string[] }[],
+): Set<string> {
+  const text = normalize(clause);
+  const matches = projects.flatMap((project) =>
+    [project.name, ...(project.aliases ?? [])].flatMap((name) => {
+      if (!name?.trim()) return [];
+      const literal = normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return [
+        ...text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${literal}(?![\\p{L}\\p{N}])`, 'gu')),
+      ].map((match) => ({ id: project.id, from: match.index, to: match.index + match[0].length }));
+    }),
+  );
+  return new Set(
+    matches
+      .filter(
+        (match) =>
+          !matches.some(
+            (other) =>
+              other.from <= match.from &&
+              other.to >= match.to &&
+              (other.from < match.from || other.to > match.to),
+          ),
+      )
+      .map((match) => match.id),
+  );
+}
+
 function affirmativeProjectMembership(
   assertion: string,
   subject: string,
@@ -1074,16 +1103,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
               if (support.field !== 'project' || !namesEndpoint(assertion, from)) return false;
               const membership = taskAssertion(assertion, from.name);
               if (!membership || !namesEndpoint(membership, from)) return false;
-              const projects = new Set(
-                known
-                  .filter(
-                    (candidate) =>
-                      candidate.type === 'project' &&
-                      [candidate.name, ...(candidate.aliases ?? [])].some(
-                        (name) => name && mentions(membership, name),
-                      ),
-                  )
-                  .map((candidate) => candidate.id),
+              const projects = mentionedProjectIds(
+                membership,
+                known.filter((candidate) => candidate.type === 'project'),
               );
               if (
                 projects.size !== 1 ||
@@ -1533,13 +1555,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
             );
           const clause = supportedTaskAssertion(projectSupport);
           const projects = clause
-            ? args.hubs.filter(
-                (hub) =>
-                  hub.type === 'project' &&
-                  [hub.name, ...(hub.aliases ?? [])].some((name) => mentions(clause, name)),
+            ? mentionedProjectIds(
+                clause,
+                args.hubs.filter((hub) => hub.type === 'project'),
               )
-            : [];
-          const project = projects.length === 1 ? projects[0] : undefined;
+            : new Set<string>();
+          const project =
+            projects.size === 1 && selected && projects.has(selected.id) ? selected : undefined;
           const names = project ? [project.name, ...(project.aliases ?? [])] : [];
           if (
             !clause ||

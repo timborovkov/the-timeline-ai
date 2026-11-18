@@ -9542,6 +9542,49 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).not.toContain('Private email: Acme is cancelling.');
   });
 
+  it('presents the full unreviewed email before an acknowledging thread reply', async () => {
+    const root = crypto.randomUUID();
+    const reply = crypto.randomUUID();
+    const reviewId = crypto.randomUUID();
+    const request = 'Please prepare the supplier checklist.';
+    const metadata = {
+      thread_root_id: root,
+      extracted_at: REFERENCE_DATE.toISOString(),
+      extraction_model_version: 'fixture',
+    };
+    await seedRawEvent(db as never, {
+      id: root,
+      source: 'email',
+      text: `Background context. ${'Ordinary thread context. '.repeat(18)}${request}`,
+      sourceMetadata: metadata,
+    });
+    await seedRawEvent(db as never, {
+      id: reply,
+      source: 'email',
+      text: 'Thanks.',
+      occurredAt: new Date(REFERENCE_DATE.getTime() + 60_000),
+      sourceMetadata: metadata,
+    });
+    await db.insert(conversationReviews).values({
+      id: reviewId,
+      teamId: TEAM_ID,
+      source: 'email',
+      status: 'pending',
+      lastRawEventId: reply,
+      conversationKey: `email:${TEAM_ID}:thread:${root}`,
+      quietUntil: new Date(0),
+    });
+    const chat = emptyModel();
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string } | undefined)?.prompt;
+    expect(prompt).toContain(request);
+    expect(prompt).toContain('Thanks.');
+  });
+
   it('creates a correction proposal instead of mutating accepted conversation suggestions', async () => {
     const rawEventId = '6c723bec-696a-5c49-8c2d-e01f1dc8cef4';
     const reviewId = '46d67b60-846c-5f8b-a07d-18ab9d983f66';

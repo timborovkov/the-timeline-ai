@@ -560,6 +560,7 @@ test('task grounding rejects a completion superseded by a later visible correcti
   for (const [status, quote, later] of [
     ['done', 'Review retention policy is done.', 'Review retention policy is still not done.'],
     ['blocked', 'Review retention policy is blocked.', 'Review retention policy is done.'],
+    ['done', 'Review retention policy is done.', 'Reopen Review retention policy.'],
     [
       'cancelled',
       'Review retention policy is cancelled.',
@@ -2251,6 +2252,48 @@ test('contracted lifecycle denials cannot authorize completion', () => {
     ).toBeUndefined();
   }
 });
+test('a project attachment resolves the complete name before testing uniqueness', () => {
+  const quote = 'Review retention policy belongs to Compliance rollout.';
+  const projects = [
+    { id: 'short', name: 'Compliance', type: 'project' },
+    { id: 'long', name: 'Compliance rollout', type: 'project' },
+  ];
+  for (const project of projects) {
+    const result = groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              operation: 'update',
+              targetKind: 'task',
+              targetId: 'task',
+              proposedPayload: { parentObjectId: project.id },
+              grounding: [support('project', quote, project.id)],
+            },
+            {
+              title: 'Task membership',
+              operation: 'create',
+              targetKind: 'object_relationship',
+              proposedPayload: { fromEntityId: 'task', toEntityId: project.id, kind: 'child' },
+              grounding: [support('project', quote, project.id)],
+            },
+          ],
+        },
+      ],
+      packet: quote,
+      sources: [{ id: event, text: quote }],
+      members: [],
+      hubs: projects,
+      objects: [{ id: 'task', name: title, type: 'task' }],
+      source: 'slack',
+    });
+    expect(result[0]?.items).toHaveLength(project.id === 'long' ? 2 : 0);
+  }
+});
+
 test('scalar project claims need an affirmative predicate naming the project', () => {
   for (const [quote, expected] of [
     ['Review retention policy belongs to Compliance.', 'compliance'],

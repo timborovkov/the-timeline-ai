@@ -3896,6 +3896,7 @@ async function runSuggestionExtraction(
       key: string;
       window: conversationReview.ConversationEvidenceEvent[];
       linkedContext: conversationReview.ConversationLinkedContextEvent[];
+      unreviewedEmailIds?: ReadonlySet<string>;
     };
   },
 ): Promise<number> {
@@ -4366,6 +4367,7 @@ async function runSuggestionExtraction(
     sourceMetadata: row.sourceMetadata,
     authorUserId: row.authorUserId,
     conversationWindow: args.conversation?.window ?? null,
+    unreviewedEmailIds: args.conversation?.unreviewedEmailIds,
     linkedContext: evidencePackEnforced ? [] : (args.conversation?.linkedContext ?? []),
     referenceDocuments,
   });
@@ -4510,7 +4512,8 @@ async function runSuggestionExtraction(
       ...(args.conversation?.window ?? []).map((event) => ({
         id: event.id,
         text: event.contentText,
-        ...(event.contentText.length > CONVERSATION_WINDOW_EXCERPT_CHARS
+        ...(!args.conversation?.unreviewedEmailIds?.has(event.id) &&
+        event.contentText.length > CONVERSATION_WINDOW_EXCERPT_CHARS
           ? { visibleExcerpt: event.contentText.slice(0, CONVERSATION_WINDOW_EXCERPT_CHARS - 1) }
           : {}),
       })),
@@ -5555,13 +5558,31 @@ async function processConversationReviewJob(
   });
   if (!(await isConversationReviewCurrent(deps.db, review.id, last.id))) return;
 
+  const reviewedThrough = review.reviewedThroughOccurredAt?.getTime();
+  const unreviewedEmailIds =
+    identity.source === 'email'
+      ? new Set(
+          window
+            .filter(
+              (event) =>
+                reviewedThrough === undefined || event.occurredAt.getTime() >= reviewedThrough,
+            )
+            .map((event) => event.id),
+        )
+      : undefined;
   const proposalsCreated = await runSuggestionExtraction(deps, {
     anchor: last,
     teamId: review.teamId,
     modelVersion,
     modelId: io.modelId ?? llm.TIMELINE_MODELS.extraction.id,
     io,
-    conversation: { reviewId: review.id, key: review.conversationKey, window, linkedContext },
+    conversation: {
+      reviewId: review.id,
+      key: review.conversationKey,
+      window,
+      linkedContext,
+      ...(unreviewedEmailIds ? { unreviewedEmailIds } : {}),
+    },
   });
   await markReviewComplete(
     deps.db,
@@ -6011,7 +6032,7 @@ export function assembleSuggestionPrompt(parts: SuggestionPromptParts, maxTokens
   if (parts.requiredEvidence) {
     const requiredTokens = estimate(parts.requiredEvidence);
     if (requiredTokens > maxTokens) {
-      throw new Error('suggestions: enforced evidence pack exceeds the prompt token budget');
+      throw new Error('suggestions: required evidence exceeds the prompt token budget');
     }
     const selected = {
       workspace: '',
@@ -6143,6 +6164,7 @@ function buildPromptParts(args: {
   source: string;
   sourceMetadata: unknown;
   authorUserId: string | null;
+  unreviewedEmailIds?: ReadonlySet<string> | undefined;
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
   referenceDocuments: {
@@ -6277,22 +6299,30 @@ function buildPromptParts(args: {
     ...args.facts.map((f) => `- ${f}`),
   ].join('\n');
 
+  const formatWindowEvent = (event: conversationReview.ConversationEvidenceEvent, full: boolean) =>
+    `- [${event.id} ${event.occurredAt.toISOString()} ${sourceContextForPrompt(
+      args.source,
+      event.sourceMetadata,
+      event.authorUserId,
+      args.members,
+      event.id,
+    )}] ${fenceExternalContent(
+      full ? event.contentText : truncate(event.contentText, CONVERSATION_WINDOW_EXCERPT_CHARS),
+      {
+        source: 'raw-event-conversation-window',
+        eventId: event.id,
+      },
+    )}`;
+  const window = args.conversationWindow ?? [];
+  const unreviewedEmails = window.filter(
+    (event) => event.id !== args.sourceEventId && args.unreviewedEmailIds?.has(event.id),
+  );
   const evidence = [
     args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
     ...(args.conversationWindow
-      ? args.conversationWindow.map(
-          (r) =>
-            `- [${r.id} ${r.occurredAt.toISOString()} ${sourceContextForPrompt(
-              args.source,
-              r.sourceMetadata,
-              r.authorUserId,
-              args.members,
-              r.id,
-            )}] ${fenceExternalContent(truncate(r.contentText, CONVERSATION_WINDOW_EXCERPT_CHARS), {
-              source: 'raw-event-conversation-window',
-              eventId: r.id,
-            })}`,
-        )
+      ? window
+          .filter((event) => !args.unreviewedEmailIds?.has(event.id))
+          .map((event) => formatWindowEvent(event, false))
       : args.recent.map((r) => {
           const occurredAt = r.occurredAt.toISOString();
           return `- [${r.id} ${occurredAt} ${sourceContextForPrompt(
@@ -6344,6 +6374,14 @@ function buildPromptParts(args: {
     })}`,
   ].join('\n');
 
+  if (unreviewedEmails.length > 0) {
+    const requiredEvidence = [
+      '# Unreviewed email thread messages',
+      ...unreviewedEmails.map((event) => formatWindowEvent(event, true)),
+      anchor,
+    ].join('\n\n');
+    return { workspace, evidence, anchor: '', requiredEvidence };
+  }
   return { workspace, evidence, anchor };
 }
 

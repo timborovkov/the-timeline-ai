@@ -587,6 +587,16 @@ export function explicitLifecycleState(sentence: string):
   | undefined {
   if (/[?]|\b(?:if|unless|maybe|perhaps|think|guess|might|could)\b/i.test(sentence))
     return undefined;
+  const command = /^(?:please )?(reopen|restart|unblock|cancel|archive) (.+?)[.!]?$/i.exec(
+    sentence.trim(),
+  );
+  if (command?.[1] && command[2] && !/\b(?:not|never|unless)\b/i.test(command[2])) {
+    return {
+      subject: command[2],
+      status: /^(?:cancel|archive)$/i.test(command[1]) ? 'cancelled' : 'todo',
+      affirmative: true,
+    };
+  }
   const assertion =
     /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)[.!]?$/i.exec(
       sentence.trim(),
