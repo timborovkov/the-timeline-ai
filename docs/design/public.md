@@ -270,12 +270,14 @@ The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
-and Pricing (`/pricing`). Desktop headers show them directly; compact widths keep
-`Sign in` and `Start free` in the header and use a far-right native menu
-disclosure (icon-only hamburger, stable accessible name `Menu`, no border box,
-focus ring retained). At phone widths the header theme control moves into that
-disclosure instead of disappearing, and the disclosure closes after link
-activation or a persisted-layout route change. The shared footer repeats the
+and Pricing (`/pricing`). Desktop headers show them directly; below the hamburger
+breakpoint the top bar keeps only the wordmark, `Start free`, and a far-right
+native menu disclosure (icon-only hamburger, stable accessible name `Menu`, no
+border box, focus ring retained). `Sign in` moves into that disclosure (still
+server-rendered and usable without JavaScript via native `<details>`). At phone
+widths the header theme control also moves into the disclosure instead of
+disappearing, and the disclosure closes after link activation or a
+persisted-layout route change. The shared footer repeats the
 primary destinations alongside How it works, Resources, and a legal/privacy
 rail. The current destination uses `aria-current="page"`.
 Native connector labels on the landing page link to their integration detail

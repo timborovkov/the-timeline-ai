@@ -140,6 +140,11 @@
   .publicMenu {
     display: block;
   }
+
+  /* Sign in stays in the open menu panel (native details, no-JS). */
+  .signInLink {
+    display: none !important;
+  }
 }
 
 @media (max-width: 44rem) {
@@ -159,10 +164,6 @@
   .navCta {
     padding-inline: 0.65rem;
   }
-
-  .signInLink {
-    padding-inline: 0.4rem;
-  }
 }
 
 @media (max-width: 30rem) {
@@ -179,11 +180,6 @@
 
   .navCta {
     padding-inline: 0.55rem;
-    font-size: 0.8125rem;
-  }
-
-  .signInLink {
-    padding-inline: 0.3rem;
     font-size: 0.8125rem;
   }
 }
