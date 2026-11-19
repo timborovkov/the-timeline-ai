@@ -1,10 +1,9 @@
 'use client';
 
+import type { FirstRunSource, FirstRunSuggestion } from '@timeline/shared/onboarding/first-run';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-
-import type { FirstRunSource, FirstRunSuggestion } from '@timeline/shared/onboarding/first-run';
 
 import { setFirstRunPhaseAction } from '@/app/actions/first-run';
 import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';

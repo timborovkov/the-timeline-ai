@@ -1,7 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { HistoryBackLink } from '@/components/history-back-link';
 import { NewObjectForm } from '@/components/objects/new-object-form';

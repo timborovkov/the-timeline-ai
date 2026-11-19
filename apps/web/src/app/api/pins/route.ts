@@ -1,7 +1,6 @@
 import { PIN_TARGET_KINDS } from '@timeline/shared/pins';
-import { withTeam } from '@timeline/shared/team-scope';
-
 import type { PinTargetKind } from '@timeline/shared/pins';
+import { withTeam } from '@timeline/shared/team-scope';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';

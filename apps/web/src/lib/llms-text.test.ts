@@ -1,8 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import type { PublicDocument } from '@/lib/public-site';
-
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_SETUP_PROMPT,
@@ -13,6 +11,7 @@ import {
 } from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
 import { buildLlmsFullTxt, buildLlmsTxt } from '@/lib/llms-text';
+import type { PublicDocument } from '@/lib/public-site';
 import {
   createPublicDocumentRegistry,
   definePublicDocuments,

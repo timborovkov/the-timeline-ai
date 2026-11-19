@@ -52,8 +52,15 @@ import {
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
+import type { BoardScope } from '#src/boards/index.js';
 import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
 import { boardQualificationFacts } from '#src/boards/qualification.js';
+import type {
+  CalendarEventWithRedaction,
+  CalendarScope,
+  CreateCalendarEventInput,
+  UpdateCalendarEventInput,
+} from '#src/calendar/index.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
@@ -62,6 +69,14 @@ import {
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
+import { isObjectNotFoundError } from '#src/mutation-errors.js';
+import type {
+  CreateObjectInput,
+  IdentityFacetInput,
+  ObjectPatch,
+  ObjectScope,
+  ObjectType,
+} from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
@@ -73,6 +88,7 @@ import {
 } from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
+import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { identitiesConflict } from '#src/suggestions/identity-resolution.js';
 import {
@@ -86,29 +102,13 @@ import {
   taskCategorySchema,
   type TaskCategory,
 } from '#src/task-categories/types.js';
+import type { TeamRole } from '#src/team-scope.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 import {
   intersectVisibilityEnvelopes,
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
-
-import type { BoardScope } from '#src/boards/index.js';
-import type {
-  CalendarEventWithRedaction,
-  CalendarScope,
-  CreateCalendarEventInput,
-  UpdateCalendarEventInput,
-} from '#src/calendar/index.js';
-import type {
-  CreateObjectInput,
-  IdentityFacetInput,
-  ObjectPatch,
-  ObjectScope,
-  ObjectType,
-} from '#src/objects/index.js';
-import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
-import type { TeamRole } from '#src/team-scope.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
@@ -364,10 +364,15 @@ function isEntityCanonicalNameDuplicate(err: unknown): boolean {
 }
 
 function isExpectedApplyFailure(err: unknown): boolean {
-  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+  return (
+    err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err) || isObjectNotFoundError(err)
+  );
 }
 
 function suggestionApplyFailureReason(err: unknown): string {
+  if (isObjectNotFoundError(err)) {
+    return 'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.';
+  }
   if (isEntityCanonicalNameDuplicate(err)) {
     return 'A workspace object with this name already exists. Reject this proposal or update the existing object instead.';
   }

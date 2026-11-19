@@ -1,8 +1,7 @@
+import type { RenderOptions } from '@testing-library/react';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
-import type { RenderOptions } from '@testing-library/react';
 import type { ReactElement } from 'react';
 // Test environment: happy-dom
 

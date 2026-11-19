@@ -1,5 +1,4 @@
 import { PUBLIC_ANALYTICS_SURFACES, type PublicSurface } from '@timeline/shared/analytics';
-
 import type { CaptureResult, PostHog } from 'posthog-js';
 
 import { expireFirstPartyCookie, readPublicAnalyticsConsent } from '@/lib/public-analytics-consent';

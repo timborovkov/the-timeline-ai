@@ -11,10 +11,9 @@ import {
   Video,
   Webhook,
 } from 'lucide-react';
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
-
-import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';

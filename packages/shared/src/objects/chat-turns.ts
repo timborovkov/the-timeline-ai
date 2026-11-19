@@ -1,10 +1,9 @@
 import { chatMessages, chatSessions, type Db } from '@timeline/db';
+import type { UIMessage } from 'ai';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import { stableJson } from '#src/reconciliation/stable-json.js';
-
 import type { TeamScopeCore } from '#src/team-scope.js';
-import type { UIMessage } from 'ai';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 interface TurnContent {

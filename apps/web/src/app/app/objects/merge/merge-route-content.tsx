@@ -1,7 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { GitMerge } from 'lucide-react';
 import { redirect, unstable_rethrow } from 'next/navigation';
-
 import type { ReactNode } from 'react';
 
 import { EmptyState } from '@/components/empty-state';

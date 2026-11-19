@@ -17,7 +17,6 @@ import {
   formatDigestTaskDetail,
   formatDigestWindowRange,
 } from '#src/messaging/digest-format.js';
-
 import type {
   BillingUsageAlertMessageInput,
   ConnectionAttentionMessageInput,

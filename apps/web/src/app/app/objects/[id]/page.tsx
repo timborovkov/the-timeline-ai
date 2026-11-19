@@ -1,9 +1,8 @@
 import { getEnv } from '@timeline/shared/env';
-import { withTeam } from '@timeline/shared/team-scope';
-import { notFound, redirect } from 'next/navigation';
-
 import type { SuggestionBundle } from '@timeline/shared/suggestions';
+import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
+import { notFound, redirect } from 'next/navigation';
 
 import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
 import { HistoryBackLink } from '@/components/history-back-link';

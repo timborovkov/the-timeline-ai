@@ -1,5 +1,6 @@
-import type { CalendarEvent, CalendarLinkedObject } from '@/components/calendar/calendar-overlay';
 import type { CalendarLinkedObjectRow } from '@timeline/shared/calendar';
+
+import type { CalendarEvent, CalendarLinkedObject } from '@/components/calendar/calendar-overlay';
 
 function calendarShowAs(showAs: string): CalendarEvent['showAs'] {
   return showAs === 'free' || showAs === 'tentative' ? showAs : 'busy';

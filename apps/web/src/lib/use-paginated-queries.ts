@@ -9,12 +9,11 @@ import {
 } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
+import { readJson } from '@/lib/api-response';
 import type { DocumentListPage } from '@/lib/document-list';
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
-import type { TimelinePage } from '@/lib/timeline-types';
-
-import { readJson } from '@/lib/api-response';
 import { queryKeys } from '@/lib/query-keys';
+import type { TimelinePage } from '@/lib/timeline-types';
 
 function replaceFirstPage<TPage>(
   previous: InfiniteData<TPage, string | number | null> | undefined,

@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
+import type { ReactNode } from 'react';
 
 import type { TeamMembership } from '@/lib/active-team';
-import type { ReactNode } from 'react';
 await vi.mock(
   import.meta.resolve('@/components/app-document-scroll-lock'),
   () => ({

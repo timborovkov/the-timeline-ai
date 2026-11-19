@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
-import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
-import { intersectVisibilityEnvelopes } from '#src/visibility.js';
-
 import type { SourceRef, VisibilityEnvelope } from '#src/reconciliation/core.js';
+import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import type { SearchEventArtifactClusterEvidence, TeamScope } from '#src/team-scope.js';
+import { intersectVisibilityEnvelopes } from '#src/visibility.js';
 
 export const EVIDENCE_PACK_VERSION = 'evidence-pack-v1';
 

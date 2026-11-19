@@ -13,7 +13,6 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
-
 import type { FreeAllowanceRemaining } from '#src/billing/status.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];

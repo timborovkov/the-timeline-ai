@@ -2,9 +2,8 @@ import { integrationSelections, integrations, type Db } from '@timeline/db';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { rebindDriveSelectionArtifactLink } from '#src/integrations/google-drive-artifacts.js';
-import { driveSelectionIsWatchable } from '#src/integrations/google-drive-scope.js';
-
 import type { DriveSelectionObjectLink } from '#src/integrations/google-drive-link-policy.js';
+import { driveSelectionIsWatchable } from '#src/integrations/google-drive-scope.js';
 
 export interface IntegrationSelectionLinkRow {
   selectionKind: string;

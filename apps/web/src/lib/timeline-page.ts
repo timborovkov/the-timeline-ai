@@ -14,14 +14,13 @@ import type {
   TimelineMoment,
   TimelineMomentDiagnostic,
 } from '@/lib/timeline-moments';
-import type { TimelineEvent } from '@/lib/timeline-types';
-
 import {
   buildTimelineMoments,
   filterTimelineMomentsByImpact,
   timelineGroupKey,
   timelineMomentDiagnostics,
 } from '@/lib/timeline-moments';
+import type { TimelineEvent } from '@/lib/timeline-types';
 
 interface TimelinePageData {
   items: TimelineEvent[];

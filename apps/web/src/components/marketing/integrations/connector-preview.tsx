@@ -1,7 +1,6 @@
 import { GitMerge } from 'lucide-react';
 
 import type { ConnectorContent } from '@/components/marketing/integrations/connector-content';
-
 import styles from '@/components/marketing/integrations/integration-detail.module.css';
 import { IntegrationSourceFeed } from '@/components/marketing/integrations/integration-source-feed';
 

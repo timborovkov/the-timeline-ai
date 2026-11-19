@@ -1,8 +1,10 @@
 // Durable schedule identities and billing-block episodes survive repeated worker ticks.
+import type { Db } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, afterEach, it } from 'bun:test';
 
 import type * as QueueModule from '#src/queue/queues.js';
+
 const queued = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 await vi.mock(
   import.meta.resolve('#src/queue/queues.js'),
@@ -33,7 +35,6 @@ const { startImpersonation, resolveImpersonation, endImpersonation } =
   await import('#src/platform-admin/index.js');
 const { operatorContext, registerOperatorContextResolver, runGuardedJob } =
   await import('#src/platform-admin/runtime.js');
-import type { Db } from '@timeline/db';
 const TEAM = '11111111-1111-4111-8111-111111111111';
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ADMIN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';

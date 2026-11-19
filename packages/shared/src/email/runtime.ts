@@ -1,12 +1,4 @@
-import { getEnv } from '#src/env.js';
-import * as queue from '#src/queue/index.js';
-import {
-  getAttachmentsBucket,
-  getAudioBucket,
-  getDocumentsBucket,
-  getS3Client,
-  putObject,
-} from '#src/s3/index.js';
+import type { Db } from '@timeline/db';
 
 import type {
   DispatcherDeps,
@@ -16,7 +8,15 @@ import type {
   SuggestionEnqueueDeps,
   EmailDocumentDeps,
 } from '#src/email/dispatcher.js';
-import type { Db } from '@timeline/db';
+import { getEnv } from '#src/env.js';
+import * as queue from '#src/queue/index.js';
+import {
+  getAttachmentsBucket,
+  getAudioBucket,
+  getDocumentsBucket,
+  getS3Client,
+  putObject,
+} from '#src/s3/index.js';
 
 export function inboundDispatcherDeps(db: Db): DispatcherDeps {
   const env = getEnv();

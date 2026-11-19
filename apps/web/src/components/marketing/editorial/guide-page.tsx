@@ -2,7 +2,6 @@ import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
-
 import { GUIDES_ROUTE } from '@/components/marketing/editorial/content';
 import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
 import styles from '@/components/marketing/editorial/editorial.module.css';

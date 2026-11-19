@@ -1,8 +1,7 @@
-import type { LoginMethod } from '@/lib/last-login-method';
-
 import { GitHubSignInButton } from '@/components/github-button';
 import { GoogleSignInButton } from '@/components/google-button';
 import { Separator } from '@/components/ui/separator';
+import type { LoginMethod } from '@/lib/last-login-method';
 
 export function OAuthSignInButtons({
   callbackUrl,

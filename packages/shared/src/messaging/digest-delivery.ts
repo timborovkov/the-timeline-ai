@@ -26,15 +26,14 @@ import {
 import { formatDigestChatText } from '#src/messaging/digest-format.js';
 import { isDigestWindowExpired } from '#src/messaging/digest-window.js';
 import { generateDailyDigest, getDigestPreference } from '#src/messaging/digest.js';
-import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
-import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/outbound.js';
-import { sendTelegramBotMessage } from '#src/telegram/api.js';
-
 import type {
   DailyDigestPayload,
   MessageChannel,
   SendMessageResult,
 } from '#src/messaging/types.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
+import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/outbound.js';
+import { sendTelegramBotMessage } from '#src/telegram/api.js';
 
 export async function sendDailyDigest(input: {
   db: Db;

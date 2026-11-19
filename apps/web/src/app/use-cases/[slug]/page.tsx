@@ -1,6 +1,5 @@
-import { notFound } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { findUseCase, USE_CASES } from '@/components/marketing/use-cases/content';
 import { findUseCasePublicDocument } from '@/components/marketing/use-cases/public-documents';

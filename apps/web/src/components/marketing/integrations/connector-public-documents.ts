@@ -1,5 +1,3 @@
-import type { PublicDocument } from '@/lib/public-site/types';
-
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import {
   CONNECTORS,
@@ -8,6 +6,7 @@ import {
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
+import type { PublicDocument } from '@/lib/public-site/types';
 
 export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-12' as const;
 

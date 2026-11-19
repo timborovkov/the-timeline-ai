@@ -1,11 +1,10 @@
 'use client';
 
-import type { RemovedTeamMemberRow, TeamMemberMap } from '@/components/team-member-types';
-
 import { CollectionRow } from '@/components/collections/collection-row';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SettingsSection } from '@/components/section-heading';
 import { TeamListPagination, useTeamListPage } from '@/components/team-list-pagination';
+import type { RemovedTeamMemberRow, TeamMemberMap } from '@/components/team-member-types';
 import { displayRemovedMemberLabel } from '@/lib/display-labels';
 
 export function RemovedMembersCard({

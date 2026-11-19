@@ -1,6 +1,5 @@
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { AuthShell } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';

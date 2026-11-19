@@ -1,11 +1,10 @@
 import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
+import type { ObjectRow } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import { notFound, redirect } from 'next/navigation';
-
-import type { ObjectRow } from '@timeline/shared/objects';
 import type { Metadata } from 'next';
+import { notFound, redirect } from 'next/navigation';
 
 import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';

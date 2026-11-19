@@ -3,12 +3,11 @@ import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 
+import { visibleConnectionAttentionStats } from '@/app/app/team/integrations/connection-attention';
 import type { ConnectedIntegrations } from '@/components/integrations/connected';
 import type { IngestWebhookRow } from '@/components/integrations/ingest-webhooks';
 import type { McpServersUi } from '@/components/integrations/mcp-servers';
 import type { TeamSourcesUi } from '@/components/integrations/provider-connections';
-
-import { visibleConnectionAttentionStats } from '@/app/app/team/integrations/connection-attention';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 

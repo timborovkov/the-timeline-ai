@@ -1,19 +1,17 @@
 'use client';
 
+import type * as boards from '@timeline/shared/boards';
+import type * as objects from '@timeline/shared/objects/types';
 import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
+import type { ReactNode } from 'react';
 
 import type {
   BoardItemOptimisticPatch,
   BoardMemberOption,
 } from '@/components/boards/board-detail-client';
-import type { BoardLayout } from '@/lib/board-links';
-import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects/types';
-import type { ReactNode } from 'react';
-
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -33,6 +31,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import type { BoardLayout } from '@/lib/board-links';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';

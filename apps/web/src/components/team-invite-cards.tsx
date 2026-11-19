@@ -1,13 +1,12 @@
+import { PendingInvitesCard } from '@/components/pending-invites-card';
+import { RemovedMembersCard } from '@/components/removed-members-card';
+import { SettingsSection } from '@/components/section-heading';
+import { InviteMemberForm } from '@/components/team-forms';
 import type {
   RemovedTeamMemberRow,
   TeamInviteRow,
   TeamMemberMap,
 } from '@/components/team-member-types';
-
-import { PendingInvitesCard } from '@/components/pending-invites-card';
-import { RemovedMembersCard } from '@/components/removed-members-card';
-import { SettingsSection } from '@/components/section-heading';
-import { InviteMemberForm } from '@/components/team-forms';
 import { getSiteUrl } from '@/lib/site-url';
 
 export function TeamInviteCards({

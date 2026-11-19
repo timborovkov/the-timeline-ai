@@ -18,20 +18,19 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import type { ChatHandoff } from '@/lib/chat-handoff';
-import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
-export type { DashboardChatContext } from '@/lib/dashboard-chat-context';
-
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
-import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
+import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
+import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
+
+export type { DashboardChatContext } from '@/lib/dashboard-chat-context';
 
 interface Props {
   teamId: string;

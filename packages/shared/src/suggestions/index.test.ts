@@ -1,10 +1,10 @@
+import type { PGlite, Transaction } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type * as QueueModule from '#src/queue/queues.js';
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
-import type { PGlite, Transaction } from '@electric-sql/pglite';
 const queueFakes = vi.hoisted(() => ({
   enqueueTaskCategoryJob: vi.fn(() =>
     Promise.resolve({ enqueued: true, jobId: 'task-category-job' }),
@@ -4811,6 +4811,64 @@ describe('suggestion scope', () => {
       status: 'superseded',
       supersededByItemId: null,
       supersededReason: 'The target object was merged into another object.',
+    });
+  });
+
+  it('fails object updates whose target entity was deleted as an expected apply failure', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const target = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Deleted target company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update deleted company',
+      dedupeKey: 'deleted-target-object-update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: target.id,
+          title: 'Rename deleted company',
+          dedupeKey: 'deleted-target-object-update:item',
+          proposedPayload: { canonicalName: 'Still deleted company' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    await db.delete(entities).where(eq(entities.id, target.id));
+
+    const rejection = await scope.suggestions.acceptSuggestionItem(itemId).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(rejection).toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+      message:
+        'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.',
+    });
+    expect(rejection).toBeInstanceOf(Error);
+    expect((rejection as Error).cause).toMatchObject({
+      name: 'ObjectNotFoundError',
+      code: 'TIMELINE_OBJECT_NOT_FOUND',
+      message: 'Object not found',
+    });
+
+    const [item] = await db
+      .select({
+        status: agentSuggestionItems.status,
+        failureReason: agentSuggestionItems.failureReason,
+        supersededReason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(item).toEqual({
+      status: 'failed',
+      failureReason:
+        'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.',
+      supersededReason: null,
     });
   });
 

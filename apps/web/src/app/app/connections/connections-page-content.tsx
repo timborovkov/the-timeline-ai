@@ -1,8 +1,7 @@
 import { getEnv } from '@timeline/shared/env';
 import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import {
   buildDirectoryProviders,

@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import type { ReactNode } from 'react';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
-import type { ReactNode } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({

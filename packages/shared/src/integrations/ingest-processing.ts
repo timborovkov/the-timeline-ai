@@ -3,9 +3,8 @@ import {
   resolveSignalClass,
   type SignalClassInput,
 } from '#src/integrations/signal-class.js';
-import { checkRateLimit, RATE_LIMITS, rateLimitKey } from '#src/rate-limit/index.js';
-
 import type { SignalClass } from '#src/integrations/types.js';
+import { checkRateLimit, RATE_LIMITS, rateLimitKey } from '#src/rate-limit/index.js';
 
 export const GITHUB_TASK_PROPOSAL_COALESCE_MS = 8_000;
 

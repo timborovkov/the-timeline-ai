@@ -1,11 +1,10 @@
 'use client';
+import type * as objects from '@timeline/shared/objects/types';
 import { presentDueDate } from '@timeline/shared/time';
 import { ArrowUpRight, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { createNoteAction, deleteNoteAction, updateNoteAction } from '@/app/actions/objects';
 import { CollectionStatus } from '@/components/collections/collection-status';

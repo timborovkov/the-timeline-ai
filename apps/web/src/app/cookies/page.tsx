@@ -1,6 +1,5 @@
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { LegalPage } from '@/components/legal-page';
 import { CookieSettingsButton } from '@/components/public-analytics';

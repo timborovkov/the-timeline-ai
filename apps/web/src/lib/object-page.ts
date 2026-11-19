@@ -1,6 +1,5 @@
-import { encodeCursor } from '@timeline/shared/pagination';
-
 import type * as objects from '@timeline/shared/objects';
+import { encodeCursor } from '@timeline/shared/pagination';
 
 const OBJECTS_PAGE_SIZE = 48;
 export const OBJECTS_SECTION_PREVIEW_SIZE = 8;

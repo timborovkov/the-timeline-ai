@@ -21,9 +21,6 @@ import {
   useState,
   useTransition,
 } from 'react';
-
-import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
-import type { SaveState } from '@/lib/utils';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import {
@@ -32,6 +29,7 @@ import {
   updateCalendarEventAction,
 } from '@/app/actions/calendar';
 import { loadCalendarEventListPageAction } from '@/app/actions/collection-pages';
+import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import {
   EMPTY_CALENDAR_OVERLAY,
   applyCalendarPageOverlay,
@@ -67,6 +65,7 @@ import { chatViewLabel } from '@/lib/chat-view';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
+import type { SaveState } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
 

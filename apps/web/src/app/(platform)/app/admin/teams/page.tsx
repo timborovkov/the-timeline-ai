@@ -1,8 +1,7 @@
 import { getEnv } from '@timeline/shared/env';
 import { directoryPage, listPlatformTeams } from '@timeline/shared/platform-admin';
-import Link from 'next/link';
-
 import type { DirectoryOptions } from '@timeline/shared/platform-admin';
+import Link from 'next/link';
 
 import { CopyButton } from '@/components/copy-button';
 import { PageHeader } from '@/components/page-header';

@@ -5,10 +5,9 @@ import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@time
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
 import { Boxes, CircleAlert, CircleCheckBig, ListTodo } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';

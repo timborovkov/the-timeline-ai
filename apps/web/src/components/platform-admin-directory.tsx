@@ -1,6 +1,5 @@
-import Link from 'next/link';
-
 import type { DirectoryOptions } from '@timeline/shared/platform-admin';
+import Link from 'next/link';
 
 export function AdminSearch({
   query,

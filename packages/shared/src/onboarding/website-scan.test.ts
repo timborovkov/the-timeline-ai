@@ -1,14 +1,16 @@
 // Public website scans use only Firecrawl and fail closed on provider errors.
 import { expect } from '@timeline/test-support';
-import { describe, it } from 'bun:test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import { getEnv, resetEnvForTests } from '#src/env.js';
 import {
-  FIRECRAWL_API_ORIGIN,
+  isAllowedFirecrawlResultUrl,
   type FirecrawlFetch,
 } from '#src/onboarding/firecrawl-website-scan.js';
 import { WEBSITE_SCAN_PAGE_CAP } from '#src/onboarding/first-run.js';
 import { scanPublicWebsite } from '#src/onboarding/website-scan.js';
 const HOME = 'https://studio.example/';
+const ENV_BACKUP = { ...process.env };
 function readable(label: string): string {
   return `${label} ${'work record context '.repeat(8)}`;
 }
@@ -16,6 +18,26 @@ function requestUrl(input: string | URL | Request): string {
   return typeof input === 'string' ? input : input instanceof Request ? input.url : input.href;
 }
 const FIRECRAWL_KEY = 'fc-test';
+
+beforeEach(() => {
+  process.env = {
+    ...ENV_BACKUP,
+    AUTH_SECRET: ENV_BACKUP.AUTH_SECRET ?? 'a'.repeat(32),
+    DATABASE_URL: ENV_BACKUP.DATABASE_URL ?? 'postgres://x:y@localhost:5432/x',
+    NODE_ENV: 'test',
+  };
+  delete process.env.FIRECRAWL_API_ORIGIN;
+  resetEnvForTests();
+});
+
+afterEach(() => {
+  process.env = { ...ENV_BACKUP };
+  resetEnvForTests();
+});
+
+function firecrawlApiOrigin(): string {
+  return getEnv().FIRECRAWL_API_ORIGIN;
+}
 
 function firecrawlFetch(options: {
   pages?: { url: string; title: string; markdown: string; statusCode?: number }[];
@@ -28,7 +50,7 @@ function firecrawlFetch(options: {
   return (input, init) => {
     const url = requestUrl(input);
     const method = (init?.method ?? 'GET').toUpperCase();
-    if (url === `${FIRECRAWL_API_ORIGIN}/v2/crawl` && method === 'POST') {
+    if (url === `${firecrawlApiOrigin()}/v2/crawl` && method === 'POST') {
       if (options.startStatus && options.startStatus !== 200) {
         return Promise.resolve(
           new Response(options.errorBody ?? 'fail', { status: options.startStatus }),
@@ -115,9 +137,92 @@ describe('website scan Firecrawl crawl', () => {
   );
 
   it('refuses a scan when the Firecrawl key is missing', async () => {
+    delete process.env.FIRECRAWL_API_ORIGIN;
+    resetEnvForTests();
     await expect(scanPublicWebsite(HOME, { firecrawlApiKey: '' })).rejects.toThrow(
       'FIRECRAWL_API_KEY is required',
     );
+  });
+
+  it('allows a missing Firecrawl key when pointing at loopback Firecrawl Local', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.FIRECRAWL_API_ORIGIN = 'http://127.0.0.1:3002';
+    resetEnvForTests();
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: '',
+      firecrawlFetch: firecrawlFetch({
+        pages: [{ url: HOME, title: 'Studio', markdown: readable('Home') }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts pagination next URLs only from the configured Firecrawl origin', () => {
+    expect(
+      isAllowedFirecrawlResultUrl(
+        'https://api.firecrawl.dev/v2/crawl/abc?skip=10',
+        'https://api.firecrawl.dev',
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedFirecrawlResultUrl(
+        'http://127.0.0.1:3002/v2/crawl/abc?skip=10',
+        'http://127.0.0.1:3002',
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedFirecrawlResultUrl(
+        'http://127.0.0.1:3002/v2/crawl/abc',
+        'https://api.firecrawl.dev',
+      ),
+    ).toBe(false);
+    expect(
+      isAllowedFirecrawlResultUrl('https://evil.example/v2/crawl/abc', 'https://api.firecrawl.dev'),
+    ).toBe(false);
+    expect(
+      isAllowedFirecrawlResultUrl(
+        'http://api.firecrawl.dev/v2/crawl/abc',
+        'https://api.firecrawl.dev',
+      ),
+    ).toBe(false);
+  });
+
+  it('follows crawl pagination next URLs on the configured origin and ignores others', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.FIRECRAWL_API_ORIGIN = 'http://localhost:3002';
+    resetEnvForTests();
+    const seen: string[] = [];
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: 'local',
+      firecrawlFetch: (input, init) => {
+        const url = requestUrl(input);
+        seen.push(url);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url === 'http://localhost:3002/v2/crawl' && method === 'POST') {
+          return Promise.resolve(Response.json({ id: 'crawl-local' }));
+        }
+        if (url === 'http://localhost:3002/v2/crawl/crawl-local') {
+          return Promise.resolve(
+            Response.json({
+              status: 'completed',
+              next: 'https://evil.example/v2/crawl/crawl-local?skip=1',
+              data: [
+                {
+                  markdown: readable('Home'),
+                  metadata: { title: 'Studio', sourceURL: HOME, statusCode: 200 },
+                },
+              ],
+            }),
+          );
+        }
+        if (url.includes('/errors')) {
+          return Promise.resolve(Response.json({ errors: [], robotsBlocked: [] }));
+        }
+        return Promise.resolve(new Response('unexpected', { status: 500 }));
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(seen.some((url) => url.includes('evil.example'))).toBe(false);
   });
 
   it('rejects local addresses before calling Firecrawl', async () => {

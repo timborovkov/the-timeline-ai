@@ -1,8 +1,7 @@
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
-
 import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 // Home must compose only actionable attention with deliberately bounded, static previews.
 const fakes = vi.hoisted(() => ({

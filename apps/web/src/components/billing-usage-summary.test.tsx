@@ -1,9 +1,8 @@
 import { FREE_STORAGE_GB } from '@timeline/shared/billing/catalog';
+import type { PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-
-import type { PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 

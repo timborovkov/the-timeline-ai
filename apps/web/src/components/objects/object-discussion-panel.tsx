@@ -9,6 +9,7 @@ import {
   type MentionMember,
 } from '@timeline/shared/objects/mentions';
 import { humanizeMetadataKey } from '@timeline/shared/objects/metadata-schemas';
+import type { ObjectDetail } from '@timeline/shared/objects/types';
 import Link from 'next/link';
 import {
   type Dispatch,
@@ -20,8 +21,6 @@ import {
   useRef,
   useState,
 } from 'react';
-
-import type { ObjectDetail } from '@timeline/shared/objects/types';
 
 import {
   OBJECT_BODY_CLASS,

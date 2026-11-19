@@ -1,8 +1,7 @@
+import type { Db } from '@timeline/db';
 import { describe, expect, it } from 'bun:test';
 
 import { createSuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
-
-import type { Db } from '@timeline/db';
 
 // Approval effects must not escape a rollback or run while their writes are uncommitted.
 describe('suggestion acceptance unit of work', () => {

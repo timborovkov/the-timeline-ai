@@ -1,9 +1,9 @@
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
-import type { Db } from '@timeline/db';
 /**
  * Business intent: category authority and a task's primary project remain
  * team-scoped, singular, auditable, and safe under stale LLM responses.

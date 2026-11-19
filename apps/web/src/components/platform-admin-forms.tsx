@@ -1,7 +1,6 @@
 'use client';
-import { useFormStatus } from 'react-dom';
-
 import type { ReactNode } from 'react';
+import { useFormStatus } from 'react-dom';
 
 import {
   adminRenameAction,

@@ -1,3 +1,4 @@
+import type { PinnedItem } from '@timeline/shared/pins';
 import {
   Activity,
   BriefcaseBusiness,
@@ -10,8 +11,6 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react';
-
-import type { PinnedItem } from '@timeline/shared/pins';
 
 export function PinTargetIcon({
   kind,

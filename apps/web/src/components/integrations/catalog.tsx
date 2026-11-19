@@ -1,9 +1,8 @@
 'use client';
 
+import type * as integrationsLib from '@timeline/shared/integrations';
 import { Plug } from 'lucide-react';
 import { useState } from 'react';
-
-import type * as integrationsLib from '@timeline/shared/integrations';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';

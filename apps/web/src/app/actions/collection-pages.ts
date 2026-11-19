@@ -4,7 +4,6 @@ import { pageWindow } from '@timeline/shared/pagination';
 import { z } from 'zod';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
-
 import { resolveScope } from '@/lib/action-scope';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import {

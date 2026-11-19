@@ -1,3 +1,4 @@
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
@@ -8,8 +9,6 @@ import {
   resolvePolarWebhookTeamId,
   type PolarWebhookPayload,
 } from '#src/billing/polar-webhook.js';
-
-import type { Db } from '@timeline/db';
 
 const SANDBOX_TEAM_ID = 'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0';
 

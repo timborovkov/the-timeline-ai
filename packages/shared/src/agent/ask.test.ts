@@ -1,10 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
+import type * as TimelineDb from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-
-import type * as TimelineDb from '@timeline/db';
 
 // askAgent is the non-browser entry point for Slack/Telegram/email-style asks.
 // These tests keep the wrapper honest while deeper agent behavior stays in the

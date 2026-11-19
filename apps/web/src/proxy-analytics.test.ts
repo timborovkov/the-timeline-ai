@@ -1,7 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-
 import type { NextRequest as NextRequestType } from 'next/server';
 import type { NextFetchEvent } from 'next/server';
 type NextRequest = NextRequestType;

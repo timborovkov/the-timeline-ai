@@ -1,10 +1,10 @@
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
 type PGlite = PGliteType;
 
 await vi.mock(

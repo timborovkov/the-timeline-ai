@@ -1,10 +1,9 @@
 'use client';
 
+import type { PinTargetRef } from '@timeline/shared/pins';
 import { Pin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-
-import type { PinTargetRef } from '@timeline/shared/pins';
 
 import { pinControlLabel, pinNotifyCopy } from '@/components/pins/pin-copy';
 import { mutatePin } from '@/components/pins/pin-mutate';

@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-
 import type { PinTargetRef } from '@timeline/shared/pins';
+import { useState } from 'react';
 
 import { PinnedGlyph } from '@/components/pins/pin-glyph';
 import { PinMenuItem } from '@/components/pins/pin-menu-item';

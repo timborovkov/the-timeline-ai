@@ -14,11 +14,10 @@ import { and, eq, sql } from 'drizzle-orm';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { chunkText } from '#src/chunk.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
-import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
-import { putObject } from '#src/s3/objects.js';
-
 import type { WebsiteSubject } from '#src/onboarding/first-run.js';
 import type { WebsiteScanPage } from '#src/onboarding/website-scan.js';
+import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
+import { putObject } from '#src/s3/objects.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 export function createWebsiteSourceHandlers({

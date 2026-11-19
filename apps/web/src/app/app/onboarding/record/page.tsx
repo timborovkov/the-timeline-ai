@@ -1,8 +1,7 @@
-import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
-
 import type { FirstRunPhase } from '@timeline/shared/onboarding';
+import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { FirstRecordScreen } from '@/components/onboarding/first-record-screen';
 import { resolveActiveTeam } from '@/lib/active-team';

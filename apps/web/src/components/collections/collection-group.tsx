@@ -2,7 +2,6 @@
 
 import { ChevronDown } from 'lucide-react';
 import { useId, useState } from 'react';
-
 import type { ReactNode } from 'react';
 
 import { statusToneClass, type StatusTone } from '@/components/collections/collection-status-tone';

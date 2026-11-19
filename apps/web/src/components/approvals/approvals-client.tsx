@@ -15,7 +15,6 @@ import {
   useSyncExternalStore,
   useTransition,
 } from 'react';
-
 import type { JSX } from 'react';
 
 import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';

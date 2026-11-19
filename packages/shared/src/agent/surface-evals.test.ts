@@ -1,10 +1,10 @@
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { AgentTurnObservability } from '#src/agent/observability.js';
 import type { TelegramApi } from '#src/telegram/api.js';
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
 type PGlite = PGliteType;
 
 await vi.mock(

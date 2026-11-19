@@ -1,10 +1,9 @@
 import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { CapturedFilesList } from '@/components/captured-files/captured-files-list';
 import { PageHeader } from '@/components/page-header';

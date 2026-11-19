@@ -10,9 +10,8 @@ import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { AskHeader } from '@/components/chat/ask-header';
 import { ChatPane } from '@/components/chat/chat-pane';

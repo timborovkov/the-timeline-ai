@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
 import { QDRANT_EXACT_SEARCH_PARAMS } from '#src/qdrant/collection-config.js';
 import {
   collectionIndexReady,
@@ -14,7 +15,6 @@ import {
   waitForQuantizedIndex,
 } from '#src/qdrant/measure.js';
 
-import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
 const TEAM = 'team-A';
 const USER = 'user-1';
 

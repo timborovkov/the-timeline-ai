@@ -1,13 +1,31 @@
 // A scan must admit billing before provider work, preserve retry evidence, and never write canonical records.
 import { expect, vi } from '@timeline/test-support';
-import { describe, it } from 'bun:test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import { resetEnvForTests } from '#src/env.js';
+import type { FirstRunState } from '#src/onboarding/first-run.js';
 import {
   processWebsiteScanJob,
   type WebsiteScanJobDeps,
 } from '#src/onboarding/website-scan-job.js';
 
-import type { FirstRunState } from '#src/onboarding/first-run.js';
+const ENV_BACKUP = { ...process.env };
+
+beforeEach(() => {
+  process.env = {
+    ...ENV_BACKUP,
+    AUTH_SECRET: ENV_BACKUP.AUTH_SECRET ?? 'a'.repeat(32),
+    DATABASE_URL: ENV_BACKUP.DATABASE_URL ?? 'postgres://x:y@localhost:5432/x',
+    NODE_ENV: 'test',
+  };
+  delete process.env.FIRECRAWL_API_ORIGIN;
+  resetEnvForTests();
+});
+
+afterEach(() => {
+  process.env = { ...ENV_BACKUP };
+  resetEnvForTests();
+});
 
 const scanId = '33333333-3333-4333-8333-333333333333';
 const state: FirstRunState = {

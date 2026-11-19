@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { instrumentAgentTools } from '#src/agent/observability.js';
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
 import { resetEnvForTests } from '#src/env.js';
+import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 import { type TeamScope } from '#src/team-scope.js';
 
-import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
   process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
 
@@ -379,6 +379,22 @@ describe('buildAgentTools — team isolation', () => {
     await expect(exec({}, {})).resolves.toEqual({ error: 'tool_failed' });
     expect(sanitizeError).toHaveBeenCalledWith(privateError);
     expect(onToolError).toHaveBeenCalledWith(safeError, { tool: 'list_team_members' });
+  });
+
+  it('reports billing admission failures from search_timeline_moments without changing tool error shape', async () => {
+    const { BillingAdmissionError } = await import('#src/billing/errors.js');
+    const scope = makeFakeScope();
+    const admission = new BillingAdmissionError('free_allowance_reached');
+    const onToolError = vi.fn();
+    scope.timeline.searchEvents.mockRejectedValue(admission);
+    const tools = buildAgentTools(scope as unknown as TeamScope, { onToolError });
+    const exec = tools.search_timeline_moments?.execute as (
+      input: { query: string },
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({ query: 'northstar' }, {})).resolves.toEqual({ error: 'tool_failed' });
+    expect(onToolError).toHaveBeenCalledWith(admission, { tool: 'search_timeline_moments' });
   });
 
   it('lists and mutates only pins exposed by the bound personal scope', async () => {

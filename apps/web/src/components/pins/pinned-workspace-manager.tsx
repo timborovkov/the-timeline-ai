@@ -1,10 +1,9 @@
 'use client';
 
+import type { PinPage, PinTargetKind, PinnedItem } from '@timeline/shared/pins';
 import { ArrowDown, ArrowUp, ChevronsDown, ChevronsUp, GripVertical, Pin } from 'lucide-react';
 import Link from 'next/link';
 import { useReducer, useRef, useTransition } from 'react';
-
-import type { PinPage, PinTargetKind, PinnedItem } from '@timeline/shared/pins';
 
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';

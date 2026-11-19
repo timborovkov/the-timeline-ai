@@ -12,7 +12,6 @@ import { artifactRefCitation } from '#src/citation.js';
 import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { stableJson } from '#src/reconciliation/stable-json.js';
-
 import type { TeamScope } from '#src/team-scope.js';
 
 const id = z.uuid();

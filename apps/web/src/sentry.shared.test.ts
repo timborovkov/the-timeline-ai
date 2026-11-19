@@ -1,7 +1,6 @@
+import type { ErrorEvent } from '@sentry/nextjs';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type { ErrorEvent } from '@sentry/nextjs';
 
 import {
   parseSentrySampleRate,

@@ -1,7 +1,6 @@
+import type * as objects from '@timeline/shared/objects/types';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { filterObjectsByText, objectMatchesTextFilter } from '@/lib/object-filter';
 function row(overrides: Partial<objects.ObjectRow>): objects.ObjectRow {

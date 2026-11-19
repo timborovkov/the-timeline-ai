@@ -34,7 +34,6 @@ import {
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
-
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 const OBJECT_SUMMARY_PROMPT_VERSION = 'object-summary-v1';

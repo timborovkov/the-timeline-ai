@@ -1,9 +1,8 @@
-import type { PublicCapabilityState, PublicDocument } from '@/lib/public-site';
-
 import {
   WORKS_WITH_PAGE_TOOLS,
   type WorksWithTool,
 } from '@/components/marketing/integrations/works-with-content';
+import type { PublicCapabilityState, PublicDocument } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const REVIEW_DATE = '2026-11-12' as const;

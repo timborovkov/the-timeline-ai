@@ -1,7 +1,7 @@
+import type { TimelineOriginFilter, TimelineSourceFacet } from '@timeline/shared/team-scope';
 import { localDateFromInstant, localDateSpanToUtcRange } from '@timeline/shared/time';
 
 import type { ImpactKind } from '@/lib/timeline-moments';
-import type { TimelineOriginFilter, TimelineSourceFacet } from '@timeline/shared/team-scope';
 
 export const TIMELINE_UPCOMING_DAYS = 7;
 

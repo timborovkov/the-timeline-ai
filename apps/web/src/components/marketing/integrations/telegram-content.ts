@@ -1,6 +1,5 @@
-import type { PublicCanonicalPath } from '@/lib/public-site';
-
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
+import type { PublicCanonicalPath } from '@/lib/public-site';
 
 const telegram = CAPTURE_SURFACES.find((surface) => surface.id === 'telegram');
 if (!telegram) throw new Error('Telegram capture surface content is required');

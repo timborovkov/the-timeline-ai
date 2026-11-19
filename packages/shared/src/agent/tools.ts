@@ -13,6 +13,7 @@ import {
 } from '#src/agent/tool-policy.js';
 import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
+import type * as boards from '#src/boards/index.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
@@ -27,6 +28,7 @@ import { PIN_TARGET_KINDS } from '#src/pins/index.js';
 import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { enrichEvidenceContext } from '#src/retrieval/context.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
   enrichTaskProposalCategories,
@@ -53,9 +55,6 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
-
-import type * as boards from '#src/boards/index.js';
-import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('agent:tools');
 

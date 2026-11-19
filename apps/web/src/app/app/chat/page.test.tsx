@@ -1,7 +1,6 @@
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-
-import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 // Guided Ask must identify the visible starter evidence without replacing saved chat context.
 const fakes = vi.hoisted(() => ({

@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+import type * as PostHogNodeSdk from 'posthog-node';
 
 import type * as TestModule1 from '#src/analytics/posthog-node.js';
-import type * as PostHogNodeSdk from 'posthog-node';
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 
 await vi.mock(

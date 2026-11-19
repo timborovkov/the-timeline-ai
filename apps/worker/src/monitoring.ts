@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { isExpectedBillingAdmissionFailure } from '@timeline/shared/billing/errors';
 import { stampSentryRuntimeContext } from '@timeline/shared/monitoring/sentry-runtime';
 import {
   RESTRICTED_SENTRY_DATA_COLLECTION,
@@ -53,14 +54,6 @@ export function captureWorkerException(
   });
 }
 
-const EXPECTED_BILLING_ADMISSION_FAILURE_RE =
-  /Billing admission failed: (?:usage_limit_reached|free_allowance_reached|spend_cap_reached)\b/;
-
-function isExpectedWorkerJobFailure(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return EXPECTED_BILLING_ADMISSION_FAILURE_RE.test(message);
-}
-
 function isEmbeddingProviderTimeout(err: unknown): boolean {
   const { tags, context } = aiErrorDetails(err);
   return (
@@ -74,7 +67,7 @@ function shouldCaptureWorkerJobFailure(
   job: Pick<Job, 'attemptsMade' | 'opts'> | undefined,
   err: unknown,
 ): boolean {
-  if (isExpectedWorkerJobFailure(err)) return false;
+  if (isExpectedBillingAdmissionFailure(err)) return false;
   if (err instanceof UnrecoverableError) return true;
   if (!job) return true;
   const maxAttempts = job.opts.attempts ?? 1;
@@ -94,7 +87,7 @@ export function captureWorkerJobFailure(
   tags: Record<string, string | number | boolean | null | undefined> = {},
 ): void {
   const terminal = isTerminalWorkerJobFailure(job, err);
-  if (isExpectedWorkerJobFailure(err)) {
+  if (isExpectedBillingAdmissionFailure(err)) {
     if (!isWorkerSentryConfigured()) return;
     Sentry.addBreadcrumb({
       category: 'billing',

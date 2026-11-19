@@ -1,11 +1,10 @@
 'use client';
 
+import type * as objects from '@timeline/shared/objects/types';
 import { Archive, GitMerge, Shapes, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useReducer, useState, useTransition } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import {
   bulkArchiveObjectsAction,

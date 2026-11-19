@@ -1,10 +1,9 @@
-import type { TeamInviteRow, TeamMemberInfo } from '@/components/team-member-types';
-
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TeamListRow } from '@/components/team-list-row';
 import { PendingInviteActions } from '@/components/team-member-actions';
+import type { TeamInviteRow, TeamMemberInfo } from '@/components/team-member-types';
 import { displayMemberLabel } from '@/lib/display-labels';
 
 export function PendingInviteItem({

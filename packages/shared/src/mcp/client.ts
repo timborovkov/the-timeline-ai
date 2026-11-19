@@ -6,11 +6,10 @@ import { externalFetch } from '#src/http/external-fetch.js';
 import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
 import { childLogger } from '#src/logger.js';
 import { buildAuth } from '#src/mcp/auth.js';
-import { refreshToken as oauthRefreshToken } from '#src/mcp/oauth-provider.js';
-import { namespaceToolName } from '#src/mcp/tool-namespace.js';
-
 import type { McpServerRow } from '#src/mcp/auth.js';
+import { refreshToken as oauthRefreshToken } from '#src/mcp/oauth-provider.js';
 import type { discoverOAuth } from '#src/mcp/oauth-provider.js';
+import { namespaceToolName } from '#src/mcp/tool-namespace.js';
 
 // Phase 11 — Minimal MCP-over-HTTP client. The full
 // @modelcontextprotocol/sdk supports stdio, SSE, and WebSocket transports;

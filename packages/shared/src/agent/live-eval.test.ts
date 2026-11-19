@@ -1,10 +1,10 @@
 import { loadEnvFile } from 'node:process';
 
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
 type PGlite = PGliteType;
 
 const fakes = vi.hoisted(

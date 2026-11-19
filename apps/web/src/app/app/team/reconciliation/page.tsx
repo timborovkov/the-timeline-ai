@@ -1,14 +1,13 @@
 import { eventSource } from '@timeline/db';
-import { withTeam } from '@timeline/shared/team-scope';
-import { GitMerge, ListRestart, Play } from 'lucide-react';
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-
 import type {
   ReconciliationDashboardCluster,
   ReconciliationDashboardOutput,
 } from '@timeline/shared/reconciliation';
+import { withTeam } from '@timeline/shared/team-scope';
+import { GitMerge, ListRestart, Play } from 'lucide-react';
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { CollectionRow } from '@/components/collections/collection-row';

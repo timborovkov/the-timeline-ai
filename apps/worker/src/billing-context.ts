@@ -1,17 +1,15 @@
 import { type Db } from '@timeline/db';
-import { isBillingAdmissionError, runWorkerBilling } from '@timeline/shared/billing';
+import {
+  isBillingAdmissionError,
+  isExpectedBillingAdmissionFailure,
+  runWorkerBilling,
+} from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { DelayedError, UnrecoverableError } from 'bullmq';
 
 import { delayWorkerJob } from '#src/job-delay.js';
 
 const log = childLogger('worker:billing');
-
-const EXPECTED_BILLING_ADMISSION_CODES = new Set([
-  'usage_limit_reached',
-  'free_allowance_reached',
-  'spend_cap_reached',
-]);
 
 export function workerBillingJobOptions(
   job: {
@@ -60,7 +58,7 @@ export async function withWorkerAiBilling<T>(
       }
     }
     if (isBillingAdmissionError(err)) {
-      if (EXPECTED_BILLING_ADMISSION_CODES.has(err.code)) {
+      if (isExpectedBillingAdmissionFailure(err)) {
         log.warn(
           { code: err.code, teamId, operationClass },
           `Billing admission failed: ${err.code}`,

@@ -1,18 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import type {
   DirectoryProvider,
   InboundEmailSettings,
   TelegramSetupSnapshot,
 } from '@/app/app/connections/connection-directory';
-import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
-import type { ReactNode } from 'react';
-
 import { providerStatusTone } from '@/app/app/connections/connection-directory';
 import { EmailSetupBody } from '@/app/app/connections/email-setup-panel';
 import { TelegramSetupBody } from '@/app/app/connections/telegram-setup-panel';
+import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';

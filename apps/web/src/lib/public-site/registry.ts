@@ -6,7 +6,6 @@ import type {
   PublicIsoDate,
   PublicLlmsSection,
 } from '@/lib/public-site/types';
-
 import {
   NATIVE_INGESTION_PROVIDERS,
   PUBLIC_DOCUMENT_KINDS,

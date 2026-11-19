@@ -1,6 +1,5 @@
 import { FileText, Link2, Mail } from 'lucide-react';
 import Image from 'next/image';
-
 import type { CSSProperties } from 'react';
 
 import styles from '@/app/(landing)/home.module.css';

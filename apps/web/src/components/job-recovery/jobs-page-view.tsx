@@ -1,6 +1,5 @@
-import { ShieldAlert } from 'lucide-react';
-
 import type * as jobRecovery from '@timeline/shared/job-recovery';
+import { ShieldAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { EmptyState } from '@/components/empty-state';

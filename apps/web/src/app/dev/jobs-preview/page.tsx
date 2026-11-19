@@ -1,7 +1,6 @@
-import { notFound } from 'next/navigation';
-
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { JobsForbiddenView, JobsPageView } from '@/components/job-recovery/jobs-page-view';
 import { JobsPreviewShell } from '@/components/job-recovery/jobs-preview-shell';

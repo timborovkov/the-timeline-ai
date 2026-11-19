@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import type { PropsWithChildren } from 'react';
 
 import type { WorkFilterState } from '@/lib/work-filters';
-import type { PropsWithChildren } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({

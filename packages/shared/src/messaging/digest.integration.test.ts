@@ -1,3 +1,4 @@
+import type { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   agentSuggestionItems,
@@ -25,7 +26,6 @@ import {
 import { generateDailyDigest, listDailyDigestRecipients } from '#src/messaging/digest.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
-import type { PGlite } from '@electric-sql/pglite';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 

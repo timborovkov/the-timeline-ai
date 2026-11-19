@@ -1,13 +1,9 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
-
-import type { BoardLayout } from '@/lib/board-links';
-import type { BoardQualificationDraft } from '@/lib/board-qualification';
-import type { WorkFilterState } from '@/lib/work-filters';
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
+import { useRouter } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
 import { BoardActionsMenu } from '@/components/boards/board-actions-menu';
@@ -25,8 +21,11 @@ import { PinButton } from '@/components/pins/pin-button';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { visibleBoardDescription } from '@/lib/board-description';
+import type { BoardLayout } from '@/lib/board-links';
 import { boardViewHref } from '@/lib/board-links';
+import type { BoardQualificationDraft } from '@/lib/board-qualification';
 import { displayObjectTitle } from '@/lib/object-title';
+import type { WorkFilterState } from '@/lib/work-filters';
 
 export interface BoardMemberOption {
   id: string;

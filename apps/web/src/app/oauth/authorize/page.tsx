@@ -4,23 +4,22 @@ import {
   type McpOAuthScope,
   validateMcpAuthorizationRequest,
 } from '@timeline/shared/mcp-server';
+import type { ValidatedAuthorizationRequest } from '@timeline/shared/mcp-server';
 import { withTeam } from '@timeline/shared/team-scope';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type { ConsentMembership } from '@/components/oauth-consent-form';
-import type { McpAuthorizationInput } from '@/lib/mcp-oauth-authorization';
-import type { ValidatedAuthorizationRequest } from '@timeline/shared/mcp-server';
-import type { Metadata } from 'next';
-
 import { denyMcpOAuthAction } from '@/app/oauth/actions';
 import { AuthShell } from '@/components/auth-shell';
+import type { ConsentMembership } from '@/components/oauth-consent-form';
 import { OAuthConsentForm } from '@/components/oauth-consent-form';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+import type { McpAuthorizationInput } from '@/lib/mcp-oauth-authorization';
 import {
   authorizationHiddenFields,
   authorizationInputFromSearchParams,

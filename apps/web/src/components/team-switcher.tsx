@@ -4,8 +4,6 @@ import { Check, ChevronsUpDown, Mail, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
-import type { TeamMembership } from '@/lib/active-team';
-
 import { acceptRecipientInviteAction, declineInviteAction } from '@/app/actions/invites';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { CreateTeamForm } from '@/components/team-forms';
@@ -17,6 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import type { TeamMembership } from '@/lib/active-team';
 import { initials } from '@/lib/initials';
 import { cn } from '@/lib/utils';
 

@@ -1,8 +1,7 @@
+import type * as boards from '@timeline/shared/boards';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-
-import type * as boards from '@timeline/shared/boards';
 import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
 // Test environment: happy-dom
 

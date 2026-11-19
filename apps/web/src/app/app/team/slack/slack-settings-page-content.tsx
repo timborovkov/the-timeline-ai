@@ -12,10 +12,9 @@ import * as slack from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { Hash, Users } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
 import { CollectionRow } from '@/components/collections/collection-row';

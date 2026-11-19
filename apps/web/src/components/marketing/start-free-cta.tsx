@@ -1,6 +1,5 @@
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-
 import type { ReactNode } from 'react';
 
 import { CTA_MICROCOPY_LEAD, START_FREE_HREF, START_FREE_LABEL } from '@/components/marketing/copy';

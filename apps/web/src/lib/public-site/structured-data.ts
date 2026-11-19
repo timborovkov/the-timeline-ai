@@ -1,6 +1,5 @@
-import type { PublicDocument, PublicStructuredDataInput } from '@/lib/public-site/types';
-
 import { canonicalPublicUrl } from '@/lib/public-site/registry';
+import type { PublicDocument, PublicStructuredDataInput } from '@/lib/public-site/types';
 
 type JsonLdNode = Record<string, unknown>;
 
