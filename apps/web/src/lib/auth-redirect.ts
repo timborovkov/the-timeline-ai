@@ -87,6 +87,7 @@ export function postSignupDestination(input: {
   callbackUrl: string;
 }): string {
   if (input.inviteToken || input.event === 'invite_accepted') return '/app';
-  void input.callbackUrl;
+  // callbackUrl is intentionally ignored for solo account_created — Welcome
+  // always runs first; plan intent stays in the cookie, MCP parking elsewhere.
   return '/onboarding';
 }
