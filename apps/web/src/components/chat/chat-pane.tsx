@@ -691,21 +691,36 @@ function ChatComposer({
         <label htmlFor="chat-composer" className="sr-only">
           Ask the timeline
         </label>
-        <input
+        <p id="chat-composer-hint" className="sr-only">
+          Press Enter to send or Shift+Enter for a new line.
+        </p>
+        <textarea
           id="chat-composer"
           name="message"
-          type="text"
+          aria-describedby="chat-composer-hint"
+          rows={2}
           maxLength={4000}
           value={input}
           onChange={(e) => {
             onChange(e.target.value);
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') onSubmit(input);
+            if (
+              event.key !== 'Enter' ||
+              event.shiftKey ||
+              event.nativeEvent.isComposing ||
+              // Safari can report composition Enter after clearing isComposing.
+              // eslint-disable-next-line @typescript-eslint/no-deprecated
+              event.nativeEvent.keyCode === 229
+            ) {
+              return;
+            }
+            event.preventDefault();
+            onSubmit(input);
           }}
           placeholder="Ask the timeline…"
           disabled={isStreaming}
-          className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
+          className="block min-h-10 max-h-[min(10rem,35dvh)] w-full resize-none overflow-y-auto rounded-sm bg-transparent py-2 pr-12 pl-3 text-base leading-6 [field-sizing:content] focus:outline-none sm:text-sm"
         />
         <button
           type="button"
@@ -714,7 +729,7 @@ function ChatComposer({
           }}
           disabled={isStreaming || !input.trim()}
           aria-label="Send"
-          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-30"
+          className="absolute right-1 bottom-1 grid size-8 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-30"
         >
           <Send aria-hidden="true" className="size-4" />
         </button>

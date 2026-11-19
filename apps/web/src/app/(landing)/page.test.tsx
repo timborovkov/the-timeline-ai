@@ -353,7 +353,8 @@ describe('LandingPage', () => {
   it('shows every source detail inline without dialogs, disclosures or navigation', () => {
     const { container } = render(<LandingPage />);
     const block = container.querySelector('[data-scene="04-ask"]');
-    const ledger = screen.getByRole('complementary', { name: 'Sources behind this answer' });
+    const ledger = screen.getByRole('region', { name: 'Sources behind this answer' });
+    expect(screen.getByRole('main').querySelector('aside')).toBeNull();
     expect(block?.querySelector('dialog')).toBeNull();
     expect(ledger.querySelector('button, a, details')).toBeNull();
     expect(block?.querySelector('a[href^="#acme-source-"]')).toBeNull();

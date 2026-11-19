@@ -7,12 +7,14 @@ import {
   use,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
 
+import styles from '@/components/public-analytics.module.css';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -48,6 +50,13 @@ import {
 import { cn } from '@/lib/utils';
 
 const PublicAnalyticsSettingsContext = createContext<(() => void) | undefined>(undefined);
+interface AnalyticsChoiceActions {
+  onAccept: () => void;
+  onReject: () => void;
+  onOpenSettings: () => void;
+}
+
+const PublicAnalyticsChoiceContext = createContext<AnalyticsChoiceActions | null>(null);
 const SERVER_CONSENT_PENDING = null;
 
 function getServerConsentSnapshot(): null {
@@ -145,17 +154,17 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
   const openSettings = useCallback(() => {
     setSettingsOpen(true);
   }, []);
+  const choiceActions = useMemo(
+    () =>
+      showChoiceBanner
+        ? { onAccept: acceptAnalytics, onReject: rejectAnalytics, onOpenSettings: openSettings }
+        : null,
+    [showChoiceBanner, acceptAnalytics, rejectAnalytics, openSettings],
+  );
 
   return (
     <PublicAnalyticsSettingsContext value={preferenceLoaded ? openSettings : undefined}>
-      <div className={showChoiceBanner ? 'pb-36 sm:pb-8' : undefined}>{children}</div>
-      {showChoiceBanner ? (
-        <AnalyticsChoiceBanner
-          onAccept={acceptAnalytics}
-          onReject={rejectAnalytics}
-          onOpenSettings={openSettings}
-        />
-      ) : null}
+      <PublicAnalyticsChoiceContext value={choiceActions}>{children}</PublicAnalyticsChoiceContext>
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="overscroll-contain border-border bg-bg sm:max-w-lg">
           <DialogHeader>
@@ -205,6 +214,11 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
   );
 }
 
+export function PublicAnalyticsChoice() {
+  const actions = use(PublicAnalyticsChoiceContext);
+  return actions ? <AnalyticsChoiceBanner {...actions} /> : null;
+}
+
 export function CookieSettingsButton({ className }: { className?: string }) {
   const openSettings = use(PublicAnalyticsSettingsContext);
   if (!openSettings) return null;
@@ -222,20 +236,12 @@ export function CookieSettingsButton({ className }: { className?: string }) {
   );
 }
 
-function AnalyticsChoiceBanner({
-  onAccept,
-  onReject,
-  onOpenSettings,
-}: {
-  onAccept: () => void;
-  onReject: () => void;
-  onOpenSettings: () => void;
-}) {
+function AnalyticsChoiceBanner({ onAccept, onReject, onOpenSettings }: AnalyticsChoiceActions) {
   return (
     <aside
       aria-labelledby="analytics-choice-title"
       data-analytics-choice-banner
-      className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-3xl rounded-md border border-border bg-bg p-4 shadow-lg sm:inset-x-auto sm:right-4 sm:bottom-4 sm:left-auto sm:mx-0 sm:max-w-sm sm:p-4"
+      className={cn(styles.choiceBanner, 'rounded-md border border-border bg-bg p-4')}
     >
       <div className="grid gap-4">
         <div>
@@ -255,11 +261,11 @@ function AnalyticsChoiceBanner({
             .
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" onClick={onReject}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] gap-2">
+          <Button variant="outline" className="h-auto min-h-9 whitespace-normal" onClick={onReject}>
             Reject
           </Button>
-          <Button variant="outline" onClick={onAccept}>
+          <Button variant="outline" className="h-auto min-h-9 whitespace-normal" onClick={onAccept}>
             Accept analytics
           </Button>
         </div>

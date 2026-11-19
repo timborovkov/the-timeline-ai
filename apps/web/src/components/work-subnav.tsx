@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
 
+import { ScrollableNav } from '@/components/scrollable-nav';
 import { cn } from '@/lib/utils';
 
 const WORK_LINKS = [
@@ -25,21 +25,6 @@ export function WorkSubnav({
   className?: string;
   spacing?: 'flush' | 'comfortable';
 }) {
-  const navRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const nav = navRef.current;
-    const active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
-    if (!nav || !active) return;
-    const revealActive = () => {
-      const offset = active.getBoundingClientRect().left - nav.getBoundingClientRect().left;
-      nav.scrollLeft += offset - (nav.clientWidth - active.offsetWidth) / 2;
-    };
-    revealActive();
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(revealActive);
-    observer?.observe(nav);
-    return () => observer?.disconnect();
-  }, [current]);
   return (
     <div
       data-slot="collection-tabs"
@@ -49,37 +34,33 @@ export function WorkSubnav({
         spacing === 'comfortable' && 'mb-6!',
       )}
     >
-      <nav
-        ref={navRef}
-        aria-label="Work"
-        className={cn('overflow-x-auto border-b border-border', className)}
+      <ScrollableNav
+        activeKey={current}
+        label="Work"
+        cue="Swipe or scroll for more work views."
+        className={cn('border-b border-border', className)}
       >
-        <div className="flex min-w-max gap-1">
-          {WORK_LINKS.map((item) => {
-            const active = item.href.includes('?')
+        {WORK_LINKS.map((item) => {
+          const active = item.href.includes('?')
+            ? current === item.href
+            : item.href === '/app/work'
               ? current === item.href
-              : item.href === '/app/work'
-                ? current === item.href
-                : current === item.href || current.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'inline-flex min-h-11 items-center border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-                  active && 'border-signal text-fg',
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
-      <p aria-hidden="true" className="py-1 text-xs text-fg-dim md:hidden">
-        Swipe or scroll for more work views.
-      </p>
+              : current === item.href || current.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'inline-flex min-h-11 items-center border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                active && 'border-signal text-fg',
+              )}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </ScrollableNav>
     </div>
   );
 }
