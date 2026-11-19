@@ -112,8 +112,8 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     };
   }, [phase, router, stepsFailed]);
 
-  async function continueWorkStyle(workStyle: TeamWorkStyle | null) {
-    const result = await submitWorkStyleAction({ workStyle });
+  async function continueWorkStyle(workStyle: TeamWorkStyle | null, teamName: string) {
+    const result = await submitWorkStyleAction({ workStyle, teamName });
     if (!result.ok) throw new Error(result.error ?? 'Could not save how your team works.');
     router.refresh();
   }

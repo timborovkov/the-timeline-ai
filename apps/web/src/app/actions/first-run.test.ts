@@ -20,6 +20,7 @@ const fakes = vi.hoisted(() => ({
   enqueueWebsiteScanJob: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   revalidatePath: vi.fn(),
+  applyTeamRename: vi.fn(),
 }));
 
 await vi.mock(
@@ -49,7 +50,11 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/env'),
-  () => ({ getEnv: () => ({ FIRECRAWL_API_KEY: 'fc-test' }) }),
+  async () => ({
+    ...(await import('@timeline/shared/env')),
+    getEnv: () => ({ FIRECRAWL_API_KEY: 'fc-test' }),
+    isFirecrawlConfigured: () => true,
+  }),
   () => import('@timeline/shared/env'),
 );
 await vi.mock(
@@ -110,6 +115,14 @@ await vi.mock(
   }),
   () => import('@/lib/sentry-action'),
 );
+await vi.mock(
+  import.meta.resolve('@/lib/team-rename'),
+  async () => ({
+    ...(await import('@/lib/team-rename')),
+    applyTeamRename: fakes.applyTeamRename,
+  }),
+  () => import('@/lib/team-rename'),
+);
 
 const {
   recordAgentDeployedAction,
@@ -138,11 +151,13 @@ beforeEach(() => {
   fakes.skipToEmptyHome.mockResolvedValue({});
   fakes.markScanFailed.mockResolvedValue({});
   fakes.enqueueWebsiteScanJob.mockResolvedValue(undefined);
+  fakes.applyTeamRename.mockResolvedValue({ ok: true, changed: false });
 });
 
 describe('first-run analytics', () => {
   it('records work style, path, skip, and go-live channel events', async () => {
     await expect(submitWorkStyleAction({ workStyle: 'email' })).resolves.toEqual({ ok: true });
+    expect(fakes.applyTeamRename).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
       'onboarding_work_style_submitted',
@@ -282,5 +297,51 @@ describe('first-run analytics', () => {
     });
     expect(result.ok).toBe(false);
     expect(fakes.markScanFailed).toHaveBeenCalled();
+  });
+});
+
+describe('submitWorkStyleAction team name', () => {
+  it('renames through the shared team-rename path before saving work style', async () => {
+    fakes.applyTeamRename.mockResolvedValue({ ok: true, changed: true });
+    await expect(
+      submitWorkStyleAction({ workStyle: 'email', teamName: '  Northstar Labs  ' }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.applyTeamRename).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      name: 'Northstar Labs',
+    });
+    expect(fakes.submitWorkStyle).toHaveBeenCalledWith('email');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('rejects blank or overlong team names with the shared validation message', async () => {
+    await expect(submitWorkStyleAction({ workStyle: null, teamName: '   ' })).resolves.toEqual({
+      ok: false,
+      error: 'Invalid team name',
+    });
+    await expect(
+      submitWorkStyleAction({ workStyle: null, teamName: 'x'.repeat(81) }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'Invalid team name',
+    });
+    expect(fakes.applyTeamRename).not.toHaveBeenCalled();
+    expect(fakes.submitWorkStyle).not.toHaveBeenCalled();
+  });
+
+  it('surfaces rename failures and skips the work-style write', async () => {
+    fakes.applyTeamRename.mockResolvedValue({ error: 'Only admins can rename a team' });
+    await expect(
+      submitWorkStyleAction({ workStyle: 'email', teamName: 'Denied Co' }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'Only admins can rename a team',
+    });
+    expect(fakes.submitWorkStyle).not.toHaveBeenCalled();
   });
 });

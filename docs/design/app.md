@@ -253,9 +253,16 @@ stay vertically centered with the row. Do not style board lanes as badges. Team
 settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
-Team → General keeps identity as a form (rename for admins) plus two readonly
-copyable support fields — team id and slug — with spacing between sections
-and no nested cards. General also contains work style, messaging, digest destinations and timezone; there is no separate Preferences tab. Old Preferences links resolve to General. Evaluation tracing and conversation report sharing appear as descriptive navigation rows under Quality and support within General, never above the page header.
+Team → General is the default Team settings section and keeps identity as a
+form (rename for admins) plus two readonly copyable support fields — team id
+and slug — with spacing between sections and no nested cards. Renaming updates
+the display name only; slug and inbound email stay put. General also contains
+work style, messaging, digest destinations and timezone; there is no separate
+Preferences tab. Old Preferences links resolve to General. Evaluation tracing
+and conversation report sharing appear as descriptive navigation rows under
+Quality and support within General, never above the page header. First-run
+onboarding asks for the same team name on the welcome step (prefilled from the
+sign-up default) and saves it through the shared rename path.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Member and invitation actions stack below

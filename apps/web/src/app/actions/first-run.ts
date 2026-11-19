@@ -29,6 +29,7 @@ import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import { applyTeamRename, teamDisplayNameSchema } from '@/lib/team-rename';
 
 const log = childLogger('web:actions:first-run');
 
@@ -88,14 +89,43 @@ function revalidateOnboarding(): void {
 
 export async function submitWorkStyleAction(input: {
   workStyle: TeamWorkStyle | null;
+  /** When set, renames the active team with the same validation as Team settings. */
+  teamName?: string;
 }): Promise<ActionResult> {
   return runSentryServerAction('submit_work_style', async () => {
     const got = await withFirstRunScope();
     if ('error' in got) return { ok: false, error: got.error };
     const limited = await limitFirstRun(got.userId);
     if (limited) return { ok: false, error: limited };
-    const parsed = z.object({ workStyle: workStyleSchema }).safeParse(input);
-    if (!parsed.success) return { ok: false, error: 'Invalid work style' };
+    const parsed = z
+      .object({
+        workStyle: workStyleSchema,
+        teamName: teamDisplayNameSchema.optional(),
+      })
+      .safeParse(input);
+    if (!parsed.success) {
+      if (parsed.error.issues.some((issue) => issue.path[0] === 'teamName')) {
+        return { ok: false, error: 'Invalid team name' };
+      }
+      return { ok: false, error: 'Invalid work style' };
+    }
+    if (parsed.data.teamName !== undefined) {
+      const renamed = await applyTeamRename({
+        teamId: got.teamId,
+        userId: got.userId,
+        name: parsed.data.teamName,
+      });
+      if ('error' in renamed) return { ok: false, error: renamed.error };
+      if (renamed.changed) {
+        trackProductEventBestEffort(
+          actor(got.userId, got.teamId),
+          'team_management_action_completed',
+          {
+            action: 'settings_update',
+          },
+        );
+      }
+    }
     try {
       await got.scope.onboarding.submitWorkStyle(parsed.data.workStyle);
     } catch (err) {

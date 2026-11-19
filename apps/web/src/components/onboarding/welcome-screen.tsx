@@ -5,10 +5,12 @@ import { useState, useTransition } from 'react';
 
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
 export function WelcomeScreen({
-  teamName,
+  teamName: initialTeamName,
   inboundEmail,
   initialWorkStyle,
   onContinue,
@@ -16,17 +18,23 @@ export function WelcomeScreen({
   teamName: string;
   inboundEmail: string | null;
   initialWorkStyle: TeamWorkStyle | null;
-  onContinue: (workStyle: TeamWorkStyle | null) => Promise<void>;
+  onContinue: (workStyle: TeamWorkStyle | null, teamName: string) => Promise<void>;
 }) {
+  const [teamName, setTeamName] = useState(initialTeamName);
   const [workStyle, setWorkStyle] = useState<TeamWorkStyle | null>(initialWorkStyle);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit(next: TeamWorkStyle | null) {
+    const trimmed = teamName.trim();
+    if (!trimmed || trimmed.length > 80) {
+      setError('Enter a team name between 1 and 80 characters.');
+      return;
+    }
     setError(null);
     startTransition(async () => {
       try {
-        await onContinue(next);
+        await onContinue(next, trimmed);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Could not continue.');
       }
@@ -37,9 +45,31 @@ export function WelcomeScreen({
     <div>
       <h1 className="text-2xl font-semibold tracking-tight md:text-[24px]">Your team is ready</h1>
       <p className="mt-2 text-sm leading-6 text-fg-muted">
-        We created {teamName} and its team email address. Anything you forward there lands on your
-        timeline.
+        Name your workspace and keep its team email address. Anything you forward there lands on
+        your timeline.
       </p>
+      <div className="mt-4 space-y-1.5">
+        <Label htmlFor="onboarding-team-name" size="sm">
+          Team name
+        </Label>
+        <Input
+          id="onboarding-team-name"
+          name="teamName"
+          value={teamName}
+          required
+          maxLength={80}
+          autoComplete="organization"
+          disabled={pending}
+          aria-invalid={error?.includes('team name') ? true : undefined}
+          aria-describedby="onboarding-team-name-hint"
+          onChange={(event) => {
+            setTeamName(event.currentTarget.value);
+          }}
+        />
+        <p id="onboarding-team-name-hint" className="text-xs leading-5 text-fg-muted">
+          You can rename this later in Team → General. The team email and slug stay the same.
+        </p>
+      </div>
       <div className="mt-4">
         <CopyableTextField
           id="onboarding-team-email"
