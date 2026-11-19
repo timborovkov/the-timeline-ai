@@ -470,6 +470,17 @@ describe('requestDocumentUploadAction', () => {
     expect(fakeGetSignedPutUrl).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a malformed renewal without creating a document', async () => {
+    const malformed = {
+      resumeVersionId: 'invalid',
+      name: 'Existing upload',
+      filename: 'existing.pdf',
+      contentType: 'application/pdf',
+    };
+    expect(await requestDocumentUploadAction(malformed)).toMatchObject({ ok: false });
+    expect(fakeScope.createDocument).not.toHaveBeenCalled();
+  });
+
   it('rejects oversized files before reserving a document name', async () => {
     const result = await requestDocumentUploadAction({
       name: 'Large file',

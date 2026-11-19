@@ -148,6 +148,7 @@ export async function deleteFolderAction(id: string): Promise<Result> {
 }
 
 const requestUploadSchema = z.object({
+  resumeVersionId: z.never().optional(),
   documentId: documentIdSchema.optional(),
   folderId: folderIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(400),
@@ -223,7 +224,7 @@ export async function requestDocumentUploadAction(
       let versionId: string;
       let objectKey: string;
       let contentType: string;
-      if ('resumeVersionId' in parsed.data) {
+      if (parsed.data.resumeVersionId !== undefined) {
         const version = await got.scope.documents.getDocumentVersion(parsed.data.resumeVersionId);
         if (
           version?.uploadedByUserId !== got.userId ||

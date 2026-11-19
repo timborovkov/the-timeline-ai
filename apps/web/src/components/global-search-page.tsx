@@ -519,7 +519,9 @@ export function GlobalSearchPage({
         state={state}
         dateErrors={dateErrors}
         resultStatus={hasSearchCriteria && !hasDateErrors ? resultStatus : ''}
-        onDraftChange={(value) => { dispatch({ type: 'draft', value }); }}
+        onDraftChange={(value) => {
+          dispatch({ type: 'draft', value });
+        }}
         onFilterChange={changeFilter}
         onSubmit={submitSearch}
         onClear={clearFilters}
@@ -591,7 +593,9 @@ function SearchControls({
         (key === 'from' || key === 'to') && !searchDateOnly.safeParse(state[key]).success
           ? 'Invalid date'
           : state[key],
-      onRemove: () => { onFilterChange(key, ''); },
+      onRemove: () => {
+        onFilterChange(key, '');
+      },
     }));
 
   return (
@@ -612,7 +616,9 @@ function SearchControls({
                 id="global-search-query"
                 type="search"
                 value={state.draft}
-                onChange={(event) => { onDraftChange(event.target.value); }}
+                onChange={(event) => {
+                  onDraftChange(event.target.value);
+                }}
                 placeholder="Search everything"
                 aria-label="Search everything"
                 className="h-9 w-full rounded-sm border-0 bg-transparent pl-10 pr-24 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 sm:text-sm"
@@ -630,14 +636,18 @@ function SearchControls({
               <FilterMultiSelect
                 label="Result types"
                 value={state.typeFilters}
-                onValueChange={(value) => { onFilterChange('typeFilters', value); }}
+                onValueChange={(value) => {
+                  onFilterChange('typeFilters', value);
+                }}
                 placeholder="All results"
                 options={RESULT_TYPE_OPTIONS}
               />
               <FilterMultiSelect
                 label="Timeline source"
                 value={state.source}
-                onValueChange={(value) => { onFilterChange('source', value); }}
+                onValueChange={(value) => {
+                  onFilterChange('source', value);
+                }}
                 placeholder="All Timeline sources"
                 options={SOURCE_OPTIONS}
               />
@@ -646,14 +656,18 @@ function SearchControls({
                 label="From"
                 value={state.from}
                 error={dateErrors.from}
-                onChange={(value) => { onFilterChange('from', value); }}
+                onChange={(value) => {
+                  onFilterChange('from', value);
+                }}
               />
               <DateFilterInput
                 id="search-to"
                 label="To"
                 value={state.to}
                 error={dateErrors.to}
-                onChange={(value) => { onFilterChange('to', value); }}
+                onChange={(value) => {
+                  onFilterChange('to', value);
+                }}
               />
             </div>
             <p id="search-date-scope" className="mt-2 text-xs text-fg-dim">
@@ -688,7 +702,9 @@ function SearchControls({
                 <button
                   className="text-fg underline underline-offset-2"
                   type="button"
-                  onClick={() => { onFilterChange(edge, ''); }}
+                  onClick={() => {
+                    onFilterChange(edge, '');
+                  }}
                 >
                   {edge === 'from' ? 'Clear start date' : 'Clear end date'}
                 </button>
