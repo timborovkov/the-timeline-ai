@@ -10,6 +10,7 @@ import { evaluate } from 'langsmith/evaluation';
 
 import {
   COMMUNICATION_CASES,
+  communicationConcurrency,
   selectCommunications,
   validateCommunicationCases,
 } from '#src/evals/communication-cases.js';
@@ -32,6 +33,7 @@ import { createSuggestionHarness } from '#src/evals/suggestion-harness.js';
 import {
   scoreSuggestions,
   suggestionRunComplete,
+  verifySuggestionPublication,
   summarizeSuggestions,
   type SuggestionResult,
   type SuggestionObservation,
@@ -45,6 +47,8 @@ const { values } = parseArgs({
     repeats: { type: 'string' },
     limit: { type: 'string' },
     tag: { type: 'string' },
+    cases: { type: 'string' },
+    concurrency: { type: 'string' },
     out: { type: 'string' },
   },
   strict: true,
@@ -55,6 +59,11 @@ if (!process.env.LANGSMITH_API_KEY) throw new Error('LANGSMITH_API_KEY is requir
 const suite = values.suite ?? 'suggestions';
 if (suite !== 'suggestions' && suite !== 'communications') throw new Error('Invalid --suite');
 const communications = suite === 'communications';
+if (!communications && values.cases !== undefined)
+  throw new Error('--cases requires --suite=communications');
+if (!communications && values.concurrency !== undefined)
+  throw new Error('--concurrency requires --suite=communications');
+const concurrency = communications ? communicationConcurrency(values.concurrency) : 1;
 if (communications) validateCommunicationCases();
 else validateSuggestionCases();
 const selection = communications ? selectCommunications(values) : selectSuggestionCases(values);
@@ -101,15 +110,24 @@ if (!values.sync) {
   for (const path of [
     '../workers/suggestions.ts',
     '../workers/communication-policy.ts',
+    '../workers/communication-grounding.ts',
+    '../workers/communication-audit.ts',
+    '../evals/communication-gap-cases.ts',
+    '../evals/communication-completeness-cases.ts',
+    '../../../../packages/shared/src/suggestions/linked-hubs.ts',
     '../evals/communication-harness.ts',
+    '../evals/communication-cases.ts',
+    '../../../../packages/shared/src/suggestions/hub-context.ts',
     '../evals/communication-report.ts',
     '../../../../packages/shared/src/suggestions/index.ts',
+    '../../../../packages/shared/src/suggestions/proposal-payload.ts',
+    '../../../../packages/shared/src/conversation-review/index.ts',
   ])
     implementationHash.update(await readFile(new URL(path, import.meta.url)));
   const implementationDigest = implementationHash.digest('hex');
   // Each concurrent communication case owns a separate database and queue.
   const harnesses = [];
-  for (let index = 0; index < (communications ? 4 : 1); index++)
+  for (let index = 0; index < concurrency; index++)
     harnesses.push(
       communications ? await createCommunicationHarness() : await createSuggestionHarness(),
     );
@@ -120,13 +138,15 @@ if (!values.sync) {
     complete: boolean;
     benchmarkEvidence: boolean;
     feedbackComplete: boolean;
+    localFeedbackComplete: boolean;
+    publication: Awaited<ReturnType<typeof verifySuggestionPublication>>;
     summary: ReturnType<typeof summarizeSuggestions>;
     rows: SuggestionResult[];
   }[] = [];
   let inProgress: { repetition: number; rows: SuggestionResult[] } | null = null;
   let checkpointChain = Promise.resolve();
   const checkpoint = () => {
-    const content = `${JSON.stringify({ suite, datasetName, corpusHash, implementationDigest, revision, dirty, split: selection.split, evaluatedAt: new Date().toISOString(), reports, inProgress }, null, 2)}\n`;
+    const content = `${JSON.stringify({ suite, datasetName, corpusHash, implementationDigest, revision, dirty, concurrency, split: selection.split, caseFilter: values.cases ?? null, evaluatedAt: new Date().toISOString(), reports, inProgress }, null, 2)}\n`;
     checkpointChain = checkpointChain.then(() => writeFile(requireValue(values.out), content));
     return checkpointChain;
   };
@@ -202,13 +222,14 @@ if (!values.sync) {
             partial: !selection.complete,
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
-            evaluatorVersion: communications ? 4 : 2,
+            evaluatorVersion: communications ? 7 : 2,
             requestedModel: selection.selected.every((row) =>
               row.tags.includes('github-completion'),
             )
               ? 'none-deterministic'
               : TIMELINE_MODELS.extraction.id,
             scenarioFilter: values.tag ?? null,
+            caseFilter: values.cases ?? null,
             synthetic: true,
             retrieval: 'database-only',
             pipeline: communications
@@ -234,13 +255,33 @@ if (!values.sync) {
           ],
         },
       );
-      const feedbackComplete =
+      const localFeedbackComplete =
         experiment.results.length === selection.selected.length &&
         experiment.results.every((result) => result.evaluationResults.results.length === 5);
+      const expectedPublication = experiment.results.map((result) => ({
+        runId: result.run.id,
+        scores: result.evaluationResults.results.map(({ key, score }) => ({ key, score })),
+      }));
+      let publication = await verifySuggestionPublication(
+        client,
+        experiment.experimentName,
+        expectedPublication,
+      );
+      // Allow bounded indexing delay; missing remote data never becomes a passing gate.
+      for (let attempt = 1; !publication.complete && attempt < 6; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        publication = await verifySuggestionPublication(
+          client,
+          experiment.experimentName,
+          expectedPublication,
+        );
+      }
+      const feedbackComplete = localFeedbackComplete && publication.complete;
       const complete = suggestionRunComplete(
         rows.map((row) => row.id),
         selection.corpus.map((row) => row.id),
         feedbackComplete,
+        selection.complete,
       );
       const summary = communications
         ? summarizeCommunications(rows as CommunicationResult[])
@@ -251,12 +292,15 @@ if (!values.sync) {
         complete,
         benchmarkEvidence: selection.benchmark && complete,
         feedbackComplete,
+        localFeedbackComplete,
+        publication,
         summary,
         rows,
       });
       inProgress = null;
       await checkpoint();
       console.log(JSON.stringify({ repetition, experiment: experiment.experimentName, summary }));
+      if (!publication.complete) break;
     }
   } finally {
     await checkpoint();

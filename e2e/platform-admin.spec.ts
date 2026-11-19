@@ -105,8 +105,8 @@ test('platform administrators can reach the panel without a team membership', as
   });
   try {
     await signIn(page, e2eUsers.nonMember.email);
-    await expect(page.getByRole('heading', { name: 'No team yet' })).toBeVisible();
-    await page.getByRole('link', { name: 'Platform admin', exact: true }).click();
+    // Teamless /app routes to Welcome; platform admin is a separate layout.
+    await page.goto('/app/admin');
     await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
   } finally {
     await withE2eDataTransaction(async (sql) => {

@@ -101,3 +101,33 @@ describe('normalizeProposalPayload', () => {
     });
   });
 });
+
+describe('optional inference values', () => {
+  it('drops absent hints but preserves explicit clears on updates', () => {
+    expect(
+      normalizeProposalPayload({
+        targetKind: 'task',
+        operation: 'update',
+        proposedPayload: {
+          status: null,
+          type: null,
+          projectName: null,
+          createProjectName: null,
+          ownerName: null,
+          assigneeName: null,
+          ownerUserId: null,
+          assigneeUserId: null,
+          dueAt: null,
+          priority: null,
+          parentObjectId: null,
+        },
+      }),
+    ).toEqual({
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      priority: null,
+      parentObjectId: null,
+    });
+  });
+});

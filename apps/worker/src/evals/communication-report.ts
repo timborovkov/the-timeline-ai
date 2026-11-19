@@ -9,9 +9,35 @@ import { summarizeSuggestions } from '#src/evals/suggestion-report.js';
 
 /** Score the approved graph, including preservation of existing records. Counts are graph assertions, not independent examples. */
 export function scoreCommunications(row: CommunicationCase, observation: CommunicationObservation) {
+  // Authorized seed aliases are identity equivalences, not extra acceptable outcomes.
+  // Expand only whole, uniquely owned aliases; ambiguous aliases remain unmatched.
+  const canonicalTitle = (title: string) => {
+    let result = title;
+    for (const seed of row.seed)
+      for (const alias of seed.aliases ?? []) {
+        if (
+          row.seed.some(
+            (other) =>
+              other.key !== seed.key &&
+              [other.name, ...(other.aliases ?? [])].some(
+                (name) => name.toLowerCase() === alias.toLowerCase(),
+              ),
+          )
+        )
+          continue;
+        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        result = result.replace(
+          new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu'),
+          () => seed.name,
+        );
+      }
+    return result.toLowerCase();
+  };
   const assigned = new Map<string, ObservedNode>();
   const used = new Set<string>();
   let matched = 0;
+  const fieldMismatches: { key: string; field: string; expected: unknown; observed: unknown }[] =
+    [];
   for (const expected of row.outcome.nodes) {
     const seeded = row.seed.some((node) => node.key === expected.key);
     const candidates = observation.nodes.filter(
@@ -22,22 +48,33 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
           ? node.id === communicationId(row.familyId, expected.key) && node.name === expected.name
           : expected.terms?.length
             ? expected.terms.every((group) =>
-                group.some((term) => node.name.toLowerCase().includes(term.toLowerCase())),
+                group.some((term) => canonicalTitle(node.name).includes(term.toLowerCase())),
               )
-            : node.name.toLowerCase() === expected.name.toLowerCase()),
+            : [expected.name, ...(expected.acceptedNames ?? [])].some(
+                (name) => node.name.toLowerCase() === name.toLowerCase(),
+              )),
     );
     const node = candidates[0];
     if (!node) continue;
     assigned.set(expected.key, node);
     used.add(node.id);
-    if (
-      (expected.status === undefined || node.status === expected.status) &&
-      (expected.assignee === undefined ||
-        node.assigneeUserId ===
-          (expected.assignee === null ? null : COMM_ACTORS[expected.assignee])) &&
-      (expected.dueAt === undefined || node.dueAt === expected.dueAt)
-    )
-      matched++;
+    const fields = [
+      ['status', expected.status, node.status],
+      [
+        'assignee',
+        expected.assignee === null ? null : COMM_ACTORS[expected.assignee],
+        node.assigneeUserId,
+      ],
+      ['dueAt', expected.dueAt, node.dueAt],
+    ] as const;
+    let valid = true;
+    for (const [field, value, observed] of fields) {
+      if (!Object.hasOwn(expected, field) || value !== observed) {
+        valid = false;
+        fieldMismatches.push({ key: expected.key, field, expected: value, observed });
+      }
+    }
+    if (valid) matched++;
   }
   const edgeMatches = (
     edge: CommunicationObservation['edges'][number],
@@ -62,19 +99,22 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
       matched++;
     }
   }
-  // A grounded company/project association is optional only when there is exactly one of each.
+  // Optional associations require explicit fixture permission and exactly one of each endpoint.
   const companies = row.outcome.nodes.filter((node) => node.type === 'company'),
     projects = row.outcome.nodes.filter((node) => node.type === 'project');
   const company =
       companies.length === 1 && companies[0] ? assigned.get(companies[0].key) : undefined,
     project = projects.length === 1 && projects[0] ? assigned.get(projects[0].key) : undefined;
-  const allowedEdges = observation.edges.filter(
+  const allowedEdges = observation.edges.some(
     (edge, index) =>
+      row.outcome.optionalCompanyProjectAssociation === true &&
       !requiredEdges.has(index) &&
       company &&
       project &&
       edgeMatches(edge, company.id, project.id, 'related'),
-  ).length;
+  )
+    ? 1
+    : 0;
   const expected = row.outcome.nodes.length + row.outcome.edges.length;
   const proposed = observation.nodes.length + observation.edges.length;
   const calendarCompanions = new Set<string>();
@@ -121,6 +161,8 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
     observation.packetLoss.length > 0;
   const missed = expected - matched;
   return {
+    fieldMismatches,
+    uncertaintyViolation: observation.uncertaintyMissing,
     expected,
     proposed,
     matched,
@@ -150,7 +192,13 @@ export function summarizeCommunications(rows: CommunicationResult[]) {
     }));
   return {
     ...summarizeSuggestions(rows),
-    scoringUnit: 'approved-graph-assertions',
+    scoringUnit: 'approved-graph-and-field-assertions',
+    fieldMismatchCases: rows
+      .filter((row) => row.score.fieldMismatches.length)
+      .map((row) => ({ id: row.id, fields: row.score.fieldMismatches })),
+    uncertaintyViolationCases: rows
+      .filter((row) => row.score.uncertaintyViolation)
+      .map((row) => row.id),
     sources: group('source'),
     families: group('familyId'),
     packetLossCases: rows.filter((row) => row.packetLoss.length).map((row) => row.id),

@@ -226,7 +226,7 @@ email-policy change and are not new evidence for it.
 ## Communications and approval benchmark
 
 Use `--suite=communications` on the suggestion sync/compare commands for the
-separate 96-case communications corpus. The default remains `--suite=suggestions`;
+separate 234-case communications corpus. The default remains `--suite=suggestions`;
 its historical datasets and experiments are unchanged.
 
 ```sh
@@ -236,14 +236,17 @@ bun run eval:suggestions:compare --suite=communications --out=/tmp/communication
 bun run eval:suggestions:compare --suite=communications --split=held-out --repeats=3 --out=/tmp/communications-held-out.json
 ```
 
-Thirty semantic families have email, Slack and Telegram variants; six additional
-families cover email packaging. There are 64 development cases and 32 held-out
-cases, with whole families assigned to one split. Cases cover combined account,
-project and task creation; aliases and pending objects; corrections; ownership;
-prospects and difficult negatives; injection, privacy and retries; and forwarding
-formats, multilingual content and long inputs. References include initial state,
-message sequences, expected approved objects and relationships, and rationales.
-These rationales receive consistency review, not independent human validation.
+Seventy-five semantic families have email, Slack and Telegram variants; nine additional
+families cover email packaging. There are 198 development cases and 36 held-out
+cases, with whole families assigned to one split. All 126 previously inspected
+cases are development regressions. The 24 new families cover prospect uncertainty,
+per-deliverable customer routing, ownership and temporal fields, split evenly
+between development and held-out. An additional 36 development cases cover completeness, negative controls,
+separate association clauses, date equivalence and partial delivery. Earlier datasets
+and reports remain unchanged.
+Coverage also includes combined object/task creation, aliases and pending objects,
+corrections, privacy, injection, retries, forwarding, multilingual content and long
+inputs. Rationales receive consistency review, not independent human validation.
 
 The harness drives the real local email, Slack and Telegram dispatchers using
 synthetic provider payloads, controlled transports, real routing/authorization,
@@ -254,24 +257,78 @@ acceptance is attempted and must fail. No canonical mutation is permitted before
 approval. Summary refresh jobs, vector indexing, external delivery, production
 stores and wall-clock delivery performance are outside the boundary.
 
-The scorer checks the approved object graph: identity reuse, lifecycle, explicit
-assignee/deadline assertions, and task/project/account relationships. Counts are
-**graph assertions**, including preservation of seeded objects, rather than task
+The scorer checks the approved object graph: identity reuse, lifecycle, mandatory
+status, assignee and deadline assertions, and task/project/account relationships. Counts are
+**graph and field assertions**, including preservation of seeded objects, rather than task
 recall estimates or independent samples. Named fixture objects use their synthetic
 identity; task intent uses term groups rather than exact prose. Extra objects,
 incorrect relationships, duplicate proposals and unsupported action kinds are
-noise. A uniquely grounded company/project association may be optional. A task
+noise. A company/project association is optional only when the fixture explicitly permits it and has one company and one project. Unrelated-hub negative controls reject extra associations. A task
 deadline may have a matching calendar companion; unsupported dates remain noise.
 Missing work, acceptance failures, lost required packet content and inference
 errors cannot pass. Privacy violations, invalid evidence and automatic changes to
 human-edited pending proposals are hard failures. Prospect proposals must use low confidence and explain
 the uncertainty; concrete proposed projects must remain `planning`.
 
+For a small development diagnostic, pass `--cases=id1,id2` to select exact case IDs.
+This cannot be combined with `--tag` or `--limit`; unknown, duplicate, or wrong-split
+IDs are rejected before any provider calls. Exact-case runs retain the versioned
+full-split dataset and are always partial diagnostics, never benchmark evidence.
+
 Communications run four cases concurrently, each with a separate disposable database
 and queue; report writes are serialized. Reports retain an implementation digest,
-per-case outputs, source/family/scenario denominators, latency,
+per-case outputs, saved approval outcomes, source/family/scenario denominators, latency,
 execution and approval failures, packet loss, and each repetition separately.
 Source variants within a family and repeated runs are correlated; do not pool them
 as independent evidence. `--tag` and `--limit` are diagnostic only. Complete held-out
 runs require committed fixtures/scoring and full feedback; inspected holdouts must
 remain in evaluation history and cannot become fresh evidence after tuning.
+
+Communications evaluator version 7 requires complete outcome fields: missing
+assignees and deadlines are explicit `null` expectations, not unscored properties.
+Seeded values remain expected unless the source supports a change. Reports list
+individual field mismatches and uncertainty violations. Graph matching is not an
+assertion about every possible canonical field (for example, priority or free-form
+text). Only actionable (`pending`/`failed`) approvals count as proposed work;
+superseded history and saved approval outcomes remain available separately.
+Forwarded timestamps follow their synthetic sequence times. Reviewed
+`acceptedNames` permit specific equivalent renderings, never unrestricted fuzzy
+matching. Version 7 additionally resolves whole, uniquely owned seed aliases in task titles;
+ambiguous aliases do not match. Required graph edges and field values are unchanged.
+Historical results are retained and are not silently rescored under
+stricter assertions; aggregate v5/v6/v7 scores are not directly comparable.
+
+Use `--tag=closure-regression` or `--tag=completeness-regression` for diagnostics.
+Communication experiments accept `--concurrency=1..8` (default 4), with an isolated database and queue per case and concurrency recorded in reports/experiment metadata. This changes evaluation throughput, not production worker concurrency; latency comparisons must account for it.
+
+Suggestion and communication runners verify stored, completed LangSmith root runs and matching remote evaluator scores after flushing uploads, with a bounded indexing wait. Local evaluator results alone do not establish publication. Missing runs, missing or mismatched feedback, and API failures prevent complete evidence and stop subsequent repetitions. Reports retain the missing IDs/keys; this check does not assert that every nested span was stored.
+
+Closure validation requires three complete runs of all 198 development cases at
+one frozen implementation and corpus revision, with every case passing and complete
+feedback. Execution, approval or hard failures block closure. Only after this gate
+passes, run the fresh 36-case held-out set three times with complete feedback.
+Retain partial and failed runs; do not weaken labels or reuse an inspected holdout
+as fresh evidence after tuning. Per-call timings distinguish extraction from its
+completeness check; both use shared inference and its billing/tracing controls.
+The [historical failure register](../evidence/communications-completeness-failure-register-2026-11-16.json)
+links every previously failed case to its original report. An implementation change
+alone is not closure evidence.
+
+The inspected family registry in the communications selector prevents subsequent
+runs of these held-out families from claiming `benchmarkEvidence`, even after a
+corpus hash changes. They remain useful diagnostic regressions. Fresh benchmark
+evidence requires a held-out split containing only uninspected, reviewed families.
+See the [dated follow-up evidence](../evidence/communications-follow-up-2026-11-15.json)
+for the frozen pre-fix runs and subsequent diagnostics; they are different revisions.
+
+The [dated grounding evidence](../evidence/communications-grounding-2026-11-16.json)
+retains the expanded corpus runs, original scorer versions and unexecuted holdout
+status. Use its frozen revision and individual failure reports when diagnosing
+remaining recall or field errors.
+
+The [completion diagnostics](../evidence/communications-completion-2026-11-17.json) retain subsequent reasoning-budget and citation/link validation attempts, including failed runs.
+
+The [completeness-check diagnostics](../evidence/communications-completeness-2026-11-16.json)
+retain failed checker-contract runs separately from benchmark evidence. Known-object
+references in a no-action ledger entry do not authorize writes; unavailable IDs
+still reject the complete attempt.

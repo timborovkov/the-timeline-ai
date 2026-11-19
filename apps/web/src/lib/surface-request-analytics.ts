@@ -4,7 +4,8 @@ import { capturePersonlessSurfaceRequest } from '@/lib/analytics';
 import { classifyAppAnalyticsPath } from '@/lib/app-analytics-routes';
 import { classifyPublicAnalyticsPath } from '@/lib/public-analytics-routes';
 
-function isPrefetch(request: NextRequest): boolean {
+/** Next.js / browser speculative fetches that must not mutate durable cookies. */
+export function isPrefetchRequest(request: NextRequest): boolean {
   return (
     request.headers.has('next-router-prefetch') ||
     request.headers.has('x-middleware-prefetch') ||
@@ -14,7 +15,11 @@ function isPrefetch(request: NextRequest): boolean {
 }
 
 export function isCountableSurfaceNavigation(request: NextRequest): boolean {
-  if (request.method !== 'GET' || isPrefetch(request) || request.headers.has('next-action')) {
+  if (
+    request.method !== 'GET' ||
+    isPrefetchRequest(request) ||
+    request.headers.has('next-action')
+  ) {
     return false;
   }
   return (

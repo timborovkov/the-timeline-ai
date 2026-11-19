@@ -6022,6 +6022,7 @@ export async function setTaskProject(
   }
 
   const result = await (options?.transactionClient ?? db).transaction(async (tx) => {
+    // Match relationship creation and project mutations: project before linked tasks.
     const project = projectId ? await lockActiveProject(tx, scope.teamId, projectId) : null;
     if (projectId && !project) throw new Error('Project not found');
 

@@ -23,7 +23,7 @@ export const ENTERPRISE_TOPICS = [
 export type EnterpriseTeamSize = (typeof ENTERPRISE_TEAM_SIZES)[number]['value'];
 export type EnterpriseTopic = (typeof ENTERPRISE_TOPICS)[number]['value'];
 
-export const ENTERPRISE_RESPONSE_EXPECTATION = 'We reply within two business days.';
+export const ENTERPRISE_RESPONSE_EXPECTATION = 'We reply within one business day.';
 
 const TOPIC_VALUES = new Set<string>(ENTERPRISE_TOPICS.map((option) => option.value));
 

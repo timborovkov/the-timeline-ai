@@ -1,3 +1,4 @@
+import { DEFAULT_FIRECRAWL_API_ORIGIN, getEnv } from '#src/env.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
 import {
   parsePublicWebsiteUrl,
@@ -5,7 +6,8 @@ import {
   type FirstRunScanFailureReason,
 } from '#src/onboarding/first-run.js';
 
-export const FIRECRAWL_API_ORIGIN = 'https://api.firecrawl.dev';
+/** Default Firecrawl Cloud origin (tests and docs). Prefer getEnv().FIRECRAWL_API_ORIGIN at runtime. */
+export const FIRECRAWL_API_ORIGIN = DEFAULT_FIRECRAWL_API_ORIGIN;
 const FIRECRAWL_REQUEST_TIMEOUT_MS = 15_000;
 const FIRECRAWL_CRAWL_TIMEOUT_MS = 45_000;
 const FIRECRAWL_POLL_INTERVAL_MS = 1_000;
@@ -147,17 +149,30 @@ function sameOrigin(left: URL, right: URL): boolean {
   return left.protocol === right.protocol && left.host === right.host;
 }
 
-function firecrawlUrl(path: string): string {
-  return `${FIRECRAWL_API_ORIGIN}${path}`;
+function resolvedFirecrawlApiOrigin(): string {
+  return getEnv().FIRECRAWL_API_ORIGIN;
 }
 
-function isFirecrawlResultUrl(raw: string): boolean {
+function firecrawlUrl(path: string): string {
+  return `${resolvedFirecrawlApiOrigin()}${path}`;
+}
+
+/**
+ * Crawl pagination `next` URLs must match the configured Firecrawl API origin
+ * exactly (including protocol) so a compromised response cannot pivot SSRF.
+ */
+export function isAllowedFirecrawlResultUrl(raw: string, apiOrigin: string): boolean {
   try {
     const url = new URL(raw);
-    return url.origin === FIRECRAWL_API_ORIGIN && url.protocol === 'https:';
+    const configured = new URL(apiOrigin);
+    return url.origin === configured.origin && url.protocol === configured.protocol;
   } catch {
     return false;
   }
+}
+
+function isFirecrawlResultUrl(raw: string): boolean {
+  return isAllowedFirecrawlResultUrl(raw, resolvedFirecrawlApiOrigin());
 }
 
 async function firecrawlJson(
@@ -170,8 +185,9 @@ async function firecrawlJson(
   try {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      Authorization: `Bearer ${apiKey}`,
     };
+    // Firecrawl Local accepts requests without a key; cloud always sends Bearer.
+    if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey.trim()}`;
     if (init.body) headers['Content-Type'] = 'application/json';
     const requestInit: RequestInit = {
       redirect: 'error',

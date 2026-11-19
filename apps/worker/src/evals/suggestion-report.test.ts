@@ -9,6 +9,7 @@ import {
 import {
   scoreSuggestions,
   suggestionRunComplete,
+  verifySuggestionPublication,
   summarizeSuggestions,
   type SuggestionObservation,
 } from '#src/evals/suggestion-report.js';
@@ -215,4 +216,50 @@ test('optional customer relationships must resolve to the expected objects in th
       ],
     }).noise,
   ).toBe(1);
+});
+
+async function* publishedRows<T>(rows: T[]) {
+  await Promise.resolve();
+  for (const row of rows) yield row;
+}
+test('publication requires stored completed roots and matching remote feedback', async () => {
+  const expected = [{ runId: 'run-a', scores: [{ key: 'passed', score: 1 }] }];
+  const check = (
+    roots: { id: string; end_time?: string }[],
+    scores: { run_id: string; key: string; score?: number }[],
+  ) =>
+    verifySuggestionPublication(
+      {
+        awaitPendingTraceBatches: () => Promise.resolve(),
+        listRuns: () => publishedRows(roots),
+        listFeedback: () => publishedRows(scores),
+      },
+      'synthetic',
+      expected,
+    );
+  const roots = [{ id: 'run-a', end_time: '2026-11-17T12:00:00Z' }];
+  const scores = [{ run_id: 'run-a', key: 'passed', score: 1 }];
+  expect((await check(roots, scores)).complete).toBe(true);
+  expect((await check([], scores)).complete).toBe(false);
+  expect((await check([{ id: 'run-a' }], scores)).complete).toBe(false);
+  expect((await check(roots, [])).complete).toBe(false);
+  expect((await check(roots, [{ ...requireValue(scores[0]), score: 0 }])).complete).toBe(false);
+  expect((await check(roots, [{ ...requireValue(scores[0]), run_id: 'other' }])).complete).toBe(
+    false,
+  );
+});
+test('publication errors and empty expectations cannot report completion', async () => {
+  const client = {
+    awaitPendingTraceBatches: () => Promise.resolve(),
+    listRuns: () => publishedRows([]),
+    listFeedback: () => publishedRows([]),
+  };
+  expect((await verifySuggestionPublication(client, 'synthetic', [])).complete).toBe(false);
+  const result = await verifySuggestionPublication(
+    { ...client, awaitPendingTraceBatches: () => Promise.reject(new Error('quota')) },
+    'synthetic',
+    [{ runId: 'a', scores: [{ key: 'passed', score: 1 }] }],
+  );
+  expect(result.complete).toBe(false);
+  expect(result.error).toBe('Error');
 });

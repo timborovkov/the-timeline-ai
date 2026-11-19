@@ -30,6 +30,80 @@ Hub roles distinguish goals, tracked work, findings and mentions. Incidental men
 
 Human discussions in email, Slack and Telegram share the same proposal policy, including preserved forwarded chains. They may propose a named customer/company or a concrete project when the discussion establishes an account or work the team is delivering, planning or tracking. Real prospective engagements may be proposed with low confidence and an explanation of the uncertainty; concrete proposed projects remain `planning` until evidence supports active work. Hypothetical examples are not prospects. A new task commitment or explicit creation command is not required for that context. Reuse matching existing or pending objects, including aliases and renamed projects, and preserve human-edited pending fields. Later supported corrections supersede earlier requests. Source parsing, original-speaker attribution, privacy and scheduling remain source-specific. Names in signatures, domains, news or unrelated mentions are not sufficient. Tasks still need supported requests or work commitments, and a task's primary-project field already represents its project link. All changes remain approval-backed; quoted instructions do not grant authority. Approved task/project creates default to `todo`/`planning` when their proposal omits a status. Bulk approval applies explicit hub objects before tasks and relationships so a task attachment cannot create a competing project before its sibling proposal.
 
+Threaded email uses its stored RFC thread root for the same ten-minute quiet-window
+review as chat. Only team-visible, non-deleted messages from that workspace and
+thread enter the bounded two-day context window, with an authorized thread root
+reserved for delayed replies. Pending emails are read in chronological pages
+with their full bodies. When a late arrival follows longer reviewed messages,
+the prompt keeps the pending body and fits later reviewed excerpts in the
+remaining space, including explicit lifecycle statements when they fit. The
+worker scans authorized thread emails through the fixed review anchor and keeps
+safe lifecycle, deadline, ownership and project assertions independently of the
+prompt window.
+Corrections can reject stale changes across pending pages, including an earlier
+email that supersedes an older forwarded statement. Pending pages supply
+chronology checks until their own extraction.
+Positive claims still require visible citations. Private replies never enter the
+window. Legacy email captures without a thread root retain event-local extraction.
+
+A later source may attach an unedited pending task to an existing project when it
+explicitly names and links exactly one pending task to the unambiguous project.
+The conservative cross-source attachment recognizes direct English association
+phrases; other phrasings remain model-reviewed proposals. Candidate overflow
+disables that fallback rather than guessing uniqueness. Loose
+similarity, uncertain/negated associations and human-edited attachments do not
+qualify. Descriptions supply context, not task identity: distinct deliverables
+must not be deduplicated merely because they share a project description or a
+common deliverable name with different customer qualifiers. In multi-project
+evidence, per-task project IDs and matching name hints survive global ambiguity
+only when the source explicitly names that project. Relationship identity uses
+endpoints, not similar display titles. A direct English completion assertion whose
+subject matches the full task name can disambiguate it from other loosely recalled
+open work; vague, hedged or complex clauses still cannot choose a target. Extraction
+also distinguishes ownership confirmation from a lifecycle change and keeps rejected
+attack directives out of proposal text.
+
+Human-communication extraction permits an empty bundle list for no action, but
+rejects empty proposed bundles, typeless object creates and non-UUID existing
+relationship endpoints at the inference boundary. It requires explicit bundle confidence and internal
+source grounding for proposed assignments, deadlines, lifecycle changes and
+relationships. Grounding identifies an admitted raw event, an exact quote visible
+in the actual packet, the subject and normalized value. It is checked against
+active members and authorized objects; internal grounding is not a canonical field.
+Prospect support lowers confidence and keeps newly proposed projects in planning.
+Per-task support can repair a missing customer link only when one endpoint is
+unambiguous. Unsupported optional writes are omitted, preserving existing values
+on updates. Ownership is not inferred from being a requester, forwarding an email or being its sole header recipient. Assignment requires the message body to identify the tasked teammate or an attributable commitment. On a new task, a uniquely supported assignment can fill an omitted assignee field after the same validation; updates and repairs never auto-fill protected fields; explicit fields are never overwritten and competing owners remain unresolved.
+A pronoun ownership correction requires an immediately preceding, uniquely named
+pending-task context quote; nested email excerpts do not inherit the outer sender. First-person commitments in forwarded chains resolve against the nearest visible original From header with one matching member email; ambiguous, hidden or injected headers and repeated commitment excerpts cannot establish that identity.
+Explicit related links between other authorized object types require a literal link instruction naming both unambiguous endpoints; co-occurrence is insufficient. Runtime-generated hub links do not inherit the source task’s audit ID, so they cannot replace it in claim-retention checks.
+Relationship quotes may combine statements within one admitted source when an
+explicit typed reference has exactly one visible authorized candidate, including
+aliases. A deadline pronoun may resolve to the immediately preceding visible task
+sentence. An explicit owner-confirmation sentence can use the immediately preceding uniquely named task. A named assignee reaffirmation also requires that preceding sentence to independently support the same owner; ownership of another artifact cannot transfer to that task. Both checks reject ambiguous or truncated support. A company–project relationship may also use an immediately adjacent engagement statement and definite project introduction, including an explicit named project “for them” following an established client, from the same source, with unique visible endpoints and no intervening speaker boundary.
+Explicit typed links such as “link the checklist” may resolve to one uniquely evidenced task in the same source; competing tasks, mismatched artifact nouns and negated links remain rejected. Task-link grounding may name a known endpoint as its subject only when the source clause also names the task; project attachment requires an affirmative, unambiguous association. Updates use the known target identity rather than their display heading.
+Short entity quotations may use their complete, uniquely located source sentence only when that entire sentence remains in the authorized packet. Known object UUIDs in relationship reference fields normalize to existing-object endpoints; unknown or conflicting identities never do. Supported task cancellation updates the task lifecycle without archiving the canonical task.
+These deterministic checks recognize supported assertion/date forms and fail
+closed on unrecognized forms; they do not establish universal language understanding
+or replace approval. Every human communication extraction, including an empty result,
+receives one completeness check through shared inference using the same model and
+authorized evidence. Both communication calls request low reasoning effort with a 150-second deadline. Extraction retains a 16,000-token output budget; the completeness check reserves 24,000 tokens for shared reasoning and its complete replacement plus coverage, to leave response capacity for JSON instead of spending the entire budget on reasoning. The setting passes through structured and JSON fallback requests; other callers keep their provider defaults. Each retained assignment ID/name is independently checked against its evidence; a supported assignee cannot authorize an unrelated owner. Ambiguous draft-only quotation fragments are excluded from citation choices; complete visible source clauses remain available. The check validates that its total coverage contains 1–100 entries at the inference boundary, including an evidenced no-action entry when no proposal is needed. It returns a complete replacement proposal set and a
+source-cited coverage ledger. Forwarding wrappers and repeated background boilerplate do not themselves cancel a concrete request; unresolved ownership stays unassigned. New company proposals retain the runtime `open` lifecycle default unless an explicit object lifecycle change is supported; customer/prospect relationships do not imply `active` status. Coverage and grounding quotation references select literal excerpts from the authorized packet; runtime resolves them and verifies their source pairing. The quote mapping is fenced as untrusted evidence and appears once, while schemas contain compact IDs. The full serialized audit request (including instructions, schema and mapping) is bounded at 128,000 estimated tokens, in addition to the existing tighter evidence/draft prompt bound; over-budget requests fail without truncating evidence. All references resolve to literal excerpts before independent grounding validation; it also selects any prepared pending-approval refinements. Pending-task context includes a human-edit boolean; protected approvals remain unchanged. Pending approval IDs cannot be used as canonical task targets. Association-only refinements use eligible prepared amendments; other supported corrections to unedited pending tasks use complete same-identity proposals.
+Every prepared pending amendment also requires exactly one explicit selection or source-cited rejection that addresses its proposed changes; merely noting that the pending task exists does not account for a missing relationship. Missing or conflicting amendment decisions fail at the inference boundary. Coverage belongs directly to each checked item and selected or rejected amendment; internal IDs are assigned by the runtime. Source and existing-record IDs are constrained to authorized visible context. The ledger is structurally validated, not treated as proof of semantic completeness. Every extracted draft is assigned a source ID and must be accounted for exactly once by a compatible final item or an explicit source-cited rejection. New discoveries have no source draft; kind/operation/target-changing corrections explicitly reject the old draft and add a new item. Missing, reused or incompatible draft IDs fail validation instead of silently dropping work. Creation requires a concrete canonical name and supported object type; local references must remain unique after normalization and dependent references must resolve. Identity facets normalize their person reference consistently with its declaration.
+
+A completion citation may reuse its uniquely located immediately adjacent same-source context only for an affirmative completion continuation, with the entire literal span visible. Contradictory, hypothetical, reordered or truncated continuations are rejected. Deterministic company affiliations are derived from surviving identity proposals after model grounding, using scoped unique-domain resolution and email evidence visible in the packet. They remain approval-backed; arbitrary model relationships receive no exemption. Customer identity matching uses canonical names and explicit aliases rather than generic approval headings.
+
+Bookkeeping requests to record or track customer/project records for review are fulfilled by those record proposals, not extra tracking tasks. Independently requested business reviews and deliverables remain tasks.
+Deterministic grounding remains mandatory. A failed check or rejected checked claim
+fails the attempt before new proposals are written; existing approvals are preserved
+and the job uses its bounded retry policy. There is no recursive checker loop.
+
+Unknown optional name/type/status/project hints encoded as `null` are treated as
+absent. Explicit clears for member IDs, dates, priorities and primary project IDs
+retain their existing meaning. Assignment belongs to a supported workspace member;
+external or unresolved participants remain attribution context rather than guessed
+assignees. Independent requested deliverables remain separate tasks.
+
 ## Evidence packs
 
 A shared bounded builder can assemble answer/proposal evidence with consumer-specific admission rules, deterministic ranking, citation identities and visibility checks. Answer retrieval may use broader semantic recall. Proposal admission requires a qualifying relationship, not semantic relevance alone, and preserves the approval source's visibility floor.
@@ -147,7 +221,7 @@ rewrites the workspace. Trace a missing result through these boundaries in order
 | --- | --- | --- |
 | Capture and classification | `integrations/event-writer.ts`, `integrations/signal-class.ts` | Immutable raw event, signal class, provider identity and occurrence time |
 | Extraction | Worker `extract.ts`, shared `extract/` | Facts and mentions; these are evidence, not accepted objects |
-| Conversation scheduling | Shared `conversation-review/`, worker `suggestions.ts` | A bounded review window for Slack/Telegram rather than independent message guesses |
+| Conversation scheduling | Shared `conversation-review/`, worker `suggestions.ts` | A bounded review window for Slack/Telegram and threaded email rather than independent message guesses |
 | Candidate recall and qualification | Shared `suggestions/hub-context.ts`, `suggestions/linked-hubs.ts` | Existing hubs and work recalled into context; unique supported attachments |
 | Proposal generation | Worker `suggestions.ts` | Typed create/update/relationship/note/calendar items with supporting evidence |
 | Structured completion | `integrations/github-task-proposals.ts` | Approval-backed lifecycle/assignee updates and qualified merged-PR task proposals |
@@ -270,10 +344,26 @@ These are optional because missing evidence must not become a guessed owner or
 deadline. Priority is not a confidence score. Source actor, addressee, capture owner
 and integration connector are distinct identities.
 
+Yearless month/day deadlines use the next occurrence on or after the source-local date. Historical repair retention checks run after target scoping and human-edit protection, so intentional removal of protected fields does not discard valid remaining repairs. Exact nonempty task names remain eligible for deduplication even when stopword filtering removes every token; audience and identity-conflict checks still apply.
+
+Bare weekday deadlines resolve to that weekday on or after the source date in the workspace timezone. Grounding references follow the same local-reference normalization and existing-object resolution as proposal payloads, using the complete resolved object context. Task-name conjunctions remain part of the identity rather than splitting its assertion. Existing task updates can cite uniquely owned authorized aliases with complete identifier boundaries. Resolving a task create to an existing task preserves its supported project association and existing lifecycle; an ungrounded new-task `todo` default cannot reopen it. Explicit lifecycle claims remain subject to retention checks. Approved task updates apply their field changes and project association atomically, preserving later human project edits; effects wait for the outer acceptance transaction to commit. Manual and approved project assignments lock the project before the task, matching project mutations and relationship creation; approval acquires that project lock before any earlier evidence-target lock. Independently grounded lifecycle writes survive the subsequent recall-ambiguity filter. Relationship proposals removed by the existing deterministic deduplication policy are explicitly accounted for during retention. Owner, assignee and project removals require affirmative evidence for the specific field being cleared. Contracted negatives are normalized for task-field assertion checks without changing literal source citations. Task-field evidence must distinguish competing task identities; shared subject words cannot transfer ownership, dates or lifecycle. Explicitly grounded project clears remain nullable through approval validation. Named assignments require complete member-name boundaries. Ordinary prose following a deadline time is permitted; unsupported time and timezone markers remain rejected. Verified adjacent affirmative completion statements and unambiguous pronoun deadline continuations retain their named task context. Archive/cancel operations require explicit affirmative cancellation grounding even when their payload is empty. Future or hypothetical assertions cannot authorize any lifecycle transition; modal detection applies to the completion predicate, not arbitrary words in a task name. Negated deadline assertions cannot authorize dates, while a later affirmative correction remains eligible.
+
+Explicit ISO, month-name, and relative deadline times retain their stated timezone, or use the workspace timezone when no zone is supplied; date-only evidence uses the workspace day start. Short literal acknowledgments can receive no-action audit coverage, but empty or unavailable evidence cannot.
+
 A source deadline must populate the task's `dueAt`, not only produce a calendar
-entry. Relative dates resolve from source occurrence time and workspace timezone.
-An assignee ID must identify an available member; unresolved named people should
-remain named evidence rather than an arbitrary member assignment.
+entry. Relative and yearless deadlines use the cited message's time and workspace
+timezone. A dated forwarded message supplies its own reference time. Later
+definitive assertions from visible context or the authorized email thread
+supersede older deadlines for the same task.
+An assignee ID must identify an available member. Unresolved named people remain
+named evidence. Owner and assignee claims each need support for their role.
+Later definitive assignments and explicit removals supersede earlier claims
+for the same role in visible context or the authorized email thread.
+Definitive primary-project assignments and removals follow the same chronology.
+Conversation links require affirmative source evidence. A project-scoped
+request or commitment can route each explicitly named deliverable in that statement.
+A uniquely named provider container can route unscoped task creates when the
+conversation supplies no explicit routing language or standalone cue.
 
 The source window must be interpreted in order. Work introduced and conclusively
 finished in one meeting should yield its final supported state. “After QA, mark it

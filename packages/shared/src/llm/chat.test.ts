@@ -131,6 +131,7 @@ describe('chatStructured', () => {
         schema: z.object({ ok: z.boolean() }),
         prompt: 'bulk',
         maxOutputTokens: 12_000,
+        reasoningEffort: 'low',
       },
       { fetch: fetchStub },
     );
@@ -142,6 +143,7 @@ describe('chatStructured', () => {
       })
       .parse(requests[0]);
     expect(body.max_completion_tokens ?? body.max_tokens).toBe(12_000);
+    expect(requests[0]).toMatchObject({ reasoning: { effort: 'low' } });
   });
 
   it('returns the parsed object and the resolved model id', async () => {
@@ -869,6 +871,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        reasoningEffort: 'low',
         normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
@@ -876,6 +879,7 @@ describe('chatStructured', () => {
       { fetch: fetchStub },
     );
 
+    for (const request of requests) expect(request).toMatchObject({ reasoning: { effort: 'low' } });
     expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
     const requestSummaries = requests.map((request) =>
       z

@@ -256,8 +256,11 @@ with the same warm public palette, wordmark position, active state, GitHub and
 theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
 signed-out visitors see `Sign in` and `Start free` (free / no-card). Session-dependent
 content reserves the larger of both states in a shared grid cell from the server
-render onward. Pending and inactive branches remain invisible, inert, and hidden
-from assistive technology; resolving authentication must not move adjacent content,
+render onward. While the session is still unknown, guest CTAs stay visible and
+usable (including with JavaScript disabled) so conversion links are present in
+SSR HTML; destination routes redirect already-authenticated visitors. After the
+session resolves, only the inactive branch is invisible, inert, and hidden from
+assistive technology. Resolving authentication must not move adjacent content,
 even when one branch is empty. The shared public canvas
 inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
@@ -267,11 +270,16 @@ The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
-and Pricing (`/pricing`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and the shared footer repeats them alongside How it works, Resources, and a legal/privacy rail. The
-current destination uses `aria-current="page"`. At phone widths, sign-in and
-theme controls move into the disclosure instead of disappearing, and the
-disclosure closes after link activation or a persisted-layout route change.
+and Pricing (`/pricing`). Desktop headers show them directly; below the hamburger
+breakpoint the top bar keeps only the wordmark, `Start free`, and a far-right
+native menu disclosure (icon-only hamburger, stable accessible name `Menu`, no
+border box, focus ring retained). `Sign in` moves into that disclosure (still
+server-rendered and usable without JavaScript via native `<details>`). At phone
+widths the header theme control also moves into the disclosure instead of
+disappearing, and the disclosure closes after link activation or a
+persisted-layout route change. The shared footer repeats the
+primary destinations alongside How it works, Resources, and a legal/privacy
+rail. The current destination uses `aria-current="page"`.
 Native connector labels on the landing page link to their integration detail
 pages, while native source badges in public walkthroughs link back to the same
 provider truth. The landing hero and public navigation also link directly to
@@ -401,19 +409,24 @@ applied after the cap check, and capacity limits are separate.
 ### Public pricing calculator
 
 The pricing Usage section compares PAYG, Team and Business through paired native
-sliders and exact number fields. A labelled editable example renders on the server.
-Desktop inputs sit beside a single hairline results panel; mobile stacks them
-with a compact selected-plan estimate that stays visible while editing. Number
-inputs and slider targets are at least 44px high. Reset restores both the usage
-example and Pay as you go selection. Invalid inputs suppress all estimates.
-Plan totals share one border with the selected breakdown underneath — no nested
-cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
-and Business show a pooled usage-credit deduction. Capacity warnings exclude
-unsuitable plans from the lowest-estimated-cost badge. Accepted sources live in
-Advanced usage with their value visible when closed. Metadata stays at the 12px
-floor. Rates and workspace eligibility remain in the closed How this estimate
-works disclosure. Inputs stay local; the calculator neither changes billing nor
-collects telemetry.
+sliders and exact number fields. Example starting-point presets (for example a
+five-person client team, a Slack-heavy engineering team, and a meeting-heavy
+delivery team) fill the fields and stay editable; they are labelled as examples,
+not quotes. Do not repeat those values in a separate activity breakdown panel.
+At most one short muted line states catalog unit assumptions (website pages and
+email units), with no per-question euro figure. A labelled editable example
+renders on the server. Desktop inputs sit beside a single hairline results panel;
+mobile stacks them with a compact selected-plan estimate that stays visible while
+editing. Number inputs and slider targets are at least 44px high. Reset restores
+the default usage example and Pay as you go selection. Invalid inputs suppress
+all estimates. Plan totals share one border with the selected breakdown underneath
+— no nested cards or extra plan-card chrome. PAYG shows native allowances per
+meter; Team and Business show a pooled usage-credit deduction. Capacity warnings
+exclude unsuitable plans from the lowest-estimated-cost badge. Accepted sources
+live in Advanced usage with their value visible when closed. Metadata stays at
+the 12px floor. Rates and workspace eligibility remain in the closed How this
+estimate works disclosure. Inputs stay local; the calculator neither changes
+billing nor collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
 

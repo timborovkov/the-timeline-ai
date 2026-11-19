@@ -37,7 +37,8 @@ describe('llms text files', () => {
     expect(text).toContain('## Start here');
     expect(text).toContain('Researching Timeline');
     expect(text).toContain('Connecting an agent to an existing account');
-    expect(text).toContain('signup creates your first team automatically');
+    expect(text).toContain('name your team on Welcome');
+    expect(text).toContain('Invite-only signup joins an existing team');
     expect(text).toContain('Already connected');
     expect(text).toContain('[Timeline skill](https://thetimeline.cc/agents/SKILL.md)');
     expect(text).toContain('[Agent setup](https://thetimeline.cc/agents/setup.md)');

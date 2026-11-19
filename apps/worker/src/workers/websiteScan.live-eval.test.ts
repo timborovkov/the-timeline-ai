@@ -24,7 +24,7 @@ import {
   agentSuggestionEvidence,
 } from '@timeline/db';
 import { listChargeCentsForMeter, runWorkerBilling } from '@timeline/shared/billing';
-import { getEnv, resetEnvForTests } from '@timeline/shared/env';
+import { allowsMissingFirecrawlApiKey, getEnv, resetEnvForTests } from '@timeline/shared/env';
 import { processWebsiteScanJob } from '@timeline/shared/onboarding';
 import { getS3Client, getObjectBuffer } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -40,16 +40,27 @@ if (process.env.WEBSITE_SCAN_LIVE_ENV_FILE) loadEnvFile(process.env.WEBSITE_SCAN
 const live = process.env.WEBSITE_SCAN_LIVE_EVAL === '1' ? describe : describe.skip;
 live('real website scan E2E', () => {
   it('captures public pages as documents and proposes cited company records without creating objects', async () => {
-    for (const key of ['FIRECRAWL_API_KEY', 'OPENROUTER_API_KEY'])
-      if (!process.env[key]?.trim())
-        throw new Error(`${key} is required for the live website test`);
-    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
+    if (!process.env.OPENROUTER_API_KEY?.trim())
+      throw new Error('OPENROUTER_API_KEY is required for the live website test');
+    const firecrawlLocal = allowsMissingFirecrawlApiKey(process.env);
+    if (!firecrawlLocal && !process.env.FIRECRAWL_API_KEY?.trim())
+      throw new Error(
+        'FIRECRAWL_API_KEY is required for the live website test (or set FIRECRAWL_API_ORIGIN to a loopback Firecrawl Local origin)',
+      );
+    const trimmedFirecrawlKey = process.env.FIRECRAWL_API_KEY?.trim();
+    const firecrawlApiKey =
+      trimmedFirecrawlKey && trimmedFirecrawlKey.length > 0
+        ? trimmedFirecrawlKey
+        : firecrawlLocal
+          ? 'local'
+          : '';
     if (!firecrawlApiKey) throw new Error('FIRECRAWL_API_KEY is required');
     const endpoint = process.env.WEBSITE_SCAN_LIVE_S3_ENDPOINT ?? 'http://127.0.0.1:9000';
     const parsed = new URL(endpoint);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname))
+    if (!['localhost', '127.0.0.1', '[::1]', '::1'].includes(parsed.hostname))
       throw new Error('Live website test requires local disposable S3 storage');
     const bucket = `website-scan-test-${randomUUID()}`;
+    const firecrawlApiOrigin = process.env.FIRECRAWL_API_ORIGIN;
     Object.assign(process.env, {
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
@@ -63,6 +74,10 @@ live('real website scan E2E', () => {
       S3_BUCKET_DOCUMENTS: bucket,
       BILLING_CHARGES_ENABLED: 'false',
       LANGSMITH_TRACING: 'false',
+      ...(firecrawlApiOrigin ? { FIRECRAWL_API_ORIGIN: firecrawlApiOrigin } : {}),
+      ...(firecrawlLocal && !process.env.FIRECRAWL_API_KEY?.trim()
+        ? { FIRECRAWL_API_KEY: firecrawlApiKey }
+        : {}),
     });
     // Never use connected billing/analytics accounts from the caller's environment.
     delete process.env.POLAR_ACCESS_TOKEN;

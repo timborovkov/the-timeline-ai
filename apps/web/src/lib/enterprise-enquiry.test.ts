@@ -73,6 +73,6 @@ describe('enterprise enquiry helpers', () => {
   });
 
   it('keeps the public response-expectation copy stable', () => {
-    expect(ENTERPRISE_RESPONSE_EXPECTATION).toBe('We reply within two business days.');
+    expect(ENTERPRISE_RESPONSE_EXPECTATION).toBe('We reply within one business day.');
   });
 });

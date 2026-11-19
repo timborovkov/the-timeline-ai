@@ -37,7 +37,7 @@ describe('enterprise contact page', () => {
     });
     const html = renderToStaticMarkup(element);
     expect(html).toContain('Enterprise enquiry');
-    expect(html).toContain('We reply within two business days.');
+    expect(html).toContain('We reply within one business day.');
     expect(html).toContain('data-testid="enterprise-enquiry-form"');
     expect(html).toContain('data-enterprise-deployment');
     expect(html).toContain('managed on-premise / private-cloud');
