@@ -6,7 +6,6 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -98,19 +97,10 @@ export default async function AppLayout({
         )
     : [];
   if (!active) {
-    // A signed-in user without any team. Shouldn't happen after Phase 1
-    // sign-up, but render an empty state rather than crash.
-    return (
-      <main className="mx-auto max-w-md px-6 py-16">
-        <h1 className="text-xl font-semibold">No team yet</h1>
-        {showPlatformAdmin(currentUser, realSession?.user.email, false) && (
-          <Link href="/app/admin">Platform admin</Link>
-        )}
-        <p className="mt-2 text-sm text-muted-foreground">
-          Sign out and create a new account, or ask a teammate for an invite link.
-        </p>
-      </main>
-    );
+    // Solo signup defers workspace creation until Welcome. Route there instead
+    // of an empty shell so nothing 500s and invite-only users who somehow land
+    // here without a membership can still name a team later.
+    redirect('/onboarding');
   }
 
   const scope = withTeam(db, active.teamId, session.user.id);

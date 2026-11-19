@@ -260,9 +260,13 @@ the display name only; slug and inbound email stay put. General also contains
 work style, messaging, digest destinations and timezone; there is no separate
 Preferences tab. Old Preferences links resolve to General. Evaluation tracing
 and conversation report sharing appear as descriptive navigation rows under
-Quality and support within General, never above the page header. First-run
-onboarding asks for the same team name on the welcome step (prefilled from the
-sign-up default) and saves it through the shared rename path.
+Quality and support within General, never above the page header. Solo signup
+defers workspace creation until first-run Welcome: the chosen name mints the
+slug and inbound email then (prefill `${name}'s team`). Invite-only signup
+never creates an owned team — joiners land in the inviting team, and a later
+owned workspace uses the normal create-team path. When a team already exists
+(for example after create-team), Welcome may still rename through the shared
+path without changing addressing.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Member and invitation actions stack below

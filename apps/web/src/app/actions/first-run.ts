@@ -2,8 +2,11 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { users } from '@timeline/db';
+import { createOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import { isFirecrawlConfigured } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
+import { sendMessage } from '@timeline/shared/messaging';
 import {
   FIRST_RUN_PATHS,
   WEBSITE_SUBJECTS,
@@ -18,18 +21,28 @@ import {
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import { startWebsiteScan } from '@timeline/shared/websites';
+import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { resolveActiveTeam } from '@/lib/active-team';
+import {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  resolveActiveTeam,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import { reportCaughtError } from '@/lib/sentry-report';
+import { getSiteUrl } from '@/lib/site-url';
 import { applyTeamRename, teamDisplayNameSchema } from '@/lib/team-rename';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 const log = childLogger('web:actions:first-run');
 
@@ -89,13 +102,16 @@ function revalidateOnboarding(): void {
 
 export async function submitWorkStyleAction(input: {
   workStyle: TeamWorkStyle | null;
-  /** When set, renames the active team with the same validation as Team settings. */
+  /**
+   * Required when the signed-in user has no team yet (deferred solo create).
+   * When a team already exists, renames it with the same validation as Team settings.
+   */
   teamName?: string;
 }): Promise<ActionResult> {
   return runSentryServerAction('submit_work_style', async () => {
-    const got = await withFirstRunScope();
-    if ('error' in got) return { ok: false, error: got.error };
-    const limited = await limitFirstRun(got.userId);
+    const session = await auth();
+    if (!session?.user) return { ok: false, error: 'Not signed in' };
+    const limited = await limitFirstRun(session.user.id);
     if (limited) return { ok: false, error: limited };
     const parsed = z
       .object({
@@ -109,16 +125,68 @@ export async function submitWorkStyleAction(input: {
       }
       return { ok: false, error: 'Invalid work style' };
     }
-    if (parsed.data.teamName !== undefined) {
+
+    const { active } = await resolveActiveTeam(session.user.id);
+    let teamId = active?.teamId ?? null;
+
+    if (!teamId) {
+      const teamName = parsed.data.teamName;
+      if (teamName === undefined) {
+        return { ok: false, error: 'Invalid team name' };
+      }
+      let created: Awaited<ReturnType<typeof createOwnedWorkspace>>;
+      try {
+        created = await db.transaction((tx) =>
+          createOwnedWorkspace(tx, {
+            ownerId: session.user.id,
+            name: teamName,
+            timezone: DEFAULT_TIMEZONE,
+          }),
+        );
+      } catch (err) {
+        log.error({ err }, 'welcome_create_workspace_failed');
+        reportCaughtError(err, { surface: 'server_action', operation: 'welcome_create_workspace' });
+        return { ok: false, error: 'Could not create your team. Please try again.' };
+      }
+      teamId = created.team.id;
+      const cookieStore = await cookies();
+      cookieStore.set(
+        ACTIVE_TEAM_COOKIE,
+        serializeActiveTeamCookie(teamId),
+        activeTeamCookieOptions(),
+      );
+      trackProductEventBestEffort(actor(session.user.id, teamId), 'team_created', {
+        source: 'signup',
+      });
+      const [owner] = await db
+        .select({ email: users.email, name: users.name })
+        .from(users)
+        .where(eq(users.id, session.user.id))
+        .limit(1);
+      if (owner?.email) {
+        await sendMessage(
+          'welcome',
+          {
+            to: owner.email,
+            name: owner.name ?? null,
+            dashboardUrl: `${getSiteUrl()}/app`,
+            teamName: created.team.name,
+          },
+          { db, teamId, userId: session.user.id, dedupeKey: `welcome:${session.user.id}` },
+        ).catch((err: unknown) => {
+          reportCaughtError(err, { surface: 'server_action', operation: 'welcome_email' });
+        });
+      }
+    } else if (parsed.data.teamName !== undefined) {
       const renamed = await applyTeamRename({
-        teamId: got.teamId,
-        userId: got.userId,
+        teamId,
+        userId: session.user.id,
         name: parsed.data.teamName,
       });
       if ('error' in renamed) return { ok: false, error: renamed.error };
       if (renamed.changed) {
         trackProductEventBestEffort(
-          actor(got.userId, got.teamId),
+          actor(session.user.id, teamId),
           'team_management_action_completed',
           {
             action: 'settings_update',
@@ -126,8 +194,10 @@ export async function submitWorkStyleAction(input: {
         );
       }
     }
+
+    const scope = withTeam(db, teamId, session.user.id);
     try {
-      await got.scope.onboarding.submitWorkStyle(parsed.data.workStyle);
+      await scope.onboarding.submitWorkStyle(parsed.data.workStyle);
     } catch (err) {
       log.error({ err }, 'submitWorkStyle failed');
       return {
@@ -138,7 +208,7 @@ export async function submitWorkStyleAction(input: {
         }),
       };
     }
-    trackProductEventBestEffort(actor(got.userId, got.teamId), 'onboarding_work_style_submitted', {
+    trackProductEventBestEffort(actor(session.user.id, teamId), 'onboarding_work_style_submitted', {
       workStyle: parsed.data.workStyle ?? 'skipped',
     });
     revalidateOnboarding();

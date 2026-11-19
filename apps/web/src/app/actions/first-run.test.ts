@@ -21,6 +21,11 @@ const fakes = vi.hoisted(() => ({
   trackProductEventBestEffort: vi.fn(),
   revalidatePath: vi.fn(),
   applyTeamRename: vi.fn(),
+  createOwnedWorkspace: vi.fn(),
+  dbTransaction: vi.fn(),
+  dbSelect: vi.fn(),
+  cookieSet: vi.fn(),
+  sendMessage: vi.fn(),
 }));
 
 await vi.mock(
@@ -35,13 +40,45 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/active-team'),
-  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => ({
+    ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+    activeTeamCookieOptions: () => ({ httpOnly: true, path: '/' }),
+    serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+    resolveActiveTeam: fakes.resolveActiveTeam,
+  }),
   () => import('@/lib/active-team'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/db'),
-  () => ({ db: {} }),
+  () => ({
+    db: {
+      transaction: fakes.dbTransaction,
+      select: fakes.dbSelect,
+    },
+  }),
   () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/agent-provisioning'),
+  () => ({ createOwnedWorkspace: fakes.createOwnedWorkspace }),
+  () => import('@timeline/shared/agent-provisioning'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  () => ({ sendMessage: fakes.sendMessage }),
+  () => import('@timeline/shared/messaging'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({
+    cookies: vi.fn().mockResolvedValue({ set: fakes.cookieSet }),
+  }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/site-url'),
+  () => ({ getSiteUrl: () => 'https://timeline.test' }),
+  () => import('@/lib/site-url'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/analytics'),
@@ -152,6 +189,19 @@ beforeEach(() => {
   fakes.markScanFailed.mockResolvedValue({});
   fakes.enqueueWebsiteScanJob.mockResolvedValue(undefined);
   fakes.applyTeamRename.mockResolvedValue({ ok: true, changed: false });
+  fakes.createOwnedWorkspace.mockResolvedValue({
+    team: { id: TEAM_ID, name: 'Northstar Labs', slug: 'northstar-labs' },
+    billing: { restricted: false },
+  });
+  fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) => callback({}));
+  fakes.dbSelect.mockReturnValue({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        limit: vi.fn().mockResolvedValue([{ email: 'owner@example.test', name: 'Ada' }]),
+      })),
+    })),
+  });
+  fakes.sendMessage.mockResolvedValue({ ok: true });
 });
 
 describe('first-run analytics', () => {
@@ -301,6 +351,38 @@ describe('first-run analytics', () => {
 });
 
 describe('submitWorkStyleAction team name', () => {
+  it('creates the owned workspace on Welcome when the user has no team yet', async () => {
+    fakes.resolveActiveTeam.mockResolvedValue({ active: null });
+    await expect(
+      submitWorkStyleAction({ workStyle: 'email', teamName: 'Northstar Labs' }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.createOwnedWorkspace).toHaveBeenCalledWith(expect.anything(), {
+      ownerId: USER_ID,
+      name: 'Northstar Labs',
+      timezone: 'Europe/Helsinki',
+    });
+    expect(fakes.applyTeamRename).not.toHaveBeenCalled();
+    expect(fakes.cookieSet).toHaveBeenCalledWith(
+      'timeline_active_team',
+      `v2:${TEAM_ID}`,
+      expect.objectContaining({ httpOnly: true, path: '/' }),
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'team_created',
+      { source: 'signup' },
+    );
+    expect(fakes.sendMessage).toHaveBeenCalledWith(
+      'welcome',
+      expect.objectContaining({
+        to: 'owner@example.test',
+        teamName: 'Northstar Labs',
+      }),
+      expect.objectContaining({ teamId: TEAM_ID, userId: USER_ID }),
+    );
+    expect(fakes.submitWorkStyle).toHaveBeenCalledWith('email');
+  });
+
   it('renames through the shared team-rename path before saving work style', async () => {
     fakes.applyTeamRename.mockResolvedValue({ ok: true, changed: true });
     await expect(
@@ -311,6 +393,7 @@ describe('submitWorkStyleAction team name', () => {
       userId: USER_ID,
       name: 'Northstar Labs',
     });
+    expect(fakes.createOwnedWorkspace).not.toHaveBeenCalled();
     expect(fakes.submitWorkStyle).toHaveBeenCalledWith('email');
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
@@ -331,6 +414,7 @@ describe('submitWorkStyleAction team name', () => {
       error: 'Invalid team name',
     });
     expect(fakes.applyTeamRename).not.toHaveBeenCalled();
+    expect(fakes.createOwnedWorkspace).not.toHaveBeenCalled();
     expect(fakes.submitWorkStyle).not.toHaveBeenCalled();
   });
 

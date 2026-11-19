@@ -24,6 +24,7 @@ export function WelcomeScreen({
   const [workStyle, setWorkStyle] = useState<TeamWorkStyle | null>(initialWorkStyle);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const creatingWorkspace = !inboundEmail;
 
   function submit(next: TeamWorkStyle | null) {
     const trimmed = teamName.trim();
@@ -43,10 +44,13 @@ export function WelcomeScreen({
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight md:text-[24px]">Your team is ready</h1>
+      <h1 className="text-2xl font-semibold tracking-tight md:text-[24px]">
+        {creatingWorkspace ? 'Name your team' : 'Your team is ready'}
+      </h1>
       <p className="mt-2 text-sm leading-6 text-fg-muted">
-        Name your workspace and keep its team email address. Anything you forward there lands on
-        your timeline.
+        {creatingWorkspace
+          ? 'Choose a name for your workspace. We’ll create your team email address from it.'
+          : 'Name your workspace and keep its team email address. Anything you forward there lands on your timeline.'}
       </p>
       <div className="mt-4 space-y-1.5">
         <Label htmlFor="onboarding-team-name" size="sm">
@@ -67,18 +71,22 @@ export function WelcomeScreen({
           }}
         />
         <p id="onboarding-team-name-hint" className="text-xs leading-5 text-fg-muted">
-          You can rename this later in Team → General. The team email and slug stay the same.
+          {creatingWorkspace
+            ? 'You can rename this later in Team → General. The team email and slug stay the same after creation.'
+            : 'You can rename this later in Team → General. The team email and slug stay the same.'}
         </p>
       </div>
-      <div className="mt-4">
-        <CopyableTextField
-          id="onboarding-team-email"
-          label="Team email address"
-          value={inboundEmail}
-          emptyLabel="Team email isn’t configured yet"
-          copyLabel="Copy team email"
-        />
-      </div>
+      {!creatingWorkspace ? (
+        <div className="mt-4">
+          <CopyableTextField
+            id="onboarding-team-email"
+            label="Team email address"
+            value={inboundEmail}
+            emptyLabel="Team email isn’t configured yet"
+            copyLabel="Copy team email"
+          />
+        </div>
+      ) : null}
       <div className="my-6 h-px bg-border" />
       <div className="flex flex-wrap items-baseline gap-2">
         <h2 className="text-base font-semibold">How does your team mostly work?</h2>

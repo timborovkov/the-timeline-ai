@@ -35,12 +35,27 @@ describe('WelcomeScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Skip question' }));
   });
 
+  it('shows the deferred-create copy when no inbound email exists yet', () => {
+    render(
+      <WelcomeScreen
+        teamName="Ada's team"
+        inboundEmail={null}
+        initialWorkStyle={null}
+        onContinue={() => Promise.resolve()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Name your team' })).toBeTruthy();
+    expect(screen.getByText(/create your team email address/i)).toBeTruthy();
+    expect(screen.queryByLabelText('Team email address')).toBeNull();
+  });
+
   it('lets the user edit the prefilled team name and submits it with continue', async () => {
     const user = userEvent.setup();
     const calls: { workStyle: string | null; teamName: string }[] = [];
     render(
       <WelcomeScreen
-        teamName="Ada's Team"
+        teamName="Ada's team"
         inboundEmail="ada-team@inbound.test"
         initialWorkStyle={null}
         onContinue={(workStyle, teamName) => {

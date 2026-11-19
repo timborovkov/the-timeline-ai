@@ -76,6 +76,6 @@ export default async function SignUpPage({ searchParams }: Props) {
 function signupSubtitle(invited: boolean, ready: boolean): string {
   if (!ready) return 'New accounts are paused while our legal publication review is completed.';
   return invited
-    ? 'You’ve been invited to a team. Sign up to accept.'
-    : 'Free for up to 3 members — no card required. We’ll create your first team automatically. Then connect one source and open the first record.';
+    ? 'You’ve been invited to a team. Sign up to accept — no separate workspace is created.'
+    : 'Free for up to 3 members — no card required. Name your team next, then connect one source and open the first record.';
 }
