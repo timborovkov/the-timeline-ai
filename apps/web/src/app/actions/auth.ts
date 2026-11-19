@@ -20,7 +20,7 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
-import { selectedPlanFromCallback } from '@/lib/auth-redirect';
+import { postSignupDestination, selectedPlanFromCallback } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
@@ -355,13 +355,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         selectedPlanFromCallback(callbackDestination) ?? (await readSignupPlanIntent()),
       );
     }
-    // New owned teams always start in first-run setup. Paid plan intent stays in
-    // the cookie and never authorizes a plan change by itself.
-    const destination = inviteToken
-      ? '/app'
-      : createdAccount.event === 'team_created'
-        ? '/onboarding'
-        : callbackDestination;
+    // New owned teams start in first-run setup unless an accept-invite continuation
+    // was preserved (Sign in → Create one). Paid plan intent stays in the cookie.
+    const destination = postSignupDestination({
+      inviteToken,
+      event: createdAccount.event,
+      callbackUrl: callbackDestination,
+    });
     if (signInFailed)
       redirect(
         destination === '/app'

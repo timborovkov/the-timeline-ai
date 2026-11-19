@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import {
+  postSignupDestination,
   signedInAuthRedirect,
   selectedPlanCallback,
   selectedPlanFromCallback,
@@ -73,6 +74,34 @@ describe('pricing plan intent', () => {
     );
     expect(signupCallback(undefined, 'free')).toBeUndefined();
     expect(signupCallback('/oauth/authorize?state=a', 'business')).toBe('/oauth/authorize?state=a');
+  });
+
+  it('keeps accept-invite continuations ahead of first-run onboarding', () => {
+    expect(
+      postSignupDestination({
+        event: 'team_created',
+        callbackUrl: '/accept-invite/token%201',
+      }),
+    ).toBe('/accept-invite/token%201');
+    expect(
+      postSignupDestination({
+        event: 'team_created',
+        callbackUrl: '/app',
+      }),
+    ).toBe('/onboarding');
+    expect(
+      postSignupDestination({
+        inviteToken: 'token',
+        event: 'invite_accepted',
+        callbackUrl: '/accept-invite/token',
+      }),
+    ).toBe('/app');
+    expect(
+      postSignupDestination({
+        event: 'invite_accepted',
+        callbackUrl: '/oauth/authorize?state=a',
+      }),
+    ).toBe('/oauth/authorize?state=a');
   });
 });
 
