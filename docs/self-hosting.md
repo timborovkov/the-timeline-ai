@@ -43,16 +43,22 @@ and [`docker/worker.Dockerfile`](../docker/worker.Dockerfile).
 
 Copy [`.env.example`](../.env.example) to `.env` and fill at least:
 
+- `TIMELINE_DEPLOYMENT_MODE=self-managed` — required for any production-like
+  process (`NODE_ENV=production`) that you operate. The schema defaults to
+  `hosted`, which rejects non-OpenRouter origins and requires Timeline-hosted
+  OpenRouter guardrail/attestation variables. Self-managed means you own the
+  AI endpoint, retention, and compliance posture.
 - `AUTH_SECRET` — session/auth secret (`openssl rand -base64 32`)
 - `SECRETS_ENCRYPTION_KEY` — 32-byte base64 key for integration/MCP secrets at rest
 - `DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`, and S3 settings matching your Compose
   or production equivalents (defaults in `.env.example` match local Compose)
 - `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL` — the shared LLM layer talks to
   an **OpenAI-compatible** HTTP API. The documented default is OpenRouter
-  (`https://openrouter.ai/api/v1`). Point `OPENROUTER_BASE_URL` at the compatible
-  endpoint you operate or subscribe to; model ids remain code-owned
-- `FIRECRAWL_API_KEY` — required before the web app or full worker boots when
-  website scanning is in the product path
+  (`https://openrouter.ai/api/v1`). With `TIMELINE_DEPLOYMENT_MODE=self-managed`,
+  point `OPENROUTER_BASE_URL` at the compatible endpoint you operate or subscribe
+  to; model ids remain code-owned
+- `FIRECRAWL_API_KEY` — required before the web app boots (instrumentation check);
+  website scanning also needs it on the worker
 - `AUTH_URL` — the public origin of your deployment
 
 Optional connectors (Slack, Telegram, GitHub, Google Drive, Linear, Monday.com,
@@ -60,10 +66,9 @@ Sentry, Resend, meeting bots, billing, Turnstile, and others) are configured by
 you with the corresponding env vars. Leave unused keys empty. Setup details live
 under [`docs/setup/`](setup/).
 
-Hosted Timeline production also uses OpenRouter privacy attestation and
-guardrail settings that are specific to Timeline’s operated environment. A
-self-hosted deployment must choose its own AI endpoint, retention, and
-compliance posture; do not assume hosted ZDR or attestation claims apply.
+Do not reuse Timeline-hosted OpenRouter ZDR, guardrail, or attestation claims for
+a deployment you operate. Hosted production settings are documented for Railway
+in [railway.md](railway.md) and [setup/openrouter.md](setup/openrouter.md).
 
 ## Bring-up outline
 
@@ -77,8 +82,20 @@ your environment; this is not a turnkey production runbook.
    `set -a; . ./.env; set +a`
    Symlink for Next.js: `ln -sf ../../.env apps/web/.env`
 4. Apply migrations: `bun run db:migrate`
-5. Run the app and workers: `bun run dev` on the host, or
-   `docker compose --profile app up` for containerized app/worker parity.
+5. Run the app and workers:
+   - Host processes (hot reload): `bun run dev` with the same `.env` exported /
+     symlinked as above. Development `NODE_ENV` does not require
+     `TIMELINE_DEPLOYMENT_MODE=self-managed`, but set it before any
+     production-like host start.
+   - Containers: `docker compose --profile app up`. The `web` and `worker`
+     services run with `NODE_ENV=production` and forward
+     `TIMELINE_DEPLOYMENT_MODE`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`,
+     and `FIRECRAWL_API_KEY` from the host `.env` (Compose falls back to
+     `self-managed` / the official OpenRouter origin only when those keys are
+     absent from `.env`). A copied `.env.example` still sets
+     `TIMELINE_DEPLOYMENT_MODE=hosted` — change it to `self-managed` before
+     this path, or startup validation expects hosted OpenRouter
+     guardrail/attestation variables and rejects a custom base URL.
 6. Open the web origin you configured (local default `http://localhost:3000`).
 
 Longer walkthroughs, demo seeding, PostgreSQL upgrades, and service-specific
