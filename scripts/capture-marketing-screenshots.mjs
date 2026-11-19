@@ -89,7 +89,7 @@ const DESKTOP_SHOTS = [
   {
     stem: '29-approvals',
     path: '/app/approvals?status=pending',
-    wait: /Pending|Why this was suggested/,
+    wait: /To review|Pending \d+|Why this was suggested/,
   },
   {
     stem: '31-ask-status',
@@ -137,7 +137,37 @@ const MOBILE_SHOTS = [
     wait: /What did the team achieve recently\?|Recent activity recap/,
     mobile: true,
   },
+  {
+    stem: '55-sources-mobile',
+    path: '/app/connections/sources',
+    wait: /Connected providers|Telegram|Google Drive/,
+    mobile: true,
+  },
+  {
+    stem: '56-project-northstar-mobile',
+    path: '/app/objects/a3000000-0000-4000-8000-000000000001',
+    wait: /Northstar pilot/,
+    mobile: true,
+  },
+  {
+    stem: '57-approvals-mobile',
+    path: '/app/approvals?status=pending',
+    wait: /To review|Pending \d+|Why this was suggested|Create Kite reopen follow-up/,
+    mobile: true,
+  },
 ];
+
+const STEM_FILTER = new Set(
+  (process.env.CAPTURE_STEMS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+
+function selectShots(shots) {
+  if (STEM_FILTER.size === 0) return shots;
+  return shots.filter((shot) => STEM_FILTER.has(shot.stem));
+}
 
 async function collapseComingSoon(page) {
   const button = page.getByRole('button', { name: /Coming soon/i }).first();
@@ -298,23 +328,40 @@ async function runTheme(browser, theme, shots, viewport) {
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
+  const desktopShots = selectShots(DESKTOP_SHOTS);
+  const mobileShots = selectShots(MOBILE_SHOTS);
+  if (STEM_FILTER.size > 0) {
+    console.log(
+      `CAPTURE_STEMS filter: ${[...STEM_FILTER].join(', ')} → desktop=${desktopShots.length} mobile=${mobileShots.length}`,
+    );
+  }
   const browser = await chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   try {
-    for (const theme of ['dark', 'light']) {
-      await runTheme(browser, theme, DESKTOP_SHOTS, DESKTOP);
+    if (desktopShots.length > 0) {
+      for (const theme of ['dark', 'light']) {
+        await runTheme(browser, theme, desktopShots, DESKTOP);
+      }
     }
-    for (const theme of ['dark', 'light']) {
-      await runTheme(browser, theme, MOBILE_SHOTS, MOBILE);
+    if (mobileShots.length > 0) {
+      for (const theme of ['dark', 'light']) {
+        await runTheme(browser, theme, mobileShots, MOBILE);
+      }
     }
   } finally {
     await browser.close();
   }
 
   // Keep unthemed mobile files in sync with the dark recapture.
-  for (const stem of ['53-timeline-mobile', '54-ask-recap-mobile']) {
+  for (const stem of [
+    '53-timeline-mobile',
+    '54-ask-recap-mobile',
+    '55-sources-mobile',
+    '56-project-northstar-mobile',
+    '57-approvals-mobile',
+  ]) {
     const dark = join(OUT_DIR, `${stem}-dark.png`);
     const unthemed = join(OUT_DIR, `${stem}.png`);
     if (existsSync(dark)) copyFileSync(dark, unthemed);

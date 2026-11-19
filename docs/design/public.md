@@ -189,8 +189,11 @@ Each screenshot reserves its aspect box and shows a loading label until painted.
 Screenshots are display-only, without links, zoom actions or instructions to click.
 Inventory tests require both twins, including legacy unthemed mobile slots.
 See the [recapture guide](../../apps/web/public/marketing/screenshots/README.md).
-Landscape slots use a 16×10 top crop; mobile
-portrait slots keep the full capture so Ask citations stay in frame. The
+The product tour uses phone captures for Sources, Timeline, project detail,
+Approvals, and Ask (`53`–`57` mobile stems) below the `md` breakpoint, keeping
+desktop landscape frames on larger viewports. Landscape slots use a 16×10 top
+crop; mobile portrait slots keep the full capture so Ask citations stay in
+frame. The
 homepage shows proof shots in alternating split rows (screenshot beside the
 copy, stacked on small screens): voice notes, work record, stored cited Ask
 answer, client record, and daily update. On small screens those landscape
