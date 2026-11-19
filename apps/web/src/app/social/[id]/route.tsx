@@ -8,6 +8,12 @@ import { PUBLIC_SOCIAL_CARDS } from '@/lib/public-social-cards';
 export const dynamic = 'force-static';
 export const dynamicParams = false;
 
+const cardAssets = Promise.all([
+  readFile(join(process.cwd(), 'public/fonts/switzer/Switzer-Social-400.ttf')),
+  readFile(join(process.cwd(), 'public/fonts/switzer/Switzer-Social-600.ttf')),
+  readFile(join(process.cwd(), 'public/icons/icon-192.png'), 'base64'),
+]);
+
 export function generateStaticParams() {
   return PUBLIC_SOCIAL_CARDS.map(({ id }) => ({ id }));
 }
@@ -17,11 +23,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const card = PUBLIC_SOCIAL_CARDS.find((candidate) => candidate.id === id);
   if (!card) return new Response(null, { status: 404 });
 
-  const [regular, semibold, brand] = await Promise.all([
-    readFile(join(process.cwd(), 'public/fonts/switzer/Switzer-Social-400.ttf')),
-    readFile(join(process.cwd(), 'public/fonts/switzer/Switzer-Social-600.ttf')),
-    readFile(join(process.cwd(), 'src/app/icon.svg'), 'base64'),
-  ]);
+  const [regular, semibold, brand] = await cardAssets;
 
   return new ImageResponse(
     <div
@@ -40,7 +42,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       <div
         style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 28, fontWeight: 600 }}
       >
-        <img alt="" width={42} height={42} src={`data:image/svg+xml;base64,${brand}`} />
+        <img alt="" width={42} height={42} src={`data:image/png;base64,${brand}`} />
         The Timeline
       </div>
       <div

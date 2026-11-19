@@ -62,16 +62,20 @@ export async function checkPublicOrigin(
     verify(`${origin}/robots.txt`, async (response) => {
       requireOk(response);
       const robots = await response.text();
-      const sitemapUrls = [...robots.matchAll(/^sitemap:[ \t]*(\S+)\s*$/gimu)].map(
+      const sitemapUrls = Array.from(
+        robots.matchAll(/^sitemap:[ \t]*(\S+)\s*$/gimu),
         ([, url]) => url,
-      );
+      ).filter((url) => url !== undefined);
       requireSameUrls(sitemapUrls, [`${origin}/sitemap.xml`], 'robots Sitemap');
     }),
     verify(`${origin}/sitemap.xml`, async (response) => {
       requireOk(response);
       const sitemap = await response.text();
       if (!/<urlset\b/u.test(sitemap)) throw new Error('Expected a sitemap URL set.');
-      const deployedUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/gu)].map(([, url]) => url);
+      const deployedUrls = Array.from(
+        sitemap.matchAll(/<loc>([^<]+)<\/loc>/gu),
+        ([, url]) => url,
+      ).filter((url) => url !== undefined);
       const expectedUrls = buildPublicSitemap(PUBLIC_DOCUMENT_REGISTRY, origin).map(
         ({ url }) => url,
       );
