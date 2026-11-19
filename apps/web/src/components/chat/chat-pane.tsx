@@ -132,32 +132,17 @@ function ChatSurfaceContent({
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
-  const history = useChatHistorySave(sessionId, () => router.refresh());
-  const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
+  const { history, messages, sendMessage, status, error, isStreaming, approveTool } = useSavedChat(
+    sessionId,
     transport,
-    messages: initialMessages,
-    onData: history.onData,
-    onFinish: ({ message }) => {
-      if (
-        history.mayContinue() &&
-        message.parts.some(
-          (part) =>
-            isToolUIPart(part) &&
-            getToolName(part).startsWith('execute_') &&
-            part.state === 'output-available',
-        )
-      )
-        router.refresh();
-    },
-    sendAutomaticallyWhen: (input) =>
-      history.mayContinue() && lastAssistantMessageIsCompleteWithApprovalResponses(input),
-  });
+    initialMessages,
+    () => router.refresh(),
+  );
 
   const [input, setInput] = useState(initialPrompt ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
-  const isStreaming = status === 'streaming' || status === 'submitted';
   const handoffPin = initialSessionId === null ? consumedHandoff : null;
   const visiblePinnedEntity = handoffPin?.pinnedEntityId
     ? { id: handoffPin.pinnedEntityId, name: handoffPin.pinnedEntityName ?? null }
@@ -234,9 +219,7 @@ function ChatSurfaceContent({
         isStreaming={isStreaming}
         messages={messages}
         approvalsBlocked={history.saveBlocked}
-        onToolApprovalResponse={(approval) => {
-          if (!history.saveBlocked && !isStreaming) void addToolApprovalResponse(approval);
-        }}
+        onToolApprovalResponse={approveTool}
         onSuggestion={submit}
         scrollRef={scrollRef}
         teamName={teamName}
@@ -264,6 +247,47 @@ function ChatSurfaceContent({
       />
     </div>
   );
+}
+
+function useSavedChat(
+  sessionId: string | null,
+  transport: DefaultChatTransport<UIMessage>,
+  initialMessages: UIMessage[],
+  refresh: () => void,
+) {
+  const history = useChatHistorySave(sessionId, refresh);
+  const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
+    transport,
+    messages: initialMessages,
+    onData: history.onData,
+    onFinish: ({ message }) => {
+      if (
+        history.mayContinue() &&
+        message.parts.some(
+          (part) =>
+            isToolUIPart(part) &&
+            getToolName(part).startsWith('execute_') &&
+            part.state === 'output-available',
+        )
+      )
+        refresh();
+    },
+    sendAutomaticallyWhen: (input) =>
+      history.mayContinue() && lastAssistantMessageIsCompleteWithApprovalResponses(input),
+  });
+
+  const isStreaming = status === 'streaming' || status === 'submitted';
+  return {
+    history,
+    messages,
+    sendMessage,
+    status,
+    error,
+    isStreaming,
+    approveTool: (approval: Parameters<typeof addToolApprovalResponse>[0]) => {
+      if (!history.saveBlocked && !isStreaming) void addToolApprovalResponse(approval);
+    },
+  };
 }
 
 function useChatHistorySave(sessionId: string | null, refresh: () => void) {
