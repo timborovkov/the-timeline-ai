@@ -1,19 +1,18 @@
 'use client';
 
+import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import { ChevronLeft, ChevronRight, ExternalLink, LifeBuoy } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import type { NavBadgeMap } from '@/components/nav-items';
-import type { RecipientInvite } from '@/components/team-switcher';
-import type { TeamMembership } from '@/lib/active-team';
-import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
-
 import { Logo, Wordmark } from '@/components/brand/logo';
+import type { NavBadgeMap } from '@/components/nav-items';
 import { RailNav } from '@/components/rail-nav';
 import { SidebarBillingUsage } from '@/components/sidebar-billing-usage';
+import type { RecipientInvite } from '@/components/team-switcher';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { TeamMembership } from '@/lib/active-team';
 import { persistSidebarExpanded, SIDEBAR_STORAGE_KEY } from '@/lib/sidebar-preference';
 import { cn } from '@/lib/utils';
 

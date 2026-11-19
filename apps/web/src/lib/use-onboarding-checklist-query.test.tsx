@@ -3,10 +3,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-
-import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import type { PropsWithChildren, ReactElement } from 'react';
 
+import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import { queryKeys } from '@/lib/query-keys';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 // Test environment: happy-dom

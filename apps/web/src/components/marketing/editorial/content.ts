@@ -1,7 +1,6 @@
-import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
-
 import { WORKFLOW_GUIDES } from '@/components/marketing/editorial/workflow-guides';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 
 export const EDITORIAL_PUBLICATION_NAME = 'How Timeline works';
 

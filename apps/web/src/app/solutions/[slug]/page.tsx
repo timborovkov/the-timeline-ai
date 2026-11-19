@@ -1,6 +1,5 @@
-import { notFound, permanentRedirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound, permanentRedirect } from 'next/navigation';
 
 import { findSolution, SOLUTIONS } from '@/components/marketing/solutions/content';
 import { createSolutionMetadata } from '@/components/marketing/solutions/metadata';

@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
+import type { TranscriptionModel } from 'ai';
 import { MockTranscriptionModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -12,7 +13,6 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { transcribeAudio } from '#src/llm/transcribe.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
-import type { TranscriptionModel } from 'ai';
 // Tests for the transcribe wrapper. The production path calls OpenRouter's
 // JSON/base64 STT endpoint; tests also inject a mock TranscriptionModel for
 // deterministic SDK-level wrapper coverage. AUTH_SECRET and DATABASE_URL are

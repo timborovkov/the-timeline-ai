@@ -1,6 +1,5 @@
-import { isToolUIPart, type UIMessage } from 'ai';
-
 import type * as objects from '@timeline/shared/objects';
+import { isToolUIPart, type UIMessage } from 'ai';
 
 interface PersistedUser {
   ui_message?: UIMessage;

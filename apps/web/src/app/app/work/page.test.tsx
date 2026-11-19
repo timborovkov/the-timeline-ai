@@ -1,7 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
 import type { ReactNode } from 'react';
 const USER_ID = 'user-1';
 const TEAM_ID = 'team-1';

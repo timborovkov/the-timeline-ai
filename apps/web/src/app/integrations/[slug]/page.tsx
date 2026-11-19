@@ -1,6 +1,5 @@
-import { notFound } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { CONNECTORS, findConnector } from '@/components/marketing/integrations/connector-content';
 import { ConnectorPage } from '@/components/marketing/integrations/connector-page';

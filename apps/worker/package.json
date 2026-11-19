@@ -36,7 +36,7 @@
     "cleanup-document-extract-snapshots": "bun --conditions=development scripts/cleanup-document-extract-snapshots.ts",
     "dev:extract": "WORKER_MODE=document-extract bun --conditions=development --watch src/extract-main.ts",
     "start:extract": "WORKER_MODE=document-extract bun --bun --no-env-file dist/extract-main.js",
-    "lint": "bun x --bun --no-install eslint src",
+    "lint": "bun x --bun --no-install eslint src --cache --cache-strategy content --cache-location ../../node_modules/.cache/eslint/worker",
     "test": "bun ../../scripts/testing/run.ts apps/worker",
     "typecheck": "bun x --bun --no-install tsc -p tsconfig.json --noEmit",
     "reset:objects": "bun --conditions=development src/scripts/reset-objects.ts"

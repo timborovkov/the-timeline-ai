@@ -37,21 +37,28 @@ repo-wide validation; do not routinely duplicate it locally.
 - Fix failures caused by the change, then rerun the affected checks. Report
   unrelated failures separately with evidence; do not automatically expand the
   task into repository-wide repairs. Required failures still block merging.
-- GitHub's static gate runs `bun run validate` (Prettier, TypeScript, ESLint,
-  Knip) and `bun run doctor`. React Doctor must show
-  `React Doctor score: 100` and `No issues found!`; an exit without a score
-  is not proof of 100. Diagnose failures locally only as needed.
+- GitHub's required `Static checks` job is a gate over parallel CI jobs that
+  still cover Prettier, TypeScript, ESLint, Knip, React Doctor, runtime smoke,
+  E2E environment contracts, and dist imports. Local `bun run validate` keeps
+  the same sequential format → typecheck → lint → knip composition for
+  developers; CI splits those steps across jobs and persists Turbo caches.
+  CI does not restore ESLint's on-disk cache across commits (typed rules do
+  not track cross-file dependencies); local package scripts may still use
+  `--cache`. React Doctor must show `React Doctor score: 100` and
+  `No issues found!`; an exit without a score is not proof of 100. Diagnose
+  failures locally only as needed.
 
 ## Branch and release CI
 
-- `main` is the development branch. PRs require `Static checks`: validation,
-  React Doctor, runtime smoke tests, E2E environment contracts, and dist imports.
+- `main` is the development branch. PRs require `Static checks`, which depends
+  on the parallel format, typecheck, lint+knip, and runtime-smoke/doctor jobs.
 - `production` is the release branch. PRs require both `Static checks` and
   `Full test suite` (offline unit/integration tests and reconciliation evals),
   with an up-to-date branch and resolved review threads. Direct pushes,
   force pushes, and deletion are blocked; release through a PR from `main`.
 - Full tests also run on production pushes and manual CI dispatches. Superseded
   PR runs are cancelled. Browser E2E remains a separate manual workflow.
+  Redis is only attached to jobs that need a live instance (runtime smoke).
 - Railway must follow `production` after the operator switches its source branch.
   Changing repository branch policy does not change Railway configuration.
 

@@ -1,5 +1,6 @@
 'use client';
 
+import type { GlobalSearchResult } from '@timeline/shared/search';
 import {
   CalendarDays,
   Bot,
@@ -18,12 +19,10 @@ import {
   Search,
   SquareKanban,
 } from 'lucide-react';
+import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { useRouter } from 'next/navigation';
 import { Collapsible } from 'radix-ui';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-
-import type { GlobalSearchResult } from '@timeline/shared/search';
-import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import type { ActionDispatch, ComponentType, SetStateAction, Dispatch, SVGProps } from 'react';
 
 import { DueDateDisplay } from '@/components/due-date-display';

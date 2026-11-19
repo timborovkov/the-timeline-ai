@@ -15,7 +15,6 @@ import {
 } from '#src/billing/status.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
-
 import type { BillingUsageAlertKind } from '#src/messaging/types.js';
 
 const log = childLogger('billing:alerts');

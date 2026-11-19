@@ -6,11 +6,10 @@ import {
   slugifyMetadataLabel,
   typedMetadataKeysFor,
 } from '@timeline/shared/objects/metadata-schemas';
+import type * as objects from '@timeline/shared/objects/types';
 import { Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { updateObjectMetadataAction } from '@/app/actions/objects';
 import { ObjectRailRow, ObjectRailSection } from '@/components/objects/object-rail-chrome';

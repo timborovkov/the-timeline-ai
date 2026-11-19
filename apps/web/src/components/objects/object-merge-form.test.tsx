@@ -1,8 +1,8 @@
+import type * as objects from '@timeline/shared/objects/types';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
-import type * as objects from '@timeline/shared/objects/types';
 const fakes = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),

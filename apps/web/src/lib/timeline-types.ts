@@ -1,4 +1,3 @@
-import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { EventSource, SearchEventArtifactCluster } from '@timeline/shared/team-scope';
 import type {
   ImpactItem,
@@ -7,6 +6,8 @@ import type {
   TimelineMomentsPageVersion,
   TimelineMomentDto,
 } from '@timeline/shared/timeline-moments';
+
+import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 
 export type TimelineArtifactCluster = SearchEventArtifactCluster;
 export type WebTimelineMomentDto = TimelineMomentDto<TimelineEvent, TimelineArtifactCluster>;

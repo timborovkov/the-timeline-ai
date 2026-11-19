@@ -1,3 +1,4 @@
+import type { Db } from '@timeline/db';
 import {
   firstCaptureJustLanded,
   prefilledAskQuestion,
@@ -5,8 +6,6 @@ import {
   type FirstRunState,
 } from '@timeline/shared/onboarding';
 import { withTeam } from '@timeline/shared/team-scope';
-
-import type { Db } from '@timeline/db';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { displayInboundEmail } from '@/lib/hub-status';

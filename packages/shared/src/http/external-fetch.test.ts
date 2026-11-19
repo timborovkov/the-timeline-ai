@@ -1,8 +1,8 @@
+import type { RequestListener, Server } from 'node:http';
+
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-
-import type { RequestListener, Server } from 'node:http';
 import type * as Undici from 'undici/index.js';
 const capturedAgentOptions = vi.hoisted(() => [] as unknown[]);
 

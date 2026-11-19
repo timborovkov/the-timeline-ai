@@ -1,11 +1,10 @@
+import type { BillingPresentation } from '@timeline/shared/billing';
 import {
   FREE_ALLOWANCES,
   formatEuroFromCents,
   formatStorageGb,
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
-
-import type { BillingPresentation } from '@timeline/shared/billing';
 import type { PlanCapacityKind, PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 
 import { cn } from '@/lib/utils';

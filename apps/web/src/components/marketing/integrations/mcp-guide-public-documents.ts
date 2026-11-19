@@ -1,5 +1,3 @@
-import type { PublicDocument } from '@/lib/public-site/types';
-
 import {
   MCP_GUIDE_HOSTED_TOOL_NAMES,
   MCP_GUIDE_LOCAL_TOOL_NAMES,
@@ -7,6 +5,7 @@ import {
   catalogNames,
 } from '@/components/marketing/integrations/mcp-guide-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
+import type { PublicDocument } from '@/lib/public-site/types';
 
 const hostedToolsLabel = catalogNames(MCP_GUIDE_HOSTED_TOOL_NAMES);
 const localDesktopToolsLabel = catalogNames(MCP_GUIDE_LOCAL_TOOL_NAMES);

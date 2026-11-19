@@ -2,12 +2,11 @@
 
 import { Users } from 'lucide-react';
 
-import type { TeamMemberMap, TeamMemberRow } from '@/components/team-member-types';
-
 import { EmptyState } from '@/components/empty-state';
 import { SectionHeading } from '@/components/section-heading';
 import { TeamListPagination, useTeamListPage } from '@/components/team-list-pagination';
 import { TeamMemberListItem } from '@/components/team-member-list-item';
+import type { TeamMemberMap, TeamMemberRow } from '@/components/team-member-types';
 
 export function MembersCard({
   members,

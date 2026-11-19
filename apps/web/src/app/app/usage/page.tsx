@@ -1,9 +1,8 @@
 import { exhaustedFreeAllowanceNotice, resolveTeamCommercialTerms } from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { BillingUsageOverview } from '@/components/billing-benefits-summary';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';

@@ -1,7 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { notFound, redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound, redirect } from 'next/navigation';
 
 import { DocumentDetail } from '@/components/documents/document-detail';
 import { resolveActiveTeam } from '@/lib/active-team';

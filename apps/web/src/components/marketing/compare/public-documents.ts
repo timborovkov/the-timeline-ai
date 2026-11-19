@@ -1,11 +1,10 @@
-import type { PublicDocument } from '@/lib/public-site';
-
 import {
   COMPARE_HUB,
   COMPARE_HUB_ROUTE,
   COMPARE_PAGES,
   type ComparePageContent,
 } from '@/components/marketing/compare/content';
+import type { PublicDocument } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const REVIEW_DATE = '2026-11-06' as const;

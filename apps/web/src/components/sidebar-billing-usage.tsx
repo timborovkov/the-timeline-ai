@@ -1,6 +1,5 @@
-import Link from 'next/link';
-
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
+import Link from 'next/link';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';

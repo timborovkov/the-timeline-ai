@@ -2,12 +2,11 @@
 
 import { Mail } from 'lucide-react';
 
-import type { TeamInviteRow, TeamMemberMap } from '@/components/team-member-types';
-
 import { EmptyState } from '@/components/empty-state';
 import { PendingInviteItem } from '@/components/pending-invite-item';
 import { SettingsSection } from '@/components/section-heading';
 import { TeamListPagination, useTeamListPage } from '@/components/team-list-pagination';
+import type { TeamInviteRow, TeamMemberMap } from '@/components/team-member-types';
 
 export function PendingInvitesCard({
   invites,

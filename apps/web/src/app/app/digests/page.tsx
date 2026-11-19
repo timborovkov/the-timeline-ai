@@ -1,7 +1,6 @@
 import { listDailyDigests, type DailyDigestPayload } from '@timeline/shared/messaging';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
 import { PageHeader } from '@/components/page-header';

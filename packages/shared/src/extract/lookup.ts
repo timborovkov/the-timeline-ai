@@ -3,9 +3,8 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { normalizeExtractionModelOutput } from '#src/extract/model-output.js';
-import { chatStructured, type ChatDeps } from '#src/llm/chat.js';
-
 import type { EntityMention, ExtractedEntityType } from '#src/extract/schema.js';
+import { chatStructured, type ChatDeps } from '#src/llm/chat.js';
 
 /** A Drizzle transaction or Db — both expose the query surface we need. */
 type _TxArg = Parameters<Db['transaction']>[0] extends (tx: infer T) => unknown ? T : never;

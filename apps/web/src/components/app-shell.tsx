@@ -1,11 +1,7 @@
-import { Search } from 'lucide-react';
-import Link from 'next/link';
-
-import type { NavBadgeMap } from '@/components/nav-items';
-import type { RecipientInvite } from '@/components/team-switcher';
-import type { TeamMembership } from '@/lib/active-team';
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
+import { Search } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
@@ -20,14 +16,17 @@ import { InspectorProvider } from '@/components/inspector-context';
 import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
+import type { NavBadgeMap } from '@/components/nav-items';
 import { GettingStartedStrip } from '@/components/onboarding/getting-started-strip';
 import { SkipLink } from '@/components/skip-link';
 import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
+import type { RecipientInvite } from '@/components/team-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
 import { WorkNavigation } from '@/components/work-subnav';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+import type { TeamMembership } from '@/lib/active-team';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
 
 interface Props {

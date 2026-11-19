@@ -1,9 +1,8 @@
 import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
+import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
-
-import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 
 /**
  * Phase 11 — Timeline-as-MCP-server bearer keys. Each row authorises one

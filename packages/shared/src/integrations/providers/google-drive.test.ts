@@ -2,12 +2,11 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { ProviderAuthorizationError } from '#src/integrations/types.js';
-
 import type {
   DriveCaptureServices,
   DriveSyncContext,
 } from '#src/integrations/google-drive-context.js';
+import { ProviderAuthorizationError } from '#src/integrations/types.js';
 import type { IntegrationEvent, SyncContext, SyncResult } from '#src/integrations/types.js';
 
 const externalFetchMock = vi.hoisted(() =>

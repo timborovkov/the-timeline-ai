@@ -1,7 +1,6 @@
 import { ArrowRight } from 'lucide-react';
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { HelpGuideDirectory } from '@/components/help/help-guide-directory';
 import { SupportMailto } from '@/components/support-email-provider';

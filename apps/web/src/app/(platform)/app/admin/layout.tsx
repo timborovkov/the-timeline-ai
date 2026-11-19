@@ -1,7 +1,6 @@
 import { IMPERSONATION_COOKIE } from '@timeline/shared/platform-admin';
 import { cookies } from 'next/headers';
 import { Suspense } from 'react';
-
 import type { ReactNode } from 'react';
 
 import { PlatformAdminNav } from '@/components/platform-admin-nav';

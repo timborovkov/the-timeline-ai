@@ -1,10 +1,9 @@
+import type { EvalSplit } from '#src/evals/benchmark.js';
 import {
   TASK_CATEGORY_EVAL_CASES,
   type TaskCategoryEvalCase,
 } from '#src/task-categories/eval-cases.js';
 import { TASK_CATEGORY_DEFINITIONS } from '#src/task-categories/types.js';
-
-import type { EvalSplit } from '#src/evals/benchmark.js';
 
 export interface ClassificationCase extends TaskCategoryEvalCase {
   split: EvalSplit;

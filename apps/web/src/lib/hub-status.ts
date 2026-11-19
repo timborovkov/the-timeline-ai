@@ -5,11 +5,10 @@ import {
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
+import type * as jobRecovery from '@timeline/shared/job-recovery';
 import { withTeam } from '@timeline/shared/team-scope';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
-
-import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { db } from '@/lib/db';
 import { TASK_OPEN_STATUSES_EXCLUDED } from '@/lib/task-board-config';

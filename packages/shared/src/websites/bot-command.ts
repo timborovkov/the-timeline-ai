@@ -1,10 +1,10 @@
+import type { Db } from '@timeline/db';
+
+import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
 import { withTeam } from '#src/team-scope.js';
 import { normalizeWebsiteUrl } from '#src/websites/policy.js';
 import { startWebsiteScan } from '#src/websites/runtime.js';
-
-import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
-import type { Db } from '@timeline/db';
 
 export async function websiteBotCommand(input: {
   db: Db;

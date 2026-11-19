@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
+import type { EmbeddingModel } from 'ai';
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -13,8 +14,6 @@ import { resetEnvForTests } from '#src/env.js';
 import { embed, embedMany } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
-import type { EmbeddingModel } from 'ai';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const USER_ID = '11111111-2222-4333-8444-555555555555';

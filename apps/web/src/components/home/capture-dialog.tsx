@@ -2,7 +2,6 @@
 
 import { Plus } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
-
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';

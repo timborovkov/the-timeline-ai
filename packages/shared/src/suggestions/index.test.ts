@@ -1,10 +1,10 @@
+import type { PGlite, Transaction } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type * as QueueModule from '#src/queue/queues.js';
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
-import type { PGlite, Transaction } from '@electric-sql/pglite';
 const queueFakes = vi.hoisted(() => ({
   enqueueTaskCategoryJob: vi.fn(() =>
     Promise.resolve({ enqueued: true, jobId: 'task-category-job' }),

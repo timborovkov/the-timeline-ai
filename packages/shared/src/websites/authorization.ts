@@ -1,9 +1,8 @@
 import { type Db, mcpOutboundKeys, mcpOutboundOAuthGrants, teamMembers } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { principalIsActive } from '#src/platform-admin/runtime.js';
-
 import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
+import { principalIsActive } from '#src/platform-admin/runtime.js';
 
 export async function authorizeWebsitePrincipal(
   db: Db,

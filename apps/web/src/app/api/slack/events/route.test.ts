@@ -1,8 +1,8 @@
+import type * as SlackModule from '@timeline/shared/slack';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as SlackModule from '@timeline/shared/slack';
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({

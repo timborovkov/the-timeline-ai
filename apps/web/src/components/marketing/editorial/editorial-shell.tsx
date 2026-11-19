@@ -1,6 +1,6 @@
-import type { PublicNavigationSection } from '@/components/public-navigation';
 import type { ReactNode } from 'react';
 
+import type { PublicNavigationSection } from '@/components/public-navigation';
 import { PublicShell } from '@/components/public-shell';
 
 export function EditorialShell({

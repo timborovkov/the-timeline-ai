@@ -71,6 +71,7 @@ import {
 } from '#src/billing/plan-history.js';
 import { buildBillingPresentation } from '#src/billing/presentation.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
+import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import {
   expireStaleBillingReservations,
   failedAttemptSettlementMetadata,
@@ -92,8 +93,6 @@ import {
 import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
-
-import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;

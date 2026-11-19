@@ -2,7 +2,6 @@
 
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { useId, useMemo, useRef, useState } from 'react';
-
 import type { KeyboardEvent, Ref } from 'react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';

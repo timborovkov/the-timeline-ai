@@ -1,8 +1,7 @@
 import { expect, vi } from '@timeline/test-support';
+import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
-import type { LanguageModel } from 'ai';
 
 await vi.mock(
   import.meta.resolve('#src/billing/runtime.js'),

@@ -1,15 +1,14 @@
 import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
+import type * as objects from '@timeline/shared/objects/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { Plus, Shapes } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-
-import type * as objects from '@timeline/shared/objects/types';
-import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';

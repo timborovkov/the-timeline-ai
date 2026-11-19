@@ -9,6 +9,7 @@ import {
   teamScopedAnchorWhere,
   uniqueAnchors,
 } from '#src/artifacts/cluster-store.js';
+import type { ArtifactAnchorInput } from '#src/artifacts/index.js';
 import {
   latestDriveObjectLinkHintsByFileIds,
   type DriveObjectLinkHints,
@@ -25,8 +26,6 @@ import {
   resolveDriveFileObjectLink,
   type DriveSelectionObjectLink,
 } from '#src/integrations/google-drive-link-policy.js';
-
-import type { ArtifactAnchorInput } from '#src/artifacts/index.js';
 
 function driveFileAnchorValues(fileId: string): ArtifactAnchorInput[] {
   return uniqueAnchors([

@@ -1,13 +1,10 @@
 'use client';
 
+import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import { ExternalLink, LifeBuoy, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-import type { RecipientInvite } from '@/components/team-switcher';
-import type { TeamMembership } from '@/lib/active-team';
-import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 
 import {
   formatNavBadge,
@@ -17,7 +14,9 @@ import {
   visibleNavGroups,
 } from '@/components/nav-items';
 import { SidebarBillingUsage } from '@/components/sidebar-billing-usage';
+import type { RecipientInvite } from '@/components/team-switcher';
 import { TeamSwitcher } from '@/components/team-switcher';
+import type { TeamMembership } from '@/lib/active-team';
 import { cn } from '@/lib/utils';
 
 interface Props {

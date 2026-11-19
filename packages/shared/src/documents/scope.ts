@@ -25,6 +25,7 @@ import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { operatorContext, recordScopedReadAudit } from '#src/platform-admin/runtime.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import {
   payloadDigestFromMetadata,
@@ -45,8 +46,6 @@ import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
-
-import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
 // fluent methods we use here (`insert`, `select`, `update`) but is not

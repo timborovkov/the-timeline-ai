@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'bun:test';
-
 import type { UIMessage } from 'ai';
+import { describe, expect, it } from 'bun:test';
 
 import {
   hydrateChatSessionMessages,

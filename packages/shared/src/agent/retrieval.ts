@@ -1,4 +1,9 @@
 import { fenceExternalContent } from '#src/agent/external-content.js';
+import type {
+  RetrievalRecipe,
+  RetrieveWorkspaceContextInput,
+  RetrievalExecutionContext,
+} from '#src/agent/retrieval-contract.js';
 import { searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation, parseCitations } from '#src/citation.js';
 import {
@@ -8,12 +13,6 @@ import {
 } from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
 import { enrichEvidenceContext, expandEvidenceConversations } from '#src/retrieval/context.js';
-
-import type {
-  RetrievalRecipe,
-  RetrieveWorkspaceContextInput,
-  RetrievalExecutionContext,
-} from '#src/agent/retrieval-contract.js';
 import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 import type { TeamScope } from '#src/team-scope.js';
 

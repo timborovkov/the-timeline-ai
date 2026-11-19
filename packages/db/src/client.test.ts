@@ -4,7 +4,6 @@ import { afterEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/postgres-js';
 
 import { buildPgClientOptions, createPgClient, PG_TIMEOUTS } from '#src/client.js';
-
 import type * as TestModule1 from '#src/index.js';
 const ENV_BACKUP = { ...process.env };
 

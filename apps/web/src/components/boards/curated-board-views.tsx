@@ -1,14 +1,13 @@
 'use client';
 
+import type * as boards from '@timeline/shared/boards';
 import { presentDueDate } from '@timeline/shared/time';
 import { Columns3 } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useReducer, useState, useTransition } from 'react';
-
-import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-client';
-import type * as boards from '@timeline/shared/boards';
 import type { Dispatch, SetStateAction } from 'react';
 
+import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-client';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';

@@ -1,8 +1,7 @@
 import { buildAgentTools } from '@timeline/shared/agent';
+import type { TeamScope } from '@timeline/shared/team-scope';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type { TeamScope } from '@timeline/shared/team-scope';
 
 import {
   hasExplicitPinMutationIntent,

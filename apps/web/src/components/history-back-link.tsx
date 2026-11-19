@@ -3,7 +3,6 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-
 import type { MouseEvent } from 'react';
 
 import { shouldUseHistoryBackClick } from '@/lib/history-back';

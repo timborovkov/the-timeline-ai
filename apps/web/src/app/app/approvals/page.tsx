@@ -1,10 +1,9 @@
 import { getEnv } from '@timeline/shared/env';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';

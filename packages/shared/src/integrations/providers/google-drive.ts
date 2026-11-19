@@ -40,6 +40,7 @@ import {
   packedCommentContext,
   type DrivePackedChangeEvent,
 } from '#src/integrations/google-drive-evidence.js';
+import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
 import {
   driveObjectLinkCandidates,
   driveObjectLinkHintsEqual,
@@ -73,9 +74,6 @@ import {
   isProviderRateLimitError,
   ProviderAuthorizationError,
 } from '#src/integrations/types.js';
-import { childLogger } from '#src/logger.js';
-
-import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -86,6 +84,7 @@ import type {
   SyncResult,
   WebhookHandleResult,
 } from '#src/integrations/types.js';
+import { childLogger } from '#src/logger.js';
 
 const fetch = providerFetch('google_drive');
 

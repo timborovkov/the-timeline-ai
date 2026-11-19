@@ -1,8 +1,7 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { Captions, ExternalLink } from 'lucide-react';
-import { notFound, redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound, redirect } from 'next/navigation';
 
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { EmptyState } from '@/components/empty-state';

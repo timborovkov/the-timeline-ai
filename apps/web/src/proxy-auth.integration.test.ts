@@ -1,8 +1,7 @@
+import type * as DbModule from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
-
-import type * as DbModule from '@timeline/db';
 import type { NextFetchEvent } from 'next/server';
 const mocks = vi.hoisted(() => ({
   migrateActiveTeamCookie: vi.fn().mockResolvedValue(undefined),

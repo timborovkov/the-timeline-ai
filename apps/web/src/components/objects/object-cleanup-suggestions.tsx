@@ -1,11 +1,10 @@
 'use client';
 
+import type * as objects from '@timeline/shared/objects/types';
 import { Archive, BrushCleaning, GitMerge, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useReducer, useState } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { findObjectCleanupSuggestionsAction } from '@/app/actions/objects';
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';

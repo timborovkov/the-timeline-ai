@@ -1,5 +1,6 @@
 'use client';
 
+import type { BillingPresentation } from '@timeline/shared/billing';
 import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
@@ -7,13 +8,11 @@ import {
   parseEuroAmountToCents,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
+import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
+import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
-
-import type { BillingPresentation } from '@timeline/shared/billing';
-import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
-import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 import type { ActionDispatch } from 'react';
 
 import {

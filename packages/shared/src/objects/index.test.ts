@@ -1,3 +1,5 @@
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
@@ -5,8 +7,6 @@ import { z } from 'zod';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
-import type { PGlite } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
 /**
  * Real-DB integration tests for workspace objects. This module owns a large
  * part of the product contract: object CRUD, audit rows, notes, suggestions,

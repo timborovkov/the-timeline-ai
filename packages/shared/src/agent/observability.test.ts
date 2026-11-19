@@ -1,11 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { jsonSchema } from 'ai';
+import type { ToolSet } from 'ai';
 import { describe, it } from 'bun:test';
 
 import { instrumentAgentTools, summarizeAgentToolObservations } from '#src/agent/observability.js';
 import { capabilityTool } from '#src/agent/tool-policy.js';
-
-import type { ToolSet } from 'ai';
 
 const EVENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const DOCUMENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';

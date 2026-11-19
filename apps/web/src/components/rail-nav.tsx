@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import type { TeamMembership } from '@/lib/active-team';
-
 import {
   formatNavBadge,
   isNavItemActive,
@@ -13,6 +11,7 @@ import {
   visibleNavGroups,
 } from '@/components/nav-items';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { TeamMembership } from '@/lib/active-team';
 import { cn } from '@/lib/utils';
 
 const EMPTY_BADGES: NavBadgeMap = {};

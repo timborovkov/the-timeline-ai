@@ -1,7 +1,7 @@
-import type { PublicDocument } from '@/lib/public-site/types';
 import type { Metadata } from 'next';
 
 import { publicMetadata } from '@/lib/public-metadata';
+import type { PublicDocument } from '@/lib/public-site/types';
 
 export function metadataForPublicDocument(document: PublicDocument): Metadata {
   return publicMetadata({

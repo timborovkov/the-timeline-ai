@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
 import type { NextConfig } from 'next';
 
 interface RailwayConfig {

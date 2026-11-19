@@ -2,9 +2,8 @@ import { teamCalendarSubscriptions, users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';

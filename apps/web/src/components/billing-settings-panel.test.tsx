@@ -1,13 +1,12 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { FREE_ALLOWANCES } from '@timeline/shared/billing/catalog';
+import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
-import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
-
 import { customerBillingState } from '@/components/billing-customer-state';
+import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
 
 await vi.mock(
   import.meta.resolve('@/app/actions/auth'),

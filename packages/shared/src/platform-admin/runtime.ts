@@ -15,13 +15,12 @@ import {
 } from '@timeline/db';
 import { and, eq, sql, type SQLWrapper } from 'drizzle-orm';
 
+import type { OperatorCapability, OperatorScopePolicy } from '#src/platform-admin/capabilities.js';
 import {
   PlatformAccessError,
   recordPlatformAudit,
   resolveImpersonation,
 } from '#src/platform-admin/index.js';
-
-import type { OperatorCapability, OperatorScopePolicy } from '#src/platform-admin/capabilities.js';
 
 export interface OperatorContext {
   actorUserId: string;

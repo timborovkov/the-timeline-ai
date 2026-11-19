@@ -10,10 +10,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
-
-import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 
 /**
  * Outbound MCP OAuth authorization-server tables.

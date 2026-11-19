@@ -1,7 +1,6 @@
 import { buildInboundEmail } from '@timeline/shared/slug';
-import { notFound } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { OnboardingPreviewGallery } from '@/app/dev/onboarding-preview/preview-gallery';
 

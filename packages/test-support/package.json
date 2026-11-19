@@ -18,6 +18,6 @@
   "scripts": {
     "typecheck": "bun x --bun --no-install tsc --noEmit",
     "test": "bun ../../scripts/testing/run.ts packages/test-support",
-    "lint": "bun x --bun --no-install eslint runtime.test.ts"
+    "lint": "bun x --bun --no-install eslint runtime.test.ts --cache --cache-strategy content --cache-location ../../node_modules/.cache/eslint/test-support"
   }
 }

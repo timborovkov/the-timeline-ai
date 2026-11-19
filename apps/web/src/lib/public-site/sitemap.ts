@@ -1,7 +1,7 @@
-import type { PublicDocumentRegistry } from '@/lib/public-site/types';
 import type { MetadataRoute } from 'next';
 
 import { canonicalPublicUrl } from '@/lib/public-site/registry';
+import type { PublicDocumentRegistry } from '@/lib/public-site/types';
 
 export function buildPublicSitemap(
   registry: PublicDocumentRegistry,

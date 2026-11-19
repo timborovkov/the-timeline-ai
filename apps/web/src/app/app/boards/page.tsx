@@ -1,9 +1,8 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { Columns3 } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { CollectionRow } from '@/components/collections/collection-row';

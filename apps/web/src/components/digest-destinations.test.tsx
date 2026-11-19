@@ -1,7 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
 import type * as ReactModule from 'react';
 import type * as ReactDomModule from 'react-dom';
 // Test environment: happy-dom

@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { connectionsHref } from '@/lib/connections';
 

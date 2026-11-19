@@ -13,6 +13,10 @@ dist/
 .turbo/
 outputs/
 
+# ---- Tool caches ----
+.eslintcache
+node_modules/.cache/
+
 # ---- Env files ----
 .env
 .env.local

@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { SignUpForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';

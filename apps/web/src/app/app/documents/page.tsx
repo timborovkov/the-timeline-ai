@@ -1,9 +1,8 @@
 import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentDrive } from '@/components/documents/document-drive';

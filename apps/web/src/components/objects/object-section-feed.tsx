@@ -1,9 +1,8 @@
 'use client';
 
+import type { UseInfiniteQueryResult, InfiniteData } from '@tanstack/react-query';
 import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
-
-import type { UseInfiniteQueryResult, InfiniteData } from '@tanstack/react-query';
 
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { EvidenceLink } from '@/components/evidence-link';

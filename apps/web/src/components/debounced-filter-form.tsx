@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef } from 'react';
-
 import type { ReactNode, SyntheticEvent } from 'react';
 
 const FILTER_DEBOUNCE_MS = 300;

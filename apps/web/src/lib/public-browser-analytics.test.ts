@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import type { CaptureResult } from 'posthog-js';
 
 import type * as TestModule1 from '@/lib/public-browser-analytics';
-import type { CaptureResult } from 'posthog-js';
 // Test environment: happy-dom
 
 const posthog = vi.hoisted(() => {

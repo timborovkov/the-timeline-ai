@@ -5,7 +5,6 @@ import * as objects from '@timeline/shared/objects';
 import { z } from 'zod';
 
 import type { ActionState } from '@/lib/action-result';
-
 import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';

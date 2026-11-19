@@ -3,7 +3,6 @@
 import { Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
-
 import type { ActionDispatch } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';

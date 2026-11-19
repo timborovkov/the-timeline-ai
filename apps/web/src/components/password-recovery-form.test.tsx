@@ -1,6 +1,5 @@
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, it } from 'bun:test';
-
 import type * as ReactModule from 'react';
 const state = vi.fn();
 await vi.mock(

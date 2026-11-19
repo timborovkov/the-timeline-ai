@@ -1,7 +1,6 @@
 'use client';
 
 import { createContext, use } from 'react';
-
 import type { ReactNode } from 'react';
 
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';

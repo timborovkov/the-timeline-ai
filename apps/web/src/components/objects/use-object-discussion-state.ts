@@ -1,9 +1,8 @@
 'use client';
 
+import type * as objects from '@timeline/shared/objects/types';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { createNoteAction, deleteNoteAction, updateNoteAction } from '@/app/actions/objects';
 import { notifyAction } from '@/lib/notify';

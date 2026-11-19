@@ -1,5 +1,4 @@
 import { Circle, CircleCheck, CircleDashed, CircleDot, CircleX } from 'lucide-react';
-
 import type { ComponentType, SVGProps } from 'react';
 
 export type StatusTone = 'neutral' | 'progress' | 'review' | 'success' | 'danger';

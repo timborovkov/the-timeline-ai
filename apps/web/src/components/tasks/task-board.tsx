@@ -13,6 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { useQueries } from '@tanstack/react-query';
+import type * as objects from '@timeline/shared/objects/types';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
 import { GripVertical, ListTodo } from 'lucide-react';
@@ -29,9 +30,6 @@ import {
   useState,
   useTransition,
 } from 'react';
-
-import type { SaveState } from '@/lib/utils';
-import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch, SetStateAction } from 'react';
 
 import {
@@ -76,6 +74,7 @@ import { recoverFromStaleServerAction } from '@/lib/stale-server-action';
 import { statusLabel } from '@/lib/status-labels';
 import { taskDisplayStatus } from '@/lib/task-statuses';
 import { useReducedMotion } from '@/lib/use-reduced-motion';
+import type { SaveState } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
 interface TaskMemberOption {

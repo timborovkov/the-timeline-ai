@@ -1,10 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
-import type * as ActiveTeamModule from '@/lib/active-team';
 import type { NextResponse as NextResponseType } from 'next/server';
 import type { NextAuthRequest } from 'next-auth';
+
+import type * as ActiveTeamModule from '@/lib/active-team';
 type NextResponse = NextResponseType;
 
 const fakes = vi.hoisted(() => ({ verifyMembership: vi.fn() }));

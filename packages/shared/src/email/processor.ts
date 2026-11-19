@@ -1,17 +1,16 @@
 import { createHash } from 'node:crypto';
 
 import { handleInbound, type DispatcherDeps } from '#src/email/dispatcher.js';
+import type { InboundEmail } from '#src/email/inbound-schema.js';
 import { isAudioAttachment } from '#src/email/parser.js';
 import {
   retrieveInboundEmailMetadata,
   hydrateInboundEmailAttachments,
   ResendError,
 } from '#src/email/resend-client.js';
+import type { EmailInboundJobData } from '#src/queue/queues.js';
 import { RATE_LIMITS } from '#src/rate-limit/buckets.js';
 import { getRedisConnection } from '#src/redis/connection.js';
-
-import type { InboundEmail } from '#src/email/inbound-schema.js';
-import type { EmailInboundJobData } from '#src/queue/queues.js';
 
 /** Atomic admission and memoization: retries never consume another sender token. */
 async function admitSender(email: InboundEmail): Promise<boolean> {

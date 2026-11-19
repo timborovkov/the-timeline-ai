@@ -1,7 +1,6 @@
+import type * as objects from '@timeline/shared/objects/types';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type * as objects from '@timeline/shared/objects/types';
 
 import { listWorkQueueObjects, objectQueueItem } from '@/lib/work-queue';
 function task(input: Partial<objects.ObjectRow> = {}): objects.ObjectRow {

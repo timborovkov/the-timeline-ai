@@ -14,18 +14,17 @@ import {
   type DragStartEvent,
   type ScreenReaderInstructions,
 } from '@dnd-kit/core';
+import type * as boards from '@timeline/shared/boards';
 import { GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 
+import { updateBoardItemAction } from '@/app/actions/boards';
 import type {
   BoardItemOptimisticPatch,
   BoardMemberOption,
 } from '@/components/boards/board-detail-client';
-import type * as boards from '@timeline/shared/boards';
-
-import { updateBoardItemAction } from '@/app/actions/boards';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';

@@ -1,12 +1,10 @@
 import { getEnv } from '@timeline/shared/env';
+import type { ObjectListFilter } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { ListTodo, Plus } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { TaskRowsPage } from '@/lib/task-page';
-import type { ObjectListFilter } from '@timeline/shared/objects';
-import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyState } from '@/components/empty-state';
@@ -22,6 +20,7 @@ import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+import type { TaskRowsPage } from '@/lib/task-page';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
 import { TASK_STATUS_COLUMNS } from '@/lib/task-statuses';
 import {

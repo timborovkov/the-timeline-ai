@@ -10,9 +10,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { users } from '#src/schema/users.js';
-
 import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
+import { users } from '#src/schema/users.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
 

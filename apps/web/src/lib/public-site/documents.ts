@@ -1,11 +1,5 @@
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 
-import type {
-  PublicDocument,
-  PublicIsoDate,
-  PublicLlmsContentSection,
-} from '@/lib/public-site/types';
-
 import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-documents';
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
@@ -30,6 +24,11 @@ import {
 import { HELP_PAGES } from '@/lib/help-content';
 import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
+import type {
+  PublicDocument,
+  PublicIsoDate,
+  PublicLlmsContentSection,
+} from '@/lib/public-site/types';
 import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-claims';
 
 // Legal consent versions may have a same-day .N revision; public dates cannot.

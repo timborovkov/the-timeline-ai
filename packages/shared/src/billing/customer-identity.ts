@@ -13,9 +13,8 @@ import {
   type PolarIdentityApi,
   type PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
-import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/index.js';
-
 import type { BillingProvider } from '#src/billing/provider.js';
+import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/index.js';
 
 export interface TeamBillingIdentity {
   customerId: string;

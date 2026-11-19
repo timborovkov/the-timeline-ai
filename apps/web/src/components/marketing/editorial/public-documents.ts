@@ -1,5 +1,3 @@
-import type { PublicDocument } from '@/lib/public-site/types';
-
 import {
   EVIDENCE_FRESHNESS_FAQS,
   EDITORIAL_GUIDES,
@@ -9,6 +7,7 @@ import {
   type GuideRoute,
 } from '@/components/marketing/editorial/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
+import type { PublicDocument } from '@/lib/public-site/types';
 
 const GUIDE_REVIEW_DATE = '2026-11-14' as const;
 const HOW_IT_WORKS_REVIEW_DATE = '2026-11-11' as const;

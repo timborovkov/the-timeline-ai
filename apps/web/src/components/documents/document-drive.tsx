@@ -34,8 +34,6 @@ import {
   useTransition,
 } from 'react';
 
-import type { DocumentListPage } from '@/lib/document-list';
-
 import {
   createFolderAction,
   deleteFolderAction,
@@ -55,6 +53,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import type { DocumentListPage } from '@/lib/document-list';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { useDocumentListQuery } from '@/lib/use-paginated-queries';

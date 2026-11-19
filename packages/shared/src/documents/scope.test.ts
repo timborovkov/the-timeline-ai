@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
@@ -10,7 +11,6 @@ import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type * as S3Client from '#src/s3/client.js';
 import type * as S3Objects from '#src/s3/objects.js';
-import type { Db } from '@timeline/db';
 
 const s3Fakes = vi.hoisted(() => ({
   deleteObject: vi.fn().mockResolvedValue(undefined),
