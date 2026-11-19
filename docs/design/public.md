@@ -386,11 +386,12 @@ members and pooled usage credit, and keep Free/PAYG monthly allowances visible
 below the plans. The plan grid uses four columns on wide screens, two on tablet
 and one on phones. No repeated plan-name eyebrows or recommended-plan badge.
 The optional signup walkthrough is a disclosure; Enterprise is a quiet contact
-line that links to `/contact/enterprise` (not general support). Follow the
-estimator with complete comparison, spending boundaries, billing-focused
-questions and a final Start free action. When calculator usage exceeds every
-self-serve plan, the breakdown links the same Enterprise enquiry path with the
-current estimate as query-param context.
+block that links to `/contact/enterprise` (not general support) and may mention
+managed on-premise plus self-hosting from the public source-available repository
+under Elastic License 2.0. Follow the estimator with complete comparison,
+spending boundaries, billing-focused questions and a final Start free action.
+When calculator usage exceeds every self-serve plan, the breakdown links the
+same Enterprise enquiry path with the current estimate as query-param context.
 
 Comparison tables have row/column scopes, a keyboard-focusable labelled scroll
 region, a mobile scroll hint and a sticky row-label column. Billing copy makes

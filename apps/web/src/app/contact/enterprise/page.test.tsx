@@ -32,15 +32,24 @@ describe('enterprise contact page', () => {
         from: 'pricing',
         plan: 'business',
         members: '25',
+        topics: 'on_premise_deployment',
       }),
     });
     const html = renderToStaticMarkup(element);
     expect(html).toContain('Enterprise enquiry');
     expect(html).toContain('We reply within two business days.');
     expect(html).toContain('data-testid="enterprise-enquiry-form"');
+    expect(html).toContain('data-enterprise-deployment');
+    expect(html).toContain('managed on-premise / private-cloud');
+    expect(html).toContain('source-available');
+    expect(html).toContain('Elastic License 2.0');
+    expect(html).toContain('OpenAI-compatible');
     expect(html).toContain(
-      'data-prefill="{&quot;plan&quot;:&quot;business&quot;,&quot;from&quot;:&quot;pricing&quot;,&quot;members&quot;:&quot;25&quot;}"',
+      'href="https://github.com/timborovkov/the-timeline-ai/blob/main/docs/self-hosting.md"',
     );
+    expect(html).not.toMatch(/\bopen source\b/i);
+    expect(html).toContain('data-prefill=');
+    expect(html).toContain('on_premise_deployment');
     expect(html).toContain('href="/pricing"');
     expect(html).toContain('href="/help/support"');
     expect(metadata).toMatchObject({

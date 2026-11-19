@@ -23,9 +23,19 @@ describe('pricing blocks', () => {
     expect(html).toContain('data-pricing-plan="business"');
     expect(html).not.toContain('data-pricing-plan="enterprise"');
     expect(html).toContain('data-pricing-enterprise-nudge');
-    expect(html).toContain('href="/contact/enterprise?from=pricing"');
+    expect(html).toContain(
+      'href="/contact/enterprise?from=pricing&amp;topics=on_premise_deployment"',
+    );
     expect(html).toContain('data-public-analytics-cta="contact_enterprise"');
+    expect(html).toContain('managed on-premise');
+    expect(html).toContain('href="https://github.com/timborovkov/the-timeline-ai"');
+    expect(html).toContain('source-available');
+    expect(html).toContain('Elastic License 2.0');
+    expect(html).toContain(
+      'href="https://github.com/timborovkov/the-timeline-ai/blob/main/docs/self-hosting.md"',
+    );
     expect(html).not.toContain('href="/help/support"');
+    expect(html).not.toMatch(/\bopen source\b/i);
     expect(html).toContain('Pay as you go');
     expect(html).toContain('Platform fee + usage beyond your allowance.');
     expect(html).toContain('Included monthly on Free and Pay as you go');

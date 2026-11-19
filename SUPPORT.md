@@ -22,10 +22,16 @@ not saved with the support request.
 ## Enterprise enquiry
 
 Use the [Enterprise enquiry form](https://thetimeline.cc/contact/enterprise) for
-procurement, security review, SSO, SLA, data residency, committed volume, or a
-custom Enterprise plan. Submissions go to the same support inbox, tagged
-enterprise, and may include pricing-calculator context from the referring link.
-The public copy currently states that we reply within two business days.
+procurement, security review, SSO, SLA, data residency, committed volume, a
+managed on-premise or private-cloud deployment, or a custom Enterprise plan.
+Submissions go to the same support inbox, tagged enterprise, and may include
+pricing-calculator context from the referring link. On-premise CTAs may
+pre-select the `on_premise_deployment` topic. The public copy currently states
+that we reply within two business days.
+
+Self-hosting from the public repository is documented in
+[docs/self-hosting.md](./docs/self-hosting.md) under the
+[Elastic License 2.0](./LICENSE).
 
 ## Public bug reports
 

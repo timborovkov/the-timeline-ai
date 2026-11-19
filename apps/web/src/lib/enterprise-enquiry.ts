@@ -16,6 +16,7 @@ export const ENTERPRISE_TOPICS = [
   { value: 'sso', label: 'SSO' },
   { value: 'sla', label: 'SLA' },
   { value: 'data_residency', label: 'Data residency' },
+  { value: 'on_premise_deployment', label: 'On-premise deployment' },
   { value: 'other', label: 'Other' },
 ] as const;
 
@@ -23,6 +24,8 @@ export type EnterpriseTeamSize = (typeof ENTERPRISE_TEAM_SIZES)[number]['value']
 export type EnterpriseTopic = (typeof ENTERPRISE_TOPICS)[number]['value'];
 
 export const ENTERPRISE_RESPONSE_EXPECTATION = 'We reply within two business days.';
+
+const TOPIC_VALUES = new Set<string>(ENTERPRISE_TOPICS.map((option) => option.value));
 
 const PRICING_CONTEXT_KEYS = [
   'plan',
@@ -39,8 +42,6 @@ const PRICING_CONTEXT_KEYS = [
   'manualScans',
 ] as const;
 
-type EnterprisePricingContextKey = (typeof PRICING_CONTEXT_KEYS)[number];
-
 export interface EnterpriseEnquiryPrefill {
   plan?: string;
   from?: string;
@@ -54,6 +55,12 @@ export interface EnterpriseEnquiryPrefill {
   pages?: string;
   frequency?: string;
   manualScans?: string;
+  /** Comma-separated topic values from the referring CTA. */
+  topics?: string;
+}
+
+export interface BuildEnterpriseEnquiryHrefInput extends EnterpriseEnquiryPrefill {
+  selectedTopics?: readonly EnterpriseTopic[];
 }
 
 function boundedParam(value: string | null | undefined, max = 64): string | undefined {
@@ -64,22 +71,49 @@ function boundedParam(value: string | null | undefined, max = 64): string | unde
   return trimmed;
 }
 
+function readParam(
+  params: URLSearchParams | Record<string, string | string[] | undefined>,
+  key: string,
+  max = 64,
+): string | undefined {
+  if (params instanceof URLSearchParams) return boundedParam(params.get(key), max);
+  const raw = params[key];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return boundedParam(value, max);
+}
+
 export function parseEnterpriseEnquiryPrefill(
   params: URLSearchParams | Record<string, string | string[] | undefined>,
 ): EnterpriseEnquiryPrefill {
-  const read = (key: EnterprisePricingContextKey): string | undefined => {
-    if (params instanceof URLSearchParams) return boundedParam(params.get(key));
-    const raw = params[key];
-    const value = Array.isArray(raw) ? raw[0] : raw;
-    return boundedParam(value);
-  };
-
   const prefill: EnterpriseEnquiryPrefill = {};
   for (const key of PRICING_CONTEXT_KEYS) {
-    const value = read(key);
+    const value = readParam(params, key);
     if (value) prefill[key] = value;
   }
+  const topics = readParam(params, 'topics', 200);
+  if (topics) prefill.topics = topics;
   return prefill;
+}
+
+export function parseEnterpriseTopicPrefill(
+  params:
+    URLSearchParams | Record<string, string | string[] | undefined> | EnterpriseEnquiryPrefill,
+): EnterpriseTopic[] {
+  const raw =
+    'topics' in params && typeof params.topics === 'string'
+      ? params.topics
+      : readParam(
+          params as URLSearchParams | Record<string, string | string[] | undefined>,
+          'topics',
+        );
+  if (!raw) return [];
+  const selected = new Set<EnterpriseTopic>();
+  for (const part of raw.split(',')) {
+    const value = part.trim();
+    if (!TOPIC_VALUES.has(value)) continue;
+    selected.add(value as EnterpriseTopic);
+  }
+  return [...selected];
 }
 
 export function formatEnterprisePricingContext(prefill: EnterpriseEnquiryPrefill): string | null {
@@ -88,15 +122,22 @@ export function formatEnterprisePricingContext(prefill: EnterpriseEnquiryPrefill
     const value = prefill[key];
     if (value) parts.push(`${key}=${value}`);
   }
+  if (prefill.topics) parts.push(`topics=${prefill.topics}`);
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
-export function buildEnterpriseEnquiryHref(prefill: EnterpriseEnquiryPrefill = {}): string {
+export function buildEnterpriseEnquiryHref(input: BuildEnterpriseEnquiryHrefInput = {}): string {
+  const { selectedTopics, ...prefill } = input;
   const params = new URLSearchParams();
   for (const key of PRICING_CONTEXT_KEYS) {
     const value = prefill[key]?.trim();
     if (value) params.set(key, value);
   }
+  const topics =
+    selectedTopics && selectedTopics.length > 0
+      ? selectedTopics
+      : parseEnterpriseTopicPrefill(prefill);
+  if (topics.length > 0) params.set('topics', topics.join(','));
   const query = params.toString();
   return query ? `${ENTERPRISE_ENQUIRY_PATH}?${query}` : ENTERPRISE_ENQUIRY_PATH;
 }

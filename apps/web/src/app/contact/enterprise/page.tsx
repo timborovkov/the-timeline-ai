@@ -8,13 +8,19 @@ import { SupportMailto } from '@/components/support-email-provider';
 import {
   ENTERPRISE_RESPONSE_EXPECTATION,
   parseEnterpriseEnquiryPrefill,
+  parseEnterpriseTopicPrefill,
 } from '@/lib/enterprise-enquiry';
 import { publicMetadata } from '@/lib/public-metadata';
+import {
+  GITHUB_LICENSE_URL,
+  GITHUB_REPOSITORY_URL,
+  GITHUB_SELF_HOSTING_URL,
+} from '@/lib/support-links';
 
 export const metadata: Metadata = publicMetadata({
   title: 'Enterprise enquiry',
   description:
-    'Talk with Timeline about procurement, security review, SSO, SLA, data residency, or a custom Enterprise plan.',
+    'Talk with Timeline about procurement, security review, SSO, SLA, data residency, on-premise deployment, or a custom Enterprise plan.',
   path: '/contact/enterprise',
 });
 
@@ -25,7 +31,9 @@ export default async function EnterpriseContactPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const prefill = parseEnterpriseEnquiryPrefill(await searchParams);
+  const params = await searchParams;
+  const prefill = parseEnterpriseEnquiryPrefill(params);
+  const defaultTopics = parseEnterpriseTopicPrefill(params);
 
   return (
     <main id="main" tabIndex={-1}>
@@ -43,8 +51,8 @@ export default async function EnterpriseContactPage({
               Enterprise enquiry
             </h1>
             <p className="text-lg text-fg-muted">
-              For procurement, security review, SSO, SLA, data residency, or committed volume. Not
-              for routine product support — use{' '}
+              For procurement, security review, SSO, SLA, data residency, committed volume, or a
+              managed on-premise / private-cloud deployment. Not for routine product support — use{' '}
               <Link
                 href="/help/support"
                 className="text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
@@ -56,7 +64,55 @@ export default async function EnterpriseContactPage({
             <p className="text-sm text-fg-muted">{ENTERPRISE_RESPONSE_EXPECTATION}</p>
           </header>
 
-          <EnterpriseEnquiryForm prefill={prefill} />
+          <section
+            aria-labelledby="enterprise-deployment-title"
+            className="space-y-3 border border-border bg-surface-2 p-5 text-sm leading-6 text-fg-muted"
+            data-enterprise-deployment
+          >
+            <h2 id="enterprise-deployment-title" className="text-base font-semibold text-fg">
+              Deployment options
+            </h2>
+            <p>
+              The Timeline team can set up and maintain an on-premise or private-cloud deployment
+              for your organisation. Choose “On-premise deployment” below and tell us the
+              environment you need.
+            </p>
+            <p>
+              Anyone can also deploy The Timeline themselves from the{' '}
+              <a
+                href={GITHUB_REPOSITORY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
+              >
+                public GitHub repository
+              </a>
+              . It is source-available under the{' '}
+              <a
+                href={GITHUB_LICENSE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
+              >
+                Elastic License 2.0
+              </a>
+              : you may use, modify, and self-host it for your own organisation, but not offer it to
+              third parties as a hosted or managed service, and not remove licensing notices.
+              Self-hosted operators configure their own connectors and AI providers (LLM calls go
+              through an OpenAI-compatible endpoint). See the{' '}
+              <a
+                href={GITHUB_SELF_HOSTING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
+              >
+                self-hosting guide
+              </a>
+              .
+            </p>
+          </section>
+
+          <EnterpriseEnquiryForm prefill={prefill} defaultTopics={defaultTopics} />
 
           <p className="text-sm text-fg-muted">
             Prefer email? Write to{' '}

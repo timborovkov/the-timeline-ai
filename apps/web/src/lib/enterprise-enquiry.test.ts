@@ -7,6 +7,7 @@ import {
   buildEnterpriseEnquiryHref,
   formatEnterprisePricingContext,
   parseEnterpriseEnquiryPrefill,
+  parseEnterpriseTopicPrefill,
 } from '@/lib/enterprise-enquiry';
 
 describe('enterprise enquiry helpers', () => {
@@ -22,10 +23,24 @@ describe('enterprise enquiry helpers', () => {
     ).toBe('/contact/enterprise?plan=business&from=pricing&members=12&ai=40');
   });
 
+  it('preselects on-premise topic when CTAs request it', () => {
+    expect(
+      buildEnterpriseEnquiryHref({
+        from: 'trust',
+        selectedTopics: ['on_premise_deployment'],
+      }),
+    ).toBe('/contact/enterprise?from=trust&topics=on_premise_deployment');
+    expect(
+      parseEnterpriseTopicPrefill({
+        topics: 'on_premise_deployment,sso,not-a-topic',
+      }),
+    ).toEqual(['on_premise_deployment', 'sso']);
+  });
+
   it('parses and formats bounded query-param context', () => {
     const prefill = parseEnterpriseEnquiryPrefill(
       new URLSearchParams(
-        'from=pricing-calculator&plan=team&members=8&ai=25&meetings=12&websites=2&pages=5&frequency=weekly',
+        'from=pricing-calculator&plan=team&members=8&ai=25&meetings=12&websites=2&pages=5&frequency=weekly&topics=on_premise_deployment',
       ),
     );
     expect(prefill).toEqual({
@@ -37,9 +52,10 @@ describe('enterprise enquiry helpers', () => {
       websites: '2',
       pages: '5',
       frequency: 'weekly',
+      topics: 'on_premise_deployment',
     });
     expect(formatEnterprisePricingContext(prefill)).toBe(
-      'plan=team, from=pricing-calculator, members=8, ai=25, meetings=12, websites=2, pages=5, frequency=weekly',
+      'plan=team, from=pricing-calculator, members=8, ai=25, meetings=12, websites=2, pages=5, frequency=weekly, topics=on_premise_deployment',
     );
   });
 
