@@ -1,6 +1,6 @@
 import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
-import { childLogger, getEnv, queue } from '@timeline/shared';
+import { allowsMissingFirecrawlApiKey, childLogger, getEnv, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 
@@ -52,7 +52,14 @@ initWorkerSentry();
 
 async function main(): Promise<void> {
   const env = getEnv();
-  if (env.WORKER_MODE !== 'document-extract' && !env.FIRECRAWL_API_KEY?.trim()) {
+  if (
+    env.WORKER_MODE !== 'document-extract' &&
+    !env.FIRECRAWL_API_KEY?.trim() &&
+    !allowsMissingFirecrawlApiKey({
+      NODE_ENV: env.NODE_ENV,
+      FIRECRAWL_API_ORIGIN: env.FIRECRAWL_API_ORIGIN,
+    })
+  ) {
     throw new Error('FIRECRAWL_API_KEY is required to start the worker service.');
   }
   if (env.WORKER_MODE === 'document-extract') {

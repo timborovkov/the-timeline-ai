@@ -22,6 +22,97 @@ function emptyStringAsUnset(value: unknown): unknown {
   return value === '' ? undefined : value;
 }
 
+/** Production and default Firecrawl Cloud origin for website scans. */
+export const DEFAULT_FIRECRAWL_API_ORIGIN = 'https://api.firecrawl.dev';
+
+const FIRECRAWL_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * True when `value` is exactly a loopback HTTP origin (no path/query/userinfo).
+ * Used to allow Firecrawl Local in non-production without a cloud API key.
+ */
+export function isFirecrawlLoopbackApiOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'http:' &&
+      FIRECRAWL_LOOPBACK_HOSTS.has(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      (url.pathname === '/' || url.pathname === '') &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Normalize and validate a Firecrawl API origin candidate.
+ * Production may only use the cloud origin; elsewhere allow https origins or
+ * loopback http (Firecrawl Local).
+ */
+export function parseFirecrawlApiOrigin(
+  value: string,
+  nodeEnv: string,
+): { ok: true; origin: string } | { ok: false; message: string } {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return { ok: false, message: 'FIRECRAWL_API_ORIGIN must be a valid absolute URL' };
+  }
+  if (url.username || url.password) {
+    return { ok: false, message: 'FIRECRAWL_API_ORIGIN must not include credentials' };
+  }
+  if ((url.pathname !== '/' && url.pathname !== '') || url.search || url.hash) {
+    return {
+      ok: false,
+      message: 'FIRECRAWL_API_ORIGIN must be an origin only (no path, query, or hash)',
+    };
+  }
+  const origin = url.origin;
+  if (nodeEnv === 'production') {
+    if (origin !== DEFAULT_FIRECRAWL_API_ORIGIN) {
+      return {
+        ok: false,
+        message: `FIRECRAWL_API_ORIGIN must be ${DEFAULT_FIRECRAWL_API_ORIGIN} in production`,
+      };
+    }
+    return { ok: true, origin };
+  }
+  if (url.protocol === 'https:') return { ok: true, origin };
+  if (url.protocol === 'http:' && isFirecrawlLoopbackApiOrigin(origin)) {
+    return { ok: true, origin };
+  }
+  return {
+    ok: false,
+    message:
+      'FIRECRAWL_API_ORIGIN must be an https origin or a loopback http origin (localhost, 127.0.0.1, [::1]) outside production',
+  };
+}
+
+/**
+ * Cloud Firecrawl always needs a key. Loopback Firecrawl Local in non-production
+ * may omit it (or use a dummy). Safe against raw process.env before getEnv().
+ */
+export function allowsMissingFirecrawlApiKey(
+  env: {
+    NODE_ENV?: string | undefined;
+    FIRECRAWL_API_ORIGIN?: string | undefined;
+  } = process.env,
+): boolean {
+  if ((env.NODE_ENV ?? 'development') === 'production') return false;
+  const raw = env.FIRECRAWL_API_ORIGIN?.trim();
+  if (!raw) return false;
+  try {
+    return isFirecrawlLoopbackApiOrigin(new URL(raw).origin);
+  } catch {
+    return false;
+  }
+}
+
 const recallWebhookSecretSchema = z.preprocess(
   emptyStringAsUnset,
   z
@@ -425,6 +516,13 @@ const baseSchema = z.object({
   ),
   WEBSITE_CRAWLS_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
   WEBSITE_SCHEDULES_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /**
+   * Firecrawl API origin for website scans. Defaults to Firecrawl Cloud.
+   * Outside production, may point at Firecrawl Local on loopback HTTP
+   * (`http://localhost:3002`) or any https origin. Production may only use
+   * `https://api.firecrawl.dev`.
+   */
+  FIRECRAWL_API_ORIGIN: z.preprocess(emptyStringAsUnset, z.string().trim().optional()),
   FIRECRAWL_API_KEY: z.preprocess(emptyStringAsUnset, z.string().trim().min(1).optional()),
   // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
   // forms use it: email/password registration and public support/contact.
@@ -596,6 +694,16 @@ const baseSchema = z.object({
 
 const schema = baseSchema
   .superRefine((env, ctx) => {
+    if (env.FIRECRAWL_API_ORIGIN !== undefined) {
+      const parsedOrigin = parseFirecrawlApiOrigin(env.FIRECRAWL_API_ORIGIN, env.NODE_ENV);
+      if (!parsedOrigin.ok) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['FIRECRAWL_API_ORIGIN'],
+          message: parsedOrigin.message,
+        });
+      }
+    }
     if (env.LANGSMITH_TRACING && !env.LANGSMITH_API_KEY) {
       ctx.addIssue({
         code: 'custom',
@@ -756,6 +864,10 @@ const schema = baseSchema
   })
   .transform((env) => ({
     ...env,
+    FIRECRAWL_API_ORIGIN:
+      env.FIRECRAWL_API_ORIGIN === undefined
+        ? DEFAULT_FIRECRAWL_API_ORIGIN
+        : new URL(env.FIRECRAWL_API_ORIGIN).origin,
     LANGSMITH_PROJECT: env.LANGSMITH_PROJECT ?? `timeline-${env.NODE_ENV}`,
     ...(env.TASK_CATEGORY_DISABLED
       ? {
@@ -769,6 +881,17 @@ const schema = baseSchema
   }));
 
 export type Env = z.infer<typeof schema>;
+
+/** True when website scanning may run with the current Firecrawl key/origin. */
+export function isFirecrawlConfigured(
+  env: Pick<Env, 'FIRECRAWL_API_KEY' | 'FIRECRAWL_API_ORIGIN' | 'NODE_ENV'> = getEnv(),
+): boolean {
+  if (env.FIRECRAWL_API_KEY?.trim()) return true;
+  return allowsMissingFirecrawlApiKey({
+    NODE_ENV: env.NODE_ENV,
+    FIRECRAWL_API_ORIGIN: env.FIRECRAWL_API_ORIGIN,
+  });
+}
 
 let _env: Env | undefined;
 

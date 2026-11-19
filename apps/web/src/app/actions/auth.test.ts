@@ -52,6 +52,14 @@ await vi.mock(
   () => import('@sentry/nextjs'),
 );
 await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+    isBillingAdmissionError: () => false,
+  }),
+  () => import('@timeline/shared/billing'),
+);
+await vi.mock(
   import.meta.resolve('@timeline/shared/messaging'),
   () => ({
     insertDefaultDigestDestination: fakes.insertDefaultDigestDestination,
@@ -95,8 +103,18 @@ await vi.mock(
   import.meta.resolve('@/lib/analytics'),
   () => ({
     trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+    capturePersonlessSurfaceRequest: vi.fn().mockResolvedValue(undefined),
   }),
   () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/signup-plan-intent'),
+  () => ({
+    readSignupPlanIntent: vi.fn().mockResolvedValue(undefined),
+    rememberSignupPlanIntent: vi.fn().mockResolvedValue(undefined),
+    clearSignupPlanIntent: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@/lib/signup-plan-intent'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
@@ -302,7 +320,7 @@ describe('signUpAction legal acceptance', () => {
     expect(fakes.recordCurrentLegalAcceptance).not.toHaveBeenCalled();
   });
 
-  it('records acceptance in the same transaction as the new user and team', async () => {
+  it('records acceptance with the new user and defers team creation to Welcome', async () => {
     const transaction = createSignupTransaction();
     fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
       callback(transaction.tx),
@@ -330,36 +348,30 @@ describe('signUpAction legal acceptance', () => {
           value.email === 'legal-user@example.test',
       ),
     ).not.toHaveProperty('emailVerified');
-    expect(transaction.insertedValues).toContainEqual({
-      teamId: TEAM_ID,
-      planId: 'free',
-      billingState: 'restricted',
-      spendCapCents: 0,
-      shadowBilling: true,
-    });
-    expect(transaction.insertedValues).toContainEqual({
-      teamId: TEAM_ID,
-      planId: 'free',
-      effectiveAt: BILLING_ACCOUNT_CREATED_AT,
-    });
-    expect(fakes.cookieSet).toHaveBeenCalledWith(
-      'timeline_active_team',
-      `v2:${TEAM_ID}`,
-      expect.objectContaining({ httpOnly: true, path: '/' }),
-    );
+    // Solo workspace (billing, membership, first-run) waits for Welcome.
+    expect(transaction.insertedValues).toHaveLength(1);
+    expect(fakes.cookieSet).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      { kind: 'user', userId: USER_ID },
       'account_registered',
       { source: 'credentials', joinedViaInvite: false },
     );
-    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalledWith(
+      expect.anything(),
       'team_created',
-      { source: 'signup' },
+      expect.anything(),
+    );
+    expect(fakes.sendMessage).not.toHaveBeenCalled();
+    expect(fakes.sendEmailVerification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: USER_ID,
+        email: 'legal-user@example.test',
+        teamId: null,
+      }),
     );
   });
 
-  it('stops team provisioning when the acceptance event cannot be recorded', async () => {
+  it('stops account provisioning when the acceptance event cannot be recorded', async () => {
     const transaction = createSignupTransaction();
     fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
       callback(transaction.tx),
@@ -373,5 +385,159 @@ describe('signUpAction legal acceptance', () => {
     expect(transaction.tx.insert).toHaveBeenCalledTimes(1);
     expect(fakes.cookieSet).not.toHaveBeenCalled();
     expect(fakes.signIn).not.toHaveBeenCalled();
+  });
+
+  it('invite signup creates zero owned teams and joins only the inviting team', async () => {
+    const INVITE_TEAM_ID = '33333333-3333-4333-8333-333333333333';
+    const INVITE_ID = '44444444-4444-4444-8444-444444444444';
+    const inviteForm = form();
+    inviteForm.set('inviteToken', 'invite-token');
+    inviteForm.set('email', 'invited@example.test');
+
+    const insertedValues: unknown[] = [];
+    let insertIndex = 0;
+    const tx = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => ({
+              for: vi.fn().mockResolvedValue([
+                {
+                  id: INVITE_ID,
+                  teamId: INVITE_TEAM_ID,
+                  email: 'invited@example.test',
+                  role: 'member',
+                  expiresAt: new Date(Date.now() + 60_000),
+                },
+              ]),
+            })),
+          })),
+        })),
+      })),
+      insert: vi.fn(() => {
+        const index = insertIndex++;
+        return {
+          values: vi.fn((values: unknown) => {
+            insertedValues.push(values);
+            return {
+              returning: vi.fn().mockResolvedValue(index === 0 ? [{ id: USER_ID }] : []),
+            };
+          }),
+        };
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+    fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(tx));
+    let selectIndex = 0;
+    fakes.dbSelect.mockImplementation(() => {
+      // First call: existing-user lookup. Later: inviting team name for welcome.
+      const rows = selectIndex++ === 0 ? [] : [{ name: 'Inviting Co' }];
+      return selectChain(rows);
+    });
+
+    await expect(signUpAction({}, inviteForm)).rejects.toThrow('NEXT_REDIRECT:/app');
+
+    expect(insertedValues).toContainEqual({
+      name: 'Legal User',
+      email: 'invited@example.test',
+      passwordHash: 'password-hash',
+    });
+    expect(insertedValues).toContainEqual({
+      teamId: INVITE_TEAM_ID,
+      userId: USER_ID,
+      role: 'member',
+    });
+    // User + membership only — no owned teams / billing / first-run rows.
+    expect(insertedValues).toHaveLength(2);
+    expect(fakes.cookieSet).toHaveBeenCalledWith(
+      'timeline_active_team',
+      `v2:${INVITE_TEAM_ID}`,
+      expect.objectContaining({ httpOnly: true, path: '/' }),
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: INVITE_TEAM_ID, userId: USER_ID },
+      'account_registered',
+      { source: 'credentials', joinedViaInvite: true },
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: INVITE_TEAM_ID, userId: USER_ID },
+      'invite_accepted',
+      { role: 'member', source: 'signup' },
+    );
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'team_created',
+      expect.anything(),
+    );
+  });
+
+  it('treats accept-invite callbackUrl as invite signup when inviteToken is omitted', async () => {
+    const INVITE_TEAM_ID = '33333333-3333-4333-8333-333333333333';
+    const INVITE_ID = '44444444-4444-4444-8444-444444444444';
+    const inviteForm = form();
+    inviteForm.delete('inviteToken');
+    inviteForm.set('callbackUrl', '/accept-invite/invite-token');
+    inviteForm.set('email', 'invited@example.test');
+
+    const insertedValues: unknown[] = [];
+    let insertIndex = 0;
+    const tx = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => ({
+              for: vi.fn().mockResolvedValue([
+                {
+                  id: INVITE_ID,
+                  teamId: INVITE_TEAM_ID,
+                  email: 'invited@example.test',
+                  role: 'member',
+                  expiresAt: new Date(Date.now() + 60_000),
+                },
+              ]),
+            })),
+          })),
+        })),
+      })),
+      insert: vi.fn(() => {
+        const index = insertIndex++;
+        return {
+          values: vi.fn((values: unknown) => {
+            insertedValues.push(values);
+            return {
+              returning: vi.fn().mockResolvedValue(index === 0 ? [{ id: USER_ID }] : []),
+            };
+          }),
+        };
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+    fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(tx));
+    let selectIndex = 0;
+    fakes.dbSelect.mockImplementation(() => {
+      const rows = selectIndex++ === 0 ? [] : [{ name: 'Inviting Co' }];
+      return selectChain(rows);
+    });
+
+    await expect(signUpAction({}, inviteForm)).rejects.toThrow('NEXT_REDIRECT:/app');
+    expect(insertedValues).toContainEqual({
+      teamId: INVITE_TEAM_ID,
+      userId: USER_ID,
+      role: 'member',
+    });
+    expect(insertedValues).toHaveLength(2);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'team_created',
+      expect.anything(),
+    );
   });
 });

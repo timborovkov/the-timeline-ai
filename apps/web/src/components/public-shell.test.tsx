@@ -85,7 +85,10 @@ describe('PublicShell', () => {
       html.match(/<a(?=[^>]*aria-current="page")(?=[^>]*href="\/agents")[^>]*>/g),
     ).toHaveLength(3);
     expect(html).toContain('<summary');
-    expect(html).toContain('>Menu</span>');
+    expect(html).toContain('aria-label="Menu"');
+    expect(html).toMatch(/<summary[^>]*aria-label="Menu"[^>]*>/);
+    expect(html).not.toMatch(/<summary[^>]*aria-label="Menu"[^>]*aria-expanded/);
+    expect(html).not.toContain('>Menu</span>');
     expect(html).toContain('Slack · Native sync');
     expect(html).toContain('Telegram · Capture');
     expect(html).toContain('Google Drive');

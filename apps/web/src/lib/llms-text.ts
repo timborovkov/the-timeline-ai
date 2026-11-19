@@ -79,7 +79,7 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
     '',
     '- Researching Timeline or answering a product question: use the topic links below. No account or agent connection is needed to read the public documentation.',
     `- Connecting an agent to an existing account: follow [Agent setup](${url('/agents/setup.md')}) for your client, sign in, select the intended team, and approve access.`,
-    `- New to Timeline: [create a free account](${url('/sign-up')}); signup creates your first team automatically. Complete email verification as prompted, then follow [Agent setup](${url('/agents/setup.md')}). A new workspace has no work history until you add evidence or connect sources.`,
+    `- New to Timeline: [create a free account](${url('/sign-up')}), name your team on Welcome, then complete email verification as prompted and follow [Agent setup](${url('/agents/setup.md')}). Invite-only signup joins an existing team with no separate workspace. A new workspace has no work history until you add evidence or connect sources.`,
     `- Already connected: use the [Timeline skill](${url('/agents/SKILL.md')}) for tool selection, retrieval, citations, and recording notes. Continue with the requested task; setup is only needed if the connection is missing or needs authorization.`,
     '',
     ...renderLinkSection(

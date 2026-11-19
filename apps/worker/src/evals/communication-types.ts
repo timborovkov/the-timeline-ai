@@ -16,9 +16,17 @@ export interface CommunicationNode {
   name: string;
   terms?: string[][];
   aliases?: string[];
+  /** Explicit equivalent renderings reviewed with the label rationale. */
+  acceptedNames?: string[];
   status?: string;
   assignee?: Actor | null;
   dueAt?: string | null;
+}
+/** Expectations are complete; omission must never silently disable field scoring. */
+export interface CommunicationExpectedNode extends CommunicationNode {
+  status: string;
+  assignee: Actor | null;
+  dueAt: string | null;
 }
 export interface CommunicationEdge {
   from: string;
@@ -32,6 +40,7 @@ export interface CommunicationMessage {
   flush?: boolean;
   private?: boolean;
   replay?: boolean;
+  offsetMinutes?: number;
   mustReachModel?: string[];
 }
 export type EmailPackaging = 'plain' | 'gmail' | 'outlook' | 'apple' | 'html' | 'nested';
@@ -41,7 +50,11 @@ export interface CommunicationCase extends SuggestionCase {
   messages: CommunicationMessage[];
   seed: CommunicationNode[];
   pending?: { node: CommunicationNode; edited?: boolean }[];
-  outcome: { nodes: CommunicationNode[]; edges: CommunicationEdge[] };
+  outcome: {
+    nodes: CommunicationExpectedNode[];
+    edges: CommunicationEdge[];
+    optionalCompanyProjectAssociation?: boolean;
+  };
   packaging?: EmailPackaging;
   prohibitedText?: string[];
   uncertain?: boolean;
@@ -62,12 +75,24 @@ export interface ObservedEdge {
 export interface CommunicationObservation extends SuggestionObservation {
   nodes: ObservedNode[];
   edges: ObservedEdge[];
+  executionFailureDetails?: string[];
   acceptanceErrors: number;
   acceptanceFailureReasons: string[];
+  approvalOutcomes?: {
+    title: string;
+    status: string;
+    resultId: string | null;
+    reason: string | null;
+  }[];
   duplicateProposals: number;
   packetLoss: string[];
   protectedPendingChanged: boolean;
   uncertaintyMissing: boolean;
+  inferenceTimings?: {
+    stage: 'extraction' | 'completeness-check';
+    latencyMs: number;
+    failed: boolean;
+  }[];
   capturedEvents: number;
   queuedJobs: number;
   source: string;

@@ -123,10 +123,13 @@ Follow [local setup](../setup/local.md) for dependencies, disposable services an
 ## Live website scan
 
 Start local storage with `docker compose up -d rustfs rustfs-init`, then run
-`bun run test:website-scan:live` with `FIRECRAWL_API_KEY` and `OPENROUTER_API_KEY`
-exported. Optionally set `WEBSITE_SCAN_LIVE_ENV_FILE` to a private env file and
-`WEBSITE_SCAN_LIVE_URL` (default `https://thetimeline.cc`). This incurs real provider
-usage. The opt-in test uses a disposable migrated PGlite database and a unique local
+`bun run test:website-scan:live` with `OPENROUTER_API_KEY` and either
+`FIRECRAWL_API_KEY` (Firecrawl Cloud) or `FIRECRAWL_API_ORIGIN` pointing at
+[Firecrawl Local](../setup/local.md#firecrawl-local) on loopback
+(for example `http://localhost:3002`, no cloud key required). Optionally set
+`WEBSITE_SCAN_LIVE_ENV_FILE` to a private env file and
+`WEBSITE_SCAN_LIVE_URL` (default `https://thetimeline.cc`). Cloud Firecrawl incurs
+real provider usage. The opt-in test uses a disposable migrated PGlite database and a unique local
 S3 bucket, removed after the test; it refuses remote storage. It runs real Firecrawl,
 extraction, and suggestion generation and checks page snapshots, documents, cited
 pending Company proposals, and absence of canonical objects. Worker dispatch is

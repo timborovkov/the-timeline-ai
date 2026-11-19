@@ -1,7 +1,13 @@
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import { getEnv, isAllowedDocumentExtractProcessEnvKey, resetEnvForTests } from '#src/env.js';
+import {
+  allowsMissingFirecrawlApiKey,
+  getEnv,
+  isAllowedDocumentExtractProcessEnvKey,
+  isFirecrawlConfigured,
+  resetEnvForTests,
+} from '#src/env.js';
 import { buildOpenRouterPrivacyAttestationToken } from '#src/llm/privacy-attestation.js';
 const ENV_BACKUP = { ...process.env };
 const TEST_OPENROUTER_API_KEY = 'sk-or-test';
@@ -417,6 +423,7 @@ describe('getEnv', () => {
       SLACK_CLIENT_ID: '',
       MONDAY_CLIENT_ID: '',
       FIRECRAWL_API_KEY: '',
+      FIRECRAWL_API_ORIGIN: '',
     });
 
     expect(getEnv().GITHUB_APP_ID).toBeUndefined();
@@ -424,6 +431,90 @@ describe('getEnv', () => {
     expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
     expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
     expect(getEnv().FIRECRAWL_API_KEY).toBeUndefined();
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('https://api.firecrawl.dev');
+  });
+
+  it('defaults FIRECRAWL_API_ORIGIN to Firecrawl Cloud and accepts loopback overrides outside production', () => {
+    setBaseEnv({ NODE_ENV: 'development', FIRECRAWL_API_ORIGIN: undefined });
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('https://api.firecrawl.dev');
+
+    setBaseEnv({ NODE_ENV: 'test', FIRECRAWL_API_ORIGIN: 'http://localhost:3002/' });
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('http://localhost:3002');
+
+    setBaseEnv({ NODE_ENV: 'development', FIRECRAWL_API_ORIGIN: 'http://127.0.0.1:3002' });
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('http://127.0.0.1:3002');
+
+    setBaseEnv({ NODE_ENV: 'development', FIRECRAWL_API_ORIGIN: 'http://[::1]:3002' });
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('http://[::1]:3002');
+
+    setBaseEnv({
+      NODE_ENV: 'development',
+      FIRECRAWL_API_ORIGIN: 'https://firecrawl.example.test',
+    });
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('https://firecrawl.example.test');
+  });
+
+  it('rejects non-loopback http FIRECRAWL_API_ORIGIN outside production', () => {
+    setBaseEnv({ NODE_ENV: 'development', FIRECRAWL_API_ORIGIN: 'http://example.com' });
+    expect(() => getEnv()).toThrow(/FIRECRAWL_API_ORIGIN/);
+
+    setBaseEnv({ NODE_ENV: 'test', FIRECRAWL_API_ORIGIN: 'http://10.0.0.5:3002' });
+    expect(() => getEnv()).toThrow(/FIRECRAWL_API_ORIGIN/);
+  });
+
+  it('rejects FIRECRAWL_API_ORIGIN overrides in production unless pinned to Firecrawl Cloud', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      FIRECRAWL_API_ORIGIN: 'http://localhost:3002',
+    });
+    expect(() => getEnv()).toThrow(/FIRECRAWL_API_ORIGIN must be https:\/\/api\.firecrawl\.dev/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      FIRECRAWL_API_ORIGIN: 'https://evil.example/v2',
+    });
+    expect(() => getEnv()).toThrow(/FIRECRAWL_API_ORIGIN/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      FIRECRAWL_API_ORIGIN: 'https://api.firecrawl.dev',
+    });
+    expect(getEnv().FIRECRAWL_API_ORIGIN).toBe('https://api.firecrawl.dev');
+  });
+
+  it('makes FIRECRAWL_API_KEY optional only for loopback Firecrawl Local outside production', () => {
+    expect(
+      allowsMissingFirecrawlApiKey({
+        NODE_ENV: 'development',
+        FIRECRAWL_API_ORIGIN: 'http://localhost:3002',
+      }),
+    ).toBe(true);
+    expect(
+      allowsMissingFirecrawlApiKey({
+        NODE_ENV: 'production',
+        FIRECRAWL_API_ORIGIN: 'http://localhost:3002',
+      }),
+    ).toBe(false);
+    expect(
+      allowsMissingFirecrawlApiKey({
+        NODE_ENV: 'development',
+        FIRECRAWL_API_ORIGIN: undefined,
+      }),
+    ).toBe(false);
+
+    setBaseEnv({
+      NODE_ENV: 'test',
+      FIRECRAWL_API_ORIGIN: 'http://127.0.0.1:3002',
+      FIRECRAWL_API_KEY: undefined,
+    });
+    expect(isFirecrawlConfigured()).toBe(true);
+
+    setBaseEnv({
+      NODE_ENV: 'test',
+      FIRECRAWL_API_ORIGIN: undefined,
+      FIRECRAWL_API_KEY: undefined,
+    });
+    expect(isFirecrawlConfigured()).toBe(false);
   });
 
   it('defaults LangSmith tracing off with an environment-specific project', () => {

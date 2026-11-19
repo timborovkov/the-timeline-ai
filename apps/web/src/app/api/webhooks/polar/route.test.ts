@@ -22,7 +22,8 @@ const db = new Proxy(
 
 await vi.mock(
   import.meta.resolve('@timeline/shared/env'),
-  () => ({
+  async () => ({
+    ...(await import('@timeline/shared/env')),
     getEnv: () => ({
       POLAR_WEBHOOK_SECRET: 'whsec_dGVzdC1zZWNyZXQ=',
       POLAR_PRODUCT_ID_PAYG: 'prod_payg',

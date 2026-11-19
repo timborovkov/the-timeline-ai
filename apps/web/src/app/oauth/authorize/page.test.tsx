@@ -8,6 +8,7 @@ const fakes = vi.hoisted(() => ({
   hasCurrentLegalAcceptance: vi.fn(),
   validate: vi.fn(),
   redirect: vi.fn(),
+  parkAuthContinuation: vi.fn(),
 }));
 
 await vi.mock(
@@ -78,6 +79,11 @@ await vi.mock(
   () => import('@/lib/db'),
 );
 await vi.mock(
+  import.meta.resolve('@/lib/auth-continuation'),
+  () => ({ parkAuthContinuation: fakes.parkAuthContinuation }),
+  () => import('@/lib/auth-continuation'),
+);
+await vi.mock(
   import.meta.resolve('@/lib/legal'),
   () => ({
     getUserLegalAcceptance: fakes.getUserLegalAcceptance,
@@ -138,6 +144,7 @@ beforeEach(() => {
     codeChallenge: 'c'.repeat(43),
     resource: 'https://timeline.example/api/mcp/server',
   });
+  fakes.parkAuthContinuation.mockResolvedValue(undefined);
 });
 
 describe('MCP OAuth consent page', () => {
@@ -326,32 +333,37 @@ describe('MCP OAuth consent page', () => {
     expect(fakes.redirect).not.toHaveBeenCalled();
   });
 
-  it('returns access_denied to a trusted callback when the member has no Timeline team', async () => {
+  it('parks the authorize request and sends teamless users to Welcome', async () => {
     fakes.resolveActiveTeam.mockResolvedValueOnce({ active: null, memberships: [] });
     fakes.redirect.mockImplementationOnce((destination: string) => {
       throw new Error(`REDIRECT:${destination}`);
     });
 
+    const searchParams = {
+      response_type: 'code',
+      client_id: 'https://client.example/oauth/metadata.json',
+      redirect_uri: 'https://client.example/callback',
+      scope: 'read',
+      state: 'state-value',
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+      resource: 'https://timeline.example/api/mcp/server',
+    };
+
     await expect(
       McpOAuthAuthorizePage({
-        searchParams: Promise.resolve({
-          response_type: 'code',
-          client_id: 'https://client.example/oauth/metadata.json',
-          redirect_uri: 'https://client.example/callback',
-          scope: 'read',
-          state: 'state-value',
-          code_challenge: 'c'.repeat(43),
-          code_challenge_method: 'S256',
-          resource: 'https://timeline.example/api/mcp/server',
-        }),
+        searchParams: Promise.resolve(searchParams),
       }),
-    ).rejects.toThrow('REDIRECT:https://client.example/callback');
+    ).rejects.toThrow('REDIRECT:/onboarding');
 
-    const url = new URL(String(fakes.redirect.mock.calls.at(-1)?.[0]));
-    expect(url.searchParams.get('error')).toBe('access_denied');
-    expect(url.searchParams.get('error_description')).toBe('The authorization request was denied.');
-    expect(url.searchParams.get('state')).toBe('state-value');
-    expect(url.searchParams.get('iss')).toBe('https://timeline.example');
+    expect(fakes.parkAuthContinuation).toHaveBeenCalledWith(
+      { name: 'db' },
+      'user-1',
+      expect.stringMatching(/^\/oauth\/authorize\?/),
+    );
+    const parked = String(fakes.parkAuthContinuation.mock.calls.at(-1)?.[2]);
+    expect(parked).toContain('client_id=');
+    expect(parked).toContain('state=state-value');
   });
 
   it('warns prominently before sending a result to a local callback', async () => {
