@@ -26,7 +26,7 @@ const fakes = vi.hoisted(() => ({
   dbSelect: vi.fn(),
   cookieSet: vi.fn(),
   sendMessage: vi.fn(),
-  takeAuthContinuationForUser: vi.fn(),
+  peekAuthContinuationForUser: vi.fn(),
 }));
 
 await vi.mock(
@@ -83,7 +83,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth-continuation'),
-  () => ({ takeAuthContinuationForUser: fakes.takeAuthContinuationForUser }),
+  () => ({ peekAuthContinuationForUser: fakes.peekAuthContinuationForUser }),
   () => import('@/lib/auth-continuation'),
 );
 await vi.mock(
@@ -219,7 +219,7 @@ beforeEach(() => {
     })),
   });
   fakes.sendMessage.mockResolvedValue({ ok: true });
-  fakes.takeAuthContinuationForUser.mockResolvedValue(null);
+  fakes.peekAuthContinuationForUser.mockResolvedValue(null);
 });
 
 describe('first-run analytics', () => {
@@ -437,7 +437,11 @@ describe('submitWorkStyleAction team name', () => {
   it('renames through the shared team-rename path before saving work style', async () => {
     fakes.applyTeamRename.mockResolvedValue({ ok: true, changed: true });
     await expect(
-      submitWorkStyleAction({ workStyle: 'email', teamName: '  Northstar Labs  ' }),
+      submitWorkStyleAction({
+        workStyle: 'email',
+        teamName: '  Northstar Labs  ',
+        teamId: TEAM_ID,
+      }),
     ).resolves.toEqual({ ok: true });
     expect(fakes.applyTeamRename).toHaveBeenCalledWith({
       teamId: TEAM_ID,
@@ -451,6 +455,24 @@ describe('submitWorkStyleAction team name', () => {
       'team_management_action_completed',
       { action: 'settings_update' },
     );
+  });
+
+  it('rejects Welcome rename when the active workspace no longer matches the displayed one', async () => {
+    fakes.resolveActiveTeam.mockResolvedValue({
+      active: { teamId: '33333333-3333-4333-8333-333333333333' },
+    });
+    await expect(
+      submitWorkStyleAction({
+        workStyle: 'email',
+        teamName: 'Northstar Labs',
+        teamId: TEAM_ID,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'This workspace changed. Refresh and try again.',
+    });
+    expect(fakes.applyTeamRename).not.toHaveBeenCalled();
+    expect(fakes.submitWorkStyle).not.toHaveBeenCalled();
   });
 
   it('rejects blank or overlong team names with the shared validation message', async () => {
@@ -472,11 +494,21 @@ describe('submitWorkStyleAction team name', () => {
   it('surfaces rename failures and skips the work-style write', async () => {
     fakes.applyTeamRename.mockResolvedValue({ error: 'Only admins can rename a team' });
     await expect(
-      submitWorkStyleAction({ workStyle: 'email', teamName: 'Denied Co' }),
+      submitWorkStyleAction({ workStyle: 'email', teamName: 'Denied Co', teamId: TEAM_ID }),
     ).resolves.toEqual({
       ok: false,
       error: 'Only admins can rename a team',
     });
     expect(fakes.submitWorkStyle).not.toHaveBeenCalled();
+  });
+
+  it('rejects rename when Welcome omits the displayed workspace id', async () => {
+    await expect(
+      submitWorkStyleAction({ workStyle: 'email', teamName: 'Orphan Rename' }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'This workspace changed. Refresh and try again.',
+    });
+    expect(fakes.applyTeamRename).not.toHaveBeenCalled();
   });
 });

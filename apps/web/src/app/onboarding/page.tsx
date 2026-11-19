@@ -43,6 +43,7 @@ export default async function OnboardingPage() {
           firstRun: null,
           inboundEmail: null,
           teamName: prefillTeamName(session.user.name, session.user.email),
+          teamId: null,
           record: null,
         }}
       />

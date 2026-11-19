@@ -35,7 +35,7 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
-import { takeAuthContinuationForUser } from '@/lib/auth-continuation';
+import { peekAuthContinuationForUser } from '@/lib/auth-continuation';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
@@ -108,6 +108,11 @@ export async function submitWorkStyleAction(input: {
    * When a team already exists, renames it with the same validation as Team settings.
    */
   teamName?: string;
+  /**
+   * Workspace id shown on Welcome when a team already exists. Required for
+   * rename so a stale tab cannot overwrite a different active team.
+   */
+  teamId?: string | null;
 }): Promise<ActionResult> {
   return runSentryServerAction('submit_work_style', async () => {
     const session = await auth();
@@ -118,17 +123,31 @@ export async function submitWorkStyleAction(input: {
       .object({
         workStyle: workStyleSchema,
         teamName: teamDisplayNameSchema.optional(),
+        teamId: z.uuid().nullable().optional(),
       })
       .safeParse(input);
     if (!parsed.success) {
       if (parsed.error.issues.some((issue) => issue.path[0] === 'teamName')) {
         return { ok: false, error: 'Invalid team name' };
       }
+      if (parsed.error.issues.some((issue) => issue.path[0] === 'teamId')) {
+        return { ok: false, error: 'This workspace changed. Refresh and try again.' };
+      }
       return { ok: false, error: 'Invalid work style' };
     }
 
     const { active } = await resolveActiveTeam(session.user.id);
+    const displayedTeamId = parsed.data.teamId ?? null;
     let teamId = active?.teamId ?? null;
+
+    if (displayedTeamId) {
+      if (teamId !== displayedTeamId) {
+        return {
+          ok: false,
+          error: 'This workspace changed. Refresh and try again.',
+        };
+      }
+    }
 
     if (!teamId) {
       const teamName = parsed.data.teamName;
@@ -198,6 +217,12 @@ export async function submitWorkStyleAction(input: {
         }
       }
     } else if (parsed.data.teamName !== undefined) {
+      if (!displayedTeamId) {
+        return {
+          ok: false,
+          error: 'This workspace changed. Refresh and try again.',
+        };
+      }
       const renamed = await applyTeamRename({
         teamId,
         userId: session.user.id,
@@ -232,7 +257,7 @@ export async function submitWorkStyleAction(input: {
       workStyle: parsed.data.workStyle ?? 'skipped',
     });
     revalidateOnboarding();
-    const authorizeResume = await takeAuthContinuationForUser(db, session.user.id);
+    const authorizeResume = await peekAuthContinuationForUser(db, session.user.id);
     if (authorizeResume) redirect(authorizeResume);
     return { ok: true };
   });

@@ -8,7 +8,7 @@ const fakes = vi.hoisted(() => ({
   hasCurrentLegalAcceptance: vi.fn(),
   validate: vi.fn(),
   redirect: vi.fn(),
-  createAuthContinuation: vi.fn(),
+  parkAuthContinuation: vi.fn(),
 }));
 
 await vi.mock(
@@ -80,7 +80,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth-continuation'),
-  () => ({ createAuthContinuation: fakes.createAuthContinuation }),
+  () => ({ parkAuthContinuation: fakes.parkAuthContinuation }),
   () => import('@/lib/auth-continuation'),
 );
 await vi.mock(
@@ -144,7 +144,7 @@ beforeEach(() => {
     codeChallenge: 'c'.repeat(43),
     resource: 'https://timeline.example/api/mcp/server',
   });
-  fakes.createAuthContinuation.mockResolvedValue('continuation-token');
+  fakes.parkAuthContinuation.mockResolvedValue(undefined);
 });
 
 describe('MCP OAuth consent page', () => {
@@ -356,12 +356,12 @@ describe('MCP OAuth consent page', () => {
       }),
     ).rejects.toThrow('REDIRECT:/onboarding');
 
-    expect(fakes.createAuthContinuation).toHaveBeenCalledWith(
+    expect(fakes.parkAuthContinuation).toHaveBeenCalledWith(
       { name: 'db' },
       'user-1',
       expect.stringMatching(/^\/oauth\/authorize\?/),
     );
-    const parked = String(fakes.createAuthContinuation.mock.calls.at(-1)?.[2]);
+    const parked = String(fakes.parkAuthContinuation.mock.calls.at(-1)?.[2]);
     expect(parked).toContain('client_id=');
     expect(parked).toContain('state=state-value');
   });

@@ -50,6 +50,47 @@ export async function createAuthContinuation(
   });
 }
 
+/**
+ * Ensure a parked `/oauth/authorize` destination exists for Welcome resume
+ * without rotating an opaque token already emailed for verification.
+ */
+export async function parkAuthContinuation(
+  db: Db,
+  userId: string,
+  callback: string,
+): Promise<void> {
+  const destination = authorizationDestination(callback);
+  if (!destination) return;
+  await db.transaction(async (tx) => {
+    const [pending] = await tx
+      .select({
+        tokenHash: authContinuations.tokenHash,
+        destination: authContinuations.destination,
+      })
+      .from(authContinuations)
+      .where(and(eq(authContinuations.userId, userId), gt(authContinuations.expiresAt, new Date())))
+      .orderBy(desc(authContinuations.expiresAt))
+      .limit(1)
+      .for('update');
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 86400000);
+    if (pending) {
+      // Keep the emailed opaque token; refresh destination/expiry in place.
+      await tx
+        .update(authContinuations)
+        .set({ destination, expiresAt })
+        .where(eq(authContinuations.tokenHash, pending.tokenHash));
+      return;
+    }
+    await tx.insert(authContinuations).values({
+      tokenHash: digest(randomBytes(32).toString('base64url')),
+      userId,
+      destination,
+      expiresAt,
+    });
+  });
+}
+
 export async function resolveAuthContinuation(
   db: Db,
   token: string,
@@ -78,23 +119,16 @@ export async function resolveAuthContinuation(
 }
 
 /**
- * Consume the latest parked `/oauth/authorize` destination for a signed-in user
- * (Welcome → resume MCP consent after deferred workspace create).
+ * Read the latest parked `/oauth/authorize` destination for a signed-in user
+ * without redeeming it — Welcome resumes consent, while email verification may
+ * still redeem the same opaque token later.
  */
-export async function takeAuthContinuationForUser(db: Db, userId: string): Promise<string | null> {
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({
-        tokenHash: authContinuations.tokenHash,
-        destination: authContinuations.destination,
-      })
-      .from(authContinuations)
-      .where(and(eq(authContinuations.userId, userId), gt(authContinuations.expiresAt, new Date())))
-      .orderBy(desc(authContinuations.expiresAt))
-      .limit(1)
-      .for('update');
-    if (!row) return null;
-    await tx.delete(authContinuations).where(eq(authContinuations.tokenHash, row.tokenHash));
-    return authorizationDestination(row.destination);
-  });
+export async function peekAuthContinuationForUser(db: Db, userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ destination: authContinuations.destination })
+    .from(authContinuations)
+    .where(and(eq(authContinuations.userId, userId), gt(authContinuations.expiresAt, new Date())))
+    .orderBy(desc(authContinuations.expiresAt))
+    .limit(1);
+  return authorizationDestination(row?.destination) ?? null;
 }

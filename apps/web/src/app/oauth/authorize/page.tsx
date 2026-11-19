@@ -17,7 +17,7 @@ import { OAuthConsentForm } from '@/components/oauth-consent-form';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
-import { createAuthContinuation } from '@/lib/auth-continuation';
+import { parkAuthContinuation } from '@/lib/auth-continuation';
 import { db } from '@/lib/db';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import type { McpAuthorizationInput } from '@/lib/mcp-oauth-authorization';
@@ -168,7 +168,7 @@ export default async function McpOAuthAuthorizePage({
   if (!active || memberships.length === 0) {
     // Deferred solo create: park this authorize URL and finish Welcome first so
     // first-time MCP/OAuth signups are not denied for missing memberships.
-    await createAuthContinuation(db, session.user.id, mcpAuthorizationPath(input));
+    await parkAuthContinuation(db, session.user.id, mcpAuthorizationPath(input));
     redirect('/onboarding');
   }
   const consentMemberships = await Promise.all(

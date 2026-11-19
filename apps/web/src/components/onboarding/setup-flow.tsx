@@ -33,6 +33,8 @@ export interface FirstRunStatusPayload {
   firstRun: FirstRunState | null;
   inboundEmail: string | null;
   teamName: string;
+  /** Workspace shown on Welcome; null when deferred solo create has no team yet. */
+  teamId: string | null;
   record: {
     title: string;
     meta: string;
@@ -113,7 +115,11 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   }, [phase, router, stepsFailed]);
 
   async function continueWorkStyle(workStyle: TeamWorkStyle | null, teamName: string) {
-    const result = await submitWorkStyleAction({ workStyle, teamName });
+    const result = await submitWorkStyleAction({
+      workStyle,
+      teamName,
+      teamId: initialStatus.teamId,
+    });
     if (!result.ok) throw new Error(result.error ?? 'Could not save how your team works.');
     router.refresh();
   }
