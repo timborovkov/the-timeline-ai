@@ -1058,6 +1058,9 @@
   "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/onboarding/setup-flow.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
     "group": "dom"
   },
@@ -1324,6 +1327,12 @@
     "group": "unit"
   },
   "apps/web/src/lib/first-run-status.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-connectors.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-source-intent.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/floating-chat-session-storage.test.ts": {
