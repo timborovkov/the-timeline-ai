@@ -186,10 +186,10 @@ export async function registerTelegramWebhook(
       detail: 'Telegram returned a different webhook target',
     };
   }
+  const allowed = after.allowed_updates ?? [];
   if (
-    !after.allowed_updates ||
-    after.allowed_updates.length !== ALLOWED_UPDATES.length ||
-    ALLOWED_UPDATES.some((update) => !after.allowed_updates?.includes(update))
+    allowed.length !== ALLOWED_UPDATES.length ||
+    ALLOWED_UPDATES.some((update) => !allowed.includes(update))
   ) {
     return { status: 'error', detail: 'Telegram returned a different list of allowed updates' };
   }
@@ -289,7 +289,7 @@ export async function provisionTelegramBot(
       registration.commands.some(
         (command, index) =>
           command.command !== actual[index]?.command ||
-          command.description !== actual[index]?.description,
+          command.description !== actual[index].description,
       )
     ) {
       throw new Error(`Telegram returned a different command menu for ${registration.scope.type}`);

@@ -22,7 +22,9 @@ export async function boundedProbe<T>(inspect: () => Promise<T>, ms = 5000): Pro
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('operator_probe_timeout')), ms);
+      timer = setTimeout(() => {
+        reject(new Error('operator_probe_timeout'));
+      }, ms);
     });
     return await Promise.race([inspect(), timeout]);
   } finally {

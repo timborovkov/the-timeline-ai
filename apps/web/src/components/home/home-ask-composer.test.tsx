@@ -47,7 +47,10 @@ describe('HomeAskComposer', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(fakes.push).toHaveBeenCalledWith('/app/chat');
-    await act(async () => deferred.resolve(false));
+    await act(async () => {
+      deferred.resolve(false);
+      await deferred.promise;
+    });
     expect(screen.getByRole('link', { name: 'Upload your first document' })).toBeTruthy();
   });
 

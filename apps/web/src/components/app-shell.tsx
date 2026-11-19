@@ -32,7 +32,10 @@ import type { TeamMembership } from '@/lib/active-team';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
 import type { PaidSignupPlanId } from '@/lib/signup-plan';
 
-type ShellInbox = { unreadCount: number; notifications: InboxBellNotification[] };
+interface ShellInbox {
+  unreadCount: number;
+  notifications: InboxBellNotification[];
+}
 
 interface Props {
   active: TeamMembership;

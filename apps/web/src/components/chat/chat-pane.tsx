@@ -31,8 +31,8 @@ import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
-import type { ChatSaveResult } from '@/lib/chat-turn-save';
 import { chatRequestMessages } from '@/lib/chat-session';
+import type { ChatSaveResult } from '@/lib/chat-turn-save';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { notifyError } from '@/lib/notify';
@@ -136,7 +136,9 @@ function ChatSurfaceContent({
     sessionId,
     transport,
     initialMessages,
-    () => router.refresh(),
+    () => {
+      router.refresh();
+    },
   );
 
   const [input, setInput] = useState(initialPrompt ?? '');
@@ -333,13 +335,15 @@ function useChatHistorySave(sessionId: string | null, refresh: () => void) {
     retrying,
     saveBlocked,
     retrySave,
-    reset: () => updateSave(null),
+    reset: () => {
+      updateSave(null);
+    },
     onData: (part: { type: string; data: unknown }) => {
       if (part.type === 'data-turn-save') updateSave(part.data as ChatSaveResult);
     },
     mayContinue: () => {
       const latest = lastSave.current;
-      return !latest || latest.sessionId !== sessionId || latest.status === 'saved';
+      return latest?.sessionId !== sessionId || latest.status === 'saved';
     },
   };
 }

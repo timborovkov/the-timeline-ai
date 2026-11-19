@@ -83,7 +83,7 @@ async function durableProgress(now: number) {
   });
 }
 
-type QueueSource = {
+interface QueueSource {
   name: string;
   getJobs: (
     types: ('active' | 'waiting' | 'failed')[],
@@ -91,7 +91,7 @@ type QueueSource = {
     end: number,
     asc: boolean,
   ) => Promise<{ timestamp: number; processedOn?: number; finishedOn?: number }[]>;
-};
+}
 
 async function inspectQueue(queue: QueueSource, now: number) {
   const [waiting, active, failed] = await Promise.all([
@@ -144,44 +144,29 @@ export async function processingHealth(now = Date.now()) {
   );
   const digestMissed =
     tick.status === 'fulfilled' && Number(tick.value) < lastExpectedDigestTick(now);
+  const queueAlert = (names: string[]) =>
+    queues.some((item) => names.includes(item.queue) && queueNeedsAttention(item));
+  const names = queue.QUEUE_NAMES;
   const signals = {
-    capture_latency: Boolean(
-      progress &&
-      (progress.capture_overdue > 0 || (progress.capture_p95_ms ?? 0) >= PROCESSING_LAG_MS),
-    ),
+    capture_latency:
+      (progress?.capture_overdue ?? 0) > 0 || (progress?.capture_p95_ms ?? 0) >= PROCESSING_LAG_MS,
     document_extraction:
       env.DOCUMENT_EXTRACT_ENABLED &&
-      Boolean(
-        (progress &&
-          (progress.extract_overdue > 0 || progress.extract_failed >= FAILURE_THRESHOLD)) ||
-        queues.some(
-          (item) => item.queue === queue.QUEUE_NAMES.documentExtract && queueNeedsAttention(item),
-        ),
-      ),
-    proposal_jobs: queues.some(
-      (item) =>
-        (item.queue === queue.QUEUE_NAMES.suggestions ||
-          item.queue === queue.QUEUE_NAMES.reconciliation) &&
-        queueNeedsAttention(item),
-    ),
+      ((progress?.extract_overdue ?? 0) > 0 ||
+        (progress?.extract_failed ?? 0) >= FAILURE_THRESHOLD ||
+        queueAlert([names.documentExtract])),
+    proposal_jobs: queueAlert([names.suggestions, names.reconciliation]),
     missed_digests:
       digestMissed ||
-      Boolean(
-        progress && (progress.digest_pending > 0 || progress.digest_failed >= FAILURE_THRESHOLD),
-      ) ||
-      queues.some(
-        (item) => item.queue === queue.QUEUE_NAMES.dailyDigest && queueNeedsAttention(item),
-      ),
+      (progress?.digest_pending ?? 0) > 0 ||
+      (progress?.digest_failed ?? 0) >= FAILURE_THRESHOLD ||
+      queueAlert([names.dailyDigest]),
     index_freshness:
       index.status === 'rejected' ||
-      Boolean(progress && progress.index_overdue > 0) ||
-      queues.some((item) => item.queue === queue.QUEUE_NAMES.embed && queueNeedsAttention(item)),
-    integration_sync: queues.some(
-      (item) => item.queue === queue.QUEUE_NAMES.integrationSync && queueNeedsAttention(item),
-    ),
-    webhook_delivery: queues.some(
-      (item) => item.queue === queue.QUEUE_NAMES.webhookDelivery && queueNeedsAttention(item),
-    ),
+      (progress?.index_overdue ?? 0) > 0 ||
+      queueAlert([names.embed]),
+    integration_sync: queueAlert([names.integrationSync]),
+    webhook_delivery: queueAlert([names.webhookDelivery]),
     processing_probe: !progress || tick.status === 'rejected' || queues.length !== watched.length,
   };
   const activeSignals = Object.entries(signals).flatMap(([signal, active]) =>

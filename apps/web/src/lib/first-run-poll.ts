@@ -82,9 +82,12 @@ export function pollFirstRun(
     }
     const controller = new AbortController();
     request = controller;
-    let timedOut = false;
+    const timeoutStatus = { expired: false };
+    function wasAborted() {
+      return controller.signal.aborted;
+    }
     const timeout = setTimeout(() => {
-      timedOut = true;
+      timeoutStatus.expired = true;
       controller.abort();
     }, 10_000);
     try {
@@ -93,7 +96,7 @@ export function pollFirstRun(
         signal: controller.signal,
         headers: { accept: 'application/json' },
       });
-      if (controller.signal.aborted) return;
+      if (wasAborted()) return;
       if ([401, 403, 428].includes(response.status)) {
         stop();
         callbacks.refresh();
@@ -101,7 +104,7 @@ export function pollFirstRun(
       }
       if (!response.ok) throw new Error('First-run status unavailable');
       const status = (await response.json()) as FirstRunStatusPayload;
-      if (controller.signal.aborted) return;
+      if (wasAborted()) return;
       if (status.teamId !== initial.teamId) {
         stop();
         callbacks.refresh();
@@ -124,12 +127,12 @@ export function pollFirstRun(
         stop();
       }
     } catch {
-      if (!controller.signal.aborted) delay = Math.min(delay * 2, MAX_DELAY_MS);
+      if (!wasAborted()) delay = Math.min(delay * 2, MAX_DELAY_MS);
     } finally {
       clearTimeout(timeout);
       request = undefined;
-      if (timedOut) delay = Math.min(delay * 2, MAX_DELAY_MS);
-      if (timedOut || !controller.signal.aborted) schedule(delay);
+      if (timeoutStatus.expired) delay = Math.min(delay * 2, MAX_DELAY_MS);
+      if (timeoutStatus.expired || !wasAborted()) schedule(delay);
     }
   }
 

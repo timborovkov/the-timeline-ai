@@ -39,7 +39,9 @@ export function FirstRunHomeCapture({
           setPolled({ base: initialStatus, failed: false, terminal: true });
         else router.replace('/app/onboarding/record');
       },
-      refresh: () => router.refresh(),
+      refresh: () => {
+        router.refresh();
+      },
     });
   }, [initialStatus, router, showFailure]);
 

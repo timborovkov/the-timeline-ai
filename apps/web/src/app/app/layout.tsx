@@ -9,9 +9,9 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { Suspense, type ReactNode } from 'react';
 
+import { AppShell } from '@/components/app-shell';
 import { ClearPlanIntent } from '@/components/clear-plan-intent';
 import { PlanIntentPrompt } from '@/components/plan-intent-prompt';
-import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { appMetadataForTeam } from '@/lib/app-metadata';

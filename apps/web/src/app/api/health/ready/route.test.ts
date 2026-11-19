@@ -47,7 +47,8 @@ it('rejects unauthenticated probes before touching queues', async () => {
 it('reports required worker presence', async () => {
   const ready = await GET(request());
   expect(ready.status).toBe(200);
-  expect((await ready.json()).queues).toHaveLength(9);
+  const body = (await ready.json()) as { queues: unknown[] };
+  expect(body.queues).toHaveLength(9);
   fakes.workers.mockResolvedValue([]);
   expect((await GET(request())).status).toBe(503);
 });

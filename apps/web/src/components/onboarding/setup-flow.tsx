@@ -26,7 +26,6 @@ import { FailedScanScreen } from '@/components/onboarding/failed-scan-screen';
 import { ProcessingScreen } from '@/components/onboarding/processing-screen';
 import { SetupShell } from '@/components/onboarding/setup-shell';
 import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
-
 import { pollFirstRun, type FirstRunStatusPayload } from '@/lib/first-run-poll';
 
 async function uploadOnboardingDocument(file: File): Promise<void> {
@@ -97,9 +96,15 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   useEffect(() => {
     if (phase !== 'processing' || stepsFailed || pending) return;
     const stop = pollFirstRun(initialStatus, {
-      update: (status) => setPolled({ baseline: initialStatus, status }),
-      navigate: (destination) => router.replace(destination),
-      refresh: () => router.refresh(),
+      update: (status) => {
+        setPolled({ baseline: initialStatus, status });
+      },
+      navigate: (destination) => {
+        router.replace(destination);
+      },
+      refresh: () => {
+        router.refresh();
+      },
     });
     stopPolling.current = stop;
     return stop;

@@ -1,12 +1,12 @@
 import { expect } from '@timeline/test-support';
 import { it } from 'bun:test';
 
+import { authorizeOperatorProbe } from '@/lib/operator-probe';
 import {
   lastExpectedDigestTick,
   PROCESSING_LAG_MS,
   queueNeedsAttention,
 } from '@/lib/processing-health';
-import { authorizeOperatorProbe } from '@/lib/operator-probe';
 
 it('detects a scheduled digest miss after the UTC grace period', () => {
   expect(lastExpectedDigestTick(Date.parse('2026-11-19T12:59:59Z'))).toBe(

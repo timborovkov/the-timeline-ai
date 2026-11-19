@@ -1006,7 +1006,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const response = createUIMessageStreamResponse({
     stream: createUIMessageStream({
-      execute: ({ writer }) =>
+      execute: ({ writer }) => {
         writer.merge(
           toUIMessageStream({
             stream: result.stream,
@@ -1040,7 +1040,8 @@ export async function POST(req: Request): Promise<Response> {
               writer.write({ type: 'data-turn-save', transient: true, data: result });
             },
           }),
-        ),
+        );
+      },
     }),
   });
   // Surface the (possibly auto-created) session id so the client can pin
