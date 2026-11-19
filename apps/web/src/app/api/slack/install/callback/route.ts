@@ -55,5 +55,9 @@ export async function GET(req: Request): Promise<Response> {
     'agent_deployed_on_channel',
     { channel: 'slack' },
   );
+  const firstRun = await scope.onboarding.getFirstRun();
+  if (firstRun?.starterPath === 'slack' && firstRun.phase === 'processing') {
+    redirect('/onboarding');
+  }
   redirect('/app/team/slack?installed=1');
 }

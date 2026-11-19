@@ -8,6 +8,11 @@ import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
 import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
 import { readLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
+import {
+  onboardingCallbackForSource,
+  parseOnboardingSourceIntent,
+  setOnboardingSourceIntent,
+} from '@/lib/onboarding-source-intent';
 import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
@@ -19,15 +24,25 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: Promise<{ invite?: string; plan?: string; callbackUrl?: string }>;
+  searchParams: Promise<{
+    invite?: string;
+    plan?: string;
+    callbackUrl?: string;
+    source?: string;
+  }>;
 }
 
 export default async function SignUpPage({ searchParams }: Props) {
-  const [{ invite, plan, callbackUrl: requestedCallback }, session] = await Promise.all([
-    searchParams,
-    auth(),
-  ]);
-  const callbackUrl = signupCallback(requestedCallback, plan);
+  const [{ invite, plan, callbackUrl: requestedCallback, source: sourceParam }, session] =
+    await Promise.all([searchParams, auth()]);
+  const sourceIntent = parseOnboardingSourceIntent(sourceParam);
+  if (sourceIntent) {
+    await setOnboardingSourceIntent(sourceIntent);
+  }
+  const callbackUrl = signupCallback(
+    requestedCallback ?? (sourceIntent ? onboardingCallbackForSource(sourceIntent) : undefined),
+    plan,
+  );
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
     // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- signedInAuthRedirect validates same-origin paths and selectedPlanCallback only returns fixed billing destinations; malicious input is covered by auth-redirect tests.

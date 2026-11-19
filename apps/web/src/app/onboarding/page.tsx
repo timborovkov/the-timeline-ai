@@ -6,14 +6,33 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
+import { resolveOnboardingConnectors } from '@/lib/onboarding-connectors';
+import {
+  clearOnboardingSourceIntent,
+  parseOnboardingSourceIntent,
+  readOnboardingSourceIntent,
+} from '@/lib/onboarding-source-intent';
 
 export const dynamic = 'force-dynamic';
 
-export default async function OnboardingPage() {
+interface Props {
+  searchParams: Promise<{ source?: string }>;
+}
+
+export default async function OnboardingPage({ searchParams }: Props) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
+
+  const [{ source: sourceParam }, cookieIntent] = await Promise.all([
+    searchParams,
+    readOnboardingSourceIntent(),
+  ]);
+  const preferredSource = parseOnboardingSourceIntent(sourceParam) ?? cookieIntent;
+  if (cookieIntent) {
+    await clearOnboardingSourceIntent();
+  }
 
   const status = await loadFirstRunStatus({
     db,
@@ -32,5 +51,14 @@ export default async function OnboardingPage() {
     redirect('/app');
   }
 
-  return <SetupFlow initialStatus={status} />;
+  const { connectors, telegramBotUsername } = resolveOnboardingConnectors();
+
+  return (
+    <SetupFlow
+      initialStatus={status}
+      preferredSource={preferredSource}
+      connectors={connectors}
+      telegramBotUsername={telegramBotUsername}
+    />
+  );
 }

@@ -1,16 +1,15 @@
 'use client';
 
 import {
+  isConnectorStarterPath,
   setupProgressLabel,
   type FirstRunPhase,
-  type FirstRunScanFailureReason,
-  type FirstRunState,
-  type NamedProcessingStep,
+  type OnboardingSourceIntent,
   type TeamWorkStyle,
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, useTransition } from 'react';
 
 import {
   finalizeDocumentVersionAction,
@@ -23,23 +22,10 @@ import {
   skipFirstRunAction,
   submitWorkStyleAction,
 } from '@/app/actions/first-run';
-import { ChooserScreen } from '@/components/onboarding/chooser-screen';
-import { FailedScanScreen } from '@/components/onboarding/failed-scan-screen';
-import { ProcessingScreen } from '@/components/onboarding/processing-screen';
+import { SetupFlowBody, type FirstRunStatusPayload } from '@/components/onboarding/setup-flow-body';
 import { SetupShell } from '@/components/onboarding/setup-shell';
-import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
 
-export interface FirstRunStatusPayload {
-  firstRun: FirstRunState | null;
-  inboundEmail: string | null;
-  teamName: string;
-  record: {
-    title: string;
-    meta: string;
-    processingSteps: NamedProcessingStep[];
-    emailArrived: boolean;
-  } | null;
-}
+export type { FirstRunStatusPayload };
 
 async function uploadOnboardingDocument(file: File): Promise<void> {
   const contentType = file.type || 'application/octet-stream';
@@ -67,23 +53,23 @@ async function uploadOnboardingDocument(file: File): Promise<void> {
   if (!attached.ok) throw new Error(attached.error ?? 'Could not attach the document.');
 }
 
-function processingTitle(status: FirstRunStatusPayload): string {
-  const path = status.firstRun?.starterPath;
-  if (path === 'website') {
-    return status.firstRun?.websiteHost
-      ? `Reading ${status.firstRun.websiteHost}`
-      : 'Reading your website';
-  }
-  if (path === 'document') {
-    return status.record?.title ? `Reading ${status.record.title}` : 'Reading your document';
-  }
-  return 'Working on it';
-}
+const EMPTY_CONNECTORS: readonly OnboardingSourceIntent[] = [];
 
-export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayload }) {
+export function SetupFlow({
+  initialStatus,
+  preferredSource = null,
+  connectors = EMPTY_CONNECTORS,
+  telegramBotUsername = null,
+}: {
+  initialStatus: FirstRunStatusPayload;
+  preferredSource?: OnboardingSourceIntent | null;
+  connectors?: readonly OnboardingSourceIntent[];
+  telegramBotUsername?: string | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const intentStarted = useRef(false);
 
   function recover(action: () => Promise<void>) {
     setError(null);
@@ -101,16 +87,37 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   const stepsFailed = (initialStatus.record?.processingSteps ?? []).some(
     (step) => step.status === 'failed',
   );
+  const waitingForCapture =
+    phase === 'processing' &&
+    (firstRun?.starterPath === 'email' || isConnectorStarterPath(firstRun?.starterPath)) &&
+    !initialStatus.record?.emailArrived;
 
   useEffect(() => {
-    if (phase !== 'processing' || stepsFailed) return;
+    if ((phase !== 'processing' || stepsFailed) && !waitingForCapture) return;
     const id = setInterval(() => {
       router.refresh();
     }, 2500);
     return () => {
       clearInterval(id);
     };
-  }, [phase, router, stepsFailed]);
+  }, [phase, router, stepsFailed, waitingForCapture]);
+
+  const startPreferredConnector = useEffectEvent(async () => {
+    if (phase !== 'choose' || intentStarted.current || !preferredSource) return;
+    if (!connectors.includes(preferredSource)) return;
+    intentStarted.current = true;
+    const result = await selectStarterPathAction({ path: preferredSource });
+    if (!result.ok) {
+      intentStarted.current = false;
+      setError(result.error ?? 'Could not start that connector.');
+      return;
+    }
+    router.refresh();
+  });
+
+  useEffect(() => {
+    void startPreferredConnector();
+  }, [phase, preferredSource, connectors]);
 
   async function continueWorkStyle(workStyle: TeamWorkStyle | null) {
     const result = await submitWorkStyleAction({ workStyle });
@@ -144,6 +151,18 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     router.refresh();
   }
 
+  async function pickSlack() {
+    const result = await selectStarterPathAction({ path: 'slack' });
+    if (!result.ok) throw new Error(result.error ?? 'Could not start Slack capture.');
+    router.refresh();
+  }
+
+  async function pickTelegram() {
+    const result = await selectStarterPathAction({ path: 'telegram' });
+    if (!result.ok) throw new Error(result.error ?? 'Could not start Telegram capture.');
+    router.refresh();
+  }
+
   async function skip() {
     const result = await skipFirstRunAction();
     if (!result.ok) throw new Error(result.error ?? 'Could not skip to Home.');
@@ -156,62 +175,6 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     router.refresh();
   }
 
-  let body = (
-    <WelcomeScreen
-      teamName={initialStatus.teamName}
-      inboundEmail={initialStatus.inboundEmail}
-      initialWorkStyle={firstRun?.workStyle ?? null}
-      onContinue={continueWorkStyle}
-    />
-  );
-  if (phase === 'choose') {
-    body = (
-      <ChooserScreen
-        inboundEmail={initialStatus.inboundEmail}
-        onWebsite={pickWebsite}
-        onDocument={pickDocument}
-        onEmail={pickEmail}
-        onSkip={skip}
-      />
-    );
-  } else if (phase === 'failed') {
-    body = (
-      <FailedScanScreen
-        host={firstRun?.websiteHost ?? null}
-        reason={(firstRun?.scanFailureReason as FirstRunScanFailureReason | null) ?? null}
-        onUpload={() => {
-          recover(returnToChooser);
-        }}
-        onEmail={() => {
-          recover(pickEmail);
-        }}
-        onBack={() => {
-          recover(returnToChooser);
-        }}
-      />
-    );
-  } else if (phase === 'processing') {
-    body = (
-      <ProcessingScreen
-        title={processingTitle(initialStatus)}
-        description={
-          firstRun?.starterPath === 'email'
-            ? 'Send one real thread to your team address. This screen opens the record as soon as it arrives.'
-            : 'You can leave this screen. The record also appears on Home when it is ready.'
-        }
-        steps={initialStatus.record?.processingSteps ?? []}
-        inboundEmail={initialStatus.inboundEmail}
-        emailWaiting={firstRun?.starterPath === 'email' && !initialStatus.record?.emailArrived}
-        onSwitch={() => {
-          recover(returnToChooser);
-        }}
-        onHome={() => {
-          router.push('/app');
-        }}
-      />
-    );
-  }
-
   return (
     <SetupShell progress={setupProgressLabel(phase)}>
       {error ? (
@@ -220,7 +183,27 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
         </p>
       ) : null}
       <fieldset disabled={pending} aria-busy={pending} className="min-w-0">
-        {body}
+        <SetupFlowBody
+          status={initialStatus}
+          phase={phase}
+          firstRun={firstRun}
+          preferredSource={preferredSource}
+          connectors={connectors}
+          telegramBotUsername={telegramBotUsername}
+          onContinueWorkStyle={continueWorkStyle}
+          onWebsite={pickWebsite}
+          onDocument={pickDocument}
+          onEmail={pickEmail}
+          onSlack={connectors.includes('slack') ? pickSlack : undefined}
+          onTelegram={connectors.includes('telegram') ? pickTelegram : undefined}
+          onSkip={skip}
+          onReturnToChooser={() => {
+            recover(returnToChooser);
+          }}
+          onPickEmail={() => {
+            recover(pickEmail);
+          }}
+        />
       </fieldset>
     </SetupShell>
   );

@@ -335,14 +335,14 @@ export function createFirstRunHandlers({
     return next;
   }
 
-  async function detectEmailArrival(): Promise<{
+  async function detectSourceArrival(source: 'email' | 'slack' | 'telegram'): Promise<{
     arrived: boolean;
     eventId: string | null;
     firstRun: FirstRunState | null;
   }> {
     await ensureMember();
     const current = await loadState();
-    if (current?.starterPath !== 'email') {
+    if (current?.starterPath !== source) {
       return { arrived: false, eventId: null, firstRun: current };
     }
     if (current.captureEventId) {
@@ -357,7 +357,7 @@ export function createFirstRunHandlers({
       .where(
         and(
           eq(rawEvents.teamId, teamId),
-          eq(rawEvents.source, 'email'),
+          eq(rawEvents.source, source),
           gte(rawEvents.createdAt, since),
           rawEventVisibleToUser(userId),
         ),
@@ -367,6 +367,26 @@ export function createFirstRunHandlers({
     if (!event) return { arrived: false, eventId: null, firstRun: current };
     const next = await attachCapture({ eventId: event.id, landed: true });
     return { arrived: true, eventId: event.id, firstRun: next };
+  }
+
+  async function detectEmailArrival(): Promise<{
+    arrived: boolean;
+    eventId: string | null;
+    firstRun: FirstRunState | null;
+  }> {
+    return detectSourceArrival('email');
+  }
+
+  async function detectConnectorArrival(): Promise<{
+    arrived: boolean;
+    eventId: string | null;
+    firstRun: FirstRunState | null;
+  }> {
+    const current = await loadState();
+    if (current?.starterPath === 'slack' || current?.starterPath === 'telegram') {
+      return detectSourceArrival(current.starterPath);
+    }
+    return { arrived: false, eventId: null, firstRun: current };
   }
 
   return {
@@ -456,6 +476,7 @@ export function createFirstRunHandlers({
     },
 
     detectEmailArrival,
+    detectConnectorArrival,
 
     async getFirstRunRecord(): Promise<FirstRunRecordView | null> {
       await ensureMember();
@@ -618,6 +639,81 @@ export function createFirstRunHandlers({
               n: 1,
               kind: 'Email',
               title: 'Forwarded thread',
+              meta: event.occurredAt.toISOString().slice(0, 10),
+              href: `/app/timeline?event=${arrival.eventId}`,
+            },
+          ],
+          suggestions,
+          processingSteps: [],
+          emailArrived: true,
+        };
+      }
+
+      if (firstRun.starterPath === 'slack' || firstRun.starterPath === 'telegram') {
+        const arrival = await detectSourceArrival(firstRun.starterPath);
+        const state = arrival.firstRun ?? firstRun;
+        const sourceLabel = firstRun.starterPath === 'slack' ? 'Slack' : 'Telegram';
+        if (!arrival.eventId) {
+          return {
+            firstRun: state,
+            teamName,
+            inboundEmail,
+            recordTitle: `Waiting for ${sourceLabel}`,
+            recordMeta: sourceLabel,
+            summary: null,
+            note:
+              firstRun.starterPath === 'slack'
+                ? 'Install Slack, bind one channel, then send a message. This screen opens the record as soon as it lands.'
+                : 'Link a Telegram group, then send a message. This screen opens the record as soon as it lands.',
+            sources: [],
+            suggestions: [],
+            processingSteps: [],
+            emailArrived: false,
+          };
+        }
+        const [event] = await db
+          .select()
+          .from(rawEvents)
+          .where(
+            and(
+              eq(rawEvents.id, arrival.eventId),
+              eq(rawEvents.teamId, teamId),
+              rawEventVisibleToUser(userId),
+            ),
+          )
+          .limit(1);
+        if (!event) {
+          return {
+            firstRun: state,
+            teamName,
+            inboundEmail,
+            recordTitle: `Waiting for ${sourceLabel}`,
+            recordMeta: sourceLabel,
+            summary: null,
+            note:
+              firstRun.starterPath === 'slack'
+                ? 'Install Slack, bind one channel, then send a message. This screen opens the record as soon as it lands.'
+                : 'Link a Telegram group, then send a message. This screen opens the record as soon as it lands.',
+            sources: [],
+            suggestions: [],
+            processingSteps: [],
+            emailArrived: false,
+          };
+        }
+        const suggestions = await loadSuggestions([arrival.eventId], state.workStyle);
+        return {
+          firstRun: state,
+          teamName,
+          inboundEmail,
+          recordTitle: event.contentText?.split('\n')[0]?.slice(0, 120) ?? `${sourceLabel} message`,
+          recordMeta: `${sourceLabel} · arrived`,
+          summary: event.contentText?.slice(0, 600) ?? null,
+          note: 'One message is a start. Keep the channel linked and the work record updates itself from what lands next.',
+          sources: [
+            {
+              n: 1,
+              kind: sourceLabel,
+              title: `${sourceLabel} message`,
               meta: event.occurredAt.toISOString().slice(0, 10),
               href: `/app/timeline?event=${arrival.eventId}`,
             },

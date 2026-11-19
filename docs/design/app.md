@@ -40,9 +40,14 @@ Setup actions stay disabled until saving finishes, and failed saves retain the c
 step with an inline retryable error. Email capture can wait in the background while
 the member continues to Home.
 
-The source chooser presents Document, Email, and Website as three mutually
-exclusive choices with one active form. Document is the initial choice. Skip is
-a separate footer action, not a fourth source. Switching forms preserves entered
+The source chooser presents configured connectors (Slack and/or Telegram when
+those integrations are live in the deployment) ahead of Document, Email, and
+Website as mutually exclusive choices with one active form. Document remains the
+initial choice when no marketing source intent is present. A `/sign-up?source=`
+intent for an available connector leads with that tab and continues straight into
+its connect/waiting flow. After connect, the processing shell waits for the first
+evidence from that source and then opens the first-value record screen. Skip is
+a separate footer action, not another source. Switching forms preserves entered
 values, remains disabled during saving, and respects reduced-motion preferences.
 
 New teams start in a focused setup shell for Welcome and Start with one source
