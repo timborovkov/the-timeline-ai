@@ -349,14 +349,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     }
     const callbackDestination = safeCallbackUrl(parsed.data.callbackUrl);
     if (!inviteToken) {
-      // Callback is usually /onboarding after paid signup; refresh TTL from the
-      // proxy cookie when the callback no longer encodes the plan.
+      // Paid intent may be in the Billing callback and/or the proxy cookie.
       await rememberSignupPlanIntent(
         selectedPlanFromCallback(callbackDestination) ?? (await readSignupPlanIntent()),
       );
     }
-    // New owned teams start in first-run setup unless an accept-invite continuation
-    // was preserved (Sign in → Create one). Paid plan intent stays in the cookie.
+    // New owned teams start in first-run setup unless an invite/MCP authorize
+    // continuation was preserved. Existing accounts keep Billing via signupCallback.
     const destination = postSignupDestination({
       inviteToken,
       event: createdAccount.event,

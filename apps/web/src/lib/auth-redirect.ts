@@ -41,13 +41,14 @@ export function selectedPlanFromCallback(callback: unknown): string | undefined 
 
 /**
  * Preserve explicit continuation before pricing, while rejecting auth loops.
- * Paid plan intent is stored in `tl_pricing_plan_intent`; new teams always start
- * in setup rather than jumping straight to Billing.
+ * Paid plan intent stays in `tl_pricing_plan_intent` and as a Billing callback for
+ * existing accounts (Sign in). New teams still go through /onboarding via
+ * `postSignupDestination` after team_created — not here.
  */
 export function signupCallback(callbackUrl?: string, plan?: string): string | undefined {
   const safe = safeSameOriginPath(callbackUrl, '', { blockedPaths: AUTH_PATHS });
   if (safe) return safe;
-  return paidSignupPlan(plan) ? '/onboarding' : undefined;
+  return selectedPlanCallback(plan);
 }
 
 /**

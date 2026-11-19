@@ -67,8 +67,10 @@ describe('pricing plan intent', () => {
     expect(selectedPlanCallback(['payg'])).toBeUndefined();
   });
 
-  it('routes paid signups into onboarding instead of billing checkout', () => {
-    expect(signupCallback(undefined, 'team')).toBe('/onboarding');
+  it('keeps paid Billing callbacks for existing accounts while rejecting auth loops', () => {
+    expect(signupCallback(undefined, 'team')).toBe(
+      '/app/team?section=billing&plan=team#change-plan',
+    );
     expect(signupCallback('/app/team?section=billing&plan=team#change-plan', 'team')).toBe(
       '/app/team?section=billing&plan=team#change-plan',
     );
