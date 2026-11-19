@@ -20,6 +20,14 @@ export interface SuggestionObservation {
   canonicalMutation: boolean;
   invalidEvidence: boolean;
   stages: string[];
+  evidenceEventIds?: string[];
+  providerCosts?: (number | null)[];
+}
+
+export function observedProviderCost(value: unknown): number | null {
+  const cost =
+    value && typeof value === 'object' && 'openRouterUsd' in value ? value.openRouterUsd : null;
+  return typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : null;
 }
 function matches(expected: ExpectedAction, actual: ObservedAction, actions: ObservedAction[]) {
   if (expected.relatedNames) {
@@ -83,6 +91,18 @@ export function scoreSuggestions(row: SuggestionCase, observation: SuggestionObs
   }
   for (let index = 0; index < row.expected.length; index++) assign(index, new Set());
   const matched = assigned.size;
+  const citationChecks = [...assigned].flatMap(([index, expectedIndex]) => {
+    const expectedEvidence = row.expected[expectedIndex]?.evidenceEventIndices;
+    const cited = observation.actions[index]?.evidenceIds ?? [];
+    return expectedEvidence
+      ? [
+          expectedEvidence.length === new Set(cited).size &&
+            expectedEvidence.every((eventIndex) =>
+              cited.includes(observation.evidenceEventIds?.[eventIndex] ?? ''),
+            ),
+        ]
+      : [];
+  });
   const missed = row.expected.length - matched;
   const optionalMatches = new Set<number>();
   for (const allowed of row.allowed ?? []) {
@@ -110,7 +130,13 @@ export function scoreSuggestions(row: SuggestionCase, observation: SuggestionObs
     noise,
     hardFailure,
     executionFailure,
-    passed: !hardFailure && !executionFailure && missed === 0 && noise === 0,
+    citationChecks: { total: citationChecks.length, passed: citationChecks.filter(Boolean).length },
+    passed:
+      !hardFailure &&
+      !executionFailure &&
+      missed === 0 &&
+      noise === 0 &&
+      citationChecks.every(Boolean),
   };
 }
 export type SuggestionResult = SuggestionObservation & {
@@ -123,11 +149,25 @@ export function summarizeSuggestions(rows: SuggestionResult[]) {
     rows.reduce((sum, row) => sum + row.score[key], 0);
   const expected = total('expected');
   const proposed = total('proposed');
+  const receipts = rows.flatMap((row) => row.providerCosts ?? []);
+  const costs = receipts.filter((cost): cost is number => cost !== null);
   return {
     cases: rows.length,
     passed: rows.filter((row) => row.score.passed).length,
     executionFailures: rows.filter((row) => row.score.executionFailure).length,
     hardFailures: rows.filter((row) => row.score.hardFailure).length,
+    citationCorrectness: rows.reduce(
+      (result, row) => ({
+        total: result.total + row.score.citationChecks.total,
+        passed: result.passed + row.score.citationChecks.passed,
+      }),
+      { total: 0, passed: 0 },
+    ),
+    providerCost: {
+      observedUsd: costs.length ? costs.reduce((sum, cost) => sum + cost, 0) : null,
+      callsWithCost: costs.length,
+      callsWithoutCost: receipts.length - costs.length,
+    },
     expected,
     proposed,
     matched: total('matched'),

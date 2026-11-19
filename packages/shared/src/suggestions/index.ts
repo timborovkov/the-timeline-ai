@@ -98,6 +98,10 @@ import {
   normalizeProposalPayload,
 } from '#src/suggestions/proposal-payload.js';
 import {
+  suggestionRejectionReason,
+  type SuggestionRejectionReason,
+} from '#src/suggestions/rejection.js';
+import {
   TASK_CATEGORY_TAXONOMY_VERSION,
   taskCategorySchema,
   type TaskCategory,
@@ -509,6 +513,15 @@ export interface SuggestionItem {
   calendarResolutionHint?: CalendarResolutionHint | null;
   evidence?: SuggestionEvidence[];
   evidenceStatus?: 'legacy' | 'current' | 'stale';
+  evidenceChanges?: SuggestionEvidenceChange[];
+}
+
+export interface SuggestionEvidenceChange {
+  rawEventId: string;
+  source: string | null;
+  savedQuote: string | null;
+  currentText: string | null;
+  occurredAt: Date | null;
 }
 
 export type RevisedSuggestionItem = Pick<
@@ -2178,6 +2191,7 @@ function toBundle(
     senderTimelineName?: string | null;
   })[],
   packEvidenceChanged = false,
+  inspectEvidence = false,
 ): SuggestionBundle {
   const hydratedEvidence: SuggestionEvidence[] = evidence.map((ev) => {
     const context = suggestionEvidenceSourceContext(ev.source ?? null, ev.sourceMetadata);
@@ -2242,6 +2256,27 @@ function toBundle(
           expectedFingerprints[id] &&
           expectedFingerprints[id] !== currentEvidenceFingerprintByRawEventId.get(id),
       );
+      const evidenceChanges = inspectEvidence
+        ? evidence.flatMap((event) => {
+            const expected = expectedFingerprints[event.rawEventId];
+            const packExpected = recordFromUnknown(event.metadata).evidence_content_fingerprint;
+            const current = currentEvidenceFingerprintByRawEventId.get(event.rawEventId);
+            const changed =
+              (evidenceIds.includes(event.rawEventId) && expected && expected !== current) ||
+              (packEvidenceChanged && typeof packExpected === 'string' && packExpected !== current);
+            return changed
+              ? [
+                  {
+                    rawEventId: event.rawEventId,
+                    source: event.source ?? null,
+                    savedQuote: event.quote,
+                    currentText: event.contentText?.slice(0, 1200) ?? null,
+                    occurredAt: event.occurredAt ?? null,
+                  },
+                ]
+              : [];
+          })
+        : undefined;
       return {
         id: item.id,
         status: item.status,
@@ -2260,6 +2295,7 @@ function toBundle(
         supersededByItemId: item.supersededByItemId,
         supersededReason: item.supersededReason,
         evidence: itemEvidence,
+        ...(evidenceChanges ? { evidenceChanges } : {}),
         evidenceStatus: packEvidenceChanged
           ? ('stale' as const)
           : evidenceIds.length === 0
@@ -3109,6 +3145,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function hydrateBundles(
     rows: (typeof agentSuggestions.$inferSelect)[],
+    inspectEvidence = false,
   ): Promise<SuggestionBundle[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
@@ -3254,7 +3291,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           );
       return hasUnavailableEvidence
         ? []
-        : [toBundle(row, suggestionItems, suggestionEvidence, packEvidenceChanged)];
+        : [
+            toBundle(
+              row,
+              suggestionItems,
+              suggestionEvidence,
+              packEvidenceChanged,
+              inspectEvidence,
+            ),
+          ];
     });
   }
 
@@ -8126,8 +8171,31 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     reconcileDuplicatePendingApprovals,
 
-    async rejectSuggestionItem(itemId: string): Promise<boolean> {
+    async inspectSuggestionEvidence(itemId: string): Promise<SuggestionEvidenceChange[] | null> {
       await ensureMember();
+      const [row] = await db
+        .select({ suggestion: agentSuggestions })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+        .where(
+          and(
+            eq(agentSuggestionItems.id, itemId),
+            isNull(agentSuggestionItems.resolvedAt),
+            suggestionVisibilityPredicate(teamId, userId),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      const [bundle] = await hydrateBundles([row.suggestion], true);
+      return bundle?.items.find((item) => item.id === itemId)?.evidenceChanges ?? null;
+    },
+
+    async rejectSuggestionItem(
+      itemId: string,
+      reason?: SuggestionRejectionReason,
+    ): Promise<boolean> {
+      await ensureMember();
+      const rejectionReason = suggestionRejectionReason.optional().parse(reason);
       await recoverInterruptedTaskCreateAcceptances();
       const rows = await db
         .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
@@ -8149,6 +8217,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .update(agentSuggestionItems)
           .set({
             status: 'rejected',
+            ...(rejectionReason
+              ? {
+                  metadata: sql`coalesce(${agentSuggestionItems.metadata}, '{}'::jsonb) || ${JSON.stringify(
+                    {
+                      rejection_reason: rejectionReason,
+                    },
+                  )}::jsonb`,
+                }
+              : {}),
             resolvedAt: new Date(),
             resolvedByUserId: userId,
             updatedAt: new Date(),

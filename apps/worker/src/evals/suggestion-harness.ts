@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { PROJECT, TASK, type SuggestionCase } from '#src/evals/suggestion-cases.js';
-import type { SuggestionObservation } from '#src/evals/suggestion-report.js';
+import { observedProviderCost, type SuggestionObservation } from '#src/evals/suggestion-report.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 
 const TEAM = '11111111-1111-4111-8111-111111111111';
@@ -46,6 +46,7 @@ export async function createSuggestionHarness(
       const stages = ['seeded'];
       const executionErrors: string[] = [];
       let modelCalls = 0;
+      const providerCosts: (number | null)[] = [];
       let unauthorizedDisclosure = false;
       await db.insert(entities).values({
         id: PROJECT,
@@ -169,9 +170,11 @@ export async function createSuggestionHarness(
             unauthorizedDisclosure = true;
           try {
             const result = await model(input);
+            providerCosts.push(observedProviderCost(result));
             input.schema.parse(result.object);
             return result;
           } catch (error) {
+            if (providerCosts.length < modelCalls) providerCosts.push(observedProviderCost(error));
             // Worker fallback may swallow provider errors: retain failure independently of output.
             executionErrors.push(error instanceof Error ? error.name : 'ModelError');
             throw error;
@@ -250,7 +253,7 @@ export async function createSuggestionHarness(
           targetId: item.targetId,
           title: item.title,
           proposedPayload: item.proposedPayload,
-          evidenceIds: bundle.evidence
+          evidenceIds: (item.evidence?.length ? item.evidence : bundle.evidence)
             .map((e) => e.rawEventId)
             .filter((id): id is string => Boolean(id)),
         })),
@@ -263,6 +266,8 @@ export async function createSuggestionHarness(
         unauthorizedDisclosure = true;
       return {
         actions,
+        evidenceEventIds: ids,
+        providerCosts,
         executionErrors,
         modelCalls,
         durationMs: performance.now() - started,

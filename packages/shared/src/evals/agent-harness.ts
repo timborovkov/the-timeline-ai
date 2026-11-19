@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 
-import { rawEvents } from '@timeline/db';
+import { documentChunks, documents, documentVersions, rawEvents } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { askAgent } from '#src/agent/ask.js';
 import type { AskAgentDeps } from '#src/agent/ask.js';
+import { artifactRefCitation } from '#src/citation.js';
 import type { AgentCase } from '#src/evals/agent-cases.js';
 import type { AgentObservation } from '#src/evals/agent-report.js';
 import { requireValue } from '#src/evals/benchmark.js';
@@ -34,12 +36,66 @@ export async function createAgentHarness() {
     async run(
       row: AgentCase,
       modelDeps: Pick<AskAgentDeps, 'model'> = {},
+      surface: 'web' | 'slack' | 'telegram' = 'web',
     ): Promise<AgentObservation> {
       await store.reset();
       const ids = row.evidence.map((_, index) => evidenceId(row.id, index));
+      const documentId = evidenceId(`${row.id}:document`, 0);
+      const documentFixture = row.evidence.filter((item) => item.documentVersion !== undefined);
+      if (documentFixture.length)
+        await db.insert(documents).values({
+          id: documentId,
+          teamId: TEAM,
+          name: 'Lab Safety Manual',
+          ownerUserId: USER,
+          visibility: 'team',
+          fileKind: 'document',
+        });
+      const citations: string[] = [];
       for (const [index, item] of row.evidence.entries()) {
+        const id = requireValue(ids[index]);
+        if (item.documentVersion !== undefined) {
+          const versionId = evidenceId(`${row.id}:version`, index);
+          await db.insert(documentVersions).values({
+            id: versionId,
+            teamId: TEAM,
+            documentId,
+            version: item.documentVersion,
+            objectKey: `synthetic/${versionId}`,
+            processingStatus: 'embedded',
+            createdAt: new Date(item.occurredAt),
+          });
+          await db.insert(documentChunks).values({
+            id,
+            teamId: TEAM,
+            documentId,
+            documentVersionId: versionId,
+            chunkIndex: 0,
+            text: item.text,
+            tokenCount: 20,
+          });
+          if (
+            item.documentVersion ===
+            Math.max(...documentFixture.map((entry) => entry.documentVersion ?? 0))
+          )
+            await db
+              .update(documents)
+              .set({ currentVersionId: versionId })
+              .where(eq(documents.id, documentId));
+          citations.push(
+            artifactRefCitation({
+              kind: 'document_chunk',
+              id,
+              documentId,
+              version: item.documentVersion,
+              chunkId: id,
+            }),
+          );
+          continue;
+        }
+        citations.push(artifactRefCitation({ kind: 'timeline_event', id }));
         await db.insert(rawEvents).values({
-          id: requireValue(ids[index]),
+          id,
           teamId: item.access === 'foreign' ? FOREIGN : TEAM,
           authorUserId: OTHER,
           visibilityOwnerUserId: OTHER,
@@ -58,12 +114,14 @@ export async function createAgentHarness() {
       let retrievalCalls = 0;
       const tools: string[] = [];
       const toolErrors: string[] = [];
+      let groundedAnswer: string | undefined;
+      let observedProviderUsd: number | null = null;
       const result = await askAgent(
         {
           db: db as never,
           teamId: TEAM,
           userId: USER,
-          deliverySurface: 'web',
+          deliverySurface: surface,
           question: row.question,
           maxSteps: 6,
           toolMode: 'read_only',
@@ -80,6 +138,10 @@ export async function createAgentHarness() {
           onTurnObservability: (observation) => {
             tools.push(...observation.toolObservations.map((item) => item.tool));
           },
+          onEvaluation: (evaluation) => {
+            groundedAnswer = evaluation.groundedAnswer;
+            observedProviderUsd = evaluation.observedProviderUsd;
+          },
           teamScopeDeps: {
             embed: () =>
               Promise.resolve({ vector: [0.1, 0.2, 0.3], model: 'synthetic-controlled-retrieval' }),
@@ -93,10 +155,21 @@ export async function createAgentHarness() {
                     teamId: item.access === 'foreign' ? FOREIGN : TEAM,
                     eventId: requireValue(ids[index]),
                     score: 0.99 - index * 0.01,
+                    source: item.documentVersion === undefined ? 'web' : 'document',
                     authorUserId: OTHER,
                     visibilityOwnerUserId: OTHER,
                     occurredAt: item.occurredAt,
                     overrides: {
+                      ...(item.documentVersion === undefined
+                        ? {}
+                        : {
+                            source_kind: 'doc_chunk',
+                            document_id: documentId,
+                            document_version_id: evidenceId(`${row.id}:version`, index),
+                            document_chunk_id: requireValue(ids[index]),
+                            file_kind: 'document',
+                            owner_user_id: USER,
+                          }),
                       visibility:
                         item.access === 'private'
                           ? 'private'
@@ -113,13 +186,17 @@ export async function createAgentHarness() {
         },
       );
       return {
-        answer: result.ok ? result.answer : '',
+        answer: result.ok ? (groundedAnswer ?? result.answer) : '',
+        deliveredAnswer: result.ok ? result.answer : '',
+        surface,
+        observedProviderUsd,
         executionSuccess: result.ok,
         truncated: result.ok && result.truncated,
         tools,
         toolErrors,
         retrievalCalls,
         evidenceIds: ids,
+        evidenceCitations: citations,
         ...(result.ok && result.requestedModelId
           ? { requestedModelId: result.requestedModelId }
           : {}),

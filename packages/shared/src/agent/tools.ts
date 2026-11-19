@@ -2981,6 +2981,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               retrieval = value;
             },
           });
+          const selectedDocument = input.documentId
+            ? await scope.documents.getDocument(input.documentId)
+            : null;
+          const version = selectedDocument
+            ? (await scope.documents.listDocumentVersions(selectedDocument.id)).find(
+                (entry) => entry.id === selectedDocument.currentVersionId,
+              )
+            : null;
           // Fence the chunk text so a prompt-injection embedded in an
           // uploaded document cannot escape into the agent's instructions.
           // Use the chunk id as the fence event_id attribute so the marker
@@ -3015,6 +3023,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           }));
           return {
             count: fenced.length,
+            ...(version && {
+              current_version: {
+                version: version.version,
+                processing_status: version.processingStatus,
+                ranking: { dateBasis: 'uploaded', evidenceDate: version.createdAt.toISOString() },
+              },
+            }),
             results: fenced,
             retrieval,
             context: await enrichEvidenceContext(scope, {

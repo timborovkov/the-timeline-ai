@@ -11,7 +11,7 @@ describe('buildSystemPrompt', () => {
       presentation: 'external_chat',
     });
 
-    expect(AGENT_PROMPT_VERSION).toBe('agent-v20-2026-08');
+    expect(AGENT_PROMPT_VERSION).toBe('agent-v21-2026-11');
     expect(prompt).toContain("the event's sender is the speaker");
     expect(prompt).toContain('For a forwarded email, the original forwarded sender is the speaker');
     expect(prompt).toContain('A mention/tag identifies an addressee, not the speaker.');

@@ -2,6 +2,10 @@
 
 import { useChat } from '@ai-sdk/react';
 import {
+  answerEvidenceSchema,
+  answerEvidenceSourceLabel,
+} from '@timeline/shared/agent/answer-evidence';
+import {
   chatContextKey,
   mergeChatContextTrail,
   type ChatContextRef,
@@ -16,15 +20,26 @@ import {
 import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type RefObject,
+} from 'react';
 
-import { unpinChatSessionAction } from '@/app/actions/chat';
+import { prepareChatApprovalResumeAction, unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
+import { Button } from '@/components/ui/button';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
+import { formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -123,7 +138,7 @@ function ChatSurfaceContent({
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
-  const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
+  const { messages, sendMessage, setMessages, status, error, addToolApprovalResponse } = useChat({
     transport,
     messages: initialMessages,
     onFinish: ({ message }) => {
@@ -141,6 +156,7 @@ function ChatSurfaceContent({
   });
 
   const [input, setInput] = useState(initialPrompt ?? '');
+  const [resuming, startResume] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
@@ -225,6 +241,38 @@ function ChatSurfaceContent({
         teamName={teamName}
       />
       <ChatError error={error} />
+      {sessionId && !isStreaming && resumableApprovalMessage(messages.at(-1)) ? (
+        <Button
+          type="button"
+          className="self-start"
+          variant="outline"
+          size="sm"
+          disabled={resuming}
+          onClick={() => {
+            const messageId = messages.at(-1)?.id;
+            if (!messageId) return;
+            startResume(async () => {
+              try {
+                const result = await prepareChatApprovalResumeAction({ sessionId, messageId });
+                const message = result.message;
+                if (message)
+                  setMessages((current) =>
+                    current.map((entry) => (entry.id === messageId ? message : entry)),
+                  );
+                else
+                  notifyError(
+                    'chat-approval-resume',
+                    result.error ?? 'Could not prepare chat approval.',
+                  );
+              } catch {
+                notifyError('chat-approval-resume', 'Could not prepare chat approval.');
+              }
+            });
+          }}
+        >
+          {resuming ? 'Loading approvals…' : 'Review unstarted steps'}
+        </Button>
+      ) : null}
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
           href={`/app/diagnostics?session=${encodeURIComponent(sessionId)}`}
@@ -236,6 +284,29 @@ function ChatSurfaceContent({
       )}
       <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
     </div>
+  );
+}
+
+function resumableApprovalMessage(message: UIMessage | undefined): boolean {
+  if (message?.role !== 'assistant') return false;
+  const recoveryStates = message.parts.flatMap((part) =>
+    part.type === 'data-tool-history' ? [(part.data as { state?: string }).state] : [],
+  );
+  return (
+    recoveryStates.includes('approval-unstarted') &&
+    !message.parts.some(
+      (part) =>
+        isToolUIPart(part) &&
+        part.approval &&
+        (part.state === 'approval-requested' ||
+          part.state === 'output-error' ||
+          part.state === 'output-denied' ||
+          (part.state === 'output-available' &&
+            part.output != null &&
+            typeof part.output === 'object' &&
+            'error' in part.output)),
+    ) &&
+    !recoveryStates.some((state) => state === 'approval-needs-check' || state === 'output-denied')
   );
 }
 
@@ -619,9 +690,49 @@ function ChatMessage({
               onToolApprovalResponse={onToolApprovalResponse}
             />
           ))}
+          {!isUser ? <AnswerEvidence metadata={message.metadata} /> : null}
         </div>
       </div>
     </li>
+  );
+}
+
+function AnswerEvidence({ metadata }: { metadata: unknown }) {
+  const timezone = useWorkspaceTimezone();
+  const parsed = answerEvidenceSchema.safeParse(
+    (metadata as { answerEvidence?: unknown } | null | undefined)?.answerEvidence,
+  );
+  if (!parsed.success || parsed.data.length === 0) return null;
+  const incomplete = parsed.data.some((source) => source.status !== 'queried');
+  return (
+    <details className="mt-2 border-t border-border pt-2 text-xs text-fg-muted">
+      <summary className="w-fit cursor-pointer py-1 font-medium">
+        {incomplete ? 'Sources checked · partial coverage' : 'Sources checked'}
+      </summary>
+      <ul className="mt-1 grid gap-2">
+        {parsed.data.map(({ source, status, latest }) => (
+          <li key={source}>
+            <span className="font-medium text-fg">{answerEvidenceSourceLabel(source)}</span>
+            {status === 'unavailable' ? ' · Unavailable or partial' : null}
+            {status === 'indexing' ? ' · Still indexing' : null}
+            {latest && (latest.date || latest.version) ? (
+              <div className="flex flex-wrap items-baseline gap-x-1.5">
+                <span>
+                  {latest.basis === 'observed'
+                    ? 'Latest relevant observation'
+                    : latest.basis === 'uploaded'
+                      ? 'Latest relevant upload'
+                      : 'Latest relevant evidence'}
+                  {latest.date ? ` · ${formatDisplayDate(latest.date, { timezone })}` : ''}
+                  {latest.version ? ` · Document v${String(latest.version)}` : ''}
+                </span>
+                {latest.citation ? <CitationText text={latest.citation} /> : null}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

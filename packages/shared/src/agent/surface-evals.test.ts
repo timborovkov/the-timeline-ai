@@ -210,7 +210,9 @@ describe('agent ask surface evals', () => {
     expect(responseInit?.method).toBe('POST');
     expect(typeof responseBody).toBe('string');
     expect(JSON.parse(responseBody as string)).toMatchObject({
-      text: 'Acme renewal pricing is due Friday.',
+      text: expect.stringContaining(
+        'Acme renewal pricing is due Friday.\n\nSources checked · Timeline',
+      ),
       mrkdwn: false,
     });
     expect(observability).toEqual([
@@ -263,7 +265,9 @@ describe('agent ask surface evals', () => {
 
     expect(payloads).toContainEqual({
       chat_id: TG_CHAT_ID,
-      text: 'Acme renewal pricing is due Friday.',
+      text: expect.stringContaining(
+        'Acme renewal pricing is due Friday.\n\nSources checked · Timeline',
+      ),
     });
     expect(observability).toEqual([
       expect.objectContaining({

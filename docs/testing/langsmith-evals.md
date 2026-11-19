@@ -33,9 +33,10 @@ category, ambiguous and conflicting context, multiple business functions, typos,
 abbreviations, multilingual text, long inputs, specialist vocabulary, and injection.
 Labels describe work visible after packet truncation; rationales explain the label.
 
-The agent corpus contains 60 cases, split 30/30. Each split has five cases for
-missing evidence, contradictions, stale evidence, citations, permissions, and tool
-failures. The harness migrates an isolated in-memory PGlite database, resets it
+The agent corpus contains 61 cases, split 31 development and 30 held-out.
+Each split has five cases for missing evidence, contradictions, stale evidence,
+citations, permissions, and tool failures. Development includes an additional
+exact document version and chunk case. The harness migrates an isolated in-memory PGlite database, resets it
 between cases, and injects synthetic search hits through the existing retrieval
 seam. Actual team scope filters records, including private, restricted, and foreign
 workspace records returned by deliberately overinclusive retrieval. Embeddings and
@@ -122,8 +123,12 @@ A rescore is not another model execution or fresh held-out evidence.
 
 Classification runs four concurrent cases per model; agents run sequentially to
 isolate database state. Latency includes retries and is diagnostic, not a controlled
-load benchmark. LLM traces carry usage when available; reports do not aggregate
-provider cost. Missing cost is not zero.
+load benchmark. Agent comparisons accept `--surface=web`, `--surface=slack`, or
+`--surface=telegram`. The report retains the grounded answer before formatting
+and the delivered text for separate inspection. It includes the citation
+correctness count and observed provider cost with the number of cases with and
+without cost data. The local Slack and Telegram surface tests cover delivery
+formatting through their handlers.
 
 ## Data boundary
 
@@ -173,6 +178,9 @@ before approval are hard failures. Reports include individual outputs, execution
 errors, scenario denominators, missed/noisy action counts, latency and observed
 harness stages. These stages identify dispatch, inference and visibility-read
 progress; they are not a complete internal rejection-reason taxonomy.
+Comparisons count exact citations for proposals with labelled evidence and
+report observed inference cost with the number of calls with and without cost
+data. This covers recorded receipts from the harnessed inference calls.
 
 Each repetition is reported separately; repeated answers are not independent
 examples. Only a complete held-out run with all feedback is marked benchmark

@@ -222,7 +222,7 @@ if (!values.sync) {
             partial: !selection.complete,
             benchmark: selection.benchmark,
             evaluatedAt: new Date().toISOString(),
-            evaluatorVersion: communications ? 7 : 2,
+            evaluatorVersion: communications ? 7 : 3,
             requestedModel: selection.selected.every((row) =>
               row.tags.includes('github-completion'),
             )

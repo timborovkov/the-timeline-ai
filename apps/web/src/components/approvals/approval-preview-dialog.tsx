@@ -1,11 +1,18 @@
 'use client';
 
-import { Check, GitMerge, X } from 'lucide-react';
+import { Check, GitMerge } from 'lucide-react';
+import type { SuggestionRejectionReason } from '@timeline/shared/suggestions/rejection';
+import {
+  suggestionRejectionLabels,
+  suggestionRejectionReason,
+} from '@timeline/shared/suggestions/rejection';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { ComponentProps } from 'react';
 
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
+import { RejectProposal } from '@/components/approvals/reject-proposal';
+import { StaleEvidence } from '@/components/approvals/stale-evidence';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EvidenceLink } from '@/components/evidence-link';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -78,6 +85,7 @@ export function ApprovalPreviewDialog({
     title: string;
     description: string | null;
     proposedPayload: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
     evidence?: PreviewEvidence[];
   };
   timezone: string;
@@ -87,7 +95,7 @@ export function ApprovalPreviewDialog({
   pending: boolean;
   mergeHref?: string | null;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (reason?: SuggestionRejectionReason) => void;
 }) {
   const requestKey = `${item.id}:${item.targetKind}:${item.targetId ?? ''}:${open ? 'open' : 'closed'}`;
   const [loaded, setLoaded] = useState<{
@@ -135,6 +143,7 @@ export function ApprovalPreviewDialog({
     timezone,
   });
   const evidence = item.evidence ?? [];
+  const rejection = suggestionRejectionReason.safeParse(item.metadata?.rejection_reason);
 
   const actions = (
     <PreviewDecisionActions
@@ -152,8 +161,11 @@ export function ApprovalPreviewDialog({
     <>
       <div className="space-y-3">
         {acceptDisabled ? (
-          <p role="status" className="text-sm text-danger">
-            Source evidence has changed. Regenerate this proposal before accepting.
+          <StaleEvidence key={item.id} itemId={item.id} timezone={timezone} />
+        ) : null}
+        {item.status === 'rejected' && rejection.success ? (
+          <p className="text-sm text-fg-muted">
+            Rejected · {suggestionRejectionLabels[rejection.data]}
           </p>
         ) : null}
         {reason ? (
@@ -275,10 +287,7 @@ function PreviewDecisionActions({
           />
         </>
       )}
-      <Button type="button" size="sm" variant="ghost" disabled={pending || busy} onClick={onReject}>
-        <X className="size-4" />
-        Reject
-      </Button>
+      <RejectProposal key={item.id} disabled={pending || busy} onReject={onReject} />
     </ItemActionGroup>
   ) : (
     <p className="text-sm capitalize text-fg-muted">

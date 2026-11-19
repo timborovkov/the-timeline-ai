@@ -872,7 +872,13 @@ describe('suggestion scope', () => {
       title: 'Evidence-backed follow-up',
       dedupeKey: 'changed-uncited-pack-evidence',
       metadata: { evidence_pack_fingerprint: 'a'.repeat(64) },
-      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID }, { rawEventId: TEAM_SUPPORT_EVENT_ID }],
+      evidence: [
+        { rawEventId: TEAM_RAW_EVENT_ID },
+        {
+          rawEventId: TEAM_SUPPORT_EVENT_ID,
+          quote: 'The supporting review is scheduled for Friday.',
+        },
+      ],
       items: [
         {
           operation: 'create',
@@ -896,12 +902,25 @@ describe('suggestion scope', () => {
     expect(visible?.items).toEqual([
       expect.objectContaining({ id: created.items[0]?.id, evidenceStatus: 'stale' }),
     ]);
+    const itemId = created.items[0]?.id ?? 'missing';
+    await expect(scope.suggestions.inspectSuggestionEvidence(itemId)).resolves.toMatchObject([
+      {
+        rawEventId: TEAM_SUPPORT_EVENT_ID,
+        savedQuote: 'The supporting review is scheduled for Friday.',
+        currentText: 'The supporting review moved to Monday.',
+      },
+    ]);
     await expect(
       scope.suggestions.reviseTaskSuggestionItem({
         itemId: created.items[0]?.id ?? 'missing',
         project: { kind: 'none' },
       }),
     ).rejects.toThrow('Required source evidence changed after this suggestion was created.');
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, TEAM_SUPPORT_EVENT_ID));
+    await expect(scope.suggestions.inspectSuggestionEvidence(itemId)).resolves.toBeNull();
   });
 
   it('marks tombstoned item evidence stale and supersedes it at acceptance', async () => {

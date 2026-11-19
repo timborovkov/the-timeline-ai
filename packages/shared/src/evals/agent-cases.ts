@@ -14,6 +14,7 @@ export interface AgentEvidence {
   text: string;
   occurredAt: string;
   access: 'team' | 'private' | 'restricted' | 'foreign';
+  documentVersion?: number;
 }
 export interface ExpectedClaim {
   value: string;
@@ -627,4 +628,36 @@ export const AGENT_CASES: AgentCase[] = initialCases.map((row, index) => {
   result.requiredEvidence = [...new Set(result.expectedClaims.flatMap((claim) => claim.evidence))];
   result.question = `Use only the search_timeline tool. ${result.question.replace('Use only the search_timeline tool. ', '')}\nReturn only JSON with keys status and claims. status is answered, conflict, pending_change, or insufficient_evidence. claims is an array of {"value":"verbatim scalar fact value", "state":"approved|proposed|reported|historical", "citations":["[ev:source-uuid]"]}. Associate every claim with its actual supporting source(s). Use reported for unresolved competing values; approved for confirmed facts; historical for superseded facts. If the requested answer cannot be established, use insufficient_evidence and an empty claims array. Include no extra fields or prose.`;
   return result;
+});
+
+AGENT_CASES.push({
+  id: 'agent-document-version',
+  familyId: 'agent-document-version',
+  split: 'development',
+  scenario: 'citation-correctness',
+  tags: ['citation-correctness', 'document-version'],
+  question:
+    'Use only search_documents. What is the current approved evacuation route in the Lab Safety Manual? Return only JSON with status and claims. Each claim must contain value, state, and citations. Cite the exact document version and chunk.',
+  evidence: [
+    {
+      ...evidence(
+        'Archived Lab Safety Manual: evacuation route is North Staircase.',
+        'team',
+        '2026-11-10T09:00:00Z',
+      ),
+      documentVersion: 1,
+    },
+    {
+      ...evidence('Current approved Lab Safety Manual: evacuation route is East Staircase.'),
+      documentVersion: 2,
+    },
+  ],
+  requiredEvidence: [1],
+  expectedStatus: 'answered',
+  expectedClaims: [{ value: 'East Staircase', state: 'approved', evidence: [1] }],
+  prohibitedDisclosures: [],
+  allowedTools: ['search_documents'],
+  failure: 'none',
+  rationale:
+    'The current value requires the version-two chunk. A citation to the former version or a mismatched chunk cannot support the answer.',
 });

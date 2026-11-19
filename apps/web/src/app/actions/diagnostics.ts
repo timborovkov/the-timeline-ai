@@ -24,6 +24,7 @@ export async function submitDiagnosticAction(
       await r.scope.diagnostics.submit({
         sessionId: data.get('sessionId'),
         description: data.get('description'),
+        category: data.get('category') || undefined,
         conversation: data.get('conversation'),
         consent: data.get('consent') === 'on',
         consentVersion: data.get('consentVersion'),

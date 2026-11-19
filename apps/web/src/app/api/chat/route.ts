@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import * as agent from '@timeline/shared/agent';
+import { createAnswerEvidenceCollector } from '@timeline/shared/agent/answer-evidence';
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import {
   askBillingUserMessage,
@@ -30,6 +31,7 @@ import {
   createUIMessageStreamResponse,
   safeValidateUIMessages,
   toUIMessageStream,
+  type ToolSet,
   type UIMessage,
 } from 'ai';
 import { z } from 'zod';
@@ -650,6 +652,10 @@ export async function POST(req: Request): Promise<Response> {
   ) {
     return Response.json({ ok: false, error: 'invalid_user_message' }, { status: 400 });
   }
+  const approvalClaim =
+    hasApprovalDecisions && sessionId
+      ? { messageId: continuation.id, claimId: randomUUID(), sessionId }
+      : null;
   if (hasApprovalDecisions) {
     if (!sessionId)
       return Response.json({ ok: false, error: 'approval_session_required' }, { status: 409 });
@@ -657,6 +663,7 @@ export async function POST(req: Request): Promise<Response> {
       uiMessages[uiMessages.length - 1] = await scope.objects.claimChatApprovals(
         sessionId,
         continuation,
+        approvalClaim?.claimId,
       );
     } catch {
       return Response.json({ ok: false, error: 'approval_no_longer_available' }, { status: 409 });
@@ -755,10 +762,21 @@ export async function POST(req: Request): Promise<Response> {
     ...mcpTools,
   };
   const toolObservations: agent.AgentToolObservation[] = [];
-  const observedTools = agent.instrumentAgentTools(tools, (observation) => {
-    toolObservations.push(observation);
-  });
+  const answerEvidence = createAnswerEvidenceCollector();
+  const observedTools = agent.instrumentAgentTools(
+    tools,
+    (observation) => {
+      toolObservations.push(observation);
+    },
+    answerEvidence.observe,
+  );
   const toolApproval = agent.userApprovalForTools(observedTools);
+  const checkpointedTools = checkpointApprovalTools(
+    observedTools,
+    toolApproval,
+    scope,
+    approvalClaim,
+  );
 
   const messages = await convertToModelMessages(modelChatMessages(uiMessages));
   const modelId = llm.resolveAgentModelId();
@@ -891,7 +909,7 @@ export async function POST(req: Request): Promise<Response> {
   const result = llm.streamChat({
     instructions,
     messages: memory.messages,
-    tools: observedTools,
+    tools: checkpointedTools,
     ...(toolApproval ? { toolApproval } : {}),
     model: modelId,
     maxSteps: llm.DEFAULT_AGENT_MAX_STEPS,
@@ -1003,6 +1021,10 @@ export async function POST(req: Request): Promise<Response> {
       stream: result.stream,
       originalMessages: uiMessages,
       generateMessageId: randomUUID,
+      messageMetadata: ({ part }) =>
+        part.type === 'finish' && answerEvidence.snapshot().length > 0
+          ? { answerEvidence: answerEvidence.snapshot() }
+          : undefined,
       onEnd: async ({ responseMessage, isContinuation, isAborted, isCancelled }) => {
         if (!sessionId) return;
         try {
@@ -1010,6 +1032,7 @@ export async function POST(req: Request): Promise<Response> {
             userMessage: isContinuation ? null : latestUserMessage,
             assistantMessage: responseMessage,
             metadata: { ...completionMetadata, interrupted: isAborted || Boolean(isCancelled) },
+            ...(approvalClaim && { approvalClaimId: approvalClaim.claimId }),
           });
         } catch (err) {
           log.warn(
@@ -1026,6 +1049,46 @@ export async function POST(req: Request): Promise<Response> {
   // doesn't conflict with the AI-SDK stream body.
   if (sessionId) response.headers.set('x-tl-session-id', sessionId);
   return response;
+}
+
+function checkpointApprovalTools(
+  tools: ToolSet,
+  approvals: Record<string, 'user-approval'> | undefined,
+  scope: ReturnType<typeof withTeam>,
+  claim: { messageId: string; claimId: string; sessionId: string } | null,
+): ToolSet {
+  if (!approvals) return tools;
+  const checkpointed = { ...tools };
+  for (const name of Object.keys(approvals)) {
+    const definition = tools[name];
+    const execute = definition?.execute;
+    if (!execute || !definition) continue;
+    checkpointed[name] = {
+      ...definition,
+      execute: async (input, options) => {
+        if (!claim || options.abortSignal?.aborted)
+          return { error: 'approval_no_longer_available' };
+        const key = {
+          messageId: claim.messageId,
+          claimId: claim.claimId,
+          toolCallId: options.toolCallId,
+        };
+        if (!(await scope.objects.startChatApprovalStep(claim.sessionId, key, { name, input })))
+          return { error: 'approval_no_longer_available' };
+        const output = await execute(input, options);
+        const result = output as { ok?: boolean; error?: unknown } | null;
+        const rejection =
+          typeof result?.error === 'string' &&
+          (result.error === 'stale_state' ||
+            result.error === 'not_found' ||
+            result.error.startsWith('stale_state:'));
+        const status = result?.ok === true ? 'completed' : rejection ? 'failed' : 'needs-check';
+        await scope.objects.finishChatApprovalStep(claim.sessionId, key, status, output);
+        return output;
+      },
+    };
+  }
+  return checkpointed;
 }
 
 function aiStreamErrorTags(error: unknown): Record<string, string> {

@@ -83,12 +83,24 @@ describe('chat turn persistence and approval claims', () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const session = await scope.createChatSession();
     await scope.persistChatTurn(session.id, { userMessage: user, assistantMessage: pending });
-    const approved = await scope.claimChatApprovals(session.id, decision());
+    const claimId = 'first-claim';
+    const approved = await scope.claimChatApprovals(session.id, decision(), claimId);
     expect(approved.parts[1]).toMatchObject({
       state: 'approval-responded',
       approval: { approved: true },
     });
     const completed = structuredClone(approved);
+    const key = { messageId: pending.id, toolCallId: 'call-1', claimId };
+    await expect(
+      scope.startChatApprovalStep(session.id, key, {
+        name: 'execute_board_create',
+        input: { name: 'CRM' },
+      }),
+    ).resolves.toBe(true);
+    await scope.finishChatApprovalStep(session.id, key, 'completed', {
+      ok: true,
+      board_id: 'created',
+    });
     Object.assign(required(completed.parts[1]), {
       state: 'output-available',
       output: { ok: true, board_id: 'created' },
@@ -167,6 +179,74 @@ describe('chat turn persistence and approval claims', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
     await expect(scope.claimChatApprovals(session.id, decision())).rejects.toThrow();
+  });
+
+  it('reissues only unstarted steps and preserves outcomes across an interrupted stream', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const session = await scope.createChatSession();
+    const assistantMessage = structuredClone(pending);
+    assistantMessage.parts.push({
+      type: 'tool-execute_board_create',
+      toolCallId: 'call-2',
+      input: { name: 'Operations' },
+      state: 'approval-requested',
+      approval: { id: 'approval-2' },
+    });
+    await scope.persistChatTurn(session.id, { assistantMessage });
+    const approved = decision();
+    approved.parts.push({
+      type: 'tool-execute_board_create',
+      toolCallId: 'call-2',
+      input: { name: 'Operations' },
+      state: 'approval-responded',
+      approval: { id: 'approval-2', approved: true },
+    });
+    await scope.claimChatApprovals(session.id, approved, 'first-claim');
+    const first = { messageId: pending.id, toolCallId: 'call-1', claimId: 'first-claim' };
+    const second = { ...first, toolCallId: 'call-2' };
+    const tool = { name: 'execute_board_create', input: { name: 'CRM' } };
+    await expect(scope.startChatApprovalStep(session.id, first, tool)).resolves.toBe(true);
+    await expect(scope.startChatApprovalStep(session.id, first, tool)).resolves.toBe(false);
+    await expect(scope.prepareChatApprovalResume(session.id, pending.id)).rejects.toThrow();
+    await scope.finishChatApprovalStep(session.id, first, 'completed', {
+      ok: true,
+      board_id: 'crm',
+    });
+    const resumed = await scope.prepareChatApprovalResume(session.id, pending.id);
+    expect(resumed.parts[1]).toMatchObject({
+      state: 'output-available',
+      output: { board_id: 'crm' },
+    });
+    expect(resumed.parts[2]).toMatchObject({ state: 'approval-requested' });
+    await expect(
+      scope.startChatApprovalStep(session.id, second, {
+        name: 'execute_board_create',
+        input: { name: 'Operations' },
+      }),
+    ).resolves.toBe(false);
+    await scope.persistChatTurn(session.id, {
+      assistantMessage: approved,
+      approvalClaimId: 'first-claim',
+    });
+    expect((await scope.getChatSession(session.id))?.messages[0]?.content).toMatchObject({
+      approval_claim_id: null,
+      approval_steps: { 'call-1': 'completed', 'call-2': 'queued' },
+      ui_message: resumed,
+    });
+    Object.assign(required(resumed.parts[2]), { state: 'approval-responded' });
+    const step = required(resumed.parts[2]);
+    if (!('approval' in step)) throw new Error('Missing reissued approval');
+    Object.assign(step.approval, { approved: true });
+    await scope.claimChatApprovals(session.id, resumed, 'second-claim');
+    const resumedKey = { ...second, claimId: 'second-claim' };
+    await expect(
+      scope.startChatApprovalStep(session.id, resumedKey, {
+        name: 'execute_board_create',
+        input: { name: 'Operations' },
+      }),
+    ).resolves.toBe(true);
+    await scope.finishChatApprovalStep(session.id, resumedKey, 'needs-check', { error: 'unknown' });
+    await expect(scope.prepareChatApprovalResume(session.id, pending.id)).rejects.toThrow();
   });
 });
 

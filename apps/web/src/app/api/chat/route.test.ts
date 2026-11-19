@@ -41,6 +41,8 @@ const fakes = vi.hoisted(() => ({
   fakeStreamChat: vi.fn(),
   fakePersistChatTurn: vi.fn(),
   fakeClaimChatApprovals: vi.fn(),
+  fakeStartChatApprovalStep: vi.fn(),
+  fakeFinishChatApprovalStep: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
   fakeCreateUIMessageStreamResponse: vi.fn(),
   fakeToUIMessageStream: vi.fn(),
@@ -100,6 +102,8 @@ await vi.mock(
       objects: {
         persistChatTurn: fakes.fakePersistChatTurn,
         claimChatApprovals: fakes.fakeClaimChatApprovals,
+        startChatApprovalStep: fakes.fakeStartChatApprovalStep,
+        finishChatApprovalStep: fakes.fakeFinishChatApprovalStep,
         chatSessionExists: fakes.fakeChatSessionExists,
         chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
         createChatSession: fakes.fakeCreateChatSession,
@@ -504,11 +508,50 @@ describe('POST /api/chat', () => {
       ],
     };
     fakes.fakeClaimChatApprovals.mockResolvedValue(decision);
+    const calls: string[] = [];
+    const mutation = vi.fn(async () => {
+      calls.push('execute');
+      return { ok: false, error: 'stale_state' };
+    });
+    fakes.fakeStartChatApprovalStep.mockImplementation(async () => {
+      calls.push('start');
+      return true;
+    });
+    fakes.fakeFinishChatApprovalStep.mockImplementation(async () => {
+      calls.push('finish');
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({ execute_object_update: { execute: mutation } });
     const response = await POST(
       request(validBody({ sessionId: SESSION_ID, messages: [userMessage, decision] })),
     );
     expect(response.status).toBe(200);
-    expect(fakes.fakeClaimChatApprovals).toHaveBeenCalledWith(SESSION_ID, decision);
+    const [sessionId, submitted, claimId] = fakes.fakeClaimChatApprovals.mock.calls[0] ?? [];
+    expect(sessionId).toBe(SESSION_ID);
+    expect(submitted).toEqual(decision);
+    expect(typeof claimId).toBe('string');
+    const execute = (
+      fakes.fakeStreamChat.mock.calls.at(-1)?.[0] as {
+        tools: {
+          execute_object_update: {
+            execute: (input: unknown, options: unknown) => Promise<unknown>;
+          };
+        };
+      }
+    ).tools.execute_object_update.execute;
+    const input = decision.parts[0]?.input;
+    const options = { toolCallId: 'call-1' };
+    await expect(execute(input, options)).resolves.toEqual({ ok: false, error: 'stale_state' });
+    expect(calls).toEqual(['start', 'execute', 'finish']);
+    const key = { messageId: decision.id, claimId, toolCallId: 'call-1' };
+    expect(fakes.fakeFinishChatApprovalStep).toHaveBeenCalledWith(SESSION_ID, key, 'failed', {
+      ok: false,
+      error: 'stale_state',
+    });
+    fakes.fakeStartChatApprovalStep.mockResolvedValue(false);
+    await expect(execute(input, options)).resolves.toEqual({
+      error: 'approval_no_longer_available',
+    });
+    expect(mutation).toHaveBeenCalledTimes(1);
     await finishUi(
       'Updated.',
       [{ ...decision.parts[0], state: 'output-available', output: { ok: true } }],

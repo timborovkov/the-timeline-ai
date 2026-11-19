@@ -119,6 +119,7 @@ describe('opt-in diagnostics', () => {
       { ...input, consentVersion: 'old' },
       { ...input, hiddenToolResults: 'secret' },
       { ...input, conversation: 'x'.repeat(60001) },
+      { ...input, category: 'unrecognised' },
     ])
       await expect(scope.diagnostics.submit(invalid)).rejects.toThrow();
     await expect(withTeam(db, TEAM, MEMBER).diagnostics.submit(input)).rejects.toThrow();
@@ -132,9 +133,11 @@ describe('opt-in diagnostics', () => {
     const report = await scope.diagnostics.submit({
       ...input,
       conversation: 'Edited synthetic text',
+      category: 'missing_context',
     });
     const rows = await db.select().from(diagnosticReports);
     expect(JSON.stringify(rows)).not.toContain('Edited synthetic text');
+    expect(JSON.stringify(rows)).not.toContain('missing_context');
     await expect(
       readDiagnosticReport(db, { userId: OWNER, email: 'owner@example.test' }, report.id),
     ).rejects.toThrow();
@@ -142,6 +145,7 @@ describe('opt-in diagnostics', () => {
     expect(await db.select().from(platformAdminAudit)).toHaveLength(0);
     const result = await readDiagnosticReport(db, actor, report.id);
     expect(result.conversation).toBe('Edited synthetic text');
+    expect(result.category).toBe('missing_context');
     const audits = await db.select().from(platformAdminAudit);
     expect(audits).toHaveLength(1);
     expect(audits[0]?.action).toBe('diagnostics.read');

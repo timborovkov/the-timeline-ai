@@ -1,8 +1,12 @@
 'use client';
 
+import {
+  suggestionRejectionLabels,
+  suggestionRejectionReason,
+} from '@timeline/shared/suggestions/rejection';
 import { taskCategoryLabel, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import { ArrowRight, Check, ExternalLink, GitMerge, Inbox, X } from 'lucide-react';
+import { ArrowRight, Check, ExternalLink, GitMerge, Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -25,6 +29,8 @@ import {
   rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
 import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-dialog';
+import { RejectProposal } from '@/components/approvals/reject-proposal';
+import { StaleEvidence } from '@/components/approvals/stale-evidence';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
@@ -1029,9 +1035,13 @@ function ActiveApprovalPreview({
           decisionMessages('accept', 1, activePreview.item.title, activePreview.item.id),
         );
       }}
-      onReject={() => {
+      onReject={(reason) => {
         run(
-          () => rejectSuggestionItemAction({ itemId: activePreview.item.id }),
+          () =>
+            rejectSuggestionItemAction({
+              itemId: activePreview.item.id,
+              ...(reason && { reason }),
+            }),
           [activePreview.item.id],
           decisionMessages('reject', 1, activePreview.item.title, activePreview.item.id),
         );
@@ -1251,22 +1261,21 @@ function ApprovalSelectionBar({
       actions={
         <>
           {allowBulkReject ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
+            <RejectProposal
+              count={selectedItems.length}
               disabled={pending || selectedItems.length === 0}
-              onClick={() => {
+              onReject={(reason) => {
                 run(
-                  () => rejectVisibleSuggestionsAction({ suggestions: selectedByBundle }),
+                  () =>
+                    rejectVisibleSuggestionsAction({
+                      suggestions: selectedByBundle,
+                      ...(reason && { reason }),
+                    }),
                   selectedItems.map((item) => item.id),
                   decisionMessages('reject', selectedItems.length),
                 );
               }}
-            >
-              <X className="size-4" />
-              Reject
-            </Button>
+            />
           ) : null}
           {allowBulkAccept ? (
             <Button
@@ -1628,6 +1637,7 @@ function ApprovalRowDetails({
   bundle: SuggestionBundle;
   timezone: string;
 }) {
+  const rejection = suggestionRejectionReason.safeParse(item.metadata?.rejection_reason);
   return (
     <>
       {' '}
@@ -1640,6 +1650,11 @@ function ApprovalRowDetails({
         <p className="pb-2 pl-9 pr-3 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
       <ApprovalCalendarHint item={item} timezone={timezone} />
+      {item.status === 'rejected' && rejection.success ? (
+        <p className="pb-2 pl-9 pr-3 text-xs text-fg-muted">
+          Rejected · {suggestionRejectionLabels[rejection.data]}
+        </p>
+      ) : null}
       <ApprovalItemDependency item={item} bundle={bundle} />
       <ApprovalItemEvidence item={item} timezone={timezone} />
       {bundle.items.length === 1 && (bundle.evidence.length > 0 || bundle.reason) ? (
@@ -1718,9 +1733,7 @@ function ApprovalInboxRow({
           </span>
         ) : null}
         {item.evidenceStatus === 'stale' ? (
-          <span className="mt-1 block text-xs text-danger">
-            Source changed · regenerate before accepting
-          </span>
+          <span className="mt-1 block text-xs text-danger">Source changed · inspect in review</span>
         ) : null}
       </button>
       <ArrowRight aria-hidden="true" className="mt-1 size-4 shrink-0 text-fg-dim" />
@@ -1930,10 +1943,9 @@ function ApprovalItemActions({
 function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezone: string }) {
   if (item.evidenceStatus === 'stale') {
     return (
-      <p className="pb-2 pl-9 pr-3 text-xs text-danger" role="status">
-        Required source evidence changed after this proposal was created. Regenerate the proposal
-        before accepting this change.
-      </p>
+      <div className="pb-2 pl-9 pr-3">
+        <StaleEvidence itemId={item.id} timezone={timezone} />
+      </div>
     );
   }
   if (!item.evidence || item.evidence.length === 0) return null;

@@ -55,6 +55,11 @@ it('sends only edited selected text and preserves redactions when submission fai
   fireEvent.click(screen.getByRole('checkbox', { name: 'Include message 2 from Assistant' }));
   expect(screen.queryByText('Private answer to exclude')).toBeNull();
   fireEvent.click(consent);
+  fireEvent.change(screen.getByLabelText('Issue with the answer (optional)'), {
+    target: { value: 'wrong_document_version' },
+  });
+  expect(consent.checked).toBe(false);
+  fireEvent.click(consent);
   fireEvent.click(button);
   await waitFor(() => {
     expect(submit).toHaveBeenCalledTimes(1);
@@ -63,6 +68,7 @@ it('sends only edited selected text and preserves redactions when submission fai
   expect(submitted?.get('conversation')).toBe('You:\nRedacted message');
   expect(JSON.stringify(submitted ? [...submitted.entries()] : [])).not.toContain('Private answer');
   expect(submitted?.get('consent')).toBe('on');
+  expect(submitted?.get('category')).toBe('wrong_document_version');
   await waitFor(() => {
     expect(screen.getByRole('alert').textContent).toBe('Could not send');
   });

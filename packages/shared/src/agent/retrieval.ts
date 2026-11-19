@@ -22,6 +22,10 @@ export type {
 } from '#src/agent/retrieval-contract.js';
 
 export interface WorkspaceContextResult {
+  queriedObjects: boolean;
+  queriedBoards: boolean;
+  queriedDocuments: boolean;
+  queriedCalendar: boolean;
   retrieval?: { timeline: SearchRankingSummary | null; documents: SearchRankingSummary | null };
   conflictContext?: Awaited<ReturnType<typeof enrichEvidenceContext>>;
   recipe: Exclude<RetrievalRecipe, 'auto'>;
@@ -97,6 +101,7 @@ export async function retrieveWorkspaceContext(
     input.includeDocuments === true ||
     (input.includeDocuments !== false &&
       (recipe === 'document_knowledge' || recipe === 'object_profile' || recipe === 'task_status'));
+  const includeCalendar = Boolean(input.includeCalendar || recipe === 'calendar');
   const routes =
     recipe === 'product_guide' ? searchAppGuide(query, limit) : searchAppGuide(query, 2);
   const adapterFailures: WorkspaceContextAdapterFailure[] = [];
@@ -189,7 +194,7 @@ export async function retrieveWorkspaceContext(
             [],
           )
         : [],
-      input.includeCalendar || recipe === 'calendar'
+      includeCalendar
         ? recoverAdapter(
             adapterFailures,
             'calendar',
@@ -309,6 +314,10 @@ export async function retrieveWorkspaceContext(
     })) ?? [];
 
   const result: WorkspaceContextResult = {
+    queriedObjects: !input.objectId || Boolean(primaryObjectId),
+    queriedBoards: Boolean(primaryObjectId),
+    queriedDocuments: includeDocuments,
+    queriedCalendar: includeCalendar,
     retrieval,
     conflictContext: await enrichEvidenceContext(scope, {
       includeConversation: false,
