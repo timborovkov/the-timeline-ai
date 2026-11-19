@@ -26,6 +26,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { clearOnboardingSourceIntent } from '@/lib/onboarding-source-intent';
 import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -214,6 +215,7 @@ export async function selectStarterPathAction(input: {
     trackProductEventBestEffort(actor(got.userId, got.teamId), 'onboarding_first_path_selected', {
       path: parsed.data.path,
     });
+    await clearOnboardingSourceIntent();
     revalidateOnboarding();
     return { ok: true };
   });

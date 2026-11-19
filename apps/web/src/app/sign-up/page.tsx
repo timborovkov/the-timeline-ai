@@ -11,7 +11,6 @@ import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
   onboardingCallbackForSource,
   parseOnboardingSourceIntent,
-  setOnboardingSourceIntent,
 } from '@/lib/onboarding-source-intent';
 import { readPendingInvite } from '@/lib/pending-invite';
 
@@ -35,10 +34,8 @@ interface Props {
 export default async function SignUpPage({ searchParams }: Props) {
   const [{ invite, plan, callbackUrl: requestedCallback, source: sourceParam }, session] =
     await Promise.all([searchParams, auth()]);
+  // Source intent cookie is stashed by `proxy.ts` (cookie writes are illegal in RSC render).
   const sourceIntent = parseOnboardingSourceIntent(sourceParam);
-  if (sourceIntent) {
-    await setOnboardingSourceIntent(sourceIntent);
-  }
   const callbackUrl = signupCallback(
     requestedCallback ?? (sourceIntent ? onboardingCallbackForSource(sourceIntent) : undefined),
     plan,

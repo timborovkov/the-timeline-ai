@@ -5,6 +5,7 @@ import {
   type OnboardingSourceIntent,
 } from '@timeline/shared/onboarding/first-run';
 import { cookies } from 'next/headers';
+import type { NextResponse } from 'next/server';
 
 import { nonEmptyEnv } from '@/lib/safe-redirect';
 
@@ -14,8 +15,19 @@ export {
   type OnboardingSourceIntent,
 } from '@timeline/shared/onboarding/first-run';
 
-const COOKIE_NAME = 'tl_onboarding_source';
+export const ONBOARDING_SOURCE_COOKIE = 'tl_onboarding_source';
+const COOKIE_NAME = ONBOARDING_SOURCE_COOKIE;
 const TTL_MS = 30 * 60 * 1000;
+
+function cookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: TTL_MS / 1000,
+  };
+}
 
 interface SignedPayload {
   intent: OnboardingSourceIntent;
@@ -58,18 +70,25 @@ function verify(value: string): OnboardingSourceIntent | null {
   return parseOnboardingSourceIntent(parsed.intent);
 }
 
-/** Stash marketing source intent across sign-up / OAuth before first-run chooser. */
+/**
+ * Stash marketing source intent on a middleware/proxy response.
+ * Cookie writes are not allowed from Server Components during render.
+ */
+export function stashOnboardingSourceIntentCookie(
+  response: NextResponse,
+  intent: OnboardingSourceIntent,
+): void {
+  const value = sign({ intent, exp: Date.now() + TTL_MS });
+  if (!value) return;
+  response.cookies.set(COOKIE_NAME, value, cookieOptions());
+}
+
+/** Server Action / Route Handler only — not safe from RSC render. */
 export async function setOnboardingSourceIntent(intent: OnboardingSourceIntent): Promise<void> {
   const value = sign({ intent, exp: Date.now() + TTL_MS });
   if (!value) return;
   const jar = await cookies();
-  jar.set(COOKIE_NAME, value, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: TTL_MS / 1000,
-  });
+  jar.set(COOKIE_NAME, value, cookieOptions());
 }
 
 export async function readOnboardingSourceIntent(): Promise<OnboardingSourceIntent | null> {
@@ -79,6 +98,7 @@ export async function readOnboardingSourceIntent(): Promise<OnboardingSourceInte
   return verify(raw);
 }
 
+/** Server Action / Route Handler only — not safe from RSC render. */
 export async function clearOnboardingSourceIntent(): Promise<void> {
   const jar = await cookies();
   jar.delete(COOKIE_NAME);

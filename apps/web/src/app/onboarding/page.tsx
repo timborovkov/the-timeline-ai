@@ -8,7 +8,6 @@ import { db } from '@/lib/db';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 import { resolveOnboardingConnectors } from '@/lib/onboarding-connectors';
 import {
-  clearOnboardingSourceIntent,
   parseOnboardingSourceIntent,
   readOnboardingSourceIntent,
 } from '@/lib/onboarding-source-intent';
@@ -29,10 +28,8 @@ export default async function OnboardingPage({ searchParams }: Props) {
     searchParams,
     readOnboardingSourceIntent(),
   ]);
+  // Cookie clear happens in selectStarterPathAction (Server Action) — RSC cannot mutate cookies.
   const preferredSource = parseOnboardingSourceIntent(sourceParam) ?? cookieIntent;
-  if (cookieIntent) {
-    await clearOnboardingSourceIntent();
-  }
 
   const status = await loadFirstRunStatus({
     db,

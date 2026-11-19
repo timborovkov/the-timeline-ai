@@ -172,7 +172,8 @@ export function SetupFlow({
   async function returnToChooser() {
     const result = await setFirstRunPhaseAction('choose');
     if (!result.ok) throw new Error(result.error ?? 'Could not return to the chooser.');
-    router.refresh();
+    // Drop marketing ?source= so a refresh does not re-auto-start the connector path.
+    router.replace('/onboarding');
   }
 
   return (
