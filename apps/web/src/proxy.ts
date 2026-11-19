@@ -7,6 +7,7 @@ import { canonicalHostRedirect } from '@/lib/canonical-host';
 import { connectionsLegacyRedirectLocation } from '@/lib/connections';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
 import { platformRequestGate } from '@/lib/platform-request-gate';
+import { applySignupPlanIntentFromRequest } from '@/lib/signup-plan-intent';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
 type ProxyHandler = (
@@ -22,6 +23,7 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
   requestHeaders.set('x-timeline-method', request.method);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   await migrateLegacyActiveTeamCookie(request, response);
+  applySignupPlanIntentFromRequest(request, response);
   return response;
 }) as unknown as ProxyHandler;
 

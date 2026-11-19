@@ -255,11 +255,18 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
                 defaultValue={currentName}
                 required
                 maxLength={80}
+                autoComplete="organization"
                 aria-invalid={activeNameError ? true : undefined}
-                aria-describedby={activeNameError ? 'team-name-error' : undefined}
+                aria-describedby={
+                  activeNameError ? 'team-name-error team-name-hint' : 'team-name-hint'
+                }
               />
             )}
           </FieldError>
+          <p id="team-name-hint" className="text-xs text-fg-muted">
+            Shown across Timeline for this workspace. Renaming does not change the team email or
+            slug.
+          </p>
         </div>
         <Submit label="Rename" variant="default" />
       </div>

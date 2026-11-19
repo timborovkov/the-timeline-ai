@@ -65,7 +65,11 @@ await vi.mock(
         unreadNotificationCount: fakes.unreadNotificationCount,
       },
       billing: {
-        getDashboard: () => Promise.resolve({ sidebar: null }),
+        getDashboard: () =>
+          Promise.resolve({
+            sidebar: null,
+            account: { planId: 'free', polarSubscriptionId: null },
+          }),
       },
       onboarding: {
         getFirstRun: fakes.getFirstRun,

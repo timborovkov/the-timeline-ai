@@ -24,7 +24,9 @@ export function suggestionEventId(id: string, index: number) {
 }
 type IO = NonNullable<Parameters<typeof processSuggestionJobForTests>[2]>;
 /** Isolated migrated database; production proposal and visibility logic, sequential use only. */
-export async function createSuggestionHarness() {
+export async function createSuggestionHarness(
+  options: { auditCommunication?: IO['chatStructured'] } = {},
+) {
   const store = await createResettablePGliteTestDb(async (pg) => {
     await pg.exec(`
       INSERT INTO teams (id,slug,name) VALUES ('${TEAM}','suggestion-eval','Synthetic suggestion benchmark'),('${FOREIGN}','foreign-eval','Foreign synthetic workspace');
@@ -141,6 +143,7 @@ export async function createSuggestionHarness() {
       }
       const queued: Parameters<typeof processSuggestionJobForTests>[1][] = [];
       const io: IO = {
+        ...(options.auditCommunication ? { auditCommunication: options.auditCommunication } : {}),
         getEnv: () => ({
           ...getEnv(),
           OPENROUTER_API_KEY: 'synthetic-harness',

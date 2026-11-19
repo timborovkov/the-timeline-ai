@@ -5,13 +5,11 @@ import {
   getDb,
   sessions,
   teamMembers,
-  teams,
   users,
   verificationTokens,
 } from '@timeline/db';
 import { createPolarBillingProvider, synchronizePolarBillingUser } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
-import { sendMessage } from '@timeline/shared/messaging';
 import { verifyPassword } from '@timeline/shared/passwords';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
@@ -24,7 +22,6 @@ import { z } from 'zod';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { signedInAuthRedirect } from '@/lib/auth-redirect';
 import { authConfig } from '@/lib/auth.config';
-import { ensureSoloTeam } from '@/lib/default-team';
 import { markEmailVerifiedFromTrustedOAuth, sendEmailVerification } from '@/lib/email-verification';
 import { rememberLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
@@ -45,7 +42,6 @@ import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-s
 import { reportCaughtError } from '@/lib/sentry-report';
 import { validateSessionVersion } from '@/lib/session-version';
 import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
-import { getSiteUrl } from '@/lib/site-url';
 
 const db = getDb();
 const log = childLogger('web:auth');
@@ -260,9 +256,8 @@ const nextAuth = NextAuth(() => {
         });
       },
       // OAuth signups land here after the adapter inserts the user. Credentials
-      // signups handle their own team creation in signUpAction, so this only
-      // fires for first-time OAuth users — give them a default solo team so
-      // they don't land on /app with no membership.
+      // signups handle invite membership in signUpAction. Solo workspaces are
+      // created later on the Welcome step — never invent a default-named team here.
       async createUser({ user }) {
         const userId = user.id;
         if (!userId) return;
@@ -307,17 +302,9 @@ const nextAuth = NextAuth(() => {
           .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
           .limit(1);
         if (membership) return;
-        // OAuth signups that arrived via an invite link must NOT get a default
-        // solo team — they'll be added to the invited team when the callback
-        // lands on /accept-invite/<token>. Creating a solo team here would
-        // leave the user in two teams forever. If invite acceptance later
-        // fails, `acceptInviteAction` spins a fallback solo team for them.
-        //
-        // Best-effort cookie read: if `cookies()` throws (request-context edge
-        // case, future runtime quirk), treat as "no pending invite" and fall
-        // through to ensureSoloTeam. Letting the error propagate would break
-        // the entire OAuth signup — strictly worse than the rare two-teams
-        // outcome (user can leave the spare team via the UI).
+        // Invite OAuth signups join the inviting team on /accept-invite. Solo
+        // OAuth signups create their workspace on the Welcome step. Neither
+        // path invents a default-named owned team here.
         let pendingInvite: string | null = null;
         try {
           const { readPendingInvite } = await import('@/lib/pending-invite');
@@ -342,71 +329,29 @@ const nextAuth = NextAuth(() => {
         } catch {
           attribution = undefined;
         }
-        if (pendingInvite) {
-          trackProductEventBestEffort({ kind: 'user', userId }, 'account_registered', {
-            source,
-            joinedViaInvite: true,
-            ...(attribution?.source ? { attributionSource: attribution.source } : {}),
-            ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
-            ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
-          });
-          return;
-        }
-        const teamId = await ensureSoloTeam(userId, { name: user.name, email: user.email });
-        const actor = teamId
-          ? ({ kind: 'user', userId, teamId } as const)
-          : ({ kind: 'user', userId } as const);
-        trackProductEventBestEffort(actor, 'account_registered', {
+        const joinedViaInvite = Boolean(pendingInvite);
+        trackProductEventBestEffort({ kind: 'user', userId }, 'account_registered', {
           source,
-          joinedViaInvite: false,
+          joinedViaInvite,
           ...(attribution?.source ? { attributionSource: attribution.source } : {}),
           ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
           ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
         });
-        if (teamId) {
-          const teamRows = await db
-            .select({ name: teams.name })
-            .from(teams)
-            .where(eq(teams.id, teamId))
-            .limit(1);
-          const teamName = teamRows[0]?.name ?? 'your team';
-          trackProductEventBestEffort(actor, 'team_created', { source: 'oauth' });
-          if (user.email) {
-            const outbound = [
-              sendMessage(
-                'welcome',
-                {
-                  to: user.email,
-                  name: user.name ?? null,
-                  dashboardUrl: `${getSiteUrl()}/app`,
-                  teamName,
-                },
-                { db, teamId, userId, dedupeKey: `welcome:${userId}` },
-              ).catch((err: unknown) => {
-                reportCaughtError(err, {
-                  surface: 'server_action',
-                  operation: 'oauth_welcome_email',
-                });
-              }),
-            ];
-            if (sendVerificationEmail) {
-              outbound.push(
-                sendEmailVerification({
-                  db,
-                  userId,
-                  email: user.email,
-                  teamId,
-                  callbackUrl: verificationCallbackUrl,
-                }).catch((err: unknown) => {
-                  reportCaughtError(err, {
-                    surface: 'server_action',
-                    operation: 'oauth_verify_email',
-                  });
-                }),
-              );
-            }
-            await Promise.all(outbound);
-          }
+        // Invite joiners get welcome mail after accept-invite; solo owners after
+        // Welcome creates the workspace. Verification still goes out now.
+        if (sendVerificationEmail && user.email) {
+          await sendEmailVerification({
+            db,
+            userId,
+            email: user.email,
+            teamId: null,
+            callbackUrl: joinedViaInvite ? undefined : verificationCallbackUrl,
+          }).catch((err: unknown) => {
+            reportCaughtError(err, {
+              surface: 'server_action',
+              operation: 'oauth_verify_email',
+            });
+          });
         }
       },
     },

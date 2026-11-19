@@ -5,7 +5,7 @@ import { SignInForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
-import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { signUpHrefFromAuthCallback, signedInAuthRedirect } from '@/lib/auth-redirect';
 import { readLastLoginMethod } from '@/lib/last-login-method';
 import { oauthSignInErrorMessage } from '@/lib/oauth-sign-in';
 import { readPendingInvite } from '@/lib/pending-invite';
@@ -36,11 +36,7 @@ export default async function SignInPage({ searchParams }: Props) {
       title="Welcome back"
       subtitle="Sign in to your team’s timeline."
       secondaryPrefix="No account yet?"
-      secondaryHref={
-        callbackUrl
-          ? `/sign-up?callbackUrl=${encodeURIComponent(signedInAuthRedirect({ callbackUrl }))}`
-          : '/sign-up'
-      }
+      secondaryHref={signUpHrefFromAuthCallback(callbackUrl)}
       secondaryLabel="Create one"
     >
       {oauthError ? (

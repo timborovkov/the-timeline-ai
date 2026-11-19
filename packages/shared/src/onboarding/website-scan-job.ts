@@ -1,4 +1,4 @@
-import { getEnv } from '#src/env.js';
+import { allowsMissingFirecrawlApiKey, getEnv } from '#src/env.js';
 import {
   type FirstRunScanFailureReason,
   type FirstRunState,
@@ -68,8 +68,17 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
     return;
   }
   const websiteUrl = firstRun.websiteUrl;
-  const apiKey = deps.firecrawlApiKey ?? getEnv().FIRECRAWL_API_KEY;
-  if (!apiKey?.trim()) throw new Error('FIRECRAWL_API_KEY is required for website scanning.');
+  const env = getEnv();
+  const apiKey = deps.firecrawlApiKey?.trim() ?? env.FIRECRAWL_API_KEY?.trim() ?? '';
+  if (
+    !apiKey &&
+    !allowsMissingFirecrawlApiKey({
+      NODE_ENV: env.NODE_ENV,
+      FIRECRAWL_API_ORIGIN: env.FIRECRAWL_API_ORIGIN,
+    })
+  ) {
+    throw new Error('FIRECRAWL_API_KEY is required for website scanning.');
+  }
   let pages = await deps.getPages();
   // Recheck admission in the worker: a queued reservation may have expired.
   if (!(await deps.reserve())) {

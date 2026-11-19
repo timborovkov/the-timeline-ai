@@ -64,6 +64,8 @@ export interface ChatStructuredInput<TSchema extends z.ZodType> {
    * needs more headroom than `DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS`.
    */
   maxOutputTokens?: number;
+  /** Optional reasoning effort for bounded structured extraction; defaults remain provider-owned. */
+  reasoningEffort?: 'low';
   /** AbortSignal wired to the request lifecycle for bounded evals/workers. */
   abortSignal?: AbortSignal;
 }
@@ -156,15 +158,19 @@ Return only a JSON object matching this JSON Schema:
 ${jsonSchema}`;
 }
 
-function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
+function openRouterRequireParametersOptions(
+  reasoningEffort?: 'low',
+): GenerateObjectProviderOptions {
   return openRouterPrivateProviderOptions({
     provider: { require_parameters: true },
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
   });
 }
 
-function openRouterJsonObjectOptions(): GenerateObjectProviderOptions {
+function openRouterJsonObjectOptions(reasoningEffort?: 'low'): GenerateObjectProviderOptions {
   return openRouterPrivateProviderOptions({
     provider: { require_parameters: true },
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     response_format: { type: 'json_object' },
   });
 }
@@ -331,6 +337,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   modelId,
   operation,
   maxOutputTokens,
+  reasoningEffort,
   abortSignal,
 }: {
   schema: TSchema;
@@ -341,6 +348,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   modelId: string;
   operation: 'chat_structured' | 'chat_structured_json_object_fallback';
   maxOutputTokens: number;
+  reasoningEffort?: 'low';
   abortSignal?: AbortSignal;
 }) {
   // generateObject is the right primitive for structured-output extraction;
@@ -356,13 +364,16 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
     repairText: repairStructuredOutput(schema, normalizeOutput),
-    providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
-      name: 'llm.chatStructured',
-      model: modelId,
-      metadata: {
-        operation,
+    providerOptions: withLangSmithProviderOptions(
+      openRouterRequireParametersOptions(reasoningEffort),
+      {
+        name: 'llm.chatStructured',
+        model: modelId,
+        metadata: {
+          operation,
+        },
       },
-    }),
+    ),
   });
 }
 
@@ -374,6 +385,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   model,
   modelId,
   maxOutputTokens,
+  reasoningEffort,
   abortSignal,
 }: {
   schema: TSchema;
@@ -383,6 +395,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   model: LanguageModel;
   modelId: string;
   maxOutputTokens: number;
+  reasoningEffort?: 'low';
   abortSignal?: AbortSignal;
 }) {
   const result = await generateText({
@@ -392,7 +405,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
     maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
-    providerOptions: withLangSmithProviderOptions(openRouterJsonObjectOptions(), {
+    providerOptions: withLangSmithProviderOptions(openRouterJsonObjectOptions(reasoningEffort), {
       name: 'llm.chatStructured',
       model: modelId,
       metadata: {
@@ -493,6 +506,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
               modelId: candidateModelId,
               operation: 'chat_structured',
               maxOutputTokens,
+              ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
               ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
             });
             captureFinish(
@@ -519,6 +533,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
               model: fallbackModel,
               modelId: candidateModelId,
               maxOutputTokens,
+              ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
               ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
             }).catch((fallbackErr: unknown) => {
               if (isBillingAdmissionError(fallbackErr)) throw fallbackErr;
