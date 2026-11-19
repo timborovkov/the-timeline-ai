@@ -311,6 +311,12 @@
       "import": "./dist/billing/index.js",
       "default": "./dist/billing/index.js"
     },
+    "./billing/errors": {
+      "types": "./src/billing/errors.ts",
+      "development": "./src/billing/errors.ts",
+      "import": "./dist/billing/errors.js",
+      "default": "./dist/billing/errors.js"
+    },
     "./billing/catalog": {
       "types": "./src/billing/catalog.ts",
       "development": "./src/billing/catalog.ts",

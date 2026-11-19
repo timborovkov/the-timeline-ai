@@ -372,6 +372,30 @@ describe('suggestion item actions', () => {
     expectSuggestionSurfacesRevalidated();
   });
 
+  it('does not report missing-target object apply failures to Sentry', async () => {
+    const err = Object.assign(
+      new Error(
+        'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.',
+      ),
+      {
+        name: 'ExpectedSuggestionApplyFailure',
+        code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+        cause: Object.assign(new Error('Object not found'), {
+          name: 'ObjectNotFoundError',
+          code: 'TIMELINE_OBJECT_NOT_FOUND',
+        }),
+      },
+    );
+    fakes.fakeSuggestions.acceptSuggestionItemWithOutcome.mockRejectedValue(err);
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: err.message,
+      failedItemIds: [ITEM_ID],
+    });
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
+  });
+
   it('reports raw invalid proposal payload failures that were not marked expected', async () => {
     const err = new z.ZodError([
       {

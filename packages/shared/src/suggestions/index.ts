@@ -69,6 +69,7 @@ import {
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
+import { isObjectNotFoundError } from '#src/mutation-errors.js';
 import type {
   CreateObjectInput,
   IdentityFacetInput,
@@ -108,6 +109,7 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
+
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
@@ -360,10 +362,15 @@ function isEntityCanonicalNameDuplicate(err: unknown): boolean {
 }
 
 function isExpectedApplyFailure(err: unknown): boolean {
-  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+  return (
+    err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err) || isObjectNotFoundError(err)
+  );
 }
 
 function suggestionApplyFailureReason(err: unknown): string {
+  if (isObjectNotFoundError(err)) {
+    return 'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.';
+  }
   if (isEntityCanonicalNameDuplicate(err)) {
     return 'A workspace object with this name already exists. Reject this proposal or update the existing object instead.';
   }
