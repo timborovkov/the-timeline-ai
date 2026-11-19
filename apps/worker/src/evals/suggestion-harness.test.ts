@@ -5,12 +5,13 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { SUGGESTION_CASES } from '#src/evals/suggestion-cases.js';
 import { createSuggestionHarness } from '#src/evals/suggestion-harness.js';
 import { scoreSuggestions } from '#src/evals/suggestion-report.js';
+import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
 
 // Real scheduling, database, deduplication and permission logic; only inference is controlled.
 // No external services. Live model quality is evaluated by eval:suggestions:compare.
 let harness: Awaited<ReturnType<typeof createSuggestionHarness>>;
 beforeAll(async () => {
-  harness = await createSuggestionHarness();
+  harness = await createSuggestionHarness({ auditCommunication: controlledCommunicationAudit });
 }, 60_000);
 afterAll(async () => {
   await harness.close();
@@ -30,6 +31,7 @@ test('persists one visible grounded suggestion when the same review job is repla
               confidence: 'high',
               items: [
                 {
+                  grounding: [],
                   operation: 'create',
                   targetKind: 'task',
                   title: 'Prepare release checklist',
@@ -102,6 +104,7 @@ test('detects private facts in outputs even when the canary marker is omitted', 
               confidence: 'high',
               items: [
                 {
+                  grounding: [],
                   operation: 'create',
                   targetKind: 'task',
                   title: 'Update public FAQ',
@@ -152,12 +155,14 @@ test('forwarded email survives real capture and queues visible customer/project 
             confidence: 'high',
             items: [
               {
+                grounding: [],
                 operation: 'create',
                 targetKind: 'object',
                 title: 'Cedar Dental',
                 proposedPayload: { type: 'company', canonicalName: 'Cedar Dental' },
               },
               {
+                grounding: [],
                 operation: 'create',
                 targetKind: 'object',
                 title: 'Patient Portal',

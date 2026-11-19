@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { getEnv } from '@timeline/shared/env';
+import { isFirecrawlConfigured } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import {
   FIRST_RUN_PATHS,
@@ -143,7 +143,7 @@ export async function selectStarterPathAction(input: {
     if (parsed.data.path === 'website') {
       if (!parsed.data.websitePermissionConfirmed)
         return { ok: false, error: 'Confirm that you may submit this website for scanning.' };
-      if (!getEnv().FIRECRAWL_API_KEY?.trim())
+      if (!isFirecrawlConfigured())
         return {
           ok: false,
           error: 'FIRECRAWL_API_KEY is required for website scanning. Contact your administrator.',

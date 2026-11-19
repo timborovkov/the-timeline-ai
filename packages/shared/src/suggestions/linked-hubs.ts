@@ -29,6 +29,7 @@ export function mergeInheritedLinkedHubs(args: {
     seen.add(hub.id);
   }
   return {
+    ...args.qualified,
     mentioned,
     uniqueProject,
     uniqueCompany,
