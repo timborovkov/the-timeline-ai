@@ -74,10 +74,16 @@
   justify-self: end;
   align-items: center;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .publicMenu {
   display: none;
+}
+
+.signInLink {
+  padding-inline: 0.55rem;
+  white-space: nowrap;
 }
 
 .navCta {
@@ -142,6 +148,10 @@
     padding-inline: 0.75rem;
   }
 
+  .actions {
+    gap: 0.125rem;
+  }
+
   .githubLink {
     display: none !important;
   }
@@ -149,38 +159,32 @@
   .navCta {
     padding-inline: 0.65rem;
   }
+
+  .signInLink {
+    padding-inline: 0.4rem;
+  }
 }
 
 @media (max-width: 30rem) {
-  .signInLink,
+  /* Theme stays available inside the mobile menu panel. */
   .themeToggle {
     display: none !important;
   }
 }
 
-@media (max-width: 24rem) {
-  .publicMenu > summary {
-    width: 2.75rem;
-    padding-inline: 0;
-    justify-content: center;
+@media (max-width: 22.5rem) {
+  .header {
+    padding-inline: 0.625rem;
   }
 
-  .publicMenu > summary span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-}
-
-@media (max-width: 22rem) {
   .navCta {
-    font-size: 0.75rem;
+    padding-inline: 0.55rem;
+    font-size: 0.8125rem;
+  }
+
+  .signInLink {
+    padding-inline: 0.3rem;
+    font-size: 0.8125rem;
   }
 }
 

@@ -3,7 +3,7 @@
 import { ArrowUpRight, ChevronDown, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   COMPARE_NAV_ITEMS,
@@ -424,8 +424,11 @@ export function PublicNavigationDisclosure({
 }) {
   const pathname = usePathname();
   const disclosureRef = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(false);
   const closeDisclosure = () => {
-    if (disclosureRef.current) disclosureRef.current.open = false;
+    if (!disclosureRef.current) return;
+    disclosureRef.current.open = false;
+    setOpen(false);
   };
 
   useEffect(() => {
@@ -433,12 +436,15 @@ export function PublicNavigationDisclosure({
       const disclosure = disclosureRef.current;
       if (event.key !== 'Escape' || !disclosure?.open) return;
       disclosure.open = false;
+      setOpen(false);
       disclosure.querySelector('summary')?.focus();
     };
     const closeOutside = (event: PointerEvent) => {
       const node = disclosureRef.current;
-      if (node?.open && event.target instanceof Node && !node.contains(event.target))
+      if (node?.open && event.target instanceof Node && !node.contains(event.target)) {
         node.open = false;
+        setOpen(false);
+      }
     };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
@@ -449,13 +455,18 @@ export function PublicNavigationDisclosure({
   }, []);
 
   useEffect(() => {
-    if (disclosureRef.current) disclosureRef.current.open = false;
+    if (!disclosureRef.current) return;
+    disclosureRef.current.open = false;
+    setOpen(false);
   }, [pathname]);
 
   return (
     <details
       ref={disclosureRef}
       className={cn('relative', className)}
+      onToggle={(event) => {
+        setOpen(event.currentTarget.open);
+      }}
       onBlur={(event) => {
         if (
           event.relatedTarget instanceof Node &&
@@ -464,9 +475,12 @@ export function PublicNavigationDisclosure({
           event.currentTarget.open = false;
       }}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm border border-border bg-bg px-3 text-sm font-medium text-fg outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-details-marker]:hidden">
-        <Menu aria-hidden="true" className="size-4" />
-        <span>Menu</span>
+      <summary
+        aria-label={open ? 'Close menu' : 'Open menu'}
+        aria-expanded={open}
+        className={styles.menuTrigger}
+      >
+        <Menu aria-hidden="true" className={styles.menuTriggerIcon} />
       </summary>
       <nav aria-label="Public navigation menu" className={styles.mobilePanel}>
         <MobileNavigationItems currentSection={currentSection} onNavigate={closeDisclosure} />

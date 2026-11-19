@@ -50,7 +50,7 @@ describe('PublicNavigationDisclosure', () => {
     const { container } = render(<PublicNavigationDisclosure currentSection="help" />);
     const disclosure = container.querySelector('details');
 
-    await user.click(screen.getByText('Menu'));
+    await user.click(screen.getByLabelText('Open menu'));
     expect(disclosure?.open).toBe(true);
 
     const pricingLink = screen.getByRole('link', { name: 'Pricing' });
@@ -65,7 +65,7 @@ describe('PublicNavigationDisclosure', () => {
   it('closes with Escape and returns focus to the menu trigger', async () => {
     const user = userEvent.setup();
     const { container } = render(<PublicNavigationDisclosure currentSection="help" />);
-    await user.click(screen.getByText('Menu'));
+    await user.click(screen.getByLabelText('Open menu'));
     screen.getByRole('link', { name: 'Pricing' }).focus();
     await user.keyboard('{Escape}');
     expect(container.querySelector('details')?.open).toBe(false);
@@ -77,7 +77,7 @@ describe('PublicNavigationDisclosure', () => {
     const { container, rerender } = render(<PublicNavigationDisclosure currentSection="help" />);
     const disclosure = container.querySelector('details');
 
-    await user.click(screen.getByText('Menu'));
+    await user.click(screen.getByLabelText('Open menu'));
     expect(disclosure?.open).toBe(true);
 
     route.pathname = '/help';
@@ -105,7 +105,7 @@ describe('Header navigation', () => {
   it('opens Use cases and Integrations dropdowns, including on the mobile menu', async () => {
     const user = userEvent.setup();
     const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
-    await user.click(screen.getByText('Menu'));
+    await user.click(screen.getByLabelText('Open menu'));
 
     const useCases = container.querySelector<HTMLDetailsElement>('nav details');
     expect(useCases?.open).toBe(false);
@@ -198,7 +198,7 @@ describe('Header navigation', () => {
       setPublicSessionCache({ status: 'signed-out' });
       const user = userEvent.setup();
       const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
-      await user.click(screen.getByText('Menu'));
+      await user.click(screen.getByLabelText('Open menu'));
       expect(container.querySelector('details')?.open).toBe(true);
 
       const dropdowns = [...container.querySelectorAll<HTMLDetailsElement>('nav details')];
@@ -267,7 +267,7 @@ describe('Header navigation', () => {
   it('closes the mobile disclosure when Pricing is activated by keyboard', async () => {
     const user = userEvent.setup();
     const { container } = render(<PublicNavigationDisclosure currentSection="pricing" />);
-    await user.click(screen.getByText('Menu'));
+    await user.click(screen.getByLabelText('Open menu'));
     const link = screen.getByRole('link', { name: 'Pricing' });
     link.addEventListener('click', (event) => {
       event.preventDefault();
@@ -314,10 +314,10 @@ it('dismisses the mobile menu on outside click and focus departure', async () =>
       <button>Outside</button>
     </>,
   );
-  await user.click(screen.getByText('Menu'));
+  await user.click(screen.getByLabelText('Open menu'));
   await user.click(screen.getByRole('button', { name: 'Outside' }));
   expect(container.querySelector('details')?.open).toBe(false);
-  await user.click(screen.getByText('Menu'));
+  await user.click(screen.getByLabelText('Open menu'));
   screen.getByRole('button', { name: 'Outside' }).focus();
   expect(container.querySelector('details')?.open).toBe(false);
 });
