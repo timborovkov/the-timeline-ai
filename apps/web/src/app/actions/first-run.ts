@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { users } from '@timeline/db';
+import { teamMembers, users } from '@timeline/db';
 import { createOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import { isFirecrawlConfigured } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
@@ -21,7 +21,7 @@ import {
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import { startWebsiteScan } from '@timeline/shared/websites';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -135,48 +135,67 @@ export async function submitWorkStyleAction(input: {
       if (teamName === undefined) {
         return { ok: false, error: 'Invalid team name' };
       }
-      let created: Awaited<ReturnType<typeof createOwnedWorkspace>>;
+      let createdName = teamName;
+      let createdFresh = false;
       try {
-        created = await db.transaction((tx) =>
-          createOwnedWorkspace(tx, {
+        const provisioned = await db.transaction(async (tx) => {
+          // Serialize concurrent Welcome submits for the same user so two tabs
+          // cannot each invent an owned workspace.
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${session.user.id}, 41))`,
+          );
+          const [existing] = await tx
+            .select({ teamId: teamMembers.teamId })
+            .from(teamMembers)
+            .where(and(eq(teamMembers.userId, session.user.id), isNull(teamMembers.removedAt)))
+            .limit(1);
+          if (existing) {
+            return { teamId: existing.teamId, name: teamName, fresh: false as const };
+          }
+          const workspace = await createOwnedWorkspace(tx, {
             ownerId: session.user.id,
             name: teamName,
             timezone: DEFAULT_TIMEZONE,
-          }),
-        );
+          });
+          return { teamId: workspace.team.id, name: workspace.team.name, fresh: true as const };
+        });
+        teamId = provisioned.teamId;
+        createdName = provisioned.name;
+        createdFresh = provisioned.fresh;
       } catch (err) {
         log.error({ err }, 'welcome_create_workspace_failed');
         reportCaughtError(err, { surface: 'server_action', operation: 'welcome_create_workspace' });
         return { ok: false, error: 'Could not create your team. Please try again.' };
       }
-      teamId = created.team.id;
       const cookieStore = await cookies();
       cookieStore.set(
         ACTIVE_TEAM_COOKIE,
         serializeActiveTeamCookie(teamId),
         activeTeamCookieOptions(),
       );
-      trackProductEventBestEffort(actor(session.user.id, teamId), 'team_created', {
-        source: 'signup',
-      });
-      const [owner] = await db
-        .select({ email: users.email, name: users.name })
-        .from(users)
-        .where(eq(users.id, session.user.id))
-        .limit(1);
-      if (owner?.email) {
-        await sendMessage(
-          'welcome',
-          {
-            to: owner.email,
-            name: owner.name ?? null,
-            dashboardUrl: `${getSiteUrl()}/app`,
-            teamName: created.team.name,
-          },
-          { db, teamId, userId: session.user.id, dedupeKey: `welcome:${session.user.id}` },
-        ).catch((err: unknown) => {
-          reportCaughtError(err, { surface: 'server_action', operation: 'welcome_email' });
+      if (createdFresh) {
+        trackProductEventBestEffort(actor(session.user.id, teamId), 'team_created', {
+          source: 'signup',
         });
+        const [owner] = await db
+          .select({ email: users.email, name: users.name })
+          .from(users)
+          .where(eq(users.id, session.user.id))
+          .limit(1);
+        if (owner?.email) {
+          await sendMessage(
+            'welcome',
+            {
+              to: owner.email,
+              name: owner.name ?? null,
+              dashboardUrl: `${getSiteUrl()}/app`,
+              teamName: createdName,
+            },
+            { db, teamId, userId: session.user.id, dedupeKey: `welcome:${session.user.id}` },
+          ).catch((err: unknown) => {
+            reportCaughtError(err, { surface: 'server_action', operation: 'welcome_email' });
+          });
+        }
       }
     } else if (parsed.data.teamName !== undefined) {
       const renamed = await applyTeamRename({

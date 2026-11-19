@@ -199,7 +199,18 @@ beforeEach(() => {
     team: { id: TEAM_ID, name: 'Northstar Labs', slug: 'northstar-labs' },
     billing: { restricted: false },
   });
-  fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) => callback({}));
+  fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
+    callback({
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([]),
+          })),
+        })),
+      })),
+    }),
+  );
   fakes.dbSelect.mockReturnValue({
     from: vi.fn(() => ({
       where: vi.fn(() => ({
@@ -387,6 +398,39 @@ describe('submitWorkStyleAction team name', () => {
       }),
       expect.objectContaining({ teamId: TEAM_ID, userId: USER_ID }),
     );
+    expect(fakes.submitWorkStyle).toHaveBeenCalledWith('email');
+  });
+
+  it('reuses an existing membership instead of creating a second owned workspace', async () => {
+    const existingTeamId = '11111111-1111-4111-8111-111111111111';
+    fakes.resolveActiveTeam.mockResolvedValue({ active: null });
+    fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
+      callback({
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([{ teamId: existingTeamId }]),
+            })),
+          })),
+        })),
+      }),
+    );
+    await expect(
+      submitWorkStyleAction({ workStyle: 'email', teamName: 'Northstar Labs' }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.createOwnedWorkspace).not.toHaveBeenCalled();
+    expect(fakes.cookieSet).toHaveBeenCalledWith(
+      'timeline_active_team',
+      `v2:${existingTeamId}`,
+      expect.objectContaining({ httpOnly: true, path: '/' }),
+    );
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'team_created',
+      expect.anything(),
+    );
+    expect(fakes.sendMessage).not.toHaveBeenCalled();
     expect(fakes.submitWorkStyle).toHaveBeenCalledWith('email');
   });
 
