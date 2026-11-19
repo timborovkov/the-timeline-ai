@@ -130,6 +130,12 @@ it('stages CSP and allows only the reviewed browser resource origins', () => {
   expect(contentSecurityPolicyHeaders({ ...env, WEB_CSP_MODE: 'enforce' })).toEqual([
     { key: 'Content-Security-Policy', value: report?.value },
   ]);
+  const [withStorageFallback] = contentSecurityPolicyHeaders({
+    ...env,
+    S3_PUBLIC_ENDPOINT: ' ',
+    S3_ENDPOINT: 'https://fallback-storage.example.test',
+  });
+  expect(withStorageFallback?.value).toContain('object-src https://fallback-storage.example.test');
   const [withoutStorage] = contentSecurityPolicyHeaders({
     ...env,
     S3_PUBLIC_ENDPOINT: 'https://credential@storage.example.test',
