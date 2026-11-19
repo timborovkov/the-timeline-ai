@@ -637,7 +637,7 @@ AGENT_CASES.push({
   scenario: 'citation-correctness',
   tags: ['citation-correctness', 'document-version'],
   question:
-    'Use only search_documents. What is the current approved evacuation route in the Lab Safety Manual? Return only JSON with status and claims. Each claim must contain value, state, and citations. Cite the exact document version and chunk.',
+    'Use only search_documents. What is the current approved evacuation route in the Lab Safety Manual? Return only JSON with keys status and claims. Use "answered" for a confirmed answer and "insufficient_evidence" with an empty claims array when the answer is unavailable. Each claim must contain a verbatim scalar value, state ("approved" for the current route), and citations as an array of exact [doc:document-uuid#vVERSION:chunk:chunk-uuid] markers from the tool output. Include no extra fields or prose.',
   evidence: [
     {
       ...evidence(
