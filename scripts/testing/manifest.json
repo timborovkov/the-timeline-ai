@@ -605,6 +605,9 @@
   "apps/web/src/app/root-route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/sign-up/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
   },
@@ -1121,6 +1124,9 @@
   "apps/web/src/components/sidebar-billing-usage.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/signup-plan-summary.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/skip-link.test.tsx": {
     "group": "dom"
   },
@@ -1464,6 +1470,12 @@
   },
   "apps/web/src/lib/sign-out-session.test.ts": {
     "group": "dom"
+  },
+  "apps/web/src/lib/signup-plan-intent.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/signup-plan.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/site-url.test.ts": {
     "group": "unit"

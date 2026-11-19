@@ -21,6 +21,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import { clearSignupPlanIntent } from '@/lib/signup-plan-intent';
 
 async function requireBillingAdmin() {
   const session = await auth();
@@ -118,12 +119,14 @@ export async function startBillingCheckout(input: {
           return { ok: true as const, url: checkout.url };
         },
       );
-      if (checkoutResult.ok)
+      if (checkoutResult.ok) {
+        await clearSignupPlanIntent();
         trackProductEventBestEffort(
           { kind: 'user', userId: gate.userId, teamId: gate.active.teamId },
           'billing_checkout_created',
           { plan },
         );
+      }
       return checkoutResult;
     } catch (error) {
       return {

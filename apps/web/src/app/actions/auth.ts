@@ -20,6 +20,7 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
+import { selectedPlanFromCallback } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
@@ -30,6 +31,7 @@ import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { rememberSignupPlanIntent } from '@/lib/signup-plan-intent';
 import { getSiteUrl } from '@/lib/site-url';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
@@ -346,6 +348,9 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       }
     }
     const callbackDestination = safeCallbackUrl(parsed.data.callbackUrl);
+    if (!inviteToken) {
+      await rememberSignupPlanIntent(selectedPlanFromCallback(callbackDestination));
+    }
     const destination = inviteToken
       ? '/app'
       : createdAccount.event === 'team_created' && callbackDestination === '/app'
@@ -422,6 +427,7 @@ async function signInWithOAuthProvider(
     const { setPendingInvite } = await import('@/lib/pending-invite');
     await setPendingInvite(inviteToken);
   }
+  await rememberSignupPlanIntent(selectedPlanFromCallback(callbackUrl));
   // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
   // Let it propagate; Next handles the response.
   await signIn(provider, { redirectTo: callbackUrl });

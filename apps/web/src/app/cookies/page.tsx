@@ -65,6 +65,17 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
+              <strong>tl_pricing_plan_intent</strong>, a host-only, HTTP-only, SameSite=Lax cookie
+              lasting up to 7 days. It is Secure in production.
+            </td>
+            <td>
+              Remember a self-serve plan chosen on Pricing or sign-up (Pay as you go, Team, or
+              Business) so Team settings → Billing can highlight it after setup. It stores only the
+              plan id, never payment details, and does not start checkout or authorize a charge.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <strong>tl_platform_impersonation</strong>, a host-only, HTTP-only, SameSite=Lax
               cookie lasting at most 30 minutes. It is Secure in production.
             </td>

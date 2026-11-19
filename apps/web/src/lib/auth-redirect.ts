@@ -1,4 +1,5 @@
 import { safeSameOriginPath } from '@/lib/safe-redirect';
+import { paidSignupPlan } from '@/lib/signup-plan';
 
 const APP_FALLBACK = '/app';
 const AUTH_PATHS = ['/sign-in', '/sign-up'];
@@ -24,9 +25,8 @@ export function signedInAuthRedirect(input: {
 
 /** Pricing intent is navigation only; it never authorizes a purchase. */
 export function selectedPlanCallback(plan: unknown): string | undefined {
-  return plan === 'payg' || plan === 'team' || plan === 'business'
-    ? `/app/team?section=billing&plan=${plan}#change-plan`
-    : undefined;
+  const paid = paidSignupPlan(plan);
+  return paid ? `/app/team?section=billing&plan=${paid}#change-plan` : undefined;
 }
 
 /** Only carry the fixed pricing destination, never an arbitrary email-link redirect. */
@@ -36,8 +36,7 @@ export function selectedPlanFromCallback(callback: unknown): string | undefined 
   const url = new URL(path, 'https://intent.invalid');
   if (url.pathname !== '/app/team' || url.searchParams.get('section') !== 'billing')
     return undefined;
-  const plan = url.searchParams.get('plan');
-  return plan === 'payg' || plan === 'team' || plan === 'business' ? plan : undefined;
+  return paidSignupPlan(url.searchParams.get('plan'));
 }
 
 /** Preserve explicit continuation before pricing, while rejecting auth loops. */

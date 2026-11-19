@@ -55,6 +55,11 @@ describe('signedInAuthRedirect', () => {
 describe('pricing plan intent', () => {
   it('allows only self-serve paid plans without authorizing a purchase', () => {
     expect(selectedPlanCallback('payg')).toBe('/app/team?section=billing&plan=payg#change-plan');
+    expect(selectedPlanCallback('team')).toBe('/app/team?section=billing&plan=team#change-plan');
+    expect(selectedPlanCallback('business')).toBe(
+      '/app/team?section=billing&plan=business#change-plan',
+    );
+    expect(selectedPlanCallback('free')).toBeUndefined();
     expect(selectedPlanCallback('https://evil.test')).toBeUndefined();
     expect(selectedPlanCallback('enterprise')).toBeUndefined();
     expect(selectedPlanCallback(['payg'])).toBeUndefined();
@@ -63,6 +68,7 @@ describe('pricing plan intent', () => {
 
 it('carries only fixed plan destinations into verification emails', () => {
   expect(selectedPlanFromCallback(selectedPlanCallback('payg'))).toBe('payg');
+  expect(selectedPlanFromCallback(selectedPlanCallback('team'))).toBe('team');
   expect(selectedPlanFromCallback('/app/team?plan=payg&section=billing')).toBe('payg');
   expect(selectedPlanFromCallback('https://evil.test/app/team?plan=payg')).toBeUndefined();
   expect(
