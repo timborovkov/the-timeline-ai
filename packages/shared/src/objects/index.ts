@@ -5127,7 +5127,9 @@ export async function archiveSuggestionCreatedObjectIfUnadopted(
     return 'archived' as const;
   });
   if (runsOwnPostCommitEffects) {
-    for (const effect of postCommitEffects) await effect();
+    for (const effect of postCommitEffects) {
+      void effect();
+    }
   }
   return outcome;
 }
