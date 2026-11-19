@@ -73,7 +73,7 @@ export function SetupFlow({
   const firstRun = initialStatus.firstRun;
   const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
   const shouldAutoStart =
-    phase === 'choose' && preferredSource != null && connectors.includes(preferredSource);
+    phase === 'choose' && preferredSource !== null && connectors.includes(preferredSource);
   // Lock the chooser on first paint for marketing-intent auto-start; recover alone
   // only flips pending on the next render after useEffect.
   const [autoStartSettled, setAutoStartSettled] = useState(!shouldAutoStart);
@@ -113,12 +113,14 @@ export function SetupFlow({
   }, [shouldAutoStart]);
 
   const startPreferredConnector = useEffectEvent(() => {
-    if (!shouldAutoStart || intentStarted.current || !preferredSource) return;
+    if (!shouldAutoStart || intentStarted.current) return;
+    // shouldAutoStart implies preferredSource is an available connector.
+    const source = preferredSource;
     intentStarted.current = true;
     // Run through recover so pending/error handling matches other setup saves.
     recover(async () => {
       try {
-        const result = await selectStarterPathAction({ path: preferredSource });
+        const result = await selectStarterPathAction({ path: source });
         if (!result.ok) {
           intentStarted.current = false;
           throw new Error(result.error ?? 'Could not start that connector.');

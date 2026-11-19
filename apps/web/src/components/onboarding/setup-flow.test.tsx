@@ -60,8 +60,8 @@ afterEach(() => {
 });
 
 describe('SetupFlow connector auto-start', () => {
-  it('disables chooser actions while marketing-intent auto-start is saving', async () => {
-    await act(async () => {
+  it('disables chooser actions while marketing-intent auto-start is saving', () => {
+    act(() => {
       render(
         <SetupFlow
           initialStatus={{
@@ -100,9 +100,7 @@ describe('SetupFlow connector auto-start', () => {
     expect(fieldset.hasAttribute('disabled')).toBe(true);
     expect(fieldset.getAttribute('aria-busy')).toBe('true');
     expect(fieldset.contains(screen.getByRole('button', { name: 'Skip to Home' }))).toBe(true);
-    expect(fieldset.contains(screen.getByRole('button', { name: 'Email', exact: true }))).toBe(
-      true,
-    );
+    expect(fieldset.contains(screen.getByRole('button', { name: /^Email$/ }))).toBe(true);
     expect(fakes.selectStarterPathAction).toHaveBeenCalledWith({ path: 'slack' });
   });
 });
