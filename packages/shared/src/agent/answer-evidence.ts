@@ -144,7 +144,7 @@ export function createAnswerEvidenceCollector() {
     });
   }
   return {
-    observe(tool: string, input: unknown, output: unknown) {
+    observe: (tool: string, input: unknown, output: unknown) => {
       const value = record(output);
       const args = record(input);
       if (tool === 'retrieve_workspace_context') {
@@ -187,7 +187,8 @@ export function createAnswerEvidenceCollector() {
         return;
       }
       if (!Object.hasOwn(sourcesForTools, tool)) return;
-      const group = sourcesForTools[tool]!;
+      const group = sourcesForTools[tool];
+      if (!group) return;
       const source =
         group === 'timeline' || group === 'integration'
           ? knownSource(args.provider ?? args.source ?? args.senderSource, group)
@@ -197,7 +198,8 @@ export function createAnswerEvidenceCollector() {
           ? rows(value.versions).find((row) => row.version_id === value.current_version_id)
           : record(value.current_version);
       const processing = document?.processing_status;
-      const unavailable = Boolean(value.error || value.ok === false || processing === 'failed');
+      const unavailable =
+        value.error !== undefined || value.ok === false || processing === 'failed';
       const indexing = ['pending', 'extracting', 'chunked', 'deferred'].includes(
         String(processing),
       );

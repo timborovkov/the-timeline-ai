@@ -63,10 +63,10 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
       .orderBy(desc(chatMessages.sequence))
       .limit(1);
-    const content = row?.content as TurnContent | undefined;
-    if (row?.role !== 'assistant' || content?.ui_message?.id !== messageId)
+    const content = row?.content as Partial<TurnContent> | undefined;
+    if (row?.role !== 'assistant' || content?.version !== 2 || content.ui_message?.id !== messageId)
       throw new Error('Approval no longer available');
-    return { row, content };
+    return { row, content: { ...content, version: 2 as const, ui_message: content.ui_message } };
   }
   return {
     async persistChatTurn(

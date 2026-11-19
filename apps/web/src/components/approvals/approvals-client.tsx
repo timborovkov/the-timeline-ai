@@ -1,9 +1,5 @@
 'use client';
 
-import {
-  suggestionRejectionLabels,
-  suggestionRejectionReason,
-} from '@timeline/shared/suggestions/rejection';
 import { taskCategoryLabel, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
 import { ArrowRight, Check, ExternalLink, GitMerge, Inbox } from 'lucide-react';
@@ -29,7 +25,7 @@ import {
   rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
 import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-dialog';
-import { RejectProposal } from '@/components/approvals/reject-proposal';
+import { RejectionReason, RejectProposal } from '@/components/approvals/reject-proposal';
 import { StaleEvidence } from '@/components/approvals/stale-evidence';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
@@ -1637,7 +1633,6 @@ function ApprovalRowDetails({
   bundle: SuggestionBundle;
   timezone: string;
 }) {
-  const rejection = suggestionRejectionReason.safeParse(item.metadata?.rejection_reason);
   return (
     <>
       {' '}
@@ -1650,11 +1645,11 @@ function ApprovalRowDetails({
         <p className="pb-2 pl-9 pr-3 text-xs text-danger">{displayText(item.failureReason)}</p>
       ) : null}
       <ApprovalCalendarHint item={item} timezone={timezone} />
-      {item.status === 'rejected' && rejection.success ? (
-        <p className="pb-2 pl-9 pr-3 text-xs text-fg-muted">
-          Rejected · {suggestionRejectionLabels[rejection.data]}
-        </p>
-      ) : null}
+      <RejectionReason
+        metadata={item.metadata}
+        status={item.status}
+        className="pb-2 pl-9 pr-3 text-xs text-fg-muted"
+      />
       <ApprovalItemDependency item={item} bundle={bundle} />
       <ApprovalItemEvidence item={item} timezone={timezone} />
       {bundle.items.length === 1 && (bundle.evidence.length > 0 || bundle.reason) ? (

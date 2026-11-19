@@ -101,7 +101,7 @@ export async function retrieveWorkspaceContext(
     input.includeDocuments === true ||
     (input.includeDocuments !== false &&
       (recipe === 'document_knowledge' || recipe === 'object_profile' || recipe === 'task_status'));
-  const includeCalendar = Boolean(input.includeCalendar || recipe === 'calendar');
+  const includeCalendar = input.includeCalendar === true || recipe === 'calendar';
   const routes =
     recipe === 'product_guide' ? searchAppGuide(query, limit) : searchAppGuide(query, 2);
   const adapterFailures: WorkspaceContextAdapterFailure[] = [];

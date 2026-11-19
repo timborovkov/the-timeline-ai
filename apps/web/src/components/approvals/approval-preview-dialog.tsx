@@ -1,17 +1,13 @@
 'use client';
 
-import { Check, GitMerge } from 'lucide-react';
 import type { SuggestionRejectionReason } from '@timeline/shared/suggestions/rejection';
-import {
-  suggestionRejectionLabels,
-  suggestionRejectionReason,
-} from '@timeline/shared/suggestions/rejection';
+import { Check, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { ComponentProps } from 'react';
 
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
-import { RejectProposal } from '@/components/approvals/reject-proposal';
+import { RejectionReason, RejectProposal } from '@/components/approvals/reject-proposal';
 import { StaleEvidence } from '@/components/approvals/stale-evidence';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EvidenceLink } from '@/components/evidence-link';
@@ -143,7 +139,6 @@ export function ApprovalPreviewDialog({
     timezone,
   });
   const evidence = item.evidence ?? [];
-  const rejection = suggestionRejectionReason.safeParse(item.metadata?.rejection_reason);
 
   const actions = (
     <PreviewDecisionActions
@@ -163,11 +158,11 @@ export function ApprovalPreviewDialog({
         {acceptDisabled ? (
           <StaleEvidence key={item.id} itemId={item.id} timezone={timezone} />
         ) : null}
-        {item.status === 'rejected' && rejection.success ? (
-          <p className="text-sm text-fg-muted">
-            Rejected · {suggestionRejectionLabels[rejection.data]}
-          </p>
-        ) : null}
+        <RejectionReason
+          metadata={item.metadata}
+          status={item.status}
+          className="text-sm text-fg-muted"
+        />
         {reason ? (
           <section>
             <h3 className="text-sm font-semibold">Why this change</h3>

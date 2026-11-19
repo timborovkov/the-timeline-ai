@@ -22,8 +22,15 @@ export function RejectProposal({
 }) {
   const labelId = useId();
   const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<SuggestionRejectionReason>();
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setReason(undefined);
+        setOpen(next);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button type="button" size="sm" variant="ghost" disabled={disabled}>
           <X className="size-4" />
@@ -31,23 +38,17 @@ export function RejectProposal({
         </Button>
       </PopoverTrigger>
       <PopoverContent aria-label="Reject proposals" className="w-64 p-3">
-        <form
-          className="grid gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const reason = suggestionRejectionReason.safeParse(
-              new FormData(event.currentTarget).get('reason'),
-            );
-            setOpen(false);
-            onReject(reason.success ? reason.data : undefined);
-          }}
-        >
+        <div className="grid gap-3">
           <label htmlFor={labelId} className="text-sm font-medium">
             Rejection reason (optional)
           </label>
           <select
             id={labelId}
-            name="reason"
+            value={reason ?? ''}
+            onChange={(event) => {
+              const parsed = suggestionRejectionReason.safeParse(event.currentTarget.value);
+              setReason(parsed.success ? parsed.data : undefined);
+            }}
             className="min-h-10 rounded-sm border border-border bg-surface px-2 text-sm"
           >
             <option value="">Choose a reason</option>
@@ -57,11 +58,35 @@ export function RejectProposal({
               </option>
             ))}
           </select>
-          <Button type="submit" size="sm" disabled={disabled}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={disabled}
+            onClick={() => {
+              setOpen(false);
+              onReject(reason);
+            }}
+          >
             {count === 1 ? 'Reject proposal' : `Reject ${count} proposals`}
           </Button>
-        </form>
+        </div>
       </PopoverContent>
     </Popover>
   );
+}
+
+export function RejectionReason({
+  metadata,
+  status,
+  className,
+}: {
+  metadata: Record<string, unknown> | undefined;
+  status: string;
+  className: string;
+}) {
+  if (status !== 'rejected') return null;
+  const reason = suggestionRejectionReason.safeParse(metadata?.rejection_reason);
+  return reason.success ? (
+    <p className={className}>Rejected · {suggestionRejectionLabels[reason.data]}</p>
+  ) : null;
 }

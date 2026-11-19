@@ -2262,7 +2262,9 @@ function toBundle(
             const packExpected = recordFromUnknown(event.metadata).evidence_content_fingerprint;
             const current = currentEvidenceFingerprintByRawEventId.get(event.rawEventId);
             const changed =
-              (evidenceIds.includes(event.rawEventId) && expected && expected !== current) ||
+              (evidenceIds.includes(event.rawEventId) &&
+                expected !== undefined &&
+                expected !== current) ||
               (packEvidenceChanged && typeof packExpected === 'string' && packExpected !== current);
             return changed
               ? [

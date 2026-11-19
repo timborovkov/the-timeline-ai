@@ -156,7 +156,6 @@ function ChatSurfaceContent({
   });
 
   const [input, setInput] = useState(initialPrompt ?? '');
-  const [resuming, startResume] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
@@ -241,38 +240,12 @@ function ChatSurfaceContent({
         teamName={teamName}
       />
       <ChatError error={error} />
-      {sessionId && !isStreaming && resumableApprovalMessage(messages.at(-1)) ? (
-        <Button
-          type="button"
-          className="self-start"
-          variant="outline"
-          size="sm"
-          disabled={resuming}
-          onClick={() => {
-            const messageId = messages.at(-1)?.id;
-            if (!messageId) return;
-            startResume(async () => {
-              try {
-                const result = await prepareChatApprovalResumeAction({ sessionId, messageId });
-                const message = result.message;
-                if (message)
-                  setMessages((current) =>
-                    current.map((entry) => (entry.id === messageId ? message : entry)),
-                  );
-                else
-                  notifyError(
-                    'chat-approval-resume',
-                    result.error ?? 'Could not prepare chat approval.',
-                  );
-              } catch {
-                notifyError('chat-approval-resume', 'Could not prepare chat approval.');
-              }
-            });
-          }}
-        >
-          {resuming ? 'Loading approvals…' : 'Review unstarted steps'}
-        </Button>
-      ) : null}
+      <ReviewUnstartedSteps
+        sessionId={sessionId}
+        message={messages.at(-1)}
+        isStreaming={isStreaming}
+        setMessages={setMessages}
+      />
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
           href={`/app/diagnostics?session=${encodeURIComponent(sessionId)}`}
@@ -284,6 +257,48 @@ function ChatSurfaceContent({
       )}
       <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
     </div>
+  );
+}
+
+function ReviewUnstartedSteps({
+  sessionId,
+  message,
+  isStreaming,
+  setMessages,
+}: {
+  sessionId: string | null;
+  message: UIMessage | undefined;
+  isStreaming: boolean;
+  setMessages: (update: (messages: UIMessage[]) => UIMessage[]) => void;
+}) {
+  const [resuming, startResume] = useTransition();
+  if (!sessionId || !message || isStreaming || !resumableApprovalMessage(message)) return null;
+  const messageId = message.id;
+  return (
+    <Button
+      type="button"
+      className="self-start"
+      variant="outline"
+      size="sm"
+      disabled={resuming}
+      onClick={() => {
+        startResume(async () => {
+          const result = await prepareChatApprovalResumeAction({ sessionId, messageId }).catch(
+            () => ({ error: 'Could not prepare chat approval.' }),
+          );
+          if ('message' in result && result.message) {
+            const prepared = result.message;
+            setMessages((current) =>
+              current.map((entry) => (entry.id === messageId ? prepared : entry)),
+            );
+          } else {
+            notifyError('chat-approval-resume', result.error ?? 'Could not prepare chat approval.');
+          }
+        });
+      }}
+    >
+      {resuming ? 'Loading approvals…' : 'Review unstarted steps'}
+    </Button>
   );
 }
 
