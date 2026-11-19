@@ -169,6 +169,38 @@ function seedNow(): Date {
   return getDemoSeedNow();
 }
 
+function corpusEventOccurredAt(eventId: string): Date {
+  const row = CORPUS_EVENTS.find((event) => event.id === eventId);
+  if (!row) throw new Error(`Missing corpus event ${eventId}`);
+  return new Date(row.occurredAt);
+}
+
+/** Proposal times follow the triggering evidence, staggered by index so the queue does not share one seed clock. */
+export function demoProposalCreatedAt(eventOccurredAt: string | Date, proposalIndex: number): Date {
+  const base = new Date(eventOccurredAt).getTime();
+  if (!Number.isFinite(base)) {
+    throw new Error(`Invalid evidence time for demo proposal index ${String(proposalIndex)}`);
+  }
+  // 8–N minutes after the evidence so same-day proposals stay distinct without collapsing to seedNow.
+  return new Date(base + (8 + proposalIndex * 13) * 60_000);
+}
+
+/** Object-summary "Updated" stamps follow the latest cited source, not the seed wall clock. */
+export function demoSummaryGeneratedAt(
+  latestSourceOccurredAt: string | Date,
+  lagMinutes = 35,
+): Date {
+  const base = new Date(latestSourceOccurredAt).getTime();
+  if (!Number.isFinite(base)) {
+    throw new Error('Invalid source time for demo object summary');
+  }
+  return new Date(base + lagMinutes * 60_000);
+}
+
+function proposalCreatedAt(eventId: string, proposalIndex: number): Date {
+  return demoProposalCreatedAt(corpusEventOccurredAt(eventId), proposalIndex);
+}
+
 export async function insertExpandedDemoCorpus(tx: SeedTx): Promise<void> {
   const passwordHash = await hashPassword(CORPUS_PASSWORD);
   await insertPeople(tx, passwordHash);
@@ -1123,7 +1155,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           tasks: 0,
           changes: 0,
         },
-        generatedAt: seedNow(),
+        generatedAt: demoSummaryGeneratedAt(corpusEventOccurredAt(dataRoomEventId), 42),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1182,7 +1214,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           tasks: 1,
           changes: 0,
         },
-        generatedAt: seedNow(),
+        generatedAt: demoSummaryGeneratedAt(corpusEventOccurredAt(northstarVoiceEventId), 28),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1221,7 +1253,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           tasks: 0,
           changes: 0,
         },
-        generatedAt: seedNow(),
+        generatedAt: demoSummaryGeneratedAt(corpusEventOccurredAt(invoicePaidEventId), 31),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1234,6 +1266,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: sql`excluded.entity_id`,
         sourceRefs: sql`excluded.source_refs`,
         sourceCounts: sql`excluded.source_counts`,
+        generatedAt: sql`excluded.generated_at`,
       },
     });
 
@@ -1665,21 +1698,24 @@ async function insertProposals(tx: SeedTx): Promise<void> {
   await tx
     .insert(agentSuggestions)
     .values(
-      CORPUS_PROPOSALS.map((row) => ({
-        id: row.id,
-        teamId: TEAM_ID,
-        source: row.source,
-        status: 'pending' as const,
-        title: row.title,
-        summary: row.summary,
-        reason: row.summary,
-        confidence: 'high' as const,
-        dedupeKey: `demo-seed:proposal:${row.id}`,
-        visibility: 'team' as const,
-        metadata: { fixture_version: DEMO_FIXTURE_VERSION },
-        createdAt: seedNow(),
-        updatedAt: seedNow(),
-      })),
+      CORPUS_PROPOSALS.map((row, index) => {
+        const createdAt = proposalCreatedAt(row.eventId, index);
+        return {
+          id: row.id,
+          teamId: TEAM_ID,
+          source: row.source,
+          status: 'pending' as const,
+          title: row.title,
+          summary: row.summary,
+          reason: row.summary,
+          confidence: 'high' as const,
+          dedupeKey: `demo-seed:proposal:${row.id}`,
+          visibility: 'team' as const,
+          metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+          createdAt,
+          updatedAt: createdAt,
+        };
+      }),
     )
     .onConflictDoUpdate({
       target: agentSuggestions.id,
@@ -1689,26 +1725,32 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         reason: sql`excluded.reason`,
         source: sql`excluded.source`,
         status: sql`excluded.status`,
-        updatedAt: seedNow(),
+        createdAt: sql`excluded.created_at`,
+        updatedAt: sql`excluded.updated_at`,
       },
     });
   await tx
     .insert(agentSuggestionItems)
     .values(
-      CORPUS_PROPOSALS.map((row) => ({
-        id: row.itemId,
-        suggestionId: row.id,
-        teamId: TEAM_ID,
-        status: 'pending' as const,
-        operation: row.operation,
-        targetKind: row.targetKind,
-        targetId: 'targetId' in row ? row.targetId : null,
-        title: row.title,
-        description: row.summary,
-        dedupeKey: `demo-seed:proposal-item:${row.itemId}`,
-        proposedPayload: row.proposedPayload,
-        metadata: { fixture_version: DEMO_FIXTURE_VERSION },
-      })),
+      CORPUS_PROPOSALS.map((row, index) => {
+        const createdAt = proposalCreatedAt(row.eventId, index);
+        return {
+          id: row.itemId,
+          suggestionId: row.id,
+          teamId: TEAM_ID,
+          status: 'pending' as const,
+          operation: row.operation,
+          targetKind: row.targetKind,
+          targetId: 'targetId' in row ? row.targetId : null,
+          title: row.title,
+          description: row.summary,
+          dedupeKey: `demo-seed:proposal-item:${row.itemId}`,
+          proposedPayload: row.proposedPayload,
+          metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+          createdAt,
+          updatedAt: createdAt,
+        };
+      }),
     )
     .onConflictDoUpdate({
       target: agentSuggestionItems.id,
@@ -1720,6 +1762,8 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         description: sql`excluded.description`,
         proposedPayload: sql`excluded.proposed_payload`,
         status: sql`excluded.status`,
+        createdAt: sql`excluded.created_at`,
+        updatedAt: sql`excluded.updated_at`,
       },
     });
   await tx

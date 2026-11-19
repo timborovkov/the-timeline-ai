@@ -11,6 +11,7 @@ import {
   dateAt,
   demoSeedNowIso,
   demoTimes,
+  getDemoSeedNow,
   isoAt,
   latestDigestDayOffset,
   localDay,
@@ -72,6 +73,7 @@ import {
   refreshDemoCorpus,
   type ExpandedDemoCorpusSnapshot,
 } from './demo-corpus/index.js';
+import { demoProposalCreatedAt, demoSummaryGeneratedAt } from './demo-corpus/insert.js';
 
 const localEnv = {
   DATABASE_URL: 'postgres://timeline:timeline_dev@localhost:5432/timeline',
@@ -1270,6 +1272,41 @@ function assertVerifyRestoresClockBeforeDocumentDownload(): void {
   }
 }
 
+function assertProposalAndSummaryTimestampsFollowEvidence(): void {
+  const root = dirname(fileURLToPath(import.meta.url));
+  const insertSource = readFileSync(join(root, 'demo-corpus', 'insert.ts'), 'utf8');
+  assert.match(insertSource, /function demoProposalCreatedAt/);
+  assert.match(insertSource, /function demoSummaryGeneratedAt/);
+  assert.doesNotMatch(
+    insertSource.slice(
+      insertSource.indexOf('async function insertProposals'),
+      insertSource.indexOf('async function insertChats'),
+    ),
+    /createdAt:\s*seedNow\(\)/,
+  );
+
+  refreshDemoCorpus();
+  const seedNow = getDemoSeedNow().getTime();
+  const proposalTimes = CORPUS_PROPOSALS.map((row, index) => {
+    const event = CORPUS_EVENTS.find((candidate) => candidate.id === row.eventId);
+    assert.ok(event, `proposal ${row.title} has evidence`);
+    const createdAt = demoProposalCreatedAt(event.occurredAt, index);
+    assert.ok(
+      createdAt.getTime() > new Date(event.occurredAt).getTime(),
+      `${row.title} should be after its evidence`,
+    );
+    assert.notEqual(createdAt.getTime(), seedNow, `${row.title} must not use the seed wall clock`);
+    return createdAt.toISOString();
+  });
+  assertUnique(proposalTimes, 'demo proposal createdAt values');
+
+  const voice = CORPUS_EVENTS.find((row) => row.contentText.includes('Voice memo from Avery'));
+  assert.ok(voice);
+  const summaryAt = demoSummaryGeneratedAt(voice.occurredAt, 28);
+  assert.ok(summaryAt.getTime() > new Date(voice.occurredAt).getTime());
+  assert.notEqual(summaryAt.getTime(), seedNow);
+}
+
 function assertDailyDigestConflictUpdatesWindows(): void {
   const root = dirname(fileURLToPath(import.meta.url));
   const source = readFileSync(join(root, 'demo-corpus', 'insert.ts'), 'utf8');
@@ -1309,3 +1346,4 @@ function assertDailyDigestConflictUpdatesWindows(): void {
 
 assertVerifyRestoresClockBeforeDocumentDownload();
 assertDailyDigestConflictUpdatesWindows();
+assertProposalAndSummaryTimestampsFollowEvidence();
