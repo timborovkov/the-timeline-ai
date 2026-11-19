@@ -96,12 +96,9 @@ export default async function AppLayout({
           ),
         )
     : [];
-  if (!active) {
-    // Solo signup defers workspace creation until Welcome. Route there instead
-    // of an empty shell so nothing 500s and invite-only users who somehow land
-    // here without a membership can still name a team later.
-    redirect('/onboarding');
-  }
+  // Solo signup and removed members land on Welcome to name a workspace.
+  // Platform admin lives under (platform)/app/admin and does not need this shell.
+  if (!active) redirect('/onboarding');
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const [gettingStarted, badges, inbox, workspaceTimezone, billingSummary] = await Promise.all([
