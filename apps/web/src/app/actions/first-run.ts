@@ -35,6 +35,7 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
+import { takeAuthContinuationForUser } from '@/lib/auth-continuation';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
@@ -212,6 +213,8 @@ export async function submitWorkStyleAction(input: {
       workStyle: parsed.data.workStyle ?? 'skipped',
     });
     revalidateOnboarding();
+    const authorizeResume = await takeAuthContinuationForUser(db, session.user.id);
+    if (authorizeResume) redirect(authorizeResume);
     return { ok: true };
   });
 }

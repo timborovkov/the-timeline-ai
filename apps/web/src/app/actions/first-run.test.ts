@@ -26,6 +26,7 @@ const fakes = vi.hoisted(() => ({
   dbSelect: vi.fn(),
   cookieSet: vi.fn(),
   sendMessage: vi.fn(),
+  takeAuthContinuationForUser: vi.fn(),
 }));
 
 await vi.mock(
@@ -79,6 +80,11 @@ await vi.mock(
   import.meta.resolve('@/lib/site-url'),
   () => ({ getSiteUrl: () => 'https://timeline.test' }),
   () => import('@/lib/site-url'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth-continuation'),
+  () => ({ takeAuthContinuationForUser: fakes.takeAuthContinuationForUser }),
+  () => import('@/lib/auth-continuation'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/analytics'),
@@ -202,6 +208,7 @@ beforeEach(() => {
     })),
   });
   fakes.sendMessage.mockResolvedValue({ ok: true });
+  fakes.takeAuthContinuationForUser.mockResolvedValue(null);
 });
 
 describe('first-run analytics', () => {

@@ -17,6 +17,7 @@ import { OAuthConsentForm } from '@/components/oauth-consent-form';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { createAuthContinuation } from '@/lib/auth-continuation';
 import { db } from '@/lib/db';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import type { McpAuthorizationInput } from '@/lib/mcp-oauth-authorization';
@@ -29,12 +30,7 @@ import {
   mcpAuthorizationPath,
   type McpAuthorizationSearchParams,
 } from '@/lib/mcp-oauth-authorization';
-import {
-  mcpOAuthResource,
-  oauthAuthorizationErrorRedirect,
-  oauthAuthorizationRedirect,
-} from '@/lib/mcp-oauth-server';
-
+import { mcpOAuthResource, oauthAuthorizationErrorRedirect } from '@/lib/mcp-oauth-server';
 export const metadata: Metadata = {
   title: 'Authorize app',
   description: 'Review an app’s request to access your Timeline workspace.',
@@ -170,13 +166,10 @@ export default async function McpOAuthAuthorizePage({
 
   const { active, memberships } = await resolveActiveTeam(session.user.id);
   if (!active || memberships.length === 0) {
-    const destination = oauthAuthorizationRedirect(request.redirectUri, {
-      error: 'access_denied',
-      error_description: 'The authorization request was denied.',
-      state: request.state,
-    });
-    // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- The destination is the exact registered redirect URI validated above; only a code-owned error and the validated state are returned.
-    redirect(destination);
+    // Deferred solo create: park this authorize URL and finish Welcome first so
+    // first-time MCP/OAuth signups are not denied for missing memberships.
+    await createAuthContinuation(db, session.user.id, mcpAuthorizationPath(input));
+    redirect('/onboarding');
   }
   const consentMemberships = await Promise.all(
     memberships.map(async (membership) => ({

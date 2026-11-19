@@ -4,7 +4,11 @@ import { expect } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { createAuthContinuation, resolveAuthContinuation } from '@/lib/auth-continuation';
+import {
+  createAuthContinuation,
+  resolveAuthContinuation,
+  takeAuthContinuationForUser,
+} from '@/lib/auth-continuation';
 import { signupCallback, signedInAuthRedirect } from '@/lib/auth-redirect';
 const pg = new PGlite();
 const db = drizzle(pg) as unknown as Db;
@@ -64,4 +68,10 @@ it('does not continue a stored non-authorize destination', async () => {
   if (!token) throw new Error('Expected continuation');
   await pg.exec("UPDATE auth_continuations SET destination='/app/admin'");
   expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBeNull();
+});
+it('resumes a parked authorize destination for the signed-in user after Welcome', async () => {
+  const token = await createAuthContinuation(db, userId, path);
+  if (!token) throw new Error('Expected continuation');
+  expect(await takeAuthContinuationForUser(db, userId)).toBe(path);
+  expect(await takeAuthContinuationForUser(db, userId)).toBeNull();
 });

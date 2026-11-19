@@ -76,3 +76,25 @@ export async function resolveAuthContinuation(
     return authorizationDestination(row.destination);
   });
 }
+
+/**
+ * Consume the latest parked `/oauth/authorize` destination for a signed-in user
+ * (Welcome → resume MCP consent after deferred workspace create).
+ */
+export async function takeAuthContinuationForUser(db: Db, userId: string): Promise<string | null> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        tokenHash: authContinuations.tokenHash,
+        destination: authContinuations.destination,
+      })
+      .from(authContinuations)
+      .where(and(eq(authContinuations.userId, userId), gt(authContinuations.expiresAt, new Date())))
+      .orderBy(desc(authContinuations.expiresAt))
+      .limit(1)
+      .for('update');
+    if (!row) return null;
+    await tx.delete(authContinuations).where(eq(authContinuations.tokenHash, row.tokenHash));
+    return authorizationDestination(row.destination);
+  });
+}
