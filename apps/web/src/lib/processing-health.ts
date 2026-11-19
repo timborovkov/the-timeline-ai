@@ -20,9 +20,9 @@ export function lastExpectedDigestTick(now: number): number {
 }
 
 async function durableProgress(now: number) {
-  const observedSince = new Date(now - DAY_MS);
-  const staleBefore = new Date(now - PROCESSING_LAG_MS);
-  const asOf = new Date(now);
+  const observedSince = new Date(now - DAY_MS).toISOString();
+  const staleBefore = new Date(now - PROCESSING_LAG_MS).toISOString();
+  const digestDueBefore = new Date(now - DIGEST_GRACE_MS).toISOString();
   // Cross-workspace operator inventory. The query projects aggregates only.
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL statement_timeout = '3500ms'`);
@@ -44,7 +44,7 @@ async function durableProgress(now: number) {
           CASE WHEN pg_input_is_valid(e.source_metadata ->> 'embedded_at', 'timestamptz')
             THEN (e.source_metadata ->> 'embedded_at')::timestamptz END AS indexed_at
         FROM raw_events e JOIN live_teams t ON t.id = e.team_id
-        WHERE e.created_at >= ${observedSince}
+        WHERE e.created_at >= ${observedSince}::timestamptz
           AND (NULLIF(btrim(e.content_text), '') IS NOT NULL OR e.content_audio_url IS NOT NULL)
           AND e.visibility = 'team'
           AND e.source NOT IN ('calendar', 'system', 'document')
@@ -57,25 +57,25 @@ async function durableProgress(now: number) {
         FROM document_versions v JOIN documents d ON d.id = v.document_id AND d.team_id = v.team_id
         JOIN live_teams t ON t.id = v.team_id
         LEFT JOIN raw_events e ON e.id = v.source_event_id AND e.team_id = v.team_id
-        WHERE v.created_at >= ${observedSince} AND v.byte_size IS NOT NULL AND d.deleted_at IS NULL
+        WHERE v.created_at >= ${observedSince}::timestamptz AND v.byte_size IS NOT NULL AND d.deleted_at IS NULL
       ), deliveries AS (
         SELECT m.created_at, m.status FROM message_deliveries m JOIN live_teams t ON t.id = m.team_id
-        WHERE m.created_at >= ${observedSince} AND m.intent = 'daily_digest'
+        WHERE m.created_at >= ${observedSince}::timestamptz AND m.intent = 'daily_digest'
       )
       SELECT
         (SELECT count(indexed_at)::int FROM captures) AS capture_completed,
         (SELECT percentile_cont(0.95) WITHIN GROUP (
           ORDER BY greatest(0, extract(epoch FROM (indexed_at - created_at)) * 1000)
         ) FILTER (WHERE indexed_at IS NOT NULL) FROM captures) AS capture_p95_ms,
-        (SELECT count(*)::int FROM captures WHERE indexed_at IS NULL AND created_at < ${staleBefore}) AS capture_overdue,
-        (SELECT count(*)::int FROM captures WHERE indexed_at IS NULL AND created_at < ${staleBefore}
+        (SELECT count(*)::int FROM captures WHERE indexed_at IS NULL AND created_at < ${staleBefore}::timestamptz) AS capture_overdue,
+        (SELECT count(*)::int FROM captures WHERE indexed_at IS NULL AND created_at < ${staleBefore}::timestamptz
            AND NULLIF(btrim(content_text), '') IS NOT NULL)
-          + (SELECT count(*)::int FROM versions WHERE website_page AND processing_status = 'chunked' AND created_at < ${staleBefore}) AS index_overdue,
+          + (SELECT count(*)::int FROM versions WHERE website_page AND processing_status = 'chunked' AND created_at < ${staleBefore}::timestamptz) AS index_overdue,
         (SELECT count(*)::int FROM versions WHERE processing_status IN ('pending','extracting')
-           AND created_at < ${staleBefore}) AS extract_overdue,
+           AND created_at < ${staleBefore}::timestamptz) AS extract_overdue,
         (SELECT count(*)::int FROM versions WHERE processing_status = 'failed') AS extract_failed,
         (SELECT count(*)::int FROM deliveries WHERE status = 'pending'
-           AND created_at < ${new Date(asOf.getTime() - DIGEST_GRACE_MS)}) AS digest_pending,
+           AND created_at < ${digestDueBefore}::timestamptz) AS digest_pending,
         (SELECT count(*)::int FROM deliveries WHERE status = 'failed') AS digest_failed
     `);
     if (!row) throw new Error('processing_summary_unavailable');
