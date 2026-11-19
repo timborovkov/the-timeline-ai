@@ -593,6 +593,12 @@
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/sign-in/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/sign-up/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/product-tour/route.test.tsx": {
     "group": "unit"
   },
@@ -604,9 +610,6 @@
   },
   "apps/web/src/app/root-route-states.test.tsx": {
     "group": "dom"
-  },
-  "apps/web/src/app/sign-up/page.test.tsx": {
-    "group": "unit"
   },
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
