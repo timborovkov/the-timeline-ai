@@ -394,19 +394,25 @@ applied after the cap check, and capacity limits are separate.
 ### Public pricing calculator
 
 The pricing Usage section compares PAYG, Team and Business through paired native
-sliders and exact number fields. A labelled editable example renders on the server.
-Desktop inputs sit beside a single hairline results panel; mobile stacks them
-with a compact selected-plan estimate that stays visible while editing. Number
-inputs and slider targets are at least 44px high. Reset restores both the usage
-example and Pay as you go selection. Invalid inputs suppress all estimates.
-Plan totals share one border with the selected breakdown underneath — no nested
-cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
-and Business show a pooled usage-credit deduction. Capacity warnings exclude
-unsuitable plans from the lowest-estimated-cost badge. Accepted sources live in
-Advanced usage with their value visible when closed. Metadata stays at the 12px
-floor. Rates and workspace eligibility remain in the closed How this estimate
-works disclosure. Inputs stay local; the calculator neither changes billing nor
-collects telemetry.
+sliders and exact number fields. Example starting-point presets (for example a
+five-person client team, a Slack-heavy engineering team, and a meeting-heavy
+delivery team) fill the fields and stay editable; they are labelled as examples,
+not quotes. A visible activity translation turns AI spend and source units into
+rough Ask questions, chat messages, emails, documents, notes, and website pages
+using catalog rates (Free AI allowance ÷ Free Ask turns; one unit per ordinary
+accepted source; twenty units per website page). A labelled editable example
+renders on the server. Desktop inputs sit beside a single hairline results panel;
+mobile stacks them with a compact selected-plan estimate that stays visible while
+editing. Number inputs and slider targets are at least 44px high. Reset restores
+the default usage example and Pay as you go selection. Invalid inputs suppress
+all estimates. Plan totals share one border with the selected breakdown underneath
+— no nested cards or extra plan-card chrome. PAYG shows native allowances per
+meter; Team and Business show a pooled usage-credit deduction. Capacity warnings
+exclude unsuitable plans from the lowest-estimated-cost badge. Accepted sources
+live in Advanced usage with their value visible when closed. Metadata stays at
+the 12px floor. Rates and workspace eligibility remain in the closed How this
+estimate works disclosure. Inputs stay local; the calculator neither changes
+billing nor collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
 
