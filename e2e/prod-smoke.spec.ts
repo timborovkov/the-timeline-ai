@@ -32,6 +32,7 @@ test('high-intent pages publish distinct social cards', async ({ page, request }
     await expect(image).toHaveCount(1);
     const url = await image.getAttribute('content');
     if (!url) throw new Error(`Missing social image URL for ${path}`);
+    expect(new URL(url).origin).toBe(new URL(page.url()).origin);
     await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute('content', url);
     const asset = await request.get(url, { maxRedirects: 0 });
     expect(asset.status(), url).toBe(200);
@@ -50,7 +51,7 @@ test('production build lets a seeded owner load app and timeline', async ({ page
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app');
-  await expect(page.getByRole('heading', { name: /timeline/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /timeline/i, level: 1 })).toBeVisible();
 
   await page.goto('/app/timeline');
   await expect(page.getByRole('heading', { name: 'Timeline', level: 1 })).toBeVisible();
