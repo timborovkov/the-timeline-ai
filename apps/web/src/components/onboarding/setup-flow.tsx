@@ -1,16 +1,15 @@
 'use client';
 
 import {
+  isConnectorStarterPath,
   setupProgressLabel,
   type FirstRunPhase,
-  type FirstRunScanFailureReason,
-  type FirstRunState,
-  type NamedProcessingStep,
+  type OnboardingSourceIntent,
   type TeamWorkStyle,
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, useTransition } from 'react';
 
 import {
   finalizeDocumentVersionAction,
@@ -23,25 +22,10 @@ import {
   skipFirstRunAction,
   submitWorkStyleAction,
 } from '@/app/actions/first-run';
-import { ChooserScreen } from '@/components/onboarding/chooser-screen';
-import { FailedScanScreen } from '@/components/onboarding/failed-scan-screen';
-import { ProcessingScreen } from '@/components/onboarding/processing-screen';
+import { SetupFlowBody, type FirstRunStatusPayload } from '@/components/onboarding/setup-flow-body';
 import { SetupShell } from '@/components/onboarding/setup-shell';
-import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
 
-export interface FirstRunStatusPayload {
-  firstRun: FirstRunState | null;
-  inboundEmail: string | null;
-  teamName: string;
-  /** Workspace shown on Welcome; null when deferred solo create has no team yet. */
-  teamId: string | null;
-  record: {
-    title: string;
-    meta: string;
-    processingSteps: NamedProcessingStep[];
-    emailArrived: boolean;
-  } | null;
-}
+export type { FirstRunStatusPayload };
 
 async function uploadOnboardingDocument(file: File): Promise<void> {
   const contentType = file.type || 'application/octet-stream';
@@ -69,23 +53,30 @@ async function uploadOnboardingDocument(file: File): Promise<void> {
   if (!attached.ok) throw new Error(attached.error ?? 'Could not attach the document.');
 }
 
-function processingTitle(status: FirstRunStatusPayload): string {
-  const path = status.firstRun?.starterPath;
-  if (path === 'website') {
-    return status.firstRun?.websiteHost
-      ? `Reading ${status.firstRun.websiteHost}`
-      : 'Reading your website';
-  }
-  if (path === 'document') {
-    return status.record?.title ? `Reading ${status.record.title}` : 'Reading your document';
-  }
-  return 'Working on it';
-}
+const EMPTY_CONNECTORS: readonly OnboardingSourceIntent[] = [];
 
-export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayload }) {
+export function SetupFlow({
+  initialStatus,
+  preferredSource = null,
+  connectors = EMPTY_CONNECTORS,
+  telegramBotUsername = null,
+}: {
+  initialStatus: FirstRunStatusPayload;
+  preferredSource?: OnboardingSourceIntent | null;
+  connectors?: readonly OnboardingSourceIntent[];
+  telegramBotUsername?: string | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const intentStarted = useRef(false);
+  const firstRun = initialStatus.firstRun;
+  const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
+  const shouldAutoStart =
+    phase === 'choose' && preferredSource !== null && connectors.includes(preferredSource);
+  // Lock the chooser on first paint for marketing-intent auto-start; recover alone
+  // only flips pending on the next render after useEffect.
+  const [autoStartSettled, setAutoStartSettled] = useState(!shouldAutoStart);
 
   function recover(action: () => Promise<void>) {
     setError(null);
@@ -97,22 +88,53 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
       }
     });
   }
-  const firstRun = initialStatus.firstRun;
-  const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
 
   const stepsFailed = (initialStatus.record?.processingSteps ?? []).some(
     (step) => step.status === 'failed',
   );
+  const waitingForCapture =
+    phase === 'processing' &&
+    (firstRun?.starterPath === 'email' || isConnectorStarterPath(firstRun?.starterPath)) &&
+    !initialStatus.record?.emailArrived;
+  const saving = pending || (shouldAutoStart && !autoStartSettled);
 
   useEffect(() => {
-    if (phase !== 'processing' || stepsFailed) return;
+    if ((phase !== 'processing' || stepsFailed) && !waitingForCapture) return;
     const id = setInterval(() => {
       router.refresh();
     }, 2500);
     return () => {
       clearInterval(id);
     };
-  }, [phase, router, stepsFailed]);
+  }, [phase, router, stepsFailed, waitingForCapture]);
+
+  useEffect(() => {
+    setAutoStartSettled(!shouldAutoStart);
+  }, [shouldAutoStart]);
+
+  const startPreferredConnector = useEffectEvent(() => {
+    if (!shouldAutoStart || intentStarted.current) return;
+    // shouldAutoStart implies preferredSource is an available connector.
+    const source = preferredSource;
+    intentStarted.current = true;
+    // Run through recover so pending/error handling matches other setup saves.
+    recover(async () => {
+      try {
+        const result = await selectStarterPathAction({ path: source });
+        if (!result.ok) {
+          intentStarted.current = false;
+          throw new Error(result.error ?? 'Could not start that connector.');
+        }
+        router.refresh();
+      } finally {
+        setAutoStartSettled(true);
+      }
+    });
+  });
+
+  useEffect(() => {
+    startPreferredConnector();
+  }, [shouldAutoStart, preferredSource, connectors]);
 
   async function continueWorkStyle(workStyle: TeamWorkStyle | null, teamName: string) {
     const result = await submitWorkStyleAction({
@@ -150,6 +172,18 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     router.refresh();
   }
 
+  async function pickSlack() {
+    const result = await selectStarterPathAction({ path: 'slack' });
+    if (!result.ok) throw new Error(result.error ?? 'Could not start Slack capture.');
+    router.refresh();
+  }
+
+  async function pickTelegram() {
+    const result = await selectStarterPathAction({ path: 'telegram' });
+    if (!result.ok) throw new Error(result.error ?? 'Could not start Telegram capture.');
+    router.refresh();
+  }
+
   async function skip() {
     const result = await skipFirstRunAction();
     if (!result.ok) throw new Error(result.error ?? 'Could not skip to Home.');
@@ -159,63 +193,8 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   async function returnToChooser() {
     const result = await setFirstRunPhaseAction('choose');
     if (!result.ok) throw new Error(result.error ?? 'Could not return to the chooser.');
-    router.refresh();
-  }
-
-  let body = (
-    <WelcomeScreen
-      teamName={initialStatus.teamName}
-      inboundEmail={initialStatus.inboundEmail}
-      initialWorkStyle={firstRun?.workStyle ?? null}
-      onContinue={continueWorkStyle}
-    />
-  );
-  if (phase === 'choose') {
-    body = (
-      <ChooserScreen
-        inboundEmail={initialStatus.inboundEmail}
-        onWebsite={pickWebsite}
-        onDocument={pickDocument}
-        onEmail={pickEmail}
-        onSkip={skip}
-      />
-    );
-  } else if (phase === 'failed') {
-    body = (
-      <FailedScanScreen
-        host={firstRun?.websiteHost ?? null}
-        reason={(firstRun?.scanFailureReason as FirstRunScanFailureReason | null) ?? null}
-        onUpload={() => {
-          recover(returnToChooser);
-        }}
-        onEmail={() => {
-          recover(pickEmail);
-        }}
-        onBack={() => {
-          recover(returnToChooser);
-        }}
-      />
-    );
-  } else if (phase === 'processing') {
-    body = (
-      <ProcessingScreen
-        title={processingTitle(initialStatus)}
-        description={
-          firstRun?.starterPath === 'email'
-            ? 'Send one real thread to your team address. This screen opens the record as soon as it arrives.'
-            : 'You can leave this screen. The record also appears on Home when it is ready.'
-        }
-        steps={initialStatus.record?.processingSteps ?? []}
-        inboundEmail={initialStatus.inboundEmail}
-        emailWaiting={firstRun?.starterPath === 'email' && !initialStatus.record?.emailArrived}
-        onSwitch={() => {
-          recover(returnToChooser);
-        }}
-        onHome={() => {
-          router.push('/app');
-        }}
-      />
-    );
+    // Drop marketing ?source= so a refresh does not re-auto-start the connector path.
+    router.replace('/onboarding');
   }
 
   return (
@@ -225,8 +204,28 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
           {error}
         </p>
       ) : null}
-      <fieldset disabled={pending} aria-busy={pending} className="min-w-0">
-        {body}
+      <fieldset disabled={saving} aria-busy={saving} className="min-w-0">
+        <SetupFlowBody
+          status={initialStatus}
+          phase={phase}
+          firstRun={firstRun}
+          preferredSource={preferredSource}
+          connectors={connectors}
+          telegramBotUsername={telegramBotUsername}
+          onContinueWorkStyle={continueWorkStyle}
+          onWebsite={pickWebsite}
+          onDocument={pickDocument}
+          onEmail={pickEmail}
+          onSlack={connectors.includes('slack') ? pickSlack : undefined}
+          onTelegram={connectors.includes('telegram') ? pickTelegram : undefined}
+          onSkip={skip}
+          onReturnToChooser={() => {
+            recover(returnToChooser);
+          }}
+          onPickEmail={() => {
+            recover(pickEmail);
+          }}
+        />
       </fieldset>
     </SetupShell>
   );
