@@ -6,7 +6,7 @@ import {
   rawEvents,
   teamCalendarSettings,
 } from '@timeline/db';
-import { type SQL, and, asc, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import {
   calendarEventMutationLockKey,
@@ -253,11 +253,8 @@ function calendarAllDayDate(
   )::date`;
 }
 
-function sqlAllDayOverlap(timed: SQL, allDay: SQL): SQL | undefined {
-  return or(
-    and(eq(calendarEvents.allDay, false), timed),
-    and(eq(calendarEvents.allDay, true), allDay),
-  );
+function sqlAllDayOverlap(timed: SQL, allDay: SQL): SQL {
+  return sql`(CASE WHEN ${calendarEvents.allDay} THEN ${allDay} ELSE ${timed} END)`;
 }
 
 function escapeSqlLike(value: string): string {
