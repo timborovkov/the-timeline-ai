@@ -317,7 +317,7 @@ function resumableApprovalMessage(message: UIMessage | undefined): boolean {
           part.state === 'output-error' ||
           part.state === 'output-denied' ||
           (part.state === 'output-available' &&
-            part.output != null &&
+            part.output !== null &&
             typeof part.output === 'object' &&
             'error' in part.output)),
     ) &&

@@ -21,10 +21,11 @@ export async function submitDiagnosticAction(
       const r = await resolveScope();
       if (!r.ok || data.get('teamId') !== r.teamId)
         return { error: 'Workspace changed. Reopen this page.' };
+      const category = data.get('category');
       await r.scope.diagnostics.submit({
         sessionId: data.get('sessionId'),
         description: data.get('description'),
-        category: data.get('category') || undefined,
+        category: category === '' ? undefined : (category ?? undefined),
         conversation: data.get('conversation'),
         consent: data.get('consent') === 'on',
         consentVersion: data.get('consentVersion'),

@@ -509,23 +509,26 @@ describe('POST /api/chat', () => {
     };
     fakes.fakeClaimChatApprovals.mockResolvedValue(decision);
     const calls: string[] = [];
-    const mutation = vi.fn(async () => {
+    const mutation = vi.fn(() => {
       calls.push('execute');
-      return { ok: false, error: 'stale_state' };
+      return Promise.resolve({ ok: false, error: 'stale_state' });
     });
-    fakes.fakeStartChatApprovalStep.mockImplementation(async () => {
+    fakes.fakeStartChatApprovalStep.mockImplementation(() => {
       calls.push('start');
-      return true;
+      return Promise.resolve(true);
     });
-    fakes.fakeFinishChatApprovalStep.mockImplementation(async () => {
+    fakes.fakeFinishChatApprovalStep.mockImplementation(() => {
       calls.push('finish');
+      return Promise.resolve();
     });
     fakes.fakeBuildAgentTools.mockReturnValue({ execute_object_update: { execute: mutation } });
     const response = await POST(
       request(validBody({ sessionId: SESSION_ID, messages: [userMessage, decision] })),
     );
     expect(response.status).toBe(200);
-    const [sessionId, submitted, claimId] = fakes.fakeClaimChatApprovals.mock.calls[0] ?? [];
+    const claim = fakes.fakeClaimChatApprovals.mock.calls[0] as
+      [string, unknown, string] | undefined;
+    const [sessionId, submitted, claimId] = claim ?? [];
     expect(sessionId).toBe(SESSION_ID);
     expect(submitted).toEqual(decision);
     expect(typeof claimId).toBe('string');

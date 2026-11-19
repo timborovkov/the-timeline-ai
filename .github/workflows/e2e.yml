@@ -45,6 +45,9 @@ jobs:
       - name: Run migrations
         run: bun run db:migrate
 
+      - name: Build workspace imports for Playwright
+        run: bun run test:dist-imports
+
       - name: Run Playwright E2E
         run: bun run e2e
 

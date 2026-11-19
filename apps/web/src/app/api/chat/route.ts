@@ -1061,8 +1061,8 @@ function checkpointApprovalTools(
   const checkpointed = { ...tools };
   for (const name of Object.keys(approvals)) {
     const definition = tools[name];
-    const execute = definition?.execute;
-    if (!execute || !definition) continue;
+    if (!definition?.execute) continue;
+    const execute = definition.execute;
     checkpointed[name] = {
       ...definition,
       execute: async (input, options) => {
@@ -1075,7 +1075,7 @@ function checkpointApprovalTools(
         };
         if (!(await scope.objects.startChatApprovalStep(claim.sessionId, key, { name, input })))
           return { error: 'approval_no_longer_available' };
-        const output = await execute(input, options);
+        const output: unknown = await execute(input, options);
         const result = output as { ok?: boolean; error?: unknown } | null;
         const rejection =
           typeof result?.error === 'string' &&
