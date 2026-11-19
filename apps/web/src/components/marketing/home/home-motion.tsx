@@ -49,13 +49,41 @@ export function HomeMotion() {
       return;
     }
 
+    let disposed = false;
+    let stopPanels: (() => void) | undefined;
+    const panels = [...root.querySelectorAll<HTMLElement>('[data-home-panel-motion]')];
+    const nearPanels = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        nearPanels.disconnect();
+        void import('./home-panel-motion')
+          .then(({ observeHomePanels }) => {
+            if (!disposed) stopPanels = observeHomePanels(panels);
+          })
+          .catch(() => undefined);
+      },
+      { rootMargin: '150px 0px' },
+    );
+    for (const panel of panels) nearPanels.observe(panel);
+
     const activeNodes = [...root.querySelectorAll<HTMLElement>('[data-home-diagram]')];
     const activeObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           const diagram = entry.target as HTMLElement;
           const wasVisible = diagram.classList.contains(visibleClass);
-          if (entry.isIntersecting) diagram.dataset.homeEntered = '';
+          if (entry.isIntersecting) {
+            diagram.dataset.homeEntered = '';
+            const mesh = diagram.querySelector<SVGGElement>(
+              '[data-hero-record-mesh]:not([data-mesh-ready])',
+            );
+            if (mesh)
+              void import('./hero-mesh-motion')
+                .then(({ mountHeroMeshMotion }) => {
+                  if (!disposed) mountHeroMeshMotion(mesh);
+                })
+                .catch(() => undefined);
+          }
           diagram.classList.toggle(visibleClass, entry.isIntersecting);
           setFlowMotion(diagram, entry.isIntersecting, entry.isIntersecting && !wasVisible);
         }
@@ -92,7 +120,10 @@ export function HomeMotion() {
     updateProgress();
 
     return () => {
+      disposed = true;
       activeObserver.disconnect();
+      nearPanels.disconnect();
+      stopPanels?.();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('scroll', requestProgress);
       window.removeEventListener('resize', requestProgress);

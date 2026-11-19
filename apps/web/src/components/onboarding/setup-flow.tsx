@@ -4,13 +4,11 @@ import {
   setupProgressLabel,
   type FirstRunPhase,
   type FirstRunScanFailureReason,
-  type FirstRunState,
-  type NamedProcessingStep,
   type TeamWorkStyle,
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 
 import {
   finalizeDocumentVersionAction,
@@ -29,19 +27,7 @@ import { ProcessingScreen } from '@/components/onboarding/processing-screen';
 import { SetupShell } from '@/components/onboarding/setup-shell';
 import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
 
-export interface FirstRunStatusPayload {
-  firstRun: FirstRunState | null;
-  inboundEmail: string | null;
-  teamName: string;
-  /** Workspace shown on Welcome; null when deferred solo create has no team yet. */
-  teamId: string | null;
-  record: {
-    title: string;
-    meta: string;
-    processingSteps: NamedProcessingStep[];
-    emailArrived: boolean;
-  } | null;
-}
+import { pollFirstRun, type FirstRunStatusPayload } from '@/lib/first-run-poll';
 
 async function uploadOnboardingDocument(file: File): Promise<void> {
   const contentType = file.type || 'application/octet-stream';
@@ -88,6 +74,7 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   const [error, setError] = useState<string | null>(null);
 
   function recover(action: () => Promise<void>) {
+    stopPolling.current?.();
     setError(null);
     startTransition(async () => {
       try {
@@ -97,22 +84,26 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
       }
     });
   }
-  const firstRun = initialStatus.firstRun;
+  const [polled, setPolled] = useState<{
+    baseline: FirstRunStatusPayload;
+    status: FirstRunStatusPayload;
+  } | null>(null);
+  const stopPolling = useRef<(() => void) | null>(null);
+  const status = polled?.baseline === initialStatus ? polled.status : initialStatus;
+  const firstRun = status.firstRun;
   const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
-
-  const stepsFailed = (initialStatus.record?.processingSteps ?? []).some(
-    (step) => step.status === 'failed',
-  );
+  const stepsFailed = status.record?.processingSteps.some((step) => step.status === 'failed');
 
   useEffect(() => {
-    if (phase !== 'processing' || stepsFailed) return;
-    const id = setInterval(() => {
-      router.refresh();
-    }, 2500);
-    return () => {
-      clearInterval(id);
-    };
-  }, [phase, router, stepsFailed]);
+    if (phase !== 'processing' || stepsFailed || pending) return;
+    const stop = pollFirstRun(initialStatus, {
+      update: (status) => setPolled({ baseline: initialStatus, status }),
+      navigate: (destination) => router.replace(destination),
+      refresh: () => router.refresh(),
+    });
+    stopPolling.current = stop;
+    return stop;
+  }, [initialStatus, pending, phase, router, stepsFailed]);
 
   async function continueWorkStyle(workStyle: TeamWorkStyle | null, teamName: string) {
     const result = await submitWorkStyleAction({
@@ -164,8 +155,8 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
 
   let body = (
     <WelcomeScreen
-      teamName={initialStatus.teamName}
-      inboundEmail={initialStatus.inboundEmail}
+      teamName={status.teamName}
+      inboundEmail={status.inboundEmail}
       initialWorkStyle={firstRun?.workStyle ?? null}
       onContinue={continueWorkStyle}
     />
@@ -173,7 +164,7 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   if (phase === 'choose') {
     body = (
       <ChooserScreen
-        inboundEmail={initialStatus.inboundEmail}
+        inboundEmail={status.inboundEmail}
         onWebsite={pickWebsite}
         onDocument={pickDocument}
         onEmail={pickEmail}
@@ -199,19 +190,20 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   } else if (phase === 'processing') {
     body = (
       <ProcessingScreen
-        title={processingTitle(initialStatus)}
+        title={processingTitle(status)}
         description={
           firstRun?.starterPath === 'email'
             ? 'Send one real thread to your team address. This screen opens the record as soon as it arrives.'
             : 'You can leave this screen. The record also appears on Home when it is ready.'
         }
-        steps={initialStatus.record?.processingSteps ?? []}
-        inboundEmail={initialStatus.inboundEmail}
-        emailWaiting={firstRun?.starterPath === 'email' && !initialStatus.record?.emailArrived}
+        steps={status.record?.processingSteps ?? []}
+        inboundEmail={status.inboundEmail}
+        emailWaiting={firstRun?.starterPath === 'email' && !status.record?.emailArrived}
         onSwitch={() => {
           recover(returnToChooser);
         }}
         onHome={() => {
+          stopPolling.current?.();
           router.push('/app');
         }}
       />

@@ -25,8 +25,8 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
-    // The complete metadata row reserves both session variants; only one is visible.
-    expect(html.match(/>Source on GitHub</g)).toHaveLength(2);
+    // The source link is shared by both session variants.
+    expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Know where the work stands.');
@@ -118,7 +118,8 @@ describe('LandingPage', () => {
     expect(html).toContain('A person approves each one.');
     expect(html).not.toContain('Suggested changes wait — human approval required.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(4);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(1);
+    expect(html.match(/data-home-panel-motion/g)).toHaveLength(3);
     expect(html.match(/data-home-proof=/g)).toHaveLength(5);
     expect(html).toContain('data-home-proof="11-timeline-dark.png"');
     expect(html).toContain('data-home-proof="17-timeline-voice-dark.png"');

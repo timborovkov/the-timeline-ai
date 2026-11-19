@@ -16,13 +16,22 @@ import {
 import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type RefObject,
+} from 'react';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
+import type { ChatSaveResult } from '@/lib/chat-turn-save';
 import { chatRequestMessages } from '@/lib/chat-session';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { displayObjectLabel } from '@/lib/display-labels';
@@ -123,11 +132,14 @@ function ChatSurfaceContent({
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
+  const history = useChatHistorySave(sessionId, () => router.refresh());
   const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
     transport,
     messages: initialMessages,
+    onData: history.onData,
     onFinish: ({ message }) => {
       if (
+        history.mayContinue() &&
         message.parts.some(
           (part) =>
             isToolUIPart(part) &&
@@ -137,7 +149,8 @@ function ChatSurfaceContent({
       )
         router.refresh();
     },
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    sendAutomaticallyWhen: (input) =>
+      history.mayContinue() && lastAssistantMessageIsCompleteWithApprovalResponses(input),
   });
 
   const [input, setInput] = useState(initialPrompt ?? '');
@@ -191,7 +204,8 @@ function ChatSurfaceContent({
 
   function submit(text: string) {
     const t = text.trim();
-    if (!t || isStreaming) return;
+    if (!t || isStreaming || history.saveBlocked) return;
+    history.reset();
     setInput('');
     void sendMessage({ text: t });
     requestAnimationFrame(() => {
@@ -219,12 +233,20 @@ function ChatSurfaceContent({
         suggestionPrompts={suggestionPrompts}
         isStreaming={isStreaming}
         messages={messages}
-        onToolApprovalResponse={addToolApprovalResponse}
+        approvalsBlocked={history.saveBlocked}
+        onToolApprovalResponse={(approval) => {
+          if (!history.saveBlocked && !isStreaming) void addToolApprovalResponse(approval);
+        }}
         onSuggestion={submit}
         scrollRef={scrollRef}
         teamName={teamName}
       />
       <ChatError error={error} />
+      <ChatSaveNotice
+        save={history.activeSave}
+        retrying={history.retrying}
+        onRetry={history.retrySave}
+      />
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
           href={`/app/diagnostics?session=${encodeURIComponent(sessionId)}`}
@@ -234,9 +256,68 @@ function ChatSurfaceContent({
           Report an issue
         </Link>
       )}
-      <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
+      <ChatComposer
+        input={input}
+        isStreaming={isStreaming || history.saveBlocked}
+        onChange={setInput}
+        onSubmit={submit}
+      />
     </div>
   );
+}
+
+function useChatHistorySave(sessionId: string | null, refresh: () => void) {
+  const [save, setSave] = useState<ChatSaveResult | null>(null);
+  const [retrying, startRetry] = useTransition();
+  const lastSave = useRef<ChatSaveResult | null>(null);
+  const activeSave = save?.sessionId === sessionId ? save : null;
+  const saveBlocked = Boolean(sessionId && activeSave && activeSave.status !== 'saved');
+
+  function updateSave(result: ChatSaveResult | null) {
+    lastSave.current = result;
+    setSave(result);
+  }
+
+  function retrySave() {
+    if (activeSave?.status !== 'retry' || retrying) return;
+    startRetry(async () => {
+      try {
+        const response = await fetch('/api/chat/save', {
+          method: 'POST',
+          headers: { 'content-type': 'text/plain' },
+          body: activeSave.token,
+        });
+        if (lastSave.current !== activeSave) return;
+        if (response.ok) {
+          updateSave({ sessionId: activeSave.sessionId, status: 'saved' });
+          refresh();
+        } else if (response.status === 409) {
+          updateSave({ sessionId: activeSave.sessionId, status: 'conflict' });
+        } else if (response.status === 400) {
+          updateSave({ sessionId: activeSave.sessionId, status: 'unavailable' });
+        } else {
+          notifyError('chat-save', 'Unable to save this answer. Try again.');
+        }
+      } catch {
+        notifyError('chat-save', 'Unable to save this answer. Try again.');
+      }
+    });
+  }
+
+  return {
+    activeSave,
+    retrying,
+    saveBlocked,
+    retrySave,
+    reset: () => updateSave(null),
+    onData: (part: { type: string; data: unknown }) => {
+      if (part.type === 'data-turn-save') updateSave(part.data as ChatSaveResult);
+    },
+    mayContinue: () => {
+      const latest = lastSave.current;
+      return !latest || latest.sessionId !== sessionId || latest.status === 'saved';
+    },
+  };
 }
 
 function useChatSessionTransport({
@@ -453,6 +534,7 @@ function ChatTranscript({
   suggestionPrompts,
   isStreaming,
   messages,
+  approvalsBlocked,
   onToolApprovalResponse,
   onSuggestion,
   scrollRef,
@@ -464,6 +546,7 @@ function ChatTranscript({
   suggestionPrompts?: readonly string[];
   isStreaming: boolean;
   messages: UIMessage[];
+  approvalsBlocked: boolean;
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
   onSuggestion: (text: string) => void;
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -490,6 +573,7 @@ function ChatTranscript({
         <MessageList
           compact={compact}
           isStreaming={isStreaming}
+          approvalsBlocked={approvalsBlocked}
           messages={messages}
           onToolApprovalResponse={onToolApprovalResponse}
         />
@@ -551,11 +635,13 @@ function MessageList({
   compact,
   isStreaming,
   messages,
+  approvalsBlocked,
   onToolApprovalResponse,
 }: {
   compact: boolean;
   isStreaming: boolean;
   messages: UIMessage[];
+  approvalsBlocked: boolean;
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   return (
@@ -565,7 +651,7 @@ function MessageList({
           key={message.id}
           message={message}
           isActive={isStreaming && message.id === messages.at(-1)?.id}
-          canApprove={message.id === messages.at(-1)?.id}
+          canApprove={!approvalsBlocked && !isStreaming && message.id === messages.at(-1)?.id}
           onToolApprovalResponse={onToolApprovalResponse}
         />
       ))}
@@ -659,6 +745,44 @@ function ChatMessagePart({
       approval={part.approval}
       onApprovalResponse={onToolApprovalResponse}
     />
+  );
+}
+
+function ChatSaveNotice({
+  save,
+  retrying,
+  onRetry,
+}: {
+  save: ChatSaveResult | null;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  if (!save) return null;
+  if (save.status === 'saved') {
+    return (
+      <p role="status" className="text-xs text-fg-muted">
+        Saved to chat history
+      </p>
+    );
+  }
+  return (
+    <div className="shrink-0 rounded-sm border border-danger/30 bg-danger/5 px-3 py-2">
+      <p role="alert" className="text-sm text-danger">
+        {save.status === 'conflict'
+          ? 'Chat history changed before this answer could be saved.'
+          : 'This answer could not be saved to chat history.'}
+      </p>
+      {save.status === 'retry' && (
+        <button
+          type="button"
+          className="min-h-9 text-sm underline disabled:opacity-50"
+          onClick={onRetry}
+          disabled={retrying}
+        >
+          {retrying ? 'Saving…' : 'Retry save'}
+        </button>
+      )}
+    </div>
   );
 }
 

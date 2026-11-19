@@ -7,8 +7,10 @@ import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 
+import { ClearPlanIntent } from '@/components/clear-plan-intent';
+import { PlanIntentPrompt } from '@/components/plan-intent-prompt';
 import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -103,36 +105,29 @@ export default async function AppLayout({
   if (!active) redirect('/onboarding');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [gettingStarted, badges, inbox, workspaceTimezone, billingShell, planIntentCookie] =
-    await Promise.all([
-      loadGettingStartedGuide(scope, session.user.id),
-      getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
-        console.error('[app-shell] failed to load navigation attention badges', err);
-        reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
-        return {};
+  const badges = getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
+    console.error('[app-shell] failed to load navigation attention badges', err);
+    reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
+    return {};
+  });
+  const inbox = loadInboxPreview(scope);
+  const billingShell = loadBillingShell(scope, Boolean(impersonation?.readOnly));
+  const [gettingStarted, workspaceTimezone, planIntentCookie] = await Promise.all([
+    loadGettingStartedGuide(scope, session.user.id),
+    scope.calendar
+      .getCalendarSettings()
+      .then((settings) => settings.defaultTimezone)
+      .catch((err: unknown) => {
+        console.error('[app-shell] failed to load calendar settings', err);
+        reportCaughtError(err, { surface: 'layout', operation: 'calendar_settings' });
+        return DEFAULT_TIMEZONE;
       }),
-      loadInboxPreview(scope),
-      scope.calendar
-        .getCalendarSettings()
-        .then((settings) => settings.defaultTimezone)
-        .catch((err: unknown) => {
-          console.error('[app-shell] failed to load calendar settings', err);
-          reportCaughtError(err, { surface: 'layout', operation: 'calendar_settings' });
-          return DEFAULT_TIMEZONE;
-        }),
-      loadBillingShell(scope, Boolean(impersonation?.readOnly)),
-      readSignupPlanIntent(),
-    ]);
+    readSignupPlanIntent(),
+  ]);
 
   const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
     cookieStore.get(SIDEBAR_COOKIE_KEY)?.value,
   );
-  const { planIntent, clearPlanIntent } = shellPlanIntentProps({
-    intent: planIntentCookie,
-    teamName: active.teamName,
-    billingShell,
-  });
-
   return (
     <QueryProvider>
       <AppShell
@@ -154,7 +149,7 @@ export default async function AppLayout({
         inbox={inbox}
         workspaceTimezone={workspaceTimezone}
         sidebarInitiallyExpanded={sidebarInitiallyExpanded}
-        billingSummary={billingShell.sidebar}
+        billingSummary={billingShell.then(({ sidebar }) => sidebar)}
         platformAdmin={showPlatformAdmin(
           currentUser,
           realSession?.user.email,
@@ -171,8 +166,18 @@ export default async function AppLayout({
             : null
         }
         gettingStarted={gettingStarted}
-        planIntent={planIntent}
-        clearPlanIntent={clearPlanIntent}
+        planIntentContent={
+          planIntentCookie && (
+            <Suspense fallback={null}>
+              <ShellPlanIntent
+                intent={planIntentCookie}
+                teamId={active.teamId}
+                teamName={active.teamName}
+                billing={billingShell}
+              />
+            </Suspense>
+          )
+        }
       >
         {children}
         {modal}
@@ -258,6 +263,30 @@ async function loadBillingShell(
       canManageBilling: false,
     };
   }
+}
+
+async function ShellPlanIntent({
+  billing,
+  intent,
+  teamId,
+  teamName,
+}: {
+  intent: NonNullable<Awaited<ReturnType<typeof readSignupPlanIntent>>>;
+  teamId: string;
+  teamName: string;
+  billing: Promise<BillingShellState>;
+}) {
+  const { planIntent, clearPlanIntent } = shellPlanIntentProps({
+    billingShell: await billing,
+    intent,
+    teamName,
+  });
+  return (
+    <>
+      <ClearPlanIntent active={clearPlanIntent} />
+      {planIntent && <PlanIntentPrompt teamId={teamId} {...planIntent} />}
+    </>
+  );
 }
 
 function shellPlanIntentProps(input: {

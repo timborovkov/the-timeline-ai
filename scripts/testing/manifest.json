@@ -1314,6 +1314,12 @@
   "apps/web/src/lib/email-verification.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/first-run-poll.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/processing-health.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/first-run-status.test.ts": {
     "group": "unit"
   },
@@ -1513,7 +1519,7 @@
   "apps/web/src/lib/team-rename.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/telegram-bot-startup.test.ts": {
+  "apps/web/src/lib/telegram-bot-provision.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/timeline-controls.test.ts": {

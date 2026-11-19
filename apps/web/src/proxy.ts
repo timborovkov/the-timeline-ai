@@ -7,6 +7,7 @@ import { canonicalHostRedirect } from '@/lib/canonical-host';
 import { connectionsLegacyRedirectLocation } from '@/lib/connections';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
 import { platformRequestGate } from '@/lib/platform-request-gate';
+import { classifyPublicAnalyticsPath } from '@/lib/public-analytics-routes';
 import { applySignupPlanIntentFromRequest } from '@/lib/signup-plan-intent';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
@@ -27,6 +28,29 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
   return response;
 }) as unknown as ProxyHandler;
 
+const additionalPublicPages = new Set([
+  '/docs',
+  '/guides',
+  '/guides/automate-daily-team-updates-in-slack',
+  '/guides/software-project-handover-checklist-template',
+  '/guides/summarize-slack-channels',
+  '/guides/track-action-items-meetings-slack-email',
+  '/help/contact',
+  '/help/support',
+  '/integrations/websites',
+  '/record',
+  '/security',
+]);
+
+export function isCookieIndependentPublicRead(
+  request: Pick<NextRequest, 'method' | 'nextUrl' | 'headers'>,
+) {
+  if ((request.method !== 'GET' && request.method !== 'HEAD') || request.headers.has('next-action'))
+    return false;
+  const path = request.nextUrl.pathname;
+  return Boolean(classifyPublicAnalyticsPath(path)) || additionalPublicPages.has(path);
+}
+
 export const proxy: ProxyHandler = async (request, context) => {
   const redirect = canonicalHostRedirect(request);
   if (redirect) return redirect;
@@ -39,7 +63,9 @@ export const proxy: ProxyHandler = async (request, context) => {
   }
   const invalidMultipart = rejectInvalidMultipartRequest(request);
   if (invalidMultipart) return invalidMultipart;
-  const response = await authProxy(request, context);
+  const response = isCookieIndependentPublicRead(request)
+    ? NextResponse.next()
+    : await authProxy(request, context);
   schedulePersonlessSurfaceRequest(request, response, context);
   return response;
 };

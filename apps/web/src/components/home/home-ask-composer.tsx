@@ -3,7 +3,7 @@
 import { Send } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState, type ReactNode } from 'react';
+import { Suspense, use, useRef, useState, type ReactNode } from 'react';
 
 import {
   CHAT_HANDOFF_MAX_PROMPT_LENGTH,
@@ -20,7 +20,7 @@ export function HomeAskComposer({
 }: {
   teamId: string;
   actions?: ReactNode;
-  hasSources?: boolean;
+  hasSources?: boolean | Promise<boolean>;
 }) {
   const router = useRouter();
   const promptRef = useRef<HTMLInputElement>(null);
@@ -52,16 +52,9 @@ export function HomeAskComposer({
         </h2>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      <p className={hasSources ? 'sr-only' : 'text-sm leading-6 text-fg-muted'}>
-        {hasSources
-          ? 'Find a decision, check what changed, or work through a next step—with sources you can open.'
-          : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
-      </p>
-      {!hasSources ? (
-        <Link href="/app/documents" className="inline-block text-sm underline">
-          Upload your first document
-        </Link>
-      ) : null}
+      <Suspense fallback={null}>
+        <HomeAskSourceHint sources={hasSources} />
+      </Suspense>
       <div>
         <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong focus-within:ring-2 focus-within:ring-signal/40 focus-within:ring-offset-2 focus-within:ring-offset-bg">
           <label htmlFor="home-ask-prompt" className="sr-only">
@@ -102,20 +95,53 @@ export function HomeAskComposer({
           {error}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {(hasSources ? SUGGESTIONS : []).map((suggestion) => (
-          <button
-            key={suggestion}
-            type="button"
-            className="min-h-9 rounded-sm border border-border px-3 py-1 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => {
-              submit(suggestion);
-            }}
-          >
-            {suggestion}
-          </button>
-        ))}
-      </div>
+      <Suspense fallback={null}>
+        <HomeAskSuggestions sources={hasSources} onSelect={submit} />
+      </Suspense>
     </section>
+  );
+}
+
+function HomeAskSourceHint({ sources }: { sources: boolean | Promise<boolean> }) {
+  const hasSources = typeof sources === 'boolean' ? sources : use(sources);
+  return (
+    <>
+      <p className={hasSources ? 'sr-only' : 'text-sm leading-6 text-fg-muted'}>
+        {hasSources
+          ? 'Find a decision, check what changed, or work through a next step—with sources you can open.'
+          : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
+      </p>
+      {!hasSources ? (
+        <Link href="/app/documents" className="inline-block text-sm underline">
+          Upload your first document
+        </Link>
+      ) : null}
+    </>
+  );
+}
+
+function HomeAskSuggestions({
+  sources,
+  onSelect,
+}: {
+  sources: boolean | Promise<boolean>;
+  onSelect: (suggestion: string) => void;
+}) {
+  const hasSources = typeof sources === 'boolean' ? sources : use(sources);
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(hasSources ? SUGGESTIONS : []).map((suggestion) => (
+        <button
+          key={suggestion}
+          type="button"
+          className="min-h-9 rounded-sm border border-border px-3 py-1 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => {
+            onSelect(suggestion);
+          }}
+        >
+          {suggestion}
+        </button>
+      ))}
+    </div>
   );
 }

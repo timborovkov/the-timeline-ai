@@ -1,4 +1,4 @@
-import { SETUP_SHELL_PHASES, type FirstRunPhase } from '@timeline/shared/onboarding';
+import { SETUP_SHELL_PHASES } from '@timeline/shared/onboarding';
 import { redirect } from 'next/navigation';
 
 import { SetupFlow } from '@/components/onboarding/setup-flow';
@@ -6,6 +6,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { defaultSoloTeamName } from '@/lib/default-team';
+import { firstRunDestination } from '@/lib/first-run-poll';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 
 export const dynamic = 'force-dynamic';
@@ -19,14 +20,6 @@ function prefillTeamName(
   const local = email?.split('@')[0]?.trim();
   if (local && local.length > 0) return defaultSoloTeamName(local);
   return defaultSoloTeamName('team');
-}
-
-function redirectForLaterPhase(phase: FirstRunPhase): never {
-  if (phase === 'record') redirect('/app/onboarding/record');
-  if (phase === 'ask') redirect('/app/chat');
-  if (phase === 'approve') redirect('/app/approvals');
-  if (phase === 'live') redirect('/app/onboarding/live');
-  redirect('/app');
 }
 
 export default async function OnboardingPage() {
@@ -60,7 +53,7 @@ export default async function OnboardingPage() {
   const firstRun = status.firstRun;
   if (firstRun?.startedByUserId !== session.user.id) redirect('/app');
   if (!SETUP_SHELL_PHASES.includes(firstRun.phase)) {
-    redirectForLaterPhase(firstRun.phase);
+    redirect(firstRunDestination(firstRun.phase));
   }
 
   return <SetupFlow initialStatus={status} />;
