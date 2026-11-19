@@ -8,6 +8,20 @@ function inviteRedirectPath(token: string): string {
   return `/accept-invite/${encodeURIComponent(token)}`;
 }
 
+/** Extract an invite token from a same-origin `/accept-invite/<token>` callback. */
+export function inviteTokenFromCallback(callbackUrl: string | undefined): string | undefined {
+  if (!callbackUrl) return undefined;
+  const callbackPath = safeSameOriginPath(callbackUrl, '', { blockedPaths: AUTH_PATHS });
+  if (!callbackPath.startsWith('/accept-invite/')) return undefined;
+  const raw = callbackPath.slice('/accept-invite/'.length).split(/[?#]/, 1)[0] ?? '';
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export function signedInAuthRedirect(input: {
   callbackUrl?: string;
   inviteToken?: string;
@@ -21,6 +35,15 @@ export function signedInAuthRedirect(input: {
   if (callbackPath.startsWith('/accept-invite/')) return callbackPath;
   if (input.pendingInviteToken) return inviteRedirectPath(input.pendingInviteToken);
   return callbackPath;
+}
+
+/** Prefer `?invite=` when linking to sign-up from an invite acceptance callback. */
+export function signUpHrefFromAuthCallback(callbackUrl: string | undefined): string {
+  if (!callbackUrl) return '/sign-up';
+  const inviteToken = inviteTokenFromCallback(callbackUrl);
+  if (inviteToken) return `/sign-up?invite=${encodeURIComponent(inviteToken)}`;
+  const dest = signedInAuthRedirect({ callbackUrl });
+  return `/sign-up?callbackUrl=${encodeURIComponent(dest)}`;
 }
 
 /** Pricing intent is navigation only; it never authorizes a purchase. */
@@ -42,8 +65,8 @@ export function selectedPlanFromCallback(callback: unknown): PaidSignupPlanId | 
 /**
  * Preserve explicit continuation before pricing, while rejecting auth loops.
  * Paid plan intent stays in `tl_pricing_plan_intent` and as a Billing callback for
- * existing accounts (Sign in). New teams still go through /onboarding via
- * `postSignupDestination` after team_created — not here.
+ * existing accounts (Sign in). Solo signups still go through /onboarding via
+ * `postSignupDestination` (Welcome mints the team) — not here.
  */
 export function signupCallback(callbackUrl?: string, plan?: string): string | undefined {
   const safe = safeSameOriginPath(callbackUrl, '', { blockedPaths: AUTH_PATHS });
@@ -53,22 +76,17 @@ export function signupCallback(callbackUrl?: string, plan?: string): string | un
 
 /**
  * Where to send the user after credentials sign-up succeeds.
- * Explicit continuations (accept-invite, MCP /oauth/authorize) win over first-run
- * setup. Owned teams otherwise start in /onboarding; paid plan intent stays in
- * the cookie rather than skipping setup for Billing.
+ * Solo accounts always finish workspace creation on Welcome (/onboarding) before
+ * any other destination — including pricing plan intent (cookie only). Invite
+ * joiners go straight into the invited team. MCP authorize parking for teamless
+ * users lives on /oauth/authorize, not here.
  */
 export function postSignupDestination(input: {
   inviteToken?: string;
-  event: 'team_created' | 'invite_accepted';
+  event: 'account_created' | 'invite_accepted';
   callbackUrl: string;
 }): string {
-  if (input.inviteToken) return '/app';
-  if (input.event !== 'team_created') return input.callbackUrl;
-  if (
-    input.callbackUrl.startsWith('/accept-invite/') ||
-    input.callbackUrl.startsWith('/oauth/authorize')
-  ) {
-    return input.callbackUrl;
-  }
+  if (input.inviteToken || input.event === 'invite_accepted') return '/app';
+  void input.callbackUrl;
   return '/onboarding';
 }

@@ -1507,6 +1507,9 @@
   "apps/web/src/lib/task-statuses.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/team-rename.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/telegram-bot-startup.test.ts": {
     "group": "unit"
   },

@@ -42,6 +42,7 @@ export async function loadFirstRunStatus(input: {
       inboundEmail: record?.inboundEmail ?? null,
     }),
     teamName: record?.teamName ?? input.teamName,
+    teamId: input.teamId,
     recommendedChannel: recommendedGoLiveChannel(firstRun?.workStyle ?? null),
     prefilledQuestion: prefilledAskQuestion({
       path: firstRun?.starterPath ?? null,

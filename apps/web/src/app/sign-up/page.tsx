@@ -92,5 +92,7 @@ export default async function SignUpPage({ searchParams }: Props) {
 function signupSubtitle(input: { invited: boolean; ready: boolean; planSubtitle: string }): string {
   if (!input.ready)
     return 'New accounts are paused while our legal publication review is completed.';
-  return input.invited ? 'You’ve been invited to a team. Sign up to accept.' : input.planSubtitle;
+  return input.invited
+    ? 'You’ve been invited to a team. Sign up to accept — no separate workspace is created.'
+    : input.planSubtitle;
 }

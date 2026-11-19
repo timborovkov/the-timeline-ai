@@ -6,17 +6,18 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 
+/** Prefill display name for the Welcome step before a solo workspace exists. */
+export function defaultSoloTeamName(label: string): string {
+  return `${label}'s team`;
+}
+
 /**
  * Idempotently create a solo team for a user who has no memberships. No-op
- * when the user is already on at least one team. Used by:
+ * when the user is already on at least one team.
  *
- *   - The NextAuth `createUser` event for fresh OAuth signups.
- *   - The `acceptInviteAction` failure path, when an OAuth user arrived via
- *     `/sign-up?invite=<token>`, `createUser` skipped solo-team creation, and
- *     invite acceptance then failed (expired, revoked, email mismatch).
- *
- * Same name / slug / inboundEmail convention as `createTeamAction` so a
- * fallback team is indistinguishable from a deliberate one.
+ * Prefer the Welcome / `createTeamAction` paths so the owner chooses the name
+ * (slug + inbound email minted then). Kept for recovery scripts and tests —
+ * product signup must not invent a default-named owned team.
  */
 export async function ensureSoloTeam(
   userId: string,
@@ -35,7 +36,7 @@ export async function ensureSoloTeam(
   const teamId = await db.transaction(async (tx) => {
     const team = await initializeOwnedWorkspace(tx, {
       ownerId: userId,
-      name: `${label}'s Team`,
+      name: defaultSoloTeamName(label),
       slug,
       inboundEmail,
     });

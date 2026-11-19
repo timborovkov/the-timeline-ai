@@ -2,10 +2,12 @@ import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import {
+  inviteTokenFromCallback,
   postSignupDestination,
   signedInAuthRedirect,
   selectedPlanCallback,
   selectedPlanFromCallback,
+  signUpHrefFromAuthCallback,
   signupCallback,
 } from '@/lib/auth-redirect';
 const ENV_BACKUP = { ...process.env };
@@ -54,6 +56,24 @@ describe('signedInAuthRedirect', () => {
   });
 });
 
+describe('invite callback helpers', () => {
+  it('extracts invite tokens from accept-invite callbacks', () => {
+    process.env.AUTH_URL = 'https://timeline.example.com';
+    expect(inviteTokenFromCallback('/accept-invite/callback-token')).toBe('callback-token');
+    expect(inviteTokenFromCallback('/accept-invite/invite%201')).toBe('invite 1');
+    expect(inviteTokenFromCallback('/app')).toBeUndefined();
+  });
+
+  it('links sign-up with invite query when the callback is accept-invite', () => {
+    process.env.AUTH_URL = 'https://timeline.example.com';
+    expect(signUpHrefFromAuthCallback('/accept-invite/callback-token')).toBe(
+      '/sign-up?invite=callback-token',
+    );
+    expect(signUpHrefFromAuthCallback('/app/team')).toBe('/sign-up?callbackUrl=%2Fapp%2Fteam');
+    expect(signUpHrefFromAuthCallback(undefined)).toBe('/sign-up');
+  });
+});
+
 describe('pricing plan intent', () => {
   it('allows only self-serve paid plans without authorizing a purchase', () => {
     expect(selectedPlanCallback('payg')).toBe('/app/team?section=billing&plan=payg#change-plan');
@@ -78,29 +98,23 @@ describe('pricing plan intent', () => {
     expect(signupCallback('/oauth/authorize?state=a', 'business')).toBe('/oauth/authorize?state=a');
   });
 
-  it('keeps invite and MCP authorize continuations ahead of first-run onboarding', () => {
+  it('sends solo signups to Welcome onboarding ahead of plan intent destinations', () => {
     expect(
       postSignupDestination({
-        event: 'team_created',
-        callbackUrl: '/accept-invite/token%201',
-      }),
-    ).toBe('/accept-invite/token%201');
-    expect(
-      postSignupDestination({
-        event: 'team_created',
-        callbackUrl: '/oauth/authorize?client_id=test&state=a',
-      }),
-    ).toBe('/oauth/authorize?client_id=test&state=a');
-    expect(
-      postSignupDestination({
-        event: 'team_created',
+        event: 'account_created',
         callbackUrl: '/app',
       }),
     ).toBe('/onboarding');
     expect(
       postSignupDestination({
-        event: 'team_created',
+        event: 'account_created',
         callbackUrl: '/app/team?section=billing&plan=team#change-plan',
+      }),
+    ).toBe('/onboarding');
+    expect(
+      postSignupDestination({
+        event: 'account_created',
+        callbackUrl: '/oauth/authorize?client_id=test&state=a',
       }),
     ).toBe('/onboarding');
     expect(
@@ -115,7 +129,7 @@ describe('pricing plan intent', () => {
         event: 'invite_accepted',
         callbackUrl: '/oauth/authorize?state=a',
       }),
-    ).toBe('/oauth/authorize?state=a');
+    ).toBe('/app');
   });
 });
 

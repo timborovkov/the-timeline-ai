@@ -83,7 +83,7 @@ export function signupPlanCopy(planId: SignupPlanId): SignupPlanCopy {
       planId,
       name: plan.name,
       subtitle:
-        'Free for up to 3 members — no card required. We’ll create your first team automatically. Then connect one source and open the first record.',
+        'Free for up to 3 members — no card required. Name your team next, then connect one source and open the first record.',
       includes,
       billingStarts:
         'Creating an account does not charge you. Free has no card requirement and no platform fee.',

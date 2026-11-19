@@ -98,7 +98,9 @@ Open <http://localhost:3000>.
 
 ## Verify a capture
 
-1.  Sign up as user A — you land on `/app` with a default team.
+1.  Sign up as user A — you land on `/onboarding` to name your team (slug and
+    inbound email are minted then). Invite-only signup joins the inviting team
+    with no owned workspace.
 2.  Post a text note — appears in the timeline.
 3.  Go to **Team settings** → invite user B by email. If `RESEND_API_KEY` and `TRANSACTIONAL_EMAIL_FROM` are set, user B receives the invite email. Otherwise the invite is still created with a visible send error and copyable fallback URL.
 4.  Open the invite URL in an incognito window, sign up as user B → user B is added to the team. If user B is already signed in with an account whose email matches the invite, the invite also appears in the team switcher modal with accept and decline actions; email verification is encouraged but not required for invite acceptance.
