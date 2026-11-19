@@ -509,8 +509,9 @@ Use it for the hero, root metadata defaults, manifest and homepage registry entr
 Specialized pages retain their own search intent and capability boundaries in the
 [public document registry](../public-site-registry.md).
 
-OG and Twitter cards share a 1200 × 630 composition: the official mark, Switzer,
-near-black background and lime emphasis. Describe the living record, connected
-objects, attached sources and approval boundary; avoid fabricated event IDs or
-version labels. Static social font subsets and their generation instructions live
+OG and Twitter cards share the 1200 × 630 format, the official mark, Switzer,
+near-black background, and lime emphasis. The default artwork presents the
+living record. Pricing, Product tour, and selected guides use their own
+headlines and show the options or steps covered on the page. Static social
+font subsets and their generation instructions live
 in `apps/web/public/fonts/switzer/SOCIAL-FONTS.md`.

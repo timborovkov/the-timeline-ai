@@ -442,7 +442,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
+    dates: { modified: '2026-11-19', reviewed: '2026-11-19' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

@@ -1,4 +1,7 @@
 {
+  "apps/web/scripts/check-public-origin.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/agent/workspace-tools.test.ts": {
     "group": "integration"
   },

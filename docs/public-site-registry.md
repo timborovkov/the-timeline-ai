@@ -71,6 +71,9 @@ and appear in the footer Compare column as head-to-head pages versus Day AI,
 Folk, Glean, Geekbot, Suda, MemoryCrow, and Achiral. SEO titles and
 descriptions on those vs URLs also name each as a competitor alternative so
 people searching `[competitor] alternatives` can land on the cited comparison.
+Each comparison owns its page review date and its baseline claim check date.
+Set a claim's `reviewedOn` when checking that claim independently. The
+comparison page and expanded LLM entry show the same check date.
 Notion remains integrations-only.
 The Integrations
 header dropdown and matching footer column list the hub plus live destinations:
@@ -81,7 +84,10 @@ they are not added to works-with filters. Jira and Notion remain truthful
 works-with pages and hub cards, not native dropdown entries. Works-with pages
 for Linear, Jira, Notion, HubSpot, Attio, and Pipedrive still live under
 [`/integrations`](../apps/web/src/app/integrations); coming-soon CRM pages stay
-on the hub cards, not in that nav list. The agents hub and product-tour documents
+on the hub cards and follow the planned-page discovery policy below. The
+directory's capability table and both LLM files share the same answers for
+native sync, deliberate capture, live lookup, historical coverage, and
+permissions. The agents hub and product-tour documents
 are registered with the core public pages. Outcome-led solution documents remain under
 [`components/marketing/solutions`](../apps/web/src/components/marketing/solutions)
 for the remaining client-handoff page. Do not create title-swapped or orphaned
@@ -161,6 +167,9 @@ a rebuild to update them. `robots.txt` remains generated at request time using
 the runtime `AUTH_URL`. The web Docker image defaults `AUTH_URL` to
 `https://thetimeline.cc` for that build so production pages do not ship
 `http://localhost:3000`. Override the build arg for a non-canonical origin.
+Both LLM files use the configured public origin for first-party URLs and retain
+the original destinations of external citations. Run the [Railway origin check](railway.md#deploy-flow)
+from the deployed revision once the web release is healthy.
 
 Request-time values that can differ from the Docker build (`SUPPORT_EMAIL`,
 `TURNSTILE_SITE_KEY`, `TASK_CATEGORY_UI_ENABLED`, production Turnstile gating)
@@ -173,11 +182,16 @@ cannot freeze the unpublished placeholder into static HTML.
 `NEXT_PUBLIC_*` analytics and Sentry values are inlined into the client bundle
 and must be passed as web image build args.
 
-`robots.txt` blocks APIs, the authenticated app, and token-bearing invite and
-verification routes. Publicly reachable HTML that declares `noindex` remains
-crawlable so search engines can observe that directive and process redirects.
-Use page metadata and the registry's `indexability` field to prevent indexing;
-do not add ordinary noindex pages to the robots disallow list.
+`robots.txt` allows public search indexing and user-directed retrieval. The
+default, search, and retrieval groups exclude APIs, the authenticated app, and
+token-bearing invite and verification routes. The training and bulk collection
+group disallows all paths for its listed agents. Some providers bundle uses
+under a single token. For example, `Google-Extended` covers Gemini training
+and some grounding, while `Googlebot` governs Google Search crawling.
+
+Pages that declare `noindex` stay crawlable so search engines can read the
+directive and follow redirects. Set canonicals and preview directives on real
+public pages. Next.js supplies `noindex` on public 404 responses.
 
 `/agents/provisioning.md` is a machine document linked from setup, excluded from the sitemap and automatic llms registry expansion, with a brief discovery link in llms.txt. The public skill and signed-in skill download read the canonical plugin SKILL.md. Discovery remains useful without an account or connection.
 

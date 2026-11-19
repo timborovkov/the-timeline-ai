@@ -98,11 +98,6 @@ export const metadata: Metadata = {
     'meeting transcript search',
     'project status AI',
   ],
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
-  },
 };
 
 function getHomeDocument() {
