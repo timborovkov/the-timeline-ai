@@ -49,7 +49,10 @@ for (const width of [1440, 390]) {
         const before = await geometry(page, selector);
         const header = page.locator('[data-public-header]');
         await expect(header.getByRole('link', { name: 'Dashboard', exact: true })).toHaveCount(0);
-        await expect(header.getByRole('link', { name: 'Start free', exact: true })).toHaveCount(0);
+        await expect(header.getByRole('link', { name: 'Start free', exact: true })).toBeVisible();
+        await expect(
+          header.getByRole('link', { name: 'Sign in', exact: true }).first(),
+        ).toBeVisible();
         release();
         await expect(page.locator('[data-public-session="unknown"]')).toHaveCount(0);
         expectStable(before, await geometry(page, selector));
