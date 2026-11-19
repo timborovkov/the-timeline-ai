@@ -52,8 +52,9 @@ export function signupCallback(callbackUrl?: string, plan?: string): string | un
 
 /**
  * Where to send the user after credentials sign-up succeeds.
- * Invitation continuations win over first-run setup so accept-invite → Create one
- * still lands on the invite. Owned teams otherwise start in /onboarding.
+ * Explicit continuations (accept-invite, MCP /oauth/authorize) win over first-run
+ * setup. Owned teams otherwise start in /onboarding; paid plan intent stays in
+ * the cookie rather than skipping setup for Billing.
  */
 export function postSignupDestination(input: {
   inviteToken?: string;
@@ -61,7 +62,12 @@ export function postSignupDestination(input: {
   callbackUrl: string;
 }): string {
   if (input.inviteToken) return '/app';
-  if (input.callbackUrl.startsWith('/accept-invite/')) return input.callbackUrl;
-  if (input.event === 'team_created') return '/onboarding';
-  return input.callbackUrl;
+  if (input.event !== 'team_created') return input.callbackUrl;
+  if (
+    input.callbackUrl.startsWith('/accept-invite/') ||
+    input.callbackUrl.startsWith('/oauth/authorize')
+  ) {
+    return input.callbackUrl;
+  }
+  return '/onboarding';
 }

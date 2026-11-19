@@ -76,7 +76,7 @@ describe('pricing plan intent', () => {
     expect(signupCallback('/oauth/authorize?state=a', 'business')).toBe('/oauth/authorize?state=a');
   });
 
-  it('keeps accept-invite continuations ahead of first-run onboarding', () => {
+  it('keeps invite and MCP authorize continuations ahead of first-run onboarding', () => {
     expect(
       postSignupDestination({
         event: 'team_created',
@@ -86,7 +86,19 @@ describe('pricing plan intent', () => {
     expect(
       postSignupDestination({
         event: 'team_created',
+        callbackUrl: '/oauth/authorize?client_id=test&state=a',
+      }),
+    ).toBe('/oauth/authorize?client_id=test&state=a');
+    expect(
+      postSignupDestination({
+        event: 'team_created',
         callbackUrl: '/app',
+      }),
+    ).toBe('/onboarding');
+    expect(
+      postSignupDestination({
+        event: 'team_created',
+        callbackUrl: '/app/team?section=billing&plan=team#change-plan',
       }),
     ).toBe('/onboarding');
     expect(
