@@ -64,8 +64,8 @@ type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelist
 type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 
 const SETTINGS_ITEMS = [
-  { value: 'members', label: 'Members' },
   { value: 'general', label: 'General' },
+  { value: 'members', label: 'Members' },
   { value: 'visibility', label: 'Visibility' },
   { value: 'email', label: 'Email' },
   { value: 'billing', label: 'Billing', adminOnly: true },
@@ -285,6 +285,10 @@ function TeamIdentitySettings({
   return (
     <SettingsSection title="Team identity">
       <div className="space-y-4">
+        <p className="text-sm text-fg-muted">
+          This is the display name for your workspace. Changing it does not update the team email or
+          slug.
+        </p>
         {isAdmin ? (
           <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
         ) : (
@@ -574,7 +578,7 @@ async function loadTeamSettingsPage({
   const query = await searchParams;
   // Preserve bookmarks to the former Preferences section.
   const requestedSection =
-    query.section === 'preferences' ? 'general' : (query.section ?? 'members');
+    query.section === 'preferences' ? 'general' : (query.section ?? 'general');
   const section = SETTINGS_ITEMS.some(
     (item) => item.value === requestedSection && (!('adminOnly' in item) || isAdmin),
   )

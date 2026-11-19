@@ -2553,7 +2553,10 @@ test.describe.serial('team admin invite, role, and removal journeys enforce perm
     ).toBeVisible();
 
     await inviteePage.goto('/app');
-    await expect(inviteePage.getByRole('heading', { name: 'No team yet' })).toBeVisible();
+    // Removed members have zero memberships — app shell routes them to Welcome
+    // so they can name a new owned workspace (invite-only never left them one).
+    await expect(inviteePage).toHaveURL(/\/onboarding/);
+    await expect(inviteePage.getByRole('heading', { name: 'Name your team' })).toBeVisible();
     await expect(inviteePage.getByText(e2eTeam.name)).toHaveCount(0);
   });
 });

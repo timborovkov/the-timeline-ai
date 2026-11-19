@@ -4,9 +4,9 @@ import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for invite acceptance. These pin the user-visible
  * contracts around auth redirects, recipient email checks, durable
- * membership/invite mutations, fallback solo-team creation, cookie switching,
- * and revalidation without duplicating the team-scope database integration
- * tests.
+ * membership/invite mutations, pending-invite cleanup on failure (no owned
+ * team is invented), cookie switching, and revalidation without duplicating
+ * the team-scope database integration tests.
  */
 
 const fakes = vi.hoisted(() => ({
@@ -19,7 +19,6 @@ const fakes = vi.hoisted(() => ({
   fakeRedirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
-  fakeEnsureSoloTeam: vi.fn(),
   fakeGetUserLegalAcceptance: vi.fn(),
   fakeHasCurrentLegalAcceptance: vi.fn(),
   fakeClearPendingInvite: vi.fn(),
@@ -62,11 +61,6 @@ await vi.mock(
     serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
   }),
   () => import('@/lib/active-team'),
-);
-await vi.mock(
-  import.meta.resolve('@/lib/default-team'),
-  () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }),
-  () => import('@/lib/default-team'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/legal'),
@@ -198,7 +192,6 @@ function invite(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSignedIn();
-  fakes.fakeEnsureSoloTeam.mockResolvedValue(undefined);
   fakes.fakeClearPendingInvite.mockResolvedValue(undefined);
   fakes.fakeGetUserLegalAcceptance.mockResolvedValue({
     legalTermsVersion: 'current',
@@ -304,22 +297,15 @@ describe('acceptInviteAction', () => {
     );
   });
 
-  it('creates fallback solo team on failed acceptance and does not mask that invite error', async () => {
+  it('clears the pending invite on failed acceptance without creating an owned team', async () => {
     fakes.fakeTransaction.mockRejectedValue(new Error('db down'));
-    fakes.fakeEnsureSoloTeam.mockRejectedValue(new Error('fallback failed'));
 
     await expect(acceptInviteAction(form({ token: TOKEN }))).rejects.toThrow(
       'NEXT_REDIRECT:/accept-invite/invite-token?error=failed',
     );
 
-    expect(fakes.fakeEnsureSoloTeam).toHaveBeenCalledWith(USER_ID, {
-      name: 'Taylor',
-      email: 'invited@example.test',
-    });
-    expect(fakes.fakeLoggerError).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'failed', userId: USER_ID }),
-      'invite_fallback_solo_team_failed',
-    );
+    expect(fakes.fakeClearPendingInvite).toHaveBeenCalled();
+    expect(fakes.fakeCookieSet).not.toHaveBeenCalled();
   });
 });
 

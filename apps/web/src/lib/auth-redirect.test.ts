@@ -2,9 +2,11 @@ import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import {
+  inviteTokenFromCallback,
   signedInAuthRedirect,
   selectedPlanCallback,
   selectedPlanFromCallback,
+  signUpHrefFromAuthCallback,
 } from '@/lib/auth-redirect';
 const ENV_BACKUP = { ...process.env };
 
@@ -49,6 +51,24 @@ describe('signedInAuthRedirect', () => {
     process.env.AUTH_URL = 'https://timeline.example.com';
 
     expect(signedInAuthRedirect({ callbackUrl: '/sign-in?callbackUrl=/app' })).toBe('/app');
+  });
+});
+
+describe('invite callback helpers', () => {
+  it('extracts invite tokens from accept-invite callbacks', () => {
+    process.env.AUTH_URL = 'https://timeline.example.com';
+    expect(inviteTokenFromCallback('/accept-invite/callback-token')).toBe('callback-token');
+    expect(inviteTokenFromCallback('/accept-invite/invite%201')).toBe('invite 1');
+    expect(inviteTokenFromCallback('/app')).toBeUndefined();
+  });
+
+  it('links sign-up with invite query when the callback is accept-invite', () => {
+    process.env.AUTH_URL = 'https://timeline.example.com';
+    expect(signUpHrefFromAuthCallback('/accept-invite/callback-token')).toBe(
+      '/sign-up?invite=callback-token',
+    );
+    expect(signUpHrefFromAuthCallback('/app/team')).toBe('/sign-up?callbackUrl=%2Fapp%2Fteam');
+    expect(signUpHrefFromAuthCallback(undefined)).toBe('/sign-up');
   });
 });
 
