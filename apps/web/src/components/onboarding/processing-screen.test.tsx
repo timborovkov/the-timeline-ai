@@ -42,7 +42,7 @@ describe('ProcessingScreen', () => {
     expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
       '2026-03-29T19:00:00.000Z',
     );
-    expect(screen.getByRole('button', { name: 'Go to Home' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Go to Home' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Choose another way' })).toBeTruthy();
     expect(screen.queryByText(/%|seconds|minutes/i)).toBeNull();
   });

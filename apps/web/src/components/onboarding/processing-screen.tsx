@@ -1,6 +1,7 @@
 'use client';
 
 import type { NamedProcessingStep } from '@timeline/shared/onboarding/first-run';
+import Link from 'next/link';
 
 import { CopyButton } from '@/components/copy-button';
 import { CopyableTextField } from '@/components/copyable-text-field';
@@ -34,12 +35,14 @@ export function ProcessingScreen({
   inboundEmail: string | null;
   emailWaiting: boolean;
   onSwitch: () => void;
-  onHome: () => void;
+  onHome?: () => void;
 }) {
   const actions = (
     <div className="mt-5 flex flex-wrap gap-2">
-      <Button type="button" variant="outline" onClick={onHome}>
-        Go to Home
+      <Button asChild variant="outline">
+        <Link href="/app" onNavigate={onHome}>
+          Go to Home
+        </Link>
       </Button>
       <Button type="button" variant="ghost" onClick={onSwitch}>
         Choose another way

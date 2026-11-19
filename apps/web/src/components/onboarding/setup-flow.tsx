@@ -10,7 +10,7 @@ import {
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 
 import {
   finalizeDocumentVersionAction,
@@ -92,6 +92,7 @@ export function SetupFlow({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const leaving = useRef(false);
 
   function recover(action: () => Promise<void>) {
     setError(null);
@@ -111,14 +112,14 @@ export function SetupFlow({
   );
 
   useEffect(() => {
-    if (phase !== 'processing' || stepsFailed) return;
+    if (phase !== 'processing' || stepsFailed || pending) return;
     const id = setInterval(() => {
-      if (document.visibilityState === 'visible') router.refresh();
+      if (!leaving.current && document.visibilityState === 'visible') router.refresh();
     }, 2500);
     return () => {
       clearInterval(id);
     };
-  }, [phase, router, stepsFailed]);
+  }, [pending, phase, router, stepsFailed]);
 
   async function continueWorkStyle(workStyle: TeamWorkStyle | null, teamName: string) {
     const result = await submitWorkStyleAction({
@@ -222,7 +223,7 @@ export function SetupFlow({
           recover(returnToChooser);
         }}
         onHome={() => {
-          router.push('/app');
+          leaving.current = true;
         }}
       />
     );

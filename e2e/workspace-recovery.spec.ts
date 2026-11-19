@@ -262,14 +262,14 @@ test('first-run capture can be resumed from Home before and after completion', a
     expect(statusUrl).toContain('?capture=');
     await screenshot(page, info, 'first-run-capture-progress');
 
-    await page.getByRole('button', { name: 'Go to Home' }).click();
+    await page.getByRole('link', { name: 'Go to Home' }).click();
     const resume = page.getByRole('link', { name: 'View capture status' });
     await expect(resume).toBeVisible();
     await screenshot(page, info, 'first-run-resume-from-home');
     await resume.click();
     await expect(page).toHaveURL(statusUrl);
 
-    await page.getByRole('button', { name: 'Go to Home' }).click();
+    await page.getByRole('link', { name: 'Go to Home' }).click();
     await expect(resume).toBeVisible();
     await withE2eDataTransaction(async (sql) => {
       await sql`
