@@ -3,6 +3,7 @@ import type { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { paidSignupPlan, type PaidSignupPlanId } from '@/lib/signup-plan';
+import { isPrefetchRequest } from '@/lib/surface-request-analytics';
 
 export const PLAN_INTENT_COOKIE = 'tl_pricing_plan_intent';
 const PLAN_INTENT_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -38,26 +39,28 @@ export async function clearSignupPlanIntent(): Promise<void> {
 
 /**
  * Capture `?plan=` on sign-up / Team billing into a short-lived cookie from the
- * proxy response. Safe during request middleware; RSC pages only read the cookie.
+ * proxy response. Skip speculative prefetches so Pricing hover/viewport fetches
+ * cannot invent an upgrade reminder. RSC pages only read the cookie.
  */
 export function applySignupPlanIntentFromRequest(
   request: NextRequest,
   response: NextResponse,
 ): void {
-  const path = request.nextUrl.pathname;
-  const planParam = request.nextUrl.searchParams.get('plan');
-  if (!planParam) return;
+  if (isPrefetchRequest(request)) return;
 
+  const path = request.nextUrl.pathname;
   const onSignUp = path === '/sign-up';
   const onTeamBilling =
     path === '/app/team' && request.nextUrl.searchParams.get('section') === 'billing';
   if (!onSignUp && !onTeamBilling) return;
 
+  const planParam = request.nextUrl.searchParams.get('plan');
   const paid = paidSignupPlan(planParam);
   if (paid) {
     response.cookies.set(PLAN_INTENT_COOKIE, paid, planIntentCookieOptions());
     return;
   }
+  // Free / missing / unknown on sign-up clears a leftover paid intent (e.g. Start free).
   if (onSignUp) {
     response.cookies.delete(PLAN_INTENT_COOKIE);
   }
