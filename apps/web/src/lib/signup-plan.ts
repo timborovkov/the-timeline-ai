@@ -90,7 +90,7 @@ export function signupPlanCopy(planId: SignupPlanId): SignupPlanCopy {
     subtitle: `${plan.name} — ${fee}. Creating an account does not charge you.`,
     includes,
     billingStarts:
-      'Billing starts only after you confirm a plan in Team settings → Billing and complete Polar checkout. Setup and account creation do not open checkout or save a card.',
-    reviewWhere: `We’ll keep ${plan.name} highlighted under Change plan in Team settings → Billing after you finish setup. You can review or pick a different plan there before checkout.`,
+      'Billing starts only after you confirm a plan in Team settings → Billing and complete Polar checkout. Setup and account creation do not open checkout or save a card. Your team stays on Free until Polar confirms payment.',
+    reviewWhere: `After setup we’ll remind you to finish ${plan.name}. That prompt opens Team settings → Billing with ${plan.name} highlighted. You can dismiss it; cancelled checkout leaves you on Free.`,
   };
 }

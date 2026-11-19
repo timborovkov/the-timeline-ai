@@ -31,7 +31,7 @@ import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
-import { rememberSignupPlanIntent } from '@/lib/signup-plan-intent';
+import { readSignupPlanIntent, rememberSignupPlanIntent } from '@/lib/signup-plan-intent';
 import { getSiteUrl } from '@/lib/site-url';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
@@ -349,11 +349,17 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     }
     const callbackDestination = safeCallbackUrl(parsed.data.callbackUrl);
     if (!inviteToken) {
-      await rememberSignupPlanIntent(selectedPlanFromCallback(callbackDestination));
+      // Callback is usually /onboarding after paid signup; refresh TTL from the
+      // proxy cookie when the callback no longer encodes the plan.
+      await rememberSignupPlanIntent(
+        selectedPlanFromCallback(callbackDestination) ?? (await readSignupPlanIntent()),
+      );
     }
+    // New owned teams always start in first-run setup. Paid plan intent stays in
+    // the cookie and never authorizes a plan change by itself.
     const destination = inviteToken
       ? '/app'
-      : createdAccount.event === 'team_created' && callbackDestination === '/app'
+      : createdAccount.event === 'team_created'
         ? '/onboarding'
         : callbackDestination;
     if (signInFailed)
@@ -427,7 +433,9 @@ async function signInWithOAuthProvider(
     const { setPendingInvite } = await import('@/lib/pending-invite');
     await setPendingInvite(inviteToken);
   }
-  await rememberSignupPlanIntent(selectedPlanFromCallback(callbackUrl));
+  await rememberSignupPlanIntent(
+    selectedPlanFromCallback(callbackUrl) ?? (await readSignupPlanIntent()),
+  );
   // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
   // Let it propagate; Next handles the response.
   await signIn(provider, { redirectTo: callbackUrl });

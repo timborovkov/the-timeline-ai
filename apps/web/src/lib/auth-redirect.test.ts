@@ -5,6 +5,7 @@ import {
   signedInAuthRedirect,
   selectedPlanCallback,
   selectedPlanFromCallback,
+  signupCallback,
 } from '@/lib/auth-redirect';
 const ENV_BACKUP = { ...process.env };
 
@@ -63,6 +64,15 @@ describe('pricing plan intent', () => {
     expect(selectedPlanCallback('https://evil.test')).toBeUndefined();
     expect(selectedPlanCallback('enterprise')).toBeUndefined();
     expect(selectedPlanCallback(['payg'])).toBeUndefined();
+  });
+
+  it('routes paid signups into onboarding instead of billing checkout', () => {
+    expect(signupCallback(undefined, 'team')).toBe('/onboarding');
+    expect(signupCallback('/app/team?section=billing&plan=team#change-plan', 'team')).toBe(
+      '/app/team?section=billing&plan=team#change-plan',
+    );
+    expect(signupCallback(undefined, 'free')).toBeUndefined();
+    expect(signupCallback('/oauth/authorize?state=a', 'business')).toBe('/oauth/authorize?state=a');
   });
 });
 

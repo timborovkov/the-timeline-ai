@@ -70,8 +70,10 @@ function CurrentBrowserStorage() {
             </td>
             <td>
               Remember a self-serve plan chosen on Pricing or sign-up (Pay as you go, Team, or
-              Business) so Team settings → Billing can highlight it after setup. It stores only the
-              plan id, never payment details, and does not start checkout or authorize a charge.
+              Business) so we can remind you after setup and highlight it in Team settings →
+              Billing. It stores only the plan id, never payment details, and never changes your
+              plan, limits, or entitlements — those stay Free until Polar confirms a paid
+              subscription.
             </td>
           </tr>
           <tr>

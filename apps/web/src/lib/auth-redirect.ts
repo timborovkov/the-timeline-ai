@@ -39,8 +39,13 @@ export function selectedPlanFromCallback(callback: unknown): string | undefined 
   return paidSignupPlan(url.searchParams.get('plan'));
 }
 
-/** Preserve explicit continuation before pricing, while rejecting auth loops. */
+/**
+ * Preserve explicit continuation before pricing, while rejecting auth loops.
+ * Paid plan intent is stored in `tl_pricing_plan_intent`; new teams always start
+ * in setup rather than jumping straight to Billing.
+ */
 export function signupCallback(callbackUrl?: string, plan?: string): string | undefined {
   const safe = safeSameOriginPath(callbackUrl, '', { blockedPaths: AUTH_PATHS });
-  return safe || selectedPlanCallback(plan);
+  if (safe) return safe;
+  return paidSignupPlan(plan) ? '/onboarding' : undefined;
 }

@@ -1076,6 +1076,9 @@
   "apps/web/src/components/payg-value-nudge.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/plan-intent-prompt.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
     "group": "dom"
   },
@@ -1387,6 +1390,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/platform-request-gate.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/plan-intent-prompt.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/pricing-calculator.test.ts": {

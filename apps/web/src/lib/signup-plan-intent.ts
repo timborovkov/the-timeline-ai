@@ -17,27 +17,14 @@ function planIntentCookieOptions() {
   };
 }
 
-function writePlanIntent(
-  jar: {
-    set: (name: string, value: string, options: object) => void;
-    delete: (name: string) => void;
-  },
-  plan: unknown,
-): PaidSignupPlanId | undefined {
-  const paid = paidSignupPlan(plan);
-  if (!paid) {
-    jar.delete(PLAN_INTENT_COOKIE);
-    return undefined;
-  }
-  jar.set(PLAN_INTENT_COOKIE, paid, planIntentCookieOptions());
-  return paid;
-}
-
 /** Persist paid pricing intent across onboarding redirects without authorizing purchase. */
 export async function rememberSignupPlanIntent(
   plan: unknown,
 ): Promise<PaidSignupPlanId | undefined> {
-  return writePlanIntent(await cookies(), plan);
+  const paid = paidSignupPlan(plan);
+  if (!paid) return undefined;
+  (await cookies()).set(PLAN_INTENT_COOKIE, paid, planIntentCookieOptions());
+  return paid;
 }
 
 export async function readSignupPlanIntent(): Promise<PaidSignupPlanId | undefined> {
