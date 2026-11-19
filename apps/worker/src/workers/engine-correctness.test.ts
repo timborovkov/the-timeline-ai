@@ -22,6 +22,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import type { z } from 'zod';
 
+import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 
@@ -89,6 +90,7 @@ const model: typeof llm.chatStructured = <T extends z.ZodType>(input: llm.ChatSt
           confidence: 'high',
           items: [
             {
+              grounding: [],
               operation: 'create',
               targetKind: 'object',
               title: 'Acme',
@@ -250,6 +252,7 @@ describe('engine persistence contracts', () => {
               confidence: 'high',
               items: [
                 {
+                  grounding: [],
                   operation: 'create',
                   targetKind: 'object_relationship',
                   title: 'Alex works at Acme',
@@ -265,7 +268,12 @@ describe('engine persistence contracts', () => {
         }),
       });
     const data = { scope: 'document' as const, teamId, documentVersionId: fixture.version.id };
-    const io = { chatStructured: chat, getEnv: () => getEnv(), modelId: 'fixture' };
+    const io = {
+      chatStructured: chat,
+      auditCommunication: controlledCommunicationAudit,
+      getEnv: () => getEnv(),
+      modelId: 'fixture',
+    };
     await processSuggestionJobForTests({ db }, data, io);
     expect(
       (await db.select().from(agentSuggestionItems)).filter(
@@ -396,6 +404,7 @@ describe('engine persistence contracts', () => {
               reason: 'Explicit business contact email.',
               items: [
                 {
+                  grounding: [],
                   operation: 'create',
                   targetKind: 'identity_facet',
                   title: 'Alex email',
@@ -413,7 +422,11 @@ describe('engine persistence contracts', () => {
     await processSuggestionJobForTests(
       { db },
       { teamId, rawEventId: required(event).id },
-      { chatStructured: chat, modelId: 'fixture' },
+      {
+        chatStructured: chat,
+        auditCommunication: controlledCommunicationAudit,
+        modelId: 'fixture',
+      },
     );
     const items = (await scope().suggestions.listPendingSuggestions()).flatMap(
       (bundle) => bundle.items,
@@ -526,6 +539,7 @@ describe('engine persistence contracts', () => {
               reason: 'Explicit request to track the project.',
               items: [
                 {
+                  grounding: [],
                   operation: 'create',
                   targetKind: 'object',
                   title: 'PBC-portaali',
@@ -544,7 +558,11 @@ describe('engine persistence contracts', () => {
     await processSuggestionJobForTests(
       { db },
       { teamId, rawEventId: required(event).id },
-      { chatStructured: chat, modelId: 'fixture' },
+      {
+        chatStructured: chat,
+        auditCommunication: controlledCommunicationAudit,
+        modelId: 'fixture',
+      },
     );
     const proposals = (await scope().suggestions.listPendingSuggestions()).flatMap(
       (bundle) => bundle.items,
@@ -683,18 +701,35 @@ describe('engine persistence contracts', () => {
               reason: 'Completed outline and new checklist request.',
               items: [
                 {
+                  grounding: [
+                    {
+                      field: 'status',
+                      rawEventId: required(event).id,
+                      quote: 'The audit outline is complete.',
+                      subject: required(task).canonicalName,
+                      value: 'done',
+                    },
+                  ],
                   operation: 'update',
                   targetKind: 'task',
                   targetId: required(task).id,
                   title: 'Complete audit outline',
                   proposedPayload: { status: 'done' },
                 },
-                {
-                  operation: 'create',
-                  targetKind: 'task',
-                  title: 'Prepare client checklist',
-                  proposedPayload: { canonicalName: 'Prepare client checklist', status: 'todo' },
-                },
+                ...(input.instructions?.includes('This is historical repair')
+                  ? []
+                  : [
+                      {
+                        grounding: [],
+                        operation: 'create',
+                        targetKind: 'task',
+                        title: 'Prepare client checklist',
+                        proposedPayload: {
+                          canonicalName: 'Prepare client checklist',
+                          status: 'todo',
+                        },
+                      },
+                    ]),
               ],
             },
           ],
@@ -703,6 +738,7 @@ describe('engine persistence contracts', () => {
     };
     const io = {
       chatStructured: chat,
+      auditCommunication: controlledCommunicationAudit,
       modelId: 'fixture',
       taskCategoryClassificationEnabled: false,
     };

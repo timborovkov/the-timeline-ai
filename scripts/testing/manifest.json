@@ -605,6 +605,9 @@
   "apps/web/src/app/root-route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/sign-up/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
   },
@@ -1046,6 +1049,9 @@
   "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/onboarding/setup-flow.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
     "group": "dom"
   },
@@ -1071,6 +1077,9 @@
     "group": "dom"
   },
   "apps/web/src/components/payg-value-nudge.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/plan-intent-prompt.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
@@ -1120,6 +1129,9 @@
   },
   "apps/web/src/components/sidebar-billing-usage.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/components/signup-plan-summary.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/components/skip-link.test.tsx": {
     "group": "dom"
@@ -1389,6 +1401,9 @@
   "apps/web/src/lib/platform-request-gate.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/plan-intent-prompt.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
@@ -1471,6 +1486,12 @@
   "apps/web/src/lib/sign-out-session.test.ts": {
     "group": "dom"
   },
+  "apps/web/src/lib/signup-plan-intent.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/signup-plan.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/site-url.test.ts": {
     "group": "unit"
   },
@@ -1493,6 +1514,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/task-statuses.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/team-rename.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/telegram-bot-startup.test.ts": {
@@ -2541,6 +2565,12 @@
     "group": "integration"
   },
   "apps/worker/src/evals/communication-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/communication-grounding.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/communication-audit.test.ts": {
     "group": "unit"
   }
 }

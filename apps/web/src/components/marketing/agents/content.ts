@@ -51,7 +51,7 @@ export const AGENTS_HUB = {
   },
   setupPrerequisite: {
     title: 'Account and team first',
-    body: 'Paste the command into a compatible agent, sign in or create an account, choose your team and approve access. New accounts get their first team automatically.',
+    body: 'Paste the command into a compatible agent, sign in or create an account, name your team on Welcome if you are new, then choose your team and approve access. Invite-only accounts join an existing team with no separate workspace.',
     distinction:
       'Connecting an external agent does not import chat or email history and does not add third-party tools to The Timeline Agent. For those tools, use',
     mcpHref: '/integrations/mcp' as const,

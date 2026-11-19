@@ -70,6 +70,13 @@ export function SetupFlow({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const intentStarted = useRef(false);
+  const firstRun = initialStatus.firstRun;
+  const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
+  const shouldAutoStart =
+    phase === 'choose' && preferredSource != null && connectors.includes(preferredSource);
+  // Lock the chooser on first paint for marketing-intent auto-start; recover alone
+  // only flips pending on the next render after useEffect.
+  const [autoStartSettled, setAutoStartSettled] = useState(!shouldAutoStart);
 
   function recover(action: () => Promise<void>) {
     setError(null);
@@ -81,8 +88,6 @@ export function SetupFlow({
       }
     });
   }
-  const firstRun = initialStatus.firstRun;
-  const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
 
   const stepsFailed = (initialStatus.record?.processingSteps ?? []).some(
     (step) => step.status === 'failed',
@@ -91,6 +96,7 @@ export function SetupFlow({
     phase === 'processing' &&
     (firstRun?.starterPath === 'email' || isConnectorStarterPath(firstRun?.starterPath)) &&
     !initialStatus.record?.emailArrived;
+  const saving = pending || (shouldAutoStart && !autoStartSettled);
 
   useEffect(() => {
     if ((phase !== 'processing' || stepsFailed) && !waitingForCapture) return;
@@ -102,25 +108,38 @@ export function SetupFlow({
     };
   }, [phase, router, stepsFailed, waitingForCapture]);
 
-  const startPreferredConnector = useEffectEvent(async () => {
-    if (phase !== 'choose' || intentStarted.current || !preferredSource) return;
-    if (!connectors.includes(preferredSource)) return;
+  useEffect(() => {
+    setAutoStartSettled(!shouldAutoStart);
+  }, [shouldAutoStart]);
+
+  const startPreferredConnector = useEffectEvent(() => {
+    if (!shouldAutoStart || intentStarted.current || !preferredSource) return;
     intentStarted.current = true;
-    const result = await selectStarterPathAction({ path: preferredSource });
-    if (!result.ok) {
-      intentStarted.current = false;
-      setError(result.error ?? 'Could not start that connector.');
-      return;
-    }
-    router.refresh();
+    // Run through recover so pending/error handling matches other setup saves.
+    recover(async () => {
+      try {
+        const result = await selectStarterPathAction({ path: preferredSource });
+        if (!result.ok) {
+          intentStarted.current = false;
+          throw new Error(result.error ?? 'Could not start that connector.');
+        }
+        router.refresh();
+      } finally {
+        setAutoStartSettled(true);
+      }
+    });
   });
 
   useEffect(() => {
-    void startPreferredConnector();
-  }, [phase, preferredSource, connectors]);
+    startPreferredConnector();
+  }, [shouldAutoStart, preferredSource, connectors]);
 
-  async function continueWorkStyle(workStyle: TeamWorkStyle | null) {
-    const result = await submitWorkStyleAction({ workStyle });
+  async function continueWorkStyle(workStyle: TeamWorkStyle | null, teamName: string) {
+    const result = await submitWorkStyleAction({
+      workStyle,
+      teamName,
+      teamId: initialStatus.teamId,
+    });
     if (!result.ok) throw new Error(result.error ?? 'Could not save how your team works.');
     router.refresh();
   }
@@ -183,7 +202,7 @@ export function SetupFlow({
           {error}
         </p>
       ) : null}
-      <fieldset disabled={pending} aria-busy={pending} className="min-w-0">
+      <fieldset disabled={saving} aria-busy={saving} className="min-w-0">
         <SetupFlowBody
           status={initialStatus}
           phase={phase}

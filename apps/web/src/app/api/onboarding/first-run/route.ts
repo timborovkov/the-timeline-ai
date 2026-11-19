@@ -55,6 +55,7 @@ export async function GET() {
         inboundEmail: record?.inboundEmail ?? null,
       }),
       teamName: record?.teamName ?? active.teamName,
+      teamId: active.teamId,
       recommendedChannel: recommendedGoLiveChannel(firstRun?.workStyle ?? null),
       prefilledQuestion: prefilledAskQuestion({
         path: firstRun?.starterPath ?? null,

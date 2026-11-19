@@ -4,13 +4,20 @@ import { expect } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { createAuthContinuation, resolveAuthContinuation } from '@/lib/auth-continuation';
+import {
+  createAuthContinuation,
+  parkAuthContinuation,
+  peekAuthContinuationForUser,
+  resolveAuthContinuation,
+} from '@/lib/auth-continuation';
 import { signupCallback, signedInAuthRedirect } from '@/lib/auth-redirect';
 const pg = new PGlite();
 const db = drizzle(pg) as unknown as Db;
 const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const path =
   '/oauth/authorize?client_id=test&state=state&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback';
+const otherPath =
+  '/oauth/authorize?client_id=other&state=other&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback';
 beforeAll(async () => {
   await pg.exec(
     'CREATE TABLE users(id uuid primary key,email text); CREATE TABLE auth_continuations(token_hash text primary key,user_id uuid references users(id),destination text,expires_at timestamptz);',
@@ -55,6 +62,7 @@ it('rejects external destinations and auth loops and preserves invitation priori
   expect(await createAuthContinuation(db, userId, '/sign-in')).toBeUndefined();
   expect(signupCallback('/oauth/authorize?state=a', 'team')).toBe('/oauth/authorize?state=a');
   expect(signupCallback('https://evil.example', 'team')).toContain('plan=team');
+  expect(signupCallback(undefined, 'team')).toContain('plan=team');
   expect(signedInAuthRedirect({ callbackUrl: '/oauth/authorize', inviteToken: 'invite' })).toBe(
     '/accept-invite/invite',
   );
@@ -64,4 +72,18 @@ it('does not continue a stored non-authorize destination', async () => {
   if (!token) throw new Error('Expected continuation');
   await pg.exec("UPDATE auth_continuations SET destination='/app/admin'");
   expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBeNull();
+});
+it('lets Welcome peek a parked authorize destination without redeeming the emailed token', async () => {
+  const token = await createAuthContinuation(db, userId, path);
+  if (!token) throw new Error('Expected continuation');
+  expect(await peekAuthContinuationForUser(db, userId)).toBe(path);
+  expect(await peekAuthContinuationForUser(db, userId)).toBe(path);
+  expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBe(path);
+});
+it('parks Welcome resume without rotating an existing emailed continuation token', async () => {
+  const token = await createAuthContinuation(db, userId, path);
+  if (!token) throw new Error('Expected continuation');
+  await parkAuthContinuation(db, userId, otherPath);
+  expect(await peekAuthContinuationForUser(db, userId)).toBe(otherPath);
+  expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBe(otherPath);
 });

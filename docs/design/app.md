@@ -262,9 +262,20 @@ stay vertically centered with the row. Do not style board lanes as badges. Team
 settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
-Team → General keeps identity as a form (rename for admins) plus two readonly
-copyable support fields — team id and slug — with spacing between sections
-and no nested cards. General also contains work style, messaging, digest destinations and timezone; there is no separate Preferences tab. Old Preferences links resolve to General. Evaluation tracing and conversation report sharing appear as descriptive navigation rows under Quality and support within General, never above the page header.
+Team → General is the default Team settings section and keeps identity as a
+form (rename for admins) plus two readonly copyable support fields — team id
+and slug — with spacing between sections and no nested cards. Renaming updates
+the display name only; slug and inbound email stay put. General also contains
+work style, messaging, digest destinations and timezone; there is no separate
+Preferences tab. Old Preferences links resolve to General. Evaluation tracing
+and conversation report sharing appear as descriptive navigation rows under
+Quality and support within General, never above the page header. Solo signup
+defers workspace creation until first-run Welcome: the chosen name mints the
+slug and inbound email then (prefill `${name}'s team`). Invite-only signup
+never creates an owned team — joiners land in the inviting team, and a later
+owned workspace uses the normal create-team path. When a team already exists
+(for example after create-team), Welcome may still rename through the shared
+path without changing addressing.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Member and invitation actions stack below

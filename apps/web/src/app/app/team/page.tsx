@@ -54,6 +54,8 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
+import { paidSignupPlan } from '@/lib/signup-plan';
+import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -64,8 +66,8 @@ type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelist
 type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
 
 const SETTINGS_ITEMS = [
-  { value: 'members', label: 'Members' },
   { value: 'general', label: 'General' },
+  { value: 'members', label: 'Members' },
   { value: 'visibility', label: 'Visibility' },
   { value: 'email', label: 'Email' },
   { value: 'billing', label: 'Billing', adminOnly: true },
@@ -107,6 +109,7 @@ export default async function TeamSettingsPage({
     placeholderInbound,
     billingDashboard,
     query,
+    selectedPlan,
     entitlementsPlanId,
     comp,
     showOperatorLink,
@@ -149,6 +152,7 @@ export default async function TeamSettingsPage({
           placeholderInbound={placeholderInbound}
           billingDashboard={billingDashboard}
           query={query}
+          selectedPlan={selectedPlan}
           entitlementsPlanId={entitlementsPlanId}
           comp={comp}
           showOperatorLink={showOperatorLink}
@@ -182,6 +186,7 @@ function TeamSettingsSections({
   placeholderInbound,
   billingDashboard,
   query,
+  selectedPlan,
   entitlementsPlanId,
   comp,
   showOperatorLink,
@@ -248,6 +253,7 @@ function TeamSettingsSections({
           <TeamBillingSettings
             billingDashboard={billingDashboard}
             query={query}
+            selectedPlan={selectedPlan}
             active={active}
             entitlementsPlanId={entitlementsPlanId}
             isAdmin={isAdmin}
@@ -285,6 +291,10 @@ function TeamIdentitySettings({
   return (
     <SettingsSection title="Team identity">
       <div className="space-y-4">
+        <p className="text-sm text-fg-muted">
+          This is the display name for your workspace. Changing it does not update the team email or
+          slug.
+        </p>
         {isAdmin ? (
           <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
         ) : (
@@ -414,6 +424,7 @@ function TeamEmailSettings({
 function TeamBillingSettings({
   billingDashboard,
   query,
+  selectedPlan,
   active,
   entitlementsPlanId,
   isAdmin,
@@ -422,7 +433,14 @@ function TeamBillingSettings({
   commercial,
 }: Pick<
   Awaited<ReturnType<typeof loadTeamSettingsPage>>,
-  'query' | 'active' | 'entitlementsPlanId' | 'isAdmin' | 'comp' | 'showOperatorLink' | 'commercial'
+  | 'query'
+  | 'selectedPlan'
+  | 'active'
+  | 'entitlementsPlanId'
+  | 'isAdmin'
+  | 'comp'
+  | 'showOperatorLink'
+  | 'commercial'
 > & {
   billingDashboard: NonNullable<
     Awaited<ReturnType<typeof loadTeamSettingsPage>>['billingDashboard']
@@ -436,7 +454,7 @@ function TeamBillingSettings({
         (!query.checkoutTeam || query.checkoutTeam === active.teamId)
       }
       checkoutPlan={query.checkoutPlan}
-      selectedPlan={query.plan}
+      selectedPlan={selectedPlan}
       planId={entitlementsPlanId}
       planName={PLAN_CATALOG[entitlementsPlanId].name}
       billingState={billingDashboard.account.billingState}
@@ -574,7 +592,7 @@ async function loadTeamSettingsPage({
   const query = await searchParams;
   // Preserve bookmarks to the former Preferences section.
   const requestedSection =
-    query.section === 'preferences' ? 'general' : (query.section ?? 'members');
+    query.section === 'preferences' ? 'general' : (query.section ?? 'general');
   const section = SETTINGS_ITEMS.some(
     (item) => item.value === requestedSection && (!('adminOnly' in item) || isAdmin),
   )
@@ -726,6 +744,7 @@ async function loadTeamSettingsPage({
   const showOperatorLink =
     Boolean(currentSettingsUser?.emailVerified) &&
     isPlatformAdminEmail(currentSettingsUser?.email ?? '', getEnv().PLATFORM_ADMIN_EMAILS);
+  const selectedPlan = paidSignupPlan(query.plan) ?? (await readSignupPlanIntent());
 
   return {
     active,
@@ -749,6 +768,7 @@ async function loadTeamSettingsPage({
     placeholderInbound,
     billingDashboard,
     query,
+    selectedPlan,
     entitlementsPlanId,
     comp,
     showOperatorLink,

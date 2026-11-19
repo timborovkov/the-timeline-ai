@@ -1,3 +1,4 @@
+import { allowsMissingFirecrawlApiKey, getEnv } from '#src/env.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
 import {
   crawlPublicWebsiteWithFirecrawl,
@@ -51,8 +52,17 @@ export async function scanPublicWebsite(
 ): Promise<WebsiteScanResult> {
   const origin = canonicalizePublicHref(startUrl);
   if (!origin) return { ok: false, reason: 'unreachable' };
+  const env = getEnv();
   const apiKey = deps.firecrawlApiKey?.trim() ?? '';
-  if (!apiKey) throw new Error('FIRECRAWL_API_KEY is required for website scanning.');
+  if (
+    !apiKey &&
+    !allowsMissingFirecrawlApiKey({
+      NODE_ENV: env.NODE_ENV,
+      FIRECRAWL_API_ORIGIN: env.FIRECRAWL_API_ORIGIN,
+    })
+  ) {
+    throw new Error('FIRECRAWL_API_KEY is required for website scanning.');
+  }
 
   const firecrawl = await crawlPublicWebsiteWithFirecrawl(origin, {
     apiKey,

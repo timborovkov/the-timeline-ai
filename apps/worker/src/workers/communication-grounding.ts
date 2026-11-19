@@ -1,0 +1,2380 @@
+import { splitStoredEmailContent } from '@timeline/shared/email';
+import {
+  chronologicalLifecycleEvidence,
+  explicitLifecycleState,
+} from '@timeline/shared/suggestions';
+import {
+  dateOnlyEventRange,
+  resolveTimePhrase,
+  zonedDateTimeFromDate,
+} from '@timeline/shared/time';
+import { z } from 'zod';
+
+export const communicationGroundingSchema = z.object({
+  field: z.enum(['assignee', 'dueAt', 'status', 'customer', 'project', 'prospect', 'relationship']),
+  rawEventId: z.uuid(),
+  quote: z.string().min(3).max(800),
+  subject: z.string().min(1).max(200),
+  value: z.string().max(200),
+  context: z.object({ rawEventId: z.uuid(), quote: z.string().min(3).max(800) }).optional(),
+});
+type Support = z.infer<typeof communicationGroundingSchema>;
+type AssignmentRole = 'owner' | 'assignee';
+interface Item {
+  auditId?: string | undefined;
+  operation: string;
+  targetKind: string;
+  title: string;
+  targetId?: string | null | undefined;
+  proposedPayload: Record<string, unknown>;
+  grounding?: Support[] | undefined;
+  scopedSourceIdentity?: { name: string; scopeLabels: string[] } | undefined;
+}
+interface Bundle<T extends Item> {
+  title: string;
+  confidence: 'low' | 'medium' | 'high';
+  reason?: string | null | undefined;
+  summary?: string | null | undefined;
+  quote?: string | null | undefined;
+  items: T[];
+}
+const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
+const tentativeAssertion =
+  /\b(?:maybe|might|perhaps|probably|possibly|tentative(?:ly)?|potentially|provisionally|likely|could|(?:I|we|they|he|she) (?:think|guess|suspect|believe)s?)\b/i;
+const projectMembershipTerms = '(?:under|within|part of|belongs? to|in (?:the )?project)';
+const projectRoutingTerms = `(?:${projectMembershipTerms}|for|in|on)`;
+const projectRoutingCue = new RegExp(`\\b${projectRoutingTerms}\\b`, 'i');
+const mentions = (text: string, name: string) => normalize(text).includes(normalize(name));
+const TASK_ACTIONS = new Set(['prepare', 'review', 'draft', 'write', 'create', 'send']);
+const namesTask = (text: string, name: string, requireActionIdentity = false) => {
+  const titleWords = (name.match(/[\p{L}\p{N}]+/gu) ?? []).filter((word) => word !== 'a');
+  const words = titleWords.map((word) => word.toLowerCase());
+  const action = words[0];
+  const directional = /\b(?:to|from|into|onto|towards?|through|against|versus|vs)\b/i.test(name);
+  const actionCanBeOmitted = action !== undefined && TASK_ACTIONS.has(action);
+  const significant = (actionCanBeOmitted ? words.slice(1) : words).filter(
+    (word) =>
+      !['an', 'and', 'for', 'in', 'of', 'on', 'the', 'with', 'please'].includes(word) &&
+      (directional || word !== 'to'),
+  );
+  if (!significant.length) return mentions(text, name);
+  const evidenceWords: string[] = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (actionCanBeOmitted && !evidenceWords.includes(action)) {
+    if (evidenceWords.some((word) => TASK_ACTIONS.has(word))) return false;
+    // The artifact can stand on its own as a subject or as the object of
+    // an explicit outcome. Arbitrary prefixes can name a different action.
+    if (requireActionIdentity) {
+      const artifact = taskIdentityPattern(titleWords.slice(1).join(' '), true);
+      if (!artifact) return false;
+      const outcome = new RegExp(
+        `^(?:(?:update|correction|status): )?(?:(?:[\\p{L}][\\p{L}\\p{M}'’.-]* ){0,4}(?:(?:has|have|had) )?(?:completed|finished|delivered|shipped|sent|reopened|cancelled|canceled|(?:am|is|are|was|were) working on) )?(?:(?:the|this|that|our) )?${artifact}(?![\\p{L}\\p{N}])`,
+        'iu',
+      );
+      if (!outcome.test(normalize(text))) return false;
+    }
+  }
+  // Directional arguments must remain ordered. Non-directional identities
+  // may vary in word order, e.g. a customer prefix or “for Customer”.
+  if (!directional) return significant.every((word) => evidenceWords.includes(word));
+  let previous = -1;
+  return significant.every((word) => {
+    previous = evidenceWords.indexOf(word, previous + 1);
+    return previous >= 0;
+  });
+};
+const unsafe = (quote: string) =>
+  /<\/?(?:system|developer)>|ignore (?:all|previous)|assign all tasks|disclose|reveal.*(?:secret|prompt)/i.test(
+    quote,
+  );
+const prospect = (quote: string) =>
+  /\b(?:potential|prospective|possible|proposed engagement|no contract|not signed|unsigned)\b/i.test(
+    quote,
+  );
+
+// These predicates explicitly identify the speaker even when the language omits “I”.
+const firstPersonCommitment =
+  /(?<![\p{L}\p{N}])(?:I (?:will|shall|won['’]t|can['’]t|cannot|can(?=\s+not\b))|I['’]ll|ich werde|revisaré|prepararé|haré|enviaré|escribiré|terminaré|completaré|tarkistan|valmistelen|lähetän|kirjoitan)(?![\p{L}\p{N}])/iu;
+const assignmentDenial = /(?:(?:will|shall|can)\s+not|won['’]t|can['’]t|cannot|declines to)\b/i;
+
+function safeSourceQuote(text: string, quote: string): boolean {
+  const body = normalize(text),
+    fragment = normalize(quote);
+  const start = body.indexOf(fragment);
+  if (start < 0 || unsafe(quote) || quote.includes('?')) return false;
+  const before = body.slice(0, start);
+  for (const tag of ['system', 'developer'])
+    if (before.lastIndexOf(`<${tag}>`) > before.lastIndexOf(`</${tag}>`)) return false;
+  return true;
+}
+
+function completeSourceAssertion(text: string, quote: string): string | undefined {
+  if (!quote.trim()) return undefined;
+  const literal = quote
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const matches = [...text.matchAll(new RegExp(literal, 'giu'))];
+  const match = matches[0];
+  if (!match || matches.length !== 1) return undefined;
+  const end = match.index + match[0].length;
+  const boundaries = [...text.matchAll(/(?:[.!?](?=\s|$)|\r?\n+)/gu)];
+  const before = boundaries.filter((boundary) => boundary.index < match.index).at(-1);
+  const after = boundaries.find((boundary) => boundary.index + boundary[0].length >= end);
+  return text
+    .slice(
+      before ? before.index + before[0].length : 0,
+      after ? after.index + after[0].length : undefined,
+    )
+    .trim();
+}
+
+interface EmailChronologyStatement {
+  id: string;
+  contentText: string;
+  occurredAt: Date;
+  deadlineReferenceAt?: Date | undefined;
+  senderEmail?: string | null | undefined;
+  routingOnly?: boolean;
+}
+
+/** Retain candidate corrections with the original time and speaker for veto checks. */
+export function emailChronologyStatements(
+  event: EmailChronologyStatement,
+): EmailChronologyStatement[] {
+  const messages = datedEmailBodies({
+    text: event.contentText,
+    occurredAt: event.occurredAt,
+    senderEmail: event.senderEmail,
+  });
+  return chronologicalLifecycleEvidence([{ ...event, source: 'email' }]).flatMap((part) => {
+    const body = normalize(part.contentText);
+    const matchingBodies = messages.filter((message) => message.body === body);
+    const matchingBody = matchingBodies.length === 1 ? matchingBodies[0] : undefined;
+    return part.contentText.split(/(?<=[.!?])\s+|\n+/u).flatMap((sentence) => {
+      const explicit =
+        Boolean(explicitLifecycleState(sentence)) ||
+        firstPersonCommitment.test(sentence) ||
+        assignmentDenial.test(sentence) ||
+        /\b(?:deadline|due|by|before|plazo|fecha límite|fällig|bis|will|shall|owns|owner|responsible|assign|assigned|reassign|reassigned|unassign|remove|declines|cannot|project|under|within|part of|belongs to|attach|move|link)\b/i.test(
+          sentence,
+        );
+      if (
+        (!explicit && !projectRoutingCue.test(sentence)) ||
+        !safeSourceQuote(part.contentText, sentence.trim())
+      )
+        return [];
+      return [
+        {
+          id: event.id,
+          contentText: sentence.trim(),
+          occurredAt: part.occurredAt ?? event.occurredAt,
+          deadlineReferenceAt: matchingBody?.occurredAt,
+          senderEmail: matchingBody?.senderEmail,
+          routingOnly: !explicit,
+        },
+      ];
+    });
+  });
+}
+
+function isOriginalChatCommitment(text: string, at: number, memberName: string | null): boolean {
+  const before = text.slice(0, at);
+  const lines = before.split('\n');
+  const linePrefix = lines.pop() ?? '';
+  const attributionLine = linePrefix.trim() || (lines.at(-1)?.trim() ?? '');
+  const attribution = /^([\p{Lu}][\p{L}'’.-]*(?: [\p{Lu}][\p{L}'’.-]*){0,4})\s*:\s*$/u.exec(
+    attributionLine,
+  )?.[1];
+  const asciiQuotes = before.match(/(?<!\\)"/g)?.length ?? 0;
+  return (
+    (!attribution || normalize(attribution) === normalize(memberName ?? '')) &&
+    !/^\s*(?:>|&gt;)/u.test(linePrefix) &&
+    !/^(?:[\t ]*)(?:>>>|&gt;&gt;&gt;)/mu.test(before) &&
+    !/\b(?:said|says|wrote|writes|texted|replied|shared)\s*:\s*["“']?\s*$/iu.test(linePrefix) &&
+    !/["“`]\s*$/u.test(linePrefix) &&
+    asciiQuotes % 2 === 0 &&
+    before.lastIndexOf('“') <= before.lastIndexOf('”') &&
+    before.lastIndexOf('«') <= before.lastIndexOf('»') &&
+    before.split('```').length % 2 === 1
+  );
+}
+
+function datedEmailBodies(source: {
+  text: string;
+  occurredAt?: Date;
+  senderEmail?: string | null | undefined;
+}) {
+  const { intro, forwarded } = splitStoredEmailContent(source.text);
+  return [
+    { body: normalize(intro), occurredAt: source.occurredAt, senderEmail: source.senderEmail },
+    ...forwarded.map((message) => {
+      const time = message.date ? Date.parse(message.date) : Number.NaN;
+      return {
+        body: normalize(message.body ?? ''),
+        senderEmail: message.from.email,
+        occurredAt:
+          Number.isFinite(time) && (!source.occurredAt || time <= source.occurredAt.getTime())
+            ? new Date(time)
+            : undefined,
+      };
+    }),
+  ];
+}
+function deadlineReferenceDate(
+  source: { text: string; occurredAt?: Date },
+  kind: string,
+  quote: string,
+  assertion: string,
+): Date | undefined {
+  if (kind !== 'email') return source.occurredAt;
+  const messages = datedEmailBodies(source);
+  for (const fragment of [quote, assertion]) {
+    if (!fragment.trim()) continue;
+    const containing = messages.filter((message) => message.body.includes(normalize(fragment)));
+    if (containing.length) return containing.length === 1 ? containing[0]?.occurredAt : undefined;
+  }
+  return undefined;
+}
+function deadlineInstant(day: string, tail: string, timezone: string): number | undefined {
+  try {
+    const start = dateOnlyEventRange(day, timezone).startAt;
+    const time =
+      /^(?:T|\s+(?:at\s+)?)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:\s*(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(
+        tail,
+      );
+    if (!time) return /^(?:T|\s+(?:at\b|\d))/i.test(tail) ? undefined : start.getTime();
+    const hour = Number(time[1]);
+    const minute = Number(time[2]);
+    const second = Number(time[3] ?? 0);
+    const millisecond = Number((time[4] ?? '').padEnd(3, '0'));
+    if (hour > 23 || minute > 59 || second > 59) return undefined;
+    // A time marker must end at a boundary; ordinary following prose is not a zone.
+    const suffix = tail.slice(time[0].length);
+    if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return undefined;
+    if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return undefined;
+    const token = /^\s+([A-Za-z][A-Za-z_/-]*)/.exec(suffix)?.[1];
+    if (token && !/^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) {
+      if (
+        /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
+        /^[A-Z]{2,6}$/.test(token) ||
+        token.includes('/')
+      )
+        return undefined;
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: token });
+        return undefined;
+      } catch {
+        // Ordinary words are not timezone identifiers.
+      }
+    }
+    const zone = time[5];
+    const instant = zone
+      ? Date.parse(
+          `${day}T${String(hour).padStart(2, '0')}:${time[2]}:${String(second).padStart(2, '0')}.${String(millisecond).padStart(3, '0')}${/^(UTC|GMT|Z)$/i.test(zone) ? 'Z' : zone}`,
+        )
+      : zonedDateTimeFromDate(start, timezone).with({ hour, minute, second, millisecond })
+          .epochMilliseconds;
+    return Number.isFinite(instant) ? instant : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function deadlineAssertions(
+  quote: string,
+  subject: string,
+  timezone: string,
+  referenceDate?: Date,
+): { affirmed: Set<number | null>; denied: Set<number> } {
+  const dates = { affirmed: new Set<number | null>(), denied: new Set<number>() };
+  const add = (kind: 'affirmed' | 'denied', day: string, tail: string) => {
+    const instant = deadlineInstant(day, tail, timezone);
+    if (instant !== undefined) dates[kind].add(instant);
+  };
+  const deadlineAt = (index: number, length: number) => {
+    const prefix =
+      quote
+        .slice(0, index)
+        .split(/\bbut\b|,\s*(?:instead|now)\b/i)
+        .at(-1) ?? '';
+    const suffix = quote.slice(index + length).split(/\bbut\b|,\s*(?:instead|now)\b/i)[0] ?? '';
+    const assertion = normalize(`${prefix} ${suffix}`).replaceAll(normalize(subject), '[task]');
+    const negation =
+      /\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i;
+    const affirmedPrefix = normalize(prefix.replace(negation, ' '));
+    const hasDeadlineCue =
+      /\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
+        affirmedPrefix,
+      ) ||
+      ['is', 'to', 'was', 'is now'].some((verb) =>
+        affirmedPrefix.endsWith(`deadline for ${normalize(subject)} ${verb}`),
+      );
+    if (
+      !hasDeadlineCue ||
+      tentativeAssertion.test(assertion) ||
+      /\b(?:if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
+        assertion,
+      )
+    )
+      return undefined;
+    return negation.test(normalize(prefix).replaceAll(normalize(subject), '[task]'))
+      ? 'denied'
+      : 'affirmed';
+  };
+  for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
+    const kind = deadlineAt(match.index, match[0].length);
+    if (kind) add(kind, match[0], quote.slice(match.index + match[0].length));
+  }
+  for (const match of quote.matchAll(
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
+  )) {
+    const kind = deadlineAt(match.index, match[0].length);
+    if (!kind) continue;
+    const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
+    let year = match[3] ? Number(match[3]) : reference?.year;
+    if (year === undefined) continue;
+    let date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
+    if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
+    if (
+      !match[3] &&
+      reference &&
+      date.toISOString().slice(0, 10) < reference.toPlainDate().toString()
+    ) {
+      year++;
+      date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
+      if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
+    }
+    add(kind, date.toISOString().slice(0, 10), quote.slice(match.index + match[0].length));
+  }
+  if (referenceDate) {
+    for (const match of quote.matchAll(
+      /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+    )) {
+      const kind = deadlineAt(match.index, match[0].length);
+      if (!kind) continue;
+      const phrase = match[0].toLowerCase();
+      const weekdays = [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      const weekday = weekdays.indexOf(phrase) + 1;
+      const relative = weekday
+        ? zonedDateTimeFromDate(referenceDate, timezone).dayOfWeek === weekday
+          ? 'today'
+          : `next ${phrase}`
+        : phrase;
+      const resolved = resolveTimePhrase(relative, { timezone, referenceDate });
+      if (resolved)
+        add(
+          kind,
+          zonedDateTimeFromDate(resolved.from, timezone).toPlainDate().toString(),
+          quote.slice(match.index + match[0].length),
+        );
+    }
+  }
+  return dates;
+}
+const lifecycleWords: Record<string, RegExp> = {
+  doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
+  done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
+  cancelled: /\b(?:cancel|cancelled|canceled|archive|archived|cancelada|cancelado|abgesagt)\b/i,
+  blocked: /\bblocked\b/i,
+  todo: /\b(?:reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i,
+};
+function affirmativeTaskHub(
+  clause: string,
+  subject: string,
+  hubName: string,
+  type: string,
+): boolean {
+  if (
+    tentativeAssertion.test(
+      normalize(clause)
+        .replaceAll(normalize(subject), '[task]')
+        .replaceAll(normalize(hubName), '[hub]'),
+    ) ||
+    hasEndpointAlternative(clause, [hubName]) ||
+    /[?]|\b(?:or|maybe|perhaps|might|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+  if (type === 'project') return affirmativeProjectMembership(clause, subject, hubName, true);
+  const name = normalize(hubName);
+  const qualifiedSubject = normalize(subject);
+  const qualifier = ` for ${name}`;
+  const deliverable = qualifiedSubject.endsWith(qualifier)
+    ? qualifiedSubject.slice(0, -qualifier.length)
+    : qualifiedSubject;
+  const task = taskIdentityPattern(deliverable, true);
+  const statement = normalize(clause);
+  const position = statement.indexOf(name);
+  if (!name || !task || position < 0) return false;
+  const before = statement.slice(0, position);
+  const after = statement.slice(position + name.length);
+  if (after && !/^[\s.,:;!'’]/.test(after)) return false;
+  const link = new RegExp(
+    `^(?:please )?(?:link|connect|associate|relate) (?:the )?${task} (?:to|with) (?:the )?$`,
+  );
+  const direct = new RegExp(
+    `(?:^|\\s)${task} (?:is )?(?:for|requested by|commissioned by) (?:our (?:customer|client) )?$`,
+  );
+  // In a coordinated request the second item may reuse the first verb:
+  // “prepare a checklist for A and another checklist for B”.
+  const repeatedDeliverable = taskIdentityPattern(
+    deliverable.replace(/^(?:prepare|draft|create|write|review|send|build|test) /, ''),
+  );
+  const coordinated = new RegExp(`^another ${repeatedDeliverable} for $`).test(before);
+  return (
+    link.test(before) ||
+    direct.test(before) ||
+    coordinated ||
+    (!before &&
+      /^ (?:needs|requests|requested|commissioned)\b/.test(after) &&
+      namesTask(after, subject))
+  );
+}
+
+function hasEndpointAlternative(assertion: string, names: string[]): boolean {
+  const statement = normalize(assertion);
+  return (
+    /\b(?:or|either|undecided)\b/i.test(statement) ||
+    names.some((name) => {
+      const project = normalize(name);
+      if (!project) return false;
+      const fragments = statement.split(project);
+      return (
+        fragments.slice(1).some((suffix) => /^\s*\//.test(suffix)) ||
+        fragments.slice(0, -1).some((prefix) => /\/\s*$/.test(prefix))
+      );
+    })
+  );
+}
+
+function taskIdentityPattern(subject: string, allowRequestModifiers = false): string {
+  return subject
+    .trim()
+    .split(/\s+/)
+    .filter(
+      (word) => word && (word === 'A' || !['the', 'a', 'an', 'of'].includes(word.toLowerCase())),
+    )
+    .map((word) => word.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join(
+      allowRequestModifiers
+        ? ' (?:of )?(?:the |a |an )?(?:separate |new )?'
+        : ' (?:of )?(?:the |a |an )?',
+    );
+}
+
+function mentionedProjectIds(
+  clause: string,
+  projects: readonly { id: string; name?: string; aliases?: string[] }[],
+): Set<string> {
+  const text = normalize(clause);
+  const matches = projects.flatMap((project) =>
+    [project.name, ...(project.aliases ?? [])].flatMap((name) => {
+      if (!name?.trim()) return [];
+      const literal = normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return [
+        ...text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${literal}(?![\\p{L}\\p{N}])`, 'gu')),
+      ].map((match) => ({ id: project.id, from: match.index, to: match.index + match[0].length }));
+    }),
+  );
+  return new Set(
+    matches
+      .filter(
+        (match) =>
+          !matches.some(
+            (other) =>
+              other.from <= match.from &&
+              other.to >= match.to &&
+              (other.from < match.from || other.to > match.to),
+          ),
+      )
+      .map((match) => match.id),
+  );
+}
+
+function groupedProjectRequest(assertion: string, subject: string, projectName: string): boolean {
+  const original = assertion.trim();
+  const speaker =
+    /^(?:\p{Lu}[\p{L}\p{M}'’-]* ){0,2}\p{Lu}[\p{L}\p{M}'’-]*:\s+(?=[Ff][Oo][Rr]\s)/u.exec(original);
+  const statement = normalize(
+    speaker && !/\b(?:example|hypothetical|scenario|template)\b/i.test(speaker[0])
+      ? original.slice(speaker[0].length)
+      : original,
+  );
+  if (/[.!?;]\s/u.test(statement)) return false;
+  const project = normalize(projectName);
+  const scopeSuffix = ` for ${project}`;
+  const subjectName = normalize(subject);
+  const task = taskIdentityPattern(
+    subjectName.endsWith(scopeSuffix) ? subjectName.slice(0, -scopeSuffix.length) : subjectName,
+    true,
+  );
+  if (!project || !task) return false;
+  const literalProject = project.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const group = new RegExp(`^(?:separately, )?for (?:the )?${literalProject}[:,]\\s+`, 'iu').exec(
+    statement,
+  );
+  if (!group) return false;
+  const request = new RegExp(
+    `^(?:(?:please|(?:i|we) (?:will|shall)|(?:i|we)[’']ll) )?${task}(?![\\p{L}\\p{N}])`,
+    'iu',
+  );
+  return statement
+    .slice(group[0].length)
+    .split(/\s+and\s+|,\s*/u)
+    .some((part) => request.test(part));
+}
+
+function affirmativeProjectMembership(
+  assertion: string,
+  subject: string,
+  name: string,
+  allowTaskRouting: boolean,
+): boolean {
+  const statement = normalize(assertion);
+  const project = normalize(name);
+  const task = taskIdentityPattern(subject);
+  if (
+    !project ||
+    !task ||
+    tentativeAssertion.test(statement.replaceAll(normalize(subject), '[task]')) ||
+    /[?]|\b(?:not|no|never|unless|if|maybe|perhaps|unrelated|without|except|might|may|instead)\b/i.test(
+      statement,
+    )
+  )
+    return false;
+  if (allowTaskRouting && groupedProjectRequest(assertion, subject, name)) return true;
+  const predicate = allowTaskRouting ? projectRoutingTerms : projectMembershipTerms;
+  const followsTask = new RegExp(
+    `(?:^|\\s)${task}(?: task)? (?:(?:is|was|should be|will be) )?${predicate} (?:the )?$`,
+  );
+  const explicitAssignment = new RegExp(
+    `^(?:please )?(?:attach|link|assign|move) (?:the )?${task}(?: task)? to (?:the )?$`,
+  );
+  const startsTask = new RegExp(`^[:,]\\s+(?:please )?(?:the )?${task}(?![\\p{L}\\p{N}])`, 'u');
+  const fragments = statement.split(project);
+  return fragments.slice(1).some((suffix, index) => {
+    const prefix = fragments[index] ?? '';
+    if (suffix && !/^[\s.,:;!]/.test(suffix)) return false;
+    return (
+      (index === 0 && !prefix && suffix.startsWith(':') && startsTask.test(suffix)) ||
+      followsTask.test(prefix) ||
+      (allowTaskRouting &&
+        (explicitAssignment.test(prefix) ||
+          (index === 0 &&
+            /^(?:separately, )?for (?:the )?$/.test(prefix) &&
+            startsTask.test(suffix))))
+    );
+  });
+}
+
+function deniedProjectMembership(assertion: string, subject: string, project: string): boolean {
+  const text = normalize(assertion);
+  const affirmative = text
+    .replace(
+      new RegExp(`\\b(?:is|was) (?:not|no longer) (?=${projectRoutingTerms}\\b)`, 'i'),
+      'is ',
+    )
+    .replace(/\b(?:does not|no longer) belongs? to\b/i, 'belongs to');
+  return affirmative !== text && affirmativeProjectMembership(affirmative, subject, project, true);
+}
+
+function taskAssertion(clause: string, subject: string): string | undefined {
+  // Keep only the assertion describing this task. Causal/dependent
+  // clauses can describe a different artifact, and task titles are identifiers.
+  const parts = clause
+    .trim()
+    .split(
+      /\s+\b(because|although|since|whereas|while|until|even though|but|yet|which|who|that(?=\s+(?:is|are|was|were|has|have|had|will|would|may|must|can|could|should)\b))\b\s+/i,
+    );
+  const statements = parts.filter((_, index) => index % 2 === 0);
+  const named = statements.filter((statement) => namesTask(statement, subject));
+  const first = statements.length === 1 ? statements[0] : named.length === 1 ? named[0] : undefined;
+  if (!first) return undefined;
+  let assertion = first;
+  const at = parts.indexOf(first);
+  for (let index = at + 1; index < parts.length; index += 2) {
+    const conjunction = parts[index]?.toLowerCase();
+    const next = parts[index + 1];
+    if (
+      (conjunction !== 'but' && conjunction !== 'yet') ||
+      !next ||
+      !/^(?:(?:it|this task|the task) )?(?:is|was|has|had|remains)\b/i.test(next)
+    )
+      break;
+    assertion = next;
+  }
+  return assertion;
+}
+
+function affirmativeLifecycle(
+  clause: string | undefined,
+  subject: string,
+  status: unknown,
+  sendTask = false,
+): boolean {
+  if (!clause || typeof status !== 'string') return false;
+  const blockedUntil =
+    status === 'blocked' && /^blocked until\b/i.test(clause) && namesTask(clause, subject);
+  const assertion = blockedUntil ? 'blocked' : taskAssertion(clause, subject);
+  if (!assertion) return false;
+  if (!blockedUntil && !namesTask(clause, subject, true)) return false;
+  const identity = normalize(subject);
+  clause = identity ? normalize(assertion).replaceAll(identity, '[task]') : normalize(assertion);
+  if (
+    tentativeAssertion.test(clause) ||
+    /[?]|\b(?:no longer|not|never|no|nobody|none|nothing|neither|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?|ei|eivät|if|unless|[a-z]+n[’']t)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+  if (
+    /(?<![\p{L}\p{N}])(?:estarán?|estarían?|serán?|serían?|van? a (?:estar|ser)|wird|werden|würden?|soll(?:en)?|könnten?|tulee olemaan|on tarkoitus)(?![\p{L}\p{N}])/iu.test(
+      clause,
+    )
+  )
+    return false;
+  if (
+    status === 'done' &&
+    /\b(?:almost|nearly|partly|partially|half|not quite|being|in the process of|basically|practically|essentially)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+
+  if (
+    /\b(?:will|shall|should|would|can|could|may|must|going to|able to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:(?:be|get)\s+|have\s+been\s+)?(?:(?:marked|declared|considered|reported|counted|treated)(?:\s+as)?\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i.test(
+      clause,
+    )
+  )
+    return false;
+  return (
+    (lifecycleWords[status]?.test(clause) ?? false) ||
+    (status === 'done' && sendTask && /\b(?:sent|delivery confirmed)\b/i.test(clause))
+  );
+}
+
+function taskClause(quote: string, subject: string): string | undefined {
+  // Keep source citations literal; normalize contractions only for assertion checks.
+  quote = quote
+    .replace(/\bwon['’]t\b/gi, 'will not')
+    .replace(/\bcan['’]t\b/gi, 'can not')
+    .replace(/\bshan['’]t\b/gi, 'shall not')
+    .replace(/\b([a-z]+)n[’']t\b/gi, '$1 not')
+    .replace(/\b([a-z]+)[’']ll\b/gi, '$1 will');
+  if (/^blocked until\b/i.test(quote.trim()) && namesTask(quote, subject)) return quote;
+  const completionNoun =
+    subject
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.at(-1) ?? 'deliverable';
+  const connected = quote
+    .replace(
+      /\band\s+(?=(?:it|this task|the task) (?:is|was) due\b|its (?:deadline|due date)\b)/gi,
+      ' ',
+    )
+    .replace(
+      new RegExp(
+        `\\.\\s+(?=(?:it|this|that|the (?:task|item|deliverable|${completionNoun})) (?:is|was|has been) (?:delivered|completed|finished|done|shipped)[.!]?$)`,
+        'i',
+      ),
+      ' ',
+    )
+    .replace(/\.\s+(?:Its|The task[’']s) (deadline|due date)\b/gi, ' $1')
+    .replace(
+      /\.\s+(?=[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b))/gu,
+      ' ',
+    );
+  const literalName = subject
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const identities = literalName ? [...connected.matchAll(new RegExp(literalName, 'gi'))] : [];
+  const clauses: string[] = [];
+  let start = 0;
+  for (const boundary of connected.matchAll(
+    /(?:[;!?]|\.(?=\s|$)|\band\b|\bwhile\b|\bwhereas\b|\buntil\b|\bpero\b|\by\b)/giu,
+  )) {
+    if (
+      identities.some(
+        (name) =>
+          boundary.index >= name.index &&
+          boundary.index + boundary[0].length <= name.index + name[0].length,
+      )
+    )
+      continue;
+    clauses.push(connected.slice(start, boundary.index));
+    start = boundary.index + boundary[0].length;
+  }
+  clauses.push(connected.slice(start));
+  const matching = clauses.filter((clause) => namesTask(clause, subject));
+  return matching.length === 1 ? matching[0]?.trim() : undefined;
+}
+
+function supportedTaskAssertion(support: Support | undefined): string | undefined {
+  if (!support) return undefined;
+  const clause = taskClause(support.quote, support.subject);
+  return clause ? taskAssertion(clause, support.subject) : undefined;
+}
+
+function affirmativeFieldClear(assertion: string, subject: string): boolean {
+  const text = normalize(assertion).replaceAll(normalize(subject), '[task]');
+  return (
+    Boolean(text) &&
+    !tentativeAssertion.test(text) &&
+    !/[?]|\b(?:not|never|if|unless|[a-z]+n[’']t)\b/i.test(text)
+  );
+}
+
+function explicitProjectClear(assertion: string, subject: string): boolean {
+  return (
+    affirmativeFieldClear(assertion, subject) &&
+    /\b(?:remove|clear|unset) (?:the |its )?(?:primary )?project(?: assignment| association)?\b/i.test(
+      assertion,
+    )
+  );
+}
+
+/** Canonicalize an existing object ID placed in a local-ref slot, never guessing identity. */
+export function normalizeKnownRelationshipReferences(
+  input: Record<string, unknown>,
+  localRefs: string[],
+  objectIds: string[],
+): Record<string, unknown> | null {
+  const payload = { ...input };
+  for (const side of ['from', 'to']) {
+    const ref = payload[`${side}Ref`];
+    if (typeof ref !== 'string' || localRefs.includes(ref) || !objectIds.includes(ref)) continue;
+    const existing = payload[`${side}EntityId`];
+    if (typeof existing === 'string' && existing !== ref) return null;
+    payload[`${side}EntityId`] = ref;
+    if (side === 'from') delete payload.fromRef;
+    else delete payload.toRef;
+  }
+  return payload;
+}
+
+/** Ground optional writes against admitted source text, not the model's echoed context. */
+export function groundCommunicationBundles<T extends Item>(args: {
+  bundles: Bundle<T>[];
+  packet: string;
+  sources: {
+    id: string;
+    source?: string;
+    text: string;
+    authorUserId?: string | null;
+    speakerContext?: string;
+    emailEnvelopeSender?: string | null | undefined;
+    occurredAt?: Date;
+  }[];
+  reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
+  emailChronologyLookahead?: readonly EmailChronologyStatement[] | undefined;
+  members: { userId: string; name: string | null; email: string | null }[];
+  hubs: { id: string; name: string; type: string; aliases?: string[] }[];
+  source: string;
+  timezone?: string;
+  pendingNames?: string[];
+  calendarTargets?: { id: string; title: string }[];
+  verifiedLifecycleAuditIds?: Set<string>;
+  objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
+}): Bundle<T>[] {
+  const sourceIds = new Set(args.sources.map((source) => source.id));
+  const chronology = chronologicalLifecycleEvidence([
+    ...args.sources.map((source) => ({
+      ...source,
+      source: source.source ?? args.source,
+      contentText: source.text,
+    })),
+    ...(args.emailChronologyLookahead ?? []).filter((event) => !sourceIds.has(event.id)),
+  ]);
+  const chronologyVetoIds = new Set([
+    ...(args.reviewedLaterEmailIds ?? []),
+    ...(args.emailChronologyLookahead ?? []).map((event) => event.id),
+  ]);
+  const emailStatementByQuote = new Map(
+    (args.emailChronologyLookahead ?? []).map((statement) => [
+      `${statement.id}:${statement.occurredAt.getTime()}:${normalize(statement.contentText)}`,
+      statement,
+    ]),
+  );
+  const packet = normalize(args.packet);
+  function enclosingAssertion(support: Support): string | undefined {
+    const source = args.sources.find((event) => event.id === support.rawEventId);
+    return source && completeSourceAssertion(source.text, support.quote);
+  }
+  function groupedProjectEvidence(
+    subject: string,
+    project: { id: string; name: string; aliases?: string[] },
+  ): Support | undefined {
+    const names = [project.name, ...(project.aliases ?? [])];
+    for (const source of args.sources) {
+      for (const sentence of source.text.split(/(?<=[.!?])\s+|\n+/u)) {
+        const quote = sentence.trim();
+        if (
+          safeSourceQuote(source.text, quote) &&
+          packet.includes(normalize(quote)) &&
+          names.some(
+            (name) =>
+              groupedProjectRequest(quote, subject, name) &&
+              affirmativeProjectMembership(quote, subject, name, true),
+          )
+        )
+          return { field: 'project', rawEventId: source.id, quote, subject, value: project.id };
+      }
+    }
+    return undefined;
+  }
+  function lifecycleVerified(support: Support, status: unknown, sendTask = false): boolean {
+    const enclosing = enclosingAssertion(support);
+    return (
+      Boolean(enclosing) &&
+      [support.quote, enclosing].every(
+        (quote) =>
+          quote &&
+          affirmativeLifecycle(
+            taskClause(quote, support.subject),
+            support.subject,
+            status,
+            sendTask,
+          ),
+      )
+    );
+  }
+  function* assertionsFromCitation(support: Support) {
+    const citedClause = taskClause(support.quote, support.subject);
+    let from = -1;
+    let assertionStart = 0;
+    for (const quote of [citedClause, support.quote]) {
+      if (!quote?.trim()) continue;
+      const literal = quote
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\s+/g, '\\s+');
+      const pattern = new RegExp(literal, 'iu');
+      from = chronology.findIndex(
+        (event) => event.id === support.rawEventId && pattern.test(event.contentText),
+      );
+      if (from >= 0) {
+        assertionStart = pattern.exec(chronology[from]?.contentText ?? '')?.index ?? 0;
+        break;
+      }
+    }
+    if (from < 0) return;
+    for (const [offset, event] of chronology.slice(from).entries()) {
+      const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
+      for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
+        if (sentence.trim() && safeSourceQuote(event.contentText, sentence.trim()))
+          yield { event, sentence, visible: packet.includes(normalize(sentence)) };
+      }
+    }
+  }
+  function lifecycleSuperseded(
+    support: Support,
+    names: string[],
+    unambiguous: (identity: string) => boolean,
+  ): boolean {
+    let status: string | undefined = support.value;
+    let found = false;
+    const subjects = names.flatMap((name) => {
+      const [action, ...artifact] = name.trim().split(/\s+/u);
+      const identities =
+        action && TASK_ACTIONS.has(action.toLowerCase()) ? [name, artifact.join(' ')] : [name];
+      return identities.flatMap((identity) => {
+        const pattern = taskIdentityPattern(identity);
+        return pattern ? [new RegExp(`^(?:(?:the|la|el|die|der|das) )?${pattern}$`, 'iu')] : [];
+      });
+    });
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      found = true;
+      const state = explicitLifecycleState(sentence);
+      if (
+        state &&
+        (visible || (event.id && chronologyVetoIds.has(event.id))) &&
+        subjects.some((subject) => subject.test(normalize(state.subject))) &&
+        unambiguous(state.subject)
+      ) {
+        if (state.affirmative) status = state.status;
+        else if (status === state.status) status = undefined;
+      }
+    }
+    return !found || status !== support.value;
+  }
+  function deadlineVerified(
+    support: Support,
+    wanted: number | null,
+    names: string[],
+    unambiguous: (assertion: string) => boolean,
+  ): boolean {
+    const deadlineIn = (
+      assertion: string,
+      subject: string,
+      sourceId: string | undefined,
+      quote: string,
+      occurredAt?: Date,
+    ) => {
+      if (
+        affirmativeFieldClear(assertion, subject) &&
+        /\b(?:remove|clear) (?:the )?deadline\b/i.test(assertion)
+      )
+        return { affirmed: new Set<number | null>([null]), denied: new Set<number>() };
+      const source = args.sources.find((row) => row.id === sourceId);
+      return deadlineAssertions(
+        assertion,
+        subject,
+        args.timezone ?? 'UTC',
+        source
+          ? deadlineReferenceDate(source, source.source ?? args.source, quote, assertion)
+          : emailStatementByQuote.get(`${sourceId}:${occurredAt?.getTime()}:${normalize(quote)}`)
+              ?.deadlineReferenceAt,
+      );
+    };
+    const enclosing = enclosingAssertion(support);
+    if (!enclosing) return false;
+    for (const quote of new Set([support.quote, enclosing])) {
+      const cited = deadlineIn(
+        supportedTaskAssertion({ ...support, quote }) ?? '',
+        support.subject,
+        support.rawEventId,
+        quote,
+      );
+      if (cited.affirmed.size !== 1 || !cited.affirmed.has(wanted)) return false;
+    }
+    let latest: number | null | undefined = wanted;
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
+      const subject = names.find((name) => namesTask(sentence, name, true));
+      if (!subject) continue;
+      const assertion = supportedTaskAssertion({ ...support, subject, quote: sentence });
+      if (!assertion || !unambiguous(assertion)) continue;
+      const dates = deadlineIn(assertion, subject, event.id, sentence, event.occurredAt);
+      if (dates.affirmed.size > 0)
+        latest = dates.affirmed.size === 1 ? [...dates.affirmed][0] : undefined;
+      else if (typeof latest === 'number' && dates.denied.has(latest)) latest = undefined;
+    }
+    return latest === wanted;
+  }
+  function assignmentProof(
+    assignment: Support | undefined,
+    member: (typeof args.members)[number] | undefined,
+    hasTaskContext: boolean,
+    compact?: EmailChronologyStatement,
+  ) {
+    const source = compact
+      ? {
+          text: compact.contentText,
+          source: 'email',
+          authorUserId: null,
+          speakerContext: undefined,
+          emailEnvelopeSender: compact.senderEmail ?? null,
+        }
+      : args.sources.find((source) => source.id === assignment?.rawEventId);
+    const unsupported = {
+      role: undefined,
+      clearRole: undefined,
+      verified: false,
+      withdrawn: false,
+    };
+    if (!source || !assignment) return unsupported;
+    const enclosing = completeSourceAssertion(source.text, assignment.quote);
+    if (!enclosing) return unsupported;
+    const expanded = packet.includes(normalize(enclosing));
+    const quote = expanded ? enclosing : assignment.quote;
+    const citedAssignment = taskClause(quote, assignment.subject);
+    const originalClause = citedAssignment
+      ? taskAssertion(citedAssignment, assignment.subject)
+      : hasTaskContext
+        ? assignment.quote
+        : undefined;
+    const clause = originalClause?.replace(
+      /,\s*not\s+([^.!?,]+)\.?$/i,
+      (phrase, alternative: string) =>
+        args.members.some(
+          (other) =>
+            other.userId !== member?.userId &&
+            other.name &&
+            normalize(other.name) === normalize(alternative),
+        )
+          ? ''
+          : phrase,
+    );
+    const surrounding = expanded ? clause : enclosing;
+    const escapedName = member?.name?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const name = escapedName
+      ? `(?<![\\p{L}\\p{N}'’_-])${escapedName}(?![\\p{L}\\p{N}'’_-])`
+      : undefined;
+    const actor = name ? `(?:${name}|\\bI\\b)` : '\\bI\\b';
+    const alternative = '(?:\\s+or\\s+|\\s*/\\s*)';
+    const unresolvedOwner =
+      surrounding &&
+      new RegExp(
+        `${actor}${alternative}|${alternative}${actor}|\\b(?:either|one of)\\s+(?:[^.!?;]{0,120}\\s+)?${actor}`,
+        'iu',
+      ).test(surrounding);
+    const tentative =
+      surrounding &&
+      tentativeAssertion.test(
+        normalize(surrounding).replaceAll(normalize(assignment.subject), '[task]'),
+      );
+    const delegation =
+      /\b(?:ask(?:ed|ing)?|remind(?:ed|ing)?|tell(?:ing)?|request(?:ed|ing)?|assign(?:ed|ing)?|expect(?:ed|ing)?|allow(?:ed|ing)?)\b[^.!?;]{0,120}\bto\b/i;
+    const matchesAssignedTask = (action: string) =>
+      (namesTask(action, assignment.subject, true) &&
+        (!delegation.test(action) ||
+          normalize(action).startsWith(normalize(assignment.subject)))) ||
+      (hasTaskContext &&
+        /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
+          action.trim(),
+        ));
+    const namedAction =
+      name && clause
+        ? new RegExp(
+            `(?:${name}\\s+(?:will|shall|owns|is responsible(?: for)?|to|revisará|preparará|hará|wird|übernimmt|tarkistaa)(?![\\p{L}\\p{N}])|${name},?\\s+please\\b)`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const namedActionRemainder =
+      clause && namedAction ? clause.slice(namedAction.index + namedAction[0].length) : undefined;
+    const explicitAssignment =
+      name && clause
+        ? new RegExp(
+            `\\b(?:re)?assign(?:ed)?\\b([^.!?]*?)${name}(?=\\s*(?:[.!?,]|$)|\\s+(?:for|to|as|by)\\b)`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const passiveSubject = taskIdentityPattern(assignment.subject);
+    const passiveAssignment =
+      clause &&
+      explicitAssignment &&
+      passiveSubject &&
+      /^(?:re)?assigned\s+to\s+/i.test(explicitAssignment[0]) &&
+      new RegExp(
+        `(?:^|\\s)${passiveSubject}(?: task)? (?:is|was|has been|had been) (?:now )?$`,
+        'iu',
+      ).test(normalize(clause.slice(0, explicitAssignment.index)) + ' ');
+    const ownerAssertion =
+      name && clause
+        ? new RegExp(
+            `${name}\\s+(?:remains|is(?: still)?) (?:the )?owner(?=\\s*(?:[.!?]|$)|\\s+(?:and|of|for)\\b)`,
+            'iu',
+          ).exec(clause)
+        : null;
+    const ownerTask =
+      clause && ownerAssertion
+        ? /^\s+(?:of|for)\s+(.+)$/i.exec(
+            clause.slice(ownerAssertion.index + ownerAssertion[0].length),
+          )
+        : null;
+    const confirmedOwner =
+      ownerAssertion !== null && (ownerTask === null || matchesAssignedTask(ownerTask[1] ?? ''));
+    const named =
+      clause &&
+      !unresolvedOwner &&
+      !tentative &&
+      !/\b(?:not|cannot|can't|declined|no|nicht|if|unless)\b/i.test(surrounding ?? clause) &&
+      ((namedAction !== null &&
+        !delegation.test(clause.slice(0, namedAction.index + namedAction[0].length)) &&
+        matchesAssignedTask(clause.slice(namedAction.index + namedAction[0].length))) ||
+        (explicitAssignment !== null &&
+          matchesAssignedTask(
+            (explicitAssignment[1] ?? '') +
+              clause.slice(explicitAssignment.index + explicitAssignment[0].length),
+          )) ||
+        Boolean(passiveAssignment) ||
+        confirmedOwner);
+    const commitmentQuotes = [...assignment.quote.matchAll(/[^.!?]+[.!?]?/g)].flatMap((match) => {
+      const start = firstPersonCommitment.exec(match[0]);
+      return start && (namesTask(match[0], assignment.subject) || hasTaskContext)
+        ? [match[0].slice(start.index).trim()]
+        : [];
+    });
+    const commitment = commitmentQuotes.length === 1 ? commitmentQuotes[0] : undefined;
+    const quoteAt = source.text.indexOf(assignment.quote);
+    const commitmentAt = commitment && quoteAt >= 0 ? source.text.indexOf(commitment, quoteAt) : -1;
+    const uniqueCommitment =
+      commitment &&
+      commitmentAt >= quoteAt &&
+      commitmentAt >= 0 &&
+      commitmentAt + commitment.length <= quoteAt + assignment.quote.length &&
+      source.text.indexOf(commitment) === commitmentAt &&
+      !source.text.includes(commitment, commitmentAt + 1);
+    const headers = uniqueCommitment
+      ? [...source.text.slice(0, commitmentAt).matchAll(/(?:^|\n)(?:From|Von|De):([^\n]*)/gi)]
+      : [];
+    const latestHeader = headers.at(-1);
+    const headerEmails = new Set(
+      [...(latestHeader?.[1] ?? '').matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(
+        (match) => normalize(match[0]),
+      ),
+    );
+    const emailSpeaker = Boolean(
+      member?.email &&
+      uniqueCommitment &&
+      (latestHeader
+        ? headerEmails.size === 1 &&
+          headerEmails.has(normalize(member.email)) &&
+          safeSourceQuote(source.text, latestHeader[0].trim()) &&
+          packet.includes(normalize(latestHeader[0].trim()))
+        : source.emailEnvelopeSender === undefined
+          ? source.speakerContext?.includes(`"senderHandle":${JSON.stringify(member.email)}`)
+          : normalize(source.emailEnvelopeSender ?? '') === normalize(member.email)),
+    );
+    const selfAction = clause && firstPersonCommitment.exec(clause);
+    const attributableSelf =
+      member &&
+      ((source.source ?? args.source) === 'email'
+        ? emailSpeaker
+        : source.authorUserId === member.userId &&
+          uniqueCommitment &&
+          isOriginalChatCommitment(source.text, commitmentAt, member.name));
+    const self =
+      clause &&
+      !unresolvedOwner &&
+      !tentative &&
+      attributableSelf &&
+      selfAction &&
+      !assignmentDenial.test(selfAction[0]) &&
+      matchesAssignedTask(clause.slice(selfAction.index + selfAction[0].length)) &&
+      !/\b(?:if|unless|not|cannot|no|nunca|jamás|tampoco|nicht|kein(?:e|en|em|er|es)?)\b/i.test(
+        surrounding ?? clause,
+      );
+    const namedDenial =
+      name && clause
+        ? new RegExp(`${name}\\s+${assignmentDenial.source}\\s+`, 'iu').exec(clause)
+        : null;
+    const namedDenialAction =
+      clause && namedDenial ? clause.slice(namedDenial.index + namedDenial[0].length) : undefined;
+    const explicitWithdrawal =
+      name && clause
+        ? new RegExp(`^(?:please )?(?:unassign|remove) ${name} from\\s+`, 'iu').exec(clause)
+        : null;
+    const selfDenial =
+      attributableSelf && selfAction && clause
+        ? assignmentDenial.test(selfAction[0])
+          ? clause.slice(selfAction.index + selfAction[0].length)
+          : /^\s*(?:not|never)\s+(.+)$/i.exec(
+              clause.slice(selfAction.index + selfAction[0].length),
+            )?.[1]
+        : undefined;
+    const withdrawn =
+      clause &&
+      !tentative &&
+      !unresolvedOwner &&
+      !/\b(?:if|unless)\b/i.test(surrounding ?? clause) &&
+      ((namedDenialAction !== undefined && matchesAssignedTask(namedDenialAction)) ||
+        (explicitWithdrawal !== null &&
+          matchesAssignedTask(clause.slice(explicitWithdrawal[0].length))) ||
+        (selfDenial !== undefined && matchesAssignedTask(selfDenial)));
+    const role: AssignmentRole =
+      confirmedOwner ||
+      /\bowns\s*$/i.test(namedAction?.[0] ?? '') ||
+      (Boolean(explicitAssignment) && /\bas (?:the )?owner\b/i.test(clause ?? '')) ||
+      /^(?:own|take ownership of|be the owner)\b/i.test(
+        (
+          namedDenialAction ??
+          selfDenial ??
+          namedActionRemainder ??
+          (selfAction && clause ? clause.slice(selfAction.index + selfAction[0].length) : '')
+        ).trim(),
+      )
+        ? 'owner'
+        : 'assignee';
+    let clearRole: AssignmentRole | undefined;
+    if (
+      clause &&
+      !unresolvedOwner &&
+      affirmativeFieldClear(surrounding ?? clause, assignment.subject)
+    ) {
+      const clear = normalize(clause);
+      if (
+        /\b(?:remove|clear|unset|unassign) (?:the |its )?owner\b|\bowner\b (?:is |was |has been )?(?:removed|cleared|unassigned)\b/i.test(
+          clear,
+        )
+      )
+        clearRole = 'owner';
+      else if (
+        /\b(?:remove|clear|unset) (?:the |its )?assignee\b/i.test(clear) ||
+        new RegExp(
+          `^(?:please )?unassign (?:the )?${passiveSubject}(?![\\p{L}\\p{N}])|^(?:the )?${passiveSubject} (?:is |was |has been )(?:now )?unassigned\\b`,
+          'iu',
+        ).test(clear)
+      )
+        clearRole = 'assignee';
+    }
+    return {
+      role,
+      clearRole,
+      verified:
+        Boolean(member) && (Boolean(named) || Boolean(self)) && !assignment.quote.includes('?'),
+      withdrawn: Boolean(withdrawn),
+    };
+  }
+  function assignmentSuperseded(
+    support: Support,
+    role: AssignmentRole,
+    names: string[],
+    unambiguous: (assertion: string) => boolean,
+  ): boolean {
+    let latest: string | undefined = support.value;
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      if (!event.id || (!visible && !chronologyVetoIds.has(event.id))) continue;
+      const subject = names.find((name) => namesTask(sentence, name, true));
+      if (!subject) continue;
+      const assertion = taskClause(sentence, subject);
+      if (!assertion || !unambiguous(assertion)) continue;
+      const sentenceSupport = { ...support, subject, quote: sentence.trim(), rawEventId: event.id };
+      const compact = emailStatementByQuote.get(
+        `${event.id}:${event.occurredAt?.getTime()}:${normalize(sentence)}`,
+      );
+      if (assignmentProof(sentenceSupport, undefined, false, compact).clearRole === role)
+        latest = 'unassigned';
+      const owners: string[] = [];
+      for (const member of args.members) {
+        const proof = assignmentProof(sentenceSupport, member, false, compact);
+        if (proof.role !== role) continue;
+        if (proof.withdrawn && latest === member.userId) latest = undefined;
+        if (proof.verified) owners.push(member.userId);
+      }
+      if (owners.length) latest = owners.length === 1 ? owners[0] : undefined;
+    }
+    return latest !== support.value;
+  }
+  function projectSuperseded(
+    support: Support,
+    wanted: string | null,
+    names: string[],
+    unambiguous: (assertion: string) => boolean,
+    projects: { id: string; name: string; aliases?: string[] }[],
+  ): boolean {
+    let latest: string | null | undefined = wanted;
+    for (const { event, sentence, visible } of assertionsFromCitation(support)) {
+      if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
+      const subject = names.find((name) => namesTask(sentence, name, true));
+      if (!subject) continue;
+      const assertion = supportedTaskAssertion({ ...support, subject, quote: sentence });
+      if (!assertion || !unambiguous(assertion)) continue;
+      if (explicitProjectClear(assertion, subject)) {
+        latest = null;
+        continue;
+      }
+      const mentioned = mentionedProjectIds(assertion, projects);
+      if (mentioned.size !== 1) continue;
+      const selected = projects.find((project) => mentioned.has(project.id));
+      if (!selected) continue;
+      const projectNames = [selected.name, ...(selected.aliases ?? [])];
+      if (hasEndpointAlternative(assertion, projectNames)) continue;
+      if (projectNames.some((name) => affirmativeProjectMembership(assertion, subject, name, true)))
+        latest = selected.id;
+      else if (
+        latest === selected.id &&
+        projectNames.some((name) => deniedProjectMembership(assertion, subject, name))
+      )
+        latest = undefined;
+    }
+    return latest !== wanted;
+  }
+  return args.bundles.map((bundle) => {
+    const validContexts = new Set<Support>();
+    const projectCandidates = args.hubs.filter((hub) => hub.type === 'project');
+    for (const candidate of bundle.items) {
+      const name = candidate.proposedPayload.canonicalName;
+      if (
+        candidate.operation === 'create' &&
+        candidate.proposedPayload.type === 'project' &&
+        typeof name === 'string' &&
+        !projectCandidates.some((project) => normalize(project.name) === normalize(name))
+      )
+        projectCandidates.push({ id: `new:${normalize(name)}`, type: 'project', name });
+    }
+    const taskIdentityNames = (
+      item: Pick<Item, 'targetId' | 'title'> &
+        Partial<Pick<Item, 'targetKind' | 'proposedPayload' | 'scopedSourceIdentity'>>,
+      objects = args.objects ?? [],
+    ) => {
+      if (item.targetKind === 'calendar_event') {
+        const calendar = args.calendarTargets?.find((event) => event.id === item.targetId);
+        return calendar ? [calendar.title] : [];
+      }
+      const target = objects.find((object) => object.id === item.targetId);
+      const proposedName = item.proposedPayload?.canonicalName;
+      const names = [
+        target?.name ??
+          (typeof proposedName === 'string' && proposedName.trim() ? proposedName : item.title),
+      ];
+      if (!target && item.scopedSourceIdentity) names.unshift(item.scopedSourceIdentity.name);
+      if (target?.type !== 'task') return names;
+      return [
+        ...names,
+        ...(target.aliases ?? []).filter(
+          (alias) =>
+            alias.trim() &&
+            !objects.some(
+              (other) =>
+                other.id !== target.id &&
+                [other.name, ...(other.aliases ?? [])].some(
+                  (name) => name && normalize(name) === normalize(alias),
+                ),
+            ),
+        ),
+      ];
+    };
+    const taskEvidenceUnambiguous = (
+      item: Pick<Item, 'targetId' | 'title'> & Partial<Pick<Item, 'scopedSourceIdentity'>>,
+      text: string,
+      objects = args.objects ?? [],
+    ) => {
+      const names = taskIdentityNames(item, objects);
+      const literal = (name: string) => {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
+      };
+      const scoped = item.scopedSourceIdentity;
+      const scopeIsCited = scoped?.scopeLabels.some(literal) ?? false;
+      const competing = objects.filter(
+        (object) =>
+          object.type === 'task' &&
+          object.id !== item.targetId &&
+          object.name &&
+          (Boolean(item.targetId) ||
+            (scoped !== undefined && !scopeIsCited) ||
+            !names.some((name) => normalize(name) === normalize(object.name ?? ''))) &&
+          [object.name, ...(object.aliases ?? [])].some((name) => namesTask(text, name)),
+      );
+      return (
+        !competing.length ||
+        (names.some(literal) &&
+          !competing.some((object) =>
+            [object.name ?? '', ...(object.aliases ?? [])].some((name) => name && literal(name)),
+          ))
+      );
+    };
+    const namesTaskQuote = (item: T, text: string, subject: string) => {
+      const target = args.objects?.find((object) => object.id === item.targetId);
+      const alias = target?.aliases?.find((name) => normalize(name) === normalize(subject));
+      if (!alias || normalize(target?.name ?? '') === normalize(subject))
+        return namesTask(text, subject);
+      if (!taskIdentityNames(item).includes(alias)) return false;
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
+    };
+    const verified = (item: T) =>
+      (item.grounding ?? [])
+        .map((support) => {
+          const names = taskIdentityNames(item);
+          if (names.some((name) => normalize(name) === normalize(support.subject))) {
+            const citedName = names.find((name) => namesTaskQuote(item, support.quote, name));
+            if (citedName) support = { ...support, subject: citedName };
+          }
+          const sourceForQuote = args.sources.find((row) => row.id === support.rawEventId);
+          const context = support.context;
+          const completionNoun = support.subject
+            .toLowerCase()
+            .match(/[\p{L}\p{N}]+/gu)
+            ?.at(-1);
+          if (
+            sourceForQuote &&
+            context?.rawEventId === support.rawEventId &&
+            support.field === 'status' &&
+            support.value === 'done' &&
+            completionNoun &&
+            new RegExp(
+              `^(?:it|this|that|the (?:task|item|deliverable|${completionNoun})) (?:is|was|has been) (?:delivered|completed|finished|done|shipped)[.!]?$`,
+              'i',
+            ).test(support.quote.trim())
+          ) {
+            const start = sourceForQuote.text.indexOf(context.quote);
+            const end = start + context.quote.length;
+            const at = sourceForQuote.text.indexOf(support.quote, end);
+            if (
+              start >= 0 &&
+              at >= end &&
+              !sourceForQuote.text.slice(end, at).trim() &&
+              !sourceForQuote.text.includes(context.quote, start + 1) &&
+              !sourceForQuote.text.includes(support.quote, at + 1)
+            ) {
+              const quote = sourceForQuote.text.slice(start, at + support.quote.length);
+              if (
+                quote.length <= 800 &&
+                safeSourceQuote(sourceForQuote.text, quote) &&
+                normalize(args.packet).includes(normalize(quote))
+              )
+                support = { ...support, quote };
+            }
+          }
+          // Recover visible sentence context for short entity citations. Never cross a
+          // source, header, truncated packet, or an ambiguous repeated occurrence.
+          if (sourceForQuote && ['customer', 'project', 'prospect'].includes(support.field)) {
+            const start = sourceForQuote.text.indexOf(support.quote);
+            if (start >= 0 && !sourceForQuote.text.includes(support.quote, start + 1)) {
+              const sentence = [...sourceForQuote.text.matchAll(/[^.!?\n]+[.!?]?/g)]
+                .find(
+                  (match) =>
+                    start >= match.index &&
+                    start + support.quote.length <= match.index + match[0].length,
+                )?.[0]
+                .trim();
+              if (
+                sentence &&
+                !/^(?:From|To|Cc|Subject):/i.test(sentence) &&
+                safeSourceQuote(sourceForQuote.text, sentence) &&
+                normalize(args.packet).includes(normalize(sentence))
+              )
+                support = { ...support, quote: sentence };
+            }
+          }
+          // Link supports sometimes name the endpoint as their subject. The
+          // source clause must still name this exact task and the known endpoint.
+          const taskObject = args.objects?.find(
+            (object) => object.id === item.targetId && object.type === 'task',
+          );
+          const taskName =
+            typeof item.proposedPayload.canonicalName === 'string'
+              ? item.proposedPayload.canonicalName
+              : (taskObject?.name ?? item.title);
+          if (
+            (item.targetKind === 'task' || item.proposedPayload.type === 'task' || taskObject) &&
+            (support.field === 'project' || support.field === 'customer')
+          ) {
+            const endpoint = args.hubs.find(
+              (hub) =>
+                hub.id === support.value &&
+                hub.type === (support.field === 'project' ? 'project' : 'company'),
+            );
+            if (
+              endpoint &&
+              [endpoint.name, ...(endpoint.aliases ?? [])].some(
+                (name) => normalize(name) === normalize(support.subject),
+              ) &&
+              namesTask(support.quote, taskName)
+            )
+              support = { ...support, subject: taskName };
+          }
+          if (
+            sourceForQuote &&
+            support.field === 'assignee' &&
+            (/^[\p{L}][\p{L} ]{0,60} (?:remains|is still) (?:the )?owner(?=\s*(?:[.!?]|$)|\s+and\b)/u.test(
+              support.quote,
+            ) ||
+              args.members.some(
+                (member) =>
+                  member.userId === support.value &&
+                  member.name &&
+                  support.quote === `Please use ${member.name} as the assignee.`,
+              ))
+          ) {
+            const at = sourceForQuote.text.indexOf(support.quote);
+            const previous =
+              at < 0
+                ? undefined
+                : /[^.!?\n]+[.!?]$/.exec(sourceForQuote.text.slice(0, at).trim())?.[0]?.trim();
+            const knownTasks = [
+              ...(args.objects ?? []).filter((row) => row.type === 'task').map((row) => row.name),
+              ...(args.pendingNames ?? []),
+              ...bundle.items
+                .filter((row) => row.targetKind === 'task' || row.proposedPayload.type === 'task')
+                .map((row) => row.title),
+            ];
+            const otherTask =
+              previous &&
+              knownTasks.some(
+                (name) => name && !namesTask(name, support.subject) && namesTask(previous, name),
+              );
+            const quote = previous ? `${previous} ${support.quote}` : '';
+            if (
+              previous &&
+              namesTask(previous, support.subject) &&
+              !otherTask &&
+              !sourceForQuote.text.includes(support.quote, at + 1) &&
+              safeSourceQuote(sourceForQuote.text, quote) &&
+              normalize(args.packet).includes(normalize(quote))
+            )
+              support = { ...support, quote };
+          }
+          if (support.field !== 'dueAt' || !/^its (?:deadline|due date)\b/i.test(support.quote))
+            return support;
+          const source = args.sources.find((row) => row.id === support.rawEventId);
+          const at = source?.text.indexOf(support.quote) ?? -1;
+          if (!source || at < 0) return support;
+          const previous = /[^.!?\n]+[.!?]$/.exec(source.text.slice(0, at).trim())?.[0]?.trim();
+          if (!previous || !namesTask(previous, support.subject)) return support;
+          const quote = `${previous} ${support.quote}`;
+          return safeSourceQuote(source.text, quote) &&
+            normalize(args.packet).includes(normalize(quote))
+            ? { ...support, quote }
+            : support;
+        })
+        .filter((support) => {
+          const source = args.sources.find((row) => row.id === support.rawEventId);
+          const prior =
+            args.sources[args.sources.findIndex((row) => row.id === support.rawEventId) - 1];
+          const context = support.context;
+          const contextValid =
+            context &&
+            prior?.id === context.rawEventId &&
+            safeSourceQuote(prior.text, context.quote) &&
+            normalize(args.packet).includes(normalize(context.quote)) &&
+            namesTask(context.quote, support.subject) &&
+            new Set(
+              [
+                ...(args.objects ?? [])
+                  .filter((object) => object.type === 'task')
+                  .map((object) => object.name),
+                ...(args.pendingNames ?? []),
+              ].filter(
+                (name): name is string =>
+                  typeof name === 'string' && namesTask(context.quote, name),
+              ),
+            ).size === 1;
+          if (contextValid) validContexts.add(support);
+          const isTask =
+            item.targetKind === 'task' ||
+            item.proposedPayload.type === 'task' ||
+            args.objects?.some((object) => object.id === item.targetId && object.type === 'task');
+          const identityText =
+            taskClause(support.quote, support.subject) ??
+            (contextValid ? context.quote : support.quote);
+          return (
+            (!isTask || taskEvidenceUnambiguous(item, identityText)) &&
+            source &&
+            safeSourceQuote(source.text, support.quote) &&
+            normalize(args.packet).includes(normalize(support.quote)) &&
+            !unsafe(support.quote) &&
+            (item.targetKind === 'object_relationship' ||
+              namesTaskQuote(item, support.quote, support.subject) ||
+              (support.field === 'assignee' &&
+                contextValid &&
+                /\b(?:this|it|instead)\b/i.test(support.quote))) &&
+            (item.targetKind === 'object_relationship' ||
+              taskIdentityNames(item).some((name) =>
+                isTask
+                  ? normalize(name) === normalize(support.subject)
+                  : namesTask(name, support.subject),
+              ))
+          );
+        });
+    const uncertainty = new Set<string>();
+    const extra: T[] = [];
+    const items = bundle.items.flatMap((item, index) => {
+      const supports = verified(item);
+      const payload = { ...item.proposedPayload };
+      const type =
+        item.targetKind === 'task'
+          ? 'task'
+          : (args.objects?.find((object) => object.id === item.targetId)?.type ?? payload.type);
+      if (item.operation === 'archive_or_cancel') {
+        const cancellation = supports.find(
+          (support) => support.field === 'status' && support.value === 'cancelled',
+        );
+        if (
+          !cancellation ||
+          !lifecycleVerified(cancellation, 'cancelled') ||
+          lifecycleSuperseded(cancellation, taskIdentityNames(item), (identity) =>
+            taskEvidenceUnambiguous(item, identity),
+          )
+        )
+          return [];
+        if (type === 'task') payload.status = 'cancelled';
+      }
+      if (item.targetKind === 'object_relationship') {
+        const normalizedRefs = normalizeKnownRelationshipReferences(
+          payload,
+          bundle.items
+            .map((candidate) => candidate.proposedPayload.localRef)
+            .filter((ref): ref is string => typeof ref === 'string'),
+          [...args.hubs, ...(args.objects ?? [])].map((object) => object.id),
+        );
+        if (!normalizedRefs) return [];
+        if (!('fromRef' in normalizedRefs)) delete payload.fromRef;
+        if (!('toRef' in normalizedRefs)) delete payload.toRef;
+        Object.assign(payload, normalizedRefs);
+        const localEndpoint = (object: T, id: string) => ({
+          id,
+          aliases: [] as string[],
+          type:
+            object.targetKind === 'task'
+              ? 'task'
+              : typeof object.proposedPayload.type === 'string'
+                ? object.proposedPayload.type
+                : '',
+          name:
+            typeof object.proposedPayload.canonicalName === 'string'
+              ? object.proposedPayload.canonicalName
+              : object.title,
+          scopedSourceIdentity: object.scopedSourceIdentity,
+        });
+        const endpoint = (side: 'from' | 'to') => {
+          const id = payload[`${side}EntityId`];
+          if (typeof id === 'string') {
+            const object =
+              args.objects?.find((object) => object.id === id) ??
+              args.hubs.find((hub) => hub.id === id);
+            return object?.name
+              ? {
+                  id,
+                  name: object.name,
+                  type: object.type,
+                  aliases: object.aliases ?? [],
+                  scopedSourceIdentity: undefined,
+                }
+              : null;
+          }
+          const ref = payload[`${side}Ref`];
+          const object = bundle.items.find(
+            (candidate) => candidate.proposedPayload.localRef === ref && typeof ref === 'string',
+          );
+          return object ? localEndpoint(object, String(ref)) : null;
+        };
+        const from = endpoint('from'),
+          to = endpoint('to');
+        // Customer and generic link evidence establishes only a related edge. A
+        // directed task → project child edge needs its own project-membership assertion.
+        const taskProjectChild =
+          payload.kind === 'child' && from?.type === 'task' && to?.type === 'project';
+        if (payload.kind !== 'related' && !taskProjectChild) return [];
+        const known = [
+          ...args.hubs,
+          ...(args.objects ?? []),
+          ...bundle.items
+            .filter(
+              (candidate) =>
+                candidate.operation === 'create' &&
+                (candidate.targetKind === 'object' || candidate.targetKind === 'task'),
+            )
+            .map((candidate) =>
+              localEndpoint(
+                candidate,
+                typeof candidate.proposedPayload.localRef === 'string'
+                  ? candidate.proposedPayload.localRef
+                  : '',
+              ),
+            ),
+        ];
+        const taskEndpointIdentity = (object: NonNullable<typeof from>) => ({
+          title: object.name,
+          targetId: object.scopedSourceIdentity ? undefined : object.id,
+          scopedSourceIdentity: object.scopedSourceIdentity,
+        });
+        const namesEndpoint = (quote: string, object: NonNullable<typeof from>) =>
+          object.type === 'task'
+            ? taskEvidenceUnambiguous(taskEndpointIdentity(object), quote, known) &&
+              taskIdentityNames(taskEndpointIdentity(object), known).some((name) =>
+                namesTask(quote, name),
+              )
+            : mentions(quote, object.name) ||
+              object.aliases.some(
+                (alias) =>
+                  mentions(quote, alias) &&
+                  !known.some(
+                    (other) =>
+                      other.id !== object.id &&
+                      other.type === object.type &&
+                      [other.name, ...(other.aliases ?? [])].some(
+                        (name) => name && normalize(name) === normalize(alias),
+                      ),
+                  ),
+              );
+        // The bundle quote is evidence only after the same source/packet checks.
+        // Reuse explicit link clauses when endpoint supports are quoted separately.
+        const linkSupports = [...supports];
+        for (const support of supports) {
+          const source = args.sources.find((source) => source.id === support.rawEventId);
+          if (
+            !bundle.quote ||
+            !source ||
+            !safeSourceQuote(source.text, bundle.quote) ||
+            !normalize(args.packet).includes(normalize(bundle.quote))
+          )
+            continue;
+          for (const quote of bundle.quote.split(/(?<=[.!?])\s+/)) {
+            if (/\blink\b/i.test(quote) && safeSourceQuote(source.text, quote))
+              linkSupports.push({ ...support, quote });
+          }
+        }
+        const adjacentEngagement = () => {
+          const company = from?.type === 'company' ? from : to?.type === 'company' ? to : null;
+          const project = from?.type === 'project' ? from : to?.type === 'project' ? to : null;
+          if (!company || !project) return false;
+          return args.sources.some((source) => {
+            const sentences = [...source.text.matchAll(/[^.!?\n]+[.!?]?/g)].filter((match) =>
+              match[0].trim(),
+            );
+            const visibleText = sentences
+              .filter(
+                (match) =>
+                  safeSourceQuote(source.text, match[0].trim()) &&
+                  normalize(args.packet).includes(normalize(match[0])),
+              )
+              .map((match) => match[0])
+              .join(' ');
+            if (
+              /\b(?:do not|don't|must not|never) (?:link|connect|associate)\b|\bunrelated\b|\bseparate from\b/i.test(
+                visibleText,
+              )
+            )
+              return false;
+            for (const object of [company, project]) {
+              const candidates = new Set(
+                known
+                  .filter(
+                    (candidate) =>
+                      candidate.type === object.type &&
+                      [candidate.name, ...(candidate.aliases ?? [])].some(
+                        (name) => name && mentions(visibleText, name),
+                      ),
+                  )
+                  .map((candidate) => candidate.id),
+              );
+              if (candidates.size !== 1 || !candidates.has(object.id)) return false;
+              if (
+                !supports.some(
+                  (support) =>
+                    support.rawEventId === source.id && namesEndpoint(support.quote, object),
+                )
+              )
+                return false;
+            }
+            return sentences.some((first, index) => {
+              const second = sentences[index + 1];
+              if (!second) return false;
+              const engagement =
+                /^(?:we are |we're )?(?:discussing|considering|exploring|planning) (?:a |the )?(?:(?:potential|possible|prospective|proposed) )?engagement (?:with|for)\b/i.test(
+                  first[0].trim(),
+                ) &&
+                /^(?:the|their) (?:(?:concrete|proposed|potential|possible) ){0,2}project is (?:called|named)\b/i.test(
+                  second[0].trim(),
+                );
+              const possessive =
+                /\bis our (?:new )?(?:client|customer)[.!]?$/i.test(first[0].trim()) &&
+                /^(?:we are|we're) (?:planning|building|delivering|tracking) their\b.*\bproject[.!]?$/i.test(
+                  second[0].trim(),
+                );
+              const namedProjectForClient =
+                /\bis our (?:new )?(?:client|customer)[.!]?$/i.test(first[0].trim()) &&
+                /^(?:we are|we're) (?:planning|building|delivering|tracking) (?:a |the )?(?:named |new |concrete )?project for them, [^.!?]+[.!]?$/i.test(
+                  second[0].trim(),
+                );
+              const feedbackContinuation =
+                [company.name, ...company.aliases].some((name) => {
+                  const beginning = `${normalize(name)} `;
+                  const statement = normalize(first[0]);
+                  return (
+                    statement.startsWith(beginning) &&
+                    /^(?:liked|reviewed|approved) (?:the|our) (?:latest )?(?:screens|designs|prototype|proposal)[.!]?$/.test(
+                      statement.slice(beginning.length),
+                    )
+                  );
+                }) &&
+                /\bis (?:the|our) project (?:we are|we're) (?:planning|building|delivering|tracking) (?:with|for) them[.!]?$/i.test(
+                  second[0].trim(),
+                );
+              if (!engagement && !possessive && !namedProjectForClient && !feedbackContinuation)
+                return false;
+              const span = source.text.slice(first.index, second.index + second[0].length);
+              return (
+                namesEndpoint(first[0], company) &&
+                namesEndpoint(second[0], project) &&
+                !/[?]|\b(?:not|no|unless|if|instead|unrelated|separate|another|either|or|maybe|perhaps)\b/i.test(
+                  span,
+                ) &&
+                safeSourceQuote(source.text, span) &&
+                normalize(args.packet).includes(normalize(span))
+              );
+            });
+          });
+        };
+        const grounded =
+          from &&
+          to &&
+          linkSupports.some((support) => {
+            const taskEndpoint = from.type === 'task' ? from : to.type === 'task' ? to : null;
+            const taskName = taskEndpoint
+              ? (taskIdentityNames(taskEndpointIdentity(taskEndpoint), known).find((name) =>
+                  namesTask(support.quote, name),
+                ) ?? taskEndpoint.name)
+              : undefined;
+            const assertion = taskEndpoint
+              ? (taskClause(support.quote, taskName ?? taskEndpoint.name) ?? support.quote)
+              : support.quote;
+            const enclosing = enclosingAssertion(support);
+            const linkStatement =
+              enclosing && (completeSourceAssertion(enclosing, assertion) ?? enclosing);
+            const deniedOrConditional =
+              /[?]|\b(?:undecided|not|never|cannot|don['’]t|can['’]t|mustn['’]t|shouldn['’]t|won['’]t|unless|if|unrelated)\b/i;
+            if (
+              !linkStatement ||
+              tentativeAssertion.test(
+                normalize(linkStatement)
+                  .replaceAll(normalize(from.name), '[endpoint]')
+                  .replaceAll(normalize(to.name), '[endpoint]'),
+              ) ||
+              deniedOrConditional.test(linkStatement) ||
+              deniedOrConditional.test(assertion) ||
+              ![to.id, to.name, from.id, from.name, taskName].includes(support.value) ||
+              (!taskEndpoint && /\bseparate\b/i.test(linkStatement))
+            )
+              return false;
+            if (
+              support.field !== 'relationship' &&
+              !(
+                (support.field === 'customer' && [from.type, to.type].includes('company')) ||
+                (support.field === 'project' && [from.type, to.type].includes('project'))
+              )
+            )
+              return false;
+            if (taskProjectChild) {
+              if (support.field !== 'project' || !namesEndpoint(assertion, from)) return false;
+              const membership = taskAssertion(assertion, taskName ?? from.name);
+              if (!membership || !namesEndpoint(membership, from)) return false;
+              const projects = mentionedProjectIds(
+                membership,
+                known.filter((candidate) => candidate.type === 'project'),
+              );
+              if (
+                projects.size !== 1 ||
+                !projects.has(to.id) ||
+                hasEndpointAlternative(membership, [to.name, ...to.aliases])
+              )
+                return false;
+              const fullSource = enclosingAssertion(support);
+              const fullMembership =
+                fullSource &&
+                supportedTaskAssertion({
+                  ...support,
+                  subject: taskName ?? from.name,
+                  quote: fullSource,
+                });
+              const selectedProject = projectCandidates.find(
+                (candidate) =>
+                  candidate.id === to.id || candidate.id === `new:${normalize(to.name)}`,
+              );
+              return (
+                Boolean(fullMembership) &&
+                [to.name, ...to.aliases].some(
+                  (name) =>
+                    namesEndpoint(name, to) &&
+                    affirmativeProjectMembership(membership, taskName ?? from.name, name, false) &&
+                    affirmativeProjectMembership(
+                      fullMembership ?? '',
+                      taskName ?? from.name,
+                      name,
+                      false,
+                    ),
+                ) &&
+                !projectSuperseded(
+                  support,
+                  selectedProject?.id ?? to.id,
+                  taskIdentityNames(taskEndpointIdentity(from), known),
+                  (later) => namesEndpoint(later, from),
+                  selectedProject ? projectCandidates : [...projectCandidates, to],
+                )
+              );
+            }
+            const linkInstruction =
+              /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i;
+            const link = linkInstruction.exec(assertion.trim());
+            const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
+              (object.scopedSourceIdentity !== undefined &&
+                [object.scopedSourceIdentity.name, `the ${object.scopedSourceIdentity.name}`].some(
+                  (name) => normalize(name) === normalize(reference),
+                ) &&
+                namesEndpoint(assertion, object)) ||
+              [object.name, ...object.aliases].some(
+                (name) =>
+                  [normalize(name), `the ${normalize(name)}`].includes(normalize(reference)) &&
+                  !known.some(
+                    (candidate) =>
+                      candidate.id !== object.id &&
+                      [candidate.name, ...(candidate.aliases ?? [])].some(
+                        (other) => other && normalize(other) === normalize(name),
+                      ),
+                  ),
+              );
+            if (
+              link &&
+              payload.kind === 'related' &&
+              ((exactEndpoint(link[1] ?? '', from) && exactEndpoint(link[2] ?? '', to)) ||
+                (exactEndpoint(link[1] ?? '', to) && exactEndpoint(link[2] ?? '', from)))
+            )
+              return true;
+            if (support.field === 'relationship') return false;
+            const direct = namesEndpoint(assertion, from) && namesEndpoint(assertion, to);
+            if (direct) {
+              const company = from.type === 'company' ? from : to.type === 'company' ? to : null;
+              const project = from.type === 'project' ? from : to.type === 'project' ? to : null;
+              if (taskEndpoint) {
+                const hub = from === taskEndpoint ? to : from;
+                const identity = taskName ?? taskEndpoint.name;
+                const association = taskAssertion(assertion, identity);
+                if (!association || !namesEndpoint(association, taskEndpoint)) return false;
+                const type = typeof hub.type === 'string' ? hub.type : '';
+                return [hub.name, ...hub.aliases].some(
+                  (name) =>
+                    namesEndpoint(name, hub) &&
+                    affirmativeTaskHub(association, identity, name, type) &&
+                    !(
+                      type === 'company' &&
+                      known.some(
+                        (other) =>
+                          other.id !== hub.id &&
+                          other.type === 'company' &&
+                          [other.name, ...(other.aliases ?? [])].some(
+                            (otherName) =>
+                              otherName &&
+                              normalize(otherName).startsWith(`${normalize(name)} `) &&
+                              affirmativeTaskHub(association, identity, otherName, type),
+                          ),
+                      )
+                    ),
+                );
+              }
+              if (!company || !project) return false;
+              // Bind the predicate to these two named endpoints in the same statement.
+              const names = (object: typeof company) =>
+                [object.name, ...object.aliases]
+                  .filter(
+                    (name) =>
+                      name &&
+                      namesEndpoint(name, object) &&
+                      !known.some(
+                        (other) =>
+                          other.id !== object.id &&
+                          other.type === object.type &&
+                          [other.name, ...(other.aliases ?? [])].some(
+                            (alias) => alias && normalize(alias) === normalize(name),
+                          ),
+                      ),
+                  )
+                  .map(normalize);
+              const statement = normalize(assertion).replace(/[.!]$/, '');
+              return names(company).some((client) =>
+                names(project).some((work) => {
+                  return (
+                    [
+                      `link ${work} to ${client}`,
+                      `link ${client} to ${work}`,
+                      `${work} is a project for ${client}`,
+                      `${work} is the project for ${client}`,
+                      `${work} is a project with ${client}`,
+                      `${client}'s project is ${work}`,
+                      `${work} is ${client}'s project`,
+                    ].includes(statement.replace(/^please /, '').replace(/[’]/g, "'")) ||
+                    (statement.endsWith(` ${work}`) &&
+                      [client, `our existing customer ${client}`, `our client ${client}`].some(
+                        (subject) =>
+                          statement.startsWith(`${subject} is `) &&
+                          /^(?:planning|considering|launching) (?:a |the )?(?:new |possible |proposed )?project(?: called| named)?$/.test(
+                            statement.slice(subject.length + 4, -work.length - 1),
+                          ),
+                      ))
+                  );
+                }),
+              );
+            }
+            // A typed reference can combine admitted statements from the SAME source only.
+            // It must be an explicit link instruction, with exactly one visible candidate.
+            const typedEndpoint = (name: string, object: NonNullable<typeof from>) => {
+              const taskNoun = object.name
+                .toLowerCase()
+                .match(/[\p{L}\p{N}]+/gu)
+                ?.at(-1);
+              const type =
+                object.type === 'task'
+                  ? `(?:task|item|deliverable${taskNoun && taskNoun.length > 3 ? `|${taskNoun}` : ''})`
+                  : object.type === 'company'
+                    ? '(?:company|customer|client)'
+                    : object.type === 'project'
+                      ? 'project'
+                      : null;
+              return (
+                type !== null && new RegExp(`^(?:the|this|that) ${type}$`, 'i').test(name.trim())
+              );
+            };
+            const other = (support.quote.match(/[^.!?\n]+[.!?]?/g) ?? []).flatMap((sentence) => {
+              const command = linkInstruction.exec(sentence.trim());
+              if (!command?.[1] || !command[2]) return [];
+              const [left, right] = [command[1], command[2]];
+              if (
+                (exactEndpoint(left, from) && typedEndpoint(right, to)) ||
+                (exactEndpoint(right, from) && typedEndpoint(left, to))
+              )
+                return [to];
+              if (
+                (exactEndpoint(left, to) && typedEndpoint(right, from)) ||
+                (exactEndpoint(right, to) && typedEndpoint(left, from))
+              )
+                return [from];
+              return [];
+            })[0];
+            if (!other) return false;
+            const source = args.sources.find((source) => source.id === support.rawEventId);
+            const candidates = new Set(
+              known
+                .filter(
+                  (candidate) =>
+                    candidate.type === other.type &&
+                    candidate.name &&
+                    source &&
+                    (candidate.type === 'task'
+                      ? namesTask(source.text, candidate.name)
+                      : [candidate.name, ...(candidate.aliases ?? [])].some((name) =>
+                          mentions(source.text, name),
+                        )),
+                )
+                .map((candidate) => candidate.id),
+            );
+            return (
+              candidates.size === 1 &&
+              candidates.has(other.id) &&
+              [
+                ...supports,
+                ...bundle.items
+                  .filter(
+                    (candidate) =>
+                      candidate.targetKind !== 'object_relationship' &&
+                      (candidate.proposedPayload.localRef === other.id ||
+                        candidate.targetId === other.id),
+                  )
+                  .flatMap(verified),
+              ].some(
+                (evidence) =>
+                  evidence.rawEventId === support.rawEventId &&
+                  namesEndpoint(evidence.quote, other),
+              )
+            );
+          });
+        if (!grounded && !adjacentEngagement()) return [];
+      }
+      const has = (field: Support['field'], value: unknown) =>
+        supports.find(
+          (support) =>
+            support.field === field &&
+            (support.value === value ||
+              (field === 'dueAt' &&
+                typeof value === 'string' &&
+                Number.isFinite(Date.parse(value)) &&
+                Date.parse(support.value) === Date.parse(value))),
+        );
+      if (type === 'company' || type === 'project') {
+        const tentative = supports.find(
+          (support) =>
+            (support.field === 'prospect' ||
+              (type === 'company' && support.field === 'customer') ||
+              (type === 'project' && support.field === 'project')) &&
+            prospect(support.quote),
+        );
+        if (tentative) {
+          uncertainty.add('prospect');
+          if (type === 'project' && item.operation === 'create') payload.status = 'planning';
+        }
+      }
+      if (type === 'task' || (item.targetKind === 'task' && item.operation === 'update')) {
+        const assignmentSupports = supports.filter((support) => support.field === 'assignee');
+        const assignments = assignmentSupports.flatMap((support) => {
+          const member = args.members.find((member) => member.userId === support.value);
+          const proof = assignmentProof(support, member, validContexts.has(support));
+          const role =
+            support.value === 'unassigned'
+              ? proof.clearRole
+              : proof.verified
+                ? proof.role
+                : undefined;
+          if (
+            !role ||
+            assignmentSuperseded(support, role, taskIdentityNames(item), (assertion) =>
+              taskEvidenceUnambiguous(item, assertion),
+            )
+          )
+            return [];
+          return [{ role, member, value: support.value, support }];
+        });
+        const assignmentFields = [
+          'assigneeUserId',
+          'assigneeName',
+          'ownerUserId',
+          'ownerName',
+        ] as const;
+        // Legacy assignee-only proposals can cite explicit ownership when
+        // the source supplies no separate assignment.
+        if (
+          !Object.hasOwn(payload, 'ownerUserId') &&
+          !Object.hasOwn(payload, 'ownerName') &&
+          !assignments.some((assignment) => assignment.role === 'assignee')
+        ) {
+          const fallback = assignments.filter(
+            (assignment) =>
+              assignment.role === 'owner' &&
+              assignment.member !== undefined &&
+              !assignmentSuperseded(
+                assignment.support,
+                'assignee',
+                taskIdentityNames(item),
+                (assertion) => taskEvidenceUnambiguous(item, assertion),
+              ),
+          );
+          assignments.push(
+            ...fallback.map((assignment) => ({ ...assignment, role: 'assignee' as const })),
+          );
+        }
+        const assignees = new Set(
+          assignments.flatMap(({ role, member }) =>
+            role === 'assignee' && member ? [member.userId] : [],
+          ),
+        );
+        // Only creates can infer an absent assignee from a uniquely supported
+        // claim. Updates and repairs may have intentionally protected fields.
+        if (
+          item.operation === 'create' &&
+          !item.targetId &&
+          assignees.size === 1 &&
+          new Set(assignmentSupports.map((support) => support.value)).size === 1 &&
+          !assignmentFields.some((key) => Object.hasOwn(payload, key))
+        ) {
+          payload.assigneeUserId = [...assignees][0];
+        }
+        const retainAssignment = (key: (typeof assignmentFields)[number]) => {
+          const role = key.startsWith('owner') ? 'owner' : 'assignee';
+          return assignments.some(
+            (assignment) =>
+              assignment.role === role &&
+              (payload[key] === null
+                ? assignment.value === 'unassigned'
+                : assignment.member !== undefined &&
+                  payload[key] ===
+                    (key.endsWith('UserId') ? assignment.member.userId : assignment.member.name)),
+          );
+        };
+        if (!retainAssignment('assigneeUserId')) delete payload.assigneeUserId;
+        if (!retainAssignment('assigneeName')) delete payload.assigneeName;
+        if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
+        if (!retainAssignment('ownerName')) delete payload.ownerName;
+        const deadline = has('dueAt', payload.dueAt === null ? 'unset' : payload.dueAt);
+        if (
+          payload.dueAt !== undefined &&
+          !(
+            deadline &&
+            (payload.dueAt === null || typeof payload.dueAt === 'string') &&
+            deadlineVerified(
+              deadline,
+              payload.dueAt === null ? null : Date.parse(payload.dueAt),
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+            )
+          )
+        )
+          delete payload.dueAt;
+        const lifecycle = has('status', payload.status);
+        const targetName =
+          args.objects?.find((object) => object.id === item.targetId)?.name ??
+          (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
+        const verifiedStatus =
+          lifecycle &&
+          lifecycleVerified(lifecycle, payload.status, /^(?:mark )?send\b/i.test(targetName)) &&
+          !lifecycleSuperseded(lifecycle, taskIdentityNames(item), (identity) =>
+            taskEvidenceUnambiguous(item, identity),
+          );
+        if (verifiedStatus && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
+        if (
+          payload.status !== undefined &&
+          !(item.operation === 'create' && payload.status === 'todo') &&
+          !verifiedStatus
+        )
+          delete payload.status;
+        if (payload.parentObjectId === null) {
+          const support = has('project', 'unset');
+          const enclosing = support && enclosingAssertion(support);
+          if (
+            !support ||
+            !enclosing ||
+            ![support.quote, enclosing].every((quote) => {
+              const clause = supportedTaskAssertion({ ...support, quote });
+              return clause && explicitProjectClear(clause, support.subject);
+            }) ||
+            projectSuperseded(
+              support,
+              null,
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              projectCandidates,
+            )
+          ) {
+            delete payload.parentObjectId;
+            delete payload.projectName;
+          }
+        }
+        if (typeof payload.parentObjectId === 'string') {
+          const selected = args.hubs.find(
+            (hub) => hub.type === 'project' && hub.id === payload.parentObjectId,
+          );
+          const projectSupport =
+            has('project', payload.parentObjectId) ??
+            supports.find(
+              (entry) =>
+                entry.field === 'project' &&
+                selected &&
+                [selected.name, ...(selected.aliases ?? [])].some(
+                  (name) => normalize(name) === normalize(entry.value),
+                ),
+            ) ??
+            (selected && item.operation === 'create'
+              ? groupedProjectEvidence(taskIdentityNames(item)[0] ?? item.title, selected)
+              : undefined);
+          const enclosedProjectNames = selected ? [selected.name, ...(selected.aliases ?? [])] : [];
+          const projectClause = (support: Support) =>
+            enclosedProjectNames.some((name) =>
+              groupedProjectRequest(support.quote, support.subject, name),
+            )
+              ? support.quote
+              : supportedTaskAssertion(support);
+          const clause = projectSupport && projectClause(projectSupport);
+          const enclosing = projectSupport && enclosingAssertion(projectSupport);
+          const fullClause =
+            projectSupport && enclosing && projectClause({ ...projectSupport, quote: enclosing });
+          const projects = clause
+            ? mentionedProjectIds(
+                clause,
+                args.hubs.filter((hub) => hub.type === 'project'),
+              )
+            : new Set<string>();
+          const project =
+            projects.size === 1 && selected && projects.has(selected.id) ? selected : undefined;
+          const names = project ? [project.name, ...(project.aliases ?? [])] : [];
+          if (
+            !clause ||
+            !fullClause ||
+            project?.id !== payload.parentObjectId ||
+            hasEndpointAlternative(clause, names) ||
+            !names.some(
+              (name) =>
+                affirmativeProjectMembership(clause, projectSupport.subject, name, true) &&
+                affirmativeProjectMembership(fullClause, projectSupport.subject, name, true),
+            ) ||
+            projectSuperseded(
+              projectSupport,
+              payload.parentObjectId,
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              projectCandidates,
+            )
+          ) {
+            delete payload.parentObjectId;
+            delete payload.projectName;
+          }
+        }
+        if (typeof payload.createProjectName === 'string') {
+          const name = payload.createProjectName;
+          const project = bundle.items.find(
+            (candidate) =>
+              candidate.operation === 'create' &&
+              candidate.proposedPayload.type === 'project' &&
+              typeof candidate.proposedPayload.canonicalName === 'string' &&
+              normalize(candidate.proposedPayload.canonicalName) === normalize(name),
+          );
+          const support = supports.find(
+            (entry) =>
+              entry.field === 'project' &&
+              (normalize(entry.value) === normalize(name) ||
+                entry.value === project?.proposedPayload.localRef),
+          );
+          const clause = supportedTaskAssertion(support);
+          const enclosing = support && enclosingAssertion(support);
+          const fullClause =
+            support && enclosing && supportedTaskAssertion({ ...support, quote: enclosing });
+          const projectId = `new:${normalize(name)}`;
+          if (
+            item.operation !== 'create' ||
+            !support ||
+            !clause ||
+            !fullClause ||
+            hasEndpointAlternative(clause, [name]) ||
+            !affirmativeProjectMembership(clause, support.subject, name, true) ||
+            !affirmativeProjectMembership(fullClause, support.subject, name, true) ||
+            projectSuperseded(
+              support,
+              projectId,
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              projectCandidates.some((project) => project.id === projectId)
+                ? projectCandidates
+                : [...projectCandidates, { id: projectId, name }],
+            )
+          ) {
+            delete payload.createProjectName;
+            if (payload.parentObjectId === undefined) delete payload.projectName;
+          }
+        }
+        const links = supports.filter((support) => {
+          if (support.field !== 'customer') return false;
+          const clause = supportedTaskAssertion(support);
+          const enclosing = enclosingAssertion(support);
+          const fullClause = enclosing && supportedTaskAssertion({ ...support, quote: enclosing });
+          if (
+            !clause ||
+            !fullClause ||
+            support.quote.includes('?') ||
+            /\b(?:or|maybe|perhaps|might|may|undecided|not|never|no|if|unless|unrelated|except|without)\b/i.test(
+              clause,
+            )
+          )
+            return false;
+          const candidates = args.hubs.filter(
+            (hub) => hub.type === 'company' && mentions(clause, hub.name),
+          );
+          const customer = candidates[0];
+          if (!customer || candidates.length !== 1 || customer.id !== support.value) return false;
+          return (
+            affirmativeTaskHub(clause, support.subject, customer.name, 'company') &&
+            affirmativeTaskHub(fullClause, support.subject, customer.name, 'company')
+          );
+        });
+        const ids = [...new Set(links.map((support) => support.value))];
+        if (ids.length === 1 && item.operation === 'create') {
+          const ref =
+            typeof payload.localRef === 'string' ? payload.localRef : `grounded-task-${index}`;
+          payload.localRef = ref;
+          extra.push({
+            ...item,
+            auditId: undefined,
+            operation: 'create',
+            targetKind: 'object_relationship',
+            title: `${item.title}: customer`,
+            proposedPayload: { kind: 'related', fromRef: ref, toEntityId: ids[0] },
+          });
+        }
+      }
+      // Internal grounding must never leak into user-editable canonical payloads.
+      delete payload.grounding;
+      const operation =
+        item.operation === 'archive_or_cancel' && type === 'task' && payload.status === 'cancelled'
+          ? 'update'
+          : item.operation;
+      if (operation === 'update' && Object.keys(payload).length === 0) return [];
+      return [{ ...item, operation, proposedPayload: payload }];
+    });
+    return {
+      ...bundle,
+      confidence: uncertainty.size ? ('low' as const) : bundle.confidence,
+      reason: uncertainty.size
+        ? `Prospective engagement; not confirmed. ${bundle.reason ?? ''}`.trim()
+        : bundle.reason,
+      items: [
+        ...items,
+        ...extra.filter(
+          (candidate) =>
+            !items.some(
+              (item) =>
+                item.targetKind === 'object_relationship' &&
+                item.proposedPayload.fromRef === candidate.proposedPayload.fromRef &&
+                item.proposedPayload.toEntityId === candidate.proposedPayload.toEntityId &&
+                item.proposedPayload.kind === candidate.proposedPayload.kind,
+            ),
+        ),
+      ],
+    };
+  });
+}

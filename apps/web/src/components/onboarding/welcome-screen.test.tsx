@@ -24,6 +24,7 @@ describe('WelcomeScreen', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Your team is ready' })).toBeTruthy();
+    expect(screen.getByDisplayValue('Northwind Studio')).toBeTruthy();
     expect(screen.getByDisplayValue('northwind-studio@inbound.test')).toBeTruthy();
     expect(screen.getByText('How does your team mostly work?')).toBeTruthy();
     expect(screen.queryByText(/employees|headcount|team size/i)).toBeNull();
@@ -32,6 +33,66 @@ describe('WelcomeScreen', () => {
     ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Skip question' }));
+  });
+
+  it('shows the deferred-create copy when no inbound email exists yet', () => {
+    render(
+      <WelcomeScreen
+        teamName="Ada's team"
+        inboundEmail={null}
+        initialWorkStyle={null}
+        onContinue={() => Promise.resolve()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Name your team' })).toBeTruthy();
+    expect(screen.getByText(/create your team email address/i)).toBeTruthy();
+    expect(screen.queryByLabelText('Team email address')).toBeNull();
+  });
+
+  it('lets the user edit the prefilled team name and submits it with continue', async () => {
+    const user = userEvent.setup();
+    const calls: { workStyle: string | null; teamName: string }[] = [];
+    render(
+      <WelcomeScreen
+        teamName="Ada's team"
+        inboundEmail="ada-team@inbound.test"
+        initialWorkStyle={null}
+        onContinue={(workStyle, teamName) => {
+          calls.push({ workStyle, teamName });
+          return Promise.resolve();
+        }}
+      />,
+    );
+
+    const nameInput = screen.getByLabelText('Team name');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Northstar Labs');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(calls).toEqual([{ workStyle: null, teamName: 'Northstar Labs' }]);
+  });
+
+  it('rejects an empty team name before calling onContinue', async () => {
+    const user = userEvent.setup();
+    let called = false;
+    render(
+      <WelcomeScreen
+        teamName="Temp"
+        inboundEmail={null}
+        initialWorkStyle={null}
+        onContinue={() => {
+          called = true;
+          return Promise.resolve();
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText('Team name'));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(called).toBe(false);
+    expect(screen.getByRole('alert').textContent).toMatch(/team name/i);
   });
 });
 

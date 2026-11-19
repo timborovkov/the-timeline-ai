@@ -41,7 +41,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/env'),
-  () => ({ getEnv: () => ({}) }),
+  async () => ({
+    ...(await import('@timeline/shared/env')),
+    getEnv: () => ({}),
+  }),
   () => import('@timeline/shared/env'),
 );
 await vi.mock(

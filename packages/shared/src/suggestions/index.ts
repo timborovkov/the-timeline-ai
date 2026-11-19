@@ -113,8 +113,11 @@ import {
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
   attachUniqueHubsToBundles,
+  chronologicalLifecycleEvidence,
+  explicitLifecycleState,
   hubEvidenceText,
   hubsChanged,
+  qualifyWorkspaceContainerHubs,
   qualifyWorkspaceHubs,
   recallRelatedOpenWork,
   selectPromptObjects,
@@ -648,6 +651,7 @@ const objectCreatePayload = z.object({
 
 const objectUpdatePayload = z.object({
   ...objectPayloadFields,
+  parentObjectId: uuid.nullable().optional(),
   ownerUserId: blankStringAsUndefined(uuid.nullable()),
   assigneeUserId: blankStringAsUndefined(uuid.nullable()),
   dueAt: blankStringAsUndefined(z.iso.datetime().nullable()),
@@ -1334,25 +1338,10 @@ function normalizedLocalRef(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim().toLowerCase() : null;
 }
 
-function approvalTextForItem(item: typeof agentSuggestionItems.$inferSelect): string {
-  const payload = normalizeLifecyclePayload(item);
-  return [
-    item.title,
-    item.description,
-    payload.canonicalName,
-    payload.title,
-    payload.name,
-    payload.description,
-  ]
-    .map(normalizedApprovalText)
-    .filter(Boolean)
-    .join(' ');
-}
-
 function distinctiveApprovalTokens(item: typeof agentSuggestionItems.$inferSelect): string[] {
   return [
     ...new Set(
-      approvalTextForItem(item)
+      normalizedPrimaryApprovalName(item)
         .split(/\s+/)
         .filter((token) => token.length >= 8 && !APPROVAL_TOKEN_STOPWORDS.has(token)),
     ),
@@ -1420,21 +1409,37 @@ function aliasesForPendingItem(item: typeof agentSuggestionItems.$inferSelect): 
 
 function createSubjectCandidates(item: typeof agentSuggestionItems.$inferSelect): string[] {
   const payload = normalizeLifecyclePayload(item);
+  const canonicalName = stringPayloadValue(payload, 'canonicalName');
+  // Approval headings describe actions (e.g. "Create company"), not object identity.
+  // Once a canonical name exists, only that name and explicit aliases can match.
+  if (canonicalName) return [canonicalName, ...aliasesForPendingItem(item)];
   return [
     normalizedPrimaryApprovalName(item),
     item.title,
-    item.description ?? '',
     stringPayloadValue(payload, 'name') ?? '',
     stringPayloadValue(payload, 'title') ?? '',
-    stringPayloadValue(payload, 'description') ?? '',
     ...aliasesForPendingItem(item),
   ].filter((value) => value.trim().length > 0);
+}
+
+function normalizedExactApprovalName(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function sameExactCreateIdentity(
+  olderItem: typeof agentSuggestionItems.$inferSelect,
+  newerItem: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const left = createSubjectCandidates(olderItem).map(normalizedExactApprovalName);
+  const right = new Set(createSubjectCandidates(newerItem).map(normalizedExactApprovalName));
+  return left.some((name) => name.length > 0 && right.has(name));
 }
 
 function sameCreateSubject(
   olderItem: typeof agentSuggestionItems.$inferSelect,
   newerItem: typeof agentSuggestionItems.$inferSelect,
 ): boolean {
+  if (sameExactCreateIdentity(olderItem, newerItem)) return true;
   const olderCandidates = createSubjectCandidates(olderItem);
   const newerCandidates = createSubjectCandidates(newerItem);
   return olderCandidates.some((older) =>
@@ -1488,6 +1493,12 @@ function samePendingCreateApprovalSubject(args: {
 }): boolean {
   const { olderItem, olderSuggestion, newerItem, newerSuggestion } = args;
   if (olderItem.operation !== 'create' || newerItem.operation !== 'create') return false;
+  // Relationship identity is its endpoints, never similar display titles.
+  if (
+    olderItem.targetKind === 'object_relationship' ||
+    newerItem.targetKind === 'object_relationship'
+  )
+    return false;
   if (olderItem.targetId || newerItem.targetId) return false;
   if (!sameConversationReview(olderSuggestion, newerSuggestion)) return false;
 
@@ -1787,6 +1798,24 @@ function sameConversationReview(
   );
 }
 
+/** Similar task text is recall, not identity, when both names add distinct terms. */
+function compatibleTaskNames(
+  left: typeof agentSuggestionItems.$inferSelect,
+  right: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const leftName = normalizedPrimaryApprovalName(left);
+  const rightName = normalizedPrimaryApprovalName(right);
+  if (leftName && leftName === rightName) return true;
+  const a = [...approvalSubjectTokensFromText(leftName)];
+  const b = [...approvalSubjectTokensFromText(rightName)];
+  const matches = (x: string, y: string) => x === y || sameLongTokenFamily(x, y);
+  return (
+    a.length > 0 &&
+    b.length > 0 &&
+    (a.every((x) => b.some((y) => matches(x, y))) || b.every((y) => a.some((x) => matches(x, y))))
+  );
+}
+
 function shouldSupersedePendingItem(args: {
   olderItem: typeof agentSuggestionItems.$inferSelect;
   olderSuggestion: typeof agentSuggestions.$inferSelect;
@@ -1823,6 +1852,16 @@ function shouldSupersedePendingItem(args: {
 
   const olderExternalKey = artifactExternalKey(olderItem);
   if (olderExternalKey && olderExternalKey === artifactExternalKey(newerItem)) return true;
+
+  if (
+    isObjectTaskCreatePair &&
+    normalizedObjectCreateType(olderItem) === 'task' &&
+    normalizedObjectCreateType(newerItem) === 'task' &&
+    !compatibleTaskNames(olderItem, newerItem) &&
+    olderItem.dedupeKey !== newerItem.dedupeKey &&
+    !sameExactCreateIdentity(olderItem, newerItem)
+  )
+    return false;
 
   const newerArtifactIds = itemArtifactIds(newerItem);
   const sameArtifact = [...itemArtifactIds(olderItem)].some((id) => newerArtifactIds.has(id));
@@ -4008,10 +4047,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function lockAcceptanceProject(projectId: unknown, client: DbOrTx = db): Promise<void> {
+    if (typeof projectId !== 'string' || !UUID_RE.test(projectId)) return;
+    // Project mutations and relationship creation lock project before linked tasks.
+    await client
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(eq(entities.id, projectId), eq(entities.teamId, teamId), eq(entities.type, 'project')),
+      )
+      .for('update');
+  }
+
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     if (deps.acceptance.kind !== 'transaction') return;
+
+    if (item.targetKind === 'object' || item.targetKind === 'task')
+      await lockAcceptanceProject(recordFromUnknown(item.proposedPayload).parentObjectId);
 
     if (
       item.operation !== 'create' &&
@@ -5032,6 +5086,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       };
     }
     try {
+      if (type === 'task') await lockAcceptanceProject(project?.id);
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
         await objects.setTaskProject(
@@ -5695,12 +5750,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
+        await lockAcceptanceProject(parsed.parentObjectId);
+        const mutationOptions =
+          deps.acceptance.kind === 'transaction'
+            ? { postCommitEffects: deps.acceptance.postCommitEffects }
+            : {};
         await objects.updateObject(
           targetId,
           patch,
           { kind: 'agent', userId: null },
-          { requireActive: true },
+          {
+            requireActive: true,
+            ...mutationOptions,
+          },
         );
+        if (parsed.parentObjectId !== undefined)
+          await objects.setTaskProject(
+            targetId,
+            parsed.parentObjectId,
+            { kind: 'agent', userId: null },
+            {
+              ...mutationOptions,
+              preserveUserChangesAfter: taskProposalFieldRevisionBoundary(item, 'primaryProjectId'),
+            },
+          );
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });
@@ -5975,6 +6048,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
       isPackBacked ||
+      (row.item.operation === 'update' &&
+        (row.item.targetKind === 'task' || row.item.targetKind === 'object') &&
+        recordFromUnknown(row.item.proposedPayload).parentObjectId !== undefined) ||
       typeof recordFromUnknown(row.suggestion.metadata).document_version_id === 'string' ||
       row.item.targetKind === 'board_membership';
     if (requiresTransactionalAcceptance && deps.acceptance.kind === 'root') {

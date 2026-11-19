@@ -11,6 +11,7 @@ import {
   stashOnboardingSourceIntentCookie,
 } from '@/lib/onboarding-source-intent';
 import { platformRequestGate } from '@/lib/platform-request-gate';
+import { applySignupPlanIntentFromRequest } from '@/lib/signup-plan-intent';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
 type ProxyHandler = (
@@ -26,6 +27,7 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
   requestHeaders.set('x-timeline-method', request.method);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   await migrateLegacyActiveTeamCookie(request, response);
+  applySignupPlanIntentFromRequest(request, response);
   if (request.nextUrl.pathname === '/sign-up') {
     const sourceIntent = parseOnboardingSourceIntent(request.nextUrl.searchParams.get('source'));
     if (sourceIntent) {

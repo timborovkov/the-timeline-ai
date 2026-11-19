@@ -21,6 +21,8 @@ export interface FirstRunStatusPayload {
   firstRun: FirstRunState | null;
   inboundEmail: string | null;
   teamName: string;
+  /** Workspace shown on Welcome; null when deferred solo create has no team yet. */
+  teamId: string | null;
   record: {
     title: string;
     meta: string;
@@ -113,7 +115,7 @@ export function SetupFlowBody({
   preferredSource: OnboardingSourceIntent | null;
   connectors: readonly OnboardingSourceIntent[];
   telegramBotUsername: string | null;
-  onContinueWorkStyle: (workStyle: TeamWorkStyle | null) => Promise<void>;
+  onContinueWorkStyle: (workStyle: TeamWorkStyle | null, teamName: string) => Promise<void>;
   onWebsite: (
     url: string,
     websiteSubject: WebsiteSubject,

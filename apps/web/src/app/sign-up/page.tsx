@@ -4,8 +4,13 @@ import { redirect } from 'next/navigation';
 import { SignUpForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
+import { SignupPlanSummary } from '@/components/signup-plan-summary';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
-import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
+import {
+  selectedPlanFromCallback,
+  signedInAuthRedirect,
+  signupCallback,
+} from '@/lib/auth-redirect';
 import { readLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
@@ -13,6 +18,7 @@ import {
   parseOnboardingSourceIntent,
 } from '@/lib/onboarding-source-intent';
 import { readPendingInvite } from '@/lib/pending-invite';
+import { resolveSignupPlanDisplay, signupPlanCopy } from '@/lib/signup-plan';
 
 export const metadata: Metadata = {
   title: 'Sign up',
@@ -36,9 +42,13 @@ export default async function SignUpPage({ searchParams }: Props) {
     await Promise.all([searchParams, auth()]);
   // Source intent cookie is stashed by `proxy.ts` (cookie writes are illegal in RSC render).
   const sourceIntent = parseOnboardingSourceIntent(sourceParam);
+  const selectedPlan = resolveSignupPlanDisplay({
+    plan,
+    planFromCallback: selectedPlanFromCallback(requestedCallback),
+  });
   const callbackUrl = signupCallback(
     requestedCallback ?? (sourceIntent ? onboardingCallbackForSource(sourceIntent) : undefined),
-    plan,
+    selectedPlan,
   );
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
@@ -50,10 +60,15 @@ export default async function SignUpPage({ searchParams }: Props) {
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   const legalPublicationReady = isLegalPublicationReady();
   const lastLoginMethod = await readLastLoginMethod();
+  const planCopy = signupPlanCopy(selectedPlan);
   return (
     <AuthShell
       title="Create your account"
-      subtitle={signupSubtitle(Boolean(invite), legalPublicationReady)}
+      subtitle={signupSubtitle({
+        invited: Boolean(invite),
+        ready: legalPublicationReady,
+        planSubtitle: planCopy.subtitle,
+      })}
       secondaryPrefix="Already have an account?"
       secondaryHref={
         invite
@@ -64,6 +79,7 @@ export default async function SignUpPage({ searchParams }: Props) {
       }
       secondaryLabel="Sign in"
     >
+      {!invite && legalPublicationReady ? <SignupPlanSummary copy={planCopy} /> : null}
       {legalPublicationReady ? (
         <OAuthSignInButtons
           lastLoginMethod={lastLoginMethod}
@@ -85,9 +101,10 @@ export default async function SignUpPage({ searchParams }: Props) {
   );
 }
 
-function signupSubtitle(invited: boolean, ready: boolean): string {
-  if (!ready) return 'New accounts are paused while our legal publication review is completed.';
-  return invited
-    ? 'You’ve been invited to a team. Sign up to accept.'
-    : 'Free for up to 3 members — no card required. We’ll create your first team automatically. Then connect one source and open the first record.';
+function signupSubtitle(input: { invited: boolean; ready: boolean; planSubtitle: string }): string {
+  if (!input.ready)
+    return 'New accounts are paused while our legal publication review is completed.';
+  return input.invited
+    ? 'You’ve been invited to a team. Sign up to accept — no separate workspace is created.'
+    : input.planSubtitle;
 }
