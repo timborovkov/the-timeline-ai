@@ -28,7 +28,7 @@ Fill in at minimum:
 
 - `AUTH_SECRET` — `openssl rand -base64 32`
 - `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features.
-- `FIRECRAWL_API_KEY` — required before the web app or full worker boots. Get a key at [firecrawl.dev](https://firecrawl.dev); the free plan works.
+- `FIRECRAWL_API_KEY` — required before the web app or full worker boots when using Firecrawl Cloud (the default). Get a key at [firecrawl.dev](https://firecrawl.dev); the free plan works. Optional only when `FIRECRAWL_API_ORIGIN` points at Firecrawl Local on loopback (see below).
 - `SECRETS_ENCRYPTION_KEY` — 32-byte base64 key required as soon as you connect any integration or custom MCP server. Generate with `openssl rand -base64 32`. See [integrations setup](integrations.md).
 
 Other third-party service keys can stay empty for the demo.
@@ -39,7 +39,25 @@ The rest of the defaults already match `docker-compose.yml`. When you use `docke
 
 For local document parsing without Daytona, set `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true`. This development-only option is rejected in production; leave it false when using a Daytona extractor.
 
-Web and full worker startup require `FIRECRAWL_API_KEY`; missing configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
+Web and full worker startup require `FIRECRAWL_API_KEY` unless `FIRECRAWL_API_ORIGIN` is a loopback Firecrawl Local origin outside production; missing cloud configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
+
+<span id="firecrawl-local"></span>
+
+### Firecrawl Local (optional)
+
+Production website scans stay pinned to Firecrawl Cloud (`https://api.firecrawl.dev`). For local development and the live website-scan eval you can run [Firecrawl Local](https://docs.firecrawl.dev/quickstarts/firecrawl-local) instead — a Rust binary that serves the Firecrawl v2 API on loopback:
+
+    cargo install firecrawl-local
+    firecrawl-local serve
+
+Then in `.env` (non-production only):
+
+    FIRECRAWL_API_ORIGIN=http://localhost:3002
+    FIRECRAWL_API_KEY=
+
+Leave the key empty or set a dummy. `FIRECRAWL_API_ORIGIN` may only be loopback `http` (`localhost`, `127.0.0.1`, `[::1]`) or an `https` origin outside production; production refuses any value other than `https://api.firecrawl.dev`. Do not set this override on Railway or other production hosts.
+
+For the opt-in live scan with Firecrawl Local, export the origin (and `OPENROUTER_API_KEY`), start local RustFS, then run `bun run test:website-scan:live`.
 
 Local Compose uses PostgreSQL 18. For an existing PostgreSQL 16 volume, follow the [data-preserving PostgreSQL upgrade procedure](postgres18.md) before startup. Keep `POSTGRES_DATA_VOLUME=postgres_data` until the documented migration; the image refuses old data rather than silently replacing it. Never use a volume reset to resolve this upgrade error.
 
