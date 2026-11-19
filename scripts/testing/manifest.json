@@ -1329,6 +1329,9 @@
   "apps/web/src/lib/last-login-method.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/legal-archive.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/lib/legal-publication.test.ts": {
     "group": "unit"
   },

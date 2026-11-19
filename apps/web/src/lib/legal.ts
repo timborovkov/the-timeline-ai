@@ -4,6 +4,7 @@ import { type Db, legalAcceptances, type LegalAcceptanceSource, users } from '@t
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import { PRIVACY_VERSION, TERMS_VERSION, isCurrentPrivacyVersion } from '@/lib/legal-versions';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 
@@ -83,6 +84,7 @@ export async function recordCurrentLegalAcceptance(
       userId: input.userId,
       termsVersion: TERMS_VERSION,
       privacyVersion: PRIVACY_VERSION,
+      ...legalDocumentHashes(),
       acceptedAt: attemptedAt,
       source: input.source,
       ipAddress: input.ipAddress,

@@ -9,6 +9,7 @@ These records retain unique observations or decisions, not current instructions.
 - [PostHog rollout evidence](posthog-rollout-evidence-2026-08-26.md)
 - [Provider privacy research and dated observations](provider-privacy-research.md)
 - [Railway capacity observations](railway-capacity-2026-11.md)
+- [Synthetic active-store erasure rehearsal, 19 November 2026](security-erasure-2026-11-19.md)
 
 Historical benchmark JSON remains under `docs/research`; [the harness](../../scripts/performance/README.md) explains its methodology and limitations.
 

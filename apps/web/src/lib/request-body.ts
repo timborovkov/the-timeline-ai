@@ -1,4 +1,6 @@
 export const REQUEST_BODY_LIMITS = {
+  chat: 4 * 1024 * 1024,
+  globalSearch: 16 * 1024,
   integrationWebhook: 1024 * 1024,
   mcpServer: 256 * 1024,
   recallTranscript: 2 * 1024 * 1024,
@@ -8,13 +10,17 @@ export const REQUEST_BODY_LIMITS = {
 export type CappedBinaryBody = { tooLarge: false; body: Uint8Array } | { tooLarge: true };
 export type CappedTextBody = { tooLarge: false; text: string } | { tooLarge: true };
 
-/** Reads a request body without ever retaining more than maxBytes in memory. */
+export function hasOversizedContentLength(req: Request, maxBytes: number): boolean {
+  const declaredLength = Number(req.headers.get('content-length'));
+  return Number.isFinite(declaredLength) && declaredLength > maxBytes;
+}
+
+/** Stops reading as soon as the streamed body exceeds maxBytes. */
 export async function readCappedBinaryBody(
   req: Request,
   maxBytes: number,
 ): Promise<CappedBinaryBody> {
-  const declaredLength = Number(req.headers.get('content-length'));
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return { tooLarge: true };
+  if (hasOversizedContentLength(req, maxBytes)) return { tooLarge: true };
   if (!req.body) return { tooLarge: false, body: new Uint8Array() };
 
   const reader = req.body.getReader();
@@ -45,7 +51,7 @@ export async function readCappedBinaryBody(
   return { tooLarge: false, body };
 }
 
-/** Reads a request body without ever retaining more than maxBytes in memory. */
+/** Decodes the body after the streaming byte limit has been checked. */
 export async function readCappedTextBody(req: Request, maxBytes: number): Promise<CappedTextBody> {
   const capped = await readCappedBinaryBody(req, maxBytes);
   if (capped.tooLarge) return { tooLarge: true };

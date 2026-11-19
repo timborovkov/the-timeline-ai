@@ -219,6 +219,8 @@ await vi.mock(
   () => import('ai'),
 );
 
+const { REQUEST_BODY_LIMITS } = await import('@/lib/request-body');
+
 const { POST } = await import('./route.js');
 const { releaseBillingReservation, settleAskAiFromOpenRouterUsd } =
   await import('@timeline/shared/billing');
@@ -436,6 +438,31 @@ beforeEach(() => {
 });
 
 describe('POST /api/chat', () => {
+  it('rejects oversized JSON before parsing declared and chunked bodies', async () => {
+    const cap = REQUEST_BODY_LIMITS.chat;
+    const url = 'https://timeline.test/api/chat';
+    const declared = new Request(url, {
+      method: 'POST',
+      body: '{',
+      headers: { 'content-length': String(cap + 1) },
+    });
+    const chunked = new Request(url, {
+      method: 'POST',
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(cap));
+          controller.enqueue(new Uint8Array(1));
+          controller.close();
+        },
+      }),
+    });
+    for (const req of [declared, chunked]) {
+      const response = await POST(req);
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({ ok: false, reason: 'payload_too_large' });
+    }
+  });
+
   it('rejects historical decisions and unclaimed assistant continuations before inference', async () => {
     fakes.fakeSafeValidateUIMessages.mockImplementation(({ messages }: { messages: unknown }) =>
       Promise.resolve({ success: true, data: messages }),

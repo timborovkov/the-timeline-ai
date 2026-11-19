@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
@@ -201,10 +203,12 @@ function form(values: Record<string, string>): FormData {
   return fd;
 }
 
-function okUpdateChain(): void {
+const INVITE_TOKEN_HASH = createHash('sha256').update('invite-token').digest('hex');
+
+function okUpdateChain(returned = [{ id: INVITE_ID }]): void {
   fakes.fakeDbUpdate.mockReturnValue({
     set: vi.fn(() => ({
-      where: vi.fn(() => Promise.resolve()),
+      where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue(returned) })),
     })),
   });
 }
@@ -738,6 +742,7 @@ describe('inviteMemberAction', () => {
       email: 'new@example.test',
       role: 'member',
       token: 'invite-token',
+      tokenHash: INVITE_TOKEN_HASH,
       expiresAt: new Date('2026-06-09T00:00:00.000Z'),
       teamName: 'Timeline E2E',
       inviterName: 'Taylor',
@@ -759,7 +764,7 @@ describe('inviteMemberAction', () => {
       expect.objectContaining({
         teamId: TEAM_ID,
         userId: USER_ID,
-        dedupeKey: 'team_invite:invite-id:invite-token',
+        dedupeKey: `team_invite:invite-id:${INVITE_TOKEN_HASH}`,
       }),
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
@@ -779,6 +784,7 @@ describe('inviteMemberAction', () => {
       email: 'new@example.test',
       role: 'member',
       token: 'invite-token',
+      tokenHash: INVITE_TOKEN_HASH,
       expiresAt: new Date('2026-06-09T00:00:00.000Z'),
       teamName: 'Timeline E2E',
       inviterName: 'Taylor',
@@ -807,6 +813,7 @@ describe('inviteMemberAction', () => {
       email: 'new@example.test',
       role: 'member',
       token: 'invite-token',
+      tokenHash: INVITE_TOKEN_HASH,
       expiresAt: new Date('2026-06-09T00:00:00.000Z'),
       teamName: 'Timeline E2E',
       inviterName: 'Taylor',
@@ -817,8 +824,18 @@ describe('inviteMemberAction', () => {
       inviteMemberAction({}, form({ email: 'new@example.test', role: 'member' })),
     ).resolves.toEqual({
       inviteUrl: 'https://timeline.test/accept-invite/invite-token',
+      sendStatus: 'pending',
     });
-    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it('withholds a stale link when delivery finishes after another rotation', async () => {
+    const { tx } = makeTx([[], []]);
+    mockTransactionWithTx(tx);
+    okUpdateChain([]);
+
+    await expect(
+      inviteMemberAction({}, form({ email: 'latest@example.test', role: 'member' })),
+    ).resolves.toEqual({ error: 'This invite changed. Refresh to see its current status.' });
   });
 
   it('reserves a seat when an expired invite is reactivated', async () => {
@@ -901,13 +918,16 @@ describe('resendInviteAction', () => {
     ]);
     mockTransactionWithTx(tx);
 
-    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toMatchObject({
+      ok: true,
+      inviteUrl: 'https://timeline.test/accept-invite/invite-token',
+    });
     expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
       expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 0 }),
     );
 
     expect(updates).toEqual([
-      expect.objectContaining({ token: 'invite-token', sendStatus: 'pending' }),
+      expect.objectContaining({ tokenHash: INVITE_TOKEN_HASH, sendStatus: 'pending' }),
     ]);
     expect(fakes.fakeSendMessage).toHaveBeenCalledWith(
       'team_invite',
@@ -937,7 +957,10 @@ describe('resendInviteAction', () => {
     ]);
     mockTransactionWithTx(tx);
 
-    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toMatchObject({
+      ok: true,
+      inviteUrl: 'https://timeline.test/accept-invite/invite-token',
+    });
     expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
       expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 1 }),
     );

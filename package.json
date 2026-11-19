@@ -65,6 +65,44 @@
     "eval:suggestions:sync": "bun --conditions=development apps/worker/src/scripts/suggestion-experiment.ts --sync",
     "eval:suggestions:compare": "bun --conditions=development apps/worker/src/scripts/suggestion-experiment.ts"
   },
+  "overrides": {
+    "@babel/helper-compilation-targets": {
+      "browserslist": "4.28.7"
+    },
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.1"
+    },
+    "@sentry/cli": {
+      "undici": "6.29.1"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    },
+    "ajv": {
+      "fast-uri": "3.1.9"
+    },
+    "browserslist": {
+      "baseline-browser-mapping": "2.11.0"
+    },
+    "eslint": {
+      "minimatch": "11.0.1"
+    },
+    "mammoth": {
+      "@xmldom/xmldom": "0.8.15"
+    },
+    "pino-pretty": {
+      "fast-copy": "4.1.0"
+    },
+    "postcss": {
+      "source-map-js": "1.2.2"
+    },
+    "posthog-js": {
+      "fflate": "0.4.9"
+    }
+  },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1165.0",
     "@happy-dom/global-registrator": "21.0.4",

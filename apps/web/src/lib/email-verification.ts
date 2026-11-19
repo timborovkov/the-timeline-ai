@@ -7,7 +7,7 @@ import {
   createPolarBillingProvider,
 } from '@timeline/shared/billing';
 import { sendMessage } from '@timeline/shared/messaging';
-import { and, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { createAuthContinuation } from '@/lib/auth-continuation';
@@ -109,42 +109,74 @@ export async function markEmailVerifiedFromTrustedOAuth(input: {
   return true;
 }
 
-export async function verifyEmailToken(input: {
+interface EmailVerificationToken {
   db: Db;
   email: string;
   token: string;
   now?: Date;
-}): Promise<'verified' | 'expired' | 'invalid'> {
+}
+
+function verificationTokenMatch(email: string, token: string) {
+  return and(
+    eq(verificationTokens.identifier, email.toLowerCase()),
+    eq(verificationTokens.token, tokenDigest(token)),
+  );
+}
+
+export async function inspectEmailVerificationToken(
+  input: EmailVerificationToken,
+): Promise<'confirm' | 'expired' | 'invalid'> {
+  const now = input.now ?? new Date();
+  const [row] = await input.db
+    .select({ expires: verificationTokens.expires })
+    .from(verificationTokens)
+    .where(verificationTokenMatch(input.email, input.token))
+    .limit(1);
+  return row ? (row.expires > now ? 'confirm' : 'expired') : 'invalid';
+}
+
+export async function verifyEmailToken(
+  input: EmailVerificationToken,
+): Promise<'verified' | 'expired' | 'invalid'> {
   const now = input.now ?? new Date();
   const email = input.email.toLowerCase();
-  const digest = tokenDigest(input.token);
-  const rows = await input.db
-    .select()
-    .from(verificationTokens)
-    .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, digest)))
-    .limit(1);
-  const row = rows[0];
-  if (!row) return 'invalid';
-  if (row.expires < now) {
-    await input.db
+  const match = verificationTokenMatch(email, input.token);
+  const userEmail = sql`lower(${users.email}) = ${email}`;
+  const confirmation = await input.db.transaction(async (tx) => {
+    const [claimed] = await tx
       .delete(verificationTokens)
-      .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, digest)));
-    return 'expired';
-  }
+      .where(and(match, gt(verificationTokens.expires, now)))
+      .returning({ token: verificationTokens.token });
+    if (!claimed) {
+      const [remaining] = await tx
+        .select({ expires: verificationTokens.expires })
+        .from(verificationTokens)
+        .where(match)
+        .limit(1);
+      return { status: remaining ? 'expired' : 'invalid' } as const;
+    }
 
-  const updated = await input.db.transaction(async (tx) => {
-    const updatedUsers = await tx
+    const accounts = await tx
+      .select({ id: users.id, verifiedAt: users.emailVerified })
+      .from(users)
+      .where(userEmail)
+      .limit(2)
+      .for('update');
+    const [account] = accounts;
+    if (!account || accounts.length !== 1) return { status: 'invalid' } as const;
+    if (account.verifiedAt) return { status: 'verified' } as const;
+
+    await tx
       .update(users)
       .set({ emailVerified: now, updatedAt: now })
-      .where(sql`lower(${users.email}) = ${email}`)
-      .returning({ id: users.id });
-    await tx
-      .delete(verificationTokens)
-      .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, digest)));
-    return updatedUsers;
+      .where(eq(users.id, account.id));
+    return { status: 'verified', newlyVerifiedUserId: account.id } as const;
   });
-  const userId = updated[0]?.id;
-  if (!userId) return 'invalid';
-  await runPostEmailVerificationSideEffects({ db: input.db, userId });
-  return 'verified';
+  if (confirmation.newlyVerifiedUserId) {
+    await runPostEmailVerificationSideEffects({
+      db: input.db,
+      userId: confirmation.newlyVerifiedUserId,
+    });
+  }
+  return confirmation.status;
 }

@@ -806,6 +806,20 @@
       "when": 1795658200000,
       "tag": "0108_workspace_evaluation_tracing",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1795658300000,
+      "tag": "0109_invite_token_digests",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1795658400000,
+      "tag": "0110_legal_acceptance_content_hashes",
+      "breakpoints": true
     }
   ]
 }
