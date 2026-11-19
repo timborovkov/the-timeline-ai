@@ -361,6 +361,20 @@ function relationshipEndpointCount(payload: Record<string, unknown>, side: 'from
 
 export function normalizeProposalPayload(item: ProposalPayloadItem): Record<string, unknown> {
   let payload = coerceMemberIdFields(recordFromUnknown(item.proposedPayload));
+  if (item.targetKind === 'task' || item.targetKind === 'object') {
+    // These hints have no explicit-clear semantics. Preserve null on IDs,
+    // dates and priorities, where it is an intentional clear operation.
+    for (const key of [
+      'status',
+      'type',
+      'projectName',
+      'createProjectName',
+      'ownerName',
+      'assigneeName',
+    ]) {
+      if (payload[key] === null) payload = omitKeys(payload, [key]);
+    }
+  }
   if (item.targetKind === 'calendar_event') {
     payload = normalizeCalendarProposalAliases(payload);
   }

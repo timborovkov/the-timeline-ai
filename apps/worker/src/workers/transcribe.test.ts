@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 import {
@@ -547,6 +548,7 @@ describe('processTranscribeJobForTests', () => {
       {
         getEnv: () => ({ OPENROUTER_API_KEY: 'test-key' }) as never,
         chatStructured: vi.fn().mockResolvedValue({ object: { bundles: [] }, model: 'e2e' }),
+        auditCommunication: controlledCommunicationAudit,
         modelId: 'telegram-media-test',
         enqueueSuggestionJob: enqueueConversationReview,
       },
@@ -576,15 +578,16 @@ describe('processTranscribeJobForTests', () => {
                 quote: "I'll schedule the lead meeting next Monday",
                 items: [
                   {
+                    grounding: [],
                     operation: 'create',
                     targetKind: 'task',
                     title: 'Schedule lead meeting',
                     proposedPayload: {
                       canonicalName: 'Schedule lead meeting',
-                      dueAt: '2026-06-01T00:00:00.000Z',
                     },
                   },
                   {
+                    grounding: [],
                     operation: 'create',
                     targetKind: 'calendar_event',
                     title: 'Schedule lead meeting',
@@ -605,6 +608,7 @@ describe('processTranscribeJobForTests', () => {
           },
           model: 'e2e',
         }),
+        auditCommunication: controlledCommunicationAudit,
         modelId: 'telegram-media-test',
       },
     );

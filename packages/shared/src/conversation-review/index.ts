@@ -1,5 +1,18 @@
 import { type Db, entities, factEntities, facts, rawEvents } from '@timeline/db';
-import { and, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 export const CONVERSATION_REVIEW_DEBOUNCE_MS = 10 * 60 * 1000;
 export const CONVERSATION_WINDOW_DAYS = 2;
@@ -10,8 +23,8 @@ type Metadata = Record<string, unknown>;
 
 export interface ConversationIdentity {
   key: string;
-  source: 'telegram' | 'slack';
-  kind: 'telegram_chat' | 'slack_thread' | 'slack_conversation';
+  source: 'telegram' | 'slack' | 'email';
+  kind: 'telegram_chat' | 'slack_thread' | 'slack_conversation' | 'email_thread';
 }
 
 export interface ConversationRawEvent {
@@ -60,6 +73,12 @@ export function conversationIdentityForRawEvent(
   row: Pick<ConversationRawEvent, 'teamId' | 'source' | 'sourceMetadata'>,
 ): ConversationIdentity | null {
   const meta = metadataObject(row.sourceMetadata);
+  if (row.source === 'email') {
+    const root = metadataString(meta, 'thread_root_id');
+    if (!root || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(root))
+      return null;
+    return { key: `email:${row.teamId}:thread:${root}`, source: 'email', kind: 'email_thread' };
+  }
   if (row.source === 'telegram') {
     const chatId = metadataString(meta, 'tg_chat_id');
     if (!chatId) return null;
@@ -112,6 +131,13 @@ export function slackChannelConversationKey(args: {
 }
 
 function conversationCondition(identity: ConversationIdentity) {
+  if (identity.source === 'email') {
+    const root = identity.key.split(':').at(-1);
+    return and(
+      eq(rawEvents.source, 'email'),
+      sql`${rawEvents.sourceMetadata} ->> 'thread_root_id' = ${root}`,
+    );
+  }
   if (identity.source === 'telegram') {
     const chatId = identity.key.split(':').at(-1);
     return and(
@@ -144,7 +170,7 @@ export function quietUntilFor(date = new Date()): Date {
   return new Date(date.getTime() + CONVERSATION_REVIEW_DEBOUNCE_MS);
 }
 
-async function loadSlackThreadRoot(
+async function loadConversationThreadRoot(
   db: Db,
   args: {
     teamId: string;
@@ -152,7 +178,7 @@ async function loadSlackThreadRoot(
     anchorOccurredAt: Date;
   },
 ): Promise<ConversationEvidenceEvent | null> {
-  if (args.identity.kind !== 'slack_thread') return null;
+  if (args.identity.kind !== 'slack_thread' && args.identity.kind !== 'email_thread') return null;
   const threadTs = args.identity.key.split(':').at(-1);
   if (!threadTs) return null;
   const parts = args.identity.key.split(':');
@@ -170,14 +196,18 @@ async function loadSlackThreadRoot(
     .where(
       and(
         eq(rawEvents.teamId, args.teamId),
-        eq(rawEvents.source, 'slack'),
+        eq(rawEvents.source, args.identity.source),
         eq(rawEvents.visibility, 'team'),
         isNotNull(rawEvents.contentText),
         lte(rawEvents.occurredAt, args.anchorOccurredAt),
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-        sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${workspaceId}`,
-        sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${channelId}`,
-        sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${threadTs}`,
+        args.identity.kind === 'email_thread'
+          ? eq(rawEvents.id, threadTs)
+          : and(
+              sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${workspaceId}`,
+              sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${channelId}`,
+              sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${threadTs}`,
+            ),
       ),
     )
     .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
@@ -201,9 +231,8 @@ export async function buildConversationEvidenceWindow(
   const from = new Date(args.anchorOccurredAt);
   from.setUTCDate(from.getUTCDate() - CONVERSATION_WINDOW_DAYS);
   const limit = args.limit ?? CONVERSATION_WINDOW_LIMIT;
-  const reservedRoot = await loadSlackThreadRoot(db, args);
-  const historyLimit =
-    reservedRoot && args.identity.kind === 'slack_thread' ? Math.max(0, limit - 1) : limit;
+  const reservedRoot = await loadConversationThreadRoot(db, args);
+  const historyLimit = reservedRoot ? Math.max(0, limit - 1) : limit;
   const historyConditions = [
     eq(rawEvents.teamId, args.teamId),
     eq(rawEvents.visibility, 'team'),
@@ -238,6 +267,40 @@ export async function buildConversationEvidenceWindow(
   if (!reservedRoot) return history;
   if (history.some((row) => row.id === reservedRoot.id)) return history;
   return [reservedRoot, ...history];
+}
+
+/** Read one authorized email page through an exact review anchor. */
+export async function listEmailThreadEvents(
+  db: Db,
+  args: {
+    teamId: string;
+    identity: ConversationIdentity;
+    through: { id: string; occurredAt: Date };
+    after?: { id: string; occurredAt: Date };
+    unreviewedBy?: string;
+  },
+): Promise<(typeof rawEvents.$inferSelect)[]> {
+  return db
+    .select()
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, args.teamId),
+        eq(rawEvents.visibility, 'team'),
+        conversationCondition(args.identity),
+        sql`length(btrim(${rawEvents.contentText})) > 0`,
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        sql`(${rawEvents.occurredAt}, ${rawEvents.id}) <= (${args.through.occurredAt.toISOString()}::timestamptz, ${args.through.id}::uuid)`,
+        args.after
+          ? sql`(${rawEvents.occurredAt}, ${rawEvents.id}) > (${args.after.occurredAt.toISOString()}::timestamptz, ${args.after.id}::uuid)`
+          : undefined,
+        args.unreviewedBy
+          ? sql`(${rawEvents.sourceMetadata} ->> 'email_thread_review_id') IS DISTINCT FROM ${args.unreviewedBy}`
+          : undefined,
+      ),
+    )
+    .orderBy(asc(rawEvents.occurredAt), asc(rawEvents.id))
+    .limit(CONVERSATION_WINDOW_LIMIT);
 }
 
 export async function buildLinkedContextWindow(

@@ -1,3 +1,4 @@
+import { splitStoredEmailContent } from '#src/email/parser.js';
 import { textMentionsAnyValue } from '#src/sql-like.js';
 
 export const WORKSPACE_HUB_TYPES = ['project', 'company', 'vendor', 'deal'] as const;
@@ -109,11 +110,13 @@ export interface WorkspaceHub {
 
 export interface QualifiedWorkspaceHubs {
   mentioned: WorkspaceHub[];
+  explicitlyNamed?: WorkspaceHub[];
   uniqueProject: WorkspaceHub | null;
   uniqueCompany: WorkspaceHub | null;
 }
 
 export interface HubAttachableItem {
+  auditId?: string | undefined;
   operation: string;
   targetKind: string;
   title: string;
@@ -160,12 +163,20 @@ function nestedContainerLabels(value: unknown): string[] {
   return labels;
 }
 
-function evidenceLabelsFromMetadata(value: unknown): string[] {
+function containerLabelsFromMetadata(value: unknown): string[] {
   return [
-    ...TITLE_METADATA_KEYS.map((key) => metadataString(value, key)),
     ...CONTAINER_LABEL_METADATA_KEYS.map((key) => metadataString(value, key)),
     ...nestedContainerLabels(value),
   ].filter((text): text is string => typeof text === 'string');
+}
+
+function evidenceLabelsFromMetadata(value: unknown): string[] {
+  return [
+    ...TITLE_METADATA_KEYS.map((key) => metadataString(value, key)).filter(
+      (text): text is string => typeof text === 'string',
+    ),
+    ...containerLabelsFromMetadata(value),
+  ];
 }
 
 export function hubEvidenceText(args: {
@@ -269,12 +280,42 @@ export function qualifyWorkspaceHubs(args: {
   const explicitProjects = explicitlyNamed.filter((hub) => hub.type === 'project');
   return {
     mentioned,
+    explicitlyNamed,
     uniqueProject: uniqueHubOfType(
       explicitProjects.length ? explicitProjects : mentioned,
       'project',
     ),
     uniqueCompany: uniqueAccountHub(mentioned),
   };
+}
+
+/** An explicitly named provider container can route otherwise unscoped work. */
+export function qualifyWorkspaceContainerHubs(args: {
+  hubs: readonly WorkspaceHub[];
+  sourceMetadata: unknown;
+  conversationText: string;
+}): QualifiedWorkspaceHubs | undefined {
+  const labels = containerLabelsFromMetadata(args.sourceMetadata).filter((label) =>
+    /^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u.test(label),
+  );
+  const text = labels.join('\n').replace(/[-_]+/g, ' ');
+  if (
+    !text ||
+    /\b(?:standalone|independent|unrelated|not|never|without|if|unless|maybe|might|could|perhaps|probably|possibly|ignore)\b/i.test(
+      `${text}\n${args.conversationText}`,
+    ) ||
+    /\b(?:for|under|within|belongs to)\s+\S/iu.test(args.conversationText) ||
+    qualifyWorkspaceHubs({ hubs: args.hubs, text: args.conversationText }).mentioned.length
+  )
+    return undefined;
+  const qualified = qualifyWorkspaceHubs({ hubs: args.hubs, text });
+  const named = (hub: WorkspaceHub | null) =>
+    qualified.explicitlyNamed?.some((candidate) => candidate.id === hub?.id) ? hub : null;
+  const uniqueProject = named(qualified.uniqueProject);
+  const uniqueCompany = named(qualified.uniqueCompany);
+  return uniqueProject || uniqueCompany
+    ? { ...qualified, uniqueProject, uniqueCompany }
+    : undefined;
 }
 
 export function selectPromptObjects<T extends { id: string }>(args: {
@@ -435,9 +476,22 @@ function attachUniqueHubsToTaskItem<T extends HubAttachableItem>(
       changed = true;
     }
   } else if (typeof payload.parentObjectId === 'string' && payload.parentObjectId) {
-    delete payload.parentObjectId;
-    delete payload.projectName;
-    changed = true;
+    // A multi-project message can route each task explicitly. Global ambiguity
+    // must not erase a per-item project that is actually named in the evidence.
+    const explicitProject = (qualified.explicitlyNamed ?? []).find(
+      (hub) =>
+        hub.type === 'project' &&
+        hub.id === payload.parentObjectId &&
+        typeof payload.projectName === 'string' &&
+        [hub.name, ...hub.aliases].some(
+          (name) => name.toLowerCase() === String(payload.projectName).toLowerCase(),
+        ),
+    );
+    if (!explicitProject) {
+      delete payload.parentObjectId;
+      delete payload.projectName;
+      changed = true;
+    }
   }
 
   let relationship: T | null = null;
@@ -450,6 +504,7 @@ function attachUniqueHubsToTaskItem<T extends HubAttachableItem>(
     if (!alreadyRelated) {
       relationship = {
         ...item,
+        auditId: undefined,
         operation: 'create',
         targetKind: 'object_relationship',
         title: `Relate ${item.title} to ${uniqueCompany.name}`,
@@ -502,6 +557,160 @@ export function attachUniqueHubsToBundles<T extends HubAttachableItem>(args: {
   });
 }
 
+interface LifecycleEvidenceSource {
+  id?: string;
+  contentText: string;
+  occurredAt?: Date | undefined;
+  source?: string | undefined;
+}
+
+export function chronologicalLifecycleEvidence(
+  sources: readonly LifecycleEvidenceSource[],
+): LifecycleEvidenceSource[] {
+  return sources
+    .flatMap((event) => {
+      if (event.source !== 'email') return [event];
+      const { intro, forwarded } = splitStoredEmailContent(event.contentText);
+      const envelopeTime = event.occurredAt?.getTime();
+      let enclosingTime = envelopeTime;
+      const nested = forwarded.flatMap((message) => {
+        const sentAt = message.date ? Date.parse(message.date) : Number.NaN;
+        if (Number.isFinite(sentAt)) enclosingTime = Math.min(sentAt, envelopeTime ?? sentAt);
+        return message.body
+          ? [
+              {
+                ...event,
+                contentText: message.body,
+                occurredAt: enclosingTime === undefined ? undefined : new Date(enclosingTime),
+              },
+            ]
+          : [];
+      });
+      return [...nested.reverse(), { ...event, contentText: intro }];
+    })
+    .sort(
+      (first, second) => (first.occurredAt?.getTime() ?? 0) - (second.occurredAt?.getTime() ?? 0),
+    );
+}
+
+const EXPLICIT_STATES: Record<string, string> = {
+  done: 'done',
+  complete: 'done',
+  completed: 'done',
+  finished: 'done',
+  shipped: 'done',
+  delivered: 'done',
+  blocked: 'blocked',
+  started: 'doing',
+  'working on it': 'doing',
+  'working on': 'doing',
+  'in progress': 'doing',
+  open: 'todo',
+  pending: 'todo',
+  reopened: 'todo',
+  restarted: 'todo',
+  unblocked: 'todo',
+  cancelled: 'cancelled',
+  canceled: 'cancelled',
+  archived: 'cancelled',
+};
+
+export function explicitLifecycleState(sentence: string):
+  | {
+      subject: string;
+      status: string;
+      affirmative: boolean;
+    }
+  | undefined {
+  if (
+    /[?]|\b(?:if|unless|maybe|perhaps|might|could|(?:I|we|they|he|she) (?:think|guess|suspect|believe)s?)\b/i.test(
+      sentence,
+    )
+  )
+    return undefined;
+  const command = /^(?:please )?(reopen|restart|unblock|cancel|archive) (.+?)[.!]?$/i.exec(
+    sentence.trim(),
+  );
+  if (command?.[1] && command[2] && !/\b(?:not|never|unless)\b/i.test(command[2])) {
+    return {
+      subject: command[2],
+      status: /^(?:cancel|archive)$/i.test(command[1]) ? 'cancelled' : 'todo',
+      affirmative: true,
+    };
+  }
+  const outcome =
+    /^(.+?)\s+(?:(?:has|have|had)\s+)?(?:(?:already|now|just|finally)\s+)?(completed|finished|shipped|delivered|started|blocked|reopened|restarted|unblocked|cancelled|canceled|archived|(?:am|is|are|was|were) working on)\s+(.+?)[.!]?$/iu.exec(
+      sentence.trim(),
+    );
+  if (
+    outcome?.[1] &&
+    outcome[2] &&
+    outcome[3] &&
+    !/\b(?:no|nobody|none|nothing|neither|not|never|hardly|rarely|who|whether|probably|possibly|potentially|likely|apparently|allegedly|reportedly|supposedly|tentatively|provisionally|said|reported|claimed)\b/i.test(
+      outcome[1],
+    ) &&
+    outcome[1]
+      .split(/\s+and\s+|\s*&\s*/i)
+      .every(
+        (actor) =>
+          /^(?:i|we|they|he|she|you|(?:the|our) (?:team|client|customer))$/i.test(actor) ||
+          /^\p{Lu}[\p{L}\p{M}'’.-]*(?:\s+\p{Lu}[\p{L}\p{M}'’.-]*){0,3}$/u.test(actor),
+      )
+  ) {
+    const predicate = outcome[2].toLowerCase();
+    const status = EXPLICIT_STATES[predicate.endsWith(' working on') ? 'working on' : predicate];
+    if (status) return { subject: outcome[3], status, affirmative: true };
+  }
+  const spanish =
+    /^(.*?)\s+(?:(no|nunca|jamás)\s+)?(?:está|estaba|ha sido|fue)\s+(terminad[oa]|completad[oa]|cancelad[oa]|empezad[oa])[.!]?$/iu.exec(
+      sentence.trim(),
+    );
+  if (spanish?.[1] && spanish[3]) {
+    const predicate = spanish[3].toLowerCase();
+    return {
+      subject: spanish[1],
+      status: predicate.startsWith('cancel')
+        ? 'cancelled'
+        : predicate.startsWith('empez')
+          ? 'doing'
+          : 'done',
+      affirmative: !spanish[2],
+    };
+  }
+  const german =
+    /^(.*?)\s+(?:ist|war|wurde)\s+(?:(nicht)\s+)?(abgeschlossen|abgesagt|begonnen)[.!]?$/iu.exec(
+      sentence.trim(),
+    );
+  if (german?.[1] && german[3]) {
+    const predicate = german[3].toLowerCase();
+    return {
+      subject: german[1],
+      status: predicate === 'abgesagt' ? 'cancelled' : predicate === 'begonnen' ? 'doing' : 'done',
+      affirmative: !german[2],
+    };
+  }
+  const finnish = /^(.*?)\s+(on|oli|ei ole|ei ollut)\s+valmis[.!]?$/iu.exec(sentence.trim());
+  if (finnish?.[1] && finnish[2]) {
+    return { subject: finnish[1], status: 'done', affirmative: !/^ei\b/i.test(finnish[2]) };
+  }
+  const assertion =
+    /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)(?:\s+(yet|already|now|anymore))?[.!]?$/i.exec(
+      sentence.trim(),
+    );
+  if (!assertion?.[1] || !assertion[2] || !assertion[4]) return undefined;
+  const status = EXPLICIT_STATES[assertion[4].toLowerCase()];
+  return status
+    ? {
+        subject: assertion[1],
+        status,
+        affirmative:
+          /^(?:is|was|has been)$/i.test(assertion[2]) &&
+          /^(?:(?:still|now|already) )*$/i.test(assertion[3] ?? '') &&
+          !/^(?:yet|anymore)$/i.test(assertion[5] ?? ''),
+      }
+    : undefined;
+}
+
 /**
  * When related-token recall lists two or more open tasks, a guessed
  * completion is not a unique write. Strip `status: done|shipped|complete`
@@ -510,9 +719,44 @@ export function attachUniqueHubsToBundles<T extends HubAttachableItem>(args: {
 export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args: {
   bundles: HubAttachableBundle<T>[];
   relatedOpenWorkIds: readonly string[];
+  relatedOpenWork?: readonly { id: string; name: string }[];
+  sourceEvidence?: readonly { contentText: string; occurredAt: Date; source?: string }[];
+  evidenceText?: string;
+  /** Runtime audit IDs whose lifecycle writes survived independent grounding, never model flags. */
+  verifiedLifecycleAuditIds?: readonly string[];
 }): HubAttachableBundle<T>[] {
   if (args.relatedOpenWorkIds.length < 2) return args.bundles;
   const ambiguous = new Set(args.relatedOpenWorkIds);
+  const verified = new Set(args.verifiedLifecycleAuditIds ?? []);
+  // Full title tokens in an affirmative completion sentence distinguish explicit
+  // completion from the loose token recall that assembled the candidate list.
+  const titleTokens = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/^the\s+/, '')
+      .match(/[\p{L}\p{N}]+/gu) ?? [];
+  const explicit = new Set<string>();
+  const evidence = args.sourceEvidence
+    ? chronologicalLifecycleEvidence(args.sourceEvidence)
+        .map((event) => event.contentText)
+        .join('\n')
+    : (args.evidenceText ?? '');
+  for (const sentence of evidence.split(/(?<=[.!?])\s+|\n+/u)) {
+    const state = explicitLifecycleState(sentence);
+    if (!state) continue;
+    const tokens = titleTokens(state.subject);
+    const matches = (args.relatedOpenWork ?? []).filter((work) => {
+      const words = titleTokens(work.name);
+      return (
+        words.length >= 2 &&
+        tokens.length === words.length &&
+        words.every((word, index) => tokens[index] === word)
+      );
+    });
+    if (matches.length !== 1 || !matches[0]) continue;
+    if (state.status === 'done' && state.affirmative) explicit.add(matches[0].id);
+    else explicit.delete(matches[0].id);
+  }
   return args.bundles.flatMap((bundle) => {
     const items: T[] = [];
     for (const item of bundle.items) {
@@ -521,7 +765,12 @@ export function stripAmbiguousLifecycleUpdates<T extends HubAttachableItem>(args
         continue;
       }
       const targetId = item.targetId;
-      if (typeof targetId !== 'string' || !ambiguous.has(targetId)) {
+      if (
+        typeof targetId !== 'string' ||
+        !ambiguous.has(targetId) ||
+        explicit.has(targetId) ||
+        (item.auditId && verified.has(item.auditId))
+      ) {
         items.push(item);
         continue;
       }

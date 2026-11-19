@@ -69,6 +69,8 @@ class SyntheticSlackApi extends SlackApi {
 }
 export interface CommunicationControls {
   model?: IO['chatStructured'];
+  auditModel?: IO['chatStructured'];
+  jobAttempts?: 1 | 2 | 3;
   failEnqueueOnce?: boolean;
   failAcceptance?: boolean;
   delayReview?: boolean;
@@ -80,7 +82,7 @@ function emailText(row: CommunicationCase, index: number) {
   const author = actor === 'alice' ? 'Alice' : 'Bob';
   const header = [
     `From: ${author} <${actor}@example.test>`,
-    'Date: Mon, Jun 1, 2026 at 09:00 AM',
+    `Date: ${new Date(BASE_TIME + (item.offsetMinutes ?? index) * 60_000).toUTCString()}`,
     'Subject: Workspace discussion',
     'To: Alice <alice@example.test>',
   ];
@@ -122,7 +124,9 @@ export async function createCommunicationHarness() {
       await store.reset();
       const started = performance.now();
       const stages = ['seeded'];
+      const inferenceTimings: NonNullable<CommunicationObservation['inferenceTimings']> = [];
       const executionErrors: string[] = [];
+      const executionFailureDetails: string[] = [];
       const ids: string[] = [];
       const jobs: Job[] = [];
       const reviews: Job[] = [];
@@ -264,6 +268,37 @@ export async function createCommunicationHarness() {
         },
       };
       const io: IO = {
+        ...(controls.model || controls.auditModel
+          ? {
+              auditCommunication: async (input) => {
+                modelCalls++;
+                stages.push('completeness-check');
+                const callStarted = performance.now();
+                let failed = false;
+                const checker =
+                  controls.auditModel ??
+                  (await import('#src/test/communication-audit.js')).controlledCommunicationAudit;
+                try {
+                  const result = await checker(input);
+                  const object = input.normalizeOutput
+                    ? input.normalizeOutput(result.object)
+                    : result.object;
+                  input.schema.parse(object);
+                  return { ...result, object } as typeof result;
+                } catch (error) {
+                  executionErrors.push(error instanceof Error ? error.name : 'AuditError');
+                  failed = true;
+                  throw error;
+                } finally {
+                  inferenceTimings.push({
+                    stage: 'completeness-check',
+                    latencyMs: performance.now() - callStarted,
+                    failed,
+                  });
+                }
+              },
+            }
+          : {}),
         getEnv: () => ({
           ...getEnv(),
           OPENROUTER_API_KEY: 'synthetic',
@@ -287,22 +322,38 @@ export async function createCommunicationHarness() {
             packets.push(input.prompt);
             stages.push('packet-built');
           }
-          stages.push('inference');
+          const stage = input.instructions?.startsWith('communication-completeness-')
+            ? 'completeness-check'
+            : 'extraction';
+          stages.push(stage === 'extraction' ? 'inference' : stage);
+          const callStarted = performance.now();
+          let failed = false;
           try {
             const result = await (controls.model ?? chatStructured)(input);
             input.schema.parse(result.object);
             return result;
           } catch (error) {
             executionErrors.push(error instanceof Error ? error.name : 'InferenceError');
+            failed = true;
             throw error;
+          } finally {
+            inferenceTimings.push({ stage, latencyMs: performance.now() - callStarted, failed });
           }
         },
       };
       const runJob = async (job: Job) => {
-        try {
-          await processSuggestionJobForTests({ db: db as unknown as Db }, job, io);
-        } catch (error) {
-          executionErrors.push(error instanceof Error ? error.name : 'WorkerError');
+        for (let attempt = 0; attempt < (controls.jobAttempts ?? 1); attempt++) {
+          try {
+            await processSuggestionJobForTests({ db: db as unknown as Db }, job, io);
+            return;
+          } catch (error) {
+            executionErrors.push(error instanceof Error ? error.name : 'WorkerError');
+            if (
+              error instanceof Error &&
+              /^(Communication |Pending communication )/.test(error.message)
+            )
+              executionFailureDetails.push(error.message);
+          }
         }
       };
       const drain = async () => {
@@ -352,7 +403,7 @@ export async function createCommunicationHarness() {
             .update(slackConversationBindings)
             .set({ visibilityDefault: item.private ? 'private' : 'team' })
             .where(eq(slackConversationBindings.workspaceId, WORKSPACE));
-        const timestamp = BASE_TIME + index * 60_000;
+        const timestamp = BASE_TIME + (item.offsetMinutes ?? index) * 60_000;
         const eventKey = `${row.id}-${index}`;
         const capture = async () => {
           if (row.source === 'email') {
@@ -485,17 +536,19 @@ export async function createCommunicationHarness() {
           protectedPendingChanged = true;
       }
       const actions = bundles.flatMap((bundle) =>
-        bundle.items.map((item) => ({
-          bundleId: bundle.id,
-          operation: item.operation,
-          targetKind: item.targetKind,
-          targetId: item.targetId,
-          title: item.title,
-          proposedPayload: item.proposedPayload,
-          evidenceIds: bundle.evidence
-            .map((e) => e.rawEventId)
-            .filter((id): id is string => Boolean(id)),
-        })),
+        bundle.items
+          .filter((item) => item.status === 'pending' || item.status === 'failed')
+          .map((item) => ({
+            bundleId: bundle.id,
+            operation: item.operation,
+            targetKind: item.targetKind,
+            targetId: item.targetId,
+            title: item.title,
+            proposedPayload: item.proposedPayload,
+            evidenceIds: bundle.evidence
+              .map((e) => e.rawEventId)
+              .filter((id): id is string => Boolean(id)),
+          })),
       );
       const actionKeys = actions
         .filter((action) => action.targetKind === 'task' || action.targetKind === 'object')
@@ -570,7 +623,14 @@ export async function createCommunicationHarness() {
           acceptanceErrors++;
         }
       }
-      const acceptanceFailureReasons = (await db.select().from(agentSuggestionItems))
+      const savedItems = await db.select().from(agentSuggestionItems);
+      const approvalOutcomes = savedItems.map((item) => ({
+        title: item.title,
+        status: item.status,
+        resultId: item.resultId,
+        reason: item.failureReason ?? item.supersededReason,
+      }));
+      const acceptanceFailureReasons = savedItems
         .filter((item) => item.status === 'failed')
         .map((item) => `${item.targetKind}: ${item.failureReason ?? 'Acceptance failed'}`);
       stages.push('approval-checked');
@@ -590,7 +650,9 @@ export async function createCommunicationHarness() {
       return {
         actions,
         executionErrors,
+        executionFailureDetails,
         modelCalls,
+        inferenceTimings,
         durationMs: performance.now() - started,
         unauthorizedDisclosure,
         canonicalMutation,
@@ -600,6 +662,7 @@ export async function createCommunicationHarness() {
         edges,
         acceptanceErrors,
         acceptanceFailureReasons,
+        approvalOutcomes,
         duplicateProposals,
         packetLoss,
         protectedPendingChanged,

@@ -27,3 +27,7 @@ Historical benchmark JSON remains under `docs/research`; [the harness](../../scr
 - [Forwarded email customer/project recall, 15 November 2026](forwarded-email-recall-2026-11-15.json).
 
 - [Cross-source communications and approval benchmark, 15 November 2026](communications-benchmark-2026-11-15.json).
+
+- [Communication follow-up fixes and diagnostics, 15 November 2026](communications-follow-up-2026-11-15.json).
+
+- [Communication grounding and expanded field evaluation, 16 November 2026](communications-grounding-2026-11-16.json).
