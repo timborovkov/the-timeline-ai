@@ -94,6 +94,12 @@ export function StaleEvidence({ itemId, timezone }: { itemId: string; timezone: 
                     </dd>
                   </div>
                 </dl>
+                {change.savedQuote && change.currentText?.includes(change.savedQuote) ? (
+                  <p className="text-fg-muted">
+                    The saved quote still appears in the source. Its date or surrounding text may
+                    have changed.
+                  </p>
+                ) : null}
               </section>
             ))
           )}

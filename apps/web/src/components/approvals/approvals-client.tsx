@@ -1016,7 +1016,10 @@ function ActiveApprovalPreview({
       }}
       timezone={timezone}
       actionLabel={itemActionLabel(activePreview.item)}
-      acceptDisabled={activePreview.item.evidenceStatus === 'stale'}
+      acceptDisabled={
+        activePreview.item.evidenceStatus === 'stale' &&
+        isActionableSuggestionStatus(activePreview.item.status)
+      }
       busy={inbox ? busyItemIds.size > 0 : busyItemIds.has(activePreview.item.id)}
       pending={pending}
       mergeHref={
@@ -1727,7 +1730,7 @@ function ApprovalInboxRow({
             {actionFailureReason ?? item.failureReason ?? 'Needs attention'}
           </span>
         ) : null}
-        {item.evidenceStatus === 'stale' ? (
+        {item.evidenceStatus === 'stale' && isActionableSuggestionStatus(item.status) ? (
           <span className="mt-1 block text-xs text-danger">Source changed · inspect in review</span>
         ) : null}
       </button>
@@ -1936,7 +1939,7 @@ function ApprovalItemActions({
 }
 
 function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezone: string }) {
-  if (item.evidenceStatus === 'stale') {
+  if (item.evidenceStatus === 'stale' && isActionableSuggestionStatus(item.status)) {
     return (
       <div className="pb-2 pl-9 pr-3">
         <StaleEvidence itemId={item.id} timezone={timezone} />
