@@ -605,6 +605,9 @@
   "apps/web/src/app/root-route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/sign-up/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
   },
@@ -1073,6 +1076,9 @@
   "apps/web/src/components/payg-value-nudge.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/plan-intent-prompt.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
     "group": "dom"
   },
@@ -1120,6 +1126,9 @@
   },
   "apps/web/src/components/sidebar-billing-usage.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/components/signup-plan-summary.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/components/skip-link.test.tsx": {
     "group": "dom"
@@ -1383,6 +1392,9 @@
   "apps/web/src/lib/platform-request-gate.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/plan-intent-prompt.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
@@ -1464,6 +1476,12 @@
   },
   "apps/web/src/lib/sign-out-session.test.ts": {
     "group": "dom"
+  },
+  "apps/web/src/lib/signup-plan-intent.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/signup-plan.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/site-url.test.ts": {
     "group": "unit"

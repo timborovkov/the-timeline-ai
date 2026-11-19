@@ -19,6 +19,7 @@ await vi.mock(
   import.meta.resolve('@/lib/surface-request-analytics'),
   () => ({
     schedulePersonlessSurfaceRequest: mocks.scheduleSurfaceRequest,
+    isPrefetchRequest: () => false,
   }),
   () => import('@/lib/surface-request-analytics'),
 );
