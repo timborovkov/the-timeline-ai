@@ -16,6 +16,17 @@ import {
   estimateWebsiteUsage,
 } from '@timeline/shared/websites/usage';
 
+/** Catalog-backed unit rates shown as a short calculator assumption line. */
+export const CALCULATOR_ACTIVITY_ASSUMPTIONS = {
+  ordinaryAcceptedSourceUnits: 1,
+  websitePageSourceUnits: WEBSITE_SOURCE_UNITS_PER_PAGE,
+  emailUnitPerMessageOrRecipient: 1,
+} as const;
+
+export function formatUnitAssumption(): string {
+  return `Website pages count as ${CALCULATOR_ACTIVITY_ASSUMPTIONS.websitePageSourceUnits} source units; each email message or recipient as ${CALCULATOR_ACTIVITY_ASSUMPTIONS.emailUnitPerMessageOrRecipient}.`;
+}
+
 export const CALCULATOR_PLANS = ['payg', 'team', 'business'] as const;
 /** Exact fields may exceed slider ranges; this is the parse ceiling, not a billed cap. */
 export const MAX_USAGE_VALUE = 1_000_000_000;
@@ -99,42 +110,6 @@ const DEFAULT_WEBSITE_INPUT: WebsiteDraft = {
   manualScans: 1,
 };
 
-function freeAskTurnsPerMonth(): number {
-  const turns = CAPACITY_BY_PLAN.free.agentTurnsPerMonth;
-  if (turns === null || turns <= 0) {
-    throw new Error('Free Ask-turn capacity is required for calculator activity translations');
-  }
-  return turns;
-}
-
-const FREE_ASK_TURNS = freeAskTurnsPerMonth();
-
-/**
- * Catalog-backed rates for translating meters into readable activities.
- * Values come from billing/website contracts — not invented marketing numbers.
- */
-export const CALCULATOR_ACTIVITY_ASSUMPTIONS = {
-  /** Ordinary accepted sources use one unit each (accepted_sources meter). */
-  ordinaryAcceptedSourceUnits: 1,
-  /** Website crawling uses the shared per-page multiplier. */
-  websitePageSourceUnits: WEBSITE_SOURCE_UNITS_PER_PAGE,
-  /**
-   * Illustrative customer AI charge per Ask turn: Free AI allowance ÷ Free
-   * Ask-turn capacity (`FREE_ALLOWANCES.aiChargeCents` /
-   * `CAPACITY_BY_PLAN.free.agentTurnsPerMonth`).
-   */
-  illustrativeAskTurnCustomerCents: FREE_ALLOWANCES.aiChargeCents / FREE_ASK_TURNS,
-  /** Email meter: one unit per inbound message or outbound recipient. */
-  emailUnitPerMessageOrRecipient: 1,
-} as const;
-
-export interface SourceActivityMix {
-  messages: number;
-  emails: number;
-  documents: number;
-  notes: number;
-}
-
 export type UsagePresetId = 'client-delivery' | 'slack-engineering' | 'meeting-delivery';
 
 export interface UsagePreset {
@@ -145,11 +120,6 @@ export interface UsagePreset {
   description: string;
   usage: UsageDraft;
   website: WebsiteDraft;
-  /**
-   * Illustrative ordinary-source mix for the preset. Each item costs
-   * `ordinaryAcceptedSourceUnits` and the counts must sum to `usage.sources`.
-   */
-  sourceMix: SourceActivityMix;
 }
 
 export const EXAMPLE_USAGE: UsageDraft = {
@@ -167,7 +137,6 @@ export const DEFAULT_USAGE_PRESET: UsagePreset = {
   description: 'Client delivery across shared email, documents, and a handful of calls.',
   usage: EXAMPLE_USAGE,
   website: DEFAULT_WEBSITE_INPUT,
-  sourceMix: { messages: 800, emails: 600, documents: 400, notes: 200 },
 };
 
 export const USAGE_PRESETS: readonly UsagePreset[] = [
@@ -185,7 +154,6 @@ export const USAGE_PRESETS: readonly UsagePreset[] = [
       sources: '25000',
     },
     website: DEFAULT_WEBSITE_INPUT,
-    sourceMix: { messages: 22_000, emails: 500, documents: 2_000, notes: 500 },
   },
   {
     id: 'meeting-delivery',
@@ -200,66 +168,12 @@ export const USAGE_PRESETS: readonly UsagePreset[] = [
       sources: '6000',
     },
     website: { websites: 1, pages: 5, frequency: 'weekly', manualScans: 1 },
-    sourceMix: { messages: 2_500, emails: 1_500, documents: 1_500, notes: 500 },
   },
 ];
-
-for (const preset of USAGE_PRESETS) {
-  const mixTotal =
-    preset.sourceMix.messages +
-    preset.sourceMix.emails +
-    preset.sourceMix.documents +
-    preset.sourceMix.notes;
-  const sources = Number(preset.usage.sources);
-  if (mixTotal !== sources) {
-    throw new Error(`Preset ${preset.id} source mix (${mixTotal}) must equal sources (${sources})`);
-  }
-}
 
 const sourcesField = USAGE_FIELDS.find((field) => field.key === 'sources');
 if (!sourcesField) throw new Error('Accepted sources must remain a calculator field');
 export const SOURCES_FIELD = sourcesField;
-
-export interface UsageActivities {
-  askQuestions: number;
-  askCentsPerQuestion: number;
-  ordinarySources: number;
-  emailMessageOrRecipientUnits: number;
-  websitePages: number;
-  websiteSourceUnits: number;
-  meetingHours: number;
-  sourceMix: SourceActivityMix | null;
-}
-
-export function translateUsageActivities(
-  usage: UsageValues,
-  websiteInput: WebsiteDraft = DEFAULT_WEBSITE_INPUT,
-  sourceMix: SourceActivityMix | null = null,
-): UsageActivities {
-  const website = estimateWebsiteUsage(websiteInput);
-  const askCents = CALCULATOR_ACTIVITY_ASSUMPTIONS.illustrativeAskTurnCustomerCents;
-  return {
-    askQuestions: askCents > 0 ? Math.round((usage.ai * 100) / askCents) : 0,
-    askCentsPerQuestion: askCents,
-    ordinarySources: usage.sources / CALCULATOR_ACTIVITY_ASSUMPTIONS.ordinaryAcceptedSourceUnits,
-    emailMessageOrRecipientUnits:
-      usage.email / CALCULATOR_ACTIVITY_ASSUMPTIONS.emailUnitPerMessageOrRecipient,
-    websitePages: website.pages,
-    websiteSourceUnits: website.sourceUnits,
-    meetingHours: usage.meetings,
-    sourceMix,
-  };
-}
-
-export function formatAskAssumption(): string {
-  const cents = CALCULATOR_ACTIVITY_ASSUMPTIONS.illustrativeAskTurnCustomerCents;
-  const euros = cents / 100;
-  return `${formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)} Free AI ÷ ${FREE_ASK_TURNS.toLocaleString('en-IE')} Free Ask turns ≈ ${formatEuroFromCents(Math.round(euros * 100))}/question`;
-}
-
-export function formatSourceUnitAssumption(): string {
-  return `Ordinary accepted sources use ${CALCULATOR_ACTIVITY_ASSUMPTIONS.ordinaryAcceptedSourceUnits} unit each; website pages use ${CALCULATOR_ACTIVITY_ASSUMPTIONS.websitePageSourceUnits} units each`;
-}
 
 export function presetMatchingDraft(draft: UsageDraft, website: WebsiteDraft): UsagePreset | null {
   return (

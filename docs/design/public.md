@@ -397,10 +397,9 @@ The pricing Usage section compares PAYG, Team and Business through paired native
 sliders and exact number fields. Example starting-point presets (for example a
 five-person client team, a Slack-heavy engineering team, and a meeting-heavy
 delivery team) fill the fields and stay editable; they are labelled as examples,
-not quotes. A visible activity translation turns AI spend and source units into
-rough Ask questions, chat messages, emails, documents, notes, and website pages
-using catalog rates (Free AI allowance ÷ Free Ask turns; one unit per ordinary
-accepted source; twenty units per website page). A labelled editable example
+not quotes. Do not repeat those values in a separate activity breakdown panel.
+At most one short muted line states catalog unit assumptions (website pages and
+email units), with no per-question euro figure. A labelled editable example
 renders on the server. Desktop inputs sit beside a single hairline results panel;
 mobile stacks them with a compact selected-plan estimate that stays visible while
 editing. Number inputs and slider targets are at least 44px high. Reset restores

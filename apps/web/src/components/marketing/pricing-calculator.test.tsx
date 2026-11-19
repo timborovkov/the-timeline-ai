@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import { WEBSITE_SOURCE_UNITS_PER_PAGE } from '@timeline/shared/websites/usage';
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { PricingCalculator } from '@/components/marketing/pricing-calculator';
-import { CALCULATOR_ACTIVITY_ASSUMPTIONS } from '@/lib/pricing-calculator';
+import { formatUnitAssumption } from '@/lib/pricing-calculator';
 
 afterEach(cleanup);
 describe('pricing calculator', () => {
@@ -16,23 +17,30 @@ describe('pricing calculator', () => {
     expect(html).toContain('Five-person client team');
     expect(html).toContain('Slack-heavy engineering team');
     expect(html).toContain('Meeting-heavy delivery team');
-    expect(html).toContain('example, not a quote');
-    expect(html).toContain('Ask questions');
+    expect(html).toContain('illustrations, not quotes');
+    expect(html).toContain(formatUnitAssumption());
+    expect(html).not.toContain('What this usage looks like');
+    expect(html).not.toContain('Ask questions at');
+    expect(html).not.toContain('/question');
     expect(html).toContain('aria-live="polite"');
     expect(html).not.toMatch(/<details[^>]*\sopen/);
     expect(html).not.toMatch(/text-\[[0-9.]+(?:px|rem)\]/);
   });
-  it('applies editable presets and keeps activity translations catalog-backed', () => {
+  it('applies editable presets without repeating activity breakdown copy', () => {
     const view = render(<PricingCalculator />);
-    expect(view.getByText('What this usage looks like')).toBeTruthy();
-    expect(view.container.textContent).toContain('Ask questions at €0.04 each');
-    expect(CALCULATOR_ACTIVITY_ASSUMPTIONS.illustrativeAskTurnCustomerCents).toBe(4);
-    expect(view.container.textContent).toContain('800 chat messages');
+    expect(view.queryByText('What this usage looks like')).toBeNull();
+    expect(view.container.textContent).toContain(
+      `Website pages count as ${WEBSITE_SOURCE_UNITS_PER_PAGE} source units; each email message or recipient as 1.`,
+    );
+    expect(view.container.textContent).not.toMatch(/Ask questions at €/);
     fireEvent.click(view.getByRole('button', { name: /Slack-heavy engineering team/ }));
     expect((view.getByLabelText('Assumed AI usage') as HTMLInputElement).value).toBe('45');
     expect((view.getByLabelText('Active members') as HTMLInputElement).value).toBe('12');
-    expect(view.container.textContent).toContain('22,000 chat messages');
-    expect(view.container.textContent).toContain('example, not a quote');
+    expect(
+      view
+        .getByRole('button', { name: /Slack-heavy engineering team/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
     fireEvent.change(view.getByLabelText('Assumed AI usage'), { target: { value: '50' } });
     expect(
       view
@@ -41,9 +49,8 @@ describe('pricing calculator', () => {
     ).toBe('false');
     expect((view.getByLabelText('Assumed AI usage') as HTMLInputElement).value).toBe('50');
     fireEvent.click(view.getByRole('button', { name: /Meeting-heavy delivery team/ }));
-    expect(view.container.textContent).toContain('25 pages');
-    expect(view.container.textContent).toContain('500 source units');
     expect((view.getByLabelText('Websites') as HTMLInputElement).value).toBe('1');
+    expect((view.getByLabelText('Assumed AI usage') as HTMLInputElement).value).toBe('35');
   });
   it('keeps exact fields and sliders synchronized without truncating larger values', () => {
     const view = render(<PricingCalculator />);

@@ -16,12 +16,9 @@ import {
   USAGE_FIELDS,
   USAGE_PRESETS,
   estimatePricing,
-  formatAskAssumption,
-  formatSourceUnitAssumption,
+  formatUnitAssumption,
   parseUsage,
   presetMatchingDraft,
-  translateUsageActivities,
-  type UsageActivities,
   type UsageDraft,
   type UsageKey,
   type UsagePreset,
@@ -237,81 +234,6 @@ function CostRow({ label, hint, cents }: { label: string; hint?: string; cents: 
   );
 }
 
-function ActivityTranslation({
-  activities,
-  presetLabel,
-}: {
-  activities: UsageActivities;
-  presetLabel: string | null;
-}) {
-  const mix = activities.sourceMix;
-  return (
-    <section
-      aria-labelledby="pricing-activity-title"
-      className="border border-border bg-bg p-4 sm:p-5"
-      data-pricing-activities
-    >
-      <h3 id="pricing-activity-title" className="text-sm font-medium text-fg">
-        What this usage looks like
-        {presetLabel ? (
-          <span className="font-normal text-fg-muted"> · example, not a quote</span>
-        ) : null}
-      </h3>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-fg">
-        <li>
-          Assumed AI ≈{' '}
-          <span className="tabular-nums">{activities.askQuestions.toLocaleString('en-IE')}</span>{' '}
-          Ask questions at {formatEuroFromCents(Math.round(activities.askCentsPerQuestion))} each
-        </li>
-        <li>
-          Accepted sources ≈{' '}
-          <span className="tabular-nums">{activities.ordinarySources.toLocaleString('en-IE')}</span>{' '}
-          ordinary items ({CALCULATOR_ACTIVITY_ASSUMPTIONS.ordinaryAcceptedSourceUnits} unit each)
-          {mix ? (
-            <>
-              : about <span className="tabular-nums">{mix.messages.toLocaleString('en-IE')}</span>{' '}
-              chat messages,{' '}
-              <span className="tabular-nums">{mix.emails.toLocaleString('en-IE')}</span> captured
-              emails, <span className="tabular-nums">{mix.documents.toLocaleString('en-IE')}</span>{' '}
-              documents, and{' '}
-              <span className="tabular-nums">{mix.notes.toLocaleString('en-IE')}</span> notes
-            </>
-          ) : null}
-        </li>
-        <li>
-          Email units ≈{' '}
-          <span className="tabular-nums">
-            {activities.emailMessageOrRecipientUnits.toLocaleString('en-IE')}
-          </span>{' '}
-          inbound messages plus outbound recipients
-        </li>
-        {activities.websitePages > 0 ? (
-          <li>
-            Website scans ≈{' '}
-            <span className="tabular-nums">{activities.websitePages.toLocaleString('en-IE')}</span>{' '}
-            pages (
-            <span className="tabular-nums">
-              {activities.websiteSourceUnits.toLocaleString('en-IE')}
-            </span>{' '}
-            source units at {CALCULATOR_ACTIVITY_ASSUMPTIONS.websitePageSourceUnits} per page)
-          </li>
-        ) : null}
-        {activities.meetingHours > 0 ? (
-          <li>
-            Meetings ≈{' '}
-            <span className="tabular-nums">{activities.meetingHours.toLocaleString('en-IE')}</span>{' '}
-            bot/transcription hours
-          </li>
-        ) : null}
-      </ul>
-      <p className="mt-3 text-xs leading-5 text-fg-muted">
-        Assumptions: {formatAskAssumption()}. {formatSourceUnitAssumption()}. Adjust any field —
-        these examples are starting points, not quotes.
-      </p>
-    </section>
-  );
-}
-
 function ExamplePresets({
   matchedPreset,
   onSelect,
@@ -322,7 +244,7 @@ function ExamplePresets({
   onReset: () => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium text-fg">Example starting points</p>
@@ -370,6 +292,7 @@ function ExamplePresets({
           );
         })}
       </div>
+      <p className="text-xs leading-5 text-fg-muted">{formatUnitAssumption()}</p>
     </div>
   );
 }
@@ -527,9 +450,6 @@ function usePricingCalculatorState() {
     ? (USAGE_PRESETS.find((preset) => preset.id === activePresetId) ?? null)
     : presetMatchingDraft(draft, websiteInput);
   const estimate = values ? estimatePricing(values, websiteInput) : null;
-  const activities = values
-    ? translateUsageActivities(values, websiteInput, matchedPreset?.sourceMix ?? null)
-    : null;
 
   function applyPreset(id: UsagePresetId) {
     const preset = USAGE_PRESETS.find((item) => item.id === id);
@@ -557,7 +477,6 @@ function usePricingCalculatorState() {
     setSelected,
     matchedPreset,
     estimate,
-    activities,
     errors,
     applyPreset,
     update,
@@ -572,18 +491,12 @@ export function PricingCalculator() {
   const state = usePricingCalculatorState();
   return (
     <div className="mt-10" data-pricing-calculator>
-      <div className="mb-6 space-y-4">
+      <div className="mb-6">
         <ExamplePresets
           matchedPreset={state.matchedPreset}
           onSelect={state.applyPreset}
           onReset={state.reset}
         />
-        {state.activities ? (
-          <ActivityTranslation
-            activities={state.activities}
-            presetLabel={state.matchedPreset?.label ?? null}
-          />
-        ) : null}
       </div>
       <MobileEstimate estimate={state.estimate} selected={state.selected} />
       <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
