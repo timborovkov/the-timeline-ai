@@ -81,7 +81,11 @@ describe('pricing calculator', () => {
     expect(members.getAttribute('aria-invalid')).toBe('true');
     expect(view.queryByText('PAYG breakdown')).toBeNull();
     fireEvent.change(members, { target: { value: '501' } });
-    expect(view.getByRole('link', { name: 'Contact sales' })).toBeTruthy();
+    const enterpriseLink = view.getByRole('link', { name: 'Contact us about Enterprise' });
+    expect(enterpriseLink.getAttribute('href')).toContain('/contact/enterprise?');
+    expect(enterpriseLink.getAttribute('href')).toContain('from=pricing-calculator');
+    expect(enterpriseLink.getAttribute('href')).toContain('members=501');
+    expect(enterpriseLink.getAttribute('data-public-analytics-cta')).toBe('contact_enterprise');
     expect(view.queryByText('Lowest estimated cost')).toBeNull();
   });
 });

@@ -342,6 +342,26 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     },
   },
   {
+    canonicalPath: '/contact/enterprise',
+    kind: 'support',
+    title: 'Enterprise enquiry',
+    description:
+      'Contact Timeline about procurement, security review, SSO, SLA, data residency, or a custom Enterprise plan.',
+    indexability: 'index',
+    dates: { modified: '2026-11-19', reviewed: '2026-11-19' },
+    capability: { kind: 'not-applicable' },
+    sitemap: { changeFrequency: 'monthly', priority: 0.4 },
+    structuredData: [{ type: 'web-page' }],
+    llms: {
+      section: 'primary',
+      order: 31,
+      summary:
+        'Dedicated Enterprise enquiry form for procurement, governance, and SLA conversations.',
+      fullSummary:
+        'Short Enterprise form that emails the same support inbox, tagged enterprise, with pricing-context prefill.',
+    },
+  },
+  {
     canonicalPath: '/terms',
     kind: 'legal',
     title: 'Terms of Use',

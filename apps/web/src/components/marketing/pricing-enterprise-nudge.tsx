@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { buildEnterpriseEnquiryHref } from '@/lib/enterprise-enquiry';
 import { cn } from '@/lib/utils';
 
 /** Quiet gray enterprise contact line — not a fifth plan column. */
@@ -11,7 +12,8 @@ export function PricingEnterpriseNudge({ className }: { className?: string }) {
     >
       Need governance, procurement, committed volume, or an SLA?{' '}
       <Link
-        href="/help/support"
+        href={buildEnterpriseEnquiryHref({ from: 'pricing' })}
+        data-public-analytics-cta="contact_enterprise"
         className="text-fg-muted underline decoration-border underline-offset-4 hover:text-fg"
       >
         Contact us for a custom Enterprise plan

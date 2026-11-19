@@ -25,6 +25,7 @@ describe('sitemap', () => {
         'https://thetimeline.cc/',
         'https://thetimeline.cc/help',
         'https://thetimeline.cc/help/support',
+        'https://thetimeline.cc/contact/enterprise',
         'https://thetimeline.cc/trust',
         'https://thetimeline.cc/terms',
         'https://thetimeline.cc/privacy',

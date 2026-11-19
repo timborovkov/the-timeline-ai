@@ -361,7 +361,10 @@ visitors or sessions, and notes that bots and retries can contribute.
 account-specific or sensitive requests to the private form/email, reproducible
 non-sensitive defects to the structured public issue form, vulnerabilities to
 the private security policy, and proposed contributions to the issue-first
-contribution guide. Signed-in support context is disclosed and limited to
+contribution guide. Procurement, governance, SSO, SLA, and data-residency
+prospects use `/contact/enterprise` instead of the general support form; that
+page reuses the support inbox with an enterprise tag, Turnstile, honeypot, and
+rate limits. Signed-in support context is disclosed and limited to
 server-resolved account/team identifiers and role, a normalized app surface,
 release, optional error reference, and bounded browser diagnostics. Never put
 that context or workspace content in a GitHub issue. Dashboard desktop and
@@ -383,8 +386,11 @@ members and pooled usage credit, and keep Free/PAYG monthly allowances visible
 below the plans. The plan grid uses four columns on wide screens, two on tablet
 and one on phones. No repeated plan-name eyebrows or recommended-plan badge.
 The optional signup walkthrough is a disclosure; Enterprise is a quiet contact
-line. Follow the estimator with complete comparison, spending boundaries,
-billing-focused questions and a final Start free action.
+line that links to `/contact/enterprise` (not general support). Follow the
+estimator with complete comparison, spending boundaries, billing-focused
+questions and a final Start free action. When calculator usage exceeds every
+self-serve plan, the breakdown links the same Enterprise enquiry path with the
+current estimate as query-param context.
 
 Comparison tables have row/column scopes, a keyboard-focusable labelled scroll
 region, a mobile scroll hint and a sticky row-label column. Billing copy makes

@@ -23,6 +23,9 @@ describe('pricing blocks', () => {
     expect(html).toContain('data-pricing-plan="business"');
     expect(html).not.toContain('data-pricing-plan="enterprise"');
     expect(html).toContain('data-pricing-enterprise-nudge');
+    expect(html).toContain('href="/contact/enterprise?from=pricing"');
+    expect(html).toContain('data-public-analytics-cta="contact_enterprise"');
+    expect(html).not.toContain('href="/help/support"');
     expect(html).toContain('Pay as you go');
     expect(html).toContain('Platform fee + usage beyond your allowance.');
     expect(html).toContain('Included monthly on Free and Pay as you go');

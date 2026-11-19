@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import styles from '@/components/marketing/pricing-page.module.css';
 import { NativeSelect } from '@/components/ui/native-select';
+import { buildEnterpriseEnquiryHref } from '@/lib/enterprise-enquiry';
 import {
   CALCULATOR_PLANS,
   EXAMPLE_USAGE,
@@ -90,10 +91,12 @@ function PlanResults({
   estimate,
   selected,
   onSelect,
+  enterpriseHref,
 }: {
   estimate: ReturnType<typeof estimatePricing>;
   selected: SelfServePaidPlanId;
   onSelect: (plan: SelfServePaidPlanId) => void;
+  enterpriseHref: string;
 }) {
   const bill = estimate.bills[selected];
   const plan = PLAN_CATALOG[selected];
@@ -187,8 +190,12 @@ function PlanResults({
             {estimate.cheapest === null && (
               <p className="mt-4 text-sm">
                 Your usage exceeds the measured limits of all self-serve plans.{' '}
-                <Link href="/help/support" className="underline">
-                  Contact sales
+                <Link
+                  href={enterpriseHref}
+                  data-public-analytics-cta="contact_enterprise"
+                  className="underline"
+                >
+                  Contact us about Enterprise
                 </Link>
                 .
               </p>
@@ -236,6 +243,20 @@ export function PricingCalculator() {
   const [selected, setSelected] = useState<SelfServePaidPlanId>('payg');
   const { values, errors } = parseUsage(draft);
   const estimate = values ? estimatePricing(values, websiteInput) : null;
+  const enterpriseHref = buildEnterpriseEnquiryHref({
+    from: 'pricing-calculator',
+    plan: selected,
+    members: draft.members,
+    ai: draft.ai,
+    meetings: draft.meetings,
+    email: draft.email,
+    storage: draft.storage,
+    sources: draft.sources,
+    websites: String(websiteInput.websites),
+    pages: String(websiteInput.pages),
+    frequency: websiteInput.frequency,
+    manualScans: String(websiteInput.manualScans),
+  });
   function update(key: UsageKey, value: string) {
     setDraft((previous) => ({ ...previous, [key]: value }));
   }
@@ -410,7 +431,12 @@ export function PricingCalculator() {
           </details>
         </div>
         {estimate ? (
-          <PlanResults estimate={estimate} selected={selected} onSelect={setSelected} />
+          <PlanResults
+            estimate={estimate}
+            selected={selected}
+            onSelect={setSelected}
+            enterpriseHref={enterpriseHref}
+          />
         ) : (
           <p
             role="status"
