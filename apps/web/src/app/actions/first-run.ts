@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { teamMembers, users } from '@timeline/db';
+import { teamBillingAccounts, teamMembers, teams, users } from '@timeline/db';
 import { createOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import { isFirecrawlConfigured } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
@@ -18,10 +18,11 @@ import {
   type GoLiveChannel,
   type TeamWorkStyle,
 } from '@timeline/shared/onboarding';
+import { isInactiveWorkspaceSecurityState } from '@timeline/shared/platform-admin/runtime';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import { startWebsiteScan } from '@timeline/shared/websites';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -163,11 +164,26 @@ export async function submitWorkStyleAction(input: {
           await tx.execute(
             sql`SELECT pg_advisory_xact_lock(hashtextextended(${session.user.id}, 41))`,
           );
-          const [existing] = await tx
-            .select({ teamId: teamMembers.teamId })
+          const memberships = await tx
+            .select({
+              teamId: teamMembers.teamId,
+              disabledAt: teams.disabledAt,
+              deletionStartedAt: teams.deletionStartedAt,
+              securityState: teamBillingAccounts.securityState,
+            })
             .from(teamMembers)
+            .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+            .leftJoin(teamBillingAccounts, eq(teamBillingAccounts.teamId, teams.id))
             .where(and(eq(teamMembers.userId, session.user.id), isNull(teamMembers.removedAt)))
-            .limit(1);
+            .orderBy(asc(teamMembers.createdAt));
+          // Match resolveActiveTeam eligibility so disabled/suspended/deleting
+          // workspaces are not reused when Welcome must create a replacement.
+          const existing = memberships.find(
+            (row) =>
+              !row.deletionStartedAt &&
+              !row.disabledAt &&
+              !isInactiveWorkspaceSecurityState(row.securityState),
+          );
           if (existing) {
             return { teamId: existing.teamId, name: teamName, fresh: false as const };
           }

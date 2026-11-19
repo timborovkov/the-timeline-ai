@@ -18,6 +18,7 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
+import { inviteTokenFromCallback } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
@@ -82,7 +83,11 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
     }
-    const { name, email, password, inviteToken } = parsed.data;
+    const { name, email, password } = parsed.data;
+    // Sign-in → "Create one" may only carry callbackUrl=/accept-invite/<token>.
+    // Treat that as invite signup so we never invent a solo workspace instead.
+    const inviteToken =
+      parsed.data.inviteToken ?? inviteTokenFromCallback(parsed.data.callbackUrl) ?? undefined;
     const legalRequestMetadata = legalAcceptanceRequestMetadata(h);
 
     if (clientIp) {

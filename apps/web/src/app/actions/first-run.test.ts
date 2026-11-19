@@ -199,16 +199,25 @@ beforeEach(() => {
     team: { id: TEAM_ID, name: 'Northstar Labs', slug: 'northstar-labs' },
     billing: { restricted: false },
   });
+  const membershipSelect = (rows: unknown[]) => {
+    const terminal = {
+      orderBy: vi.fn().mockResolvedValue(rows),
+      limit: vi.fn().mockResolvedValue(rows),
+    };
+    const where = vi.fn(() => terminal);
+    const joinable = {
+      where,
+      innerJoin: vi.fn(() => joinable),
+      leftJoin: vi.fn(() => joinable),
+    };
+    return {
+      from: vi.fn(() => joinable),
+    };
+  };
   fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
     callback({
       execute: vi.fn().mockResolvedValue(undefined),
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            limit: vi.fn().mockResolvedValue([]),
-          })),
-        })),
-      })),
+      select: vi.fn(() => membershipSelect([])),
     }),
   );
   fakes.dbSelect.mockReturnValue({
@@ -404,16 +413,32 @@ describe('submitWorkStyleAction team name', () => {
   it('reuses an existing membership instead of creating a second owned workspace', async () => {
     const existingTeamId = '11111111-1111-4111-8111-111111111111';
     fakes.resolveActiveTeam.mockResolvedValue({ active: null });
+    const membershipSelect = (rows: unknown[]) => {
+      const terminal = {
+        orderBy: vi.fn().mockResolvedValue(rows),
+        limit: vi.fn().mockResolvedValue(rows),
+      };
+      const where = vi.fn(() => terminal);
+      const joinable = {
+        where,
+        innerJoin: vi.fn(() => joinable),
+        leftJoin: vi.fn(() => joinable),
+      };
+      return { from: vi.fn(() => joinable) };
+    };
     fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
       callback({
         execute: vi.fn().mockResolvedValue(undefined),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn().mockResolvedValue([{ teamId: existingTeamId }]),
-            })),
-          })),
-        })),
+        select: vi.fn(() =>
+          membershipSelect([
+            {
+              teamId: existingTeamId,
+              disabledAt: null,
+              deletionStartedAt: null,
+              securityState: 'active',
+            },
+          ]),
+        ),
       }),
     );
     await expect(
@@ -432,6 +457,46 @@ describe('submitWorkStyleAction team name', () => {
     );
     expect(fakes.sendMessage).not.toHaveBeenCalled();
     expect(fakes.submitWorkStyle).toHaveBeenCalledWith('email');
+  });
+
+  it('creates a replacement workspace when the only membership is inactive', async () => {
+    fakes.resolveActiveTeam.mockResolvedValue({ active: null });
+    const membershipSelect = (rows: unknown[]) => {
+      const terminal = {
+        orderBy: vi.fn().mockResolvedValue(rows),
+        limit: vi.fn().mockResolvedValue(rows),
+      };
+      const where = vi.fn(() => terminal);
+      const joinable = {
+        where,
+        innerJoin: vi.fn(() => joinable),
+        leftJoin: vi.fn(() => joinable),
+      };
+      return { from: vi.fn(() => joinable) };
+    };
+    fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) =>
+      callback({
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn(() =>
+          membershipSelect([
+            {
+              teamId: '55555555-5555-4555-8555-555555555555',
+              disabledAt: new Date('2026-01-01T00:00:00.000Z'),
+              deletionStartedAt: null,
+              securityState: 'active',
+            },
+          ]),
+        ),
+      }),
+    );
+    await expect(
+      submitWorkStyleAction({ workStyle: 'email', teamName: 'Fresh Start' }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.createOwnedWorkspace).toHaveBeenCalledWith(expect.anything(), {
+      ownerId: USER_ID,
+      name: 'Fresh Start',
+      timezone: 'Europe/Helsinki',
+    });
   });
 
   it('renames through the shared team-rename path before saving work style', async () => {

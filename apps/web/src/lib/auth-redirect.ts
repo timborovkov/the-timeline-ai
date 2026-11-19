@@ -7,6 +7,20 @@ function inviteRedirectPath(token: string): string {
   return `/accept-invite/${encodeURIComponent(token)}`;
 }
 
+/** Extract an invite token from a same-origin `/accept-invite/<token>` callback. */
+export function inviteTokenFromCallback(callbackUrl: string | undefined): string | undefined {
+  if (!callbackUrl) return undefined;
+  const callbackPath = safeSameOriginPath(callbackUrl, '', { blockedPaths: AUTH_PATHS });
+  if (!callbackPath.startsWith('/accept-invite/')) return undefined;
+  const raw = callbackPath.slice('/accept-invite/'.length).split(/[?#]/, 1)[0] ?? '';
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export function signedInAuthRedirect(input: {
   callbackUrl?: string;
   inviteToken?: string;
@@ -20,6 +34,15 @@ export function signedInAuthRedirect(input: {
   if (callbackPath.startsWith('/accept-invite/')) return callbackPath;
   if (input.pendingInviteToken) return inviteRedirectPath(input.pendingInviteToken);
   return callbackPath;
+}
+
+/** Prefer `?invite=` when linking to sign-up from an invite acceptance callback. */
+export function signUpHrefFromAuthCallback(callbackUrl: string | undefined): string {
+  if (!callbackUrl) return '/sign-up';
+  const inviteToken = inviteTokenFromCallback(callbackUrl);
+  if (inviteToken) return `/sign-up?invite=${encodeURIComponent(inviteToken)}`;
+  const dest = signedInAuthRedirect({ callbackUrl });
+  return `/sign-up?callbackUrl=${encodeURIComponent(dest)}`;
 }
 
 /** Pricing intent is navigation only; it never authorizes a purchase. */

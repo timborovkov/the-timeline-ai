@@ -464,4 +464,70 @@ describe('signUpAction legal acceptance', () => {
       expect.anything(),
     );
   });
+
+  it('treats accept-invite callbackUrl as invite signup when inviteToken is omitted', async () => {
+    const INVITE_TEAM_ID = '33333333-3333-4333-8333-333333333333';
+    const INVITE_ID = '44444444-4444-4444-8444-444444444444';
+    const inviteForm = form();
+    inviteForm.delete('inviteToken');
+    inviteForm.set('callbackUrl', '/accept-invite/invite-token');
+    inviteForm.set('email', 'invited@example.test');
+
+    const insertedValues: unknown[] = [];
+    let insertIndex = 0;
+    const tx = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => ({
+              for: vi.fn().mockResolvedValue([
+                {
+                  id: INVITE_ID,
+                  teamId: INVITE_TEAM_ID,
+                  email: 'invited@example.test',
+                  role: 'member',
+                  expiresAt: new Date(Date.now() + 60_000),
+                },
+              ]),
+            })),
+          })),
+        })),
+      })),
+      insert: vi.fn(() => {
+        const index = insertIndex++;
+        return {
+          values: vi.fn((values: unknown) => {
+            insertedValues.push(values);
+            return {
+              returning: vi.fn().mockResolvedValue(index === 0 ? [{ id: USER_ID }] : []),
+            };
+          }),
+        };
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+    fakes.dbTransaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(tx));
+    let selectIndex = 0;
+    fakes.dbSelect.mockImplementation(() => {
+      const rows = selectIndex++ === 0 ? [] : [{ name: 'Inviting Co' }];
+      return selectChain(rows);
+    });
+
+    await expect(signUpAction({}, inviteForm)).rejects.toThrow('NEXT_REDIRECT:/app');
+    expect(insertedValues).toContainEqual({
+      teamId: INVITE_TEAM_ID,
+      userId: USER_ID,
+      role: 'member',
+    });
+    expect(insertedValues).toHaveLength(2);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'team_created',
+      expect.anything(),
+    );
+  });
 });
