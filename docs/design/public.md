@@ -256,8 +256,11 @@ with the same warm public palette, wordmark position, active state, GitHub and
 theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
 signed-out visitors see `Sign in` and `Start free` (free / no-card). Session-dependent
 content reserves the larger of both states in a shared grid cell from the server
-render onward. Pending and inactive branches remain invisible, inert, and hidden
-from assistive technology; resolving authentication must not move adjacent content,
+render onward. While the session is still unknown, guest CTAs stay visible and
+usable (including with JavaScript disabled) so conversion links are present in
+SSR HTML; destination routes redirect already-authenticated visitors. After the
+session resolves, only the inactive branch is invisible, inert, and hidden from
+assistive technology. Resolving authentication must not move adjacent content,
 even when one branch is empty. The shared public canvas
 inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
@@ -267,11 +270,14 @@ The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
-and Pricing (`/pricing`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and the shared footer repeats them alongside How it works, Resources, and a legal/privacy rail. The
-current destination uses `aria-current="page"`. At phone widths, sign-in and
-theme controls move into the disclosure instead of disappearing, and the
-disclosure closes after link activation or a persisted-layout route change.
+and Pricing (`/pricing`). Desktop headers show them directly; compact widths keep
+`Sign in` and `Start free` in the header and use a far-right native menu
+disclosure (icon-only hamburger, stable accessible name `Menu`, no border box,
+focus ring retained). At phone widths the header theme control moves into that
+disclosure instead of disappearing, and the disclosure closes after link
+activation or a persisted-layout route change. The shared footer repeats the
+primary destinations alongside How it works, Resources, and a legal/privacy
+rail. The current destination uses `aria-current="page"`.
 Native connector labels on the landing page link to their integration detail
 pages, while native source badges in public walkthroughs link back to the same
 provider truth. The landing hero and public navigation also link directly to

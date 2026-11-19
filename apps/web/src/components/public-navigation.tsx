@@ -3,7 +3,7 @@
 import { ArrowUpRight, ChevronDown, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import {
   COMPARE_NAV_ITEMS,
@@ -424,11 +424,8 @@ export function PublicNavigationDisclosure({
 }) {
   const pathname = usePathname();
   const disclosureRef = useRef<HTMLDetailsElement>(null);
-  const [open, setOpen] = useState(false);
   const closeDisclosure = () => {
-    if (!disclosureRef.current) return;
-    disclosureRef.current.open = false;
-    setOpen(false);
+    if (disclosureRef.current) disclosureRef.current.open = false;
   };
 
   useEffect(() => {
@@ -436,15 +433,12 @@ export function PublicNavigationDisclosure({
       const disclosure = disclosureRef.current;
       if (event.key !== 'Escape' || !disclosure?.open) return;
       disclosure.open = false;
-      setOpen(false);
       disclosure.querySelector('summary')?.focus();
     };
     const closeOutside = (event: PointerEvent) => {
       const node = disclosureRef.current;
-      if (node?.open && event.target instanceof Node && !node.contains(event.target)) {
+      if (node?.open && event.target instanceof Node && !node.contains(event.target))
         node.open = false;
-        setOpen(false);
-      }
     };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
@@ -455,18 +449,13 @@ export function PublicNavigationDisclosure({
   }, []);
 
   useEffect(() => {
-    if (!disclosureRef.current) return;
-    disclosureRef.current.open = false;
-    setOpen(false);
+    if (disclosureRef.current) disclosureRef.current.open = false;
   }, [pathname]);
 
   return (
     <details
       ref={disclosureRef}
       className={cn('relative', className)}
-      onToggle={(event) => {
-        setOpen(event.currentTarget.open);
-      }}
       onBlur={(event) => {
         if (
           event.relatedTarget instanceof Node &&
@@ -475,11 +464,9 @@ export function PublicNavigationDisclosure({
           event.currentTarget.open = false;
       }}
     >
-      <summary
-        aria-label={open ? 'Close menu' : 'Open menu'}
-        aria-expanded={open}
-        className={styles.menuTrigger}
-      >
+      {/* Native details/summary expose expanded state; keep a stable name so
+          no-JS and pre-hydration opens stay accurate for assistive tech. */}
+      <summary aria-label="Menu" className={styles.menuTrigger}>
         <Menu aria-hidden="true" className={styles.menuTriggerIcon} />
       </summary>
       <nav aria-label="Public navigation menu" className={styles.mobilePanel}>
