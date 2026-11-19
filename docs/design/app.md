@@ -40,10 +40,12 @@ Setup actions stay disabled until saving finishes, and failed saves retain the c
 step with an inline retryable error. Email capture can wait in the background while
 the member continues to Home.
 
-The source chooser presents configured connectors (Slack and/or Telegram when
-those integrations are live in the deployment) ahead of Document, Email, and
-Website as mutually exclusive choices with one active form. Document remains the
-initial choice when no marketing source intent is present. A `/sign-up?source=`
+The source chooser presents configured connectors ahead of Document, Email, and
+Website as mutually exclusive choices with one active form. Slack appears when
+OAuth credentials are complete; Telegram appears only when both
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` are set (the webhook route
+rejects traffic without the secret). Document remains the initial choice when no
+marketing source intent is present. A `/sign-up?source=`
 intent is stashed by the auth proxy as a signed cookie (RSC cannot set cookies),
 carried on the signup callback URL, and for an available connector leads with that
 tab and continues straight into its connect/waiting flow. Returning via Choose

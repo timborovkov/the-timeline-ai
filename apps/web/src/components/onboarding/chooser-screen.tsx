@@ -53,7 +53,10 @@ export function ChooserScreen({
   onSkip: () => Promise<void>;
 }) {
   const tabs = orderChooserSources({ connectors, preferred: preferredSource });
-  const [source, setSource] = useState<ChooserSourceId>(tabs[0] ?? 'document');
+  // Keep Document selected without marketing intent; connectors still lead the tab order.
+  const initialSource: ChooserSourceId =
+    preferredSource && connectors.includes(preferredSource) ? preferredSource : 'document';
+  const [source, setSource] = useState<ChooserSourceId>(initialSource);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const selectionSeq = useRef(0);

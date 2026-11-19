@@ -1305,6 +1305,9 @@
   "apps/web/src/lib/first-run-status.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/onboarding-connectors.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/onboarding-source-intent.test.ts": {
     "group": "unit"
   },

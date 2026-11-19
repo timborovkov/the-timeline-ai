@@ -59,6 +59,29 @@ describe('ChooserScreen', () => {
     );
   });
 
+  it('keeps Document selected by default when connectors are available without marketing intent', () => {
+    render(
+      <ChooserScreen
+        inboundEmail={null}
+        connectors={['slack', 'telegram']}
+        onWebsite={() => Promise.resolve()}
+        onDocument={() => Promise.resolve()}
+        onEmail={() => Promise.resolve()}
+        onSlack={() => Promise.resolve()}
+        onTelegram={() => Promise.resolve()}
+        onSkip={() => Promise.resolve()}
+      />,
+    );
+
+    const tabs = screen.getByLabelText('Choose a source');
+    const labels = [...tabs.querySelectorAll('button')].map((button) => button.textContent);
+    expect(labels).toEqual(['Slack', 'Telegram', 'Document', 'Email', 'Website']);
+    expect(screen.getByRole('button', { name: 'Document' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('heading', { name: 'Upload a document' })).toBeTruthy();
+  });
+
   it('starts Slack from the Continue with Slack action', async () => {
     const onSlack = mock(() => Promise.resolve());
     render(

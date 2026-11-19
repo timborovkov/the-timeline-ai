@@ -14,7 +14,8 @@ export function resolveOnboardingConnectors(
   if (env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET && env.SLACK_SIGNING_SECRET) {
     connectors.push('slack');
   }
-  if (env.TELEGRAM_BOT_TOKEN) {
+  // Webhook route returns 503 without TELEGRAM_WEBHOOK_SECRET, so token alone is not usable.
+  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_WEBHOOK_SECRET) {
     connectors.push('telegram');
   }
   return {

@@ -31,7 +31,7 @@ import {
 } from '#src/onboarding/first-run.js';
 import type { SuggestionBundle } from '#src/suggestions/index.js';
 import type { TeamRole } from '#src/team-scope.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
+import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 interface FirstRunScopeDeps {
   db: Db;
@@ -212,7 +212,12 @@ export function createFirstRunHandlers({
       .select({ id: rawEvents.id })
       .from(rawEvents)
       .where(
-        and(eq(rawEvents.id, eventId), eq(rawEvents.teamId, teamId), rawEventVisibleToUser(userId)),
+        and(
+          eq(rawEvents.id, eventId),
+          eq(rawEvents.teamId, teamId),
+          rawEventVisibleToUser(userId),
+          rawEventIsActive(),
+        ),
       )
       .limit(1);
     return event ?? null;
@@ -347,8 +352,8 @@ export function createFirstRunHandlers({
     }
     if (current.captureEventId) {
       const visible = await visibleRawEvent(current.captureEventId);
-      if (!visible) return { arrived: false, eventId: null, firstRun: current };
-      return { arrived: true, eventId: current.captureEventId, firstRun: current };
+      if (visible) return { arrived: true, eventId: current.captureEventId, firstRun: current };
+      // Tombstoned or no-longer-visible capture: keep looking for an active event.
     }
     const since = current.createdAt;
     const [event] = await db
@@ -360,6 +365,7 @@ export function createFirstRunHandlers({
           eq(rawEvents.source, source),
           gte(rawEvents.createdAt, since),
           rawEventVisibleToUser(userId),
+          rawEventIsActive(),
         ),
       )
       .orderBy(desc(rawEvents.createdAt))
@@ -607,6 +613,7 @@ export function createFirstRunHandlers({
               eq(rawEvents.id, arrival.eventId),
               eq(rawEvents.teamId, teamId),
               rawEventVisibleToUser(userId),
+              rawEventIsActive(),
             ),
           )
           .limit(1);
@@ -679,6 +686,7 @@ export function createFirstRunHandlers({
               eq(rawEvents.id, arrival.eventId),
               eq(rawEvents.teamId, teamId),
               rawEventVisibleToUser(userId),
+              rawEventIsActive(),
             ),
           )
           .limit(1);
