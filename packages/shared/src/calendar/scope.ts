@@ -239,8 +239,12 @@ function calendarAllDayDate(
     ${calendarEvents.timezone}
   )`;
   return sql`(
-    CASE WHEN ${zone} ~ '^[+-]([01][0-9]|2[0-3]):[0-5][0-9]$'
-      THEN timezone((${zone})::interval, ${timestamp})
+    CASE WHEN ${zone} ~ '^[+-]([01][0-9]|2[0-3])(:?[0-5][0-9])?$'
+      THEN timezone((CASE length(${zone})
+        WHEN 3 THEN ${zone} || ':00'
+        WHEN 5 THEN left(${zone}, 3) || ':' || right(${zone}, 2)
+        ELSE ${zone}
+      END)::interval, ${timestamp})
       ELSE timezone(COALESCE(
         (SELECT zones.name FROM pg_timezone_names zones WHERE lower(zones.name) = lower(${zone}) LIMIT 1),
         'UTC'
@@ -249,11 +253,11 @@ function calendarAllDayDate(
   )::date`;
 }
 
-function sqlAllDayOverlap(timed: SQL, allDay: SQL): SQL {
+function sqlAllDayOverlap(timed: SQL, allDay: SQL): SQL | undefined {
   return or(
     and(eq(calendarEvents.allDay, false), timed),
     and(eq(calendarEvents.allDay, true), allDay),
-  )!;
+  );
 }
 
 function escapeSqlLike(value: string): string {

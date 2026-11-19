@@ -22,6 +22,7 @@ test('workspace dates, scoped keyword matches and date recovery', async ({ brows
   const documentId = randomUUID();
   const versionId = randomUUID();
   const calendarId = randomUUID();
+  const allDayId = randomUUID();
   const matchingTaskId = randomUUID();
   const oldTaskId = randomUUID();
   const privateEventId = randomUUID();
@@ -49,8 +50,10 @@ test('workspace dates, scoped keyword matches and date recovery', async ({ brows
     `;
     await sql`UPDATE documents SET current_version_id = ${versionId} WHERE id = ${documentId}`;
     await sql`
-      INSERT INTO calendar_events (id, team_id, created_by_user_id, title, start_at, end_at)
-      VALUES (${calendarId}, ${e2eTeam.id}, ${e2eUsers.owner.id}, 'Q4 handoff', '2026-03-28T22:30:00Z', '2026-03-28T23:00:00Z')
+      INSERT INTO calendar_events (id, team_id, created_by_user_id, title, start_at, end_at, timezone, all_day)
+      VALUES
+        (${calendarId}, ${e2eTeam.id}, ${e2eUsers.owner.id}, 'Q4 handoff', '2026-03-28T22:30:00Z', '2026-03-28T23:00:00Z', 'UTC', false),
+        (${allDayId}, ${e2eTeam.id}, ${e2eUsers.owner.id}, 'Q4 next-day workshop', '2026-03-29T18:30:00Z', '2026-03-30T18:30:00Z', '+0530', true)
     `;
     await sql`
       INSERT INTO entities (id, team_id, type, canonical_name, status, updated_at)
@@ -75,7 +78,12 @@ test('workspace dates, scoped keyword matches and date recovery', async ({ brows
     await expect(
       page.getByRole('link', { name: 'Q4 checklist review', exact: true }),
     ).toBeVisible();
-    for (const title of ['Q4 build archive', 'Q4 private notes', 'Q4 other workspace']) {
+    for (const title of [
+      'Q4 build archive',
+      'Q4 private notes',
+      'Q4 other workspace',
+      'Q4 next-day workshop',
+    ]) {
       await expect(page.getByRole('link', { name: title, exact: true })).toHaveCount(0);
     }
     const calendar = page.getByRole('link', { name: 'Q4 handoff', exact: true });
@@ -85,7 +93,7 @@ test('workspace dates, scoped keyword matches and date recovery', async ({ brows
     );
     await expect(page.getByText(/Keyword matches only in Timeline, Documents/)).toBeVisible();
     await page.getByRole('button', { name: /^Filters/ }).click();
-    await expect(page.getByRole('button', { name: 'Timeline source' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Timeline source', exact: true })).toBeVisible();
     await screenshot(page, info, 'search-filter-scope-and-keyword-coverage');
     await page.keyboard.press('Escape');
     await calendar.click();
@@ -102,7 +110,7 @@ test('workspace dates, scoped keyword matches and date recovery', async ({ brows
     await withE2eDataTransaction(async (sql) => {
       await sql`DELETE FROM raw_events WHERE id IN (${eventId}, ${privateEventId}, ${outsiderEventId})`;
       await sql`DELETE FROM documents WHERE id = ${documentId}`;
-      await sql`DELETE FROM calendar_events WHERE id = ${calendarId}`;
+      await sql`DELETE FROM calendar_events WHERE id IN (${calendarId}, ${allDayId})`;
       await sql`DELETE FROM entities WHERE id IN (${matchingTaskId}, ${oldTaskId})`;
     });
   }
