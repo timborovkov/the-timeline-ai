@@ -80,15 +80,11 @@ jobs:
             turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-
             turbo-lint-${{ runner.os }}-
 
-      - name: Restore ESLint cache
-        uses: actions/cache@v6
-        with:
-          path: node_modules/.cache/eslint
-          # Bust on toolchain/config changes so type-aware results cannot reuse a
-          # stale analyzer world. Per-file freshness uses --cache-strategy content.
-          key: eslint-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'eslint.config.js', 'tsconfig.base.json', '**/tsconfig*.json') }}-${{ github.sha }}
-          restore-keys: |
-            eslint-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'eslint.config.js', 'tsconfig.base.json', '**/tsconfig*.json') }}-
+      # Do not restore/save node_modules/.cache/eslint across CI commits. ESLint
+      # --cache does not track cross-file type dependencies, so typed rules can
+      # skip an unchanged consumer when an imported symbol changes. Local
+      # package scripts still use --cache for iterative work; CI always starts
+      # with a fresh ESLint cache (Turbo still hashes source inputs).
 
       # Keep package lint serial on CI. Parallel type-aware ESLint + import-x
       # disagrees with local Bun on `import type` ranking (see eslint.config.js

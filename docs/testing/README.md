@@ -41,8 +41,10 @@ repo-wide validation; do not routinely duplicate it locally.
   still cover Prettier, TypeScript, ESLint, Knip, React Doctor, runtime smoke,
   E2E environment contracts, and dist imports. Local `bun run validate` keeps
   the same sequential format → typecheck → lint → knip composition for
-  developers; CI splits those steps across jobs and persists Turbo/ESLint
-  caches. React Doctor must show `React Doctor score: 100` and
+  developers; CI splits those steps across jobs and persists Turbo caches.
+  CI does not restore ESLint's on-disk cache across commits (typed rules do
+  not track cross-file dependencies); local package scripts may still use
+  `--cache`. React Doctor must show `React Doctor score: 100` and
   `No issues found!`; an exit without a score is not proof of 100. Diagnose
   failures locally only as needed.
 
