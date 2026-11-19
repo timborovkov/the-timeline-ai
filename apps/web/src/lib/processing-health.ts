@@ -144,8 +144,10 @@ export async function processingHealth(now = Date.now()) {
   );
   const digestMissed =
     tick.status === 'fulfilled' && Number(tick.value) < lastExpectedDigestTick(now);
-  const queueAlert = (names: string[]) =>
-    queues.some((item) => names.includes(item.queue) && queueNeedsAttention(item));
+  function queueAlert(names: string[]) {
+    const watched = new Set(names);
+    return queues.some((item) => watched.has(item.queue) && queueNeedsAttention(item));
+  }
   const names = queue.QUEUE_NAMES;
   const signals = {
     capture_latency:
