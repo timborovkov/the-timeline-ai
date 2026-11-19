@@ -600,7 +600,9 @@ function CaptureFeedback({
             variant="outline"
             size="sm"
             disabled={pending}
-            onClick={() => onRetryFiles(failedFiles)}
+            onClick={() => {
+              onRetryFiles(failedFiles);
+            }}
           >
             Retry failed files
           </Button>

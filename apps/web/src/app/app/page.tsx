@@ -125,7 +125,7 @@ async function FirstRunHomeBanner(input: {
   teamSlug: string;
 }) {
   const { firstRun } = input;
-  if (!firstRun || firstRun.startedByUserId !== input.userId) return null;
+  if (firstRun?.startedByUserId !== input.userId) return null;
   if (firstRun.phase !== 'processing' && firstRun.phase !== 'failed' && firstRun.phase !== 'record')
     return null;
 

@@ -307,7 +307,7 @@ describe('CaptureForm', () => {
     expect(screen.getByRole('status').textContent).toContain('meeting.m4a');
     expect(fakes.refresh).toHaveBeenCalledOnce();
 
-    const note = screen.getByRole('textbox', { name: 'Note' }) as HTMLTextAreaElement;
+    const note = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Note' });
     await user.type(note, 'An unsent draft');
     await user.click(screen.getByRole('button', { name: 'Retry failed files' }));
 
@@ -342,7 +342,8 @@ describe('CaptureForm', () => {
     });
     expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
     const [first, retry] = fakes.requestDocumentUploadAction.mock.calls;
-    expect(first?.[0]).toMatchObject({ captureId: expect.any(String) });
+    const request = first?.[0] as { captureId?: string } | undefined;
+    expect(typeof request?.captureId).toBe('string');
     expect(retry?.[0]).toEqual(first?.[0]);
   });
 
@@ -374,7 +375,7 @@ describe('CaptureForm', () => {
     const user = userEvent.setup();
     render(<CaptureForm currentUser={{ id: 'user-1', name: 'Ada', email: 'ada@example.test' }} />);
 
-    const note = screen.getByRole('textbox', { name: 'Note' }) as HTMLTextAreaElement;
+    const note = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Note' });
     await user.type(note, 'Keep this draft');
     await user.upload(
       screen.getByLabelText('Attach files'),

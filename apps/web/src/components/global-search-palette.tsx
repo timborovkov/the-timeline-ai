@@ -26,11 +26,11 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ActionDispatch, ComponentType, SetStateAction, Dispatch, SVGProps } from 'react';
 
 import { DueDateDisplay } from '@/components/due-date-display';
-import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ApiResponseError } from '@/lib/api-response';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { fetchGlobalSearch } from '@/lib/global-search';
+import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { cn } from '@/lib/utils';
 import { searchErrorMessage } from '@/lib/ux-errors';
 

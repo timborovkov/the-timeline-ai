@@ -1,3 +1,4 @@
+import type { GlobalSearchResponse } from '@timeline/shared/search';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 /**
@@ -348,7 +349,7 @@ describe('POST /api/search/global', () => {
       },
     ]);
     const response = await POST(request({ query: 'Otto', mode: 'full', source: 'email' }));
-    const data = await response.json();
+    const data = (await response.json()) as GlobalSearchResponse;
 
     expect(response.status).toBe(200);
     expect(data.results).toContainEqual(
@@ -393,25 +394,33 @@ describe('POST /api/search/global', () => {
       expect.objectContaining({ from, to }),
     );
     expect(fakes.fakeListBoards).toHaveBeenCalledWith({ from, to });
-    const objectDates = expect.objectContaining({ updatedAfter: from, updatedBefore: to });
+    const objectDates: unknown = expect.objectContaining({ updatedAfter: from, updatedBefore: to });
     expect(fakes.fakeSearchObjects).toHaveBeenCalledWith(objectDates);
     expect(fakes.fakeSearchObjectsBySummary).toHaveBeenCalledWith(objectDates);
     expect(fakes.fakeSearchObjectNotes).toHaveBeenCalledWith(objectDates);
   });
 
   it('normalizes a legacy all-day calendar timezone before returning it', async () => {
-    const rows = await fakes.fakeListCalendarEvents();
+    const startAt = new Date('2026-03-29T00:00:00Z');
     fakes.fakeListCalendarEvents.mockResolvedValue([
-      { ...rows[0], title: 'Legacy launch', allDay: true, timezone: 'Invalid/Zone' },
+      {
+        id: 'legacy-event',
+        startAt,
+        updatedAt: startAt,
+        title: 'Legacy launch',
+        source: 'internal',
+        allDay: true,
+        timezone: 'Invalid/Zone',
+      },
     ]);
     const response = await POST(request({ query: 'Legacy launch', kinds: ['calendar_event'] }));
     expect(response.status).toBe(200);
-    const data = await response.json();
+    const data = (await response.json()) as GlobalSearchResponse;
     expect(data.results).toContainEqual(
       expect.objectContaining({
         title: 'Legacy launch',
         metadata: expect.objectContaining({
-          allDayDate: rows[0].startAt.toISOString().slice(0, 10),
+          allDayDate: '2026-03-29',
         }),
       }),
     );
@@ -975,7 +984,7 @@ describe('POST /api/search/global', () => {
       new Error('Document keyword search unavailable'),
     );
     const response = await POST(request({ query: 'github', mode: 'full' }));
-    const data = await response.json();
+    const data = (await response.json()) as GlobalSearchResponse;
     expect(response.status).toBe(200);
     expect(data.results).toContainEqual(expect.objectContaining({ id: 'github-integration' }));
     expect(data.coverage).toMatchObject({

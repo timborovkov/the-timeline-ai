@@ -567,7 +567,7 @@ describe('HomeDashboardPage', () => {
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
     expect(html).toContain(
-      '/onboarding?capture=team-1.document.' + capture.starterSelectedAt.getTime(),
+      '/onboarding?capture=team-1.document.' + String(capture.starterSelectedAt.getTime()),
     );
     expect(html).toContain('record ready');
   });

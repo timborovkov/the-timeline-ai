@@ -25,7 +25,6 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -37,6 +36,7 @@ import { formatDisplayDate } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
+import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { searchDateErrors, searchDateOnly } from '@/lib/global-search-dates';
 import { GLOBAL_SEARCH_SOURCE_OPTIONS } from '@/lib/global-search-sources';
 import { searchErrorMessage } from '@/lib/ux-errors';
@@ -398,7 +398,7 @@ export function GlobalSearchPage({
   }, [initialFrom, initialQuery, initialSource, initialTo, initialType]);
 
   const dateErrors = searchDateErrors(state.from, state.to);
-  const hasDateErrors = Boolean(dateErrors.from || dateErrors.to);
+  const hasDateErrors = Boolean(dateErrors.from ?? dateErrors.to);
   const coverageText = globalSearchCoverageText(state.coverage);
 
   const kinds = useMemo(() => kindsForFilters(state.typeFilters), [state.typeFilters]);
@@ -519,7 +519,7 @@ export function GlobalSearchPage({
         state={state}
         dateErrors={dateErrors}
         resultStatus={hasSearchCriteria && !hasDateErrors ? resultStatus : ''}
-        onDraftChange={(value) => dispatch({ type: 'draft', value })}
+        onDraftChange={(value) => { dispatch({ type: 'draft', value }); }}
         onFilterChange={changeFilter}
         onSubmit={submitSearch}
         onClear={clearFilters}
@@ -591,7 +591,7 @@ function SearchControls({
         (key === 'from' || key === 'to') && !searchDateOnly.safeParse(state[key]).success
           ? 'Invalid date'
           : state[key],
-      onRemove: () => onFilterChange(key, ''),
+      onRemove: () => { onFilterChange(key, ''); },
     }));
 
   return (
@@ -612,7 +612,7 @@ function SearchControls({
                 id="global-search-query"
                 type="search"
                 value={state.draft}
-                onChange={(event) => onDraftChange(event.target.value)}
+                onChange={(event) => { onDraftChange(event.target.value); }}
                 placeholder="Search everything"
                 aria-label="Search everything"
                 className="h-9 w-full rounded-sm border-0 bg-transparent pl-10 pr-24 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 sm:text-sm"
@@ -630,14 +630,14 @@ function SearchControls({
               <FilterMultiSelect
                 label="Result types"
                 value={state.typeFilters}
-                onValueChange={(value) => onFilterChange('typeFilters', value)}
+                onValueChange={(value) => { onFilterChange('typeFilters', value); }}
                 placeholder="All results"
                 options={RESULT_TYPE_OPTIONS}
               />
               <FilterMultiSelect
                 label="Timeline source"
                 value={state.source}
-                onValueChange={(value) => onFilterChange('source', value)}
+                onValueChange={(value) => { onFilterChange('source', value); }}
                 placeholder="All Timeline sources"
                 options={SOURCE_OPTIONS}
               />
@@ -646,14 +646,14 @@ function SearchControls({
                 label="From"
                 value={state.from}
                 error={dateErrors.from}
-                onChange={(value) => onFilterChange('from', value)}
+                onChange={(value) => { onFilterChange('from', value); }}
               />
               <DateFilterInput
                 id="search-to"
                 label="To"
                 value={state.to}
                 error={dateErrors.to}
-                onChange={(value) => onFilterChange('to', value)}
+                onChange={(value) => { onFilterChange('to', value); }}
               />
             </div>
             <p id="search-date-scope" className="mt-2 text-xs text-fg-dim">
@@ -688,7 +688,7 @@ function SearchControls({
                 <button
                   className="text-fg underline underline-offset-2"
                   type="button"
-                  onClick={() => onFilterChange(edge, '')}
+                  onClick={() => { onFilterChange(edge, ''); }}
                 >
                   {edge === 'from' ? 'Clear start date' : 'Clear end date'}
                 </button>

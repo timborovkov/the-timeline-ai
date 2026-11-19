@@ -127,7 +127,9 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                 <li key={notification.id} className="border-b border-border last:border-b-0">
                   <Link
                     href={inboxItemHref(notification)}
-                    onNavigate={() => setOpen(false)}
+                    onNavigate={() => {
+                      setOpen(false);
+                    }}
                     onClick={() => {
                       if (unread) markRead(notification.id);
                     }}

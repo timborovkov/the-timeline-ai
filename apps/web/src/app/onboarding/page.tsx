@@ -7,8 +7,8 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
 import { CaptureUnavailable } from '@/components/onboarding/capture-unavailable';
-import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { SetupFlow } from '@/components/onboarding/setup-flow';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -52,7 +52,7 @@ function setupCaptureView(
   if (capture !== undefined && (capture !== key || firstRun?.startedByUserId !== userId)) {
     return { kind: 'unavailable' };
   }
-  if (!firstRun || firstRun.startedByUserId !== userId) return { kind: 'redirect', href: '/app' };
+  if (firstRun?.startedByUserId !== userId) return { kind: 'redirect', href: '/app' };
   if (key && firstRun.firstCaptureLandedAt && capture === key) {
     return { kind: 'redirect', href: firstRunCaptureHref(key, 'record') };
   }

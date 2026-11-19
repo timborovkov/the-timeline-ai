@@ -215,10 +215,8 @@ export async function requestDocumentUploadAction(
         error: `Too many upload attempts. Try again in ${Math.ceil(rl.retryAfterMs / 1000)} seconds.`,
       };
     }
-    const parsed =
-      input && typeof input === 'object' && 'resumeVersionId' in input
-        ? resumeUploadSchema.safeParse(input)
-        : requestUploadSchema.safeParse(input);
+    const resume = resumeUploadSchema.safeParse(input);
+    const parsed = resume.success ? resume : requestUploadSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
     try {
       let documentId: string;
@@ -228,8 +226,7 @@ export async function requestDocumentUploadAction(
       if ('resumeVersionId' in parsed.data) {
         const version = await got.scope.documents.getDocumentVersion(parsed.data.resumeVersionId);
         if (
-          !version ||
-          version.uploadedByUserId !== got.userId ||
+          version?.uploadedByUserId !== got.userId ||
           version.sourceEventId ||
           version.byteSize !== null ||
           !version.contentType ||

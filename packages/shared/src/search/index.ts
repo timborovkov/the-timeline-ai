@@ -55,7 +55,7 @@ export interface GlobalSearchResponse {
   mode: GlobalSearchMode;
   results: GlobalSearchResult[];
   warnings: GlobalSearchWarning[];
-  coverage: GlobalSearchCoverage;
+  coverage?: GlobalSearchCoverage;
 }
 
 export interface LexicalScoreInput {

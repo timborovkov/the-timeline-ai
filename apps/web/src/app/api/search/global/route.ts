@@ -15,9 +15,9 @@ import {
   type GlobalSearchResult,
   type GlobalSearchWarning,
 } from '@timeline/shared/search';
-import { assertValidTimezone, localDateFromInstant } from '@timeline/shared/time';
 import { taskCategoryLabel } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
+import { assertValidTimezone, localDateFromInstant } from '@timeline/shared/time';
 import { buildTimelineMoments, timelineMomentAnchorId } from '@timeline/shared/timeline-moments';
 import { z } from 'zod';
 
@@ -52,7 +52,10 @@ type SearchInput = Omit<z.infer<typeof schema>, 'from' | 'to'> &
   SearchRange & {
     calendarDates?: { from?: string; to?: string };
   };
-type SearchRange = { from?: Date; to?: Date };
+interface SearchRange {
+  from?: Date;
+  to?: Date;
+}
 type TimelineRow = Awaited<ReturnType<Scope['timeline']['listEvents']>>[number];
 
 function wants(kinds: Set<GlobalSearchKind> | null, kind: GlobalSearchKind): boolean {
@@ -607,12 +610,12 @@ async function searchResponse(req: Request): Promise<Response> {
   const includeAdmin = role === 'owner' || role === 'admin';
   const warnings: GlobalSearchWarning[] = [];
   const coverage: GlobalSearchCoverage = {};
-  const hasContentCriteria = Boolean(query || from || to || request.source || kinds?.size);
+  const hasContentCriteria = [query, from, to, request.source, kinds?.size].some(Boolean);
   const calendarDates = {
     ...(searchDateOnly.safeParse(from).success ? { from } : {}),
     ...(searchDateOnly.safeParse(to).success ? { to } : {}),
   };
-  const hasDateOnly = Boolean(calendarDates.from || calendarDates.to);
+  const hasDateOnly = Boolean(calendarDates.from ?? calendarDates.to);
   const needsTimezone =
     hasDateOnly ||
     wants(kinds, 'calendar_event') ||
