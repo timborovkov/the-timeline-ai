@@ -106,7 +106,7 @@ test('matching proposal text cannot earn credit with the wrong visible citation'
     citationChecks: { total: 1, passed: 0 },
     passed: false,
   });
-  result.actions[0]!.evidenceIds = ['supporting-source'];
+  requireValue(result.actions[0]).evidenceIds = ['supporting-source'];
   expect(scoreSuggestions(row, result)).toMatchObject({
     matched: 1,
     citationChecks: { total: 1, passed: 1 },
