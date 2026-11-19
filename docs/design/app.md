@@ -44,8 +44,10 @@ The source chooser presents configured connectors (Slack and/or Telegram when
 those integrations are live in the deployment) ahead of Document, Email, and
 Website as mutually exclusive choices with one active form. Document remains the
 initial choice when no marketing source intent is present. A `/sign-up?source=`
-intent for an available connector leads with that tab and continues straight into
-its connect/waiting flow. After connect, the processing shell waits for the first
+intent is stashed by the auth proxy as a signed cookie (RSC cannot set cookies),
+carried on the signup callback URL, and for an available connector leads with that
+tab and continues straight into its connect/waiting flow. Returning via Choose
+another way replaces the URL without `?source=` so refresh does not re-auto-start. After connect, the processing shell waits for the first
 evidence from that source and then opens the first-value record screen. Skip is
 a separate footer action, not another source. Switching forms preserves entered
 values, remains disabled during saving, and respects reduced-motion preferences.
