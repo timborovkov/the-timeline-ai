@@ -1,4 +1,10 @@
-import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
+import {
+  type Db,
+  documentChunks,
+  documentExtractionAttempts,
+  documents,
+  documentVersions,
+} from '@timeline/db';
 import {
   childLogger,
   chunkText,
@@ -13,7 +19,12 @@ import {
   putObject,
   queue,
 } from '@timeline/shared';
-import { assertTeamWriteCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
+import {
+  assertTeamWriteCapacity,
+  isBillingAdmissionError,
+  VISION_BUDGET_DEFERRED,
+  VisionBudgetDeferredError,
+} from '@timeline/shared/billing';
 import * as extractProtocol from '@timeline/shared/integrations/drive-extract-protocol';
 import { planDriveSync } from '@timeline/shared/integrations/google-drive-scheduling';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -365,7 +376,11 @@ async function processDriveTransientExtract(
       io,
     );
   } catch (err: unknown) {
-    if (isDaytonaNotConfiguredError(err) || err instanceof UnrecoverableError) {
+    if (
+      err instanceof VisionBudgetDeferredError ||
+      isDaytonaNotConfiguredError(err) ||
+      err instanceof UnrecoverableError
+    ) {
       await handoffPersistedDriveTransientResult(io, data, {
         ok: false,
         error: err.message.slice(0, 500),
@@ -403,7 +418,7 @@ export async function processDocumentExtractJob(
   if (queue.isDriveTransientExtractJob(data)) {
     return processDriveTransientExtract(data, io);
   }
-  const { documentVersionId, teamId, targetCollection } = data;
+  const { documentVersionId, teamId, targetCollection, correctionAttemptId } = data;
   // OpenRouter is gated lazily inside routeContentToText only when a
   // vision path is taken. Text / DOCX / accepted sandbox PDFs work without it.
 
@@ -430,6 +445,63 @@ export async function processDocumentExtractJob(
     // the doc-chunks for this version will be cleaned up via the
     // separate deletePoints path when the delete action ran.
     return { documentVersionId, skipped: true, reason: 'document_deleted' };
+  }
+
+  if (correctionAttemptId) {
+    const attemptFilter = and(
+      eq(documentExtractionAttempts.id, correctionAttemptId),
+      eq(documentExtractionAttempts.teamId, teamId),
+      eq(documentExtractionAttempts.versionId, documentVersionId),
+    );
+    const [attempt] = await deps.db
+      .update(documentExtractionAttempts)
+      .set({ status: 'extracting', updatedAt: new Date() })
+      .where(and(attemptFilter, eq(documentExtractionAttempts.status, 'pending')))
+      .returning();
+    if (!attempt) return { documentVersionId, skipped: true, reason: 'already_processed' };
+    try {
+      const fetched = await io.fetchBlob(version.objectKey, MAX_DOCUMENT_BYTES);
+      const routed = await routeContentToText(
+        {
+          body: fetched.body,
+          contentType: (version.contentType ?? '').toLowerCase(),
+          name: version.objectKey.split('/').pop() || document.name,
+        },
+        io,
+      );
+      if ('failure' in routed || !routed.representations.some((entry) => entry.text.trim())) {
+        await deps.db
+          .update(documentExtractionAttempts)
+          .set({ status: 'failed', updatedAt: new Date() })
+          .where(attemptFilter);
+        return { documentVersionId, skipped: true, reason: 'correction_empty' };
+      }
+      await deps.db
+        .update(documentExtractionAttempts)
+        .set({
+          status: 'ready',
+          model: routed.model ?? EXTRACT_CODE_VERSION,
+          representations: routed.representations,
+          updatedAt: new Date(),
+        })
+        .where(attemptFilter);
+      return { documentVersionId, chunkCount: 0 };
+    } catch (error) {
+      const deferred = error instanceof VisionBudgetDeferredError;
+      await deps.db
+        .update(documentExtractionAttempts)
+        .set({
+          status: deferred
+            ? 'deferred'
+            : error instanceof UnrecoverableError
+              ? 'failed'
+              : 'pending',
+          updatedAt: new Date(),
+        })
+        .where(attemptFilter);
+      if (!deferred) throw error;
+      return { documentVersionId, skipped: true, reason: 'deferred_budget' };
+    }
   }
 
   // Race-safe ownership claim: take the advisory lock, re-read the
@@ -622,6 +694,16 @@ export async function processDocumentExtractJob(
     if (routed.model) extractionModel = routed.model;
     suggestedTitle = normalizeSuggestedTitle(routed.suggestedTitle);
   } catch (err: unknown) {
+    if (err instanceof VisionBudgetDeferredError) {
+      await deps.db
+        .update(documentVersions)
+        .set({
+          processingStatus: 'deferred',
+          processingError: VISION_BUDGET_DEFERRED,
+        })
+        .where(eq(documentVersions.id, version.id));
+      return { documentVersionId, skipped: true, reason: 'deferred_budget' };
+    }
     // Always stamp failed before rethrowing — including UnrecoverableError
     // from missing OPENROUTER_API_KEY after the version was claimed as
     // extracting. Skipping the stamp left rows stuck in extracting forever

@@ -152,7 +152,7 @@ async function main(): Promise<void> {
       name: queue.QUEUE_NAMES.calendarRecurrence,
       start: () => startCalendarRecurrenceWorker({ db }),
       closeQueue: queue.closeCalendarRecurrenceQueue,
-      schedule: queue.scheduleCalendarRecurrenceMaterialization,
+      schedule: queue.scheduleCalendarJobs,
     },
     {
       name: queue.QUEUE_NAMES.chatDelivery,

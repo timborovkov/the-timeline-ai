@@ -47,6 +47,7 @@ import { EmptyState } from '@/components/empty-state';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { useAppDialog } from '@/components/ui/app-dialog';
+import { EventReminders } from '@/components/calendar/event-reminders';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -1431,10 +1432,13 @@ function CalendarEventDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader className="flex-row items-start justify-between gap-2 pr-8 text-left">
           <div className="min-w-0 space-y-2">
-            <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
+            <DialogTitle>
+              {editing?.readOnly ? editing.title : editing ? 'Edit event' : 'New event'}
+            </DialogTitle>
             <DialogDescription>
-              Times are saved in {timezone}. For all-day events, choose the first and last included
-              days.
+              {editing?.readOnly
+                ? 'Imported from Google Calendar'
+                : `Times are saved in ${timezone}. For all-day events, choose the first and last included days.`}
             </DialogDescription>
           </div>
           {editing && !editing.redacted ? (
@@ -1445,13 +1449,29 @@ function CalendarEventDialog({
           ) : null}
         </DialogHeader>
         <div className="grid gap-4">
-          <CalendarDraftFields
-            draft={draft}
-            members={members}
-            titleErrorId={titleError ? 'calendar-title-error' : undefined}
-            titleInputRef={titleInputRef}
-            onDraftChange={onDraftChange}
-          />
+          {editing?.readOnly ? (
+            <div className="space-y-2 text-sm">
+              <p>
+                {draft.allDay ? draft.startDate : draft.startDateTime} –{' '}
+                {draft.allDay ? draft.endDate : draft.endDateTime} · {draft.timezone}
+              </p>
+              {editing.location ? <p>{editing.location}</p> : null}
+              {editing.description ? (
+                <p className="whitespace-pre-wrap">{editing.description}</p>
+              ) : null}
+            </div>
+          ) : (
+            <CalendarDraftFields
+              draft={draft}
+              members={members}
+              titleErrorId={titleError ? 'calendar-title-error' : undefined}
+              titleInputRef={titleInputRef}
+              onDraftChange={onDraftChange}
+            />
+          )}
+          {editing && !editing.redacted ? (
+            <EventReminders key={editing.id} eventId={editing.id} />
+          ) : null}
           {error ? (
             <p
               id={titleError ? 'calendar-title-error' : undefined}
@@ -1465,26 +1485,28 @@ function CalendarEventDialog({
             <CalendarLinkedObjectList objects={editing.linkedObjects} />
           ) : null}
         </div>
-        <DialogFooter className="gap-2 sm:justify-between">
-          <div>
-            {editing ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onRemove}
-                disabled={pending}
-              >
-                <Trash2 className="mr-1 size-4" />
-                Delete
-              </Button>
-            ) : null}
-          </div>
-          <Button type="button" size="sm" onClick={onSave} disabled={pending}>
-            <Check className="mr-1 size-4" />
-            {pending ? 'Saving…' : 'Save'}
-          </Button>
-        </DialogFooter>
+        {editing?.readOnly ? null : (
+          <DialogFooter className="gap-2 sm:justify-between">
+            <div>
+              {editing ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onRemove}
+                  disabled={pending}
+                >
+                  <Trash2 className="mr-1 size-4" />
+                  Delete
+                </Button>
+              ) : null}
+            </div>
+            <Button type="button" size="sm" onClick={onSave} disabled={pending}>
+              <Check className="mr-1 size-4" />
+              {pending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

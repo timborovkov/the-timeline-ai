@@ -1,6 +1,7 @@
 import { getEnv } from '@timeline/shared/env';
 import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import {
@@ -18,6 +19,7 @@ import {
   loadIntegrationsPageModel,
   type IntegrationsPageModel,
 } from '@/app/app/team/integrations/integrations-page-model';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -181,6 +183,13 @@ export function SourcesPageView({
       <PageHeader
         variant="collection"
         title="Connections"
+        trailing={
+          isAdmin ? (
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/app/connections/health">Source health</Link>
+            </Button>
+          ) : null
+        }
         subtitle="Connect the tools this team already uses."
         srLabel={`Connections · ${active.teamName} · ${String(connectedCount)} connected · ${String(attentionCount)} need attention · ${String(availableCount)} available`}
         metadata={connectionHeaderMetadata(

@@ -67,6 +67,38 @@ Each member can create a read-only calendar subscription URL for their Timeline 
 
 Subscription feeds include team events, the subscriber's private event details, authorized specific-user events, and other members' private events only as redacted busy blocks. Materialized recurring occurrences export as individual feed events, so external calendar apps see the concrete schedule in the current materialization window. Tentative holds export as tentative iCalendar events instead of confirmed meetings.
 
+## Google Calendar import
+
+A member can connect Google Calendar and select one calendar for the active
+workspace. The read-only connection uses Google's Calendar List and Events
+scopes. The importer sees the event details. Teammates see the existing
+redacted busy blocks. Imported events open read-only in Calendar and use the
+same private visibility rules in outbound subscriptions.
+
+Calendar shows the selected calendar, the last successful sync, and connection
+recovery. The worker polls every 15 minutes, applies cancellations, and
+rebuilds its rolling import window when a cursor expires or a week passes.
+Changing calendars or disconnecting tombstones the old mirrors and removes
+their pending reminders.
+
+Enable Google Calendar API in the configured Google OAuth project and
+register `/api/calendar/google` on the app origin as a redirect URI. Verify
+the scopes and callback using a test account before enabling them for external
+users. See [Google OAuth readiness](research/google-oauth-readiness.md).
+
+## Reminders
+
+Each member can turn on an in-app reminder for an upcoming event whose
+details they can read. Events start with reminders off, including imported
+events. Organizers can block reminders for everyone on an event or a
+recurring series. Members can still clear their own preference while blocked.
+
+The calendar worker checks access, event start time and the organizer's block
+before delivery. The inbox records one reminder per member and scheduled
+occurrence. A rescheduled occurrence with a new start time can deliver again.
+Reminder notifications contain a link and a generic label to protect details
+if event access changes.
+
 <span id="manual-editing"></span>
 
 ## Manual editing

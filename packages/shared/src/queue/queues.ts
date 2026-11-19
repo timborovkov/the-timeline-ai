@@ -664,6 +664,16 @@ export async function scheduleCalendarRecurrenceMaterialization(): Promise<void>
   );
 }
 
+export async function scheduleCalendarJobs(): Promise<void> {
+  await Promise.all([
+    scheduleCalendarRecurrenceMaterialization(),
+    upsertCronScheduler(getCalendarRecurrenceQueue(), 'calendar-maintenance-minute', '* * * * *', {
+      name: 'calendar-maintenance',
+      data: {},
+    }),
+  ]);
+}
+
 export async function closeCalendarRecurrenceQueue(): Promise<void> {
   await closeQueue(_calendarRecurrenceQueue, () => {
     _calendarRecurrenceQueue = undefined;
@@ -673,6 +683,7 @@ export async function closeCalendarRecurrenceQueue(): Promise<void> {
 export interface DocumentVersionExtractJobData {
   kind?: 'document';
   documentVersionId: string;
+  correctionAttemptId?: string;
   teamId: string;
   /** Override target Qdrant collection for the embed fan-out — used by the
    *  redocument-embed migration script. Threaded into each chunk's embed
@@ -744,7 +755,9 @@ export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): P
         data.fileId,
         data.extractId,
       ])
-    : undefined;
+    : data.correctionAttemptId
+      ? bullmqCustomJobId(['document-extract', 'correction', data.correctionAttemptId])
+      : undefined;
   if (jobId) {
     const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
     if (existing) {

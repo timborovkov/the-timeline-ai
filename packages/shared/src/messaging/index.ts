@@ -5,3 +5,4 @@ export * from '#src/messaging/delivery.js';
 export * from '#src/messaging/digest.js';
 export * from '#src/messaging/destinations.js';
 export * from '#src/messaging/digest-delivery.js';
+export { presentSavedViewDigest } from '#src/messaging/saved-view-digest.js';

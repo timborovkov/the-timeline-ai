@@ -18,6 +18,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
+import { saveProjectHandoff } from '@/app/actions/handoffs';
+import { Button } from '@/components/ui/button';
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
@@ -26,7 +28,7 @@ import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { displayObjectLabel } from '@/lib/display-labels';
-import { notifyError } from '@/lib/notify';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
@@ -189,6 +191,17 @@ function ChatSurfaceContent({
     }
   }, [messages, status]);
 
+  const handoffMessage =
+    !isStreaming && visiblePinnedEntity && sessionId
+      ? messages.find(
+          (message) =>
+            message.role === 'assistant' &&
+            message.parts.some(
+              (part) => part.type === 'text' && numberCitations(part.text).size > 0,
+            ),
+        )
+      : null;
+
   function submit(text: string) {
     const t = text.trim();
     if (!t || isStreaming) return;
@@ -224,6 +237,9 @@ function ChatSurfaceContent({
         scrollRef={scrollRef}
         teamName={teamName}
       />
+      {handoffMessage && sessionId ? (
+        <SaveHandoffButton sessionId={sessionId} messageId={handoffMessage.id} />
+      ) : null}
       <ChatError error={error} />
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
@@ -236,6 +252,36 @@ function ChatSurfaceContent({
       )}
       <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
     </div>
+  );
+}
+
+function SaveHandoffButton({ sessionId, messageId }: { sessionId: string; messageId: string }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  return (
+    <Button
+      className="self-start"
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={saving}
+      title="Save a snapshot for teammates who can read the project and its sources"
+      onClick={() => {
+        setSaving(true);
+        void notifyAction({
+          id: `handoff:${messageId}`,
+          loading: 'Saving handoff…',
+          success: 'Handoff saved',
+          error: 'Couldn’t save handoff',
+          run: () => saveProjectHandoff(sessionId, messageId),
+        }).then((result) => {
+          setSaving(false);
+          if ('id' in result && result.id) router.push(`/app/handoffs/${result.id}`);
+        });
+      }}
+    >
+      Save handoff
+    </Button>
   );
 }
 

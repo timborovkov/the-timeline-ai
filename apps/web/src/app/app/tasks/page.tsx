@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyState } from '@/components/empty-state';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
@@ -82,6 +83,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       <PageHeader
         variant="collection"
         title="Tasks"
+        trailing={<SaveViewButton collection="tasks" filters={{ ...taskLoadFilterParams, view }} />}
         subtitle="Assigned work and follow-ups from your timeline."
         metadata={[
           { label: 'Total', value: counts.total, mono: true },

@@ -294,6 +294,71 @@ export async function scheduleMeetingBotAction(
   });
 }
 
+export async function recoverMeetingCaptureAction(input: {
+  meetingId: string;
+  action: 'process' | 'rejoin';
+  consentGiven: boolean;
+}): Promise<Result> {
+  return runSentryServerAction('recover_meeting_capture', async () => {
+    if (
+      !UUID_RE.test(input.meetingId) ||
+      !['process', 'rejoin'].includes(input.action) ||
+      typeof input.consentGiven !== 'boolean'
+    ) {
+      return { ok: false, error: 'Invalid recovery request.' };
+    }
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const { scope, teamId, userId } = got;
+    if (input.action === 'rejoin') {
+      if (!meetingBots.isMeetingBotConfigured()) {
+        return { ok: false, error: 'Meeting notetakers are unavailable.' };
+      }
+      const rl = await rateLimit.checkRateLimit({
+        key: rateLimit.rateLimitKey('meeting_scheduling', 'user', userId),
+        ...rateLimit.RATE_LIMITS.meetingScheduling,
+      });
+      if (!rl.ok) return { ok: false, error: 'Too many join attempts. Try again shortly.' };
+      const settings = await scope.meetings.getMeetingSettings();
+      if (settings.requireHostConsent && !input.consentGiven) {
+        return { ok: false, error: 'Confirm that participants will be told about recording.' };
+      }
+      const capacity = await ensureMeetingCapacity(scope);
+      if (!capacity.ok) return capacity;
+    }
+    const attempt = await scope.meetings.prepareMeetingRecovery(
+      input.meetingId,
+      input.action,
+      input.consentGiven,
+    );
+    if (!attempt) return { ok: false, error: 'This capture is no longer eligible for recovery.' };
+    try {
+      if (input.action === 'process') {
+        const queue = await requireRedisQueue();
+        await queue.enqueueMeetingFinalizeJob({ meetingId: attempt.id, teamId });
+      } else if (attempt.status === 'pending') {
+        const result = await startMeetingBot({
+          scope,
+          teamId,
+          meetingId: attempt.id,
+          meetingUrl: attempt.meetingUrl,
+          platform: attempt.platform,
+        });
+        if (!result.ok) return result;
+        if (result.meetingId !== attempt.id) {
+          return { ok: false, error: 'A notetaker is already joining this meeting.' };
+        }
+      }
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'recover_meeting_capture' });
+      return { ok: false, error: 'Recovery could not start. Try again shortly.' };
+    }
+    revalidatePath('/app/meetings');
+    revalidatePath(`/app/meetings/${input.meetingId}`);
+    return { ok: true, meetingId: attempt.id };
+  });
+}
+
 export async function createSavedMeetingAction(
   input: z.input<typeof createSavedMeetingSchema>,
 ): Promise<Result & { savedMeetingId?: string }> {

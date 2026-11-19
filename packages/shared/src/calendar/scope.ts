@@ -8,6 +8,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
+import { createGoogleCalendarScope } from '#src/calendar/google.js';
+import { createCalendarReminderScope } from '#src/calendar/reminders.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
@@ -575,13 +577,53 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     return materializeParent(tx, parent, opts);
   }
 
+  async function transferOccurrenceReminderSettings(
+    tx: DbOrTx,
+    children: { id: string; originalStartAt: Date | null }[],
+    replacements: { id: string; originalStartAt: Date | null }[],
+  ) {
+    const byStart = new Map(
+      replacements.map((event) => [event.originalStartAt?.getTime(), event.id]),
+    );
+    const pairs = children.flatMap((event) => {
+      const id = byStart.get(event.originalStartAt?.getTime());
+      return id && event.id !== id ? [{ old_id: event.id, new_id: id }] : [];
+    });
+    if (!pairs.length) return;
+    const mappings = sql`jsonb_to_recordset(${JSON.stringify(pairs)}::jsonb) AS mapping(old_id uuid, new_id uuid)`;
+    await tx.execute(sql`INSERT INTO calendar_reminder_preferences (team_id, event_id, user_id, lead_minutes)
+      SELECT settings.team_id, mapping.new_id, settings.user_id, settings.lead_minutes
+      FROM calendar_reminder_preferences AS settings
+      JOIN ${mappings} ON settings.event_id = mapping.old_id
+      WHERE settings.team_id = ${teamId}::uuid ON CONFLICT DO NOTHING`);
+    await tx.execute(sql`INSERT INTO calendar_reminder_blocks (team_id, event_id, series)
+      SELECT settings.team_id, mapping.new_id, false
+      FROM calendar_reminder_blocks AS settings
+      JOIN ${mappings} ON settings.event_id = mapping.old_id
+      WHERE settings.team_id = ${teamId}::uuid AND NOT settings.series ON CONFLICT DO NOTHING`);
+    await tx.execute(sql`UPDATE notifications AS item
+      SET payload = jsonb_set(item.payload, '{event_id}', to_jsonb(mapping.new_id::text))
+      FROM ${mappings}
+      WHERE item.team_id = ${teamId}::uuid AND item.kind = 'calendar_reminder'
+      AND item.payload->>'event_id' = mapping.old_id::text`);
+  }
+
+  async function reminderOccurrenceRows(tx: DbOrTx, ids: string[]) {
+    return ids.length
+      ? tx
+          .select({ id: calendarEvents.id, originalStartAt: calendarEvents.originalStartAt })
+          .from(calendarEvents)
+          .where(and(eq(calendarEvents.teamId, teamId), inArray(calendarEvents.id, ids)))
+      : [];
+  }
+
   async function rematerializeParent(
     tx: DbOrTx,
     parent: CalendarEventRow,
     opts: { from?: Date; to?: Date } = {},
   ): Promise<{ materializedIds: string[]; deletedIds: string[] }> {
     const children = await tx
-      .select({ id: calendarEvents.id })
+      .select({ id: calendarEvents.id, originalStartAt: calendarEvents.originalStartAt })
       .from(calendarEvents)
       .where(
         and(
@@ -603,6 +645,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         ),
       );
     const materializedIds = await materializeParent(tx, parent, opts);
+    await transferOccurrenceReminderSettings(
+      tx,
+      children,
+      await reminderOccurrenceRows(tx, materializedIds),
+    );
     return { materializedIds, deletedIds };
   }
 
@@ -656,6 +703,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
   }
 
   return {
+    google: createGoogleCalendarScope(deps),
+    reminders: createCalendarReminderScope(deps),
     async createCalendarEvent(
       input: CreateCalendarEventInput,
     ): Promise<CalendarEventWithRedaction> {
@@ -922,7 +971,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           .limit(1);
 
         let row = existing[0];
-        if (!row) return null;
+        if (!row || row.source !== 'internal') return null;
         let current = row as CalendarEventRow;
         let targetId = id;
         let effectivePatch = patch;
@@ -956,7 +1005,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             })
             .where(eq(calendarEvents.id, parentRow.id));
           const futureChildren = await tx
-            .select({ id: calendarEvents.id })
+            .select({ id: calendarEvents.id, originalStartAt: calendarEvents.originalStartAt })
             .from(calendarEvents)
             .where(
               and(
@@ -1039,6 +1088,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             .returning();
           if (!hydrated) throw new Error('Failed to hydrate split recurring event');
           const materializedIds = await materializeParent(tx, hydrated as CalendarEventRow);
+          await tx.execute(sql`INSERT INTO calendar_reminder_blocks (event_id, team_id, series)
+            SELECT ${hydrated.id}::uuid, team_id, true FROM calendar_reminder_blocks
+            WHERE team_id = ${teamId}::uuid AND event_id = ${parentRow.id}::uuid AND series
+            ON CONFLICT DO NOTHING`);
+          await transferOccurrenceReminderSettings(tx, futureChildren, [
+            { id: hydrated.id, originalStartAt: splitAt },
+            ...(await reminderOccurrenceRows(tx, materializedIds)),
+          ]);
           return {
             event: redactIfNeeded(hydrated as CalendarEventRow),
             changedFields: [
@@ -1433,7 +1490,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           .limit(1);
 
         const row = existing[0];
-        if (!row) return false;
+        if (!row || row.source !== 'internal') return false;
         const current = row as CalendarEventRow;
         const requestedRecurrenceMode =
           opts.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');

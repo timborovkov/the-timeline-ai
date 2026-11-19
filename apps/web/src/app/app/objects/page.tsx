@@ -15,6 +15,7 @@ import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
 import { ObjectIndexPeek } from '@/components/objects/object-index-peek';
 import { ObjectListViewport } from '@/components/objects/object-list-viewport';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { PageHeader } from '@/components/page-header';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WorkFilterBar } from '@/components/work-filter-bar';
@@ -95,6 +96,7 @@ export default async function ObjectsIndexPage({
         className="w-full shrink-0 px-4 md:px-8"
         variant="collection"
         title="Objects"
+        trailing={<SaveViewButton collection="objects" filters={filterParams} />}
         subtitle="Projects, people, decisions, and other durable team context."
         metadata={[
           { label: 'Total', value: objectWindow.totalCount, mono: true },

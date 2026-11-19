@@ -2454,6 +2454,9 @@
   "packages/shared/src/visibility.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/workspace-follow-through.test.ts": {
+    "group": "integration"
+  },
   "packages/test-support/runtime.test.ts": {
     "group": "unit",
     "isolation": "registration"

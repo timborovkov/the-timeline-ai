@@ -58,6 +58,7 @@ export interface EmbeddingPlan {
   sourceId: string;
   payloadOverrides: Partial<QdrantPayload>;
   occurredAt: Date;
+  sourceUpdatedAt?: Date;
   authorUserId: string | null;
 }
 
@@ -348,6 +349,7 @@ async function buildObjectPlan(db: Db, data: EmbedJobData): Promise<EmbeddingPla
   return {
     text: renderObjectNarrative(row),
     scope: 'object',
+    sourceUpdatedAt: row.updatedAt,
     sourceKind: 'object',
     sourceId: row.id,
     occurredAt: row.updatedAt,
@@ -452,6 +454,7 @@ async function buildDocChunkPlan(db: Db, data: EmbedJobData): Promise<EmbeddingP
   return {
     text,
     scope: 'doc_chunk',
+    sourceUpdatedAt: hit.chunk.createdAt,
     sourceKind: 'doc_chunk',
     sourceId: hit.chunk.id,
     occurredAt: hit.version.createdAt,
@@ -577,6 +580,7 @@ async function buildCalendarEventPlan(db: Db, data: EmbedJobData): Promise<Embed
   return {
     text,
     scope: 'calendar_event',
+    sourceUpdatedAt: row.updatedAt,
     sourceKind: 'calendar_event',
     sourceId: row.id,
     occurredAt: row.startAt,

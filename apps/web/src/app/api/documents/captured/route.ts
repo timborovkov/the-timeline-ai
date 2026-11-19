@@ -1,8 +1,10 @@
+import { VISION_BUDGET_DEFERRED } from '@timeline/shared/billing';
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
 import { withTeam } from '@timeline/shared/team-scope';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { capturedFileFilters } from '@/lib/captured-file-filters';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -16,11 +18,22 @@ export async function GET(req: Request): Promise<Response> {
 
   const url = new URL(req.url);
   const cursor = url.searchParams.get('cursor');
+  const filters = capturedFileFilters(
+    url.searchParams.get('source'),
+    url.searchParams.get('sender'),
+  );
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const key = cacheKey(['captured-files', active.teamId, session.user.id, cursor]);
+  const key = cacheKey([
+    'captured-files',
+    active.teamId,
+    session.user.id,
+    cursor,
+    filters.sources.join(','),
+    filters.sender,
+  ]);
   const page = await cachedJson(key, 30, async () => {
-    const result = await scope.documents.listCapturedFilesPage({ cursor, limit: 50 });
+    const result = await scope.documents.listCapturedFilesPage({ cursor, limit: 50, ...filters });
     return {
       items: result.items.map((file) => ({
         id: file.id,
@@ -35,11 +48,16 @@ export async function GET(req: Request): Promise<Response> {
         currentVersion: file.currentVersion
           ? {
               ...file.currentVersion,
+              processingError:
+                file.currentVersion.processingError === VISION_BUDGET_DEFERRED
+                  ? VISION_BUDGET_DEFERRED
+                  : null,
               createdAt: file.currentVersion.createdAt.toISOString(),
             }
           : null,
         provenance: {
           source: file.provenance.source,
+          sender: file.provenance.sender ?? null,
           sourceEventId: file.provenance.sourceEventId,
           parentEventId: file.provenance.parentEventId,
           occurredAt: file.provenance.occurredAt?.toISOString() ?? null,

@@ -170,3 +170,13 @@ Console configuration is unverified from this repository.
 
 The operator controls publication through `LEGAL_PUBLICATION_READY`. This change
 does not publish Terms.
+
+## Google Calendar import
+
+Calendar import requests `calendar.calendarlist.readonly` and
+`calendar.events.readonly` through a separate, PKCE-protected OAuth flow.
+Register the exact `/api/calendar/google` callback and enable the Calendar
+API in the OAuth project. Verify the grant and private import in a test
+account, including consent denial, expired access and disconnect. Record
+verification and publication status before offering the scopes to external
+users. [Calendar import behavior](../calendar.md#google-calendar-import).

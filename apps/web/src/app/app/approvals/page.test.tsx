@@ -26,6 +26,7 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      objects: { listObjects: () => Promise.resolve([]) },
       suggestions: {
         getApprovalItemCounts: fakes.getApprovalItemCounts,
         listSuggestions: fakes.listSuggestions,

@@ -20,6 +20,15 @@ Slack supports `/timeline join <alias-or-url> [title]`. Telegram supports `/join
 
 <span id="provider"></span>
 
+## Capture recovery
+
+A failed recorder, a no-show, and a completed capture with an empty transcript
+have distinct outcomes on the capture record. The creator or a workspace
+admin who can read the capture can retry processing when transcript chunks
+remain. Rejoin is available for recent or still-scheduled captures with a
+valid recovery window and uses the existing consent and meeting billing checks.
+The new attempt links back to the original capture.
+
 ## Why Recall.ai (and what else works)
 
 Recall.ai is the default provider — handles all three platforms (Meet / Teams / Zoom) with one API, ships a hosted bot fleet so we don't run audio infrastructure. Per-minute pricing applies; check current rates at [recall.ai](https://recall.ai).

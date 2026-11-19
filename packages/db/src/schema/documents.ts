@@ -223,3 +223,37 @@ export const documentChunks = pgTable(
     index('document_chunks_team_document_idx').on(table.teamId, table.documentId),
   ],
 );
+
+export interface DocumentExtractionRepresentation {
+  kind: (typeof extractedRepresentationKind.enumValues)[number];
+  text: string;
+}
+
+export const documentExtractionAttempts = pgTable(
+  'document_extraction_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => documentVersions.id, { onDelete: 'cascade' }),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('pending'),
+    model: text('model'),
+    representations: jsonb('representations').$type<DocumentExtractionRepresentation[]>(),
+    previous: jsonb('previous').$type<DocumentExtractionRepresentation[]>(),
+    appliedBy: uuid('applied_by').references(() => users.id, { onDelete: 'set null' }),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('document_extraction_attempts_version_idx').on(
+      table.teamId,
+      table.versionId,
+      table.createdAt,
+    ),
+  ],
+);

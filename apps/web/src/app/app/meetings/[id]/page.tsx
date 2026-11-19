@@ -1,13 +1,15 @@
+import { meetingRecoveryAction } from '@timeline/shared/meetings';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Captions, ExternalLink } from 'lucide-react';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
-import { CancelMeetingButton } from '@/components/meeting-forms';
+import { CancelMeetingButton, RecoverMeetingForm } from '@/components/meeting-forms';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -78,7 +80,7 @@ export default async function MeetingDetailPage({ params }: Props) {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership();
+  const role = await scope.requireMembership();
 
   const meeting = await scope.meetings.getMeeting(id);
   if (!meeting) notFound();
@@ -88,6 +90,18 @@ export default async function MeetingDetailPage({ params }: Props) {
   ]);
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
+  const canRecover =
+    meeting.createdByUserId === session.user.id || role === 'admin' || role === 'owner';
+  const outcome =
+    meeting.status === 'failed'
+      ? 'Recorder failed'
+      : meeting.status === 'no_show'
+        ? 'Recorder could not join'
+        : chunks.length === 0 && ['completed', 'completed_partial'].includes(meeting.status)
+          ? 'Capture completed with no transcript'
+          : null;
+  const recovery = canRecover ? meetingRecoveryAction(meeting, chunks.length > 0) : null;
+  const originalId = meeting.metadata.recovery_of_meeting_id;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);
   const title = displayMeetingLabel(meeting);
   const transcriptExport = formatTranscriptExport({
@@ -122,7 +136,7 @@ export default async function MeetingDetailPage({ params }: Props) {
         title={title}
         subtitle={displaySourceLabel(meeting.platform)}
         metadata={[
-          { label: 'Status', value: statusLabel(meeting.status) },
+          { label: 'Status', value: outcome ?? statusLabel(meeting.status) },
           {
             label: 'Captured',
             value: <RelativeTimestamp value={meeting.createdAt} />,
@@ -131,6 +145,32 @@ export default async function MeetingDetailPage({ params }: Props) {
         ]}
         trailing={headerActions}
       />
+      {typeof originalId === 'string' && UUID_RE.test(originalId) ? (
+        <Link className="text-sm underline" href={`/app/meetings/${originalId}`}>
+          Open original capture
+        </Link>
+      ) : null}
+      {outcome || recovery ? (
+        <section className="space-y-3 rounded-lg border p-4" aria-label="Capture recovery">
+          <SectionHeading>{outcome ?? 'Capture recovery'}</SectionHeading>
+          <p className="text-sm text-fg-muted">
+            {recovery === 'process'
+              ? 'Transcript lines are available. Process them again to recover the capture.'
+              : recovery === 'rejoin'
+                ? 'If the call is still running, invite the notetaker back in a new capture attempt.'
+                : canRecover
+                  ? 'There is no recovery action available for this capture. You can start a new capture from Meetings.'
+                  : 'The capture owner or a workspace admin can check whether recovery is available.'}
+          </p>
+          {recovery ? (
+            <RecoverMeetingForm meetingId={meeting.id} action={recovery} />
+          ) : canRecover ? (
+            <Link className="text-sm underline" href="/app/meetings">
+              Open Meetings
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
 
       {summary ? (
         <section className="space-y-2 py-4">

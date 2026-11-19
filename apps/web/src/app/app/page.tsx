@@ -1,5 +1,9 @@
 import { teams, users } from '@timeline/db';
-import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
+import {
+  latestDailyDigest,
+  presentSavedViewDigest,
+  type DailyDigestPayload,
+} from '@timeline/shared/messaging';
 import { GUIDED_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -272,6 +276,10 @@ export default async function HomeDashboardPage() {
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
   const emptyTimeline = homeEmptyTimelineCopy(events.length === 0);
 
+  const digestPayload = latestDigest?.payload as DailyDigestPayload | undefined;
+  const renderedDigest = digestPayload?.savedViewChanges
+    ? (await presentSavedViewDigest(scope, digestPayload)).payload
+    : digestPayload;
   return (
     <div data-app-width="overview" className="home-overview space-y-8">
       <header className="grid items-start gap-6 border-b border-border pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,1fr)]">
@@ -395,7 +403,7 @@ export default async function HomeDashboardPage() {
               }}
             />
           </section>
-          <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
+          <DailyDigestBlock digest={renderedDigest} />
         </div>
         <aside
           aria-label="Workspace context"

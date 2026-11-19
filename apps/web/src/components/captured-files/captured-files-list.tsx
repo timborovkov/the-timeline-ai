@@ -1,11 +1,16 @@
 'use client';
 
 import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+import Link from 'next/link';
 import { FileText, Image as ImageIcon, Link2, Paperclip, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 import type { ReactNode } from 'react';
 
+import { bulkCapturedFileAction } from '@/app/actions/file-extraction';
+import { FileExtractionAction } from '@/components/captured-files/file-extraction-action';
+import { SelectionBar } from '@/components/collections/selection-bar';
+import { Input } from '@/components/ui/input';
 import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
@@ -51,10 +56,12 @@ interface CapturedFileItem {
     contentType: string | null;
     byteSize: number | null;
     processingStatus: string;
+    processingError?: string | null;
     createdAt: string;
   } | null;
   provenance: {
     source: string;
+    sender?: string | null;
     parentEventId: string | null;
     occurredAt: string | null;
     summary: string | null;
@@ -76,6 +83,7 @@ interface FolderOption {
 
 interface Props {
   files: CapturedFileItem[];
+  filters?: { sources: string[]; sender: string };
   nextCursor?: string | null;
   folders: FolderOption[];
   members: { id: string; label: string }[];
@@ -171,7 +179,10 @@ function paginationReducer(state: PaginationState, action: PaginationAction): Pa
   };
 }
 
-export function CapturedFilesList({ files, nextCursor = null, folders, members }: Props) {
+export function CapturedFilesList({ files, nextCursor = null, folders, members, filters }: Props) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkPending, runBulk] = useTransition();
   const [paginationState, setPaginationState] = useState(() =>
     paginationStateForProps(files, nextCursor),
   );
@@ -189,8 +200,15 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   const { loadedFiles, cursor } = paginationState;
 
   const sources = useMemo(
-    () => Array.from(new Set(loadedFiles.map((file) => file.provenance.source))).sort(),
-    [loadedFiles],
+    () =>
+      Array.from(
+        new Set([
+          ...loadedFiles.map((file) => file.provenance.source),
+          ...(filters?.sources ?? []),
+          ...(filters ? ['slack', 'telegram', 'email', 'website', 'integration'] : []),
+        ]),
+      ).sort(),
+    [loadedFiles, filters],
   );
   const statuses = useMemo(
     () =>
@@ -238,6 +256,8 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     startLoadMore(async () => {
       try {
         const params = new URLSearchParams({ cursor });
+        if (filters?.sources.length) params.set('source', filters.sources.join(','));
+        if (filters?.sender) params.set('sender', filters.sender);
         const response = await fetch(`/api/documents/captured?${params.toString()}`);
         if (!response.ok) throw new Error('captured_files_load_failed');
         const page = (await response.json()) as CapturedFilesPageResponse;
@@ -256,7 +276,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     });
   }
 
-  if (loadedFiles.length === 0) {
+  if (loadedFiles.length === 0 && !filters?.sources.length && !filters?.sender) {
     return (
       <EmptyState
         icon={Paperclip}
@@ -333,13 +353,38 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <FilterMultiSelect
               label="Source"
-              value={uiState.sourceFilter}
+              value={filters?.sources.join(',') ?? uiState.sourceFilter}
               onValueChange={(value) => {
-                dispatchUi({ type: 'source', value });
+                if (!filters) {
+                  dispatchUi({ type: 'source', value });
+                  return;
+                }
+                const params = new URLSearchParams();
+                if (value) params.set('source', value);
+                if (filters.sender) params.set('sender', filters.sender);
+                router.push(`/app/documents/captured?${params.toString()}`);
               }}
               placeholder="All sources"
               options={sourceOptions}
             />
+            {filters ? (
+              <form className="flex items-end gap-2" action="/app/documents/captured">
+                <input type="hidden" name="source" value={filters.sources.join(',')} />
+                <label className="space-y-1">
+                  <span className="block text-[11px] text-fg-dim">Sender</span>
+                  <Input
+                    name="sender"
+                    key={filters.sender}
+                    defaultValue={filters.sender}
+                    maxLength={160}
+                    className="h-9"
+                  />
+                </label>
+                <Button type="submit" variant="outline" size="sm">
+                  Filter sender
+                </Button>
+              </form>
+            ) : null}
             <FilterMultiSelect
               label="Type"
               value={uiState.typeFilter}
@@ -387,6 +432,43 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         </CollectionToolbar.Actions>
       </CollectionToolbar>
 
+      {filters ? (
+        <SelectionBar
+          count={selected.length}
+          onClear={() => setSelected([])}
+          actions={(['promote', 'extract'] as const).map((action) => (
+            <Button
+              key={action}
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={bulkPending}
+              onClick={() => {
+                runBulk(async () => {
+                  const result = await notifyAction({
+                    id: `captured:bulk:${action}`,
+                    loading: 'Working on selected files…',
+                    success:
+                      action === 'promote' ? 'Selected files promoted' : 'Extractions queued',
+                    error: 'Couldn’t process every file',
+                    run: () => bulkCapturedFileAction(selected, action),
+                  });
+                  setSelected(
+                    'failedItemIds' in result
+                      ? (result.failedItemIds ?? [])
+                      : result.error
+                        ? selected
+                        : [],
+                  );
+                  router.refresh();
+                });
+              }}
+            >
+              {action === 'promote' ? 'Promote selected' : 'Re-extract selected'}
+            </Button>
+          ))}
+        />
+      ) : null}
       <Dialog
         open={uiState.promoting !== null}
         onOpenChange={(open) => {
@@ -401,6 +483,19 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             renderItem={(file) => (
               <CapturedFileRow
                 file={file}
+                {...(filters
+                  ? {
+                      selected: selected.includes(file.id),
+                      onSelect: () =>
+                        setSelected((current) =>
+                          current.includes(file.id)
+                            ? current.filter((id) => id !== file.id)
+                            : current.length < 50
+                              ? [...current, file.id]
+                              : current,
+                        ),
+                    }
+                  : {})}
                 onPromote={() => {
                   dispatchUi({ type: 'promote', file });
                 }}
@@ -478,7 +573,17 @@ function matchesMultiFilter(
   return selected.length === 0 || selected.includes(value);
 }
 
-function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromote: () => void }) {
+function CapturedFileRow({
+  file,
+  onPromote,
+  selected,
+  onSelect,
+}: {
+  file: CapturedFileItem;
+  onPromote: () => void;
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
   const timezone = useWorkspaceTimezone();
   const contentType = file.currentVersion?.contentType ?? '';
   const Icon = contentType.startsWith('image/') ? ImageIcon : FileText;
@@ -497,6 +602,15 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </span>
         </CollectionRow.Leading>
         <CollectionRow.Title>
+          {onSelect ? (
+            <input
+              type="checkbox"
+              className="mr-2"
+              aria-label={`Select ${presentation.displayTitle}`}
+              checked={selected}
+              onChange={onSelect}
+            />
+          ) : null}
           <span className="min-w-0">
             <span
               className="block whitespace-normal text-sm font-semibold leading-5 text-fg [overflow-wrap:anywhere]"
@@ -531,8 +645,15 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             </Badge>
             <CollectionStatus
               value={file.currentVersion?.processingStatus ?? 'pending'}
-              label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
+              label={
+                file.currentVersion?.processingError === 'vision_budget_deferred'
+                  ? 'Deferred by OCR budget'
+                  : processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')
+              }
             />
+            {file.provenance.sender ? (
+              <span className="text-xs text-fg-muted">{file.provenance.sender}</span>
+            ) : null}
             <Badge variant="outline" className="text-[11px] text-fg-muted">
               {visibilityLabel(file.visibility)}
             </Badge>
@@ -568,6 +689,16 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
                 <Link2 aria-hidden="true" className="size-3.5" />
                 View evidence
               </EvidenceLink>
+            ) : null}
+            {file.currentVersion && onSelect ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href={`/app/documents/captured/${file.id}/extraction`}>
+                  Extraction history
+                </Link>
+              </Button>
+            ) : null}
+            {file.currentVersion?.processingError === 'vision_budget_deferred' ? (
+              <FileExtractionAction id={file.id} resume />
             ) : null}
             <DialogTrigger asChild>
               <Button type="button" variant="outline" size="sm" onClick={onPromote}>

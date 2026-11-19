@@ -55,6 +55,9 @@ import {
 } from '#src/ingest-webhooks/accept.js';
 import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
+import { createHandoffScope } from '#src/handoffs.js';
+import { createSavedWorkViewScope } from '#src/saved-work-views.js';
+import { createSourceHealthScope } from '#src/source-health.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import type { chatStructured } from '#src/llm/chat.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -3605,6 +3608,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
+    handoffs: createHandoffScope(db, teamId, userId, ensureMember),
+    savedViews: createSavedWorkViewScope({
+      db,
+      teamId,
+      userId,
+      ensureMember,
+      objects: objectScope,
+      boards: boardScope,
+      calendar: calendarScope,
+      suggestions: suggestionScope,
+    }),
+    sourceHealth: createSourceHealthScope(db, teamId, userId, ensureMember),
     audit: auditScope,
     telegram: telegramScope,
   };

@@ -1,3 +1,5 @@
+import { presentSavedViewDigest } from '#src/messaging/saved-view-digest.js';
+import { withTeam } from '#src/team-scope.js';
 import {
   type Db,
   dailyDigests,
@@ -138,7 +140,15 @@ export async function sendDailyDigest(input: {
   if (personal.length === 0) {
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
-  const payload = digest.payload as DailyDigestPayload;
+  const stored = digest.payload as DailyDigestPayload;
+  const { payload, hasVisibleChanges } = await presentSavedViewDigest(
+    withTeam(input.db, digest.teamId, digest.userId),
+    stored,
+    input.now ?? new Date(),
+  );
+  if (payload.savedViewsOnly && !hasVisibleChanges) {
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
   const results: SendMessageResult[] = [];
   for (const destination of personal) {
     results.push(

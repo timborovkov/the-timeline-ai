@@ -801,3 +801,22 @@ requires a deliberate audited open action, never automatic list previews.
 Team settings links to `/app/team/evaluation`. Explain the quality purpose before the opt-in control; default it off, leave source choices unchecked initially, and require a separate acknowledgment to enable it. Show capture availability separately from the saved preference. Onboarding offers the same disclosure in a new tab without interrupting completion. Distinguish automatic sampled source extraction from individually reviewed conversation reports.
 
 Quality-sharing forms keep the material consent summary visible in short bullets, with sampling and cleanup details in an expandable disclosure. Source choices use a compact responsive grid. Saves use shared loading/success/error toasts and disable the save button while pending. Platform Admin → Teams shows saved evaluation/report permissions; team detail adds selected sources, consent version and this web instance’s configuration readiness. Readiness is not evidence of worker capture or received traces, and platform staff cannot grant workspace consent from this view.
+
+## Recovery and saved views
+
+Capture detail gives recorder outcomes and the available recovery action near
+the transcript. Calendar shows the personal Google import and its last sync
+beside the existing subscription controls. Event reminder controls appear
+inside the event dialog.
+
+Connections leads admins to Source health, where selections, evidence
+delivery, and indexing have separate status fields. Recovery opens the
+specific connection or queues indexing for visible records. Captured files
+reuses the collection toolbar and selection bar for triage. Extraction history
+shows the candidate and previous representations. Workspace owners can open
+the OCR budget from Captured files.
+
+Approvals, Tasks, Objects, and individual Boards offer Save view for their
+current filters. Work links to personal saved views, where each member can
+opt in to new-match updates through their daily digest. Project handoffs use
+a dated snapshot header and a separate link to the current project.

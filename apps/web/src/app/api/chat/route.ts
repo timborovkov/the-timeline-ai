@@ -36,6 +36,7 @@ import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
+import { handoffProvenance } from '@/lib/handoff-provenance';
 import { auth } from '@/lib/auth';
 import { modelChatMessages } from '@/lib/chat-session';
 import {
@@ -363,6 +364,7 @@ async function deterministicChatResponse(input: {
   teamId: string;
   userId: string;
   shouldTitleSession: boolean;
+  freshTurn: boolean;
 }): Promise<Response> {
   const question = messageText(input.latestUserMessage);
   const wantsWorkspaceState =
@@ -389,6 +391,7 @@ async function deterministicChatResponse(input: {
               eventId: match.id,
               event_id: match.id,
               snippet: match.contentText ?? '',
+              citation: `[ev:${match.id}]`,
               source: match.source,
             },
           ],
@@ -418,7 +421,11 @@ async function deterministicChatResponse(input: {
       await input.scope.objects.persistChatTurn(input.sessionId, {
         userMessage: input.latestUserMessage,
         assistantMessage,
-        metadata: { finish_reason: 'stop', prompt_version: agent.AGENT_PROMPT_VERSION },
+        metadata: {
+          finish_reason: 'stop',
+          prompt_version: agent.AGENT_PROMPT_VERSION,
+          handoff_provenance: handoffProvenance(assistantMessage, input.freshTurn),
+        },
       });
     } catch (err) {
       log.warn(
@@ -679,6 +686,7 @@ export async function POST(req: Request): Promise<Response> {
       teamId: active.teamId,
       userId: session.user.id,
       shouldTitleSession,
+      freshTurn: uiMessages.length === 1,
     });
   }
 
@@ -1009,7 +1017,14 @@ export async function POST(req: Request): Promise<Response> {
           await scope.objects.persistChatTurn(sessionId, {
             userMessage: isContinuation ? null : latestUserMessage,
             assistantMessage: responseMessage,
-            metadata: { ...completionMetadata, interrupted: isAborted || Boolean(isCancelled) },
+            metadata: {
+              ...completionMetadata,
+              interrupted: isAborted || Boolean(isCancelled),
+              handoff_provenance: handoffProvenance(
+                responseMessage,
+                uiMessages.length === 1 && !isContinuation && !isAborted && !isCancelled,
+              ),
+            },
           });
         } catch (err) {
           log.warn(

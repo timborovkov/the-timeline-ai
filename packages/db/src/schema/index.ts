@@ -29,6 +29,7 @@ export * from '#src/schema/mcp-outbound.js';
 export * from '#src/schema/mcp-oauth-server.js';
 export * from '#src/schema/ingest-webhooks.js';
 export * from '#src/schema/calendar-events.js';
+export * from '#src/schema/calendar-automation.js';
 export * from '#src/schema/calendar-subscriptions.js';
 export * from '#src/schema/job-recovery.js';
 export * from '#src/schema/visibility-defaults.js';
@@ -53,3 +54,5 @@ export * from '#src/schema/websites.js';
 export * from '#src/schema/engine-maintenance.js';
 
 export * from '#src/schema/evaluation-tracing.js';
+export * from '#src/schema/source-index-receipts.js';
+export * from '#src/schema/work-follow-through.js';

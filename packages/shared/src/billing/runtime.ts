@@ -1,3 +1,4 @@
+import { VISION_BUDGET_ESTIMATE_CENTS } from '#src/billing/vision-budget.js';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -669,11 +670,11 @@ export async function withAiMetering<T>(
      */
     callMaterial?: readonly string[];
   },
-  fn: () => Promise<{ value: T; finish?: OpenRouterFinishEvent }>,
+  fn: (visionBudgetEnforced: boolean) => Promise<{ value: T; finish?: OpenRouterFinishEvent }>,
 ): Promise<T> {
   const ctx = getBillingContext();
   if (!ctx || ctx.skipMeters?.has('ai')) {
-    return (await fn()).value;
+    return (await fn(false)).value;
   }
   const operationClass = input.operationClass ?? ctx.operationClass;
   const operationId = aiMeteringOperationId(ctx, {
@@ -698,6 +699,7 @@ export async function withAiMetering<T>(
     reservedChargeCents,
     metadata: {
       operation_class: operationClass,
+      ...(operationClass === 'vision' ? { vision_budget_cents: VISION_BUDGET_ESTIMATE_CENTS } : {}),
       source: ctx.source ?? 'worker',
     },
   });
@@ -739,7 +741,7 @@ export async function withAiMetering<T>(
   let value: T;
   let finish: OpenRouterFinishEvent | undefined;
   try {
-    ({ value, finish } = await fn());
+    ({ value, finish } = await fn(existingMeta.vision_budget_enforced === true));
   } catch (err) {
     const failedFinish = openRouterFinishFromCaughtError(err);
     const failedUsd = failedFinish ? openRouterUsdCostFromFinishEvent(failedFinish) : 0;

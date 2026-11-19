@@ -4,6 +4,7 @@ import {
   type Db,
   auditLog,
   documentChunks,
+  documentExtractionAttempts,
   documents,
   documentVersions,
   folders,
@@ -12,6 +13,8 @@ import {
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
+import { VISION_BUDGET_DEFERRED } from '#src/billing/vision-budget.js';
+import { chunkText } from '#src/chunk.js';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
@@ -122,11 +125,13 @@ export interface DocumentListEntry extends DocumentRow {
     byteSize: number | null;
     contentType: string | null;
     processingStatus: DocumentVersionRow['processingStatus'];
+    processingError?: string | null;
     sourceEventId: string | null;
     createdAt: Date;
   } | null;
   provenance: {
     source: string;
+    sender?: string | null;
     sourceEventId: string | null;
     parentEventId: string | null;
     occurredAt: Date | null;
@@ -148,6 +153,8 @@ export interface DocumentListArgs {
   folderId?: string | null;
   includeDeleted?: boolean;
   fileKind?: FileKind;
+  sources?: string[];
+  sender?: string;
   limit?: number;
   cursor?: string | null;
 }
@@ -672,6 +679,18 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     await ensureMember();
     const conditions = documentListConditions(args);
     if (args.fileKind === 'captured') conditions.push(sql`${rawEvents.id} IS NOT NULL`);
+    const sourceExpression = sql<string>`coalesce(${documents.metadata}->>'source', ${rawEvents.sourceMetadata}->>'source', ${documents.metadata}->>'integration_provider', 'manual')`;
+    const senderExpression = sql<string>`coalesce(
+      ${rawEvents.sourceMetadata}->>'sender_name', ${rawEvents.sourceMetadata}->>'slack_sender_name',
+      ${rawEvents.sourceMetadata}->>'tg_sender_name', ${rawEvents.sourceMetadata}->>'tg_username',
+      ${rawEvents.sourceMetadata}->>'from', ${rawEvents.sourceMetadata}->>'sender_email',
+      ${documents.metadata}->>'sender_name', ${documents.metadata}->>'sender_email'
+    )`;
+    if (args.sources?.length) conditions.push(inArray(sourceExpression, args.sources));
+    if (args.sender?.trim()) {
+      conditions.push(sql`strpos(lower(${senderExpression}), lower(${args.sender.trim()})) > 0`);
+    }
+
     const cursor = decodeCursor(args.cursor);
     if (args.cursor && !cursor) throw new Error('Invalid cursor');
     if (cursor) {
@@ -685,12 +704,14 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const rows = await db
       .select({
         document: documents,
+        sender: senderExpression,
         version: {
           id: documentVersions.id,
           version: documentVersions.version,
           byteSize: documentVersions.byteSize,
           contentType: documentVersions.contentType,
           processingStatus: documentVersions.processingStatus,
+          processingError: documentVersions.processingError,
           sourceEventId: documentVersions.sourceEventId,
           createdAt: documentVersions.createdAt,
         },
@@ -735,12 +756,14 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
               byteSize: row.version.byteSize,
               contentType: row.version.contentType,
               processingStatus: row.version.processingStatus,
+              processingError: row.version.processingError,
               sourceEventId: row.sourceEvent?.id ?? null,
               createdAt: row.version.createdAt,
             }
           : null,
         provenance: {
           source,
+          sender: row.sender ?? null,
           sourceEventId: row.sourceEvent?.id ?? null,
           parentEventCandidate,
           occurredAt: row.sourceEvent?.occurredAt ?? null,
@@ -797,6 +820,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         }),
         provenance: {
           source: row.provenance.source,
+          sender: row.provenance.sender,
           sourceEventId: row.provenance.sourceEventId,
           parentEventId,
           occurredAt: row.provenance.occurredAt,
@@ -1363,6 +1387,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     async listCapturedFilesPage(
       args: {
         includeDeleted?: boolean;
+        sources?: string[];
+        sender?: string;
         limit?: number;
         cursor?: string | null;
       } = {},
@@ -1374,6 +1400,203 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         limit: limit + 1,
       });
       return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
+    },
+
+    async listExtractionCorrections(id: string) {
+      await ensureMember();
+      const document = await getDocumentRaw(id);
+      if (!document?.currentVersionId) return [];
+      return db
+        .select()
+        .from(documentExtractionAttempts)
+        .where(
+          and(
+            eq(documentExtractionAttempts.teamId, teamId),
+            eq(documentExtractionAttempts.versionId, document.currentVersionId),
+          ),
+        )
+        .orderBy(desc(documentExtractionAttempts.createdAt))
+        .limit(20);
+    },
+
+    async getDeferredVisionVersion(id: string) {
+      await ensureMember();
+      const document = await getDocumentRaw(id);
+      if (!document?.currentVersionId) return null;
+      const [row] = await db
+        .select({ id: documentVersions.id })
+        .from(documentVersions)
+        .where(
+          and(
+            eq(documentVersions.teamId, teamId),
+            eq(documentVersions.id, document.currentVersionId),
+            eq(documentVersions.processingStatus, 'deferred'),
+            eq(documentVersions.processingError, VISION_BUDGET_DEFERRED),
+          ),
+        );
+      return row?.id ?? null;
+    },
+
+    async requestExtractionCorrection(id: string) {
+      await ensureMember();
+      const document = await getDocumentRaw(id);
+      if (!document?.currentVersionId) return null;
+      const versionId = document.currentVersionId;
+      return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${versionId}, 0))`);
+        const [version] = await tx
+          .select()
+          .from(documentVersions)
+          .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, versionId)));
+        if (!version || ['pending', 'extracting'].includes(version.processingStatus)) return null;
+        const [existing] = await tx
+          .select()
+          .from(documentExtractionAttempts)
+          .where(
+            and(
+              eq(documentExtractionAttempts.teamId, teamId),
+              eq(documentExtractionAttempts.versionId, versionId),
+              inArray(documentExtractionAttempts.status, [
+                'pending',
+                'extracting',
+                'ready',
+                'deferred',
+              ]),
+            ),
+          )
+          .orderBy(desc(documentExtractionAttempts.createdAt))
+          .limit(1);
+        if (existing) {
+          if (
+            existing.status === 'deferred' ||
+            (existing.status === 'extracting' &&
+              existing.updatedAt.getTime() < Date.now() - 20 * 60_000)
+          ) {
+            await tx
+              .update(documentExtractionAttempts)
+              .set({ status: 'pending', updatedAt: new Date() })
+              .where(
+                and(
+                  eq(documentExtractionAttempts.id, existing.id),
+                  eq(documentExtractionAttempts.status, existing.status),
+                ),
+              );
+          }
+          return { attemptId: existing.id, versionId };
+        }
+        const [attempt] = await tx
+          .insert(documentExtractionAttempts)
+          .values({ versionId, teamId, requestedBy: userId })
+          .returning({ id: documentExtractionAttempts.id });
+        return attempt ? { attemptId: attempt.id, versionId } : null;
+      });
+    },
+
+    async applyExtractionCorrection(id: string, attemptId: string) {
+      await ensureMember();
+      const document = await getDocumentRaw(id);
+      if (!document?.currentVersionId) return null;
+      const versionId = document.currentVersionId;
+      return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${versionId}, 0))`);
+        const [version] = await tx
+          .select()
+          .from(documentVersions)
+          .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, versionId)))
+          .for('update');
+        if (!version || ['pending', 'extracting'].includes(version.processingStatus)) return null;
+        const [attempt] = await tx
+          .select()
+          .from(documentExtractionAttempts)
+          .where(
+            and(
+              eq(documentExtractionAttempts.teamId, teamId),
+              eq(documentExtractionAttempts.id, attemptId),
+              eq(documentExtractionAttempts.versionId, versionId),
+            ),
+          );
+        const [current] = await tx
+          .select({ id: documents.id })
+          .from(documents)
+          .where(
+            and(
+              eq(documents.teamId, teamId),
+              eq(documents.id, id),
+              eq(documents.currentVersionId, versionId),
+              isNull(documents.deletedAt),
+              documentVisibility,
+            ),
+          )
+          .for('update');
+        if (!current || !attempt?.representations || !['ready', 'applied'].includes(attempt.status))
+          return null;
+        const previous = await tx
+          .select({
+            id: documentChunks.id,
+            kind: documentChunks.representationKind,
+            text: documentChunks.text,
+          })
+          .from(documentChunks)
+          .where(
+            and(eq(documentChunks.teamId, teamId), eq(documentChunks.documentVersionId, versionId)),
+          )
+          .orderBy(asc(documentChunks.chunkIndex));
+        if (attempt.status === 'applied') return previous.map((chunk) => chunk.id);
+        const chunks = attempt.representations.flatMap((representation) =>
+          chunkText(representation.text).map((chunk) => ({
+            ...chunk,
+            representationKind: representation.kind,
+          })),
+        );
+        if (chunks.length === 0) return null;
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 2))`);
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
+          teamId,
+          additionalChunks: chunks.length,
+          excludeDocumentVersionId: versionId,
+        });
+        await tx
+          .delete(documentChunks)
+          .where(
+            and(eq(documentChunks.teamId, teamId), eq(documentChunks.documentVersionId, versionId)),
+          );
+        const newChunks = await tx
+          .insert(documentChunks)
+          .values(
+            chunks.map((chunk, chunkIndex) => ({
+              teamId,
+              documentId: id,
+              documentVersionId: versionId,
+              chunkIndex,
+              representationKind: chunk.representationKind,
+              text: chunk.text,
+              tokenCount: chunk.tokenCount,
+            })),
+          )
+          .returning({ id: documentChunks.id });
+        const now = new Date();
+        await tx
+          .update(documentVersions)
+          .set({
+            processingStatus: 'chunked',
+            processingError: null,
+            extractionModelVersion: attempt.model,
+            embeddingModelVersion: null,
+          })
+          .where(eq(documentVersions.id, versionId));
+        await tx
+          .update(documentExtractionAttempts)
+          .set({
+            previous: previous.map(({ kind, text }) => ({ kind, text })),
+            status: 'applied',
+            appliedAt: now,
+            appliedBy: userId,
+            updatedAt: now,
+          })
+          .where(eq(documentExtractionAttempts.id, attempt.id));
+        return newChunks.map((chunk) => chunk.id);
+      });
     },
 
     async getDocument(

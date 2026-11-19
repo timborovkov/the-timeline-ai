@@ -10,6 +10,7 @@ import {
   cancelMeetingBotAction,
   createSavedMeetingAction,
   joinSavedMeetingAction,
+  recoverMeetingCaptureAction,
   scheduleMeetingBotAction,
   skipScheduledMeetingAction,
   updateSavedMeetingAction,
@@ -623,6 +624,52 @@ export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
     >
       {pending ? 'Cancelling notetaker…' : 'Cancel notetaker'}
     </Button>
+  );
+}
+
+export function RecoverMeetingForm({
+  meetingId,
+  action,
+}: {
+  meetingId: string;
+  action: 'process' | 'rejoin';
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  return (
+    <form
+      className="flex flex-wrap items-center gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const consentGiven = new FormData(event.currentTarget).has('consent');
+        setPending(true);
+        void notifyAction({
+          id: `meeting:${meetingId}:recover`,
+          loading: 'Starting recovery…',
+          success: action === 'rejoin' ? 'Recovery attempt ready' : 'Transcript processing queued',
+          error: 'Couldn’t start recovery',
+          run: () => recoverMeetingCaptureAction({ meetingId, action, consentGiven }),
+        }).then((result) => {
+          setPending(false);
+          if (result.error) return;
+          if ('meetingId' in result && result.meetingId && result.meetingId !== meetingId) {
+            router.push(`/app/meetings/${result.meetingId}`);
+          } else {
+            router.refresh();
+          }
+        });
+      }}
+    >
+      {action === 'rejoin' ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input className="mt-1" type="checkbox" name="consent" required />
+          I’ll tell attendees that the notetaker is recording.
+        </label>
+      ) : null}
+      <Button type="submit" size="sm" disabled={pending}>
+        {action === 'rejoin' ? 'Rejoin meeting' : 'Retry processing'}
+      </Button>
+    </form>
   );
 }
 
