@@ -195,6 +195,41 @@ details[open] > summary .dropdownChevron {
   color: var(--fg-muted);
   font-size: 0.75rem;
 }
+.menuTrigger {
+  display: inline-flex;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  list-style: none;
+  outline: none;
+}
+
+.menuTrigger::-webkit-details-marker {
+  display: none;
+}
+
+.menuTrigger:hover {
+  background: var(--surface);
+}
+
+.menuTrigger:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 4px;
+}
+
+.menuTriggerIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+}
+
 .mobilePanel {
   position: fixed;
   top: 4.5rem;

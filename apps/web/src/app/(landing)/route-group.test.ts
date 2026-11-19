@@ -62,19 +62,26 @@ describe('landing route group', () => {
       new URL('../../components/marketing/home/home-motion.tsx', import.meta.url),
       'utf8',
     );
-    const narrowViewportStart = headerStyles.indexOf('@media (max-width: 30rem)');
-    const narrowViewportEnd = headerStyles.indexOf(
-      '@media (prefers-reduced-motion: reduce)',
-      narrowViewportStart,
+    const compactViewportStart = headerStyles.indexOf('@media (max-width: 64rem)');
+    const compactViewportEnd = headerStyles.indexOf(
+      '@media (max-width: 44rem)',
+      compactViewportStart,
     );
-    const narrowViewportStyles = headerStyles.slice(narrowViewportStart, narrowViewportEnd);
+    const compactViewportStyles = headerStyles.slice(compactViewportStart, compactViewportEnd);
+    const phoneViewportStart = headerStyles.indexOf('@media (max-width: 30rem)');
+    const phoneViewportEnd = headerStyles.indexOf(
+      '@media (prefers-reduced-motion: reduce)',
+      phoneViewportStart,
+    );
+    const phoneViewportStyles = headerStyles.slice(phoneViewportStart, phoneViewportEnd);
     const remFontSizeMinimums = [
       ...styles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g),
       ...agentSetupStyles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g),
     ].map(([, size]) => Number(size));
 
-    expect(narrowViewportStyles).toContain('.signInLink');
-    expect(narrowViewportStyles).toContain('.themeToggle');
+    expect(compactViewportStyles).toMatch(/\.signInLink\s*\{[^}]*display:\s*none/s);
+    expect(compactViewportStyles).toContain('.publicMenu');
+    expect(phoneViewportStyles).toContain('.themeToggle');
     expect(headerStyles).toContain('grid-template-columns: auto minmax(0, 1fr) auto');
     expect(headerStyles).toContain('min-height: 4rem');
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');

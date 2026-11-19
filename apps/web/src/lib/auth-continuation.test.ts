@@ -62,6 +62,7 @@ it('rejects external destinations and auth loops and preserves invitation priori
   expect(await createAuthContinuation(db, userId, '/sign-in')).toBeUndefined();
   expect(signupCallback('/oauth/authorize?state=a', 'team')).toBe('/oauth/authorize?state=a');
   expect(signupCallback('https://evil.example', 'team')).toContain('plan=team');
+  expect(signupCallback(undefined, 'team')).toContain('plan=team');
   expect(signedInAuthRedirect({ callbackUrl: '/oauth/authorize', inviteToken: 'invite' })).toBe(
     '/accept-invite/invite',
   );

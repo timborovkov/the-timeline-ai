@@ -3,10 +3,12 @@ import { afterEach, describe, it } from 'bun:test';
 
 import {
   inviteTokenFromCallback,
+  postSignupDestination,
   signedInAuthRedirect,
   selectedPlanCallback,
   selectedPlanFromCallback,
   signUpHrefFromAuthCallback,
+  signupCallback,
 } from '@/lib/auth-redirect';
 const ENV_BACKUP = { ...process.env };
 
@@ -75,14 +77,65 @@ describe('invite callback helpers', () => {
 describe('pricing plan intent', () => {
   it('allows only self-serve paid plans without authorizing a purchase', () => {
     expect(selectedPlanCallback('payg')).toBe('/app/team?section=billing&plan=payg#change-plan');
+    expect(selectedPlanCallback('team')).toBe('/app/team?section=billing&plan=team#change-plan');
+    expect(selectedPlanCallback('business')).toBe(
+      '/app/team?section=billing&plan=business#change-plan',
+    );
+    expect(selectedPlanCallback('free')).toBeUndefined();
     expect(selectedPlanCallback('https://evil.test')).toBeUndefined();
     expect(selectedPlanCallback('enterprise')).toBeUndefined();
     expect(selectedPlanCallback(['payg'])).toBeUndefined();
+  });
+
+  it('keeps paid Billing callbacks for existing accounts while rejecting auth loops', () => {
+    expect(signupCallback(undefined, 'team')).toBe(
+      '/app/team?section=billing&plan=team#change-plan',
+    );
+    expect(signupCallback('/app/team?section=billing&plan=team#change-plan', 'team')).toBe(
+      '/app/team?section=billing&plan=team#change-plan',
+    );
+    expect(signupCallback(undefined, 'free')).toBeUndefined();
+    expect(signupCallback('/oauth/authorize?state=a', 'business')).toBe('/oauth/authorize?state=a');
+  });
+
+  it('sends solo signups to Welcome onboarding ahead of plan intent destinations', () => {
+    expect(
+      postSignupDestination({
+        event: 'account_created',
+        callbackUrl: '/app',
+      }),
+    ).toBe('/onboarding');
+    expect(
+      postSignupDestination({
+        event: 'account_created',
+        callbackUrl: '/app/team?section=billing&plan=team#change-plan',
+      }),
+    ).toBe('/onboarding');
+    expect(
+      postSignupDestination({
+        event: 'account_created',
+        callbackUrl: '/oauth/authorize?client_id=test&state=a',
+      }),
+    ).toBe('/onboarding');
+    expect(
+      postSignupDestination({
+        inviteToken: 'token',
+        event: 'invite_accepted',
+        callbackUrl: '/accept-invite/token',
+      }),
+    ).toBe('/app');
+    expect(
+      postSignupDestination({
+        event: 'invite_accepted',
+        callbackUrl: '/oauth/authorize?state=a',
+      }),
+    ).toBe('/app');
   });
 });
 
 it('carries only fixed plan destinations into verification emails', () => {
   expect(selectedPlanFromCallback(selectedPlanCallback('payg'))).toBe('payg');
+  expect(selectedPlanFromCallback(selectedPlanCallback('team'))).toBe('team');
   expect(selectedPlanFromCallback('/app/team?plan=payg&section=billing')).toBe('payg');
   expect(selectedPlanFromCallback('https://evil.test/app/team?plan=payg')).toBeUndefined();
   expect(
