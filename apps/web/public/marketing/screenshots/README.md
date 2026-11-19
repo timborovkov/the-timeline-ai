@@ -18,8 +18,10 @@ stems. Desktop shots are 1440×900 at device scale 2 (2880×1800 PNG); mobile
 shots are 390×844 at device scale 2 (780×1688 PNG). Both themes are captured in
 one run. Product-tour phone slots currently use `53-timeline-mobile`,
 `54-ask-recap-mobile`, `55-sources-mobile`, `56-project-northstar-mobile`, and
-`57-approvals-mobile`. The script forces `tl-theme`, rejects public analytics
-consent, and asserts the `html.dark` class on dark captures. Timeline readiness
-uses a loaded moment, so a persisted seed clock does not need to fall on today’s
-date. Copy the PNGs from `/tmp/marketing-screenshots` into this directory. The
-script also copies dark mobile images to the existing unthemed filenames.
+`57-approvals-mobile`. The script forces `tl-theme`, dismisses only the public
+analytics consent dialog/banner (`Reject analytics` / banner `Reject` scoped to
+`[data-analytics-choice-banner]` — never bare Approvals `Reject`), and asserts
+the `html.dark` class on dark captures. Timeline readiness uses a loaded moment,
+so a persisted seed clock does not need to fall on today’s date. Copy the PNGs
+from `/tmp/marketing-screenshots` into this directory. The script also copies
+dark mobile images to the existing unthemed filenames.

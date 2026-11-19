@@ -234,17 +234,25 @@ async function signIn(page) {
 }
 
 async function dismissConsentPopups(page) {
-  // Public analytics consent (and similar) must not appear in product shots.
-  const labels = [/^(Reject|Reject analytics|Not now|Dismiss|Close)$/i];
-  for (const name of labels) {
-    const button = page.getByRole('button', { name }).first();
-    if ((await button.count()) === 0) continue;
-    if (!(await button.isVisible().catch(() => false))) continue;
-    await button.click({ timeout: 2_000 }).catch(() => {});
+  // Public analytics consent only. Never match bare Reject/Close/Dismiss in /app —
+  // Approvals' Reject mutates the seed and leaves toasts in the shot.
+  const consentButtons = [
+    page.getByRole('dialog').getByRole('button', { name: /^Reject analytics$/i }),
+    page.locator('[data-analytics-choice-banner]').getByRole('button', { name: /^Reject$/i }),
+  ];
+  for (const button of consentButtons) {
+    const target = button.first();
+    if ((await target.count()) === 0) continue;
+    if (!(await target.isVisible().catch(() => false))) continue;
+    await target.click({ timeout: 2_000 }).catch(() => {});
     await page.waitForTimeout(150);
   }
   await page.evaluate(() => {
     document.querySelector('nextjs-portal')?.remove();
+    // Clear any leftover Sonner toasts so product shots stay clean.
+    document.querySelectorAll('[data-sonner-toaster], [data-sonner-toast]').forEach((node) => {
+      node.remove();
+    });
   });
 }
 

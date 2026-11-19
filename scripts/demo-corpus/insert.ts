@@ -1725,6 +1725,10 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         reason: sql`excluded.reason`,
         source: sql`excluded.source`,
         status: sql`excluded.status`,
+        // Idempotent reseed must clear prior accept/reject residue so inventory
+        // counts (resolved_at IS NULL) match the pending list again.
+        resolvedAt: sql`NULL`,
+        resolvedByUserId: sql`NULL`,
         createdAt: sql`excluded.created_at`,
         updatedAt: sql`excluded.updated_at`,
       },
@@ -1762,6 +1766,13 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         description: sql`excluded.description`,
         proposedPayload: sql`excluded.proposed_payload`,
         status: sql`excluded.status`,
+        // Prior capture/reject left resolved_at while status was reset to pending,
+        // which made "To review/Pending" (counts) disagree with "Select all visible".
+        resolvedAt: sql`NULL`,
+        resolvedByUserId: sql`NULL`,
+        failureReason: sql`NULL`,
+        supersededByItemId: sql`NULL`,
+        supersededReason: sql`NULL`,
         createdAt: sql`excluded.created_at`,
         updatedAt: sql`excluded.updated_at`,
       },

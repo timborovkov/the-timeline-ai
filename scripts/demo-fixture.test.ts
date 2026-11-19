@@ -1277,13 +1277,15 @@ function assertProposalAndSummaryTimestampsFollowEvidence(): void {
   const insertSource = readFileSync(join(root, 'demo-corpus', 'insert.ts'), 'utf8');
   assert.match(insertSource, /function demoProposalCreatedAt/);
   assert.match(insertSource, /function demoSummaryGeneratedAt/);
-  assert.doesNotMatch(
-    insertSource.slice(
-      insertSource.indexOf('async function insertProposals'),
-      insertSource.indexOf('async function insertChats'),
-    ),
-    /createdAt:\s*seedNow\(\)/,
+  const proposalsBlock = insertSource.slice(
+    insertSource.indexOf('async function insertProposals'),
+    insertSource.indexOf('async function insertChats'),
   );
+  assert.doesNotMatch(proposalsBlock, /createdAt:\s*seedNow\(\)/);
+  // Idempotent reseed must clear accept/reject residue or inventory counts drift
+  // from the pending list ("To review 10" vs "Select all visible 14").
+  assert.match(proposalsBlock, /resolvedAt:\s*sql`NULL`/);
+  assert.match(proposalsBlock, /resolvedByUserId:\s*sql`NULL`/);
 
   refreshDemoCorpus();
   const seedNow = getDemoSeedNow().getTime();
