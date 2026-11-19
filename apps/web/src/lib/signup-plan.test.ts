@@ -5,6 +5,7 @@ import { describe, it } from 'bun:test';
 import {
   paidSignupPlan,
   parseSignupPlan,
+  resolveSignupPlanDisplay,
   signupPlanCopy,
   type SignupPlanId,
 } from '@/lib/signup-plan';
@@ -28,6 +29,15 @@ describe('parseSignupPlan', () => {
     expect(paidSignupPlan('business')).toBe('business');
     expect(paidSignupPlan('free')).toBeUndefined();
     expect(paidSignupPlan('enterprise')).toBeUndefined();
+  });
+});
+
+describe('resolveSignupPlanDisplay', () => {
+  it('prefers an explicit plan query and recovers paid intent from a Billing callback', () => {
+    expect(resolveSignupPlanDisplay({ plan: 'team' })).toBe('team');
+    expect(resolveSignupPlanDisplay({ plan: 'enterprise', planFromCallback: 'team' })).toBe('free');
+    expect(resolveSignupPlanDisplay({ planFromCallback: 'team' })).toBe('team');
+    expect(resolveSignupPlanDisplay({})).toBe('free');
   });
 });
 

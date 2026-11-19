@@ -109,4 +109,19 @@ describe('SignUpPage plan param', () => {
     expect(html).toContain('You’ve been invited to a team');
     expect(html).not.toContain('data-signup-plan=');
   });
+
+  it('recovers Team from a preserved Billing callback when plan is omitted', async () => {
+    const copy = signupPlanCopy('team');
+    const html = renderToStaticMarkup(
+      await SignUpPage({
+        searchParams: Promise.resolve({
+          callbackUrl: '/app/team?section=billing&plan=team#change-plan',
+        }),
+      }),
+    );
+
+    expect(html).toContain('data-signup-plan="team"');
+    expect(html).toContain(copy.subtitle);
+    expect(html).toContain(copy.billingStarts);
+  });
 });

@@ -1,5 +1,5 @@
 import { safeSameOriginPath } from '@/lib/safe-redirect';
-import { paidSignupPlan } from '@/lib/signup-plan';
+import { paidSignupPlan, type PaidSignupPlanId } from '@/lib/signup-plan';
 
 const APP_FALLBACK = '/app';
 const AUTH_PATHS = ['/sign-in', '/sign-up'];
@@ -30,7 +30,7 @@ export function selectedPlanCallback(plan: unknown): string | undefined {
 }
 
 /** Only carry the fixed pricing destination, never an arbitrary email-link redirect. */
-export function selectedPlanFromCallback(callback: unknown): string | undefined {
+export function selectedPlanFromCallback(callback: unknown): PaidSignupPlanId | undefined {
   if (typeof callback !== 'string') return undefined;
   const path = safeSameOriginPath(callback, APP_FALLBACK, { blockedPaths: AUTH_PATHS });
   const url = new URL(path, 'https://intent.invalid');

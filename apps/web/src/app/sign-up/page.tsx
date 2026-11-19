@@ -6,11 +6,15 @@ import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
 import { SignupPlanSummary } from '@/components/signup-plan-summary';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
-import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
+import {
+  selectedPlanFromCallback,
+  signedInAuthRedirect,
+  signupCallback,
+} from '@/lib/auth-redirect';
 import { readLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readPendingInvite } from '@/lib/pending-invite';
-import { parseSignupPlan, signupPlanCopy } from '@/lib/signup-plan';
+import { resolveSignupPlanDisplay, signupPlanCopy } from '@/lib/signup-plan';
 
 export const metadata: Metadata = {
   title: 'Sign up',
@@ -29,7 +33,10 @@ export default async function SignUpPage({ searchParams }: Props) {
     searchParams,
     auth(),
   ]);
-  const selectedPlan = parseSignupPlan(plan);
+  const selectedPlan = resolveSignupPlanDisplay({
+    plan,
+    planFromCallback: selectedPlanFromCallback(requestedCallback),
+  });
   const callbackUrl = signupCallback(requestedCallback, selectedPlan);
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();

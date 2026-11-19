@@ -25,6 +25,19 @@ export function paidSignupPlan(value: unknown): PaidSignupPlanId | undefined {
   return plan === 'payg' || plan === 'team' || plan === 'business' ? plan : undefined;
 }
 
+/**
+ * Prefer an explicit `?plan=` query; otherwise recover a paid selection from a
+ * preserved Billing callback (Sign in → Create one).
+ */
+export function resolveSignupPlanDisplay(input: {
+  plan?: string;
+  callbackUrl?: string;
+  planFromCallback?: PaidSignupPlanId;
+}): SignupPlanId {
+  if (typeof input.plan === 'string') return parseSignupPlan(input.plan);
+  return input.planFromCallback ?? 'free';
+}
+
 export interface SignupPlanCopy {
   planId: SignupPlanId;
   name: string;
