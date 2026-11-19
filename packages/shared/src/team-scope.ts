@@ -3351,6 +3351,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         for (const eventId of orderedEventIds) {
           const ev = eventMap.get(eventId);
           if (!ev) continue;
+          if (input.source && ev.source !== input.source) continue;
+          if (input.from && ev.occurredAt < input.from) continue;
+          if (input.to && ev.occurredAt >= input.to) continue;
           const senderInfo = senderMap.get(ev.id);
           if (
             !usedSqlSenderFilter &&
@@ -3431,6 +3434,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         operation?: QdrantOperationContext;
         query: string;
         objectId?: string;
+        updatedAfter?: Date;
+        updatedBefore?: Date;
+        excludeArchived?: boolean;
+        useObjectUpdatedAt?: boolean;
+        onCandidateLimitReached?: () => void;
         limit?: number;
       }): Promise<SearchObjectNoteResult[]> {
         await ensureMember();
@@ -3443,11 +3451,41 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           });
 
         const limit = Math.min(Math.max(input.limit ?? 10, 1), 20);
+        const objectConditions = [
+          eq(entities.teamId, teamId),
+          isNull(entities.mergedIntoId),
+          input.objectId ? eq(entities.id, input.objectId) : undefined,
+          input.excludeArchived ? isNull(entities.archivedAt) : undefined,
+          input.updatedAfter ? gte(entities.updatedAt, input.updatedAfter) : undefined,
+          input.updatedBefore ? lt(entities.updatedAt, input.updatedBefore) : undefined,
+        ];
+        let objectIds: string[] | undefined;
+        if (input.updatedAfter || input.updatedBefore) {
+          const objectLimit = 500;
+          const eligibleObjects = await db
+            .selectDistinct({ id: entities.id, updatedAt: entities.updatedAt })
+            .from(entities)
+            .innerJoin(
+              objectNotes,
+              and(
+                eq(objectNotes.entityId, entities.id),
+                eq(objectNotes.teamId, teamId),
+                isNull(objectNotes.deletedAt),
+              ),
+            )
+            .where(and(...objectConditions))
+            .orderBy(desc(entities.updatedAt), entities.id)
+            .limit(objectLimit + 1);
+          if (!eligibleObjects.length) return [];
+          if (eligibleObjects.length > objectLimit) input.onCandidateLimitReached?.();
+          objectIds = eligibleObjects.slice(0, objectLimit).map((object) => object.id);
+        }
         const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
         const hits = await searchFn(teamId, userId, vector, {
           limit: limit * 3,
           operation: input.operation ?? {},
           sourceKind: 'object_note',
+          ...(objectIds ? { objectIds } : {}),
         });
 
         const orderedNoteIds: string[] = [];
@@ -3470,7 +3508,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             noteId: objectNotes.id,
             objectId: objectNotes.entityId,
             body: objectNotes.body,
-            updatedAt: objectNotes.updatedAt,
+            updatedAt: input.useObjectUpdatedAt ? entities.updatedAt : objectNotes.updatedAt,
             objectName: entities.canonicalName,
             objectType: entities.type,
           })
@@ -3480,8 +3518,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             and(
               eq(objectNotes.teamId, teamId),
               isNull(objectNotes.deletedAt),
-              isNull(entities.mergedIntoId),
-              input.objectId ? eq(objectNotes.entityId, input.objectId) : undefined,
+              ...objectConditions,
               inArray(objectNotes.id, orderedNoteIds),
             ),
           );

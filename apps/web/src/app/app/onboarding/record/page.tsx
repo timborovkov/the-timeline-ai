@@ -1,5 +1,4 @@
-import type { FirstRunPhase } from '@timeline/shared/onboarding';
-import { withTeam } from '@timeline/shared/team-scope';
+import type { FirstRunPhase, FirstRunState } from '@timeline/shared/onboarding';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
@@ -7,6 +6,7 @@ import { FirstRecordScreen } from '@/components/onboarding/first-record-screen';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 
 export const metadata: Metadata = {
@@ -25,8 +25,27 @@ function destinationForRecordPhase(phase: FirstRunPhase | undefined): string | n
   return null;
 }
 
-export default async function FirstRecordPage() {
-  const session = await auth();
+function recordDestination(
+  firstRun: FirstRunState | null,
+  capture: string | string[] | undefined,
+  userId: string,
+): string | null {
+  if (capture === undefined) return destinationForRecordPhase(firstRun?.phase);
+  if (typeof capture !== 'string' || capture.length > 100) return '/onboarding';
+
+  const matchesCapture = capture === firstRunCaptureKey(firstRun);
+  if (matchesCapture && firstRun?.startedByUserId === userId && firstRun.firstCaptureLandedAt) {
+    return null;
+  }
+  return firstRunCaptureHref(capture);
+}
+
+export default async function FirstRecordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ capture?: string | string[] }>;
+}) {
+  const [session, { capture }] = await Promise.all([auth(), searchParams]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
@@ -39,23 +58,27 @@ export default async function FirstRecordPage() {
     teamName: active.teamName,
   });
   const firstRun = status.firstRun;
-  const destination = destinationForRecordPhase(firstRun?.phase);
+  const destination = recordDestination(firstRun, capture, session.user.id);
   if (destination) redirect(destination);
-  if (firstRun?.phase === 'record') {
-    await withTeam(db, active.teamId, session.user.id).onboarding.setFirstRunPhase('record');
-  }
+  const record = status.record;
+  const captureStatus =
+    capture && firstRun
+      ? { startedAt: firstRun.starterSelectedAt, steps: record?.processingSteps ?? [] }
+      : null;
 
   return (
     <FirstRecordScreen
-      title={status.record?.title ?? 'Your first record'}
-      meta={status.record?.meta ?? ''}
-      summary={status.record?.summary ?? null}
+      captureStatus={captureStatus}
+      readOnly={Boolean(capture) && firstRun?.phase !== 'record'}
+      title={record?.title ?? 'Your first record'}
+      meta={record?.meta ?? ''}
+      summary={record?.summary ?? null}
       note={
-        status.record?.note ??
+        record?.note ??
         'The record starts updating itself once a channel or your email is connected.'
       }
-      sources={status.record?.sources ?? []}
-      suggestions={status.record?.suggestions ?? []}
+      sources={record?.sources ?? []}
+      suggestions={record?.suggestions ?? []}
     />
   );
 }

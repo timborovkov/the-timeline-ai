@@ -212,7 +212,9 @@ describe('CaptureForm', () => {
     expect(typeof success === 'string' ? success : String(success)).toBe(
       'Saved, but search indexing queue is unreachable.',
     );
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain(
+      'Saved, but search indexing queue is unreachable.',
+    );
     expect(fakes.refresh).toHaveBeenCalledOnce();
   });
 
@@ -299,23 +301,91 @@ describe('CaptureForm', () => {
     await user.upload(screen.getByLabelText('Attach files'), [audio, pdf]);
     await user.click(screen.getByRole('button', { name: 'Post' }));
 
-    await waitFor(() => {
-      expect(screen.queryByText('meeting.m4a')).toBeNull();
-    });
-    expect(screen.queryByText('Finalize failed for notes.pdf')).toBeNull();
-    expect(screen.getByText('notes.pdf')).toBeTruthy();
+    const failed = await screen.findByRole('alert');
+    expect(failed.textContent).toContain('notes.pdf');
+    expect(failed.textContent).toContain('Finalize failed for notes.pdf');
+    expect(screen.getByRole('status').textContent).toContain('meeting.m4a');
     expect(fakes.refresh).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole('button', { name: 'Post' }));
+    const note = screen.getByRole('textbox', { name: 'Note' }) as HTMLTextAreaElement;
+    await user.type(note, 'An unsent draft');
+    await user.click(screen.getByRole('button', { name: 'Retry failed files' }));
 
     await waitFor(() => {
       expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('alert')).toBeNull();
     });
+    expect(screen.getByRole('status').textContent).toContain('notes.pdf');
+    expect(note.value).toBe('An unsent draft');
+    expect(fakes.createTextEventAction).not.toHaveBeenCalled();
     expect(fakes.requestAudioUploadAction).toHaveBeenCalledOnce();
     expect(fakes.createAudioEventAction).toHaveBeenCalledOnce();
-    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(fakes.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries preparation with the same attachment ID after a lost response', async () => {
+    fakes.requestDocumentUploadAction.mockRejectedValueOnce(new Error('Connection interrupted.'));
+    const user = userEvent.setup();
+    render(<CaptureForm currentUser={{ id: 'user-1', name: 'Ada', email: 'ada@example.test' }} />);
+    await user.upload(
+      screen.getByLabelText('Attach files'),
+      new File(['PDF'], 'plan.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Connection interrupted.');
+    await user.click(screen.getByRole('button', { name: 'Retry failed files' }));
+
+    await waitFor(() => {
+      expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledOnce();
+    });
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
+    const [first, retry] = fakes.requestDocumentUploadAction.mock.calls;
+    expect(first?.[0]).toMatchObject({ captureId: expect.any(String) });
+    expect(retry?.[0]).toEqual(first?.[0]);
+  });
+
+  it('keeps an earlier team upload out of a later private post', async () => {
+    fakes.finalizeDocumentVersionAction.mockResolvedValueOnce({ ok: false, error: 'Try again.' });
+    const user = userEvent.setup();
+    render(<CaptureForm currentUser={{ id: 'user-1', name: 'Ada', email: 'ada@example.test' }} />);
+
+    await user.upload(
+      screen.getByLabelText('Attach files'),
+      new File(['PDF'], 'plan.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('plan.pdf');
+
+    await user.click(screen.getByRole('button', { name: 'Visible to team' }));
+    await user.type(screen.getByRole('textbox', { name: 'Note' }), 'A private note');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('Note');
+    });
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledOnce();
+    expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Retry failed files' })).toBeTruthy();
+  });
+
+  it('saves attachments even if the note fails and retains the note text', async () => {
+    fakes.createTextEventAction.mockResolvedValue({ error: 'Could not save the note.' });
+    const user = userEvent.setup();
+    render(<CaptureForm currentUser={{ id: 'user-1', name: 'Ada', email: 'ada@example.test' }} />);
+
+    const note = screen.getByRole('textbox', { name: 'Note' }) as HTMLTextAreaElement;
+    await user.type(note, 'Keep this draft');
+    await user.upload(
+      screen.getByLabelText('Attach files'),
+      new File(['PDF'], 'plan.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not save the note.');
+    expect(screen.getByRole('status').textContent).toContain('plan.pdf');
+    expect(note.value).toBe('Keep this draft');
+    expect(screen.queryByRole('button', { name: 'Retry failed files' })).toBeNull();
   });
 
   it('does not force extension-only webm files through audio transcription', async () => {

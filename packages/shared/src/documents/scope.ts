@@ -17,7 +17,7 @@ import { getBillingContext, runWithBillingContext } from '#src/billing/context.j
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
-import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { buildDocumentObjectKey, sanitiseFilename } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { documentVisibleToUser } from '#src/documents/visibility.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -203,6 +203,8 @@ export interface CreateDocumentInput {
   /** Phase 11: free-form provenance for integration harvest. Persisted on
    *  the documents.metadata jsonb so the next sync can update-in-place. */
   metadata?: Record<string, unknown>;
+  /** Stable identifier supplied by the capture form for an upload retry. */
+  captureId?: string;
 }
 
 export interface CreateDocumentResult {
@@ -891,6 +893,64 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return rows.map((row) => row.id);
   }
 
+  async function searchDocumentNames(input: {
+    query: string;
+    from?: Date;
+    to?: Date;
+    limit: number;
+  }) {
+    await ensureMember();
+    const keyword = input.query.trim().toLowerCase();
+    const fileName = sql<string>`split_part(${documentVersions.objectKey}, '/', -1)`;
+    const safeFilename = sanitiseFilename(keyword);
+    const needle = '%' + escapeSqlLike(keyword) + '%';
+    const matches = keyword
+      ? sql`(
+          lower(${documents.name}) LIKE ${needle} ESCAPE '\\'
+          OR lower(${fileName}) LIKE ${needle} ESCAPE '\\'
+          OR ${safeFilename !== 'file'} AND lower(${fileName}) = ${safeFilename}
+          OR ${documents.id}::text = ${keyword}
+          OR ${documentVersions.id}::text = ${keyword}
+          OR lower(${documents.metadata} ->> 'integration_external_id') = ${keyword}
+        )`
+      : undefined;
+
+    const matchingVersions = db
+      .selectDistinctOn([documents.id], {
+        documentId: documents.id,
+        name: documents.name,
+        version: documentVersions.version,
+        filename: fileName.as('filename'),
+        createdAt: documentVersions.createdAt,
+      })
+      .from(documents)
+      .innerJoin(
+        documentVersions,
+        and(eq(documentVersions.teamId, teamId), eq(documentVersions.documentId, documents.id)),
+      )
+      .where(
+        and(
+          eq(documents.teamId, teamId),
+          eq(documents.fileKind, 'document'),
+          isNull(documents.deletedAt),
+          documentVisibility,
+          sql`(${documentVersions.byteSize} IS NOT NULL
+            OR ${documentVersions.id} = ${documents.currentVersionId})`,
+          input.from ? gte(documentVersions.createdAt, input.from) : undefined,
+          input.to ? lt(documentVersions.createdAt, input.to) : undefined,
+          matches,
+        ),
+      )
+      .orderBy(documents.id, desc(documentVersions.version))
+      .as('matching_versions');
+
+    return db
+      .select()
+      .from(matchingVersions)
+      .orderBy(desc(matchingVersions.createdAt), matchingVersions.documentId)
+      .limit(input.limit);
+  }
+
   async function searchDocumentChunksPage(
     input: SearchDocumentChunksInput,
   ): Promise<DocumentChunkSearchPage> {
@@ -1413,8 +1473,62 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         visibility,
         visibilityUserIds: input.visibilityUserIds ?? null,
       });
+      const digest = input.captureId
+        ? stableSha256Digest(['capture_document', teamId, userId, input.captureId]).slice(
+            'sha256:'.length,
+          )
+        : null;
+      const reservedId = digest
+        ? [
+            digest.slice(0, 8),
+            digest.slice(8, 12),
+            '5' + digest.slice(13, 16),
+            'a' + digest.slice(17, 20),
+            digest.slice(20, 32),
+          ].join('-')
+        : undefined;
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+        if (reservedId) {
+          const [existing] = await tx
+            .select({ document: documents, version: documentVersions })
+            .from(documents)
+            .innerJoin(
+              documentVersions,
+              and(
+                eq(documentVersions.teamId, teamId),
+                eq(documentVersions.documentId, documents.id),
+                eq(documentVersions.version, 1),
+              ),
+            )
+            .where(
+              and(
+                eq(documents.id, reservedId),
+                eq(documents.teamId, teamId),
+                eq(documents.ownerUserId, userId),
+              ),
+            )
+            .limit(1);
+          if (existing) {
+            if (
+              existing.document.deletedAt ||
+              existing.document.visibility !== visibility ||
+              existing.version.sourceEventId ||
+              existing.version.byteSize !== null ||
+              existing.version.contentType !== input.contentType ||
+              existing.version.objectKey !==
+                buildDocumentObjectKey({
+                  teamId,
+                  documentId: existing.document.id,
+                  version: 1,
+                  filename: input.filename,
+                })
+            ) {
+              throw new Error('This upload can no longer be resumed.');
+            }
+            return { document: normalizeDocumentRow(existing.document), version: existing.version };
+          }
+        }
         await assertTeamWriteCapacity({
           db: tx as unknown as Db,
           teamId,
@@ -1423,6 +1537,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         const docRows = await tx
           .insert(documents)
           .values({
+            id: reservedId,
             teamId,
             fileKind: 'document',
             folderId: input.folderId ?? null,
@@ -2033,6 +2148,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     },
 
     searchDocumentChunksPage,
+    searchDocumentNames,
 
     /**
      * Recent document-related raw_events for this team (visibility-filtered

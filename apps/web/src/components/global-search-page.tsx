@@ -1,6 +1,10 @@
 'use client';
 
-import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
+import type {
+  GlobalSearchCoverage,
+  GlobalSearchKind,
+  GlobalSearchResult,
+} from '@timeline/shared/search';
 import {
   CalendarDays,
   ExternalLink,
@@ -21,15 +25,19 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { ApiResponseError } from '@/lib/api-response';
 import { chatViewLabel } from '@/lib/chat-view';
+import { formatDisplayDate } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
 import { fetchGlobalSearch } from '@/lib/global-search';
+import { searchDateErrors, searchDateOnly } from '@/lib/global-search-dates';
 import { GLOBAL_SEARCH_SOURCE_OPTIONS } from '@/lib/global-search-sources';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
@@ -38,6 +46,7 @@ interface SearchViewState {
   loading: boolean;
   results: GlobalSearchResult[];
   warnings: string[];
+  coverage: GlobalSearchCoverage;
   error: string | null;
   searchVersion: number;
 }
@@ -66,7 +75,12 @@ type PageAction =
       typeFilters: string;
     }
   | { type: 'search_start' }
-  | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
+  | {
+      type: 'search_success';
+      results: GlobalSearchResult[];
+      warnings: string[];
+      coverage: GlobalSearchCoverage;
+    }
   | { type: 'search_error'; error: string }
   | { type: 'search_retry' };
 
@@ -89,8 +103,6 @@ for (const filter of FILTERS) {
 }
 const SOURCE_OPTIONS = GLOBAL_SEARCH_SOURCE_OPTIONS;
 
-const RESULT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-
 function pageReducer(state: PageState, action: PageAction): PageState {
   if (action.type === 'draft') return { ...state, draft: action.value };
   if (action.type === 'query') return { ...state, query: action.value };
@@ -104,7 +116,6 @@ function pageReducer(state: PageState, action: PageAction): PageState {
   if (action.type === 'route_sync') {
     if (
       state.query === action.query &&
-      state.draft === action.query &&
       state.source === action.source &&
       state.from === action.from &&
       state.to === action.to &&
@@ -114,7 +125,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
     }
     return {
       ...state,
-      draft: action.query,
+      draft: state.query === action.query ? state.draft : action.query,
       query: action.query,
       source: action.source,
       from: action.from,
@@ -132,6 +143,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
       loading: false,
       results: action.results,
       warnings: action.warnings,
+      coverage: action.coverage,
       error: null,
     };
   }
@@ -140,6 +152,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
     loading: false,
     results: [],
     warnings: [],
+    coverage: {},
     error: action.error,
   };
 }
@@ -167,15 +180,17 @@ function searchResultStatus(state: SearchViewState): string {
   if (state.error) return 'Search unavailable';
   const count = state.results.length;
   const label = `${String(count)} ${count === 1 ? 'result' : 'results'}`;
-  return state.warnings.length > 0 ? `${label} · some sources unavailable` : label;
+  return label;
 }
 
-function resultDate(result: GlobalSearchResult): string | null {
-  const value = result.occurredAt ?? result.updatedAt ?? result.startAt;
+function resultDate(result: GlobalSearchResult, timezone: string): string | null {
+  const value = result.startAt ?? result.occurredAt ?? result.updatedAt;
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return RESULT_DATE_FORMAT.format(date);
+  const allDayDate = result.metadata?.allDayDate;
+  if (typeof allDayDate === 'string') {
+    return formatDisplayDate(allDayDate + 'T00:00:00Z', { timezone: 'UTC' });
+  }
+  return formatDisplayDate(value, { timezone });
 }
 
 function relatedEvidenceLabel(result: GlobalSearchResult): string | null {
@@ -231,33 +246,43 @@ function searchPath(input: {
 }
 
 function DateFilterInput({
+  id,
   label,
   value,
+  error,
   onChange,
 }: {
+  id: string;
   label: string;
   value: string;
+  error: string | undefined;
   onChange: (value: string) => void;
 }) {
+  const errorId = id + '-error';
   return (
-    <label className="min-w-36">
-      <span className="mb-1 block text-xs text-fg-dim">{label}</span>
+    <div className="min-w-36">
+      <label htmlFor={id} className="mb-1 block text-xs text-fg-dim">
+        {label}
+      </label>
       <input
+        id={id}
         type="date"
-        value={value}
-        aria-label={label}
+        value={searchDateOnly.safeParse(value).success ? value : ''}
+        aria-describedby={error ? errorId : 'search-date-scope'}
+        aria-invalid={Boolean(error)}
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-base font-mono text-fg outline-none transition-colors focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg sm:text-xs"
+        className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-base font-mono text-fg outline-none transition-colors focus-visible:border-signal/60 focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg aria-invalid:border-danger sm:text-xs"
       />
-    </label>
+    </div>
   );
 }
 
 function SearchResultRow({ result }: { result: GlobalSearchResult }) {
+  const timezone = useWorkspaceTimezone();
   const Icon = iconFor(result.kind);
-  const date = resultDate(result);
+  const date = resultDate(result, timezone);
   const relatedEvidence = relatedEvidenceLabel(result);
   const objectType = typeof result.metadata?.type === 'string' ? result.metadata.type : '';
   const dueAt = typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
@@ -356,6 +381,7 @@ export function GlobalSearchPage({
     loading: false,
     results: [],
     warnings: [],
+    coverage: {},
     error: null,
     searchVersion: 0,
   });
@@ -371,6 +397,10 @@ export function GlobalSearchPage({
     });
   }, [initialFrom, initialQuery, initialSource, initialTo, initialType]);
 
+  const dateErrors = searchDateErrors(state.from, state.to);
+  const hasDateErrors = Boolean(dateErrors.from || dateErrors.to);
+  const coverageText = globalSearchCoverageText(state.coverage);
+
   const kinds = useMemo(() => kindsForFilters(state.typeFilters), [state.typeFilters]);
   const selectedSources = useMemo(
     () => selectedValues(state.source, SOURCE_OPTIONS),
@@ -378,6 +408,7 @@ export function GlobalSearchPage({
   );
 
   useEffect(() => {
+    if (hasDateErrors) return;
     const controller = new AbortController();
     dispatch({ type: 'search_start' });
     fetchGlobalSearch({
@@ -391,9 +422,11 @@ export function GlobalSearchPage({
       signal: controller.signal,
     })
       .then((response) => {
+        if (controller.signal.aborted) return;
         dispatch({
           type: 'search_success',
           results: response.results,
+          coverage: response.coverage ?? {},
           warnings: response.warnings.map((warning) => warning.message),
         });
       })
@@ -413,7 +446,15 @@ export function GlobalSearchPage({
     return () => {
       controller.abort();
     };
-  }, [kinds, selectedSources, state.from, state.query, state.searchVersion, state.to]);
+  }, [
+    hasDateErrors,
+    kinds,
+    selectedSources,
+    state.from,
+    state.query,
+    state.searchVersion,
+    state.to,
+  ]);
 
   function replaceSearchUrl(
     next: Partial<Pick<PageState, 'query' | 'typeFilters' | 'source' | 'from' | 'to'>>,
@@ -435,17 +476,19 @@ export function GlobalSearchPage({
     replaceSearchUrl({ query: trimmed });
   }
 
+  function changeFilter(field: SearchFilterField, value: string): void {
+    dispatch({ type: field === 'typeFilters' ? 'type_filters' : field, value });
+    replaceSearchUrl({ [field]: value });
+  }
+
   function clearFilters(): void {
     dispatch({ type: 'clear_filters' });
     replaceSearchUrl({ typeFilters: '', source: '', from: '', to: '' });
   }
 
-  const filterCount =
-    selectedValues(state.typeFilters, RESULT_TYPE_OPTIONS).length +
-    selectedSources.length +
-    (state.from ? 1 : 0) +
-    (state.to ? 1 : 0);
-  const hasSearchCriteria = Boolean(state.query || filterCount > 0);
+  const hasSearchCriteria = Boolean(
+    state.query || state.typeFilters || state.source || state.from || state.to,
+  );
   const resultStatus = searchResultStatus(state);
 
   const searchHref = searchPath({
@@ -472,66 +515,90 @@ export function GlobalSearchPage({
         subtitle="Search pages, workspace objects, tasks, boards, calendar, timeline events, and documents."
       />
 
-      <form action={submitSearch}>
-        <CollectionToolbar
-          activeFilters={[
-            ...(state.typeFilters
-              ? [
-                  {
-                    key: 'type',
-                    label: 'Type',
-                    value: state.typeFilters,
-                    onRemove: () => {
-                      dispatch({ type: 'type_filters', value: '' });
-                      replaceSearchUrl({ typeFilters: '' });
-                    },
-                  },
-                ]
-              : []),
-            ...(state.source
-              ? [
-                  {
-                    key: 'source',
-                    label: 'Source',
-                    value: state.source,
-                    onRemove: () => {
-                      dispatch({ type: 'source', value: '' });
-                      replaceSearchUrl({ source: '' });
-                    },
-                  },
-                ]
-              : []),
-            ...(state.from
-              ? [
-                  {
-                    key: 'from',
-                    label: 'From',
-                    value: state.from,
-                    onRemove: () => {
-                      dispatch({ type: 'from', value: '' });
-                      replaceSearchUrl({ from: '' });
-                    },
-                  },
-                ]
-              : []),
-            ...(state.to
-              ? [
-                  {
-                    key: 'to',
-                    label: 'To',
-                    value: state.to,
-                    onRemove: () => {
-                      dispatch({ type: 'to', value: '' });
-                      replaceSearchUrl({ to: '' });
-                    },
-                  },
-                ]
-              : []),
-          ]}
+      <SearchControls
+        state={state}
+        dateErrors={dateErrors}
+        resultStatus={hasSearchCriteria && !hasDateErrors ? resultStatus : ''}
+        onDraftChange={(value) => dispatch({ type: 'draft', value })}
+        onFilterChange={changeFilter}
+        onSubmit={submitSearch}
+        onClear={clearFilters}
+      />
+
+      {!hasDateErrors &&
+      hasSearchCriteria &&
+      !state.loading &&
+      (coverageText || state.warnings.length > 0) ? (
+        <div
+          role="status"
+          className="rounded-sm border border-border bg-surface px-3 py-2 text-sm text-fg-muted"
         >
-          {hasSearchCriteria ? (
-            <CollectionToolbar.Count>{resultStatus}</CollectionToolbar.Count>
-          ) : null}
+          {[coverageText, ...state.warnings].filter(Boolean).join(' ')}
+        </div>
+      ) : null}
+
+      {!hasDateErrors ? (
+        <SearchResultsPanel
+          resultStatus={resultStatus}
+          loading={state.loading}
+          error={state.error}
+          results={state.results}
+          hasSearchCriteria={hasSearchCriteria}
+          hasSourceWarnings={Object.values(state.coverage).some(
+            (status) => status === 'unavailable',
+          )}
+          onRetry={() => {
+            dispatch({ type: 'search_retry' });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type SearchFilterField = 'typeFilters' | 'source' | 'from' | 'to';
+
+function SearchControls({
+  state,
+  dateErrors,
+  resultStatus,
+  onDraftChange,
+  onFilterChange,
+  onSubmit,
+  onClear,
+}: {
+  state: Pick<PageState, 'draft' | SearchFilterField>;
+  dateErrors: ReturnType<typeof searchDateErrors>;
+  resultStatus: string;
+  onDraftChange: (value: string) => void;
+  onFilterChange: (field: SearchFilterField, value: string) => void;
+  onSubmit: () => void;
+  onClear: () => void;
+}) {
+  const timezone = useWorkspaceTimezone();
+  const filterLabels: Record<SearchFilterField, string> = {
+    typeFilters: 'Type',
+    source: 'Timeline source',
+    from: 'From',
+    to: 'To',
+  };
+  const activeFilters = (Object.keys(filterLabels) as SearchFilterField[])
+    .filter((key) => state[key])
+    .map((key) => ({
+      key,
+      label: filterLabels[key],
+      value:
+        (key === 'from' || key === 'to') && !searchDateOnly.safeParse(state[key]).success
+          ? 'Invalid date'
+          : state[key],
+      onRemove: () => onFilterChange(key, ''),
+    }));
+
+  return (
+    <>
+      <form action={onSubmit}>
+        <CollectionToolbar activeFilters={activeFilters}>
+          {resultStatus ? <CollectionToolbar.Count>{resultStatus}</CollectionToolbar.Count> : null}
           <CollectionToolbar.Search>
             <div className="relative">
               <label htmlFor="global-search-query" className="sr-only">
@@ -545,9 +612,7 @@ export function GlobalSearchPage({
                 id="global-search-query"
                 type="search"
                 value={state.draft}
-                onChange={(event) => {
-                  dispatch({ type: 'draft', value: event.target.value });
-                }}
+                onChange={(event) => onDraftChange(event.target.value)}
                 placeholder="Search everything"
                 aria-label="Search everything"
                 className="h-9 w-full rounded-sm border-0 bg-transparent pl-10 pr-24 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 sm:text-sm"
@@ -561,50 +626,45 @@ export function GlobalSearchPage({
             </div>
           </CollectionToolbar.Search>
           <CollectionToolbar.Filters>
-            <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <div className="flex min-w-0 flex-wrap items-start gap-2">
               <FilterMultiSelect
                 label="Result types"
                 value={state.typeFilters}
-                onValueChange={(value) => {
-                  dispatch({ type: 'type_filters', value });
-                  replaceSearchUrl({ typeFilters: value });
-                }}
+                onValueChange={(value) => onFilterChange('typeFilters', value)}
                 placeholder="All results"
                 options={RESULT_TYPE_OPTIONS}
               />
               <FilterMultiSelect
-                label="Source"
+                label="Timeline source"
                 value={state.source}
-                onValueChange={(value) => {
-                  dispatch({ type: 'source', value });
-                  replaceSearchUrl({ source: value });
-                }}
-                placeholder="All sources"
+                onValueChange={(value) => onFilterChange('source', value)}
+                placeholder="All Timeline sources"
                 options={SOURCE_OPTIONS}
               />
               <DateFilterInput
+                id="search-from"
                 label="From"
                 value={state.from}
-                onChange={(value) => {
-                  dispatch({ type: 'from', value });
-                  replaceSearchUrl({ from: value });
-                }}
+                error={dateErrors.from}
+                onChange={(value) => onFilterChange('from', value)}
               />
               <DateFilterInput
+                id="search-to"
                 label="To"
                 value={state.to}
-                onChange={(value) => {
-                  dispatch({ type: 'to', value });
-                  replaceSearchUrl({ to: value });
-                }}
+                error={dateErrors.to}
+                onChange={(value) => onFilterChange('to', value)}
               />
             </div>
+            <p id="search-date-scope" className="mt-2 text-xs text-fg-dim">
+              Content dates use {timezone}. Page shortcuts have no date.
+            </p>
           </CollectionToolbar.Filters>
           <CollectionToolbar.Actions>
-            {filterCount > 0 ? (
+            {activeFilters.length > 0 ? (
               <button
                 type="button"
-                onClick={clearFilters}
+                onClick={onClear}
                 className="h-9 rounded-sm border border-border px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
               >
                 Clear
@@ -614,24 +674,30 @@ export function GlobalSearchPage({
         </CollectionToolbar>
       </form>
 
-      {state.warnings.length > 0 ? (
-        <div className="rounded-sm border border-border bg-surface px-3 py-2 text-sm text-fg-muted">
-          {state.warnings.join(' ')}
+      {dateErrors.from || dateErrors.to ? (
+        <div
+          role="alert"
+          className="space-y-2 rounded-sm border border-danger/40 bg-surface px-3 py-2 text-sm"
+        >
+          {(['from', 'to'] as const).map((edge) =>
+            dateErrors[edge] ? (
+              <div key={edge} className="flex flex-wrap items-center gap-2">
+                <span id={'search-' + edge + '-error'} className="text-danger">
+                  {dateErrors[edge]}
+                </span>
+                <button
+                  className="text-fg underline underline-offset-2"
+                  type="button"
+                  onClick={() => onFilterChange(edge, '')}
+                >
+                  {edge === 'from' ? 'Clear start date' : 'Clear end date'}
+                </button>
+              </div>
+            ) : null,
+          )}
         </div>
       ) : null}
-
-      <SearchResultsPanel
-        resultStatus={resultStatus}
-        loading={state.loading}
-        error={state.error}
-        results={state.results}
-        hasSearchCriteria={hasSearchCriteria}
-        hasSourceWarnings={state.warnings.length > 0}
-        onRetry={() => {
-          dispatch({ type: 'search_retry' });
-        }}
-      />
-    </div>
+    </>
   );
 }
 

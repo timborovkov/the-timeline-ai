@@ -527,3 +527,10 @@ near-black background and lime emphasis. Describe the living record, connected
 objects, attached sources and approval boundary; avoid fabricated event IDs or
 version labels. Static social font subsets and their generation instructions live
 in `apps/web/public/fonts/switzer/SOCIAL-FONTS.md`.
+
+## Invitation recovery
+
+Invite links are checked before the sign-in and signup choices appear. Invalid
+links direct people to the sender for a replacement. The wrong-account screen
+lets a signed-in visitor switch accounts and describes the address to use without
+showing it.

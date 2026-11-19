@@ -118,36 +118,11 @@ describe('InboxBell', () => {
     });
   });
 
-  it('keeps the menu open when an individual read fails, then navigates only after a successful retry', async () => {
-    const user = userEvent.setup();
-    fakes.markRead
-      .mockResolvedValueOnce({ error: 'Database unavailable' })
-      .mockResolvedValueOnce({ ok: true });
-
-    render(<InboxBell unreadCount={1} notifications={[notification]} />);
-    await user.click(screen.getByRole('button', { name: 'Open inbox, 1 unread' }));
-    const item = screen.getByRole('link', { name: /Review the launch plan/i });
-    await user.click(item);
-
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(fakes.refresh).not.toHaveBeenCalled();
-    expect(fakes.push).not.toHaveBeenCalled();
-
-    await user.click(item);
-    await waitFor(() => {
-      expect(fakes.markRead).toHaveBeenCalledTimes(2);
-      expect(fakes.push).toHaveBeenCalledWith('/app/inbox');
-      expect(fakes.refresh).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('prevents overlapping individual read actions while one is pending', async () => {
-    let resolveAction: (value: { ok: true }) => void = () => {
-      throw new Error('Expected the individual read action to be pending');
-    };
+  it('keeps the native link usable while the read update is pending or fails', async () => {
+    let finish: (result: { error: string }) => void = () => undefined;
     fakes.markRead.mockReturnValue(
-      new Promise<{ ok: true }>((resolve) => {
-        resolveAction = resolve;
+      new Promise((resolve) => {
+        finish = resolve;
       }),
     );
     const user = userEvent.setup();
@@ -155,20 +130,15 @@ describe('InboxBell', () => {
     render(<InboxBell unreadCount={1} notifications={[notification]} />);
     await user.click(screen.getByRole('button', { name: 'Open inbox, 1 unread' }));
     const item = screen.getByRole('link', { name: /Review the launch plan/i });
+    expect(item.getAttribute('href')).toBe('/app/inbox');
     await user.click(item);
+    expect(item.getAttribute('aria-disabled')).toBeNull();
+    expect(fakes.markRead).toHaveBeenCalledWith(notification.id);
 
-    expect(item.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByText('Marking notification as read').getAttribute('aria-live')).toBe(
-      'polite',
-    );
-    await user.click(item);
-    expect(fakes.markRead).toHaveBeenCalledTimes(1);
-
-    resolveAction({ ok: true });
+    finish({ error: 'Database unavailable' });
     await waitFor(() => {
-      expect(fakes.push).toHaveBeenCalledWith('/app/inbox');
-      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+      expect(fakes.refresh).not.toHaveBeenCalled();
+      expect(item.getAttribute('href')).toBe('/app/inbox');
     });
-    expect(screen.queryByText('Marking notification as read')).toBeNull();
   });
 });

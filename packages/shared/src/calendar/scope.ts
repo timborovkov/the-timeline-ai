@@ -6,7 +6,7 @@ import {
   rawEvents,
   teamCalendarSettings,
 } from '@timeline/db';
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import {
   calendarEventMutationLockKey,
@@ -206,6 +206,8 @@ export interface CalendarEventUpdateResult extends CalendarEventWithRedaction {
 export interface ListCalendarEventsInput {
   from?: Date;
   to?: Date;
+  /** Apply date-only bounds to the displayed dates of all-day events. */
+  allDayDates?: { from?: string; to?: string };
   limit?: number;
   includeDeleted?: boolean;
 }
@@ -227,6 +229,31 @@ export interface MaterializeRecurringEventsInput {
   from?: Date;
   to?: Date;
   parentId?: string;
+}
+
+function calendarAllDayDate(
+  timestamp: typeof calendarEvents.startAt | typeof calendarEvents.endAt,
+): SQL {
+  const zone = sql`COALESCE(
+    substring(${calendarEvents.timezone} from '[[]!?([^]]+)[]]'),
+    ${calendarEvents.timezone}
+  )`;
+  return sql`(
+    CASE WHEN ${zone} ~ '^[+-]([01][0-9]|2[0-3]):[0-5][0-9]$'
+      THEN timezone((${zone})::interval, ${timestamp})
+      ELSE timezone(COALESCE(
+        (SELECT zones.name FROM pg_timezone_names zones WHERE lower(zones.name) = lower(${zone}) LIMIT 1),
+        'UTC'
+      ), ${timestamp})
+    END
+  )::date`;
+}
+
+function sqlAllDayOverlap(timed: SQL, allDay: SQL): SQL {
+  return or(
+    and(eq(calendarEvents.allDay, false), timed),
+    and(eq(calendarEvents.allDay, true), allDay),
+  )!;
 }
 
 function escapeSqlLike(value: string): string {
@@ -833,10 +860,26 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         conditions.push(isNull(calendarEvents.deletedAt));
       }
       if (opts.from) {
-        conditions.push(gte(calendarEvents.endAt, opts.from));
+        const timedOverlap = gt(calendarEvents.endAt, opts.from);
+        conditions.push(
+          opts.allDayDates?.from
+            ? sqlAllDayOverlap(
+                timedOverlap,
+                sql`${calendarAllDayDate(calendarEvents.endAt)} > ${opts.allDayDates.from}::date`,
+              )
+            : timedOverlap,
+        );
       }
       if (opts.to) {
-        conditions.push(lt(calendarEvents.startAt, opts.to));
+        const timedOverlap = lt(calendarEvents.startAt, opts.to);
+        conditions.push(
+          opts.allDayDates?.to
+            ? sqlAllDayOverlap(
+                timedOverlap,
+                sql`${calendarAllDayDate(calendarEvents.startAt)} <= ${opts.allDayDates.to}::date`,
+              )
+            : timedOverlap,
+        );
       }
 
       const rows = await db

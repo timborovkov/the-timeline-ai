@@ -7,8 +7,9 @@ import {
   rawEvents,
   teamFirstRun,
   teams,
+  websiteRuns,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { documentVisibleToUser } from '#src/documents/visibility.js';
 import {
@@ -110,11 +111,12 @@ export function createFirstRunHandlers({
 
   async function touch(
     patch: Partial<typeof teamFirstRun.$inferInsert>,
+    condition?: SQL,
   ): Promise<FirstRunState | null> {
     await db
       .update(teamFirstRun)
       .set({ ...patch, updatedAt: new Date() })
-      .where(eq(teamFirstRun.teamId, teamId));
+      .where(and(eq(teamFirstRun.teamId, teamId), condition));
     return loadState();
   }
 
@@ -284,6 +286,7 @@ export function createFirstRunHandlers({
     eventId?: string;
     landed?: boolean;
     requireStarterPath?: FirstRunPath;
+    expectedSelection?: FirstRunState;
     websiteScanId?: string;
   }): Promise<FirstRunState> {
     await ensureMember();
@@ -325,12 +328,26 @@ export function createFirstRunHandlers({
       if (!next) throw new Error('First-run state disappeared during capture');
       return next;
     }
-    const next = await touch({
-      captureDocumentId: input.documentId ?? current.captureDocumentId,
-      captureEventId: input.eventId ?? current.captureEventId,
-      firstCaptureLandedAt: landedAt,
-      phase,
-    });
+    const expected = input.expectedSelection;
+    const next = await touch(
+      {
+        captureDocumentId: input.documentId ?? current.captureDocumentId,
+        captureEventId: input.eventId ?? current.captureEventId,
+        firstCaptureLandedAt: landedAt,
+        phase,
+      },
+      expected
+        ? and(
+            eq(teamFirstRun.phase, expected.phase),
+            expected.starterPath
+              ? eq(teamFirstRun.starterPath, expected.starterPath)
+              : isNull(teamFirstRun.starterPath),
+            expected.starterSelectedAt
+              ? sql`date_trunc('milliseconds', ${teamFirstRun.starterSelectedAt}) = ${expected.starterSelectedAt.toISOString()}::timestamptz`
+              : isNull(teamFirstRun.starterSelectedAt),
+          )
+        : undefined,
+    );
     if (!next) throw new Error('Failed to attach capture');
     return next;
   }
@@ -350,6 +367,9 @@ export function createFirstRunHandlers({
       if (!visible) return { arrived: false, eventId: null, firstRun: current };
       return { arrived: true, eventId: current.captureEventId, firstRun: current };
     }
+    if (current.phase !== 'processing') {
+      return { arrived: false, eventId: null, firstRun: current };
+    }
     const since = current.createdAt;
     const [event] = await db
       .select({ id: rawEvents.id })
@@ -365,8 +385,13 @@ export function createFirstRunHandlers({
       .orderBy(desc(rawEvents.createdAt))
       .limit(1);
     if (!event) return { arrived: false, eventId: null, firstRun: current };
-    const next = await attachCapture({ eventId: event.id, landed: true });
-    return { arrived: true, eventId: event.id, firstRun: next };
+    const next = await attachCapture({
+      eventId: event.id,
+      landed: true,
+      expectedSelection: current,
+    });
+    const landedEventId = next.starterPath === 'email' ? next.captureEventId : null;
+    return { arrived: Boolean(landedEventId), eventId: landedEventId, firstRun: next };
   }
 
   return {
@@ -503,7 +528,11 @@ export function createFirstRunHandlers({
           .where(
             and(eq(documentVersions.documentId, document.id), eq(documentVersions.teamId, teamId)),
           )
-          .orderBy(desc(documentVersions.version))
+          .orderBy(
+            firstRun.starterSelectedAt
+              ? asc(documentVersions.version)
+              : desc(documentVersions.version),
+          )
           .limit(1);
         const eventId = version?.sourceEventId ?? firstRun.captureEventId;
         const visibleEventId = eventId && (await visibleRawEvent(eventId)) ? eventId : null;
@@ -526,12 +555,14 @@ export function createFirstRunHandlers({
               .limit(4)
           : [];
         const suggestions = await loadSuggestions(eventIds, firstRun.workStyle);
+        const href =
+          '/app/documents/' + document.id + (version ? '?version=' + String(version.version) : '');
         const sources: FirstRunSource[] = chunks.map((chunk, index) => ({
           n: index + 1,
           kind: 'Document',
           title: document.name,
           meta: `chunk ${String(chunk.chunkIndex + 1)}`,
-          href: `/app/documents/${document.id}`,
+          href,
         }));
         if (sources.length === 0 && visibleEventId) {
           sources.push({
@@ -539,7 +570,7 @@ export function createFirstRunHandlers({
             kind: 'Document',
             title: document.name,
             meta: 'uploaded',
-            href: `/app/documents/${document.id}`,
+            href,
           });
         }
         return {
@@ -555,6 +586,7 @@ export function createFirstRunHandlers({
           processingSteps: documentProcessingSteps(
             version?.processingStatus ?? 'pending',
             suggestions.length > 0,
+            Boolean(version?.sourceEventId),
           ),
           emailArrived: false,
         };
@@ -563,6 +595,7 @@ export function createFirstRunHandlers({
       if (firstRun.starterPath === 'email') {
         const arrival = await detectEmailArrival();
         const state = arrival.firstRun ?? firstRun;
+        if (state.starterPath !== 'email') return null;
         if (!arrival.eventId) {
           return {
             firstRun: state,
@@ -630,26 +663,43 @@ export function createFirstRunHandlers({
 
       if (firstRun.starterPath === 'website') {
         if (firstRun.starterSelectedAt) {
-          const pages = await db
-            .select({
-              id: rawEvents.id,
-              contentText: rawEvents.contentText,
-              occurredAt: rawEvents.occurredAt,
-            })
-            .from(rawEvents)
-            .where(
-              and(
-                eq(rawEvents.teamId, teamId),
-                eq(rawEvents.source, 'web'),
-                ...(firstRun.websiteScanId
-                  ? [sql`${rawEvents.sourceMetadata}->>'websiteScanId' = ${firstRun.websiteScanId}`]
-                  : [gte(rawEvents.createdAt, firstRun.starterSelectedAt)]),
-                rawEventVisibleToUser(userId),
-                sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
-              ),
-            )
-            .orderBy(asc(rawEvents.createdAt))
-            .limit(5);
+          const [pages, runs] = await Promise.all([
+            db
+              .select({
+                id: rawEvents.id,
+                contentText: rawEvents.contentText,
+                occurredAt: rawEvents.occurredAt,
+              })
+              .from(rawEvents)
+              .where(
+                and(
+                  eq(rawEvents.teamId, teamId),
+                  eq(rawEvents.source, 'web'),
+                  ...(firstRun.websiteScanId
+                    ? [
+                        sql`${rawEvents.sourceMetadata}->>'websiteScanId' = ${firstRun.websiteScanId}`,
+                      ]
+                    : [gte(rawEvents.createdAt, firstRun.starterSelectedAt)]),
+                  rawEventVisibleToUser(userId),
+                  sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
+                ),
+              )
+              .orderBy(asc(rawEvents.createdAt))
+              .limit(5),
+            firstRun.websiteScanId
+              ? db
+                  .select({
+                    status: websiteRuns.status,
+                    providerFinishedAt: websiteRuns.providerFinishedAt,
+                    handoffAt: websiteRuns.handoffAt,
+                  })
+                  .from(websiteRuns)
+                  .where(
+                    and(eq(websiteRuns.id, firstRun.websiteScanId), eq(websiteRuns.teamId, teamId)),
+                  )
+                  .limit(1)
+              : [],
+          ]);
           let extra: (typeof pages)[number] | null = null;
           if (
             firstRun.captureEventId &&
@@ -704,6 +754,10 @@ export function createFirstRunHandlers({
               failureReason: firstRun.scanFailureReason,
               pageCount: listed.length,
               hasSuggestions: suggestions.length > 0,
+              queued: runs[0]?.status === 'queued',
+              saved: Boolean(runs[0]?.handoffAt ?? firstRun.firstCaptureLandedAt),
+              fetched:
+                Boolean(runs[0]?.providerFinishedAt) || Boolean(firstRun.firstCaptureLandedAt),
             }),
             emailArrived: false,
           };
@@ -728,7 +782,12 @@ export function createFirstRunHandlers({
     async refreshDocumentCapture(): Promise<FirstRunState | null> {
       await ensureMember();
       const current = await loadState();
-      if (!current?.captureDocumentId || current.starterPath !== 'document') return current;
+      if (
+        !current?.captureDocumentId ||
+        current.starterPath !== 'document' ||
+        current.phase !== 'processing'
+      )
+        return current;
       const [version] = await db
         .select({
           processingStatus: documentVersions.processingStatus,
@@ -741,7 +800,11 @@ export function createFirstRunHandlers({
             eq(documentVersions.teamId, teamId),
           ),
         )
-        .orderBy(desc(documentVersions.version))
+        .orderBy(
+          current.starterSelectedAt
+            ? asc(documentVersions.version)
+            : desc(documentVersions.version),
+        )
         .limit(1);
       if (version?.processingStatus === 'failed') return current;
       if (!version?.sourceEventId) return current;
@@ -751,10 +814,14 @@ export function createFirstRunHandlers({
         version.processingStatus === 'chunked' ||
         suggestionCount > 0;
       if (!ready && !current.captureEventId) {
-        return touch({ captureEventId: version.sourceEventId });
+        return attachCapture({ eventId: version.sourceEventId, expectedSelection: current });
       }
       if (ready) {
-        return attachCapture({ eventId: version.sourceEventId, landed: true });
+        return attachCapture({
+          eventId: version.sourceEventId,
+          landed: true,
+          expectedSelection: current,
+        });
       }
       return current;
     },

@@ -24,6 +24,8 @@ export interface EventListFilters {
    * matching rows.
    */
   externalObjectId?: string;
+  /** Literal text or known identifier match for global search fallback. */
+  keyword?: string;
   limit?: number;
   cursor?: string | null;
 }

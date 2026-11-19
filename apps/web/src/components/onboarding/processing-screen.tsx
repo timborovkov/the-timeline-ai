@@ -2,8 +2,11 @@
 
 import type { NamedProcessingStep } from '@timeline/shared/onboarding/first-run';
 
+import { CopyButton } from '@/components/copy-button';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { Button } from '@/components/ui/button';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 function stepMark(status: NamedProcessingStep['status']): string {
@@ -15,6 +18,8 @@ function stepMark(status: NamedProcessingStep['status']): string {
 export function ProcessingScreen({
   title,
   description,
+  startedAt,
+  captureUrl,
   steps,
   inboundEmail,
   emailWaiting,
@@ -23,20 +28,35 @@ export function ProcessingScreen({
 }: {
   title: string;
   description: string;
+  startedAt?: Date | null;
+  captureUrl?: string | null;
   steps: NamedProcessingStep[];
   inboundEmail: string | null;
   emailWaiting: boolean;
   onSwitch: () => void;
   onHome: () => void;
 }) {
+  const actions = (
+    <div className="mt-5 flex flex-wrap gap-2">
+      <Button type="button" variant="outline" onClick={onHome}>
+        Go to Home
+      </Button>
+      <Button type="button" variant="ghost" onClick={onSwitch}>
+        Choose another way
+      </Button>
+      {captureUrl ? <CopyButton value={captureUrl} label="Copy capture link" /> : null}
+    </div>
+  );
+
   if (emailWaiting) {
     return (
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Waiting for your email</h1>
         <p className="mt-2 text-sm leading-6 text-fg-muted">
-          Send one real thread to your team address. This screen opens the record as soon as it
-          arrives.
+          Send one real thread to your team address. You can keep working and check Home for
+          updates.
         </p>
+        {startedAt ? <CaptureStartedTime value={startedAt} waiting /> : null}
         <div className="mt-4">
           <CopyableTextField
             id="onboarding-waiting-email"
@@ -65,14 +85,7 @@ export function ProcessingScreen({
           <span className="size-2 rounded-full bg-review" />
           <span className="text-sm text-fg-muted">Nothing has arrived yet.</span>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={onHome}>
-            Go to Home and wait there
-          </Button>
-          <Button type="button" variant="outline" onClick={onSwitch}>
-            Choose another way
-          </Button>
-        </div>
+        {actions}
       </div>
     );
   }
@@ -81,55 +94,66 @@ export function ProcessingScreen({
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
       <p className="mt-2 text-sm leading-6 text-fg-muted">{description}</p>
-      <ol className="mt-5 border-t border-border">
-        {steps.map((step) => (
-          <li key={step.id} className="flex gap-3 border-b border-border py-2.5">
-            <span
+      {startedAt ? <CaptureStartedTime value={startedAt} /> : null}
+      <CaptureProcessingSteps steps={steps} />
+      {actions}
+    </div>
+  );
+}
+
+export function CaptureStartedTime({ value, waiting }: { value: Date; waiting?: boolean }) {
+  const timezone = useWorkspaceTimezone();
+  return (
+    <p className="mt-2 text-xs text-fg-dim">
+      {waiting ? 'Waiting since' : 'Started'}{' '}
+      <time dateTime={value.toISOString()}>{formatDisplayDateTime(value, { timezone })}</time>
+    </p>
+  );
+}
+
+export function CaptureProcessingSteps({ steps }: { steps: NamedProcessingStep[] }) {
+  if (!steps.length) return null;
+  return (
+    <ol className="mt-5 border-t border-border">
+      {steps.map((step) => (
+        <li key={step.id} className="flex gap-3 border-b border-border py-2.5">
+          <span
+            className={cn(
+              'w-4 text-center text-sm',
+              step.status === 'done'
+                ? 'text-success'
+                : step.status === 'active'
+                  ? 'text-review'
+                  : step.status === 'failed'
+                    ? 'text-danger'
+                    : 'text-fg-dim',
+            )}
+          >
+            {stepMark(step.status)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div
               className={cn(
-                'w-4 text-center text-sm',
-                step.status === 'done'
-                  ? 'text-success'
-                  : step.status === 'active'
-                    ? 'text-review'
-                    : step.status === 'failed'
-                      ? 'text-danger'
-                      : 'text-fg-dim',
+                'text-sm',
+                step.status === 'waiting' ? 'text-fg-dim' : 'text-fg',
+                step.status === 'active' && 'font-medium',
               )}
             >
-              {stepMark(step.status)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  'text-sm',
-                  step.status === 'waiting' ? 'text-fg-dim' : 'text-fg',
-                  step.status === 'active' && 'font-medium',
-                )}
-              >
-                {step.label}
-              </div>
-              {step.detail ? <div className="mt-0.5 text-xs text-fg-dim">{step.detail}</div> : null}
+              {step.label}
             </div>
-            <span className="text-xs text-fg-dim">
-              {step.status === 'done'
-                ? 'Done'
-                : step.status === 'active'
-                  ? 'In progress'
-                  : step.status === 'failed'
-                    ? 'Failed'
-                    : 'Waiting'}
-            </span>
-          </li>
-        ))}
-      </ol>
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={onHome}>
-          Go to Home and wait there
-        </Button>
-        <Button type="button" variant="ghost" onClick={onSwitch}>
-          Choose another way
-        </Button>
-      </div>
-    </div>
+            {step.detail ? <div className="mt-0.5 text-xs text-fg-dim">{step.detail}</div> : null}
+          </div>
+          <span className="text-xs text-fg-dim">
+            {step.status === 'done'
+              ? 'Done'
+              : step.status === 'active'
+                ? 'In progress'
+                : step.status === 'failed'
+                  ? 'Failed'
+                  : 'Waiting'}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }

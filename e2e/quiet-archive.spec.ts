@@ -157,7 +157,7 @@ test('AuthShell covers sign-up, invite, and email verification layouts', async (
     },
     {
       path: '/accept-invite/quiet-archive-layout',
-      heading: 'Accept invite',
+      heading: 'Invite invalid',
       action: 'Sign in',
     },
     {

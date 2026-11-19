@@ -438,6 +438,49 @@ describe('requestDocumentUploadAction', () => {
     );
   });
 
+  it('renews the original uploader’s pending reservation without creating another version', async () => {
+    const objectKey = [TEAM_ID, DOC_ID, 'v1', 'pending.pdf'].join('/');
+    fakeScope.getDocumentVersion.mockResolvedValue({
+      id: VERSION_ID,
+      documentId: DOC_ID,
+      uploadedByUserId: USER_ID,
+      objectKey,
+      sourceEventId: null,
+      byteSize: null,
+      contentType: 'application/pdf',
+    });
+    fakeScope.getDocument.mockResolvedValue({ id: DOC_ID });
+    fakeGetSignedPutUrl.mockResolvedValue('https://rustfs/signed/renewed');
+    const renewed = await requestDocumentUploadAction({ resumeVersionId: VERSION_ID });
+    expect(renewed).toMatchObject({ ok: true, versionId: VERSION_ID, objectKey });
+    expect(fakeScope.createDocument).not.toHaveBeenCalled();
+    expect(fakeScope.addDocumentVersion).not.toHaveBeenCalled();
+
+    fakeScope.getDocumentVersion.mockResolvedValueOnce({
+      id: VERSION_ID,
+      documentId: DOC_ID,
+      uploadedByUserId: 'other-user',
+      sourceEventId: null,
+      byteSize: null,
+      contentType: 'application/pdf',
+    });
+    expect(await requestDocumentUploadAction({ resumeVersionId: VERSION_ID })).toMatchObject({
+      ok: false,
+    });
+    expect(fakeGetSignedPutUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects oversized files before reserving a document name', async () => {
+    const result = await requestDocumentUploadAction({
+      name: 'Large file',
+      filename: 'large.pdf',
+      contentType: 'application/pdf',
+      byteSize: 26 * 1024 * 1024,
+    });
+    expect(result.error).toBe('Choose a file up to 25 MiB.');
+    expect(fakeScope.createDocument).not.toHaveBeenCalled();
+  });
+
   it('takes the new-version path when documentId is passed', async () => {
     fakeScope.addDocumentVersion.mockResolvedValue({
       id: VERSION_ID,

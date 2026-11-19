@@ -82,7 +82,13 @@ function processingTitle(status: FirstRunStatusPayload): string {
   return 'Working on it';
 }
 
-export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayload }) {
+export function SetupFlow({
+  initialStatus,
+  captureUrl = null,
+}: {
+  initialStatus: FirstRunStatusPayload;
+  captureUrl?: string | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +113,7 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   useEffect(() => {
     if (phase !== 'processing' || stepsFailed) return;
     const id = setInterval(() => {
-      router.refresh();
+      if (document.visibilityState === 'visible') router.refresh();
     }, 2500);
     return () => {
       clearInterval(id);
@@ -147,7 +153,8 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   async function pickEmail() {
     const result = await selectStarterPathAction({ path: 'email' });
     if (!result.ok) throw new Error(result.error ?? 'Could not start email capture.');
-    router.refresh();
+    if (captureUrl) router.replace('/onboarding');
+    else router.refresh();
   }
 
   async function skip() {
@@ -159,7 +166,8 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   async function returnToChooser() {
     const result = await setFirstRunPhaseAction('choose');
     if (!result.ok) throw new Error(result.error ?? 'Could not return to the chooser.');
-    router.refresh();
+    if (captureUrl) router.replace('/onboarding');
+    else router.refresh();
   }
 
   let body = (
@@ -202,9 +210,11 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
         title={processingTitle(initialStatus)}
         description={
           firstRun?.starterPath === 'email'
-            ? 'Send one real thread to your team address. This screen opens the record as soon as it arrives.'
-            : 'You can leave this screen. The record also appears on Home when it is ready.'
+            ? 'Send one real thread to your team address. You can keep working and check Home for updates.'
+            : 'You can keep working on Home while this finishes. Open your capture status there to check progress.'
         }
+        startedAt={firstRun?.starterSelectedAt ?? null}
+        captureUrl={captureUrl}
         steps={initialStatus.record?.processingSteps ?? []}
         inboundEmail={initialStatus.inboundEmail}
         emailWaiting={firstRun?.starterPath === 'email' && !initialStatus.record?.emailArrived}

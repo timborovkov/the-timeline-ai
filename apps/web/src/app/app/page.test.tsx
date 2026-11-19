@@ -244,8 +244,18 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/components/onboarding/first-run-home-capture'),
   () => ({
-    FirstRunHomeCapture: ({ failed }: { failed: boolean }) => (
-      <div data-testid="first-run-home-capture">{failed ? 'failed' : 'processing'}</div>
+    FirstRunHomeCapture: ({
+      failed,
+      ready,
+      href,
+    }: {
+      failed: boolean;
+      ready: boolean;
+      href: string;
+    }) => (
+      <a data-testid="first-run-home-capture" href={href}>
+        {ready ? 'record ready' : failed ? 'failed' : 'processing'}
+      </a>
     ),
   }),
   () => import('@/components/onboarding/first-run-home-capture'),
@@ -522,10 +532,18 @@ describe('HomeDashboardPage', () => {
     });
   });
 
+  const capture = {
+    phase: 'processing',
+    starterPath: 'document',
+    teamId: 'team-1',
+    startedByUserId: 'user-1',
+    starterSelectedAt: new Date('2026-03-29T11:30:00Z'),
+  };
+
   it('keeps a processing first-run capture visible after the owner leaves setup', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun: { phase: 'processing', starterPath: 'document' },
+      firstRun: capture,
     });
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
@@ -538,16 +556,24 @@ describe('HomeDashboardPage', () => {
   });
 
   it('opens the cited record when capture lands after leaving setup', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun: { phase: 'record', starterPath: 'document' },
+      firstRun: {
+        ...capture,
+        phase: 'record',
+        firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
+      },
     });
 
-    await expect(HomeDashboardPage()).rejects.toThrow('redirect:/app/onboarding/record');
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+    expect(html).toContain(
+      '/onboarding?capture=team-1.document.' + capture.starterSelectedAt.getTime(),
+    );
+    expect(html).toContain('record ready');
   });
 
   it('shows a failed first-run capture on Home', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'failed', starterPath: 'website' });
+    fakes.getFirstRun.mockResolvedValue({ ...capture, phase: 'failed', starterPath: 'website' });
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
 
@@ -557,9 +583,9 @@ describe('HomeDashboardPage', () => {
   });
 
   it('stops waiting on Home when document extract failed', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun: { phase: 'processing', starterPath: 'document' },
+      firstRun: capture,
       record: { processingSteps: [{ id: 'extract', status: 'failed' }] },
     });
 

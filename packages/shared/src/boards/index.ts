@@ -1259,7 +1259,7 @@ export function createBoardScope({
   }
 
   const api = {
-    async listBoards(): Promise<BoardRow[]> {
+    async listBoards(range: { from?: Date; to?: Date } = {}): Promise<BoardRow[]> {
       await scope.requireMembership();
       const [boardRows, countRows, pinRows] = await Promise.all([
         db
@@ -1269,6 +1269,8 @@ export function createBoardScope({
             and(
               eq(boards.teamId, scope.teamId),
               isNull(boards.archivedAt),
+              range.from ? gte(boards.updatedAt, range.from) : undefined,
+              range.to ? lt(boards.updatedAt, range.to) : undefined,
               or(eq(boards.isShared, true), eq(boards.createdBy, scope.userId)),
             ),
           )

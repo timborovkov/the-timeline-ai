@@ -1,12 +1,21 @@
-import { SETUP_SHELL_PHASES, type FirstRunPhase } from '@timeline/shared/onboarding';
+import {
+  SETUP_SHELL_PHASES,
+  type FirstRunPhase,
+  type FirstRunState,
+} from '@timeline/shared/onboarding';
+import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
+import { CaptureUnavailable } from '@/components/onboarding/capture-unavailable';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { SetupFlow } from '@/components/onboarding/setup-flow';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { defaultSoloTeamName } from '@/lib/default-team';
+import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
+import { appUrl } from '@/lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,14 +38,52 @@ function redirectForLaterPhase(phase: FirstRunPhase): never {
   redirect('/app');
 }
 
-export default async function OnboardingPage() {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
+type SetupCaptureView =
+  | { kind: 'unavailable' }
+  | { kind: 'redirect'; href: string }
+  | { kind: 'setup'; resumeHref: string | null };
+
+function setupCaptureView(
+  firstRun: FirstRunState | null,
+  capture: string | string[] | undefined,
+  userId: string,
+): SetupCaptureView {
+  const key = firstRunCaptureKey(firstRun);
+  if (capture !== undefined && (capture !== key || firstRun?.startedByUserId !== userId)) {
+    return { kind: 'unavailable' };
+  }
+  if (!firstRun || firstRun.startedByUserId !== userId) return { kind: 'redirect', href: '/app' };
+  if (key && firstRun.firstCaptureLandedAt && capture === key) {
+    return { kind: 'redirect', href: firstRunCaptureHref(key, 'record') };
+  }
+  if (!SETUP_SHELL_PHASES.includes(firstRun.phase)) {
+    redirectForLaterPhase(firstRun.phase);
+  }
+  const resumeHref = key ? firstRunCaptureHref(key) : null;
+  return resumeHref && capture === undefined
+    ? { kind: 'redirect', href: resumeHref }
+    : { kind: 'setup', resumeHref };
+}
+
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ capture?: string | string[] }>;
+}) {
+  const [session, { capture }] = await Promise.all([auth(), searchParams]);
+  if (!session?.user) {
+    const callback =
+      typeof capture === 'string' && capture.length <= 100
+        ? firstRunCaptureHref(capture)
+        : '/onboarding';
+    redirect('/sign-in?callbackUrl=' + encodeURIComponent(callback));
+  }
   const { active } = await resolveActiveTeam(session.user.id);
 
   // Deferred solo create: signed-in users with zero memberships name their
   // workspace here. Invite joiners already have a team and never hit this.
   if (!active) {
+    if (capture !== undefined) return <CaptureUnavailable />;
     return (
       <SetupFlow
         initialStatus={{
@@ -57,11 +104,18 @@ export default async function OnboardingPage() {
     teamSlug: active.teamSlug,
     teamName: active.teamName,
   });
-  const firstRun = status.firstRun;
-  if (firstRun?.startedByUserId !== session.user.id) redirect('/app');
-  if (!SETUP_SHELL_PHASES.includes(firstRun.phase)) {
-    redirectForLaterPhase(firstRun.phase);
-  }
-
-  return <SetupFlow initialStatus={status} />;
+  const view = setupCaptureView(status.firstRun, capture, session.user.id);
+  if (view.kind === 'unavailable') return <CaptureUnavailable />;
+  if (view.kind === 'redirect') redirect(view.href);
+  const { resumeHref } = view;
+  const calendar = await withTeam(
+    db,
+    active.teamId,
+    session.user.id,
+  ).calendar.getCalendarSettings();
+  return (
+    <WorkspaceTimezoneProvider timezone={calendar.defaultTimezone}>
+      <SetupFlow initialStatus={status} captureUrl={resumeHref ? appUrl(resumeHref).href : null} />
+    </WorkspaceTimezoneProvider>
+  );
 }

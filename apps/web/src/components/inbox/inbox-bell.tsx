@@ -3,7 +3,7 @@
 import { Bell } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type MouseEvent, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from '@/app/actions/objects';
 import { EmptyState } from '@/components/empty-state';
@@ -48,50 +48,32 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [pendingNotificationId, setPendingNotificationId] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const badge = formatNavBadge(unreadCount);
 
-  function completeReadAction(
-    action: () => Promise<{ error?: string }>,
-    onSuccess: () => void,
-    notificationId?: string,
-  ): void {
-    setPendingNotificationId(notificationId ?? null);
+  function markAllRead(): void {
     startTransition(async () => {
       const result = await notifyAction({
-        id: notificationId ? `inbox:${notificationId}:read` : 'inbox:mark-all-read',
-        loading: notificationId ? 'Marking notification read…' : 'Marking notifications read…',
-        success: notificationId ? 'Notification marked read' : 'Notifications marked read',
-        error: notificationId
-          ? 'Couldn’t mark notification read'
-          : 'Couldn’t mark notifications read',
-        run: action,
+        id: 'inbox:mark-all-read',
+        loading: 'Marking notifications read…',
+        success: 'Notifications marked read',
+        error: 'Couldn’t mark notifications read',
+        run: markAllNotificationsReadAction,
       });
-      setPendingNotificationId(null);
-      if (result.error) return;
-      onSuccess();
-      router.refresh();
+      if (!result.error) router.refresh();
     });
   }
 
-  function markReadAndNavigate(
-    event: MouseEvent<HTMLAnchorElement>,
-    notification: InboxBellNotification,
-  ): void {
-    if (notification.readAt !== null) return;
-    event.preventDefault();
-    if (pending) return;
-    completeReadAction(
-      () => markNotificationReadAction(notification.id),
-      () => {
-        router.push(inboxItemHref(notification));
-      },
-      notification.id,
-    );
+  function markRead(id: string): void {
+    void markNotificationReadAction(id)
+      .then((result) => {
+        if (!result.error) router.refresh();
+      })
+      .catch(() => undefined);
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -123,9 +105,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
             type="button"
             disabled={unreadCount === 0 || pending}
             aria-busy={pending}
-            onClick={() => {
-              completeReadAction(markAllNotificationsReadAction, () => undefined);
-            }}
+            onClick={markAllRead}
             className="text-xs text-signal hover:underline disabled:opacity-40"
           >
             {pending ? 'Marking all read…' : 'Mark all read'}
@@ -147,15 +127,13 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                 <li key={notification.id} className="border-b border-border last:border-b-0">
                   <Link
                     href={inboxItemHref(notification)}
-                    aria-disabled={pending && unread ? true : undefined}
-                    tabIndex={pending && unread ? -1 : undefined}
-                    onClick={(event) => {
-                      markReadAndNavigate(event, notification);
+                    onNavigate={() => setOpen(false)}
+                    onClick={() => {
+                      if (unread) markRead(notification.id);
                     }}
                     className={cn(
                       'grid grid-cols-[auto_1fr] gap-x-2 px-3 py-2.5 text-sm transition-colors hover:bg-surface-2',
                       !unread && 'opacity-70',
-                      pending && unread && 'pointer-events-none opacity-50',
                     )}
                   >
                     <span
@@ -175,11 +153,6 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
                       <span className="mt-1 line-clamp-2 block text-fg">
                         {notification.summary}
                       </span>
-                      {pendingNotificationId === notification.id ? (
-                        <span className="sr-only" aria-live="polite">
-                          Marking notification as read
-                        </span>
-                      ) : null}
                     </span>
                   </Link>
                 </li>

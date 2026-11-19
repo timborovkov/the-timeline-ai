@@ -1,6 +1,6 @@
 import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
-import { GUIDED_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboarding/first-run';
+import { type FirstRunState } from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
@@ -28,6 +28,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 import {
   displayInboundEmail,
@@ -109,29 +110,6 @@ function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: s
   };
 }
 
-async function resolveFirstRunHomeCapture(input: {
-  firstRun: FirstRunState | null;
-  teamId: string;
-  userId: string;
-  teamSlug: string;
-}): Promise<{ failed: boolean } | 'record' | null> {
-  if (input.firstRun?.phase === 'failed') return { failed: true };
-  if (input.firstRun?.phase !== 'processing') return null;
-  const status = await loadFirstRunStatus({
-    db,
-    teamId: input.teamId,
-    userId: input.userId,
-    teamSlug: input.teamSlug,
-    teamName: 'Your team',
-  });
-  const nextPhase = status.firstRun?.phase ?? input.firstRun.phase;
-  if (GUIDED_SHELL_PHASES.includes(nextPhase)) return 'record';
-  const stepsFailed = (status.record?.processingSteps ?? []).some(
-    (step) => step.status === 'failed',
-  );
-  return { failed: nextPhase === 'failed' || stepsFailed };
-}
-
 function firstRunStarterPath(row: FirstRunState | null) {
   return row?.starterPath ?? null;
 }
@@ -146,13 +124,31 @@ async function FirstRunHomeBanner(input: {
   userId: string;
   teamSlug: string;
 }) {
-  const result = await resolveFirstRunHomeCapture(input);
-  if (result === 'record') redirect('/app/onboarding/record');
-  if (!result) return null;
+  const { firstRun } = input;
+  if (!firstRun || firstRun.startedByUserId !== input.userId) return null;
+  if (firstRun.phase !== 'processing' && firstRun.phase !== 'failed' && firstRun.phase !== 'record')
+    return null;
+
+  const status =
+    firstRun.phase === 'processing'
+      ? await loadFirstRunStatus({ db, ...input, teamName: 'Your team' })
+      : null;
+  const current = status?.firstRun ?? firstRun;
+  const captureKey = firstRunCaptureKey(current);
+  if (!captureKey) return null;
+  const steps = status?.record?.processingSteps ?? [];
+  const ready = Boolean(current.firstCaptureLandedAt);
+  const failed = current.phase === 'failed' || steps.some((step) => step.status === 'failed');
+
   return (
     <FirstRunHomeCapture
-      failed={result.failed}
-      emailWaiting={input.firstRun?.starterPath === 'email'}
+      ready={ready}
+      failed={failed}
+      emailWaiting={current.starterPath === 'email' && !ready}
+      startedAt={current.starterSelectedAt}
+      completed={steps.filter((step) => step.status === 'done').length}
+      total={steps.length}
+      href={firstRunCaptureHref(captureKey)}
     />
   );
 }
@@ -285,6 +281,7 @@ export default async function HomeDashboardPage() {
           <div className="mt-4 flex items-center gap-4">
             <CaptureDialog>
               <CaptureForm
+                key={active.teamId}
                 initialVisibility={quickCaptureVisibility}
                 currentUser={{
                   id: session.user.id,

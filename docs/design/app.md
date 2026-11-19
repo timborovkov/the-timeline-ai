@@ -37,8 +37,11 @@ ask, meetings, trust memory, stay in the loop) rather than enumerating every
 work surface.
 
 Setup actions stay disabled until saving finishes, and failed saves retain the current
-step with an inline retryable error. Email capture can wait in the background while
-the member continues to Home.
+step with an inline retryable error. First-run processing displays the start time
+and completed steps. Home shows the latest status while the user works and links
+to that exact attempt. The same link opens the cited record when ready. If an
+attempt is replaced or the active workspace changes, the link offers recovery
+through the current setup.
 
 The source chooser presents Document, Email, and Website as three mutually
 exclusive choices with one active form. Document is the initial choice. Skip is
@@ -773,6 +776,18 @@ Work relevance badges do not duplicate the canonical Blocked status, and normal
 pending approval uses the signal tone rather than danger. Narrow object property
 values wrap so dates remain complete. Website polling skips overlapping requests, so slow responses can settle.
 
+### Global search
+
+The Source control applies to Timeline. Date filters use whole workspace-local
+days. Timeline uses occurrence time, Documents use version creation time,
+Calendar uses event overlap, and objects, tasks and boards use last-updated
+time. Page shortcuts have no dates. Search date errors leave the query and other
+filters available while the user corrects or clears the affected field.
+
+The page and palette show which result types were searched. When semantic
+retrieval cannot run, Timeline and Documents use workspace-scoped keyword
+matching for names, filenames and identifiers, with coverage shown in the results.
+
 ### Global search palette
 
 The header search opens a panel capped at 44rem and the available viewport
@@ -781,6 +796,13 @@ icons; content results retain their context and due dates. Arrow navigation,
 Enter, Escape, active-descendant semantics, and row actions keep their existing
 linear order. Opening and closing use the shared popover transition; closing
 returns focus to the search input.
+
+### Capture and Inbox feedback
+
+Capture reports each saved or failed part. Users can retry failed attachments
+with their original visibility while keeping the note draft and saved items.
+Inbox preview links open their destinations immediately, and read state updates
+in the background.
 
 ## Conversation reports
 

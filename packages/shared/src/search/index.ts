@@ -45,12 +45,17 @@ export interface GlobalSearchWarning {
   message: string;
 }
 
+export type GlobalSearchCoverage = Partial<
+  Record<GlobalSearchKind, 'searched' | 'keyword' | 'partial' | 'unavailable'>
+>;
+
 export interface GlobalSearchResponse {
   ok: true;
   query: string;
   mode: GlobalSearchMode;
   results: GlobalSearchResult[];
   warnings: GlobalSearchWarning[];
+  coverage: GlobalSearchCoverage;
 }
 
 export interface LexicalScoreInput {

@@ -16,6 +16,8 @@ describe('ProcessingScreen', () => {
       <ProcessingScreen
         title="Reading seed-deck.pdf"
         description="You can leave this screen. The record also appears on Home when it is ready."
+        startedAt={new Date('2026-03-29T19:00:00Z')}
+        captureUrl="https://example.test/onboarding?capture=fixture"
         steps={[
           { id: 'upload', label: 'Uploading', status: 'done' },
           {
@@ -35,7 +37,12 @@ describe('ProcessingScreen', () => {
 
     expect(screen.getByRole('heading', { name: 'Reading seed-deck.pdf' })).toBeTruthy();
     expect(screen.getByText('In progress')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Go to Home and wait there' })).toBeTruthy();
+    expect(screen.getByText('Done')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy capture link' })).toBeTruthy();
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-03-29T19:00:00.000Z',
+    );
+    expect(screen.getByRole('button', { name: 'Go to Home' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Choose another way' })).toBeTruthy();
     expect(screen.queryByText(/%|seconds|minutes/i)).toBeNull();
   });
