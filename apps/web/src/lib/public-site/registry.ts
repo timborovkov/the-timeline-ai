@@ -119,8 +119,8 @@ function validateDocument(document: PublicDocument, sourceId: string): void {
   validateCanonicalPath(document.canonicalPath, context);
   validateSingleLine(document.title, 'title', context);
   validateSingleLine(document.description, 'description', context);
-  validateDate(document.dates.modified, 'modified date', context);
-  validateDate(document.dates.reviewed, 'reviewed date', context);
+  validatePublicDate(document.dates.modified, 'modified date', context);
+  validatePublicDate(document.dates.reviewed, 'reviewed date', context);
 
   if (document.dates.reviewed < document.dates.modified) {
     throw new Error(`Public document reviewed date precedes its modified date: ${context}`);
@@ -212,7 +212,7 @@ function validateDocument(document: PublicDocument, sourceId: string): void {
       });
     }
     if (input.type === 'tech-article' && input.published) {
-      validateDate(input.published, 'published date', context);
+      validatePublicDate(input.published, 'published date', context);
     }
   }
 }
@@ -266,10 +266,12 @@ function validateCanonicalPath(canonicalPath: string, context: string): void {
   }
 }
 
-function validateDate(value: PublicIsoDate, field: string, context: string): void {
+export function validatePublicDate(value: PublicIsoDate, field: string, context: string): void {
+  const date = new Date(`${value}T00:00:00.000Z`);
   if (
     !ISO_DATE.test(value) ||
-    new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== value
   ) {
     throw new Error(`Invalid public document ${field} in ${context}: ${value}`);
   }

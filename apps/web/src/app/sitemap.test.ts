@@ -49,7 +49,7 @@ describe('sitemap', () => {
 
     expect(second).toEqual(first);
     expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-11-12');
-    expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-11-12');
+    expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-11-19');
     expect(byUrl.get('https://thetimeline.cc/integrations/mcp')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/use-cases')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/product-tour')).toBe('2026-11-12');

@@ -307,6 +307,18 @@ Ingest webhook credentials are managed in the dashboard and stored as database h
 
 6.  Services restart with new image. Healthcheck on `web` (`/api/health`) must pass before traffic shifts.
 
+    From a checkout of the deployed revision, verify the public origin after
+    the web deployment is healthy. Pass the intended origin first and any
+    configured host aliases afterward.
+
+        bun run check:public-origin https://thetimeline.cc https://www.thetimeline.cc
+
+    The check verifies the sitemap advertised in robots, the sitemap pages and
+    their canonical tags, legacy and host-alias redirects, and the link
+    destinations in both LLM files. If build-time output points to another
+    origin, align the Docker build argument and runtime `AUTH_URL`, then
+    rebuild and redeploy before rechecking.
+
 7.  Workers restart with same image — they share the codebase, just different entry points.
 
 <span id="cost-considerations"></span>

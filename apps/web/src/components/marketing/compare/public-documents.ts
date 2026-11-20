@@ -5,9 +5,7 @@ import {
   type ComparePageContent,
 } from '@/components/marketing/compare/content';
 import type { PublicDocument } from '@/lib/public-site';
-import { definePublicDocuments } from '@/lib/public-site/registry';
-
-const REVIEW_DATE = '2026-11-06' as const;
+import { definePublicDocuments, validatePublicDate } from '@/lib/public-site/registry';
 
 function uniqueCitations(sources: readonly ComparePageContent['facts'][number]['source'][]) {
   const seen = new Set<string>();
@@ -18,6 +16,14 @@ function uniqueCitations(sources: readonly ComparePageContent['facts'][number]['
   });
 }
 
+function reviewedClaimItems(page: ComparePageContent): string[] {
+  validatePublicDate(page.factsReviewedOn, 'claims reviewed date', page.route);
+  return page.facts.map(({ claim, reviewedOn }) => {
+    if (reviewedOn) validatePublicDate(reviewedOn, 'claim check date', page.route);
+    return `${claim} (Source checked ${reviewedOn ?? page.factsReviewedOn}.)`;
+  });
+}
+
 export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
   {
     canonicalPath: COMPARE_HUB_ROUTE,
@@ -25,7 +31,7 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
     title: COMPARE_HUB.seoTitle,
     description: COMPARE_HUB.seoDescription,
     indexability: 'index',
-    dates: { modified: REVIEW_DATE, reviewed: REVIEW_DATE },
+    dates: COMPARE_HUB.dates,
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.8 },
     structuredData: [
@@ -57,7 +63,7 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
     title: page.seoTitle,
     description: page.seoDescription,
     indexability: 'index',
-    dates: { modified: REVIEW_DATE, reviewed: REVIEW_DATE },
+    dates: page.dates,
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'monthly', priority: 0.7 },
     structuredData: [
@@ -79,7 +85,8 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
       sections: [
         {
           title: `What ${page.name} publishes`,
-          body: page.facts.map((fact) => fact.claim).join(' '),
+          body: `Comparison last reviewed ${page.dates.reviewed}.`,
+          items: reviewedClaimItems(page),
           links: uniqueCitations(page.facts.map((fact) => fact.source)),
         },
         { title: 'What The Timeline is', body: page.timelineSide },

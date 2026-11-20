@@ -26,6 +26,7 @@
     "test:dist-imports": "bun run --filter @timeline/db build && bun run --filter @timeline/shared build && bun scripts/check-dist-imports.mjs",
     "test:e2e-env": "bun scripts/e2e-env.test.ts",
     "check:web-bundle": "bun scripts/check-web-bundle-hygiene.ts",
+    "check:public-origin": "bun --cwd apps/web --no-env-file --conditions=development scripts/check-public-origin.ts",
     "e2e": "bun scripts/run-e2e-strict.ts",
     "e2e:ui": "bun scripts/run-e2e-command.ts bun x --bun --no-install playwright test --ui",
     "e2e:prod-smoke": "bun scripts/run-e2e-prod-smoke.ts",

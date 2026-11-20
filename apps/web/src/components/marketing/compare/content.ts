@@ -1,3 +1,5 @@
+import type { PublicDocumentDates, PublicIsoDate } from '@/lib/public-site/types';
+
 export const COMPARE_HUB_ROUTE = '/compare' as const;
 
 export const COMPARE_SLUGS = [
@@ -29,6 +31,7 @@ interface CompareCitation {
 interface CompareFact {
   claim: string;
   source: CompareCitation;
+  reviewedOn?: PublicIsoDate;
 }
 
 export interface ComparePageContent {
@@ -41,6 +44,8 @@ export interface ComparePageContent {
   seoTitle: string;
   seoDescription: string;
   competitorUrl: `https://${string}`;
+  dates: PublicDocumentDates;
+  factsReviewedOn: PublicIsoDate;
   facts: readonly CompareFact[];
   timelineSide: string;
   whenCompetitorBetter: string;
@@ -48,6 +53,7 @@ export interface ComparePageContent {
 
 export const COMPARE_HUB = {
   route: COMPARE_HUB_ROUTE,
+  dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
   title: 'See how The Timeline sits next to other tools.',
   summary:
     "Looking for Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow or Achiral alternatives? Head-to-head pages cite each competitor's own site. Unverified claims are left out. How existing tools plug in lives under Integrations.",
@@ -59,6 +65,8 @@ export const COMPARE_HUB = {
 export const COMPARE_PAGES: readonly ComparePageContent[] = [
   {
     slug: 'the-timeline-vs-day-ai',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-day-ai',
     name: 'Day AI',
     navLabel: 'The Timeline vs Day AI',
@@ -93,6 +101,8 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-folk',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-folk',
     name: 'Folk',
     navLabel: 'The Timeline vs Folk',
@@ -130,6 +140,8 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-glean',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-glean',
     name: 'Glean',
     navLabel: 'The Timeline vs Glean',
@@ -163,6 +175,8 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-geekbot',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-geekbot',
     name: 'Geekbot',
     navLabel: 'The Timeline vs Geekbot',
@@ -196,6 +210,8 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-suda',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-suda',
     name: 'Suda',
     navLabel: 'The Timeline vs Suda',
@@ -240,6 +256,8 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-memorycrow',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-memorycrow',
     name: 'MemoryCrow',
     navLabel: 'The Timeline vs MemoryCrow',
@@ -284,6 +302,8 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-achiral',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-achiral',
     name: 'Achiral',
     navLabel: 'The Timeline vs Achiral',

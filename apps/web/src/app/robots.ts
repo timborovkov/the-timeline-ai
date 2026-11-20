@@ -6,24 +6,28 @@ export const dynamic = 'force-dynamic';
 
 const DISALLOWED_PATHS = ['/api/', '/app$', '/app/', '/accept-invite/', '/verify-email/'];
 
-const AI_AND_SEARCH_BOTS = [
+const SEARCH_BOTS = [
   'Googlebot',
   'Bingbot',
   'DuckDuckBot',
+  'Applebot',
+  'YandexBot',
   'PerplexityBot',
-  'Perplexity-User',
-  'ChatGPT-User',
   'OAI-SearchBot',
+  'Claude-SearchBot',
+];
+
+const USER_RETRIEVAL_BOTS = ['Perplexity-User', 'ChatGPT-User', 'Claude-User'];
+
+const TRAINING_AND_BULK_BOTS = [
   'GPTBot',
   'ClaudeBot',
   'Claude-Web',
   'anthropic-ai',
   'Google-Extended',
-  'Applebot',
   'Applebot-Extended',
   'CCBot',
   'Bytespider',
-  'YandexBot',
 ];
 
 export default function robots(): MetadataRoute.Robots {
@@ -31,11 +35,9 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       { userAgent: '*', allow: '/', disallow: DISALLOWED_PATHS },
-      ...AI_AND_SEARCH_BOTS.map((userAgent) => ({
-        userAgent,
-        allow: '/',
-        disallow: DISALLOWED_PATHS,
-      })),
+      { userAgent: SEARCH_BOTS, allow: '/', disallow: DISALLOWED_PATHS },
+      { userAgent: USER_RETRIEVAL_BOTS, allow: '/', disallow: DISALLOWED_PATHS },
+      { userAgent: TRAINING_AND_BULK_BOTS, disallow: '/' },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,
     host: siteUrl,
