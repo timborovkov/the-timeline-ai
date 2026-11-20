@@ -30,8 +30,9 @@ describe('MarketingProductScreenshot', () => {
     expect(html).toContain('aspect-[16/10]');
     expect(html).toContain('object-cover');
     expect(html).toContain('object-top');
-    expect(html).toContain('/marketing/screenshots/32-ask-handoff-dark.png');
-    expect(html).not.toContain('/_next/image');
+    expect(html).toContain(
+      '/_next/image?url=%2Fmarketing%2Fscreenshots%2F32-ask-handoff-dark.png%3Fv%3D',
+    );
     expect(html).not.toContain('aspect-[390/844]');
     expect(html).not.toContain('object-contain');
   });
@@ -112,7 +113,7 @@ describe('resolved screenshot theme', () => {
     expect(html).not.toContain('rel="preload"');
   });
 
-  it('waits for the resolved theme then swaps one unoptimized image, including legacy mobile names', () => {
+  it('waits for the resolved theme then swaps one responsive image, including legacy mobile names', () => {
     theme.resolvedTheme = undefined;
     const element = () => (
       <MarketingProductScreenshot
@@ -129,10 +130,14 @@ describe('resolved screenshot theme', () => {
       view.rerender(element());
       const images = view.container.querySelectorAll('img');
       expect(images.length).toBe(1);
-      expect(images[0]?.getAttribute('src')).toBe(
-        `/marketing/screenshots/54-ask-recap-mobile-${value}.png`,
+      const optimized = new URL(images[0]?.getAttribute('src') ?? '', 'https://example.test');
+      expect(optimized.pathname).toBe('/_next/image');
+      expect(optimized.searchParams.get('url')).toStartWith(
+        `/marketing/screenshots/54-ask-recap-mobile-${value}.png?v=`,
       );
-      expect(images[0]?.getAttribute('srcset')).toBeNull();
+      expect(images[0]?.getAttribute('srcset')).toContain(' 640w');
+      expect(images[0]?.getAttribute('srcset')).toContain(' 828w');
+      expect(images[0]?.getAttribute('sizes')).toBe('(min-width: 384px) 384px, 100vw');
       expect(images[0]?.getAttribute('loading')).toBe('eager');
       expect(view.container.textContent).not.toContain(
         'Fictional example · Acme Labs demo workspace',

@@ -182,7 +182,7 @@ pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
 referenced by the public screenshot inventory. Each public slot has matching `<stem>-light.png`
 and `<stem>-dark.png` twins from the same fictional seed and framing. The
-resolved site theme selects one unoptimized image after hydration, including
+resolved site theme selects one responsive optimized image after hydration, including
 saved Light/Dark overrides and System changes. No variant is preloaded before
 the preference is known; the reserved loading frame prevents layout shift.
 Each screenshot reserves its aspect box and shows a loading label until painted.
@@ -207,8 +207,7 @@ board), and Share the context (team daily log and onboarding). Each group has
 an aligned heading and two descriptive link rows, followed by one shared-record
 explanation. Do not repeat the chooser as a second diagram. Referenced screenshot files are
 inventory-tested so a missing asset fails CI instead of shipping as a silent
-placeholder. Public screenshot slots serve the committed PNG bytes (unoptimized)
-so a recapture cannot stay hidden behind a stale image-optimizer cache. Ask
+placeholder. Public screenshot URLs carry a hash of the committed PNG bytes so recaptures invalidate optimized variants. Ask
 captures are stored examples; captions explain the pictured workflow without
 repeated demo disclaimers or implementation noise.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
@@ -532,8 +531,9 @@ Use it for the hero, root metadata defaults, manifest and homepage registry entr
 Specialized pages retain their own search intent and capability boundaries in the
 [public document registry](../public-site-registry.md).
 
-OG and Twitter cards share a 1200 × 630 composition: the official mark, Switzer,
-near-black background and lime emphasis. Describe the living record, connected
-objects, attached sources and approval boundary; avoid fabricated event IDs or
-version labels. Static social font subsets and their generation instructions live
+OG and Twitter cards share the 1200 × 630 format, the official mark, Switzer,
+near-black background, and lime emphasis. The default artwork presents the
+living record. Pricing, Product tour, and selected guides use their own
+headlines and show the options or steps covered on the page. Static social
+font subsets and their generation instructions live
 in `apps/web/public/fonts/switzer/SOCIAL-FONTS.md`.

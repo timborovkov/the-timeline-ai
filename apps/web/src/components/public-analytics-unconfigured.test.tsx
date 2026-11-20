@@ -68,7 +68,7 @@ describe('PublicAnalyticsBoundary without a public PostHog key', () => {
     await user.click(screen.getByRole('button', { name: 'Cookie settings' }));
 
     expect(
-      screen.getByText('Optional public analytics is unavailable on this deployment.'),
+      await screen.findByText('Optional public analytics is unavailable on this deployment.'),
     ).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Accept analytics' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject analytics' })).toBeNull();

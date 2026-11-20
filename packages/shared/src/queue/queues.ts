@@ -1212,11 +1212,24 @@ export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
   return _dailyDigestQueue;
 }
 
+export const DAILY_DIGEST_TICK_HEARTBEAT = 'timeline:daily-digest:last-scheduled-tick';
+
+export async function recordDailyDigestTick(scheduledAt: number): Promise<void> {
+  // A delayed retry of an older tick must not overwrite a newer heartbeat.
+  await getRedisConnection().eval(
+    "local last = tonumber(redis.call('GET', KEYS[1]) or '0'); if tonumber(ARGV[1]) > last then redis.call('SET', KEYS[1], ARGV[1], 'EX', 604800) end",
+    1,
+    DAILY_DIGEST_TICK_HEARTBEAT,
+    scheduledAt,
+  );
+}
+
 export async function scheduleDailyDigest(): Promise<void> {
-  await upsertCronScheduler(getDailyDigestQueue(), 'daily-digest-1200-utc', '0 12 * * *', {
-    name: 'tick',
-    data: { kind: 'tick', reason: 'scheduled' },
-  });
+  await getDailyDigestQueue().upsertJobScheduler(
+    'daily-digest-1200-utc',
+    { pattern: '0 12 * * *', tz: 'UTC' },
+    { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
+  );
   await enqueueDailyDigestCatchupJob();
 }
 

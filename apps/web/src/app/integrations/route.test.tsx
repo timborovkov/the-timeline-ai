@@ -21,6 +21,7 @@ const { ConnectorPage } = await import('@/components/marketing/integrations/conn
 const { WORKS_WITH_PAGE_TOOLS, findWorksWithTool } =
   await import('@/components/marketing/integrations/works-with-content');
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
+const { buildLlmsFullTxt, buildLlmsTxt } = await import('@/lib/llms-text');
 
 const { default: IntegrationsPage, metadata } = await import('@/app/integrations/page');
 const connectorRoute = await import('@/app/integrations/[slug]/page');
@@ -29,6 +30,29 @@ describe('public integration routes', () => {
   afterEach(() => {
     cleanup();
     resetPublicSessionCache();
+  });
+
+  it('puts the same answers in the rendered capability table and both LLM files', () => {
+    const html = renderToStaticMarkup(<IntegrationsPage />);
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    const rows = [...document.querySelectorAll('table[aria-labelledby="capabilities"] tbody tr')];
+    expect(rows.map((row) => row.querySelector('th')?.textContent)).toEqual([
+      'Native sync',
+      'Deliberate capture',
+      'Live lookup',
+      'Historical coverage',
+      'Permissions',
+    ]);
+
+    const compact = buildLlmsTxt();
+    const full = buildLlmsFullTxt();
+    for (const row of rows) {
+      const title = row.querySelector('th')?.textContent ?? '';
+      const body = row.querySelector('td')?.textContent ?? '';
+      expect(body.length).toBeGreaterThan(30);
+      expect(compact).toContain(`- ${title}: ${body}`);
+      expect(full).toContain(`#### ${title}\n${body}`);
+    }
   });
 
   it('renders the directory with one heading and an accurate capability tier boundary', () => {
@@ -211,7 +235,7 @@ describe('public integration routes', () => {
     });
     expect(github.title).toBe('GitHub integration for cited release history');
     expect(github.alternates).toEqual({ canonical: '/integrations/github' });
-    expect(github.robots).toBeUndefined();
+    expect(github.robots).toMatchObject({ googleBot: { 'max-image-preview': 'large' } });
 
     expect(metadata.alternates).toEqual({ canonical: '/integrations' });
     expect(metadata.title).toBe('Integrations and capture surfaces');
@@ -221,6 +245,7 @@ describe('public integration routes', () => {
     });
     expect(hubspot.title).toBe('HubSpot and The Timeline');
     expect(hubspot.alternates).toEqual({ canonical: '/integrations/hubspot' });
+    expect(hubspot.robots).toEqual({ index: false, follow: false });
   });
 
   it.each(WORKS_WITH_PAGE_TOOLS)('renders $route with honest status and guidance', async (tool) => {
