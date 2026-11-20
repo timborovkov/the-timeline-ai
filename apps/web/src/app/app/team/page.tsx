@@ -683,7 +683,6 @@ async function loadTeamSettingsPage({
           id: teamInvites.id,
           email: teamInvites.email,
           role: teamInvites.role,
-          token: teamInvites.token,
           expiresAt: teamInvites.expiresAt,
           createdAt: teamInvites.createdAt,
           lastSentAt: teamInvites.lastSentAt,

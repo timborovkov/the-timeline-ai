@@ -7,6 +7,7 @@ import {
   engineMaintenanceRuns,
   agentSuggestionEvidence,
   agentSuggestionItems,
+  entityRelationships,
   agentSuggestions,
   boardItems,
   boardItemChanges,
@@ -3956,6 +3957,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         id: calendarEvents.id,
         teamId: calendarEvents.teamId,
         deletedAt: calendarEvents.deletedAt,
+        source: calendarEvents.source,
       })
       .from(calendarEvents)
       .where(eq(calendarEvents.id, calendarEventId))
@@ -3963,6 +3965,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!row) return null;
     if (row.teamId !== teamId) return null;
     if (row.deletedAt) return 'The target calendar event was deleted.';
+    if (row.source !== 'internal') {
+      return 'Imported calendar events are read-only. Change them in the source calendar instead.';
+    }
     return null;
   }
 
@@ -6059,16 +6064,26 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
         };
       }
-      await calendar.updateCalendarEvent(targetId, patch);
-      return targetId;
+      const updated = await calendar.updateCalendarEvent(targetId, patch);
+      if (!updated) {
+        throw new Error(
+          'Imported calendar events are read-only. Change them in the source calendar instead.',
+        );
+      }
+      return updated.id;
     }
     const parsed = calendarUpdatePayload.parse(
       normalizeCalendarPayload(item, { fallbackTitle: false }),
     );
-    await calendar.deleteCalendarEvent(
+    const deleted = await calendar.deleteCalendarEvent(
       targetId,
       parsed.recurrenceEditMode ? { recurrenceEditMode: parsed.recurrenceEditMode } : {},
     );
+    if (!deleted) {
+      throw new Error(
+        'Imported calendar events are read-only. Change them in the source calendar instead.',
+      );
+    }
     return targetId;
   }
 
@@ -6473,6 +6488,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       limit?: number;
       cursor?: string | null;
       itemIds?: string[];
+      projectId?: string | undefined;
+      decisionOnly?: boolean | undefined;
     } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
@@ -6480,6 +6497,66 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (opts.itemIds) conditions.push(captureItemsPredicate(opts.itemIds));
+    const filteredItem =
+      opts.projectId || opts.decisionOnly
+        ? and(
+            eq(agentSuggestionItems.teamId, teamId),
+            status === 'pending'
+              ? eq(agentSuggestionItems.status, 'pending')
+              : status === 'failed'
+                ? eq(agentSuggestionItems.status, 'failed')
+                : status === 'resolved'
+                  ? sql`${agentSuggestionItems.status} NOT IN ('pending', 'failed')`
+                  : sql`${agentSuggestionItems.status} <> 'failed'`,
+            opts.boardId
+              ? sql`${agentSuggestionItems.proposedPayload}->>'boardId' = ${opts.boardId}`
+              : undefined,
+            opts.decisionOnly
+              ? sql`(
+            ${agentSuggestionItems.proposedPayload}->>'type' = 'decision'
+            OR ${agentSuggestionItems.proposedPayload}->>'objectType' = 'decision'
+            OR EXISTS (SELECT 1 FROM ${entities} WHERE ${entities.teamId} = ${teamId}
+              AND ${entities.id} = ${agentSuggestionItems.targetId} AND ${entities.type} = 'decision')
+          )`
+              : undefined,
+            opts.projectId
+              ? sql`(
+            ${agentSuggestionItems.targetId} = ${opts.projectId}::uuid
+            OR ${agentSuggestionItems.proposedPayload}->>'parentObjectId' = ${opts.projectId}
+            OR ${agentSuggestionItems.proposedPayload}->>'projectId' = ${opts.projectId}
+            OR EXISTS (
+              SELECT 1 FROM agent_suggestion_items AS sibling
+              WHERE sibling.team_id = ${teamId}::uuid AND sibling.suggestion_id = ${agentSuggestionItems.suggestionId}
+              AND sibling.target_kind = 'object_relationship'
+              AND sibling.status IN ('pending', 'accepted')
+              AND (
+                (sibling.proposed_payload->>'fromRef' = ${agentSuggestionItems.proposedPayload}->>'localRef'
+                  AND sibling.proposed_payload->>'toEntityId' = ${opts.projectId})
+                OR
+                (sibling.proposed_payload->>'toRef' = ${agentSuggestionItems.proposedPayload}->>'localRef'
+                  AND sibling.proposed_payload->>'fromEntityId' = ${opts.projectId})
+              )
+            )
+            OR ${agentSuggestionItems.proposedPayload}->>'primaryProjectId' = ${opts.projectId}
+            OR ${agentSuggestionItems.metadata}->>'project_id' = ${opts.projectId}
+            OR EXISTS (SELECT 1 FROM ${entityRelationships}
+              WHERE ${entityRelationships.teamId} = ${teamId}
+              AND ((${entityRelationships.fromEntityId} = ${agentSuggestionItems.targetId} AND ${entityRelationships.toEntityId} = ${opts.projectId}::uuid)
+                OR (${entityRelationships.toEntityId} = ${agentSuggestionItems.targetId} AND ${entityRelationships.fromEntityId} = ${opts.projectId}::uuid)))
+          )`
+              : undefined,
+          )
+        : undefined;
+    if (filteredItem) {
+      conditions.push(
+        exists(
+          db
+            .select({ id: agentSuggestionItems.id })
+            .from(agentSuggestionItems)
+            .where(and(eq(agentSuggestionItems.suggestionId, agentSuggestions.id), filteredItem)),
+        ),
+      );
+    }
     if (opts.boardId)
       conditions.push(
         exists(
@@ -6534,7 +6611,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(...conditions))
       .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestions.id))
       .limit(Math.min(Math.max(opts.limit ?? 100, 1), 200));
-    return hydrateBundles(rows);
+    const bundles = await hydrateBundles(rows);
+    if (!filteredItem || rows.length === 0) return bundles;
+    const matching = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          filteredItem,
+          inArray(
+            agentSuggestionItems.suggestionId,
+            rows.map((row) => row.id),
+          ),
+        ),
+      );
+    const matches = new Set(matching.map((row) => row.id));
+    return bundles.map((bundle) => ({
+      ...bundle,
+      items: bundle.items.filter((item) => matches.has(item.id)),
+    }));
   }
 
   async function calendarResolutionHintForItem(

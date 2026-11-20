@@ -21,16 +21,13 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 
 | ID | Open outcome | Completion criterion / owner |
 | --- | --- | --- |
-| P1 | Add per-team vision-spend budgets and visibility. | Bound paid OCR spend before work starts and show deferred/budget state; retain existing extraction admission limits. |
-| P2 | Recover terminal failed/no-show meeting captures. | Expose final failure in operations with an explicit retry/rejoin path; existing in-window retry is not full recovery. |
 | P3 | Complete remaining timeline moment coverage. | Non-integration source moment IDs, provider live-payload fixtures and handoff/update DTOs; current Moments UI is not a pending redesign. |
 | P4 | Extend remaining direct workspace actions in chat. | Add approved document/folder organization, identity-facet editing, and dedicated task category/project/company-field operations through their existing domain services. See [direct chat workspace actions](docs/objects.md#direct-chat-workspace-actions); administrative actions require a separate scope. |
 | P5 | Extend multi-step in-chat action recovery. | Add durable workflow-level recovery for multi-step operations; interrupted approval claims must never silently replay a mutation. See [persisted chat sessions](docs/objects.md#persisted-chat-sessions). |
-| P6 | Add retrieval/index health by source kind. | Surface stale/missing indexes and recovery for object/calendar/document/board changes without leaking hidden data. |
 | P7 | Extend shared agent evaluation to remaining journeys. | Measure gaps in real dashboard/external-chat/background-proposal/summary/action paths using the existing harness; do not build a second harness. |
-| P8 | Add external calendar import. | Person-owned encrypted credentials, selected calendars, incremental Google sync/push and CalDAV polling, dedupe, private-source visibility and deletion tombstones. |
-| P9 | Add calendar reminders and missed-event handling. | Stateless due-window worker, team/per-event override cascade, idempotent delivery and evidence-based missed-event semantics. |
-| P10 | Add targeted file inspection and correction. | Second-pass original-file inspection, audited representation corrections, and captured-file sender/bulk triage; preserve [file semantics](docs/captured-files.md). |
+| P8 | Extend calendar import coverage. | Verify and enable the Google Calendar OAuth scopes, then add Google push sync and CalDAV polling. See [Calendar](docs/calendar.md#google-calendar-import). |
+| P9 | Add missed-event handling. | Define evidence-based missed-event semantics alongside [calendar reminders](docs/calendar.md#reminders). |
+| P10 | Add the targeted file inspection tool. | Let Ask inspect a known original for a narrow question and optionally persist reusable evidence under the [captured-file contract](docs/captured-files.md). |
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
 

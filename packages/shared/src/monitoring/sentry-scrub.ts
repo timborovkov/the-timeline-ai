@@ -1,4 +1,7 @@
-const SENSITIVE_PATH_PREDECESSORS = new Set(['accept-invite', 'verify-email']);
+const TOKEN_PATH =
+  /(\/(?:accept-invite|verify-email|api\/calendar\/feed|api\/webhooks\/ingest)\/)[^/?#]+/gi;
+const SENSITIVE_LINK_IN_TEXT =
+  /(?:https?:\/\/[^/\s"'<>]+)?\/(?:accept-invite|verify-email|reset-password|forgot-password|sign-in|sign-up|legal\/accept|oauth|api\/(?:auth|calendar\/feed|webhooks\/(?:ingest|monday)|mcp\/oauth|slack\/(?:install|user-link)|integrations\/[^/\s]+\/callback))(?=[/?#]|$)[^\s"'<>]*/gi;
 const BREADCRUMB_URL_FIELD = /^(?:from|href|request_?url|to|uri|url)$/i;
 /**
  * Telegram Bot API embeds the bot token in URL paths:
@@ -12,6 +15,7 @@ export interface SentryRequestLike {
   url?: string;
   cookies?: unknown;
   headers?: Record<string, unknown> | undefined;
+  query_string?: unknown;
 }
 
 export interface SentryBreadcrumbLike {
@@ -22,6 +26,10 @@ export interface SentryBreadcrumbLike {
 export interface SentryEventLike {
   request?: SentryRequestLike;
   breadcrumbs?: SentryBreadcrumbLike[];
+  transaction?: string;
+  message?: string;
+  logentry?: { message?: string; formatted?: string };
+  exception?: { values?: { value?: string }[] };
 }
 
 export interface SentrySpanLike {
@@ -40,6 +48,7 @@ export function scrubSentryRequestEvent<Event extends SentryEventLike>(event: Ev
     const sanitizedUrl = sanitizeRequestUrl(event.request.url);
     if (sanitizedUrl !== undefined) event.request.url = sanitizedUrl;
     delete event.request.cookies;
+    delete event.request.query_string;
     // Request headers are not needed to diagnose application failures. A
     // denylist cannot anticipate Referer tokens, forwarded IPs, or custom
     // secret headers, so fail closed and remove the complete map.
@@ -50,6 +59,14 @@ export function scrubSentryRequestEvent<Event extends SentryEventLike>(event: Ev
     event.breadcrumbs = event.breadcrumbs.map(scrubSentryBreadcrumb);
   }
 
+  if (event.transaction) event.transaction = sanitizeSpanName(event.transaction);
+  if (event.message) event.message = sanitizeTextLinks(event.message);
+  if (event.logentry?.message) event.logentry.message = sanitizeTextLinks(event.logentry.message);
+  if (event.logentry?.formatted)
+    event.logentry.formatted = sanitizeTextLinks(event.logentry.formatted);
+  for (const exception of event.exception?.values ?? []) {
+    if (exception.value) exception.value = sanitizeTextLinks(exception.value);
+  }
   return event;
 }
 
@@ -60,6 +77,8 @@ export function sanitizeRequestUrl(rawUrl: string | undefined): string | undefin
 
   try {
     const url = new URL(redactedSecrets, 'https://timeline.local');
+    url.username = '';
+    url.password = '';
     url.search = '';
     url.hash = '';
     url.pathname = redactSensitivePath(url.pathname);
@@ -82,7 +101,7 @@ export function sanitizeSpanName(name: string): string {
   if (match?.[1] && match[2]) {
     return `${match[1].toUpperCase()} ${sanitizeRequestUrl(match[2]) ?? match[2]}`;
   }
-  return sanitizeRequestUrl(name) ?? name;
+  return looksLikeUrl(name) ? (sanitizeRequestUrl(name) ?? name) : sanitizeTextLinks(name);
 }
 
 export function scrubSentrySpan<Span extends SentrySpanLike>(span: Span): Span {
@@ -97,7 +116,7 @@ export function scrubSentrySpan<Span extends SentrySpanLike>(span: Span): Span {
       if (SPAN_URL_ATTRIBUTE_KEY.test(key) || looksLikeUrl(redacted)) {
         return [[key, sanitizeRequestUrl(redacted) ?? redacted]];
       }
-      return [[key, redacted]];
+      return [[key, sanitizeTextLinks(redacted)]];
     }),
   );
   return span;
@@ -112,14 +131,19 @@ export function scrubSentryBreadcrumb<Breadcrumb extends SentryBreadcrumbLike>(
 ): Breadcrumb {
   const next = { ...breadcrumb };
   if (typeof next.message === 'string') {
-    next.message = redactTelegramBotTokenInUrl(next.message);
+    next.message = sanitizeTextLinks(next.message);
   }
   if (next.data) {
     next.data = Object.fromEntries(
       Object.entries(next.data).map(([key, value]) => {
         if (typeof value !== 'string') return [key, value];
         const redacted = redactTelegramBotTokenInUrl(value);
-        return [key, BREADCRUMB_URL_FIELD.test(key) ? sanitizeRequestUrl(redacted) : redacted];
+        return [
+          key,
+          BREADCRUMB_URL_FIELD.test(key)
+            ? sanitizeRequestUrl(redacted)
+            : sanitizeTextLinks(redacted),
+        ];
       }),
     );
   }
@@ -127,13 +151,20 @@ export function scrubSentryBreadcrumb<Breadcrumb extends SentryBreadcrumbLike>(
 }
 
 function redactSensitivePath(pathname: string): string {
-  const parts = pathname.split('/');
-  return parts
-    .map((part, index) => {
-      const previous = parts[index - 1]?.toLowerCase();
-      return part && previous && SENSITIVE_PATH_PREDECESSORS.has(previous) ? '[redacted]' : part;
-    })
-    .join('/');
+  // URL keeps path segments percent-encoded. Match encoded route names too,
+  // without decoding encoded slashes inside the credential segment.
+  const normalized = pathname.replace(/%([a-f0-9]{2})/gi, (escaped, hex: string) => {
+    const char = String.fromCharCode(Number.parseInt(hex, 16));
+    return /^[a-z0-9_-]$/i.test(char) ? char : escaped;
+  });
+  return normalized.replace(TOKEN_PATH, '$1[redacted]');
+}
+
+function sanitizeTextLinks(text: string): string {
+  return redactTelegramBotTokenInUrl(text).replace(
+    SENSITIVE_LINK_IN_TEXT,
+    (link) => sanitizeRequestUrl(link) ?? link,
+  );
 }
 
 /**

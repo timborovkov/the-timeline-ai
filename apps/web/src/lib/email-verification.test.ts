@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 
+import { PGlite } from '@electric-sql/pglite';
+import { type Db, users, verificationTokens } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
-import { beforeEach, describe, it } from 'bun:test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { drizzle } from 'drizzle-orm/pglite';
 
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
@@ -23,6 +26,7 @@ await vi.mock(
 const { claimOwnedTeamFreeGrantsForVerifiedUser, synchronizePolarBillingUser } =
   await import('@timeline/shared/billing');
 const {
+  inspectEmailVerificationToken,
   markEmailVerifiedFromTrustedOAuth,
   retryOwnedTeamFreeGrantsAfterSignIn,
   verifyEmailToken,
@@ -37,119 +41,78 @@ function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function selectChain(rows: unknown[]) {
-  return {
-    from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        limit: vi.fn(() => Promise.resolve(rows)),
-      })),
-    })),
-  };
-}
-
-function deleteChain(deletes: unknown[]) {
-  return {
-    where: vi.fn((where: unknown) => {
-      deletes.push(where);
-      return Promise.resolve();
-    }),
-  };
-}
-
-function updateChain(updates: unknown[], updatedRows: unknown[]) {
-  return {
-    set: vi.fn((values: unknown) => {
-      updates.push(values);
-      return {
-        where: vi.fn(() => ({
-          returning: vi.fn(() => Promise.resolve(updatedRows)),
-        })),
-      };
-    }),
-  };
-}
-
-function dbForVerification(input: {
-  tokenRows: unknown[];
-  updatedRows: unknown[];
-  updates?: unknown[];
-  deletes?: unknown[];
-}) {
-  const updates = input.updates ?? [];
-  const deletes = input.deletes ?? [];
-  return {
-    select: vi.fn(() => selectChain(input.tokenRows)),
-    transaction: vi.fn((callback: (tx: unknown) => unknown) =>
-      Promise.resolve(
-        callback({
-          update: vi.fn(() => updateChain(updates, input.updatedRows)),
-          delete: vi.fn(() => deleteChain(deletes)),
-        }),
-      ),
-    ),
-    delete: vi.fn(() => deleteChain(deletes)),
-  };
-}
-
 describe('verifyEmailToken', () => {
-  it('verifies matching users case-insensitively and consumes the token', async () => {
-    const updates: unknown[] = [];
-    const deletes: unknown[] = [];
-    const now = new Date('2026-06-14T10:00:00.000Z');
-    const db = dbForVerification({
-      tokenRows: [
-        {
-          identifier: 'mixed@example.test',
-          token: digest('raw-token'),
-          expires: new Date('2026-06-15T10:00:00.000Z'),
-        },
-      ],
-      updatedRows: [{ id: 'user-1' }],
-      updates,
-      deletes,
-    });
+  const now = new Date('2026-06-14T10:00:00.000Z');
+  const expires = new Date('2026-06-15T10:00:00.000Z');
+  const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const email = 'mixed@example.test';
+  const token = 'synthetic-token';
+  let pg: PGlite;
+  let database: ReturnType<typeof drizzle>;
 
-    await expect(
-      verifyEmailToken({
-        db: db as never,
-        email: 'Mixed@Example.Test',
-        token: 'raw-token',
-        now,
-      }),
-    ).resolves.toBe('verified');
-
-    expect(updates).toEqual([expect.objectContaining({ emailVerified: now, updatedAt: now })]);
-    expect(deletes).toHaveLength(1);
-    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledWith({
-      db,
-      userId: 'user-1',
-    });
+  beforeEach(async () => {
+    pg = new PGlite();
+    await pg.exec(`
+      CREATE TABLE users (id uuid PRIMARY KEY, email text, "emailVerified" timestamptz, updated_at timestamptz);
+      CREATE TABLE "verificationToken" (identifier text, token text, expires timestamptz, PRIMARY KEY (identifier, token));
+    `);
+    database = drizzle(pg);
+    await pg.query('INSERT INTO users (id, email) VALUES ($1, $2)', [userId, 'Mixed@Example.Test']);
+    await database
+      .insert(verificationTokens)
+      .values({ identifier: email, token: digest(token), expires });
   });
 
-  it('does not report success when the token exists but no user row is updated', async () => {
-    const now = new Date('2026-06-14T10:00:00.000Z');
-    const db = dbForVerification({
-      tokenRows: [
-        {
-          identifier: 'missing@example.test',
-          token: digest('raw-token'),
-          expires: new Date('2026-06-15T10:00:00.000Z'),
-        },
-      ],
-      updatedRows: [],
-    });
+  afterEach(async () => {
+    await pg.close();
+  });
 
-    await expect(
-      verifyEmailToken({
-        db: db as never,
-        email: 'missing@example.test',
-        token: 'raw-token',
-        now,
-      }),
-    ).resolves.toBe('invalid');
+  function input(at = now) {
+    return { db: database as unknown as Db, email, token, now: at };
+  }
+
+  async function verifiedAt() {
+    const [row] = await database.select({ at: users.emailVerified }).from(users);
+    return row?.at;
+  }
+
+  it('leaves reads side-effect free and verifies a case-insensitive match once', async () => {
+    await expect(inspectEmailVerificationToken(input())).resolves.toBe('confirm');
+    expect(await verifiedAt()).toBeNull();
+    const results = await Promise.all([verifyEmailToken(input()), verifyEmailToken(input())]);
+    expect(results.sort()).toEqual(['invalid', 'verified']);
+    expect(await verifiedAt()).toEqual(now);
+    expect(await database.select().from(verificationTokens)).toHaveLength(0);
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an expired token and its account unchanged', async () => {
+    await expect(inspectEmailVerificationToken(input(expires))).resolves.toBe('expired');
+    await expect(verifyEmailToken(input(expires))).resolves.toBe('expired');
+    expect(await verifiedAt()).toBeNull();
+    expect(await database.select().from(verificationTokens)).toHaveLength(1);
+  });
+
+  it('rolls back the token claim when the account write fails', async () => {
+    await pg.exec(
+      'ALTER TABLE users ADD CONSTRAINT reject_verification CHECK ("emailVerified" IS NULL)',
+    );
+    await expect(verifyEmailToken(input())).rejects.toThrow();
+    expect(await verifiedAt()).toBeNull();
+    expect(await database.select().from(verificationTokens)).toHaveLength(1);
     expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
   });
 
+  it('preserves the original verification timestamp when another valid link is confirmed', async () => {
+    const earlier = new Date('2026-06-13T10:00:00.000Z');
+    await database.update(users).set({ emailVerified: earlier });
+    await expect(verifyEmailToken(input())).resolves.toBe('verified');
+    expect(await verifiedAt()).toEqual(earlier);
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('verified account grants', () => {
   it('retries Free-grant claims on signed-in load after verification', async () => {
     await retryOwnedTeamFreeGrantsAfterSignIn({
       db: {} as never,

@@ -11,6 +11,7 @@ import {
   type LegalAcceptanceTransaction,
   recordCurrentLegalAcceptance,
 } from '@/lib/legal';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 /**
  * Legal acceptance is durable evidence, not just a checkbox state. These tests
@@ -48,6 +49,8 @@ describe('legal acceptance persistence', () => {
         user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         terms_version text NOT NULL,
         privacy_version text NOT NULL,
+        terms_content_hash text,
+        privacy_content_hash text,
         accepted_at timestamptz NOT NULL,
         recorded_at timestamptz NOT NULL DEFAULT now(),
         source text NOT NULL,
@@ -147,6 +150,7 @@ describe('legal acceptance persistence', () => {
     expect(events[0]).toMatchObject({
       acceptedAt: firstAcceptedAt,
       source: 'credentials_signup',
+      ...legalDocumentHashes(),
       ipAddress: '203.0.113.10',
       userAgent: 'First browser',
     });

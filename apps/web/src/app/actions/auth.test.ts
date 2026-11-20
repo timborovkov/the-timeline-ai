@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 /**
  * Credential signup is the first legal clickwrap path. These tests ensure the
  * acceptance event shares the user/team transaction and that a failed evidence
@@ -202,6 +204,9 @@ function form(includeAcceptance = true): FormData {
   result.set('password', 'safe-password');
   result.set('termsVersion', TERMS_VERSION);
   result.set('privacyVersion', PRIVACY_VERSION);
+  const { termsContentHash, privacyContentHash } = legalDocumentHashes();
+  result.set('termsContentHash', termsContentHash);
+  result.set('privacyContentHash', privacyContentHash);
   if (includeAcceptance) result.set('legalAccepted', 'on');
   return result;
 }

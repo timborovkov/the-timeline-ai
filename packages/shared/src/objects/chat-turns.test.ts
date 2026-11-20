@@ -136,11 +136,13 @@ describe('chat turn persistence and approval claims', () => {
         name: 'execute_board_create',
         input: { name: 'CRM' },
       }),
-    ).resolves.toBe(true);
-    await scope.finishChatApprovalStep(session.id, key, 'completed', {
-      ok: true,
-      board_id: 'created',
-    });
+    ).resolves.toEqual(expect.any(String));
+    await expect(
+      scope.finishChatApprovalStep(session.id, key, 'completed', {
+        ok: true,
+        board_id: 'created',
+      }),
+    ).resolves.toEqual(expect.any(String));
     Object.assign(required(completed.parts[1]), {
       state: 'output-available',
       output: { ok: true, board_id: 'created' },
@@ -247,13 +249,17 @@ describe('chat turn persistence and approval claims', () => {
     const first = { messageId: pending.id, toolCallId: 'call-1', claimId: 'first-claim' };
     const second = { ...first, toolCallId: 'call-2' };
     const tool = { name: 'execute_board_create', input: { name: 'CRM' } };
-    await expect(scope.startChatApprovalStep(session.id, first, tool)).resolves.toBe(true);
-    await expect(scope.startChatApprovalStep(session.id, first, tool)).resolves.toBe(false);
+    await expect(scope.startChatApprovalStep(session.id, first, tool)).resolves.toEqual(
+      expect.any(String),
+    );
+    await expect(scope.startChatApprovalStep(session.id, first, tool)).resolves.toBeNull();
     await expect(scope.prepareChatApprovalResume(session.id, pending.id)).rejects.toThrow();
-    await scope.finishChatApprovalStep(session.id, first, 'completed', {
-      ok: true,
-      board_id: 'crm',
-    });
+    await expect(
+      scope.finishChatApprovalStep(session.id, first, 'completed', {
+        ok: true,
+        board_id: 'crm',
+      }),
+    ).resolves.toEqual(expect.any(String));
     const resumed = await scope.prepareChatApprovalResume(session.id, pending.id);
     expect(resumed.parts[1]).toMatchObject({
       state: 'output-available',
@@ -265,7 +271,7 @@ describe('chat turn persistence and approval claims', () => {
         name: 'execute_board_create',
         input: { name: 'Operations' },
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBeNull();
     await scope.persistChatTurn(session.id, {
       assistantMessage: approved,
       approvalClaimId: 'first-claim',
@@ -286,9 +292,84 @@ describe('chat turn persistence and approval claims', () => {
         name: 'execute_board_create',
         input: { name: 'Operations' },
       }),
-    ).resolves.toBe(true);
-    await scope.finishChatApprovalStep(session.id, resumedKey, 'needs-check', { error: 'unknown' });
+    ).resolves.toEqual(expect.any(String));
+    await expect(
+      scope.finishChatApprovalStep(session.id, resumedKey, 'needs-check', { error: 'unknown' }),
+    ).resolves.toEqual(expect.any(String));
     await expect(scope.prepareChatApprovalResume(session.id, pending.id)).rejects.toThrow();
+  });
+
+  it('saves an approved-tool continuation using checkpoint revisions and still detects concurrent writes', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const session = await scope.createChatSession();
+    await scope.persistChatTurn(session.id, { userMessage: user, assistantMessage: pending });
+    const claimId = 'checkpoint-claim';
+    const claim = await scope.claimChatApprovals(session.id, decision(), claimId);
+    const key = { messageId: pending.id, toolCallId: 'call-1', claimId };
+    const started = await scope.startChatApprovalStep(session.id, key, {
+      name: 'execute_board_create',
+      input: { name: 'CRM' },
+    });
+    expect(started).toEqual(expect.any(String));
+    expect(started).not.toBe(claim.revision);
+    const finished = await scope.finishChatApprovalStep(session.id, key, 'completed', {
+      ok: true,
+      board_id: 'created',
+    });
+    expect(finished).toEqual(expect.any(String));
+    expect(finished).not.toBe(started);
+    const completed = structuredClone(claim.message);
+    Object.assign(required(completed.parts[1]), {
+      state: 'output-available',
+      output: { ok: true, board_id: 'created' },
+    });
+    completed.parts.push({ type: 'text', text: 'Created CRM.' });
+    // Stale claim revision must conflict after checkpoints mutated the row.
+    expect(
+      await scope.persistChatTurn(session.id, {
+        assistantMessage: completed,
+        approvalClaimId: claimId,
+        save: { id: 'stale-claim-revision', expectedRevision: claim.revision, replace: true },
+      }),
+    ).toBe('conflict');
+    expect(
+      await scope.persistChatTurn(session.id, {
+        assistantMessage: completed,
+        approvalClaimId: claimId,
+        save: { id: 'after-checkpoints', expectedRevision: finished, replace: true },
+      }),
+    ).toBe('saved');
+    expect(
+      await scope.persistChatTurn(session.id, {
+        assistantMessage: completed,
+        approvalClaimId: claimId,
+        save: { id: 'after-checkpoints', expectedRevision: finished, replace: true },
+      }),
+    ).toBe('saved');
+    const afterSaveRevision = await scope.chatTurnRevision(session.id);
+    expect(afterSaveRevision).toEqual(expect.any(String));
+    expect(afterSaveRevision).not.toBe(finished);
+
+    // A concurrent writer updating the same assistant row invalidates the carried revision.
+    expect(
+      await scope.persistChatTurn(session.id, {
+        assistantMessage: {
+          ...completed,
+          parts: [{ type: 'text', text: 'Concurrent overwrite.' }],
+        },
+      }),
+    ).toBe('saved');
+    expect(
+      await scope.persistChatTurn(session.id, {
+        assistantMessage: completed,
+        approvalClaimId: claimId,
+        save: {
+          id: 'after-concurrent',
+          expectedRevision: afterSaveRevision,
+          replace: true,
+        },
+      }),
+    ).toBe('conflict');
   });
 });
 

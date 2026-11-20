@@ -50,6 +50,12 @@ import {
 import { saveChatTurn, type ChatSaveResult } from '@/lib/chat-turn-save';
 import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
+import { handoffProvenance } from '@/lib/handoff-provenance';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 /**
@@ -368,6 +374,7 @@ async function deterministicChatResponse(input: {
   shouldTitleSession: boolean;
   saveUnavailable: boolean;
   expectedRevision: string | null;
+  freshTurn: boolean;
 }): Promise<Response> {
   const question = messageText(input.latestUserMessage);
   const wantsWorkspaceState =
@@ -394,6 +401,7 @@ async function deterministicChatResponse(input: {
               eventId: match.id,
               event_id: match.id,
               snippet: match.contentText ?? '',
+              citation: `[ev:${match.id}]`,
               source: match.source,
             },
           ],
@@ -415,27 +423,32 @@ async function deterministicChatResponse(input: {
     sessionId,
     save: sessionId
       ? async () => {
+          const assistantMessage: UIMessage = {
+            id: textId,
+            role: 'assistant',
+            parts: [
+              {
+                type: `tool-${toolName}`,
+                toolCallId,
+                state: 'output-available',
+                input: toolInput,
+                output: toolOutput,
+              },
+              { type: 'text', text: answer },
+            ],
+          };
           const result = await saveChatTurn({
             scope: input.scope,
             sessionId,
             expectedRevision: input.expectedRevision,
             turn: {
               userMessage: input.latestUserMessage,
-              assistantMessage: {
-                id: textId,
-                role: 'assistant',
-                parts: [
-                  {
-                    type: `tool-${toolName}`,
-                    toolCallId,
-                    state: 'output-available',
-                    input: toolInput,
-                    output: toolOutput,
-                  },
-                  { type: 'text', text: answer },
-                ],
+              assistantMessage,
+              metadata: {
+                finish_reason: 'stop',
+                prompt_version: agent.AGENT_PROMPT_VERSION,
+                handoff_provenance: handoffProvenance(assistantMessage, input.freshTurn),
               },
-              metadata: { finish_reason: 'stop', prompt_version: agent.AGENT_PROMPT_VERSION },
             },
           });
           if (result.status === 'saved' && input.shouldTitleSession) {
@@ -532,7 +545,9 @@ export async function POST(req: Request): Promise<Response> {
 
   let parsedBody: unknown;
   try {
-    parsedBody = await req.json();
+    const body = await readCappedTextBody(req, REQUEST_BODY_LIMITS.chat);
+    if (body.tooLarge) return payloadTooLargeResponse();
+    parsedBody = JSON.parse(body.text) as unknown;
   } catch {
     return Response.json({ ok: false, error: 'invalid_json' }, { status: 400 });
   }
@@ -650,7 +665,7 @@ export async function POST(req: Request): Promise<Response> {
   ) {
     return Response.json({ ok: false, error: 'invalid_user_message' }, { status: 400 });
   }
-  let expectedRevision: string | null = null;
+  const expectedRevision = { current: null as string | null };
   const approvalClaim =
     hasApprovalDecisions && sessionId
       ? { messageId: continuation.id, claimId: randomUUID(), sessionId }
@@ -665,13 +680,13 @@ export async function POST(req: Request): Promise<Response> {
         approvalClaim?.claimId,
       );
       uiMessages[uiMessages.length - 1] = claim.message;
-      expectedRevision = claim.revision;
+      expectedRevision.current = claim.revision;
     } catch {
       return Response.json({ ok: false, error: 'approval_no_longer_available' }, { status: 409 });
     }
   } else if (sessionId) {
     try {
-      expectedRevision = await scope.objects.chatTurnRevision(sessionId);
+      expectedRevision.current = await scope.objects.chatTurnRevision(sessionId);
     } catch {
       return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
     }
@@ -694,7 +709,8 @@ export async function POST(req: Request): Promise<Response> {
       userId: session.user.id,
       shouldTitleSession,
       saveUnavailable,
-      expectedRevision,
+      expectedRevision: expectedRevision.current,
+      freshTurn: uiMessages.length === 1,
     });
   }
 
@@ -785,6 +801,7 @@ export async function POST(req: Request): Promise<Response> {
     toolApproval,
     scope,
     approvalClaim,
+    expectedRevision,
   );
 
   const messages = await convertToModelMessages(modelChatMessages(uiMessages));
@@ -1051,7 +1068,7 @@ export async function POST(req: Request): Promise<Response> {
               const result = await saveChatTurn({
                 scope,
                 sessionId,
-                expectedRevision,
+                expectedRevision: expectedRevision.current,
                 replace: isContinuation,
                 turn: {
                   userMessage: isContinuation ? null : latestUserMessage,
@@ -1059,6 +1076,10 @@ export async function POST(req: Request): Promise<Response> {
                   metadata: {
                     ...completionMetadata,
                     interrupted: isAborted || Boolean(isCancelled),
+                    handoff_provenance: handoffProvenance(
+                      responseMessage,
+                      uiMessages.length === 1 && !isContinuation && !isAborted && !isCancelled,
+                    ),
                   },
                   ...(approvalClaim && { approvalClaimId: approvalClaim.claimId }),
                 },
@@ -1082,6 +1103,7 @@ function checkpointApprovalTools(
   approvals: Record<string, 'user-approval'> | undefined,
   scope: ReturnType<typeof withTeam>,
   claim: { messageId: string; claimId: string; sessionId: string } | null,
+  expectedRevision: { current: string | null },
 ): ToolSet {
   if (!approvals) return tools;
   const checkpointed = { ...tools };
@@ -1099,8 +1121,12 @@ function checkpointApprovalTools(
           claimId: claim.claimId,
           toolCallId: options.toolCallId,
         };
-        if (!(await scope.objects.startChatApprovalStep(claim.sessionId, key, { name, input })))
-          return { error: 'approval_no_longer_available' };
+        const started = await scope.objects.startChatApprovalStep(claim.sessionId, key, {
+          name,
+          input,
+        });
+        if (started === null) return { error: 'approval_no_longer_available' };
+        expectedRevision.current = started;
         const output: unknown = await execute(input, options);
         const result = output as { ok?: boolean; error?: unknown } | null;
         const rejection =
@@ -1109,7 +1135,12 @@ function checkpointApprovalTools(
             result.error === 'not_found' ||
             result.error.startsWith('stale_state:'));
         const status = result?.ok === true ? 'completed' : rejection ? 'failed' : 'needs-check';
-        await scope.objects.finishChatApprovalStep(claim.sessionId, key, status, output);
+        expectedRevision.current = await scope.objects.finishChatApprovalStep(
+          claim.sessionId,
+          key,
+          status,
+          output,
+        );
         return output;
       },
     };

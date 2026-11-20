@@ -32,6 +32,17 @@ jobs:
       - name: Setup workspace
         uses: ./.github/actions/setup-workspace
 
+      - name: Verify legal archive renders
+        run: bun run test legal-archive.test.tsx
+
+      - name: Verify published legal archives are immutable
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+          bun scripts/check-legal-archive.ts "$PR_BASE_SHA"
+
       - name: Prettier check
         run: bun run format:check
 

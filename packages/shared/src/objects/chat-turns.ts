@@ -244,16 +244,16 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       sessionId: string,
       key: ApprovalStepKey,
       tool: { name: string; input: unknown },
-    ): Promise<boolean> {
+    ): Promise<string | null> {
       await scope.requireMembership();
       return db.transaction(async (tx) => {
-        if (!(await lock(tx, sessionId))) return false;
+        if (!(await lock(tx, sessionId))) return null;
         const { row, content } = await findLatestAssistant(tx, sessionId, key.messageId);
         if (
           content.approval_claim_id !== key.claimId ||
           content.approval_steps?.[key.toolCallId] !== 'queued'
         )
-          return false;
+          return null;
         const part = content.ui_message.parts.find(
           (part) => isToolUIPart(part) && part.toolCallId === key.toolCallId,
         );
@@ -265,17 +265,14 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           getToolName(part) !== tool.name ||
           stableJson(part.input) !== stableJson(tool.input)
         )
-          return false;
-        await tx
-          .update(chatMessages)
-          .set({
-            content: {
-              ...content,
-              approval_steps: { ...content.approval_steps, [key.toolCallId]: 'running' },
-            },
-          })
-          .where(eq(chatMessages.id, row.id));
-        return true;
+          return null;
+        const next = {
+          ...content,
+          approval_steps: { ...content.approval_steps, [key.toolCallId]: 'running' as const },
+        };
+        await tx.update(chatMessages).set({ content: next }).where(eq(chatMessages.id, row.id));
+        // Callers must carry this revision into the final guarded save.
+        return revision({ id: row.id, content: next });
       });
     },
 
@@ -284,9 +281,9 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       key: ApprovalStepKey,
       status: 'completed' | 'failed' | 'needs-check',
       output: unknown,
-    ): Promise<void> {
+    ): Promise<string> {
       await scope.requireMembership();
-      await db.transaction(async (tx) => {
+      return db.transaction(async (tx) => {
         if (!(await lock(tx, sessionId))) throw new Error('Approval step unavailable');
         const row = await find(tx, sessionId, key.messageId);
         const content = row?.content as TurnContent | undefined;
@@ -302,16 +299,16 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
         );
         if (!part) throw new Error('Approval step unavailable');
         if (status !== 'needs-check') Object.assign(part, { state: 'output-available', output });
-        await tx
-          .update(chatMessages)
-          .set({
-            content: {
-              ...content,
-              ui_message: message,
-              approval_steps: { ...content.approval_steps, [key.toolCallId]: status },
-            },
-          })
-          .where(eq(chatMessages.id, row.id));
+        const next = {
+          ...content,
+          ui_message: message,
+          approval_steps: { ...content.approval_steps, [key.toolCallId]: status },
+        };
+        await tx.update(chatMessages).set({ content: next }).where(eq(chatMessages.id, row.id));
+        // Stream completion must use this revision, not the original claim revision.
+        const nextRevision = revision({ id: row.id, content: next });
+        if (!nextRevision) throw new Error('Approval step unavailable');
+        return nextRevision;
       });
     },
 

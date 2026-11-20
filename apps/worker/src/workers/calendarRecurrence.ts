@@ -10,6 +10,7 @@ import { and, asc, gt, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
+import { processCalendarMaintenance } from '#src/workers/calendarMaintenance.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const TEAM_PAGE_SIZE = 1000;
@@ -68,7 +69,9 @@ export function startCalendarRecurrenceWorker(
   const worker = new Worker<queue.CalendarRecurrenceJobData>(
     queue.QUEUE_NAMES.calendarRecurrence,
     guardWorkerProcessor(deps.db, async (job: Job<queue.CalendarRecurrenceJobData>) =>
-      processCalendarRecurrenceTick(deps, job.id),
+      job.name === 'calendar-maintenance'
+        ? processCalendarMaintenance(deps.db)
+        : processCalendarRecurrenceTick(deps, job.id),
     ),
     {
       connection: queue.getRedisConnection(),

@@ -25,7 +25,9 @@ import {
 } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
+import { hashInviteToken } from '@/lib/invite-token';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
@@ -41,7 +43,7 @@ const signUpSchema = z.object({
   name: z.string().min(1).max(80),
   email: z.email().toLowerCase(),
   password: z.string().min(8).max(200),
-  inviteToken: z.string().optional(),
+  inviteToken: z.string().max(256).optional(),
   callbackUrl: z.string().max(2048).optional(),
   legalAccepted: z.literal('on'),
   termsVersion: z.literal(TERMS_VERSION),
@@ -72,7 +74,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     const clientIp = clientIpFromHeaders(h);
     const submittedTermsVersion = formData.get('termsVersion');
     const submittedPrivacyVersion = formData.get('privacyVersion');
-    if (submittedTermsVersion !== TERMS_VERSION || submittedPrivacyVersion !== PRIVACY_VERSION) {
+    const { termsContentHash, privacyContentHash } = legalDocumentHashes();
+    if (
+      submittedTermsVersion !== TERMS_VERSION ||
+      submittedPrivacyVersion !== PRIVACY_VERSION ||
+      formData.get('termsContentHash') !== termsContentHash ||
+      formData.get('privacyContentHash') !== privacyContentHash
+    ) {
       return { error: LEGAL_VERSION_CHANGED_ERROR };
     }
     const parsed = signUpSchema.safeParse({
@@ -169,7 +177,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
             .from(teamInvites)
             .where(
               and(
-                eq(teamInvites.token, inviteToken),
+                eq(teamInvites.tokenHash, hashInviteToken(inviteToken)),
                 isNull(teamInvites.acceptedAt),
                 isNull(teamInvites.revokedAt),
               ),

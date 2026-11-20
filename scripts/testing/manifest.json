@@ -1350,6 +1350,9 @@
   "apps/web/src/lib/google-drive-limited-use.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/handoff-provenance.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/hub-status.test.ts": {
     "group": "unit"
   },
@@ -1363,6 +1366,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/last-login-method.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/legal-archive.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/lib/legal-publication.test.ts": {
@@ -2483,6 +2489,9 @@
   },
   "packages/shared/src/visibility.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/workspace-follow-through.test.ts": {
+    "group": "integration"
   },
   "packages/test-support/runtime.test.ts": {
     "group": "unit",

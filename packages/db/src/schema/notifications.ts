@@ -28,6 +28,7 @@ export const notificationKind = pgEnum('notification_kind', [
   'mention',
   'agent_suggestion',
   'connection_attention',
+  'calendar_reminder',
 ]);
 
 export const notifications = pgTable(
@@ -74,6 +75,14 @@ export const notifications = pgTable(
       .where(sql`${table.readAt} IS NULL`),
     index('notifications_team_entity_idx').on(table.teamId, table.entityId),
     index('notifications_team_suggestion_idx').on(table.teamId, table.agentSuggestionId),
+    uniqueIndex('notifications_calendar_reminder_unq')
+      .on(
+        table.teamId,
+        table.userId,
+        sql`(${table.payload}->>'event_id')`,
+        sql`(${table.payload}->>'start_at')`,
+      )
+      .where(sql`${table.payload} ? 'calendar_reminder'`),
     uniqueIndex('notifications_suggestion_recipient_unq')
       .on(table.teamId, table.userId, table.agentSuggestionId)
       .where(sql`${table.agentSuggestionId} IS NOT NULL`),

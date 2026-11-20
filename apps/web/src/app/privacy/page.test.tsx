@@ -19,6 +19,11 @@ await vi.mock(
         {children}
       </main>
     ),
+    LegalContact: ({ subject }: { subject?: string }) => (
+      <a href={`mailto:help@example.test${subject ? `?subject=${subject}` : ''}`}>
+        help@example.test
+      </a>
+    ),
   }),
   () => import('@/components/legal-page'),
 );

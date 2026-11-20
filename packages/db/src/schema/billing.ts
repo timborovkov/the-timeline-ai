@@ -100,6 +100,7 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
    * them. A historical `wallet_lock_cents` stamp can still unwind
    * `reserved_balance_cents` on settle, release, or expiry.
    */
+  visionBudgetCents: integer('vision_budget_cents'),
   walletBalanceCents: integer('wallet_balance_cents').notNull().default(0),
   reservedBalanceCents: integer('reserved_balance_cents').notNull().default(0),
   autoReloadEnabled: boolean('auto_reload_enabled').notNull().default(false),

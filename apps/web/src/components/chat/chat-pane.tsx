@@ -31,6 +31,7 @@ import {
 } from 'react';
 
 import { prepareChatApprovalResumeAction, unpinChatSessionAction } from '@/app/actions/chat';
+import { saveProjectHandoff } from '@/app/actions/handoffs';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
@@ -42,7 +43,7 @@ import type { ChatSaveResult } from '@/lib/chat-turn-save';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectLabel } from '@/lib/display-labels';
-import { notifyError } from '@/lib/notify';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
@@ -212,6 +213,7 @@ function ChatSurfaceContent({
         setInput={setInput}
         setMessages={setMessages}
         onSubmit={submit}
+        pinned={Boolean(visiblePinnedEntity)}
       />
     </div>
   );
@@ -296,6 +298,7 @@ function ChatSessionControls({
   setInput,
   setMessages,
   onSubmit,
+  pinned,
 }: {
   sessionId: string | null;
   messages: UIMessage[];
@@ -305,6 +308,7 @@ function ChatSessionControls({
   setInput: (value: string) => void;
   setMessages: (update: (messages: UIMessage[]) => UIMessage[]) => void;
   onSubmit: (text: string) => void;
+  pinned: boolean;
 }) {
   return (
     <>
@@ -318,6 +322,12 @@ function ChatSessionControls({
         save={history.activeSave}
         retrying={history.retrying}
         onRetry={history.retrySave}
+      />
+      <ChatHandoffControl
+        sessionId={sessionId}
+        pinned={pinned}
+        streaming={isStreaming}
+        messages={messages}
       />
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
@@ -335,6 +345,56 @@ function ChatSessionControls({
         onSubmit={onSubmit}
       />
     </>
+  );
+}
+
+function ChatHandoffControl({
+  sessionId,
+  pinned,
+  streaming,
+  messages,
+}: {
+  sessionId: string | null;
+  pinned: boolean;
+  streaming: boolean;
+  messages: UIMessage[];
+}) {
+  if (!sessionId || !pinned || streaming) return null;
+  const message = messages.find(
+    (item) =>
+      item.role === 'assistant' &&
+      item.parts.some((part) => part.type === 'text' && numberCitations(part.text).size > 0),
+  );
+  return message ? <SaveHandoffButton sessionId={sessionId} messageId={message.id} /> : null;
+}
+
+function SaveHandoffButton({ sessionId, messageId }: { sessionId: string; messageId: string }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  return (
+    <Button
+      className="self-start"
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={saving}
+      title="Save a snapshot for teammates who can read the project and its sources"
+      onClick={() => {
+        setSaving(true);
+        void notifyAction({
+          id: `handoff:${messageId}`,
+          loading: 'Saving handoff…',
+          success: 'Handoff saved',
+          error: 'Couldn’t save handoff',
+          run: () => saveProjectHandoff(sessionId, messageId),
+        }).then((result) => {
+          setSaving(false);
+          if ('id' in result && result.id) router.push(`/app/handoffs/${result.id}`);
+        });
+      }}
+    >
+      Save handoff
+    </Button>
   );
 }
 
@@ -1036,21 +1096,36 @@ function ChatComposer({
         <label htmlFor="chat-composer" className="sr-only">
           Ask the timeline
         </label>
-        <input
+        <p id="chat-composer-hint" className="sr-only">
+          Press Enter to send or Shift+Enter for a new line.
+        </p>
+        <textarea
           id="chat-composer"
           name="message"
-          type="text"
+          aria-describedby="chat-composer-hint"
+          rows={2}
           maxLength={4000}
           value={input}
           onChange={(e) => {
             onChange(e.target.value);
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') onSubmit(input);
+            if (
+              event.key !== 'Enter' ||
+              event.shiftKey ||
+              event.nativeEvent.isComposing ||
+              // Safari can report composition Enter after clearing isComposing.
+              // eslint-disable-next-line @typescript-eslint/no-deprecated
+              event.nativeEvent.keyCode === 229
+            ) {
+              return;
+            }
+            event.preventDefault();
+            onSubmit(input);
           }}
           placeholder="Ask the timeline…"
           disabled={isStreaming}
-          className="h-10 w-full truncate rounded-sm bg-transparent pl-3 pr-12 text-base focus:outline-none sm:text-sm"
+          className="block min-h-10 max-h-[min(10rem,35dvh)] w-full resize-none overflow-y-auto rounded-sm bg-transparent py-2 pr-12 pl-3 text-base leading-6 [field-sizing:content] focus:outline-none sm:text-sm"
         />
         <button
           type="button"
@@ -1059,7 +1134,7 @@ function ChatComposer({
           }}
           disabled={isStreaming || !input.trim()}
           aria-label="Send"
-          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-30"
+          className="absolute right-1 bottom-1 grid size-8 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-30"
         >
           <Send aria-hidden="true" className="size-4" />
         </button>
