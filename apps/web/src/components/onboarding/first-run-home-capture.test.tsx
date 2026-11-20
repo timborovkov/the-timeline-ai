@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
 await vi.mock(
   import.meta.resolve('next/navigation'),
   () => ({
+    redirect: vi.fn(),
     useRouter: () => ({ refresh: fakes.refresh, push: vi.fn() }),
   }),
   () => import('next/navigation'),

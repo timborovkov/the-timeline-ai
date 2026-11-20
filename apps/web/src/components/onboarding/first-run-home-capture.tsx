@@ -1,5 +1,6 @@
 'use client';
 
+import type { OnboardingSourceIntent } from '@timeline/shared/onboarding/first-run';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -10,6 +11,7 @@ export function FirstRunHomeCapture({
   ready,
   failed,
   emailWaiting,
+  connectorWaiting = null,
   startedAt,
   completed,
   total,
@@ -18,6 +20,7 @@ export function FirstRunHomeCapture({
   ready: boolean;
   failed: boolean;
   emailWaiting: boolean;
+  connectorWaiting?: OnboardingSourceIntent | null;
   startedAt: Date | null;
   completed: number;
   total: number;
@@ -34,18 +37,25 @@ export function FirstRunHomeCapture({
     };
   }, [ready, failed, router]);
 
+  const connectorLabel =
+    connectorWaiting === 'slack' ? 'Waiting for Slack' : 'Waiting for Telegram';
+  const waitingLabel = emailWaiting
+    ? 'Waiting for your email'
+    : connectorWaiting
+      ? connectorLabel
+      : 'Your first capture is processing';
   const title = ready
     ? 'Your first record is ready'
     : failed
       ? 'Your first capture needs attention'
-      : emailWaiting
-        ? 'Waiting for your email'
-        : 'Your first capture is processing';
+      : waitingLabel;
 
   return (
     <div className="rounded-md border border-border bg-surface p-4">
       <p className="text-sm font-medium">{title}</p>
-      {startedAt ? <CaptureStartedTime waiting={emailWaiting} value={startedAt} /> : null}
+      {startedAt ? (
+        <CaptureStartedTime waiting={emailWaiting || Boolean(connectorWaiting)} value={startedAt} />
+      ) : null}
       {!ready && total > 0 ? (
         <p className="mt-1 text-xs text-fg-muted">
           {completed} of {total} steps complete

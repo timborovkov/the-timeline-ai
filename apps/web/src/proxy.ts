@@ -6,6 +6,10 @@ import { authConfig } from '@/lib/auth.config';
 import { canonicalHostRedirect } from '@/lib/canonical-host';
 import { connectionsLegacyRedirectLocation } from '@/lib/connections';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
+import {
+  parseOnboardingSourceIntent,
+  stashOnboardingSourceIntentCookie,
+} from '@/lib/onboarding-source-intent';
 import { platformRequestGate } from '@/lib/platform-request-gate';
 import { applySignupPlanIntentFromRequest } from '@/lib/signup-plan-intent';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
@@ -24,6 +28,12 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   await migrateLegacyActiveTeamCookie(request, response);
   applySignupPlanIntentFromRequest(request, response);
+  if (request.nextUrl.pathname === '/sign-up') {
+    const sourceIntent = parseOnboardingSourceIntent(request.nextUrl.searchParams.get('source'));
+    if (sourceIntent) {
+      stashOnboardingSourceIntentCookie(response, sourceIntent);
+    }
+  }
   return response;
 }) as unknown as ProxyHandler;
 

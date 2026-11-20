@@ -2,11 +2,16 @@ import type { FirstRunPhase, FirstRunState } from '@timeline/shared/onboarding';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+import { CaptureUnavailable } from '@/components/onboarding/capture-unavailable';
 import { FirstRecordScreen } from '@/components/onboarding/first-record-screen';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
+import {
+  firstRunCaptureHref,
+  firstRunCaptureKey,
+  firstRunConnectorCaptureUnavailable,
+} from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 
 export const metadata: Metadata = {
@@ -61,6 +66,9 @@ export default async function FirstRecordPage({
   const destination = recordDestination(firstRun, capture, session.user.id);
   if (destination) redirect(destination);
   const record = status.record;
+  if (capture !== undefined && firstRunConnectorCaptureUnavailable(firstRun, record)) {
+    return <CaptureUnavailable />;
+  }
   const captureStatus =
     capture && firstRun
       ? { startedAt: firstRun.starterSelectedAt, steps: record?.processingSteps ?? [] }

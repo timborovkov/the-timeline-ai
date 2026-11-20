@@ -47,6 +47,30 @@ describe('ProcessingScreen', () => {
     expect(screen.queryByText(/%|seconds|minutes/i)).toBeNull();
   });
 
+  it('offers Slack setup and a resumable capture link while waiting for a message', () => {
+    render(
+      <ProcessingScreen
+        title="Waiting for Slack"
+        description=""
+        startedAt={new Date('2026-03-29T19:00:00Z')}
+        captureUrl="https://example.test/onboarding?capture=slack-fixture"
+        steps={[]}
+        inboundEmail={null}
+        emailWaiting={false}
+        connectorWaiting="slack"
+        onSwitch={() => undefined}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Install Slack' }).getAttribute('href')).toBe(
+      '/api/slack/install/start',
+    );
+    expect(screen.getByRole('link', { name: 'Bind a channel' }).getAttribute('href')).toBe(
+      '/app/team/slack',
+    );
+    expect(screen.getByRole('link', { name: 'Go to Home' }).getAttribute('href')).toBe('/app');
+    expect(screen.getByRole('button', { name: 'Copy capture link' })).toBeTruthy();
+  });
+
   it('keeps the inbound address visible while waiting for email', () => {
     render(
       <ProcessingScreen

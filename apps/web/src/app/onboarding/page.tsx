@@ -15,9 +15,18 @@ import { db } from '@/lib/db';
 import { defaultSoloTeamName } from '@/lib/default-team';
 import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
+import { resolveOnboardingConnectors } from '@/lib/onboarding-connectors';
+import {
+  parseOnboardingSourceIntent,
+  readOnboardingSourceIntent,
+} from '@/lib/onboarding-source-intent';
 import { appUrl } from '@/lib/site-url';
 
 export const dynamic = 'force-dynamic';
+
+interface Props {
+  searchParams: Promise<{ source?: string; capture?: string | string[] }>;
+}
 
 function prefillTeamName(
   name: string | null | undefined,
@@ -65,12 +74,8 @@ function setupCaptureView(
     : { kind: 'setup', resumeHref };
 }
 
-export default async function OnboardingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ capture?: string | string[] }>;
-}) {
-  const [session, { capture }] = await Promise.all([auth(), searchParams]);
+export default async function OnboardingPage({ searchParams }: Props) {
+  const [session, { capture, source }] = await Promise.all([auth(), searchParams]);
   if (!session?.user) {
     const callback =
       typeof capture === 'string' && capture.length <= 100
@@ -97,6 +102,10 @@ export default async function OnboardingPage({
     );
   }
 
+  const cookieIntent = await readOnboardingSourceIntent();
+  // Cookie clear happens in selectStarterPathAction (Server Action) — RSC cannot mutate cookies.
+  const preferredSource = parseOnboardingSourceIntent(source) ?? cookieIntent;
+
   const status = await loadFirstRunStatus({
     db,
     teamId: active.teamId,
@@ -108,6 +117,7 @@ export default async function OnboardingPage({
   if (view.kind === 'unavailable') return <CaptureUnavailable />;
   if (view.kind === 'redirect') redirect(view.href);
   const { resumeHref } = view;
+  const { connectors, telegramBotUsername } = resolveOnboardingConnectors();
   const calendar = await withTeam(
     db,
     active.teamId,
@@ -115,7 +125,13 @@ export default async function OnboardingPage({
   ).calendar.getCalendarSettings();
   return (
     <WorkspaceTimezoneProvider timezone={calendar.defaultTimezone}>
-      <SetupFlow initialStatus={status} captureUrl={resumeHref ? appUrl(resumeHref).href : null} />
+      <SetupFlow
+        initialStatus={status}
+        captureUrl={resumeHref ? appUrl(resumeHref).href : null}
+        preferredSource={preferredSource}
+        connectors={connectors}
+        telegramBotUsername={telegramBotUsername}
+      />
     </WorkspaceTimezoneProvider>
   );
 }

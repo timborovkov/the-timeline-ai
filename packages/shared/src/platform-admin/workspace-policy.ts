@@ -411,6 +411,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'onboarding.skipToEmptyHome': write,
   'onboarding.completeFirstRun': write,
   'onboarding.detectEmailArrival': write,
+  'onboarding.detectConnectorArrival': write,
   'onboarding.getFirstRunRecord': read,
   'onboarding.refreshDocumentCapture': write,
   'billing.isExistingTeam': maintenanceRead,

@@ -582,6 +582,27 @@ describe('HomeDashboardPage', () => {
     expect(fakes.loadFirstRunStatus).not.toHaveBeenCalled();
   });
 
+  it('keeps the capture link when the first Slack message is no longer available', async () => {
+    const firstRun = {
+      ...capture,
+      phase: 'record',
+      starterPath: 'slack',
+      firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
+    };
+    fakes.getFirstRun.mockResolvedValue(firstRun);
+    fakes.loadFirstRunStatus.mockResolvedValue({
+      firstRun,
+      record: { processingSteps: [], emailArrived: false },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain(
+      '/onboarding?capture=team-1.slack.' + String(capture.starterSelectedAt.getTime()),
+    );
+    expect(html).toContain('>failed</a>');
+  });
+
   it('stops waiting on Home when document extract failed', async () => {
     fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({

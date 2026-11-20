@@ -1,6 +1,6 @@
 import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
-import { type FirstRunState } from '@timeline/shared/onboarding/first-run';
+import { isConnectorStarterPath, type FirstRunState } from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
@@ -28,7 +28,11 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
+import {
+  firstRunCaptureHref,
+  firstRunCaptureKey,
+  firstRunConnectorCaptureUnavailable,
+} from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 import {
   displayInboundEmail,
@@ -130,21 +134,29 @@ async function FirstRunHomeBanner(input: {
     return null;
 
   const status =
-    firstRun.phase === 'processing'
+    firstRun.phase === 'processing' ||
+    (firstRun.phase === 'record' && isConnectorStarterPath(firstRun.starterPath))
       ? await loadFirstRunStatus({ db, ...input, teamName: 'Your team' })
       : null;
   const current = status?.firstRun ?? firstRun;
   const captureKey = firstRunCaptureKey(current);
   if (!captureKey) return null;
   const steps = status?.record?.processingSteps ?? [];
-  const ready = Boolean(current.firstCaptureLandedAt);
-  const failed = current.phase === 'failed' || steps.some((step) => step.status === 'failed');
+  const unavailable = firstRunConnectorCaptureUnavailable(current, status?.record ?? null);
+  const ready = Boolean(current.firstCaptureLandedAt) && !unavailable;
+  const failed =
+    unavailable || current.phase === 'failed' || steps.some((step) => step.status === 'failed');
 
   return (
     <FirstRunHomeCapture
       ready={ready}
       failed={failed}
       emailWaiting={current.starterPath === 'email' && !ready}
+      connectorWaiting={
+        !ready && !failed && isConnectorStarterPath(current.starterPath)
+          ? current.starterPath
+          : null
+      }
       startedAt={current.starterSelectedAt}
       completed={steps.filter((step) => step.status === 'done').length}
       total={steps.length}

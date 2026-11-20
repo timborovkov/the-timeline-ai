@@ -1,4 +1,15 @@
-import type { FirstRunState } from '@timeline/shared/onboarding/first-run';
+import { isConnectorStarterPath, type FirstRunState } from '@timeline/shared/onboarding/first-run';
+
+export function firstRunConnectorCaptureUnavailable(
+  firstRun: FirstRunState | null,
+  record: { emailArrived: boolean } | null,
+): boolean {
+  return Boolean(
+    firstRun?.firstCaptureLandedAt &&
+    isConnectorStarterPath(firstRun.starterPath) &&
+    !record?.emailArrived,
+  );
+}
 
 export function firstRunCaptureKey(firstRun: FirstRunState | null): string | null {
   if (

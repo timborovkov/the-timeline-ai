@@ -43,9 +43,18 @@ to that exact attempt. The same link opens the cited record when ready. If an
 attempt is replaced or the active workspace changes, the link offers recovery
 through the current setup.
 
-The source chooser presents Document, Email, and Website as three mutually
-exclusive choices with one active form. Document is the initial choice. Skip is
-a separate footer action, not a fourth source. Switching forms preserves entered
+The source chooser presents configured connectors ahead of Document, Email, and
+Website as mutually exclusive choices with one active form. Slack appears when
+OAuth credentials are complete; Telegram appears only when both
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` are set (the webhook route
+rejects traffic without the secret). Document remains the initial choice when no
+marketing source intent is present. A `/sign-up?source=`
+intent is stashed by the auth proxy as a signed cookie (RSC cannot set cookies),
+carried on the signup callback URL, and for an available connector leads with that
+tab and continues straight into its connect/waiting flow. Returning via Choose
+another way replaces the URL without `?source=` so refresh does not re-auto-start. After connect, the processing shell waits for the first
+evidence from that source and then opens the first-value record screen. Skip is
+a separate footer action, not another source. Switching forms preserves entered
 values, remains disabled during saving, and respects reduced-motion preferences.
 
 New teams start in a focused setup shell for Welcome and Start with one source

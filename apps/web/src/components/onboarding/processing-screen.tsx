@@ -1,10 +1,15 @@
 'use client';
 
-import type { NamedProcessingStep } from '@timeline/shared/onboarding/first-run';
+import type {
+  NamedProcessingStep,
+  OnboardingSourceIntent,
+} from '@timeline/shared/onboarding/first-run';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { CopyButton } from '@/components/copy-button';
 import { CopyableTextField } from '@/components/copyable-text-field';
+import { GenerateGroupTokenForm } from '@/components/telegram-forms';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
@@ -24,6 +29,8 @@ export function ProcessingScreen({
   steps,
   inboundEmail,
   emailWaiting,
+  connectorWaiting = null,
+  telegramBotUsername = null,
   onSwitch,
   onHome,
 }: {
@@ -34,6 +41,8 @@ export function ProcessingScreen({
   steps: NamedProcessingStep[];
   inboundEmail: string | null;
   emailWaiting: boolean;
+  connectorWaiting?: OnboardingSourceIntent | null;
+  telegramBotUsername?: string | null;
   onSwitch: () => void;
   onHome?: () => void;
 }) {
@@ -50,6 +59,18 @@ export function ProcessingScreen({
       {captureUrl ? <CopyButton value={captureUrl} label="Copy capture link" /> : null}
     </div>
   );
+
+  if (connectorWaiting) {
+    return (
+      <ConnectorCaptureWaiting
+        connector={connectorWaiting}
+        startedAt={startedAt}
+        telegramBotUsername={telegramBotUsername}
+      >
+        {actions}
+      </ConnectorCaptureWaiting>
+    );
+  }
 
   if (emailWaiting) {
     return (
@@ -100,6 +121,53 @@ export function ProcessingScreen({
       {startedAt ? <CaptureStartedTime value={startedAt} /> : null}
       <CaptureProcessingSteps steps={steps} />
       {actions}
+    </div>
+  );
+}
+
+function ConnectorCaptureWaiting({
+  connector,
+  startedAt,
+  telegramBotUsername,
+  children,
+}: {
+  connector: OnboardingSourceIntent;
+  startedAt?: Date | null;
+  telegramBotUsername: string | null;
+  children: ReactNode;
+}) {
+  const slack = connector === 'slack';
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        {slack ? 'Waiting for Slack' : 'Waiting for Telegram'}
+      </h1>
+      <p className="mt-2 text-sm leading-6 text-fg-muted">
+        {slack
+          ? 'Install Timeline, bind one channel, then send a message there.'
+          : 'Link one group with the bot, then send a message.'}{' '}
+        You can keep working and check Home for updates.
+      </p>
+      {startedAt ? <CaptureStartedTime value={startedAt} waiting /> : null}
+      {slack ? (
+        <div className="mt-4 flex flex-wrap gap-2 rounded-md border border-border bg-surface p-4">
+          <Button asChild>
+            <Link href="/api/slack/install/start">Install Slack</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/app/team/slack">Bind a channel</Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-4 rounded-md border border-border bg-surface p-4">
+          <GenerateGroupTokenForm botUsername={telegramBotUsername} />
+          <p className="text-sm text-fg-muted">
+            Open the group link in Telegram, then send a message in that group.
+          </p>
+        </div>
+      )}
+      <p className="mt-4 text-sm text-fg-muted">Nothing has arrived yet.</p>
+      {children}
     </div>
   );
 }
