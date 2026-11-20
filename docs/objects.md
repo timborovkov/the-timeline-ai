@@ -115,12 +115,14 @@ Stream completion stores a versioned, ordered assistant UI message, including to
 Approval continuations claim the saved pending action before execution. The server verifies tool identity, inputs and approval IDs; already-claimed or mismatched actions cannot be replayed. Only the latest assistant turn can be approved; sending a new question makes older approval cards inactive. A claim interrupted before its outcome is saved is shown as interrupted and must be checked against current workspace state before any new action is proposed. Missing legacy tool results display **Result unavailable**, never fabricated success or an indefinitely running spinner. Historical incomplete calls are display-only data, excluded from model tool-call conversion. Old transcript JSON remains readable; no production backfill reconstructs discarded results.
 
 Each approved step records its start and outcome under the session lock before
-the stream finishes. Reloading shows completed steps and distinguishes actions
-that never started from actions whose outcome needs checking. **Review unstarted
-steps** offers fresh approvals for the remaining actions in the latest workflow
-once earlier steps have confirmed outcomes. The new claim replaces the previous
-execution authorization, and resumed mutations still enforce their domain
-preconditions.
+the stream finishes. Those checkpoints advance the guarded turn revision, and
+`/api/chat` carries the latest revision into the final save so the continuation
+does not false-conflict with its own approval writes. Reloading shows completed
+steps and distinguishes actions that never started from actions whose outcome
+needs checking. **Review unstarted steps** offers fresh approvals for the
+remaining actions in the latest workflow once earlier steps have confirmed
+outcomes. The new claim replaces the previous execution authorization, and
+resumed mutations still enforce their domain preconditions.
 
 ### Project handoffs
 

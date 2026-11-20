@@ -571,11 +571,11 @@ describe('POST /api/chat', () => {
     });
     fakes.fakeStartChatApprovalStep.mockImplementation(() => {
       calls.push('start');
-      return Promise.resolve(true);
+      return Promise.resolve('started-revision');
     });
     fakes.fakeFinishChatApprovalStep.mockImplementation(() => {
       calls.push('finish');
-      return Promise.resolve();
+      return Promise.resolve('finished-revision');
     });
     fakes.fakeBuildAgentTools.mockReturnValue({ execute_object_update: { execute: mutation } });
     const response = await POST(
@@ -606,7 +606,7 @@ describe('POST /api/chat', () => {
       ok: false,
       error: 'stale_state',
     });
-    fakes.fakeStartChatApprovalStep.mockResolvedValue(false);
+    fakes.fakeStartChatApprovalStep.mockResolvedValue(null);
     await expect(execute(input, options)).resolves.toEqual({
       error: 'approval_no_longer_available',
     });
@@ -620,6 +620,11 @@ describe('POST /api/chat', () => {
       SESSION_ID,
       matchingObject({
         userMessage: null,
+        approvalClaimId: claimId,
+        save: matchingObject({
+          expectedRevision: 'finished-revision',
+          replace: true,
+        }),
         assistantMessage: matchingObject({
           parts: matchingArray([
             matchingObject({ state: 'output-available', output: { ok: true } }),

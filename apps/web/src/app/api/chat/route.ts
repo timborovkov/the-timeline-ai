@@ -665,7 +665,7 @@ export async function POST(req: Request): Promise<Response> {
   ) {
     return Response.json({ ok: false, error: 'invalid_user_message' }, { status: 400 });
   }
-  let expectedRevision: string | null = null;
+  const expectedRevision = { current: null as string | null };
   const approvalClaim =
     hasApprovalDecisions && sessionId
       ? { messageId: continuation.id, claimId: randomUUID(), sessionId }
@@ -680,13 +680,13 @@ export async function POST(req: Request): Promise<Response> {
         approvalClaim?.claimId,
       );
       uiMessages[uiMessages.length - 1] = claim.message;
-      expectedRevision = claim.revision;
+      expectedRevision.current = claim.revision;
     } catch {
       return Response.json({ ok: false, error: 'approval_no_longer_available' }, { status: 409 });
     }
   } else if (sessionId) {
     try {
-      expectedRevision = await scope.objects.chatTurnRevision(sessionId);
+      expectedRevision.current = await scope.objects.chatTurnRevision(sessionId);
     } catch {
       return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
     }
@@ -709,7 +709,7 @@ export async function POST(req: Request): Promise<Response> {
       userId: session.user.id,
       shouldTitleSession,
       saveUnavailable,
-      expectedRevision,
+      expectedRevision: expectedRevision.current,
       freshTurn: uiMessages.length === 1,
     });
   }
@@ -801,6 +801,7 @@ export async function POST(req: Request): Promise<Response> {
     toolApproval,
     scope,
     approvalClaim,
+    expectedRevision,
   );
 
   const messages = await convertToModelMessages(modelChatMessages(uiMessages));
@@ -1067,7 +1068,7 @@ export async function POST(req: Request): Promise<Response> {
               const result = await saveChatTurn({
                 scope,
                 sessionId,
-                expectedRevision,
+                expectedRevision: expectedRevision.current,
                 replace: isContinuation,
                 turn: {
                   userMessage: isContinuation ? null : latestUserMessage,
@@ -1102,6 +1103,7 @@ function checkpointApprovalTools(
   approvals: Record<string, 'user-approval'> | undefined,
   scope: ReturnType<typeof withTeam>,
   claim: { messageId: string; claimId: string; sessionId: string } | null,
+  expectedRevision: { current: string | null },
 ): ToolSet {
   if (!approvals) return tools;
   const checkpointed = { ...tools };
@@ -1119,8 +1121,12 @@ function checkpointApprovalTools(
           claimId: claim.claimId,
           toolCallId: options.toolCallId,
         };
-        if (!(await scope.objects.startChatApprovalStep(claim.sessionId, key, { name, input })))
-          return { error: 'approval_no_longer_available' };
+        const started = await scope.objects.startChatApprovalStep(claim.sessionId, key, {
+          name,
+          input,
+        });
+        if (started === null) return { error: 'approval_no_longer_available' };
+        expectedRevision.current = started;
         const output: unknown = await execute(input, options);
         const result = output as { ok?: boolean; error?: unknown } | null;
         const rejection =
@@ -1129,7 +1135,12 @@ function checkpointApprovalTools(
             result.error === 'not_found' ||
             result.error.startsWith('stale_state:'));
         const status = result?.ok === true ? 'completed' : rejection ? 'failed' : 'needs-check';
-        await scope.objects.finishChatApprovalStep(claim.sessionId, key, status, output);
+        expectedRevision.current = await scope.objects.finishChatApprovalStep(
+          claim.sessionId,
+          key,
+          status,
+          output,
+        );
         return output;
       },
     };
