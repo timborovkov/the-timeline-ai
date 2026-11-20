@@ -2,6 +2,11 @@ name: E2E
 
 on:
   workflow_dispatch:
+  # Temporary: same-repo PRs cannot be dispatched with the cloud-agent token
+  # (actions:write 403). Keep this only while proving Production-ish web smoke
+  # on PR #604; remove before merge so E2E stays opt-in via workflow_dispatch.
+  pull_request:
+    branches: [main]
 
 jobs:
   e2e:
