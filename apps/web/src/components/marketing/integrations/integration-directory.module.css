@@ -78,6 +78,27 @@
   color: var(--fg-muted);
   line-height: 1.65;
 }
+.capabilities {
+  width: 100%;
+  margin-top: 1.25rem;
+  text-align: start;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+.capabilities th,
+.capabilities td {
+  border-top: 1px solid var(--border);
+  padding-block: 0.75rem;
+  vertical-align: top;
+}
+.capabilities th {
+  width: 25%;
+  padding-inline-end: 1rem;
+  font-weight: 600;
+}
+.capabilities td {
+  color: var(--fg-muted);
+}
 .rows {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

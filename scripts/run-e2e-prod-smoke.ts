@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-import { buildE2eEnv } from './e2e-env.js';
+import { buildE2eEnv, buildE2eWebServerConfig } from './e2e-env.js';
 
 function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -14,7 +14,9 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<v
 }
 
 // Production smoke must resolve the same compiled workspace exports as images.
-const env = { ...buildE2eEnv({ ...process.env, E2E_PROD_SMOKE: '1' }), NODE_OPTIONS: '' };
+const fixtureEnv = buildE2eEnv({ ...process.env, E2E_PROD_SMOKE: '1' });
+const { baseURL } = buildE2eWebServerConfig(fixtureEnv);
+const env = { ...fixtureEnv, AUTH_URL: baseURL, NEXTAUTH_URL: baseURL, NODE_OPTIONS: '' };
 
 await run(
   process.execPath,

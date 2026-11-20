@@ -1,6 +1,7 @@
 import { ArrowRight, Globe, Mail, Video, Webhook } from 'lucide-react';
 import Link from 'next/link';
 
+import { INTEGRATION_CAPABILITY_ANSWERS } from '@/components/marketing/integrations/capability-answers';
 import {
   CAPTURE_SURFACES,
   type CaptureSurfaceContent,
@@ -87,6 +88,25 @@ export function IntegrationDirectory() {
             </nav>
           </header>
 
+          <section className={styles.section} aria-labelledby="capabilities">
+            <h2 id="capabilities">What each connection can do</h2>
+            <table className={styles.capabilities} aria-labelledby="capabilities">
+              <thead className="sr-only">
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Coverage and limits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {INTEGRATION_CAPABILITY_ANSWERS.map(({ title, body }) => (
+                  <tr key={title}>
+                    <th scope="row">{title}</th>
+                    <td>{body}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
           <section className={styles.section} aria-labelledby="capture-surfaces">
             <h2 id="capture-surfaces">Send work in. Keep the context.</h2>
             <p>Send work in deliberately. Each route explains what is saved and who can see it.</p>

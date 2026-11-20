@@ -6,6 +6,7 @@ import CompareToolPage, {
   generateMetadata as generateCompareMetadata,
 } from '@/app/compare/[slug]/page';
 import CompareHubPage, { metadata as compareHubMetadata } from '@/app/compare/page';
+import { ComparePage } from '@/components/marketing/compare/compare-page';
 import { COMPARE_HUB, COMPARE_PAGES } from '@/components/marketing/compare/content';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
@@ -59,10 +60,30 @@ describe('compare routes', () => {
     expect(html).toContain('Start free');
     expect(html).toContain(`data-compare-route="${page.route}"`);
     expect(html).toContain(`When ${page.name} is the better pick`);
+    expect(html).toContain(`Last reviewed <time dateTime="${page.dates.reviewed}">`);
     const decoded = html.replaceAll('&#x27;', "'");
     for (const fact of page.facts) {
       expect(decoded).toContain(fact.claim);
       expect(html).toContain(`href="${fact.source.href}"`);
     }
+  });
+
+  it('shows an independent review date for a single claim', () => {
+    const [page] = COMPARE_PAGES;
+    if (!page) throw new Error('Expected a comparison page.');
+    const html = renderToStaticMarkup(
+      <ComparePage
+        page={{
+          ...page,
+          dates: { ...page.dates, reviewed: '2026-11-08' },
+          facts: page.facts.map((fact, index) =>
+            index === 0 ? { ...fact, reviewedOn: '2026-11-09' } : fact,
+          ),
+        }}
+      />,
+    );
+    expect(html).toContain('Last reviewed <time dateTime="2026-11-08">November 8, 2026</time>');
+    expect(html).toContain('Checked <time dateTime="2026-11-09">November 9, 2026</time>');
+    expect(html).toContain('Checked <time dateTime="2026-11-06">November 6, 2026</time>');
   });
 });
