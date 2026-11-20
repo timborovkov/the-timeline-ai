@@ -5,31 +5,16 @@ import {
   type FirstRunPhase,
   type FirstRunScanFailureReason,
   type FirstRunState,
-  type NamedProcessingStep,
   type OnboardingSourceIntent,
   type TeamWorkStyle,
   type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
-import { useRouter } from 'next/navigation';
 
 import { ChooserScreen } from '@/components/onboarding/chooser-screen';
 import { FailedScanScreen } from '@/components/onboarding/failed-scan-screen';
 import { ProcessingScreen } from '@/components/onboarding/processing-screen';
 import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
-
-export interface FirstRunStatusPayload {
-  firstRun: FirstRunState | null;
-  inboundEmail: string | null;
-  teamName: string;
-  /** Workspace shown on Welcome; null when deferred solo create has no team yet. */
-  teamId: string | null;
-  record: {
-    title: string;
-    meta: string;
-    processingSteps: NamedProcessingStep[];
-    emailArrived: boolean;
-  } | null;
-}
+import type { FirstRunStatusPayload } from '@/lib/first-run-poll';
 
 function processingTitle(status: FirstRunStatusPayload): string {
   const path = status.firstRun?.starterPath;
@@ -64,13 +49,14 @@ function SetupProcessingBody({
   firstRun,
   telegramBotUsername,
   onSwitch,
+  onHome,
 }: {
   status: FirstRunStatusPayload;
   firstRun: FirstRunState | null | undefined;
   telegramBotUsername: string | null;
   onSwitch: () => void;
+  onHome: () => void;
 }) {
-  const router = useRouter();
   const connectorWaiting =
     isConnectorStarterPath(firstRun?.starterPath) && !status.record?.emailArrived
       ? firstRun.starterPath
@@ -85,9 +71,7 @@ function SetupProcessingBody({
       connectorWaiting={connectorWaiting}
       telegramBotUsername={telegramBotUsername}
       onSwitch={onSwitch}
-      onHome={() => {
-        router.push('/app');
-      }}
+      onHome={onHome}
     />
   );
 }
@@ -106,6 +90,7 @@ export function SetupFlowBody({
   onSlack,
   onTelegram,
   onSkip,
+  onHome,
   onReturnToChooser,
   onPickEmail,
 }: {
@@ -126,6 +111,7 @@ export function SetupFlowBody({
   onSlack?: () => Promise<void>;
   onTelegram?: () => Promise<void>;
   onSkip: () => Promise<void>;
+  onHome: () => void;
   onReturnToChooser: () => void;
   onPickEmail: () => void;
 }) {
@@ -165,6 +151,7 @@ export function SetupFlowBody({
         firstRun={firstRun}
         telegramBotUsername={telegramBotUsername}
         onSwitch={onReturnToChooser}
+        onHome={onHome}
       />
     );
   }

@@ -114,7 +114,11 @@ export async function failWebsiteRun(
     if (run?.trigger === 'onboarding')
       await tx
         .update(teamFirstRun)
-        .set({ phase: 'failed', scanFailureReason: 'unreachable', updatedAt: new Date() })
+        .set({
+          phase: 'failed',
+          scanFailureReason: reason === 'not_enabled' ? 'not_enabled' : 'unreachable',
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(teamFirstRun.teamId, teamId),

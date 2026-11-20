@@ -130,9 +130,11 @@ describe('website scan job', () => {
     expect(deps.createEvent).not.toHaveBeenCalled();
     expect(deps.release).toHaveBeenCalled();
   });
-  it('requires the key before provider work', async () => {
-    const deps = fixture({ firecrawlApiKey: '' });
-    await expect(processWebsiteScanJob(deps)).rejects.toThrow('FIRECRAWL_API_KEY is required');
+  it('marks scans unavailable before provider work when the key is missing', async () => {
+    const deps = fixture({ firecrawlApiKey: '', getPages: () => Promise.resolve(null) });
+    await processWebsiteScanJob(deps);
+    expect(deps.markScanFailed).toHaveBeenCalledWith('not_enabled', scanId);
+    expect(deps.release).toHaveBeenCalled();
     expect(deps.firecrawlFetch).not.toHaveBeenCalled();
   });
   it('ignores jobs for an older selection even when its URL is identical', async () => {

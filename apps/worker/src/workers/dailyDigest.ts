@@ -185,6 +185,9 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
         }
         throw error;
       });
+      if (job.data.kind === 'tick' && job.data.reason === 'scheduled') {
+        await queue.recordDailyDigestTick(job.opts.prevMillis ?? job.timestamp);
+      }
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
         'digest job complete',

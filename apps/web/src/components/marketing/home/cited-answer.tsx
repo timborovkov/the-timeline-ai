@@ -3,7 +3,7 @@ import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 export function CitedAnswer() {
   return (
-    <div className={styles.answerLayout} data-home-diagram>
+    <div className={styles.answerLayout} data-home-panel-motion>
       <article className={styles.answerWindow}>
         <div className={styles.answerBar}>
           <span>/ask / Acme rollout</span>

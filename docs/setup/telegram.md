@@ -2,7 +2,7 @@
 
 > Telegram is a first-party conversational surface. Direct text talks to the agent; explicit notes, group messages, voice/audio, and supported document/image attachments feed the evidence pipeline shared with Slack.
 
-Create the bot, disable privacy mode so it can read group messages, point a secret-protected webhook at the web service, let startup register the `/` command menu, and link teams from inside the app.
+Create the bot, disable privacy mode so it can read group messages, register the secret-protected webhook and command menu, and link teams from inside the app.
 
 <span id="create-bot"></span>
 
@@ -40,20 +40,13 @@ Set in `.env`:
 
 ## 4. Register the webhook and command menu
 
-**The web service does this automatically on startup.** The Next.js instrumentation hook at `apps/web/src/instrumentation.ts` runs once per server process in the Node runtime.
+Load the secrets for the selected environment into the shell. Use BotFather's numeric bot ID and the public HTTPS origin of that environment. When the shell provides `AUTH_URL` or `NEXTAUTH_URL`, its origin must match the command.
 
-Command menu: if `TELEGRAM_BOT_TOKEN` is set, it calls `setMyCommands` for the default, private-chat, and group-chat scopes (idempotent on Telegram's side). That is what fills the Telegram `/` picker in bot DMs and groups. Direct messages get the DM command list (including `/note` and `/new`); groups get the group list. Typed commands still work even if the menu was never registered; `/help` prints the same catalog. Registration is fire-and-forget and runs in production and local `next dev`, because unlike `setWebhook` it does not need a public callback URL.
+    bun --no-env-file run telegram:provision --environment staging --bot-id <numeric-id> --origin https://<staging-host>
 
-Webhook: in production (`NODE_ENV=production`), if `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `AUTH_URL` are all set, it always calls `setWebhook` (idempotent on Telegram's side, and the only way to push a rotated `TELEGRAM_WEBHOOK_SECRET` since `getWebhookInfo` doesn't return the stored secret), then verifies via `getWebhookInfo`. Registration is fire-and-forget — it never blocks server readiness. Missing env vars → logs a skip line and continues.
+The preview calls `getMe` and checks the currently assigned webhook. Confirm the environment, bot username, and target before adding `--apply` to the same command. Apply requires `TELEGRAM_WEBHOOK_SECRET` and verifies the installed Telegram command menus and webhook settings before exiting successfully.
 
-For local development (or to register the webhook manually):
-
-    curl -F "url=https://thetimeline.cc/api/telegram/webhook" \
-         -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-         -F 'allowed_updates=["message","edited_message","callback_query"]' \
-         "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
-
-Expose the dev server via ngrok / cloudflared and point the webhook at the tunnel.
+Run apply during first setup, after changes to the command catalog, and after a webhook target or secret rotation. The command reapplies the secret and preserves pending updates. Coordinate a secret rotation with the web environment so the signed webhook continues to reach the same deployment.
 
 <span id="verify"></span>
 
@@ -99,11 +92,9 @@ The bot is gated off when `TELEGRAM_WEBHOOK_SECRET` is unset — the route at `/
     # Terminal 2: expose it
     ngrok http 3000
 
-    # Terminal 3: register the webhook with the secret (command menu is registered by bun run dev)
-    curl -F "url=https://<ngrok-id>.ngrok-free.app/api/telegram/webhook" \
-         -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-         -F 'allowed_updates=["message","edited_message","callback_query"]' \
-         "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
+    # Terminal 3: preview and apply using the development bot
+    bun --no-env-file run telegram:provision --environment development --bot-id <numeric-id> --origin https://<ngrok-id>.ngrok-free.app
+    bun --no-env-file run telegram:provision --environment development --bot-id <numeric-id> --origin https://<ngrok-id>.ngrok-free.app --apply
 
 Then in the app:
 

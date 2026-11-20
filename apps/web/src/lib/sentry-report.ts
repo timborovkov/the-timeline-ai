@@ -14,6 +14,7 @@ interface ReportOptions {
 
 interface ReportMessageOptions extends ReportOptions {
   message: string;
+  measurements?: Record<string, number | null>;
 }
 
 const HANDLED_EVENT_WINDOW_MS = 60_000;
@@ -80,6 +81,7 @@ export function reportHandledEvent(options: ReportMessageOptions): void {
   const throttle = handledEventThrottle(options.message, tags, Date.now());
   if (!throttle.capture) return;
   Sentry.captureMessage(options.message, {
+    ...(options.measurements ? { extra: options.measurements } : {}),
     level: options.level ?? 'warning',
     tags: {
       ...tags,

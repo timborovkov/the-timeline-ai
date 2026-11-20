@@ -14,6 +14,15 @@ import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
+const reviewDateFormat = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'long',
+  timeZone: 'UTC',
+});
+
+function ReviewDate({ date }: { date: string }) {
+  return <time dateTime={date}>{reviewDateFormat.format(new Date(date))}</time>;
+}
+
 export function ComparePage({ page }: { page: ComparePageContent }) {
   const related = COMPARE_PAGES.filter((candidate) => candidate.slug !== page.slug);
 
@@ -35,6 +44,9 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
           <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
             {page.summary}
           </p>
+          <p className="mt-3 text-sm text-fg-muted">
+            Last reviewed <ReviewDate date={page.dates.reviewed} />
+          </p>
         </header>
 
         <section className="border-y border-border bg-surface/45">
@@ -55,6 +67,9 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
                     >
                       Source: {fact.source.label}
                     </a>
+                    <span className="ms-3 text-sm text-fg-muted">
+                      Checked <ReviewDate date={fact.reviewedOn ?? page.factsReviewedOn} />
+                    </span>
                   </p>
                 </li>
               ))}

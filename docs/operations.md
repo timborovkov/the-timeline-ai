@@ -6,6 +6,7 @@ Use the specific runbook before changing infrastructure or retained data. Produc
 | --- | --- |
 | Provision, deploy, rollback, resource sizing | [Railway](railway.md) |
 | Queue readiness, missing jobs, retries | [Job recovery](runbooks/job-recovery.md) |
+| Isolated PostgreSQL, object, and vector recovery | [Restore runbook](runbooks/restore.md) |
 | Re-extract, re-embed, vector collection migration | [Vector maintenance](runbooks/reindex.md) |
 | Document extraction snapshots | [Extraction operations](runbooks/document-extract.md) |
 | Email delivery/capture and replay | [Resend](setup/resend.md) |
@@ -17,7 +18,22 @@ Use the specific runbook before changing infrastructure or retained data. Produc
 
 ## Health
 
-`/api/health` is public liveness. `/api/health/ready` requires `Authorization: Bearer <CRON_SECRET>`, returns no-store aggregate readiness, and checks worker presence/queue age with bounded probes. It does not establish answer quality, every queue's progress or invoice correctness. Never place the secret in a URL.
+Use public `/api/health` to check web and database liveness. Use `GET /api/health/ready` to check for the expected BullMQ consumers. These operator endpoints require `Authorization: Bearer <CRON_SECRET>` and return uncached aggregate status. Set `DOCUMENT_EXTRACT_ENABLED` on the web service to reflect whether the deployment expects an extraction consumer.
+
+Schedule `POST /api/health/operations` every five minutes from an external scheduler. A 200 means no threshold has fired, a 503 means at least one threshold fired or the probe failed. Alert when the scheduler misses a run, since the endpoint itself cannot report an outage. The operational endpoint checks:
+
+| Signal | Trigger |
+| --- | --- |
+| Capture latency | In the last day, any eligible capture over 30 minutes without its index receipt, or the completed capture-to-index p95 reaches 30 minutes. |
+| Document extraction | A finalized upload over 30 minutes in pending or extracting state, a stalled extraction queue, or five recent failures. |
+| Proposal jobs | Suggestions or reconciliation jobs waiting or running for 30 minutes, or five terminal failures in the last day. |
+| Missed digests | The scheduled noon UTC tick hasn't finished fan-out by 13:00 UTC, a delivery stays pending for an hour, or five recent deliveries or queue jobs fail. |
+| Integration sync and webhook delivery | Waiting or running for 30 minutes, or five terminal failures in the last day. |
+| Index freshness | Eligible text events or chunked website pages are 30 minutes behind, embed jobs stall or accumulate failures, or Qdrant collection metadata is unavailable. |
+
+The queue probes sample the oldest waiting item and up to 100 active and recent failed jobs per queue. Metrics use database ingest timestamps and completed writes from the last 24 hours. The endpoint emits a Sentry issue per alert condition at most once an hour across replicas. Configure notifications for the `processing_health` operation in [Sentry](setup/sentry.md#alerts), independently of liveness and readiness. Keep the bearer in the scheduler's secret store.
+
+At release, verify the public HTML cache with and without an Auth.js session cookie. A cacheable public response should have no `Set-Cookie` and should serve the same HTML on a hit. Keep session API responses private and preserve Next.js response variants when configuring the edge cache.
 
 For failed delivery, inspect sanitized message-delivery records and provider diagnostics; do not paste raw payloads, tokens or signed URLs into issues. Auth/password recovery follows the [security contract](security-privacy-trust.md#password-recovery); email configuration belongs to Resend setup.
 

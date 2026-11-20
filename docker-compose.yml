@@ -72,7 +72,7 @@ services:
   # ---- RustFS (S3-compatible object storage) ----
   # S3 API on 9000, console on 9001. Bucket creation handled by `rustfs-init`.
   rustfs:
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
     restart: unless-stopped
     ports:
       - '9000:9000'

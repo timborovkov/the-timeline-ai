@@ -14,7 +14,7 @@ await vi.mock(
   () => import('next/navigation'),
 );
 
-const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 const { chatHandoffKey } = await import('@/lib/chat-handoff');
 
 const { HomeAskComposer } = await import('@/components/home/home-ask-composer');
@@ -36,6 +36,22 @@ describe('HomeAskComposer', () => {
     ).toBe('/app/documents');
     expect(screen.queryByRole('button', { name: 'What changed today?' })).toBeNull();
     expect(screen.getByLabelText('Question for Ask')).toBeTruthy();
+  });
+
+  it('accepts a question while the source guidance is waiting', async () => {
+    const deferred = Promise.withResolvers<boolean>();
+    render(<HomeAskComposer teamId="team-1" hasSources={deferred.promise} />);
+    expect(screen.queryByRole('link', { name: 'Upload your first document' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Question for Ask'), {
+      target: { value: 'What changed?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(fakes.push).toHaveBeenCalledWith('/app/chat');
+    await act(async () => {
+      deferred.resolve(false);
+      await deferred.promise;
+    });
+    expect(screen.getByRole('link', { name: 'Upload your first document' })).toBeTruthy();
   });
 
   it('validates an empty question without navigating', () => {
