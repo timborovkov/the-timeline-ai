@@ -40,9 +40,15 @@ export default async function DigestsPage({
   });
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  // One `now` + request-scoped match cache so history rows reuse each view scan.
+  const now = new Date();
   const presented = await Promise.all(
     rows.map(async (row) => {
-      const { payload } = await presentSavedViewDigest(scope, row.payload as DailyDigestPayload);
+      const { payload } = await presentSavedViewDigest(
+        scope,
+        row.payload as DailyDigestPayload,
+        now,
+      );
       return {
         id: row.id,
         status: row.status,

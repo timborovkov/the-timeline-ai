@@ -63,13 +63,41 @@ export function createSavedWorkViewScope(input: {
 }) {
   const { db, teamId, userId, ensureMember, objects, boards, calendar, suggestions } = input;
   const ownerCondition = and(eq(savedWorkViews.teamId, teamId), eq(savedWorkViews.userId, userId));
+  /** Request-scoped cache so digest history can reuse one match scan per view. */
+  const matchCache = new Map<string, Promise<string[] | null>>();
   async function lock(tx: Tx) {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`saved-view:${teamId}:${userId}`}, 0))`,
     );
   }
 
+  function matchCacheKey(
+    view: Pick<SavedView, 'id' | 'collection' | 'targetId' | 'filters' | 'updatedAt'>,
+    now: Date,
+  ): string {
+    return [
+      view.id,
+      view.collection,
+      view.targetId ?? '',
+      view.updatedAt.getTime(),
+      now.getTime(),
+      JSON.stringify(view.filters),
+    ].join('\u0000');
+  }
+
   async function getMatches(
+    view: Pick<SavedView, 'id' | 'collection' | 'targetId' | 'filters' | 'updatedAt'>,
+    now: Date,
+  ): Promise<string[] | null> {
+    const key = matchCacheKey(view, now);
+    const cached = matchCache.get(key);
+    if (cached) return cached;
+    const pending = loadMatches(view, now);
+    matchCache.set(key, pending);
+    return pending;
+  }
+
+  async function loadMatches(
     view: Pick<SavedView, 'collection' | 'targetId' | 'filters'>,
     now: Date,
   ): Promise<string[] | null> {
@@ -290,11 +318,17 @@ export function createSavedWorkViewScope(input: {
         .select()
         .from(savedWorkViews)
         .where(and(ownerCondition, eq(savedWorkViews.notify, true)));
+      const byId = new Map(views.map((view) => [view.id, view]));
+      const currentByView = new Map<string, string[] | null>();
       const result: { title: string; href: string; count: number }[] = [];
       for (const change of changes) {
-        const view = views.find((candidate) => candidate.id === change.viewId);
+        const view = byId.get(change.viewId);
         if (!view?.optedInAt || view.optedInAt > asOf) continue;
-        const current = await getMatches(view, now);
+        let current = currentByView.get(view.id);
+        if (current === undefined) {
+          current = await getMatches(view, now);
+          currentByView.set(view.id, current);
+        }
         if (!current) continue;
         const set = new Set(current);
         const count = change.itemIds.filter((id) => set.has(id)).length;

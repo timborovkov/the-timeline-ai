@@ -1,4 +1,5 @@
 import { VISION_BUDGET_DEFERRED } from '@timeline/shared/billing';
+import { isStaleExtractionAttempt } from '@timeline/shared/documents';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -66,6 +67,7 @@ export default async function FileExtractionPage({
   if (!version) notFound();
   const deferred = version.processingError === VISION_BUDGET_DEFERRED;
   const latest = history[0];
+  const staleExtracting = latest ? isStaleExtractionAttempt(latest) : false;
   return (
     <div className="space-y-5">
       <Link className="text-sm underline" href="/app/documents/captured">
@@ -77,8 +79,14 @@ export default async function FileExtractionPage({
           Deferred by OCR budget. The original file remains available.
         </p>
       ) : null}
+      {staleExtracting ? (
+        <p className="text-sm text-fg-muted">
+          The previous extraction attempt stalled. You can retry it.
+        </p>
+      ) : null}
       {deferred ||
       latest?.status === 'deferred' ||
+      staleExtracting ||
       !latest ||
       ['applied', 'failed', 'pending'].includes(latest.status) ? (
         <FileExtractionAction id={id} resume={deferred} />

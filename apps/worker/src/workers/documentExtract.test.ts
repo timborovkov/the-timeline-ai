@@ -10,6 +10,8 @@ import {
   teams,
 } from '@timeline/db';
 import { email, integrations, withTeam, type queue as queueNS } from '@timeline/shared';
+import { VisionBudgetDeferredError } from '@timeline/shared/billing';
+import { EXTRACTION_ATTEMPT_STALE_MS } from '@timeline/shared/documents';
 import {
   createResettablePGliteTestDb,
   type ResettablePGliteTestDb,
@@ -1667,5 +1669,91 @@ describe('processDocumentExtractJob — Drive transient extract', () => {
     );
     expect(h.resumeDriveFile).toHaveBeenCalledOnce();
     expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+
+  it('defers OCR budget exhaustion without a terminal failure or source delete', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'), {
+      sandboxPdfThrows: new VisionBudgetDeferredError(),
+    });
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      skipped: true,
+      reason: 'deferred_budget',
+    });
+    expect(h.writeDriveTransientResult).not.toHaveBeenCalled();
+    expect(h.deleteBlob).not.toHaveBeenCalled();
+    expect(h.resumeDriveFile).toHaveBeenCalledWith({
+      teamId: TEAM,
+      integrationId: INTEGRATION_ID,
+      fileId: 'file-1',
+      extractId: 'extract-1',
+    });
+  });
+});
+
+describe('processDocumentExtractJob — correction attempt reclaim', () => {
+  it('reclaims a stale extracting correction after a worker crash', async () => {
+    h = await makeHarness('Recovered correction text that is long enough.');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'notes.txt',
+      contentType: 'text/plain',
+    });
+    await h.pg.exec(
+      `UPDATE document_versions SET processing_status = 'chunked' WHERE id = '${versionId}'`,
+    );
+    const attemptId = randomUUID();
+    const staleAt = new Date(Date.now() - EXTRACTION_ATTEMPT_STALE_MS - 60_000);
+    await h.pg.query(
+      `INSERT INTO document_extraction_attempts
+        (id, team_id, version_id, requested_by, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'extracting', $5, $5)`,
+      [attemptId, TEAM_ID, versionId, USER_A, staleAt],
+    );
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      {
+        documentVersionId: versionId,
+        teamId: TEAM_ID,
+        correctionAttemptId: attemptId,
+      },
+      h.io,
+    );
+    expect(result).toMatchObject({ documentVersionId: versionId, chunkCount: 0 });
+    const attempt = await h.pg.query<{ status: string }>(
+      `SELECT status FROM document_extraction_attempts WHERE id = $1`,
+      [attemptId],
+    );
+    expect(attempt.rows[0]?.status).toBe('ready');
+    expect(h.fetchBlob).toHaveBeenCalled();
+  });
+
+  it('does not reclaim a fresh extracting correction', async () => {
+    h = await makeHarness('Should not run.');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'notes.txt',
+      contentType: 'text/plain',
+    });
+    await h.pg.exec(
+      `UPDATE document_versions SET processing_status = 'chunked' WHERE id = '${versionId}'`,
+    );
+    const attemptId = randomUUID();
+    await h.pg.query(
+      `INSERT INTO document_extraction_attempts
+        (id, team_id, version_id, requested_by, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'extracting', now(), now())`,
+      [attemptId, TEAM_ID, versionId, USER_A],
+    );
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      {
+        documentVersionId: versionId,
+        teamId: TEAM_ID,
+        correctionAttemptId: attemptId,
+      },
+      h.io,
+    );
+    expect(result).toMatchObject({ skipped: true, reason: 'already_processed' });
+    expect(h.fetchBlob).not.toHaveBeenCalled();
   });
 });

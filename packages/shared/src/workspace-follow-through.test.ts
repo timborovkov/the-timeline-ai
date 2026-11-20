@@ -78,6 +78,21 @@ describe('workspace follow-through', () => {
     expect(second?.id).toBe(first?.id);
     expect(first?.defaultVisibility).toBe('private');
     expect((await owner.meetings.getMeeting(original.id))?.status).toBe('no_show');
+    if (!first) throw new Error('Missing recovery replacement');
+    await db
+      .update(meetings)
+      .set({
+        status: 'failed',
+        metadata: {
+          ...first.metadata,
+          join_failed_at: new Date().toISOString(),
+          join_error: 'provider_error',
+        },
+      })
+      .where(eq(meetings.id, first.id));
+    const retried = await owner.meetings.prepareMeetingRecovery(original.id, 'rejoin', true);
+    expect(retried?.id).toBe(first.id);
+    expect(retried?.status).toBe('pending');
   });
 
   it('starts reminders off, checks event-wide blocks, and deduplicates retries', async () => {
@@ -318,8 +333,34 @@ describe('workspace follow-through', () => {
     expect(await owner.visibleDigestChanges(result, firstWindow, firstWindow)).toMatchObject([
       { count: 1 },
     ]);
+    // A second history-style presentation for the same `now` must reuse the
+    // cached match scan instead of paginating objects again.
+    const historyScope = withTeam(db, TEAM, OWNER);
+    const listSpy = vi.spyOn(historyScope.objects, 'listObjects');
+    const firstPass = await historyScope.savedViews.visibleDigestChanges(
+      result,
+      firstWindow,
+      firstWindow,
+    );
+    const callsAfterFirst = listSpy.mock.calls.length;
+    expect(callsAfterFirst).toBeGreaterThan(0);
+    const secondPass = await historyScope.savedViews.visibleDigestChanges(
+      result,
+      firstWindow,
+      firstWindow,
+    );
+    expect(secondPass).toEqual(firstPass);
+    expect(listSpy.mock.calls.length).toBe(callsAfterFirst);
+    listSpy.mockRestore();
     await db.update(entities).set({ status: 'done' }).where(eq(entities.id, added.id));
-    expect(await owner.visibleDigestChanges(result, firstWindow, firstWindow)).toEqual([]);
+    // Fresh scope so the request cache does not retain the pre-update matches.
+    expect(
+      await withTeam(db, TEAM, OWNER).savedViews.visibleDigestChanges(
+        result,
+        firstWindow,
+        firstWindow,
+      ),
+    ).toEqual([]);
   });
 
   it('syncs one Google calendar privately and applies incremental cancellations', async () => {

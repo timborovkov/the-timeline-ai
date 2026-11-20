@@ -1049,7 +1049,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
             .returning();
           return (updated as MeetingRow | undefined) ?? null;
         }
-        const [existing] = await tx
+        const replacements = (await tx
           .select()
           .from(meetings)
           .where(
@@ -1058,9 +1058,38 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
               meetingVisibility,
               sql`${meetings.metadata}->>'recovery_of_meeting_id' = ${id}`,
             ),
-          )
-          .limit(1);
-        if (existing) return existing as MeetingRow;
+          )) as MeetingRow[];
+        const activeStatuses = new Set([
+          'pending',
+          'scheduled',
+          'joining',
+          'active',
+          'processing',
+        ]);
+        const active = replacements.find((row) => activeStatuses.has(row.status));
+        if (active) return active;
+        const failed = replacements.find((row) => row.status === 'failed');
+        if (failed) {
+          // Provider join already failed once. Reset so retry contacts the
+          // provider again instead of reporting success against a dead capture.
+          const [reset] = await tx
+            .update(meetings)
+            .set({
+              status: 'pending',
+              providerBotId: null,
+              metadata: {
+                ...failed.metadata,
+                recovery_of_meeting_id: id,
+                recovery_requested_by: userId,
+                consent_given_at: consentGiven ? new Date().toISOString() : null,
+                recovery_retry_at: new Date().toISOString(),
+              },
+              updatedAt: new Date(),
+            })
+            .where(and(eq(meetings.id, failed.id), eq(meetings.teamId, teamId)))
+            .returning();
+          return (reset as MeetingRow | undefined) ?? null;
+        }
         const [replacement] = await tx
           .insert(meetings)
           .values({

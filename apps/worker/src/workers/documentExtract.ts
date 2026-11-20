@@ -25,10 +25,11 @@ import {
   VISION_BUDGET_DEFERRED,
   VisionBudgetDeferredError,
 } from '@timeline/shared/billing';
+import { EXTRACTION_ATTEMPT_STALE_MS } from '@timeline/shared/documents';
 import * as extractProtocol from '@timeline/shared/integrations/drive-extract-protocol';
 import { planDriveSync } from '@timeline/shared/integrations/google-drive-scheduling';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, lt, or, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import {
@@ -376,11 +377,19 @@ async function processDriveTransientExtract(
       io,
     );
   } catch (err: unknown) {
-    if (
-      err instanceof VisionBudgetDeferredError ||
-      isDaytonaNotConfiguredError(err) ||
-      err instanceof UnrecoverableError
-    ) {
+    if (err instanceof VisionBudgetDeferredError) {
+      // Do not persist a terminal failure or delete source bytes. Leaving the
+      // extract pending lets a later budget window (or stale-pending reschedule)
+      // retry the same revision.
+      await io.resumeDriveFile({
+        teamId: data.teamId,
+        integrationId: data.integrationId,
+        fileId: data.fileId,
+        extractId: data.extractId,
+      });
+      return { driveFileId: data.fileId, skipped: true, reason: 'deferred_budget' };
+    }
+    if (isDaytonaNotConfiguredError(err) || err instanceof UnrecoverableError) {
       await handoffPersistedDriveTransientResult(io, data, {
         ok: false,
         error: err.message.slice(0, 500),
@@ -453,10 +462,22 @@ export async function processDocumentExtractJob(
       eq(documentExtractionAttempts.teamId, teamId),
       eq(documentExtractionAttempts.versionId, documentVersionId),
     );
+    const staleBefore = new Date(Date.now() - EXTRACTION_ATTEMPT_STALE_MS);
     const [attempt] = await deps.db
       .update(documentExtractionAttempts)
       .set({ status: 'extracting', updatedAt: new Date() })
-      .where(and(attemptFilter, eq(documentExtractionAttempts.status, 'pending')))
+      .where(
+        and(
+          attemptFilter,
+          or(
+            eq(documentExtractionAttempts.status, 'pending'),
+            and(
+              eq(documentExtractionAttempts.status, 'extracting'),
+              lt(documentExtractionAttempts.updatedAt, staleBefore),
+            ),
+          ),
+        ),
+      )
       .returning();
     if (!attempt) return { documentVersionId, skipped: true, reason: 'already_processed' };
     try {

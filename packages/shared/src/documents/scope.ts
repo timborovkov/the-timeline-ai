@@ -68,6 +68,19 @@ const DOCUMENT_LIFECYCLE_SOURCE_SNAPSHOT_VERSION = 'document-lifecycle-source-sn
 /** Qdrant `match.any` batches for name-scoped doc_chunk search. */
 const DOCUMENT_ID_SEARCH_BATCH = 100;
 
+/** Interrupted correction attempts older than this may be reclaimed or re-requested. */
+export const EXTRACTION_ATTEMPT_STALE_MS = 20 * 60_000;
+
+export function isStaleExtractionAttempt(
+  attempt: { status: string; updatedAt: Date },
+  now = Date.now(),
+): boolean {
+  return (
+    attempt.status === 'extracting' &&
+    attempt.updatedAt.getTime() < now - EXTRACTION_ATTEMPT_STALE_MS
+  );
+}
+
 export interface DocumentScopeDeps {
   db: Db;
   teamId: string;
@@ -1467,11 +1480,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .orderBy(desc(documentExtractionAttempts.createdAt))
           .limit(1);
         if (existing) {
-          if (
-            existing.status === 'deferred' ||
-            (existing.status === 'extracting' &&
-              existing.updatedAt.getTime() < Date.now() - 20 * 60_000)
-          ) {
+          if (existing.status === 'deferred' || isStaleExtractionAttempt(existing)) {
             await tx
               .update(documentExtractionAttempts)
               .set({ status: 'pending', updatedAt: new Date() })
