@@ -1,5 +1,6 @@
 'use client';
 
+import { Bell } from 'lucide-react';
 import { useId, useState } from 'react';
 
 import {
@@ -7,6 +8,7 @@ import {
   changeEventReminderBlock,
   getEventReminder,
 } from '@/app/actions/calendar-automation';
+import { CalendarEventDisclosure } from '@/components/calendar/calendar-event-disclosure';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
@@ -47,14 +49,20 @@ export function EventReminders({ eventId }: { eventId: string }) {
   }
 
   const blocked = preferences?.eventBlocked === true || preferences?.seriesBlocked === true;
+  let summary: string | undefined;
+  if (blocked) summary = 'Blocked';
+  else if (preferences)
+    summary = preferences.leadMinutes ? reminderLeadLabel(preferences.leadMinutes) : 'Off';
+
   return (
-    <details
-      className="space-y-3 rounded-md border p-3"
-      onToggle={(event) => {
-        if (event.currentTarget.open) void refresh();
+    <CalendarEventDisclosure
+      icon={Bell}
+      label="Reminders"
+      value={summary}
+      onToggle={(open) => {
+        if (open) void refresh();
       }}
     >
-      <summary className="cursor-pointer text-sm font-medium">Reminders</summary>
       {preferences ? (
         <div className="space-y-3">
           {blocked ? (
@@ -63,12 +71,13 @@ export function EventReminders({ eventId }: { eventId: string }) {
               {preferences.seriesBlocked ? 'in this series' : 'for this event'}.
             </p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-sm" htmlFor={inputId}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="text-sm font-medium" htmlFor={inputId}>
               My reminder
             </label>
             <NativeSelect
               id={inputId}
+              className="w-auto min-w-36 max-w-full"
               value={preferences.leadMinutes ?? ''}
               disabled={pending}
               onChange={(event) => {
@@ -79,7 +88,7 @@ export function EventReminders({ eventId }: { eventId: string }) {
               <option value="">Off</option>
               {LEAD_TIMES.map((lead) => (
                 <option key={lead} value={lead} disabled={blocked || preferences.started}>
-                  {lead === 1440 ? '1 day before' : `${lead} minutes before`}
+                  {reminderLeadLabel(lead)}
                 </option>
               ))}
             </NativeSelect>
@@ -96,8 +105,14 @@ export function EventReminders({ eventId }: { eventId: string }) {
           {loaded ? 'Reminders are unavailable.' : 'Loading settings…'}
         </p>
       )}
-    </details>
+    </CalendarEventDisclosure>
   );
+}
+
+function reminderLeadLabel(lead: number): string {
+  if (lead === 1440) return '1 day before';
+  if (lead === 60) return '1 hour before';
+  return `${lead} minutes before`;
 }
 
 function OrganizerReminderControls({

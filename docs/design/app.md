@@ -356,12 +356,15 @@ date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
 and tight padding so names remain readable in a seven-column grid. Week
 numbers belong on the week column, not inside every month cell.
 
-The Edit event dialog stays a calendar-event editor. When the event is linked
-to workspace objects, those objects appear as quiet title links under
-**Linked objects**, never as a large Open button. Object Calendar sections
-link the other way to the focused calendar event. Subscription create/last-used
-times use relative age with a timestamp tooltip. Event dialog selects use
-`NativeSelect`.
+The event editor puts the title and schedule first. The schedule groups the
+timezone, all-day control, start and end, and repeat settings. The custom rule
+field appears when Custom rule is selected. Edit scope appears on recurring
+occurrences. Location and description, event settings, and reminders open from
+compact disclosure rows. The form scrolls inside the dialog and keeps its
+header and Save, Cancel, and Delete actions in view. Linked objects appear as
+quiet title links. Object Calendar sections link back to the focused event.
+Subscription create and last-used times use relative age with a timestamp
+tooltip. Event dialog selects use `NativeSelect`.
 
 Job recovery is an admin-only queue, not a processing inventory.
 Members who open `/app/team/jobs` see an Admins-only empty state. Home

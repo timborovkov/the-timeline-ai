@@ -78,7 +78,10 @@ test('calendar import displays sync state and organizers can block opted-in remi
     await screenshot(page, testInfo, 'google-calendar-import');
     await page.goto(`/app/calendar?event=${eventId}`);
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('heading', { name: 'Edit event' })).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Edit event' })).toBeFocused();
+    await expect(dialog.getByLabel('Repeats', { exact: true })).toHaveValue('');
+    await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeInViewport();
+    await screenshot(page, testInfo, 'event-editor-desktop');
     await dialog.getByText('Reminders', { exact: true }).click();
     await expect(dialog.getByLabel('My reminder')).toHaveValue('');
     await dialog.getByLabel('My reminder').selectOption('15');
@@ -88,6 +91,50 @@ test('calendar import displays sync state and organizers can block opted-in remi
       dialog.getByText('Reminders are blocked for everyone for this event.'),
     ).toBeVisible();
     await screenshot(page, testInfo, 'event-reminders');
+  } finally {
+    await context.close();
+  }
+});
+
+test('calendar editor keeps settings and actions reachable on a narrow screen', async ({
+  browser,
+}, testInfo) => {
+  const eventId = crypto.randomUUID();
+  await withE2eDataTransaction(async (sql) => {
+    await sql`INSERT INTO calendar_events (id, team_id, created_by_user_id, title, start_at, end_at, rrule)
+      VALUES (${eventId}, ${teamId}, ${ownerId}, 'Northstar planning', now() + interval '1 hour', now() + interval '2 hours', 'FREQ=WEEKLY')`;
+  });
+  const context = await newSignedInContext(browser, 'owner', {
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    deviceScaleFactor: 1,
+    hasTouch: true,
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`/app/calendar?event=${eventId}`);
+    const dialog = page.getByRole('dialog', { name: 'Edit event' });
+    const save = dialog.getByRole('button', { name: 'Save', exact: true });
+    await expect(dialog.getByLabel('Repeats', { exact: true })).toHaveValue('weekly');
+    await expect(save).toBeInViewport({ ratio: 1 });
+    await screenshot(page, testInfo, 'event-editor-mobile');
+
+    await page.setViewportSize({ width: 320, height: 568 });
+    await dialog.getByText('Location and description', { exact: true }).click();
+    await dialog.getByLabel('Location', { exact: true }).fill('Studio B');
+    await dialog.getByText('Event settings', { exact: true }).click();
+    await dialog.getByLabel('Visibility').selectOption('private');
+    await expect(save).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('heading', { name: 'Edit event' })).toBeInViewport();
+    expect(await dialog.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(320);
+
+    await page.locator('html').evaluate((element) => {
+      element.dir = 'rtl';
+    });
+    await expect(save).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('heading', { name: 'Edit event' })).toBeInViewport();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).not.toBeVisible();
   } finally {
     await context.close();
   }
