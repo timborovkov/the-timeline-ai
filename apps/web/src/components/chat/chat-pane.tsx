@@ -213,6 +213,7 @@ function ChatSurfaceContent({
         setInput={setInput}
         setMessages={setMessages}
         onSubmit={submit}
+        pinned={Boolean(visiblePinnedEntity)}
       />
     </div>
   );
@@ -297,6 +298,7 @@ function ChatSessionControls({
   setInput,
   setMessages,
   onSubmit,
+  pinned,
 }: {
   sessionId: string | null;
   messages: UIMessage[];
@@ -306,6 +308,7 @@ function ChatSessionControls({
   setInput: (value: string) => void;
   setMessages: (update: (messages: UIMessage[]) => UIMessage[]) => void;
   onSubmit: (text: string) => void;
+  pinned: boolean;
 }) {
   return (
     <>
@@ -322,7 +325,7 @@ function ChatSessionControls({
       />
       <ChatHandoffControl
         sessionId={sessionId}
-        pinned={Boolean(visiblePinnedEntity)}
+        pinned={pinned}
         streaming={isStreaming}
         messages={messages}
       />
