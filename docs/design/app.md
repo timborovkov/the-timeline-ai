@@ -18,7 +18,7 @@ composer on wide screens. Prompt suggestions use compact bordered buttons. Atten
 and recent activity form the primary column; three pinned shortcuts and workspace
 utilities support them in the secondary column. Email capture stays visible with copy and settings actions. Processing issues use a
 stacked notice with explicit review actions; job counts remain admin-only. Healthy
-processing adds no notice.
+processing adds no notice. Capture and Ask can be used while secondary panels and source guidance load.
 Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
 four moments; the full timeline remains one click away. The latest digest follows
 activity with a bounded summary preview and an expandable full body.
@@ -155,11 +155,15 @@ separate competing headings. Stories and records share that same skeleton;
 pulses stay one muted line. Impact on the row is omitted; the inspector shows
 workspace consequences, structured facts, a matching `[ev:…]` citation chip per
 source evidence item, and a collapsed Original source
-disclosure. Attached files link to Documents. Sticky date bands and row boundaries extend to the main-pane edges while their
-content stays bounded. The date offset follows the measured toolbar height,
-including wrapped controls and expanded filters. Infinite scroll retains
-virtualized rows. The default view ends at the current instant so
-materialized calendar occurrences do not displace recent work. Upcoming context
+disclosure. Attached files link to Documents. A date band separates each
+workspace day in Moments and All events. Today and Yesterday use the current
+date in the workspace timezone. Date bands and row boundaries extend to the
+main-pane edges while their content stays bounded. Each date band sticks below
+the measured toolbar until the next day reaches it, including when controls
+wrap or filters expand. Clearing the active filter chip updates the timeline
+in place. Infinite scroll retains virtualized rows. The default view ends at
+the current instant so materialized calendar occurrences do not displace recent
+work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
 source, and title only, linking into this surface. Timeline pin and overflow
@@ -181,7 +185,7 @@ text; inline citations are mono lime superscripts, not raw chips. Tool
 execution details are collapsed. Status badges distinguish running, approval needed, denied, completed, failed, interrupted, and unavailable historical results; only active calls spin. Approval previews show effective defaults and before/after values, including lane kinds and removal consequences. Only the latest assistant turn offers actionable approval controls. Ask object
 bindings always have a human label and read **About {name}**, not Pin. Prompts
 handed off from Home are stored
-briefly in team-scoped session storage and never in the URL.
+briefly in team-scoped session storage and never in the URL. A completed answer shows whether it saved to history. If the write fails, the open chat keeps the answer available for a save-only retry. An unresolved saved-session turn pauses new prompts and tool approvals until the history is saved or the user leaves the conversation.
 
 The desktop session list stays dense: last-activity age under each title in
 mono 11px, a centered 60% hairline between rows, and archive revealed on row

@@ -28,7 +28,7 @@ Fill in at minimum:
 
 - `AUTH_SECRET` — `openssl rand -base64 32`
 - `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features.
-- `FIRECRAWL_API_KEY` — required before the web app or full worker boots when using Firecrawl Cloud (the default). Get a key at [firecrawl.dev](https://firecrawl.dev); the free plan works. Optional only when `FIRECRAWL_API_ORIGIN` points at Firecrawl Local on loopback (see below).
+- `FIRECRAWL_API_KEY` — enables website scanning with Firecrawl Cloud. Firecrawl Local accepts a loopback origin outside production (see below).
 - `SECRETS_ENCRYPTION_KEY` — 32-byte base64 key required as soon as you connect any integration or custom MCP server. Generate with `openssl rand -base64 32`. See [integrations setup](integrations.md).
 
 Other third-party service keys can stay empty for the demo.
@@ -39,7 +39,7 @@ The rest of the defaults already match `docker-compose.yml`. When you use `docke
 
 For local document parsing without Daytona, set `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true`. This development-only option is rejected in production; leave it false when using a Daytona extractor.
 
-Web and full worker startup require `FIRECRAWL_API_KEY` unless `FIRECRAWL_API_ORIGIN` is a loopback Firecrawl Local origin outside production; missing cloud configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
+The web app and worker start without Cloud credentials. Website scanning requires the key or a supported Firecrawl Local configuration. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
 
 <span id="firecrawl-local"></span>
 

@@ -202,6 +202,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'objects.chatSessionTitleStatus': write,
   'objects.getChatSession': read,
   'objects.appendChatMessages': write,
+  'objects.chatTurnRevision': read,
   'objects.persistChatTurn': write,
   'objects.claimChatApprovals': write,
   'objects.startChatApprovalStep': write,

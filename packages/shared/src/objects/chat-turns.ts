@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { chatMessages, chatSessions, type Db } from '@timeline/db';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
@@ -8,6 +8,23 @@ import { stableJson } from '#src/reconciliation/stable-json.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+export interface ChatTurnInput {
+  userMessage?: UIMessage | null;
+  assistantMessage: UIMessage;
+  metadata?: Record<string, unknown>;
+  approvalClaimId?: string;
+  save?: { id: string; expectedRevision: string | null; replace?: boolean };
+}
+
+function revision(row: { id: string; content: unknown } | undefined): string | null {
+  return row
+    ? createHash('sha256')
+        .update(stableJson([row.id, row.content]))
+        .digest('hex')
+    : null;
+}
+
 interface TurnContent {
   version: 2;
   ui_message: UIMessage;
@@ -40,7 +57,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
         ),
       )
       .for('update');
-    if (!session) throw new Error('Session not found');
+    return Boolean(session);
   }
   async function find(tx: Tx, sessionId: string, messageId: string) {
     const [row] = await tx
@@ -56,6 +73,15 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       .limit(1);
     return row;
   }
+  async function latest(tx: Tx, sessionId: string) {
+    const [row] = await tx
+      .select({ id: chatMessages.id, content: chatMessages.content })
+      .from(chatMessages)
+      .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1);
+    return row;
+  }
   async function findLatestAssistant(tx: Tx, sessionId: string, messageId: string) {
     const [row] = await tx
       .select()
@@ -68,19 +94,33 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       throw new Error('Approval no longer available');
     return { row, content: { ...content, version: 2 as const, ui_message: content.ui_message } };
   }
+
   return {
-    async persistChatTurn(
-      sessionId: string,
-      input: {
-        userMessage?: UIMessage | null;
-        assistantMessage: UIMessage;
-        metadata?: Record<string, unknown>;
-        approvalClaimId?: string;
-      },
-    ) {
+    async chatTurnRevision(sessionId: string) {
       await scope.requireMembership();
-      await db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) throw new Error('Session not found');
+        return revision(await latest(tx, sessionId));
+      });
+    },
+    async persistChatTurn(sessionId: string, input: ChatTurnInput): Promise<'saved' | 'conflict'> {
+      await scope.requireMembership();
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) {
+          if (input.save) return 'conflict';
+          throw new Error('Session not found');
+        }
+        if (input.save) {
+          const existing = await find(tx, sessionId, input.assistantMessage.id);
+          if ((existing?.content as TurnContent | undefined)?.turn_save_id === input.save.id)
+            return 'saved';
+          const expectedHead = input.save.replace ? existing : await latest(tx, sessionId);
+          if (
+            (input.save.replace && !existing) ||
+            revision(expectedHead) !== input.save.expectedRevision
+          )
+            return 'conflict';
+        }
         const messages = [input.userMessage, input.assistantMessage].filter((m): m is UIMessage =>
           Boolean(m),
         );
@@ -105,6 +145,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
             ...previous,
             ...(message.role === 'assistant' ? input.metadata : {}),
             ...(approvalSteps && { approval_steps: approvalSteps }),
+            ...(message.role === 'assistant' && input.save ? { turn_save_id: input.save.id } : {}),
             version: 2,
             ui_message: assistantMessage,
             text: assistantMessage.parts
@@ -127,16 +168,17 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           .update(chatSessions)
           .set({ updatedAt: new Date() })
           .where(eq(chatSessions.id, sessionId));
+        return 'saved';
       });
     },
     async claimChatApprovals(
       sessionId: string,
       submitted: UIMessage,
       claimId: string = randomUUID(),
-    ): Promise<UIMessage> {
+    ): Promise<{ message: UIMessage; revision: string | null }> {
       await scope.requireMembership();
       return db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+        if (!(await lock(tx, sessionId))) throw new Error('Session not found');
         const { row, content } = await findLatestAssistant(tx, sessionId, submitted.id);
         const saved = content.ui_message;
         if (
@@ -186,19 +228,15 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           steps[decision.toolCallId] = decision.approval.approved ? 'queued' : 'declined';
         }
         // A claim is durable before execution. An interrupted claim is never automatically retried.
-        await tx
-          .update(chatMessages)
-          .set({
-            content: {
-              ...content,
-              ui_message: result,
-              approval_claimed: true,
-              approval_claim_id: claimId,
-              approval_steps: steps,
-            },
-          })
-          .where(eq(chatMessages.id, row.id));
-        return result;
+        const claimed = {
+          ...content,
+          ui_message: result,
+          approval_claimed: true,
+          approval_claim_id: claimId,
+          approval_steps: steps,
+        };
+        await tx.update(chatMessages).set({ content: claimed }).where(eq(chatMessages.id, row.id));
+        return { message: result, revision: revision({ id: row.id, content: claimed }) };
       });
     },
 
@@ -209,7 +247,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
     ): Promise<boolean> {
       await scope.requireMembership();
       return db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+        if (!(await lock(tx, sessionId))) return false;
         const { row, content } = await findLatestAssistant(tx, sessionId, key.messageId);
         if (
           content.approval_claim_id !== key.claimId ||
@@ -249,7 +287,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
     ): Promise<void> {
       await scope.requireMembership();
       await db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+        if (!(await lock(tx, sessionId))) throw new Error('Approval step unavailable');
         const row = await find(tx, sessionId, key.messageId);
         const content = row?.content as TurnContent | undefined;
         if (
@@ -280,7 +318,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
     async prepareChatApprovalResume(sessionId: string, messageId: string): Promise<UIMessage> {
       await scope.requireMembership();
       return db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+        if (!(await lock(tx, sessionId))) throw new Error('Session not found');
         const { row, content } = await findLatestAssistant(tx, sessionId, messageId);
         const message = structuredClone(content.ui_message);
         const phases = Object.values(content.approval_steps ?? {});
