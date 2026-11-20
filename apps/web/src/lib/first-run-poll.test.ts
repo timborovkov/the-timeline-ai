@@ -64,21 +64,18 @@ describe('first-run status polling', () => {
   });
 
   it('keeps waiting for the first connector capture and stops on document extraction failure', () => {
-    const waiting = {
-      ...starter,
-      firstRun: { ...starter.firstRun, phase: 'processing', starterPath: 'slack' },
-      record: {
-        ...starter.record,
-        processingSteps: [{ id: 'extract', label: 'Extracting', status: 'failed' }],
-      },
-    } as FirstRunStatusPayload;
-    expect(firstRunPollingNeeded(waiting)).toBe(true);
-    expect(
-      firstRunPollingNeeded({
-        ...waiting,
-        firstRun: { ...waiting.firstRun!, starterPath: 'document' },
-      }),
-    ).toBe(false);
+    function capture(starterPath: 'slack' | 'document') {
+      return {
+        ...starter,
+        firstRun: { ...starter.firstRun, phase: 'processing', starterPath },
+        record: {
+          ...starter.record,
+          processingSteps: [{ id: 'extract', label: 'Extracting', status: 'failed' }],
+        },
+      } as FirstRunStatusPayload;
+    }
+    expect(firstRunPollingNeeded(capture('slack'))).toBe(true);
+    expect(firstRunPollingNeeded(capture('document'))).toBe(false);
   });
 
   it('pauses on a hidden tab and ignores a late response or another workspace', async () => {
