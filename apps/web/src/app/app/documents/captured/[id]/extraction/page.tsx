@@ -14,7 +14,12 @@ import { db } from '@/lib/db';
 
 type TeamScope = ReturnType<typeof withTeam>;
 type ExtractionHistory = Awaited<ReturnType<TeamScope['documents']['listExtractionCorrections']>>;
-type CapturedFile = { id: string; name: string; currentVersionId: string };
+
+interface CapturedFile {
+  id: string;
+  name: string;
+  currentVersionId: string;
+}
 
 async function renderPreviousExtraction(
   scope: TeamScope,
@@ -126,7 +131,7 @@ function ExtractionAttempts({ history, id }: { history: ExtractionHistory; id: s
             {attempt.status === 'deferred' ? 'Deferred by OCR budget' : attempt.status}
           </h2>
           <RelativeTimestamp value={attempt.createdAt} />
-          {attempt.nxt?.map((representation) => (
+          {attempt.representations?.map((representation) => (
             <details key={representation.kind} className="space-y-2 text-sm">
               <summary>{representation.kind.replaceAll('_', ' ')}</summary>
               <p className="max-h-80 overflow-auto whitespace-pre-wrap">{representation.text}</p>
