@@ -979,7 +979,11 @@ test.describe.serial('reconciliation dashboard', () => {
     await approval
       .getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.calendarTitle}` })
       .check();
-    await page.getByRole('main').getByRole('button', { name: 'Accept', exact: true }).click();
+    await page
+      .locator('div')
+      .filter({ has: page.getByLabel(/\d+ proposals? selected/) })
+      .getByRole('button', { name: 'Accept', exact: true })
+      .click();
 
     await expect(approval.getByText(fixtures.approvalBulkPartial.taskTitle)).toHaveCount(0);
     await expect(

@@ -32,9 +32,16 @@ async function acceptApprovalReview(page: Page, title: string) {
   return review;
 }
 
-/** Selection-bar Accept lives in main; the review drawer Accept is outside it. */
+/**
+ * Inbox auto-opens a Review proposal panel with its own Accept. Prefer the
+ * selection-bar Accept keyed by the selected-count output label.
+ */
 async function clickBulkAccept(page: Page) {
-  await page.getByRole('main').getByRole('button', { name: 'Accept', exact: true }).click();
+  await page
+    .locator('div')
+    .filter({ has: page.getByLabel(/\d+ proposals? selected/) })
+    .getByRole('button', { name: 'Accept', exact: true })
+    .click();
 }
 
 async function expectTaskVisible(page: Page, taskTitle: string) {
@@ -2123,18 +2130,8 @@ test.describe.serial('agentic core object update approval updates existing objec
       ownerPage.getByRole('button', { name: `Status for ${objectName}`, exact: true }),
     ).toHaveText('Active');
     await expect(ownerPage.getByLabel('Stage')).toHaveValue('proposal');
-    const recentChanges = ownerPage.locator('section').filter({
-      has: ownerPage.getByRole('heading', { name: 'Recent changes' }),
-    });
-    await expect(
-      recentChanges
-        .locator('li')
-        .filter({ hasText: 'status' })
-        .filter({ hasText: 'open → active' }),
-    ).toBeVisible();
-    await expect(
-      recentChanges.locator('li').filter({ hasText: 'stage' }).filter({ hasText: 'proposal' }),
-    ).toBeVisible();
+    await expect(ownerPage.getByText('The Timeline Bot updated status')).toBeVisible();
+    await expect(ownerPage.getByText('The Timeline Bot updated stage')).toBeVisible();
     await expect(await countObjectsByName(objectName)).toBe(1);
 
     await memberPage.goto(`/app/objects/${objectId}`);
