@@ -1,7 +1,16 @@
 'use client';
 
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { useCommittedRef } from '@/lib/use-committed-ref';
@@ -19,7 +28,7 @@ interface VirtualListProps<T> {
   className?: string;
   itemClassName?: string;
   ariaLabel?: string;
-  renderSticky?: (firstVisible: T | undefined) => ReactNode;
+  stickyGroupHeader?: { isHeader: (item: T) => boolean; className: string };
   onEndReached?: () => void;
 }
 
@@ -35,7 +44,7 @@ export function VirtualList<T>({
   className,
   itemClassName,
   ariaLabel,
-  renderSticky,
+  stickyGroupHeader,
   onEndReached,
 }: VirtualListProps<T>) {
   const fallbackParentRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +79,31 @@ export function VirtualList<T>({
   }, [getScrollElement, offsetWithinScrollElement]);
   const onEndReachedRef = useCommittedRef(onEndReached);
   const requestedCountRef = useRef(0);
+  const isGroupHeader = stickyGroupHeader?.isHeader;
+  const headerIndexes = useMemo(() => {
+    const indexes = new Set<number>();
+    if (isGroupHeader) {
+      items.forEach((item, index) => {
+        if (isGroupHeader(item)) indexes.add(index);
+      });
+    }
+    return indexes;
+  }, [items, isGroupHeader]);
+  const extractGroupRange = useCallback(
+    (range: Parameters<typeof defaultRangeExtractor>[0]) => {
+      const indexes = defaultRangeExtractor(range);
+      const firstIndex = indexes[0];
+      if (firstIndex === undefined || headerIndexes.has(firstIndex)) return indexes;
+      // Keep the enclosing header mounted when its day starts before the window.
+      let headerIndex: number | undefined;
+      for (const index of headerIndexes) {
+        if (index >= firstIndex) break;
+        headerIndex = index;
+      }
+      return headerIndex === undefined ? indexes : [headerIndex, ...indexes];
+    },
+    [headerIndexes],
+  );
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -92,6 +126,7 @@ export function VirtualList<T>({
       return size + (index < items.length - 1 ? gap : 0);
     },
     overscan,
+    rangeExtractor: isGroupHeader ? extractGroupRange : defaultRangeExtractor,
     getItemKey: (index) => {
       const item = items[index];
       return item === undefined ? String(index) : getItemKey(item, index);
@@ -104,7 +139,6 @@ export function VirtualList<T>({
   const windowStart = virtualItems[0]?.start ?? 0;
   const windowEnd = virtualItems.at(-1)?.end ?? 0;
   const offset = offsetWithinScrollElement ? scrollMargin : 0;
-  const firstVisible = virtualItems[0] ? items[virtualItems[0].index] : items[0];
   const lastRenderedIndex = virtualItems.at(-1)?.index;
 
   useEffect(() => {
@@ -117,13 +151,33 @@ export function VirtualList<T>({
     onEndReachedRef.current();
   }, [items.length, lastRenderedIndex, overscan, onEndReachedRef]);
 
+  const renderRow = (virtualRow: VirtualItem) => {
+    const item = items[virtualRow.index];
+    if (item === undefined) return null;
+    return (
+      <div
+        key={virtualRow.key}
+        data-index={virtualRow.index}
+        ref={virtualizer.measureElement}
+        className={cn(
+          'relative w-full',
+          itemClassName,
+          headerIndexes.has(virtualRow.index) && stickyGroupHeader?.className,
+        )}
+      >
+        {/* Virtualizer windows rows through a callback; the item component owns its own state. */}
+        {/* react-doctor-disable-next-line react-doctor/no-render-in-render */}
+        {renderItem(item, virtualRow.index)}
+      </div>
+    );
+  };
+
   return (
     <div
       ref={fallbackParentRef}
       className={cn('relative w-full', className)}
       aria-label={ariaLabel}
     >
-      {renderSticky?.(firstVisible)}
       <div
         className="relative w-full"
         style={{
@@ -134,24 +188,36 @@ export function VirtualList<T>({
           ),
         }}
       >
-        {virtualItems.map((virtualRow) => {
-          const item = items[virtualRow.index];
-          if (item === undefined) return null;
-          return (
-            <div
-              key={virtualRow.key}
-              data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
-              className={cn('relative w-full', itemClassName)}
-            >
-              {/* Virtualizer windows rows through a callback; the item component
-                  owns its own state. */}
-              {/* react-doctor-disable-next-line react-doctor/no-render-in-render */}
-              {renderItem(item, virtualRow.index)}
-            </div>
-          );
-        })}
+        {stickyGroupHeader
+          ? groupVirtualRows(virtualItems, headerIndexes).map((group) => (
+              // A native sticky header stops at the end of its own group.
+              <section key={group[0]?.key}>
+                {group.map((row, index) => {
+                  const previous = group[index - 1];
+                  const skippedHeight = previous ? row.start - previous.end : 0;
+                  return (
+                    <Fragment key={row.key}>
+                      {skippedHeight > 0 ? (
+                        <div aria-hidden="true" style={{ height: skippedHeight }} />
+                      ) : null}
+                      {renderRow(row)}
+                    </Fragment>
+                  );
+                })}
+              </section>
+            ))
+          : virtualItems.map(renderRow)}
       </div>
     </div>
   );
+}
+
+function groupVirtualRows(rows: VirtualItem[], headerIndexes: Set<number>): VirtualItem[][] {
+  const groups: VirtualItem[][] = [];
+  for (const row of rows) {
+    const currentGroup = groups.at(-1);
+    if (currentGroup && !headerIndexes.has(row.index)) currentGroup.push(row);
+    else groups.push([row]);
+  }
+  return groups;
 }

@@ -232,24 +232,20 @@ function ClaimScene() {
                   {SEE_IT_FIRST_LABEL}
                 </Link>
               </div>
-              <PublicSessionBranch
-                signedOut={
-                  <div className={styles.heroMeta}>
+              <div className={styles.heroMeta}>
+                <PublicSessionBranch
+                  signedOut={
                     <p className={styles.ctaFinePrint}>
                       {CTA_MICROCOPY_LEAD}{' '}
                       <Link href="/pricing" className={styles.textLink}>
                         See pricing
                       </Link>
                     </p>
-                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
-                  </div>
-                }
-                signedIn={
-                  <div className={styles.heroMeta}>
-                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
-                  </div>
-                }
-              />
+                  }
+                  signedIn={null}
+                />
+                <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+              </div>
               <AgentSetupCard compact className={styles.heroAgentSetup} />
             </div>
           </div>
@@ -360,7 +356,7 @@ function TimelineScene() {
         title={<>Everything lands on one timeline.</>}
         copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
       />
-      <div className={styles.timelineStage} data-home-diagram>
+      <div className={styles.timelineStage} data-home-panel-motion>
         <div className={styles.timelineHeader}>
           <span>Acme rollout · Illustrative example / Last 7 days</span>
           <span>5 items</span>
@@ -573,7 +569,11 @@ function AudienceScene() {
         copy="For client delivery, product and operations work that happens in conversation."
       />
       <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
-      <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
+      <div
+        className={styles.trustFlowPanel}
+        data-home-panel-motion
+        aria-labelledby="trust-flow-title"
+      >
         <header>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
           <div className={styles.trustIntro}>
@@ -707,6 +707,7 @@ function HomeProof({
           alt={shot.alt}
           caption={shot.caption}
           chrome="media"
+          sizes="(min-width: 1280px) 800px, (min-width: 960px) 62vw, calc(100vw - 3rem)"
         />
       </div>
     </div>
