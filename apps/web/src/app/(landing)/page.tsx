@@ -586,6 +586,14 @@ function AudienceScene() {
               Access is checked when a source is retrieved. The answer only uses evidence you can
               see.
             </p>
+            <p>
+              Hosted by us, self-hosted from the source-available GitHub repo, or a managed
+              on-premise deployment we run for you — see{' '}
+              <Link href="/trust#deployment" className={styles.textLink}>
+                deployment options
+              </Link>
+              .
+            </p>
             <Link href="/trust" className={styles.trustCta}>
               Explore trust &amp; security <span aria-hidden="true">↗</span>
             </Link>

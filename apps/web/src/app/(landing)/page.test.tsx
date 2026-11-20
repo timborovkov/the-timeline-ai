@@ -279,6 +279,9 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
+    expect(html).toContain('source-available GitHub repo');
+    expect(html).toContain('managed on-premise deployment');
+    expect(html).toContain('href="/trust#deployment"');
     expect(html).toContain(
       'Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place.',
     );

@@ -71,6 +71,9 @@
   "apps/web/src/app/actions/documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/enterprise.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/events.test.ts": {
     "group": "unit"
   },
@@ -543,6 +546,9 @@
     "group": "unit"
   },
   "apps/web/src/app/compare/route.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/contact/enterprise/page.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/cookies/page.test.tsx": {
@@ -1317,11 +1323,11 @@
   "apps/web/src/lib/email-verification.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/enterprise-enquiry.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/first-run-poll.test.ts": {
     "group": "dom"
-  },
-  "apps/web/src/lib/processing-health.test.ts": {
-    "group": "unit"
   },
   "apps/web/src/lib/first-run-status.test.ts": {
     "group": "unit"
@@ -1414,6 +1420,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/pricing-calculator.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/processing-health.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {

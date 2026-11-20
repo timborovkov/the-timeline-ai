@@ -33,7 +33,7 @@ Fill in at minimum:
 
 Other third-party service keys can stay empty for the demo.
 
-The rest of the defaults already match `docker-compose.yml`. When you use `docker compose --profile app up`, Compose forwards `TELEGRAM_BOT_TOKEN` and `SECRETS_ENCRYPTION_KEY` to the worker so Telegram and Slack direct-agent replies use the production-parity external-chat profile.
+The rest of the defaults already match `docker-compose.yml`. When you use `docker compose --profile app up`, Compose forwards `TELEGRAM_BOT_TOKEN` and `SECRETS_ENCRYPTION_KEY` to the worker so Telegram and Slack direct-agent replies use the production-parity external-chat profile. Those containers also run with `NODE_ENV=production` and forward `TIMELINE_DEPLOYMENT_MODE`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, and `FIRECRAWL_API_KEY` from `.env`. Set `TIMELINE_DEPLOYMENT_MODE=self-managed` (and your chosen `OPENROUTER_BASE_URL`) before that path so an operator-selected OpenAI-compatible endpoint works without Timeline-hosted OpenRouter attestation. See [self-hosting](../self-hosting.md).
 
 `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` can stay empty locally. Empty Turnstile secrets fail open outside production so developers can create email/password accounts without a Cloudflare widget. Optional GitHub sign-in uses `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` with callback `http://localhost:3000/api/auth/callback/github`. Optional Google sign-in reuses the Drive OAuth client (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`) with callback `http://localhost:3000/api/auth/callback/google` and scopes `openid email profile` only — never Drive. See [Google sign-in setup](google-sign-in.md).
 
