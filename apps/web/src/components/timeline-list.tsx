@@ -575,7 +575,10 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
   return [...groups.entries()];
 }
 
-type TimelineArchiveRow = { kind: 'day' | 'moment'; moment: TimelineMoment };
+interface TimelineArchiveRow {
+  kind: 'day' | 'moment';
+  moment: TimelineMoment;
+}
 
 const STICKY_DATE_BAND = {
   isHeader: (row: TimelineArchiveRow) => row.kind === 'day',
@@ -594,7 +597,9 @@ function timelineArchiveRows(dateGroups: [string, TimelineMoment[]][]): Timeline
 
 function subscribeToDayChanges(checkLabel: () => void): () => void {
   const timer = window.setInterval(checkLabel, 30_000);
-  return () => window.clearInterval(timer);
+  return () => {
+    window.clearInterval(timer);
+  };
 }
 
 function TimelineDayLabel({ moment, timezone }: { moment: TimelineMoment; timezone: string }) {

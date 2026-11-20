@@ -364,7 +364,7 @@ describe('TimelineList archive virtualization', () => {
       timelineEvent({ id: 'latest', occurredAt: '2026-08-14T08:30:00Z', source: 'web' }),
       timelineEvent({ id: 'older', occurredAt: '2026-08-13T13:00:00Z', source: 'web' }),
     ];
-    const authorMap = new Map();
+    const authorMap: ComponentProps<typeof TimelineList>['authorMap'] = new Map();
     const serverMoments = buildTimelineMoments<TimelineEvent, TimelineArtifactCluster>(
       events,
       authorMap,
