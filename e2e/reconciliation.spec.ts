@@ -953,7 +953,8 @@ test.describe.serial('reconciliation dashboard', () => {
       .click();
     const rejectReview = page.getByRole('region', { name: 'Review proposal' });
     await rejectReview.getByRole('button', { name: 'Reject', exact: true }).click();
-    await rejectReview.getByRole('button', { name: 'Reject proposal', exact: true }).click();
+    // Reject confirmation popover portals outside the review region.
+    await page.getByRole('button', { name: 'Reject proposal', exact: true }).click();
     await expect(page.getByText(fixtures.approvalActions.rejectItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.rejectItemTitle)).toBe(0);
     await expect
@@ -978,7 +979,7 @@ test.describe.serial('reconciliation dashboard', () => {
     await approval
       .getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.calendarTitle}` })
       .check();
-    await page.getByRole('button', { name: 'Accept', exact: true }).click();
+    await page.getByRole('main').getByRole('button', { name: 'Accept', exact: true }).click();
 
     await expect(approval.getByText(fixtures.approvalBulkPartial.taskTitle)).toHaveCount(0);
     await expect(

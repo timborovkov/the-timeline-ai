@@ -32,6 +32,18 @@ async function acceptApprovalReview(page: Page, title: string) {
   return review;
 }
 
+/** Selection-bar Accept lives in main; the review drawer Accept is outside it. */
+async function clickBulkAccept(page: Page) {
+  await page.getByRole('main').getByRole('button', { name: 'Accept', exact: true }).click();
+}
+
+async function expectTaskVisible(page: Page, taskTitle: string) {
+  await page.goto('/app/tasks');
+  const search = page.getByRole('searchbox', { name: 'Search' });
+  await search.fill(taskTitle);
+  await expect(page.getByRole('link', { name: taskTitle, exact: true })).toBeVisible();
+}
+
 /**
  * Core product E2E coverage. These tests intentionally cross the real browser,
  * auth, server-action, DB, and RSC boundaries for the workflows that define
@@ -1845,9 +1857,15 @@ for (const view of ['failed', 'pending', 'work'] as const) {
       }
       if (view === 'work') {
         await ownerPage.goto('/app/work');
-        await expect(
-          ownerPage.getByRole('link', { name: `${countsBefore.pending} pending approvals` }),
-        ).toBeVisible();
+        if (countsBefore.pending > 0) {
+          await expect(
+            ownerPage.getByRole('link', { name: `${countsBefore.pending} pending approvals` }),
+          ).toBeVisible();
+        } else {
+          await expect(ownerPage.getByRole('link', { name: /\d+ pending approvals/ })).toHaveCount(
+            0,
+          );
+        }
         await expect(ownerPage.getByText(taskTitle)).toHaveCount(0);
       }
     } finally {
@@ -1947,9 +1965,7 @@ test('approvals page bulk accept leaves merge proposals for review', async ({ br
 
     await ownerPage.getByRole('checkbox', { name: `Select ${taskTitle}` }).check();
     await ownerPage.getByRole('checkbox', { name: `Select ${calendarTitle}` }).check();
-    await waitForPost(ownerPage, '/app/approvals', () =>
-      ownerPage.getByRole('button', { name: 'Accept', exact: true }).click(),
-    );
+    await waitForPost(ownerPage, '/app/approvals', () => clickBulkAccept(ownerPage));
 
     await expect(
       ownerPage.getByRole('button', { name: `Preview ${taskTitle}`, exact: true }),
@@ -1965,8 +1981,7 @@ test('approvals page bulk accept leaves merge proposals for review', async ({ br
     ).toBeVisible();
     expect(await scope.objects.getMergedObjectTarget(second.id)).toBeNull();
 
-    await ownerPage.goto('/app/tasks');
-    await expect(ownerPage.getByText(taskTitle).first()).toBeVisible();
+    await expectTaskVisible(ownerPage, taskTitle);
   } finally {
     await scope.suggestions.rejectSuggestionItem(mergeItemId);
     await ownerPage.context().close();
@@ -2011,9 +2026,7 @@ test('approvals page bulk accept recovers failed proposal rows', async ({ browse
     await ownerPage.goto('/app/approvals?status=all');
     await ownerPage.getByRole('checkbox', { name: `Select ${taskTitle}` }).check();
     await ownerPage.getByRole('checkbox', { name: `Select ${calendarTitle}` }).check();
-    await waitForPost(ownerPage, '/app/approvals', () =>
-      ownerPage.getByRole('button', { name: 'Accept', exact: true }).click(),
-    );
+    await waitForPost(ownerPage, '/app/approvals', () => clickBulkAccept(ownerPage));
 
     await expect(
       ownerPage
@@ -2037,8 +2050,7 @@ test('approvals page bulk accept recovers failed proposal rows', async ({ browse
     await expect(failedReview.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
     await expect(failedReview.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
 
-    await ownerPage.goto('/app/tasks');
-    await expect(ownerPage.getByText(taskTitle).first()).toBeVisible();
+    await expectTaskVisible(ownerPage, taskTitle);
   } finally {
     await scope.suggestions.rejectSuggestionItem(calendarItemId);
     await ownerPage.context().close();
@@ -2094,8 +2106,8 @@ test.describe.serial('agentic core object update approval updates existing objec
     await ownerPage.goto('/app/approvals');
     const review = await openApprovalReview(ownerPage, `Update ${objectName}`);
     await expect(review.getByText(sourceText).filter({ visible: true }).first()).toBeVisible();
-    await expect(review.getByText('Status Active')).toBeVisible();
-    await expect(review.getByText('Stage Proposal')).toBeVisible();
+    await expect(review.getByText('Open → Active')).toBeVisible();
+    await expect(review.getByText('None → Proposal')).toBeVisible();
     await waitForPost(ownerPage, '/app/approvals', () =>
       review.getByRole('button', { name: 'Accept', exact: true }).click(),
     );
