@@ -83,7 +83,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       # Credentials sign-in rate-limits through Redis. Without a reachable Redis
-      # the request-role client previously hung forever under
+      # service the request-role client previously hung forever under
       # maxRetriesPerRequest:null, so smoke stayed on /sign-in until timeout.
       redis:
         image: redis:8-alpine
