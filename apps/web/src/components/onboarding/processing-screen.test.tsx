@@ -3,7 +3,7 @@ import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
 const { cleanup, render, screen } = await import('@testing-library/react');
-const { ProcessingScreen } = await import('./processing-screen.js');
+const { CaptureStartedTime, ProcessingScreen } = await import('./processing-screen.js');
 const { FailedScanScreen } = await import('./failed-scan-screen.js');
 
 afterEach(() => {
@@ -87,6 +87,45 @@ describe('ProcessingScreen', () => {
     expect(screen.getByRole('heading', { name: 'Waiting for your email' })).toBeTruthy();
     expect(screen.getByDisplayValue('northwind-studio@inbound.test')).toBeTruthy();
     expect(screen.getByText('Nothing has arrived yet.')).toBeTruthy();
+  });
+
+  it('formats polled JSON string timestamps without crashing', () => {
+    render(
+      <ProcessingScreen
+        title="Reading Launch plan.pdf"
+        description="Waiting for indexing."
+        startedAt="2026-03-29T19:00:00.000Z"
+        steps={[{ id: 'index', label: 'Indexing', status: 'active' }]}
+        inboundEmail={null}
+        emailWaiting={false}
+        onSwitch={() => undefined}
+        onHome={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-03-29T19:00:00.000Z',
+    );
+  });
+});
+
+describe('CaptureStartedTime', () => {
+  it('accepts Date and ISO string values', () => {
+    const { rerender } = render(
+      <CaptureStartedTime value={new Date('2026-07-19T12:00:00.000Z')} />,
+    );
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-07-19T12:00:00.000Z',
+    );
+    rerender(<CaptureStartedTime value="2026-07-19T12:00:00.000Z" />);
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-07-19T12:00:00.000Z',
+    );
+  });
+
+  it('omits invalid timestamps instead of throwing', () => {
+    render(<CaptureStartedTime value="not-a-real-date" />);
+    expect(screen.queryByText(/Started/)).toBeNull();
   });
 });
 

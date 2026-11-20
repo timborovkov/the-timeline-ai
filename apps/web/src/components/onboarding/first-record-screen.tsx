@@ -34,7 +34,7 @@ export function FirstRecordScreen({
   note: string;
   sources: FirstRunSource[];
   suggestions: FirstRunSuggestion[];
-  captureStatus?: { startedAt: Date | null; steps: NamedProcessingStep[] } | null;
+  captureStatus?: { startedAt: Date | string | null; steps: NamedProcessingStep[] } | null;
   readOnly?: boolean;
 }) {
   const router = useRouter();

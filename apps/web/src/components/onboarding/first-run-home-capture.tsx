@@ -21,7 +21,7 @@ export function FirstRunHomeCapture({
   failed: boolean;
   emailWaiting: boolean;
   connectorWaiting?: OnboardingSourceIntent | null;
-  startedAt: Date | null;
+  startedAt: Date | string | null;
   completed: number;
   total: number;
   href: string;

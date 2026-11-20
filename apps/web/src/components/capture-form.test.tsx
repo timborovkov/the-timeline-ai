@@ -320,9 +320,58 @@ describe('CaptureForm', () => {
     expect(fakes.createTextEventAction).not.toHaveBeenCalled();
     expect(fakes.requestAudioUploadAction).toHaveBeenCalledOnce();
     expect(fakes.createAudioEventAction).toHaveBeenCalledOnce();
-    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledTimes(2);
+    // Finalize discarded progress, so retry renews the PUT URL and re-uploads bytes.
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
     expect(fakes.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-uploads after finalization discards bytes for capacity errors', async () => {
+    fakes.finalizeDocumentVersionAction
+      .mockResolvedValueOnce({ ok: false, error: 'Workspace storage is full.' })
+      .mockResolvedValueOnce({ ok: true, documentId: 'doc-1' });
+    fakes.requestDocumentUploadAction
+      .mockResolvedValueOnce({
+        ok: true,
+        url: 'https://storage.test/document',
+        versionId: 'version-1',
+        maxBytes: 25 * 1024 * 1024,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        url: 'https://storage.test/document-renewed',
+        versionId: 'version-1',
+        maxBytes: 25 * 1024 * 1024,
+      });
+    const user = userEvent.setup();
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    await user.upload(
+      screen.getByLabelText('Attach files'),
+      new File(['%PDF'], 'notes.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Workspace storage is full.');
+
+    await user.click(screen.getByRole('button', { name: 'Retry failed files' }));
+    await waitFor(() => {
+      expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
+    expect(fakes.requestDocumentUploadAction.mock.calls[1]?.[0]).toEqual({
+      resumeVersionId: 'version-1',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://storage.test/document-renewed',
+      expect.objectContaining({ method: 'PUT' }),
+    );
   });
 
   it('retries preparation with the same attachment ID after a lost response', async () => {

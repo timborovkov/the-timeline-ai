@@ -13,6 +13,7 @@ import { GenerateGroupTokenForm } from '@/components/telegram-forms';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
+import { isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
 import { cn } from '@/lib/utils';
 
 function stepMark(status: NamedProcessingStep['status']): string {
@@ -36,7 +37,7 @@ export function ProcessingScreen({
 }: {
   title: string;
   description: string;
-  startedAt?: Date | null;
+  startedAt?: Date | string | null;
   captureUrl?: string | null;
   steps: NamedProcessingStep[];
   inboundEmail: string | null;
@@ -132,7 +133,7 @@ function ConnectorCaptureWaiting({
   children,
 }: {
   connector: OnboardingSourceIntent;
-  startedAt?: Date | null;
+  startedAt?: Date | string | null;
   telegramBotUsername: string | null;
   children: ReactNode;
 }) {
@@ -172,12 +173,21 @@ function ConnectorCaptureWaiting({
   );
 }
 
-export function CaptureStartedTime({ value, waiting }: { value: Date; waiting?: boolean }) {
+export function CaptureStartedTime({
+  value,
+  waiting,
+}: {
+  value: Date | string;
+  waiting?: boolean;
+}) {
   const timezone = useWorkspaceTimezone();
+  const date = toDateOrNull(value);
+  const iso = isoTimestamp(value);
+  if (!date || !iso) return null;
   return (
     <p className="mt-2 text-xs text-fg-dim">
       {waiting ? 'Waiting since' : 'Started'}{' '}
-      <time dateTime={value.toISOString()}>{formatDisplayDateTime(value, { timezone })}</time>
+      <time dateTime={iso}>{formatDisplayDateTime(date, { timezone })}</time>
     </p>
   );
 }
