@@ -398,56 +398,6 @@ function SaveHandoffButton({ sessionId, messageId }: { sessionId: string; messag
   );
 }
 
-function ChatHandoffControl({
-  sessionId,
-  pinned,
-  streaming,
-  messages,
-}: {
-  sessionId: string | null;
-  pinned: boolean;
-  streaming: boolean;
-  messages: UIMessage[];
-}) {
-  if (!sessionId || !pinned || streaming) return null;
-  const message = messages.find(
-    (item) =>
-      item.role === 'assistant' &&
-      item.parts.some((part) => part.type === 'text' && numberCitations(part.text).size > 0),
-  );
-  return message ? <SaveHandoffButton sessionId={sessionId} messageId={message.id} /> : null;
-}
-
-function SaveHandoffButton({ sessionId, messageId }: { sessionId: string; messageId: string }) {
-  const router = useRouter();
-  const [saving, setSaving] = useState(false);
-  return (
-    <Button
-      className="self-start"
-      type="button"
-      size="sm"
-      variant="outline"
-      disabled={saving}
-      title="Save a snapshot for teammates who can read the project and its sources"
-      onClick={() => {
-        setSaving(true);
-        void notifyAction({
-          id: `handoff:${messageId}`,
-          loading: 'Saving handoff…',
-          success: 'Handoff saved',
-          error: 'Couldn’t save handoff',
-          run: () => saveProjectHandoff(sessionId, messageId),
-        }).then((result) => {
-          setSaving(false);
-          if ('id' in result && result.id) router.push(`/app/handoffs/${result.id}`);
-        });
-      }}
-    >
-      Save handoff
-    </Button>
-  );
-}
-
 function useSavedChat(
   sessionId: string | null,
   transport: DefaultChatTransport<UIMessage>,
