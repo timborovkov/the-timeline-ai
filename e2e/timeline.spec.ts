@@ -7,11 +7,19 @@ import { closeEmbedQueue, getEmbedQueue } from '@timeline/shared/queue';
 import { withTeam } from '@timeline/shared/team-scope';
 import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
 
+import { controlledCommunicationAudit } from '../apps/worker/src/test/communication-audit.js';
 import { processEmbedJobForTests } from '../apps/worker/src/workers/embed.js';
 import { processSuggestionJobForTests } from '../apps/worker/src/workers/suggestions.js';
 import { processTranscribeJobForTests } from '../apps/worker/src/workers/transcribe.js';
 import { newSignedInPage, signIn, signInFromCurrentPage, waitForPost } from './helpers.js';
 import { E2E_PREFIX, e2eOtherTeam, e2eSeedEvents, e2eTeam, e2eUsers } from './test-data.js';
+
+function commitmentTaskTitle(text: string): string {
+  return text
+    .replace(/^I'll\s+/i, '')
+    .replace(/\s+next \w+$/i, '')
+    .replace(/^./, (char) => char.toUpperCase());
+}
 
 /**
  * Core product E2E coverage. These tests intentionally cross the real browser,
@@ -218,12 +226,39 @@ async function processCapturedSuggestion(text: string): Promise<string> {
   }
   if (!rawEventId) throw new Error(`Captured raw event not found for "${text}"`);
 
+  const taskTitle = commitmentTaskTitle(text);
   await processSuggestionJobForTests(
     { db },
     { rawEventId, teamId: e2eTeam.id },
     {
       getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
-      chatStructured: async () => ({ object: { bundles: [] }, model: 'e2e' }) as never,
+      chatStructured: async () =>
+        ({
+          object: {
+            bundles: [
+              {
+                title: `Commitment: ${taskTitle}`,
+                summary: text,
+                reason: 'A captured note contains a clear commitment.',
+                confidence: 'medium',
+                quote: text,
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: taskTitle,
+                    proposedPayload: {
+                      canonicalName: taskTitle,
+                      ownerUserId: e2eUsers.owner.id,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          model: 'e2e-suggestion-model',
+        }) as never,
+      auditCommunication: controlledCommunicationAudit,
       modelId: 'e2e-suggestion-model',
     },
   );
@@ -267,6 +302,7 @@ async function processObjectUpdateSuggestion(input: {
           },
           model: 'e2e-object-update',
         }) as never,
+      auditCommunication: controlledCommunicationAudit,
       modelId: 'e2e-object-update-model',
     },
   );
@@ -357,6 +393,7 @@ async function processTelegramVoiceSuggestion(transcript: string): Promise<strin
     {
       getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
       chatStructured: async () => ({ object: { bundles: [] }, model: 'e2e' }) as never,
+      auditCommunication: controlledCommunicationAudit,
       enqueueSuggestionJob: async (input) => {
         scheduledSuggestionJobs.push(input);
         return undefined as never;
@@ -385,10 +422,7 @@ async function processTelegramVoiceSuggestion(transcript: string): Promise<strin
     SET quiet_until = NOW() - INTERVAL '1 second'
     WHERE id = ${conversationJob.conversationReviewId}
   `;
-  const taskTitle = transcript
-    .replace(/^I'll\s+/i, '')
-    .replace(/\s+next Monday$/i, '')
-    .replace(/^./, (char) => char.toUpperCase());
+  const taskTitle = commitmentTaskTitle(transcript);
   await processSuggestionJobForTests({ db }, conversationJob, {
     getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
     chatStructured: async () =>
@@ -418,6 +452,7 @@ async function processTelegramVoiceSuggestion(transcript: string): Promise<strin
         },
         model: 'e2e-telegram-conversation-review',
       }) as never,
+    auditCommunication: controlledCommunicationAudit,
     enqueueSuggestionJob: async () => undefined as never,
     modelId: 'e2e-telegram-conversation-review-model',
   });

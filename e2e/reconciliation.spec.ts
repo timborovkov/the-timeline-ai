@@ -612,6 +612,8 @@ async function seedApprovalActionBundle(input: {
     summary: 'Approval action edge-state coverage.',
     reason: 'Browser should apply or reject exactly one approval row.',
     dedupeKey: input.dedupeKey,
+    // Keep evidence current so Accept stays enabled under evidence-status gates.
+    evidence: [{ rawEventId: fixtures.team.rawEvent }],
     items: [
       {
         operation: 'create',
@@ -622,6 +624,7 @@ async function seedApprovalActionBundle(input: {
           canonicalName: input.itemTitle,
           priority: input.dedupeKey.endsWith(':accept') ? 1 : 4,
         },
+        evidenceRawEventIds: [fixtures.team.rawEvent],
       },
     ],
   });
