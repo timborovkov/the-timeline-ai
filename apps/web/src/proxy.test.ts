@@ -11,6 +11,8 @@ import {
   protectSensitiveLinkResponse,
   sensitiveLinkRequestLogPattern,
 } from '@/lib/sensitive-links';
+import { isCookieIndependentPublicRead } from '@/proxy';
+
 const ORIGINAL_AUTH_URL = process.env.AUTH_URL;
 const ORIGINAL_NEXTAUTH_URL = process.env.NEXTAUTH_URL;
 
@@ -141,4 +143,45 @@ it('stages CSP and allows only the reviewed browser resource origins', () => {
     S3_PUBLIC_ENDPOINT: 'https://credential@storage.example.test',
   });
   expect(withoutStorage?.value).toContain("object-src 'none'");
+});
+
+describe('public request routing', () => {
+  it('bypasses auth for public reads even with a session cookie', () => {
+    for (const path of ['/', '/pricing', '/integrations/telegram', '/guides']) {
+      for (const method of ['GET', 'HEAD']) {
+        expect(
+          isCookieIndependentPublicRead(
+            new NextRequest(`https://example.test${path}`, {
+              method,
+              headers: { cookie: 'authjs.session-token=synthetic' },
+            }),
+          ),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('retains auth for actions, session APIs and product routes', () => {
+    for (const path of [
+      '/app',
+      '/api/auth/session',
+      '/sign-up?plan=team',
+      '/sign-up?source=slack',
+      '/onboarding',
+    ]) {
+      expect(isCookieIndependentPublicRead(new NextRequest(`https://example.test${path}`))).toBe(
+        false,
+      );
+    }
+    expect(
+      isCookieIndependentPublicRead(new NextRequest('https://example.test/', { method: 'POST' })),
+    ).toBe(false);
+    expect(
+      isCookieIndependentPublicRead(
+        new NextRequest('https://example.test/', {
+          headers: { 'next-action': 'synthetic' },
+        }),
+      ),
+    ).toBe(false);
+  });
 });

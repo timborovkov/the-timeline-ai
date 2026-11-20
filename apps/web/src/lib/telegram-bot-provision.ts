@@ -1,36 +1,17 @@
-/**
- * Telegram Bot API startup registration used by Next instrumentation.
- *
- * Kept out of the `@timeline/shared` barrel so the instrumentation bundle does
- * not pull BullMQ. Command payloads come from the leaf
- * `@timeline/shared/telegram/commands` export.
- */
 import {
   registerTelegramBotCommands,
   TELEGRAM_BOT_COMMAND_REGISTRATIONS,
 } from '@timeline/shared/telegram/commands';
 
 const ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query'] as const;
-const TELEGRAM_STARTUP_REQUEST_TIMEOUT_MS = 10_000;
-const TELEGRAM_STARTUP_RETRY_DELAYS_MS = [0, 400, 1_600];
-
-export interface TelegramBotStartupEnv {
-  nodeEnv: string | undefined;
-  botToken: string | undefined;
-  webhookSecret: string | undefined;
-  authUrl: string | undefined;
-}
+const TELEGRAM_PROVISION_REQUEST_TIMEOUT_MS = 10_000;
+const TELEGRAM_PROVISION_RETRY_DELAYS_MS = [0, 400, 1_600];
 
 export type TelegramBotApiPost = (
   token: string,
   method: string,
   body?: unknown,
 ) => Promise<unknown>;
-
-export interface TelegramStartupLogger {
-  log: (message: string) => void;
-  warn: (message: string) => void;
-}
 
 interface TelegramCallResult<T> {
   ok: boolean;
@@ -41,7 +22,7 @@ interface TelegramCallResult<T> {
 interface WebhookInfo {
   url?: string;
   pending_update_count?: number;
-  last_error_message?: string;
+  allowed_updates?: string[];
 }
 
 const SECRET_PATTERN =
@@ -64,7 +45,7 @@ function scalarText(value: unknown): string | null {
 }
 
 /** Flatten fetch/TLS failures so Railway log text includes code/errno/syscall/host. */
-function formatTelegramStartupError(err: unknown, depth = 0): string {
+function formatTelegramError(err: unknown, depth = 0): string {
   if (depth > 6) return '…';
   if (err === undefined) return 'undefined';
   if (err === null) return 'null';
@@ -94,21 +75,10 @@ function formatTelegramStartupError(err: unknown, depth = 0): string {
       parts.push(`${key}=${value}`);
     }
     if ('cause' in record && record.cause !== undefined) {
-      parts.push(`[cause: ${formatTelegramStartupError(record.cause, depth + 1)}]`);
+      parts.push(`[cause: ${formatTelegramError(record.cause, depth + 1)}]`);
     }
   }
   return redactSecrets(parts.join(' '));
-}
-
-function nonEmptyEnv(value: string | undefined): string | undefined {
-  return value && value.length > 0 ? value : undefined;
-}
-
-export function resolveTelegramAuthUrl(
-  authUrl: string | undefined,
-  nextAuthUrl: string | undefined,
-): string | undefined {
-  return nonEmptyEnv(authUrl) ?? nonEmptyEnv(nextAuthUrl);
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -123,7 +93,7 @@ async function callTelegram<T>(token: string, method: string, body?: unknown): P
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : '{}',
-    signal: AbortSignal.timeout(TELEGRAM_STARTUP_REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(TELEGRAM_PROVISION_REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     const error = (await res.json().catch(() => ({}))) as TelegramCallResult<T>;
@@ -143,13 +113,13 @@ async function callTelegramWithRetry<T>(
   body?: unknown,
   attempt = 0,
 ): Promise<T> {
-  const delayMs = TELEGRAM_STARTUP_RETRY_DELAYS_MS[attempt] ?? 0;
+  const delayMs = TELEGRAM_PROVISION_RETRY_DELAYS_MS[attempt] ?? 0;
   await sleep(delayMs);
   try {
     return (await postTelegram(token, method, body)) as T;
   } catch (err) {
-    if (attempt >= TELEGRAM_STARTUP_RETRY_DELAYS_MS.length - 1) {
-      throw err instanceof Error ? err : new Error(formatTelegramStartupError(err));
+    if (attempt >= TELEGRAM_PROVISION_RETRY_DELAYS_MS.length - 1) {
+      throw err instanceof Error ? err : new Error(formatTelegramError(err));
     }
     return callTelegramWithRetry(postTelegram, token, method, body, attempt + 1);
   }
@@ -196,7 +166,7 @@ export async function registerTelegramWebhook(
   } catch (err) {
     return {
       status: 'error',
-      detail: `setWebhook failed: ${formatTelegramStartupError(err)}. The bot may still work if the webhook was registered earlier.`,
+      detail: `setWebhook failed: ${formatTelegramError(err)}. The bot may still work if the webhook was registered earlier.`,
     };
   }
 
@@ -206,15 +176,22 @@ export async function registerTelegramWebhook(
   } catch (err) {
     return {
       status: 'error',
-      detail: `setWebhook ok but verification failed: ${formatTelegramStartupError(err)}. The bot may still work if the webhook was registered earlier.`,
+      detail: `setWebhook ok but verification failed: ${formatTelegramError(err)}. The bot may still work if the webhook was registered earlier.`,
     };
   }
 
   if (after.url !== targetUrl) {
     return {
       status: 'error',
-      detail: `verification mismatch: expected ${targetUrl}, got ${after.url ?? '(none)'}`,
+      detail: 'Telegram returned a different webhook target',
     };
+  }
+  const allowed = after.allowed_updates ?? [];
+  if (
+    allowed.length !== ALLOWED_UPDATES.length ||
+    ALLOWED_UPDATES.some((update) => !allowed.includes(update))
+  ) {
+    return { status: 'error', detail: 'Telegram returned a different list of allowed updates' };
   }
   if (alreadyPresent) {
     return {
@@ -239,97 +216,89 @@ export async function registerTelegramCommandMenu(
   } catch (err) {
     return {
       status: 'error',
-      detail: `setMyCommands failed: ${formatTelegramStartupError(err)}. The bot may still work if commands were registered earlier.`,
+      detail: `setMyCommands failed: ${formatTelegramError(err)}. The bot may still work if commands were registered earlier.`,
     };
   }
   const scopes = TELEGRAM_BOT_COMMAND_REGISTRATIONS.map((entry) => entry.scope.type).join(',');
   return { status: 'registered', detail: `scopes=${scopes}` };
 }
 
-export function telegramBotStartupActions(env: TelegramBotStartupEnv): {
-  commands: 'register' | 'skip-token';
-  webhook: 'register' | 'skip-non-production' | 'skip-missing';
-  missingWebhook: string[];
-} {
-  const token = nonEmptyEnv(env.botToken);
-  const secret = nonEmptyEnv(env.webhookSecret);
-  const authUrl = nonEmptyEnv(env.authUrl);
-  const missingWebhook = [
-    !token && 'TELEGRAM_BOT_TOKEN',
-    !secret && 'TELEGRAM_WEBHOOK_SECRET',
-    !authUrl && 'AUTH_URL',
-  ].filter((value): value is string => Boolean(value));
-
-  return {
-    commands: token ? 'register' : 'skip-token',
-    webhook:
-      env.nodeEnv !== 'production'
-        ? 'skip-non-production'
-        : missingWebhook.length > 0
-          ? 'skip-missing'
-          : 'register',
-    missingWebhook,
-  };
-}
-
-/**
- * Fire-and-forget Telegram startup. Command-menu registration needs only the
- * bot token and runs in every Node environment so local `next dev` bots get a
- * `/` menu. Webhook registration stays production-only because Telegram rejects
- * localhost callback URLs.
- */
-export function startTelegramBotRegistration(
-  env: TelegramBotStartupEnv,
-  logger: TelegramStartupLogger,
+export async function provisionTelegramBot(
+  input: {
+    environment: string;
+    expectedBotId: number;
+    origin: string;
+    apply: boolean;
+    botToken: string | undefined;
+    webhookSecret: string | undefined;
+    configuredOrigin?: string;
+  },
   postTelegram: TelegramBotApiPost = callTelegram,
-): { commands: Promise<void>; webhook: Promise<void> } {
-  const token = nonEmptyEnv(env.botToken);
-  const actions = telegramBotStartupActions(env);
+) {
+  const origin = new URL(input.origin);
+  if (
+    origin.protocol !== 'https:' ||
+    origin.href !== `${origin.origin}/` ||
+    !/^[a-z0-9][a-z0-9-]*$/.test(input.environment) ||
+    !Number.isSafeInteger(input.expectedBotId) ||
+    input.expectedBotId <= 0
+  ) {
+    throw new Error('Supply an environment label, positive numeric bot ID and HTTPS origin');
+  }
+  if (input.configuredOrigin && new URL(input.configuredOrigin).origin !== origin.origin) {
+    throw new Error('Callback origin differs from the selected environment configuration');
+  }
+  const token = input.botToken?.trim();
+  if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
+  const secret = input.webhookSecret?.trim();
+  if (input.apply && (!secret || !/^[A-Za-z0-9_-]{1,256}$/.test(secret))) {
+    throw new Error('Apply requires a valid TELEGRAM_WEBHOOK_SECRET');
+  }
 
-  const commands = (async () => {
-    if (actions.commands === 'register' && token) {
-      try {
-        const result = await registerTelegramCommandMenu(token, postTelegram);
-        const line = `[telegram-commands] ${result.status}: ${result.detail}`;
-        if (result.status === 'error') logger.warn(line);
-        else logger.log(line);
-      } catch (err: unknown) {
-        logger.warn(`[telegram-commands] unexpected error: ${formatTelegramStartupError(err)}`);
-      }
-      return;
+  const bot = await callTelegramWithRetry<{ id: number; is_bot: boolean; username?: string }>(
+    postTelegram,
+    token,
+    'getMe',
+  );
+  if (!bot.is_bot || bot.id !== input.expectedBotId) {
+    throw new Error('Telegram token does not belong to the expected bot');
+  }
+  const url = webhookTargetUrl(origin.origin);
+  const result = { environment: input.environment, botId: bot.id, username: bot.username, url };
+
+  if (!input.apply || !secret) {
+    const info = await callTelegramWithRetry<WebhookInfo>(postTelegram, token, 'getWebhookInfo');
+    return {
+      ...result,
+      applied: false,
+      webhook: info.url === url ? 'matching' : info.url ? 'different' : 'unconfigured',
+    };
+  }
+
+  const commands = await registerTelegramCommandMenu(token, postTelegram);
+  if (commands.status === 'error') throw new Error(commands.detail);
+  for (const registration of TELEGRAM_BOT_COMMAND_REGISTRATIONS) {
+    const actual = await callTelegramWithRetry<typeof registration.commands>(
+      postTelegram,
+      token,
+      'getMyCommands',
+      { scope: registration.scope },
+    );
+    if (
+      actual.length !== registration.commands.length ||
+      registration.commands.some(
+        (command, index) =>
+          command.command !== actual[index]?.command ||
+          command.description !== actual[index].description,
+      )
+    ) {
+      throw new Error(`Telegram returned a different command menu for ${registration.scope.type}`);
     }
-    logger.log('[telegram-commands] skipping — missing TELEGRAM_BOT_TOKEN');
-  })();
-
-  const webhook = (async () => {
-    if (actions.webhook === 'skip-non-production') return;
-    if (actions.webhook === 'skip-missing' || !token) {
-      logger.log(`[telegram-webhook] skipping — missing ${actions.missingWebhook.join(', ')}`);
-      return;
-    }
-
-    const secret = nonEmptyEnv(env.webhookSecret);
-    const authUrl = nonEmptyEnv(env.authUrl);
-    if (!secret || !authUrl) return;
-
-    try {
-      const result = await registerTelegramWebhook(
-        { botToken: token, webhookSecret: secret, authUrl },
-        postTelegram,
-      );
-      if (result.status === 'already-registered') {
-        logger.log('[telegram-webhook] webhook already registered');
-        return;
-      }
-      const line = `[telegram-webhook] ${result.status}: ${result.detail}`;
-      if (result.status === 'error') logger.warn(line);
-      else logger.log(line);
-    } catch (err: unknown) {
-      logger.warn(
-        `[telegram-webhook] unexpected error: ${formatTelegramStartupError(err)}. The bot may still work if the webhook was registered earlier.`,
-      );
-    }
-  })();
-
-  return { commands, webhook };
+  }
+  const webhook = await registerTelegramWebhook(
+    { botToken: token, webhookSecret: secret, authUrl: origin.origin },
+    postTelegram,
+  );
+  if (webhook.status === 'error') throw new Error(webhook.detail);
+  return { ...result, applied: true, commands: commands.detail, webhook: webhook.status };
 }

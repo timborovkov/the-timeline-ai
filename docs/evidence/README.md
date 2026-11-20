@@ -2,6 +2,7 @@
 
 These records retain unique observations or decisions, not current instructions. Read each baseline/date and limitation. [Security gaps](../security-gaps.md) owns unresolved controls; release PRs own deployment/submission evidence. Never infer current settings from an old snapshot.
 
+- [Architecture verification and recovery rehearsal](architecture-verification-2026-11-19.md)
 - [GDPR, cookies, and consent audit](gdpr-cookie-consent-audit-2026-08-21.md)
 - [Marketplace verification observations](marketplace-verification-2026.md)
 - [Platform retention decision, 3 November 2026](platform-retention-decision-2026-11-03.md)

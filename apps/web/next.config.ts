@@ -16,6 +16,13 @@ const workspaceRoot = join(__dirname, '../..');
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  images: {
+    localPatterns: [
+      // Public screenshot revisions keep the optimized cache coherent after recaptures.
+      { pathname: '/marketing/screenshots/*.png' },
+      { pathname: '/**', search: '' },
+    ],
+  },
   // Load routes on first use instead of retaining every server bundle at startup.
   // This trades cold-route latency for a lower idle footprint on Railway.
   experimental: {

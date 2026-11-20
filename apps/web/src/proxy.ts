@@ -12,6 +12,7 @@ import {
   stashOnboardingSourceIntentCookie,
 } from '@/lib/onboarding-source-intent';
 import { platformRequestGate } from '@/lib/platform-request-gate';
+import { classifyPublicAnalyticsPath } from '@/lib/public-analytics-routes';
 import {
   hasOversizedContentLength,
   payloadTooLargeResponse,
@@ -43,11 +44,6 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
   requestHeaders.set('x-timeline-path', request.nextUrl.pathname);
   requestHeaders.set('x-timeline-method', request.method);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
-  if (!request.nextUrl.pathname.startsWith('/api/')) {
-    for (const { key, value } of contentSecurityPolicyHeaders(process.env)) {
-      response.headers.set(key, value);
-    }
-  }
   await migrateLegacyActiveTeamCookie(request, response);
   applySignupPlanIntentFromRequest(request, response);
   if (request.nextUrl.pathname === '/sign-up') {
@@ -58,6 +54,29 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
   }
   return response;
 }) as unknown as ProxyHandler;
+
+const additionalPublicPages = new Set([
+  '/docs',
+  '/guides',
+  '/guides/automate-daily-team-updates-in-slack',
+  '/guides/software-project-handover-checklist-template',
+  '/guides/summarize-slack-channels',
+  '/guides/track-action-items-meetings-slack-email',
+  '/help/contact',
+  '/help/support',
+  '/integrations/websites',
+  '/record',
+  '/security',
+]);
+
+export function isCookieIndependentPublicRead(
+  request: Pick<NextRequest, 'method' | 'nextUrl' | 'headers'>,
+) {
+  if ((request.method !== 'GET' && request.method !== 'HEAD') || request.headers.has('next-action'))
+    return false;
+  const path = request.nextUrl.pathname;
+  return Boolean(classifyPublicAnalyticsPath(path)) || additionalPublicPages.has(path);
+}
 
 export const proxy: ProxyHandler = async (request, context) => {
   const redirect = canonicalHostRedirect(request);
@@ -72,7 +91,14 @@ export const proxy: ProxyHandler = async (request, context) => {
   const invalidMultipart = rejectInvalidMultipartRequest(request);
   if (invalidMultipart)
     return protectSensitiveLinkResponse(invalidMultipart, request.nextUrl.pathname);
-  const response = await authProxy(request, context);
+  const response = isCookieIndependentPublicRead(request)
+    ? NextResponse.next()
+    : await authProxy(request, context);
+  if (response && !request.nextUrl.pathname.startsWith('/api/')) {
+    for (const { key, value } of contentSecurityPolicyHeaders(process.env)) {
+      response.headers.set(key, value);
+    }
+  }
   schedulePersonlessSurfaceRequest(request, response, context);
   return protectSensitiveLinkResponse(response, request.nextUrl.pathname);
 };
