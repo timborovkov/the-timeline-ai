@@ -4,7 +4,7 @@ import { afterEach, describe, it } from 'bun:test';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { buildTimelineMoments } from '@/lib/timeline-moments';
-import type { TimelineEvent } from '@/lib/timeline-types';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -365,10 +365,14 @@ describe('TimelineList archive virtualization', () => {
       timelineEvent({ id: 'older', occurredAt: '2026-08-13T13:00:00Z', source: 'web' }),
     ];
     const authorMap = new Map();
-    const serverMoments = buildTimelineMoments(events, authorMap, {
-      now: new Date('2026-08-15T08:00:00Z'),
-      timezone,
-    });
+    const serverMoments = buildTimelineMoments<TimelineEvent, TimelineArtifactCluster>(
+      events,
+      authorMap,
+      {
+        now: new Date('2026-08-15T08:00:00Z'),
+        timezone,
+      },
+    );
     vi.setSystemTime(new Date('2026-08-14T22:59:00Z'));
 
     render(
