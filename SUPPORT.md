@@ -19,6 +19,20 @@ attach your Timeline account ID, active team ID, and role. It never attaches
 workspace content automatically. The IP address used for abuse prevention is
 not saved with the support request.
 
+## Enterprise enquiry
+
+Use the [Enterprise enquiry form](https://thetimeline.cc/contact/enterprise) for
+procurement, security review, SSO, SLA, data residency, committed volume, a
+managed on-premise or private-cloud deployment, or a custom Enterprise plan.
+Submissions go to the same support inbox, tagged enterprise, and may include
+pricing-calculator context from the referring link. On-premise CTAs may
+pre-select the `on_premise_deployment` topic. The public copy currently states
+that we reply within one business day.
+
+Self-hosting from the public repository is documented in
+[docs/self-hosting.md](./docs/self-hosting.md) under the
+[Elastic License 2.0](./LICENSE).
+
 ## Public bug reports
 
 Use the [bug report form](https://github.com/timborovkov/the-timeline-ai/issues/new?template=bug_report.yml)

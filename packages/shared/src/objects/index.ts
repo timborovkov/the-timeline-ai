@@ -4430,7 +4430,7 @@ export async function createObject(
   return txResult.object;
 }
 
-type PostCommitEffect = () => void;
+type PostCommitEffect = () => void | Promise<void>;
 
 interface ObjectMutationOptions {
   expectedUpdatedAt?: string | undefined;
@@ -5133,7 +5133,7 @@ export async function archiveSuggestionCreatedObjectIfUnadopted(
   });
   if (runsOwnPostCommitEffects) {
     for (const effect of postCommitEffects) {
-      void effect();
+      await Promise.resolve(effect());
     }
   }
   return outcome;
