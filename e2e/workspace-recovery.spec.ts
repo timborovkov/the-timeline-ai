@@ -293,14 +293,15 @@ test('first-run capture can be resumed from Home before and after completion', a
       `;
       await sql`UPDATE document_versions SET processing_status = 'embedded' WHERE id = ${versionId}`;
     });
-    const ready = page.getByRole('link', { name: 'Open your first record' });
-    await expect(ready).toBeVisible();
-    await expect(page).toHaveURL(/\/app$/);
-    await ready.click();
+    // Home advances first-run to `record` and GUIDED_SHELL_PHASES redirects into the
+    // guided record with the same ?capture= key — there is no ready banner on Home.
+    await page.reload();
+    await expect(page).toHaveURL(/\/app\/onboarding\/record\?capture=/);
     await expect(page.getByRole('heading', { name: 'Launch plan.pdf' })).toBeVisible();
     await expect(
       page.getByText('The launch plan sets the release date and assigns review owners.'),
     ).toBeVisible();
+    await screenshot(page, info, 'first-run-guided-record');
 
     await withE2eDataTransaction(async (sql) => {
       await sql`UPDATE team_first_run SET phase = 'complete' WHERE team_id = ${e2eTeam.id}`;
