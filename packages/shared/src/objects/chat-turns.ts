@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { chatMessages, chatSessions, type Db } from '@timeline/db';
 import type { UIMessage } from 'ai';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
@@ -6,6 +8,21 @@ import { stableJson } from '#src/reconciliation/stable-json.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+export interface ChatTurnInput {
+  userMessage?: UIMessage | null;
+  assistantMessage: UIMessage;
+  metadata?: Record<string, unknown>;
+  save?: { id: string; expectedRevision: string | null; replace?: boolean };
+}
+
+function revision(row: { id: string; content: unknown } | undefined): string | null {
+  return row
+    ? createHash('sha256')
+        .update(stableJson([row.id, row.content]))
+        .digest('hex')
+    : null;
+}
 interface TurnContent {
   version: 2;
   ui_message: UIMessage;
@@ -27,7 +44,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
         ),
       )
       .for('update');
-    if (!session) throw new Error('Session not found');
+    return Boolean(session);
   }
   async function find(tx: Tx, sessionId: string, messageId: string) {
     const [row] = await tx
@@ -43,18 +60,42 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       .limit(1);
     return row;
   }
+  async function latest(tx: Tx, sessionId: string) {
+    const [row] = await tx
+      .select({ id: chatMessages.id, content: chatMessages.content })
+      .from(chatMessages)
+      .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1);
+    return row;
+  }
+
   return {
-    async persistChatTurn(
-      sessionId: string,
-      input: {
-        userMessage?: UIMessage | null;
-        assistantMessage: UIMessage;
-        metadata?: Record<string, unknown>;
-      },
-    ) {
+    async chatTurnRevision(sessionId: string) {
       await scope.requireMembership();
-      await db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) throw new Error('Session not found');
+        return revision(await latest(tx, sessionId));
+      });
+    },
+    async persistChatTurn(sessionId: string, input: ChatTurnInput): Promise<'saved' | 'conflict'> {
+      await scope.requireMembership();
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) {
+          if (input.save) return 'conflict';
+          throw new Error('Session not found');
+        }
+        if (input.save) {
+          const existing = await find(tx, sessionId, input.assistantMessage.id);
+          if ((existing?.content as TurnContent | undefined)?.turn_save_id === input.save.id)
+            return 'saved';
+          const expectedHead = input.save.replace ? existing : await latest(tx, sessionId);
+          if (
+            (input.save.replace && !existing) ||
+            revision(expectedHead) !== input.save.expectedRevision
+          )
+            return 'conflict';
+        }
         const messages = [input.userMessage, input.assistantMessage].filter((m): m is UIMessage =>
           Boolean(m),
         );
@@ -67,6 +108,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           if (existing && message.role === 'user') continue;
           const content: TurnContent = {
             ...(message.role === 'assistant' ? input.metadata : {}),
+            ...(message.role === 'assistant' && input.save ? { turn_save_id: input.save.id } : {}),
             version: 2,
             ui_message: message,
             text: message.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n'),
@@ -87,19 +129,15 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           .update(chatSessions)
           .set({ updatedAt: new Date() })
           .where(eq(chatSessions.id, sessionId));
+        return 'saved';
       });
     },
-    async claimChatApprovals(sessionId: string, submitted: UIMessage): Promise<UIMessage> {
+    async claimChatApprovals(sessionId: string, submitted: UIMessage) {
       await scope.requireMembership();
       return db.transaction(async (tx) => {
-        await lock(tx, sessionId);
+        if (!(await lock(tx, sessionId))) throw new Error('Session not found');
         const row = await find(tx, sessionId, submitted.id);
-        const [latestMessage] = await tx
-          .select({ id: chatMessages.id })
-          .from(chatMessages)
-          .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
-          .orderBy(desc(chatMessages.sequence))
-          .limit(1);
+        const latestMessage = await latest(tx, sessionId);
         if (!row || latestMessage?.id !== row.id) throw new Error('Approval no longer available');
         const content = row.content as TurnContent | undefined;
         const saved = content?.ui_message;
@@ -144,11 +182,9 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           });
         }
         // A claim is durable before execution. An interrupted claim is never automatically retried.
-        await tx
-          .update(chatMessages)
-          .set({ content: { ...content, ui_message: result, approval_claimed: true } })
-          .where(eq(chatMessages.id, row.id));
-        return result;
+        const claimed = { ...content, ui_message: result, approval_claimed: true };
+        await tx.update(chatMessages).set({ content: claimed }).where(eq(chatMessages.id, row.id));
+        return { message: result, revision: revision({ id: row.id, content: claimed }) };
       });
     },
   };

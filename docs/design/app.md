@@ -18,7 +18,7 @@ composer on wide screens. Prompt suggestions use compact bordered buttons. Atten
 and recent activity form the primary column; three pinned shortcuts and workspace
 utilities support them in the secondary column. Email capture stays visible with copy and settings actions. Processing issues use a
 stacked notice with explicit review actions; job counts remain admin-only. Healthy
-processing adds no notice.
+processing adds no notice. Capture and Ask can be used while secondary panels and source guidance load.
 Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
 four moments; the full timeline remains one click away. The latest digest follows
 activity with a bounded summary preview and an expandable full body.
@@ -185,7 +185,7 @@ text; inline citations are mono lime superscripts, not raw chips. Tool
 execution details are collapsed. Status badges distinguish running, approval needed, denied, completed, failed, interrupted, and unavailable historical results; only active calls spin. Approval previews show effective defaults and before/after values, including lane kinds and removal consequences. Only the latest assistant turn offers actionable approval controls. Ask object
 bindings always have a human label and read **About {name}**, not Pin. Prompts
 handed off from Home are stored
-briefly in team-scoped session storage and never in the URL.
+briefly in team-scoped session storage and never in the URL. A completed answer shows whether it saved to history. If the write fails, the open chat keeps the answer available for a save-only retry. An unresolved saved-session turn pauses new prompts and tool approvals until the history is saved or the user leaves the conversation.
 
 The desktop session list stays dense: last-activity age under each title in
 mono 11px, a centered 60% hairline between rows, and archive revealed on row
