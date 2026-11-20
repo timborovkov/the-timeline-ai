@@ -8,7 +8,7 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
 
-import { getEnv } from '#src/env.js';
+import { getEnv, isFirecrawlConfigured } from '#src/env.js';
 import { PlatformAccessError } from '#src/platform-admin/index.js';
 import { runGuardedJob } from '#src/platform-admin/runtime.js';
 import { getChatDeliveryQueue, enqueueWebsiteScanJob } from '#src/queue/queues.js';
@@ -169,7 +169,12 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
       }
     }
   }
-  if (!getEnv().WEBSITE_SCHEDULES_ENABLED || getEnv().WEBSITE_CRAWLS_DISABLED) return;
+  if (
+    !getEnv().WEBSITE_SCHEDULES_ENABLED ||
+    getEnv().WEBSITE_CRAWLS_DISABLED ||
+    !isFirecrawlConfigured()
+  )
+    return;
   const due = await db
     .select()
     .from(websites)

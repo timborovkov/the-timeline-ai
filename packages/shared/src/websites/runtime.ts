@@ -21,7 +21,7 @@ import {
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { authorizeWebsitePrincipal } from '#src/websites/authorization.js';
 import { WEBSITE_PAGE_LIMIT, websiteSourceUnits } from '#src/websites/policy.js';
-import { settleCapturedWebsiteRun } from '#src/websites/recovery.js';
+import { failWebsiteRun, settleCapturedWebsiteRun } from '#src/websites/recovery.js';
 
 export function websiteContentHash(text: string): string {
   return createHash('sha256').update(text.replace(/\r\n/g, '\n').trim()).digest('hex');
@@ -140,6 +140,10 @@ export async function processPersistentWebsiteScan(
   let failureReason = run.failureReason;
   let pages = await scope.onboarding.getWebsiteScanPages(scanId);
   if (!pages) {
+    if (!isFirecrawlConfigured()) {
+      await failWebsiteRun(db, teamId, scanId, 'not_enabled');
+      return true;
+    }
     const units = websiteSourceUnits(WEBSITE_PAGE_LIMIT, run.unitsPerPage);
     const admission = await scope.billing.reserve({
       operationId,

@@ -4,7 +4,7 @@ import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import { ExternalLink, LifeBuoy, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, use, useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   formatNavBadge,
@@ -23,8 +23,8 @@ interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
-  badges?: NavBadgeMap;
-  billingSummary?: SidebarBillingSummary | null;
+  badges?: NavBadgeMap | Promise<NavBadgeMap>;
+  billingSummary?: SidebarBillingSummary | null | Promise<SidebarBillingSummary | null>;
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
@@ -157,66 +157,27 @@ export function MobileNav({
                 <X aria-hidden="true" className="size-4" />
               </button>
             </div>
-            <nav aria-label="Primary" className="mt-6 min-h-0 flex-1 overflow-y-auto pb-4">
-              {visibleNavGroups(active.role).map((group, groupIndex) => (
-                <div key={group.id} className={groupIndex > 0 ? 'mt-5' : undefined}>
-                  <p
-                    aria-hidden="true"
-                    className="mb-1 px-3 text-xs font-medium leading-[1.35] text-fg-dim"
-                  >
-                    {group.label}
-                  </p>
-                  <ul aria-label={group.label} className="m-0 list-none space-y-1 p-0">
-                    {group.items.map((item) => {
-                      const isActive = isNavItemActive(item, pathname);
-                      const Icon = item.icon;
-                      const badge = formatNavBadge(
-                        item.badgeKey ? badges[item.badgeKey] : undefined,
-                      );
-                      return (
-                        <li key={item.href}>
-                          <Link
-                            href={item.href}
-                            aria-label={navItemAccessibleLabel(item.label, badge)}
-                            aria-current={isActive ? 'page' : undefined}
-                            data-current={isActive ? 'true' : undefined}
-                            onClick={() => {
-                              closeNavigation();
-                            }}
-                            className={cn(
-                              'flex min-h-9 items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
-                              isActive
-                                ? 'bg-surface-2 font-medium text-signal'
-                                : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
-                            )}
-                          >
-                            <Icon aria-hidden="true" className="size-4" />
-                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                            {badge ? (
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  'grid h-5 min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px]',
-                                  isActive
-                                    ? 'border-signal/40 bg-bg text-signal'
-                                    : 'border-danger/40 text-danger',
-                                )}
-                              >
-                                {badge}
-                              </span>
-                            ) : null}
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-            </nav>
+            <Suspense
+              fallback={
+                <MobilePrimaryLinks
+                  role={active.role}
+                  pathname={pathname}
+                  badges={EMPTY_BADGES}
+                  closeNavigation={closeNavigation}
+                />
+              }
+            >
+              <MobilePrimaryLinks
+                role={active.role}
+                pathname={pathname}
+                badges={badges}
+                closeNavigation={closeNavigation}
+              />
+            </Suspense>
             <div className="mt-auto shrink-0 space-y-3 border-t border-border pt-4">
-              {billingSummary ? (
+              <Suspense fallback={null}>
                 <SidebarBillingUsage summary={billingSummary} expanded className="mx-1" />
-              ) : null}
+              </Suspense>
               <Link
                 href="/help"
                 target="_blank"
@@ -242,5 +203,75 @@ export function MobileNav({
         </dialog>
       ) : null}
     </>
+  );
+}
+
+function MobilePrimaryLinks({
+  role,
+  pathname,
+  badges: source,
+  closeNavigation,
+}: {
+  role: TeamMembership['role'];
+  pathname: string;
+  badges: NavBadgeMap | Promise<NavBadgeMap>;
+  closeNavigation: () => void;
+}) {
+  const badges = 'then' in source ? use(source) : source;
+  return (
+    <nav aria-label="Primary" className="mt-6 min-h-0 flex-1 overflow-y-auto pb-4">
+      {visibleNavGroups(role).map((group, groupIndex) => (
+        <div key={group.id} className={groupIndex > 0 ? 'mt-5' : undefined}>
+          <p
+            aria-hidden="true"
+            className="mb-1 px-3 text-xs font-medium leading-[1.35] text-fg-dim"
+          >
+            {group.label}
+          </p>
+          <ul aria-label={group.label} className="m-0 list-none space-y-1 p-0">
+            {group.items.map((item) => {
+              const isActive = isNavItemActive(item, pathname);
+              const Icon = item.icon;
+              const badge = formatNavBadge(item.badgeKey ? badges[item.badgeKey] : undefined);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-label={navItemAccessibleLabel(item.label, badge)}
+                    aria-current={isActive ? 'page' : undefined}
+                    data-current={isActive ? 'true' : undefined}
+                    onClick={() => {
+                      closeNavigation();
+                    }}
+                    className={cn(
+                      'flex min-h-9 items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                      isActive
+                        ? 'bg-surface-2 font-medium text-signal'
+                        : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
+                    )}
+                  >
+                    <Icon aria-hidden="true" className="size-4" />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {badge ? (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'grid h-5 min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px]',
+                          isActive
+                            ? 'border-signal/40 bg-bg text-signal'
+                            : 'border-danger/40 text-danger',
+                        )}
+                      >
+                        {badge}
+                      </span>
+                    ) : null}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </nav>
   );
 }
