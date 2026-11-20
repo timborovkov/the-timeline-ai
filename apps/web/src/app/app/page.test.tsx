@@ -83,7 +83,11 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/messaging'),
-  () => ({ latestDailyDigest: fakes.latestDailyDigest }),
+  () => ({
+    latestDailyDigest: fakes.latestDailyDigest,
+    presentSavedViewDigest: (_scope: unknown, payload: unknown) =>
+      Promise.resolve({ payload, hasVisibleChanges: false }),
+  }),
   () => import('@timeline/shared/messaging'),
 );
 await vi.mock(
