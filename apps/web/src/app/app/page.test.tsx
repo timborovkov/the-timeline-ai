@@ -574,11 +574,10 @@ describe('HomeDashboardPage', () => {
       record: { processingSteps: [], sources: [{ href: '/app/documents/example' }] },
     });
 
-    const html = await renderHome();
-    expect(html).toContain(
-      '/onboarding?capture=team-1.document.' + String(capture.starterSelectedAt.getTime()),
+    await expect(renderHome()).rejects.toThrow(
+      'redirect:/app/onboarding/record?capture=' +
+        encodeURIComponent('team-1.document.' + String(capture.starterSelectedAt.getTime())),
     );
-    expect(html).toContain('record ready');
   });
 
   it('shows a failed first-run capture on Home', async () => {
@@ -588,30 +587,37 @@ describe('HomeDashboardPage', () => {
 
     expect(html).toContain('data-testid="first-run-home-capture"');
     expect(html).toContain('failed');
+    expect(html).toContain(
+      '/onboarding?capture=team-1.website.' + String(capture.starterSelectedAt.getTime()),
+    );
     expect(fakes.loadFirstRunStatus).not.toHaveBeenCalled();
   });
 
   it.each(['document', 'email', 'slack', 'telegram', 'website'])(
-    'keeps the capture link when the first %s source is no longer available',
+    'sends an unavailable %s capture to the record page with the same capture link',
     async (starterPath) => {
       const firstRun = {
         ...capture,
-        phase: 'record',
+        phase: 'processing',
         starterPath,
+      };
+      const landed = {
+        ...firstRun,
+        phase: 'record' as const,
         firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
       };
       fakes.getFirstRun.mockResolvedValue(firstRun);
       fakes.loadFirstRunStatus.mockResolvedValue({
-        firstRun,
+        firstRun: landed,
         record: { processingSteps: [], sources: [] },
       });
 
-      const html = await renderHome();
-
-      expect(html).toContain(
-        `/onboarding?capture=team-1.${starterPath}.${String(capture.starterSelectedAt.getTime())}`,
+      await expect(renderHome()).rejects.toThrow(
+        'redirect:/app/onboarding/record?capture=' +
+          encodeURIComponent(
+            `team-1.${starterPath}.${String(capture.starterSelectedAt.getTime())}`,
+          ),
       );
-      expect(html).toContain('>failed</a>');
     },
   );
 

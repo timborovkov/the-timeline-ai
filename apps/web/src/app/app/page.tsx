@@ -1,6 +1,10 @@
 import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
-import { isConnectorStarterPath, type FirstRunState } from '@timeline/shared/onboarding/first-run';
+import {
+  GUIDED_SHELL_PHASES,
+  isConnectorStarterPath,
+  type FirstRunState,
+} from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
@@ -115,7 +119,10 @@ function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: s
   };
 }
 
-const HOME_CAPTURE_PHASES = new Set<FirstRunState['phase']>(['processing', 'failed', 'record']);
+function redirectToGuidedRecord(firstRun: FirstRunState): never {
+  const captureKey = firstRunCaptureKey(firstRun);
+  redirect(captureKey ? firstRunCaptureHref(captureKey, 'record') : '/app/onboarding/record');
+}
 
 async function FirstRunHomeBanner({
   firstRun,
@@ -131,27 +138,44 @@ async function FirstRunHomeBanner({
   teamName: string;
 }) {
   if (firstRun?.startedByUserId !== userId) return null;
-  if (!HOME_CAPTURE_PHASES.has(firstRun.phase)) return null;
 
-  const status =
-    firstRun.phase === 'failed'
-      ? null
-      : await loadHomePanel('home_first_run_status', () =>
-          loadFirstRunStatus({ db, teamId, userId, teamSlug, teamName }),
-        );
+  if (firstRun.phase === 'failed') {
+    const captureKey = firstRunCaptureKey(firstRun);
+    if (!captureKey) return null;
+    return (
+      <FirstRunHomeCapture
+        ready={false}
+        failed
+        emailWaiting={false}
+        startedAt={firstRun.starterSelectedAt}
+        completed={0}
+        total={0}
+        href={firstRunCaptureHref(captureKey)}
+      />
+    );
+  }
+
+  // Match main (#524/#603): only the processing Home path upgrades into the guided
+  // shell redirect. Capture-link progress stays here until that transition.
+  if (firstRun.phase !== 'processing') return null;
+
+  const status = await loadHomePanel('home_first_run_status', () =>
+    loadFirstRunStatus({ db, teamId, userId, teamSlug, teamName }),
+  );
   const current = status?.firstRun ?? firstRun;
+  if (GUIDED_SHELL_PHASES.includes(current.phase)) redirectToGuidedRecord(current);
+
   const captureKey = firstRunCaptureKey(current);
   if (!captureKey) return null;
   const steps = status?.record?.processingSteps ?? [];
   const unavailable = firstRunCaptureUnavailable(current, status?.record ?? null);
-  const ready = Boolean(current.firstCaptureLandedAt) && !unavailable;
   const failed =
     unavailable || current.phase === 'failed' || steps.some((step) => step.status === 'failed');
-  const waitingPath = ready || failed ? null : current.starterPath;
+  const waitingPath = failed ? null : current.starterPath;
 
   return (
     <FirstRunHomeCapture
-      ready={ready}
+      ready={false}
       failed={failed}
       emailWaiting={waitingPath === 'email'}
       connectorWaiting={isConnectorStarterPath(waitingPath) ? waitingPath : null}
