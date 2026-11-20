@@ -103,8 +103,18 @@ await vi.mock(
   import.meta.resolve('@/lib/analytics'),
   () => ({
     trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+    capturePersonlessSurfaceRequest: vi.fn().mockResolvedValue(undefined),
   }),
   () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/signup-plan-intent'),
+  () => ({
+    readSignupPlanIntent: vi.fn().mockResolvedValue(undefined),
+    rememberSignupPlanIntent: vi.fn().mockResolvedValue(undefined),
+    clearSignupPlanIntent: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@/lib/signup-plan-intent'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),

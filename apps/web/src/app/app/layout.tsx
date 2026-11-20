@@ -20,8 +20,10 @@ import { firstRunGuideProps } from '@/lib/first-run-status';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
+import { resolvePlanIntentPrompt, shouldClearPlanIntentCookie } from '@/lib/plan-intent-prompt';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { SIDEBAR_COOKIE_KEY, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
+import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -101,64 +103,35 @@ export default async function AppLayout({
   if (!active) redirect('/onboarding');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [gettingStarted, badges, inbox, workspaceTimezone, billingSummary] = await Promise.all([
-    loadGettingStartedGuide(scope, session.user.id),
-    getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
-      console.error('[app-shell] failed to load navigation attention badges', err);
-      reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
-      return {};
-    }),
-    (async () => {
-      try {
-        const [unreadCount, notifications] = await Promise.all([
-          scope.objects.unreadNotificationCount(),
-          scope.objects.listNotifications({ limit: 5 }),
-        ]);
-        return {
-          unreadCount,
-          notifications: notifications.map((notification) => ({
-            id: notification.id,
-            kind: notification.kind,
-            summary: notification.summary,
-            entityId: notification.entityId,
-            agentSuggestionId: notification.agentSuggestionId,
-            payload: notification.payload,
-            createdAt: notification.createdAt.toISOString(),
-            readAt: notification.readAt?.toISOString() ?? null,
-          })),
-        };
-      } catch (err) {
-        console.error('[app-shell] failed to load inbox preview', err);
-        reportCaughtError(err, { surface: 'layout', operation: 'inbox_preview' });
-        return { unreadCount: 0, notifications: [] };
-      }
-    })(),
-    scope.calendar
-      .getCalendarSettings()
-      .then((settings) => settings.defaultTimezone)
-      .catch((err: unknown) => {
-        console.error('[app-shell] failed to load calendar settings', err);
-        reportCaughtError(err, { surface: 'layout', operation: 'calendar_settings' });
-        return DEFAULT_TIMEZONE;
+  const [gettingStarted, badges, inbox, workspaceTimezone, billingShell, planIntentCookie] =
+    await Promise.all([
+      loadGettingStartedGuide(scope, session.user.id),
+      getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
+        console.error('[app-shell] failed to load navigation attention badges', err);
+        reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
+        return {};
       }),
-    (async () => {
-      if (impersonation?.readOnly) return null;
-      try {
-        const role = await scope.requireMembership();
-        const canManage = role === 'owner' || role === 'admin';
-        const dash = await scope.billing.getDashboard({ canManageBilling: canManage });
-        return dash.sidebar;
-      } catch (err) {
-        console.error('[app-shell] failed to load billing summary', err);
-        reportCaughtError(err, { surface: 'layout', operation: 'billing_summary' });
-        return null;
-      }
-    })(),
-  ]);
+      loadInboxPreview(scope),
+      scope.calendar
+        .getCalendarSettings()
+        .then((settings) => settings.defaultTimezone)
+        .catch((err: unknown) => {
+          console.error('[app-shell] failed to load calendar settings', err);
+          reportCaughtError(err, { surface: 'layout', operation: 'calendar_settings' });
+          return DEFAULT_TIMEZONE;
+        }),
+      loadBillingShell(scope, Boolean(impersonation?.readOnly)),
+      readSignupPlanIntent(),
+    ]);
 
   const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
     cookieStore.get(SIDEBAR_COOKIE_KEY)?.value,
   );
+  const { planIntent, clearPlanIntent } = shellPlanIntentProps({
+    intent: planIntentCookie,
+    teamName: active.teamName,
+    billingShell,
+  });
 
   return (
     <QueryProvider>
@@ -181,7 +154,7 @@ export default async function AppLayout({
         inbox={inbox}
         workspaceTimezone={workspaceTimezone}
         sidebarInitiallyExpanded={sidebarInitiallyExpanded}
-        billingSummary={billingSummary}
+        billingSummary={billingShell.sidebar}
         platformAdmin={showPlatformAdmin(
           currentUser,
           realSession?.user.email,
@@ -198,6 +171,8 @@ export default async function AppLayout({
             : null
         }
         gettingStarted={gettingStarted}
+        planIntent={planIntent}
+        clearPlanIntent={clearPlanIntent}
       >
         {children}
         {modal}
@@ -215,6 +190,104 @@ async function loadGettingStartedGuide(scope: ReturnType<typeof withTeam>, userI
     redirect('/onboarding');
   }
   return firstRunGuideProps(firstRun);
+}
+
+async function loadInboxPreview(scope: ReturnType<typeof withTeam>) {
+  try {
+    const [unreadCount, notifications] = await Promise.all([
+      scope.objects.unreadNotificationCount(),
+      scope.objects.listNotifications({ limit: 5 }),
+    ]);
+    return {
+      unreadCount,
+      notifications: notifications.map((notification) => ({
+        id: notification.id,
+        kind: notification.kind,
+        summary: notification.summary,
+        entityId: notification.entityId,
+        agentSuggestionId: notification.agentSuggestionId,
+        payload: notification.payload,
+        createdAt: notification.createdAt.toISOString(),
+        readAt: notification.readAt?.toISOString() ?? null,
+      })),
+    };
+  } catch (err) {
+    console.error('[app-shell] failed to load inbox preview', err);
+    reportCaughtError(err, { surface: 'layout', operation: 'inbox_preview' });
+    return { unreadCount: 0, notifications: [] };
+  }
+}
+
+interface BillingShellState {
+  sidebar:
+    Awaited<ReturnType<ReturnType<typeof withTeam>['billing']['getDashboard']>>['sidebar'] | null;
+  accountPlanId: string;
+  hasPolarSubscription: boolean;
+  canManageBilling: boolean;
+}
+
+async function loadBillingShell(
+  scope: ReturnType<typeof withTeam>,
+  readOnlyImpersonation: boolean,
+): Promise<BillingShellState> {
+  if (readOnlyImpersonation) {
+    return {
+      sidebar: null,
+      accountPlanId: 'free',
+      hasPolarSubscription: false,
+      canManageBilling: false,
+    };
+  }
+  try {
+    const role = await scope.requireMembership();
+    const canManage = role === 'owner' || role === 'admin';
+    const dash = await scope.billing.getDashboard({ canManageBilling: canManage });
+    return {
+      sidebar: dash.sidebar,
+      accountPlanId: dash.account.planId,
+      hasPolarSubscription: Boolean(dash.account.polarSubscriptionId),
+      canManageBilling: canManage,
+    };
+  } catch (err) {
+    console.error('[app-shell] failed to load billing summary', err);
+    reportCaughtError(err, { surface: 'layout', operation: 'billing_summary' });
+    return {
+      sidebar: null,
+      accountPlanId: 'free',
+      hasPolarSubscription: false,
+      canManageBilling: false,
+    };
+  }
+}
+
+function shellPlanIntentProps(input: {
+  intent: Awaited<ReturnType<typeof readSignupPlanIntent>>;
+  teamName: string;
+  billingShell: BillingShellState;
+}) {
+  const prompt = resolvePlanIntentPrompt({
+    intent: input.intent,
+    accountPlanId: input.billingShell.accountPlanId,
+    hasPolarSubscription: input.billingShell.hasPolarSubscription,
+    canManageBilling: input.billingShell.canManageBilling,
+    teamName: input.teamName,
+  });
+  return {
+    planIntent: prompt
+      ? {
+          planId: prompt.planId,
+          title: prompt.title,
+          body: prompt.body,
+          ctaLabel: prompt.ctaLabel,
+          href: prompt.href,
+        }
+      : null,
+    clearPlanIntent: shouldClearPlanIntentCookie({
+      intent: input.intent,
+      accountPlanId: input.billingShell.accountPlanId,
+      hasPolarSubscription: input.billingShell.hasPolarSubscription,
+    }),
+  };
 }
 
 function showPlatformAdmin(

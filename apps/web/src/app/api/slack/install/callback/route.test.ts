@@ -8,6 +8,7 @@ const fakes = vi.hoisted(() => ({
   redirect: vi.fn(),
   requireMembership: vi.fn(),
   auditRecord: vi.fn(),
+  getFirstRun: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   verifySlackOAuthState: vi.fn(),
   oauthV2Access: vi.fn(),
@@ -49,6 +50,7 @@ await vi.mock(
     withTeam: () => ({
       requireMembership: fakes.requireMembership,
       audit: { record: fakes.auditRecord },
+      onboarding: { getFirstRun: fakes.getFirstRun },
     }),
   }),
   () => import('@timeline/shared/team-scope'),
@@ -114,6 +116,7 @@ beforeEach(() => {
   });
   fakes.upsertSlackWorkspaceFromOAuth.mockResolvedValue('workspace-1');
   fakes.safeMarkOnboardingStep.mockResolvedValue(true);
+  fakes.getFirstRun.mockResolvedValue(null);
   fakes.redirect.mockImplementation((target: string) => {
     throw new Error(`NEXT_REDIRECT:${target}`);
   });
@@ -179,6 +182,16 @@ describe('GET /api/slack/install/callback', () => {
       { kind: 'user', userId: 'user-1', teamId: 'team-1' },
       'agent_deployed_on_channel',
       { channel: 'slack' },
+    );
+  });
+
+  it('returns first-run Slack starters to onboarding after install', async () => {
+    fakes.getFirstRun.mockResolvedValueOnce({
+      starterPath: 'slack',
+      phase: 'processing',
+    });
+    await expect(GET(request({ code: 'code-1', state: 'valid-state' }))).rejects.toThrow(
+      'NEXT_REDIRECT:/onboarding',
     );
   });
 });

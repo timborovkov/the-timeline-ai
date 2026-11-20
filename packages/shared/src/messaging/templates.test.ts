@@ -19,6 +19,7 @@ describe('messaging templates', () => {
       teamRole: 'admin',
     });
 
+    expect(message.subject).toBe('[Timeline support] technical_support from Ada Lovelace');
     expect(message.textBody).toContain('Surface: board_detail');
     expect(message.textBody).toContain('Error reference: sentry-reference');
     expect(message.textBody).toContain('Release: release-sha');
@@ -29,6 +30,31 @@ describe('messaging templates', () => {
     expect(message.htmlBody).not.toContain('Acme Labs');
     expect(message.htmlBody).not.toContain('Current page:');
     expect(message.htmlBody).not.toContain('?');
+  });
+
+  it('tags enterprise enquiries in the support subject and metadata', () => {
+    const message = renderMessage('support_request', {
+      supportEmail: 'contact@thetimeline.cc',
+      requestId: 'enterprise-reference',
+      requestType: 'sales',
+      tag: 'enterprise',
+      name: 'Ada Lovelace',
+      email: 'ada@example.test',
+      message: 'Enterprise enquiry\nCompany: Acme',
+      surface: null,
+      errorReference: null,
+      release: 'release-sha',
+      userId: null,
+      teamId: null,
+      teamRole: null,
+    });
+
+    expect(message.subject).toBe('[Timeline support] enterprise from Ada Lovelace');
+    expect(message.textBody).toContain('Tag: enterprise');
+    expect(message.metadata).toMatchObject({
+      request_type: 'sales',
+      support_tag: 'enterprise',
+    });
   });
 
   it('renders invite HTML and text with escaped user content', () => {
