@@ -146,7 +146,6 @@ function ChatSurfaceContent({
 
   const [input, setInput] = useState(initialPrompt ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const handoffConsumedRef = useRef(false);
 
   const handoffPin = initialSessionId === null ? consumedHandoff : null;
   const visiblePinnedEntity = handoffPin?.pinnedEntityId
@@ -155,42 +154,16 @@ function ChatSurfaceContent({
       ? { id: pinnedEntityId, name: pinnedEntityName }
       : null;
 
-  // react-doctor-disable-next-line react-doctor/no-event-handler -- One-time sessionStorage handoff can only run after mount; sending a Home prompt is that hydration, not a click handler.
-  useEffect(() => {
-    if (!consumeHandoff) return;
-    // The SDK stops its chat during Strict Mode's effect cleanup. Consume and
-    // send only after that setup/cleanup cycle, otherwise it cancels the prompt
-    // before the request starts and the one-time handoff is already gone.
-    let active = true;
-    queueMicrotask(() => {
-      if (!active || handoffConsumedRef.current) return;
-      handoffConsumedRef.current = true;
-      let handoff: ChatHandoff | null = null;
-      try {
-        handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
-      } catch {
-        return;
-      }
-      if (!handoff) return;
-      chatHandoffRef.current = handoff;
-      // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
-      setConsumedHandoff(handoff);
-      // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
-      if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
-    });
-    return () => {
-      active = false;
-    };
-  }, [consumeHandoff, initialMessages.length, initialSessionId, sendMessage, teamId]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 80) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages, status]);
+  useChatHandoffHydration({
+    consumeHandoff,
+    chatHandoffRef,
+    initialMessagesLength: initialMessages.length,
+    initialSessionId,
+    sendMessage,
+    setConsumedHandoff,
+    teamId,
+  });
+  useStickTranscriptToBottom(scrollRef, messages, status);
 
   function submit(text: string) {
     const t = text.trim();
@@ -230,6 +203,111 @@ function ChatSurfaceContent({
         teamName={teamName}
       />
       <ChatError error={error} />
+      <ChatSessionControls
+        sessionId={sessionId}
+        messages={messages}
+        isStreaming={isStreaming}
+        history={history}
+        input={input}
+        setInput={setInput}
+        setMessages={setMessages}
+        onSubmit={submit}
+      />
+    </div>
+  );
+}
+
+function useChatHandoffHydration({
+  consumeHandoff,
+  chatHandoffRef,
+  initialMessagesLength,
+  initialSessionId,
+  sendMessage,
+  setConsumedHandoff,
+  teamId,
+}: {
+  consumeHandoff: boolean;
+  chatHandoffRef: RefObject<ChatHandoff | null>;
+  initialMessagesLength: number;
+  initialSessionId: string | null;
+  sendMessage: (input: { text: string }) => void | Promise<void>;
+  setConsumedHandoff: (handoff: ChatHandoff | null) => void;
+  teamId: string;
+}) {
+  const handoffConsumedRef = useRef(false);
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- One-time sessionStorage handoff can only run after mount; sending a Home prompt is that hydration, not a click handler.
+  useEffect(() => {
+    if (!consumeHandoff) return;
+    // The SDK stops its chat during Strict Mode's effect cleanup. Consume and
+    // send only after that setup/cleanup cycle, otherwise it cancels the prompt
+    // before the request starts and the one-time handoff is already gone.
+    let active = true;
+    queueMicrotask(() => {
+      if (!active || handoffConsumedRef.current) return;
+      handoffConsumedRef.current = true;
+      let handoff: ChatHandoff | null = null;
+      try {
+        handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
+      } catch {
+        return;
+      }
+      if (!handoff) return;
+      chatHandoffRef.current = handoff;
+      // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
+      setConsumedHandoff(handoff);
+      // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
+      if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    chatHandoffRef,
+    consumeHandoff,
+    initialMessagesLength,
+    initialSessionId,
+    sendMessage,
+    setConsumedHandoff,
+    teamId,
+  ]);
+}
+
+function useStickTranscriptToBottom(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  messages: UIMessage[],
+  status: string,
+) {
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 80) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, scrollRef, status]);
+}
+
+function ChatSessionControls({
+  sessionId,
+  messages,
+  isStreaming,
+  history,
+  input,
+  setInput,
+  setMessages,
+  onSubmit,
+}: {
+  sessionId: string | null;
+  messages: UIMessage[];
+  isStreaming: boolean;
+  history: ReturnType<typeof useChatHistorySave>;
+  input: string;
+  setInput: (value: string) => void;
+  setMessages: (update: (messages: UIMessage[]) => UIMessage[]) => void;
+  onSubmit: (text: string) => void;
+}) {
+  return (
+    <>
       <ReviewUnstartedSteps
         sessionId={sessionId}
         message={messages.at(-1)}
@@ -254,9 +332,9 @@ function ChatSurfaceContent({
         input={input}
         isStreaming={isStreaming || history.saveBlocked}
         onChange={setInput}
-        onSubmit={submit}
+        onSubmit={onSubmit}
       />
-    </div>
+    </>
   );
 }
 
