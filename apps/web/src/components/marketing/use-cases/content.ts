@@ -168,12 +168,8 @@ export const USE_CASES: readonly UseCaseContent[] = [
             detail: 'Highlights and status are written from that day’s captured work.',
           },
           {
-            label: 'Who owns the next step',
-            detail: 'Follow-ups and new tasks name the next owner.',
-          },
-          {
-            label: 'Link to the source',
-            detail: 'Open linked tasks and calendar items; find captured sources in Timeline.',
+            label: 'Open linked work',
+            detail: 'Tasks and calendar items open from the digest.',
           },
         ],
       },
