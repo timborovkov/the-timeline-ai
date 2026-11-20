@@ -25,8 +25,12 @@ function publicStorageOrigin(raw: string | undefined): string | undefined {
 export function contentSecurityPolicyHeaders(env: NodeJS.ProcessEnv) {
   if (env.NODE_ENV !== 'production') return [];
 
+  // Empty/whitespace public endpoints must fall through to S3_ENDPOINT.
+  // An invalid public endpoint still wins and yields no storage origin.
   const publicEndpoint = env.S3_PUBLIC_ENDPOINT?.trim();
-  const storage = publicStorageOrigin(publicEndpoint ? publicEndpoint : env.S3_ENDPOINT);
+  let storageEndpoint = env.S3_ENDPOINT;
+  if (publicEndpoint) storageEndpoint = publicEndpoint;
+  const storage = publicStorageOrigin(storageEndpoint);
   const storageSource = storage ? ` ${storage}` : '';
   const policy = [
     baseContentSecurityPolicy.value,
