@@ -11,11 +11,9 @@ import type { TeamInviteRow, TeamMemberMap } from '@/components/team-member-type
 export function PendingInvitesCard({
   invites,
   userMap,
-  siteUrl,
 }: {
   invites: TeamInviteRow[];
   userMap: TeamMemberMap;
-  siteUrl: string;
 }) {
   const { visibleItems, pagination, listRef } = useTeamListPage(invites);
   return (
@@ -40,7 +38,6 @@ export function PendingInvitesCard({
             <PendingInviteItem
               key={invite.id}
               invite={invite}
-              siteUrl={siteUrl}
               inviter={userMap.get(invite.invitedByUserId)}
             />
           ))}

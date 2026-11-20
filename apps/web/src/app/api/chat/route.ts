@@ -48,6 +48,11 @@ import {
 import { saveChatTurn, type ChatSaveResult } from '@/lib/chat-turn-save';
 import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 /**
@@ -530,7 +535,9 @@ export async function POST(req: Request): Promise<Response> {
 
   let parsedBody: unknown;
   try {
-    parsedBody = await req.json();
+    const body = await readCappedTextBody(req, REQUEST_BODY_LIMITS.chat);
+    if (body.tooLarge) return payloadTooLargeResponse();
+    parsedBody = JSON.parse(body.text) as unknown;
   } catch {
     return Response.json({ ok: false, error: 'invalid_json' }, { status: 400 });
   }

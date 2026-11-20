@@ -20,7 +20,7 @@ export default function VerifyEmailError({
     >
       <ErrorState
         title="Unable to verify email"
-        description="Email verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again."
+        description="Email verification could not be confirmed. If you submitted the confirmation, your address may already be verified. Check your connection, then try again."
         error={error}
         reset={reset}
       />

@@ -2,7 +2,7 @@ import { devices, expect, test, type Page } from '@playwright/test';
 
 import { newSignedInContext } from './helpers.js';
 
-const POSTHOG_ORIGIN = 'https://eu.i.posthog.com';
+const POSTHOG_URL = /^https:\/\/(?:m\.thetimeline\.cc|eu\.i\.posthog\.com)\//u;
 const POSTHOG_PERSISTENCE_KEY = 'ph_timeline_public_analytics_v1';
 const TIMELINE_CONSENT_COOKIE = 'tl_analytics_consent';
 const ATTRIBUTION_COOKIE = 'tl_public_attribution';
@@ -68,9 +68,9 @@ test('public PostHog stays absent until consent and is removed before private ap
   const page = await context.newPage();
   const providerRequests: string[] = [];
   page.on('request', (request) => {
-    if (request.url().startsWith(POSTHOG_ORIGIN)) providerRequests.push(request.url());
+    if (POSTHOG_URL.test(request.url())) providerRequests.push(request.url());
   });
-  await page.route(`${POSTHOG_ORIGIN}/**`, async (route) => {
+  await page.route(POSTHOG_URL, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 

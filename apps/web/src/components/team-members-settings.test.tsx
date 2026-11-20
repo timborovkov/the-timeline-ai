@@ -86,7 +86,6 @@ describe('TeamMembersSettings', () => {
             id: 'invite-1',
             email: 'grace@example.com',
             role: 'member',
-            token: 'invite-token',
             expiresAt: new Date('2026-08-01T00:00:00.000Z'),
             lastSentAt: null,
             sendStatus: 'failed',
@@ -107,13 +106,12 @@ describe('TeamMembersSettings', () => {
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Resend invite' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Revoke invite' })).toBeTruthy();
-    expect(screen.getByText(/accept-invite\/invite-token/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy fresh invite link' })).toBeNull();
 
     const memberRow = screen.getByText('Ada Lovelace').closest('li');
     const inviteRow = screen.getByText('grace@example.com').closest('li');
     expect(memberRow).toBeTruthy();
     expect(inviteRow).toBeTruthy();
-    expect(inviteRow?.textContent).toContain('accept-invite/invite-token');
   });
 
   it('keeps administrator permissions scoped to member invites and member removals', () => {
@@ -220,7 +218,6 @@ describe('adjacent team lists', () => {
         id: `invite-${index}`,
         email: profile.email,
         role: 'member',
-        token: `test-token-${index}`,
         expiresAt: new Date('2026-11-24T12:00:00Z'),
         lastSentAt: null,
         sendStatus: 'pending',
@@ -239,11 +236,7 @@ describe('adjacent team lists', () => {
     const fixture = relatedMemberFixtures(12);
     render(
       <>
-        <PendingInvitesCard
-          siteUrl="https://preview.example.com"
-          invites={fixture.invites.slice(11, 12)}
-          userMap={fixture.userMap}
-        />
+        <PendingInvitesCard invites={fixture.invites.slice(11, 12)} userMap={fixture.userMap} />
         <RemovedMembersCard
           removedMembers={fixture.removedMembers.slice(11, 12)}
           userMap={fixture.userMap}
@@ -256,9 +249,6 @@ describe('adjacent team lists', () => {
     expect(
       pending.getByText('member · invited by ops@sub.department.region.example.co.uk'),
     ).toBeTruthy();
-    expect(
-      pending.getByText('https://preview.example.com/accept-invite/test-token-11'),
-    ).toBeTruthy();
     const removed = within(
       screen.getByRole('heading', { name: 'Removed members' }).closest('section') ?? document.body,
     );
@@ -270,11 +260,7 @@ describe('adjacent team lists', () => {
     function view(count: number) {
       return (
         <>
-          <PendingInvitesCard
-            siteUrl="https://preview.example.com"
-            invites={fixture.invites.slice(0, count)}
-            userMap={fixture.userMap}
-          />
+          <PendingInvitesCard invites={fixture.invites.slice(0, count)} userMap={fixture.userMap} />
           <RemovedMembersCard
             removedMembers={fixture.removedMembers.slice(0, count)}
             userMap={fixture.userMap}

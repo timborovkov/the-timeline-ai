@@ -7,6 +7,7 @@ import { useFormStatus } from 'react-dom';
 import { acceptLegalAction, type AcceptLegalState } from '@/app/actions/legal';
 import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import {
   LEGAL_EFFECTIVE_DATE,
   PRIVACY_EFFECTIVE_DATE,
@@ -38,6 +39,12 @@ export function LegalAcceptanceForm({ returnTo }: { returnTo?: string }) {
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
       <input type="hidden" name="termsVersion" value={TERMS_VERSION} />
       <input type="hidden" name="privacyVersion" value={PRIVACY_VERSION} />
+      <input type="hidden" name="termsContentHash" value={legalDocumentHashes().termsContentHash} />
+      <input
+        type="hidden"
+        name="privacyContentHash"
+        value={legalDocumentHashes().privacyContentHash}
+      />
       <div className="rounded-sm border border-border bg-surface p-4 text-sm text-fg-muted">
         <p>
           Current versions: Terms of Use {TERMS_VERSION} (effective {LEGAL_EFFECTIVE_DATE}); Privacy

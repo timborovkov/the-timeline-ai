@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { PublicShell } from '@/components/public-shell';
+import { DEFAULT_SUPPORT_EMAIL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
 
 interface LegalPageProps {
@@ -33,4 +34,10 @@ export function LegalPage({ children, eyebrow, title, description, className }: 
       </main>
     </PublicShell>
   );
+}
+
+/** The contact in versioned legal documents is part of their accepted text. */
+export function LegalContact({ subject }: { subject?: string }) {
+  const query = subject ? `?subject=${encodeURIComponent(subject)}` : '';
+  return <a href={`mailto:${DEFAULT_SUPPORT_EMAIL}${query}`}>{DEFAULT_SUPPORT_EMAIL}</a>;
 }

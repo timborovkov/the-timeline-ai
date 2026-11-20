@@ -86,6 +86,17 @@ describe('MemberRoleForm', () => {
   });
 });
 
+it('offers the copy control only after a fresh invite link is returned', async () => {
+  const user = userEvent.setup();
+  fakes.resendInviteAction.mockResolvedValue({
+    inviteUrl: 'https://timeline.test/accept-invite/synthetic',
+  });
+  render(<PendingInviteActions inviteEmail="ada@example.com" inviteId="invite-1" />);
+  expect(screen.queryByRole('button', { name: 'Copy fresh invite link' })).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Resend invite' }));
+  expect(await screen.findByRole('button', { name: 'Copy fresh invite link' })).toBeTruthy();
+});
+
 describe('destructive team member actions', () => {
   it('keeps focus and prevents removal until the keyboard confirmation is accepted', async () => {
     const user = userEvent.setup();
