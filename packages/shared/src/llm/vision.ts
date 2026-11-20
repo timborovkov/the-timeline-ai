@@ -3,6 +3,10 @@ import { type FilePart, type LanguageModel } from 'ai';
 import { digestAiBytes } from '#src/billing/ai-call.js';
 import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
+import {
+  VISION_BUDGET_PRICE_CEILING,
+  VisionBudgetDeferredError,
+} from '#src/billing/vision-budget.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
@@ -171,7 +175,10 @@ export async function extractTextFromMedia(
             SYSTEM_PROMPT,
           ],
         },
-        async () => {
+        async (budgetEnforced) => {
+          if (budgetEnforced && (modelId !== resolveVisionModelId() || maxOutputTokens > 8000)) {
+            throw new VisionBudgetDeferredError();
+          }
           const generated = await generateText({
             model,
             instructions: SYSTEM_PROMPT,
@@ -188,20 +195,26 @@ export async function extractTextFromMedia(
               },
             ],
             maxOutputTokens,
-            providerOptions: withLangSmithProviderOptions(openRouterPrivateProviderOptions(), {
-              name: 'llm.extractTextFromMedia',
-              model: modelId,
-              processInputs: sanitizeAiSdkInputs,
-              processChildLLMRunInputs: sanitizeAiSdkInputs,
-              metadata: {
-                operation: 'extract_text_from_media',
-                media_type: mediaType,
-                input_bytes: input.body.byteLength,
-                page_image_count: pageImages.length,
-                has_filename: Boolean(input.filename),
-                max_output_tokens: input.maxOutputTokens ?? 8000,
+            ...(budgetEnforced ? { maxRetries: 0, abortSignal: AbortSignal.timeout(300_000) } : {}),
+            providerOptions: withLangSmithProviderOptions(
+              openRouterPrivateProviderOptions(
+                budgetEnforced ? { provider: { max_price: VISION_BUDGET_PRICE_CEILING } } : {},
+              ),
+              {
+                name: 'llm.extractTextFromMedia',
+                model: modelId,
+                processInputs: sanitizeAiSdkInputs,
+                processChildLLMRunInputs: sanitizeAiSdkInputs,
+                metadata: {
+                  operation: 'extract_text_from_media',
+                  media_type: mediaType,
+                  input_bytes: input.body.byteLength,
+                  page_image_count: pageImages.length,
+                  has_filename: Boolean(input.filename),
+                  max_output_tokens: input.maxOutputTokens ?? 8000,
+                },
               },
-            }),
+            ),
           });
           // Cache a plain string. GenerateTextResult.text is a prototype getter,
           // so JSON.stringify of the SDK instance drops it and a later billing

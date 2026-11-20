@@ -21,6 +21,7 @@ export interface CalendarEvent {
   isException: boolean;
   metadata: Record<string, unknown>;
   redacted: boolean;
+  readOnly?: boolean;
   visibility: string;
   visibilityUserIds: string[] | null;
   pinned: boolean;

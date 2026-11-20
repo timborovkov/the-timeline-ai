@@ -1,4 +1,5 @@
 import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { VisionBudgetDeferredError } from '#src/billing/vision-budget.js';
 
 export interface TimelineAiErrorMetadata {
   operation: string;
@@ -37,7 +38,7 @@ export function wrapAiFailure<T>(
   return Promise.resolve()
     .then(fn)
     .catch((err: unknown) => {
-      if (isBillingAdmissionError(err)) throw err;
+      if (isBillingAdmissionError(err) || err instanceof VisionBudgetDeferredError) throw err;
       throw toTimelineAiError(metadata, err);
     });
 }

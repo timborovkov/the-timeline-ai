@@ -1,5 +1,8 @@
 import {
   auditLog,
+  calendarEvents,
+  calendarReminderPreferences,
+  googleCalendarImports,
   ingestWebhookCredentials,
   ingestWebhooks,
   integrations,
@@ -284,6 +287,41 @@ export async function removeMember(
             userId: memberUserId,
           });
         }
+        // Serialize against the import worker before retiring the connection
+        // and its busy blocks when the importer leaves the workspace.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`calendar-import:${active.teamId}:${memberUserId}`}, 0))`,
+        );
+        const [calendarImport] = await tx
+          .delete(googleCalendarImports)
+          .where(
+            and(
+              eq(googleCalendarImports.teamId, active.teamId),
+              eq(googleCalendarImports.userId, memberUserId),
+            ),
+          )
+          .returning({ id: googleCalendarImports.id });
+        if (calendarImport) {
+          await tx
+            .update(calendarEvents)
+            .set({ deletedAt: new Date(), updatedAt: new Date() })
+            .where(
+              and(
+                eq(calendarEvents.teamId, active.teamId),
+                eq(calendarEvents.externalCalendarId, calendarImport.id),
+                eq(calendarEvents.source, 'google'),
+                isNull(calendarEvents.deletedAt),
+              ),
+            );
+        }
+        await tx
+          .delete(calendarReminderPreferences)
+          .where(
+            and(
+              eq(calendarReminderPreferences.teamId, active.teamId),
+              eq(calendarReminderPreferences.userId, memberUserId),
+            ),
+          );
         await tx
           .delete(teamCalendarSubscriptions)
           .where(

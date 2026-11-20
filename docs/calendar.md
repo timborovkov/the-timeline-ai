@@ -67,11 +67,45 @@ Each member can create a read-only calendar subscription URL for their Timeline 
 
 Subscription feeds include team events, the subscriber's private event details, authorized specific-user events, and other members' private events only as redacted busy blocks. Materialized recurring occurrences export as individual feed events, so external calendar apps see the concrete schedule in the current materialization window. Tentative holds export as tentative iCalendar events instead of confirmed meetings.
 
+## Google Calendar import
+
+A member can connect Google Calendar and select one calendar for the active
+workspace. The read-only connection uses Google's Calendar List and Events
+scopes. The importer sees the event details. Teammates see the existing
+redacted busy blocks. Imported events open read-only in Calendar; chat and
+approval proposals reject update or cancel mutations against them, and the
+source calendar remains the place to change those events. They use the same
+private visibility rules in outbound subscriptions.
+
+Calendar shows the selected calendar, the last successful sync, and connection
+recovery. The worker polls every 15 minutes, applies cancellations, and
+rebuilds its rolling import window when a cursor expires or a week passes.
+Changing calendars or disconnecting tombstones the old mirrors and removes
+their pending reminders.
+
+Enable Google Calendar API in the configured Google OAuth project and
+register `/api/calendar/google` on the app origin as a redirect URI. Verify
+the scopes and callback using a test account before enabling them for external
+users. See [Google OAuth readiness](research/google-oauth-readiness.md).
+
+## Reminders
+
+Each member can turn on an in-app reminder for an upcoming event whose
+details they can read. Events start with reminders off, including imported
+events. Organizers can block reminders for everyone on an event or a
+recurring series. Members can still clear their own preference while blocked.
+
+The calendar worker checks access, event start time and the organizer's block
+before delivery. The inbox records one reminder per member and scheduled
+occurrence. A rescheduled occurrence with a new start time can deliver again.
+Reminder notifications contain a link and a generic label to protect details
+if event access changes.
+
 <span id="manual-editing"></span>
 
 ## Manual editing
 
-The calendar UI offers common recurrence presets, with raw RRULE input inside Advanced repeat rule. All-day forms ask for the first and last included days; the UI converts the last day to an exclusive end boundary when saving. Event deletion requires confirmation naming the event and selected recurrence scope; cancellation leaves it unchanged. Event details show recurrence and tentative status, and editing a recurring occurrence asks whether the change applies to this event, this and all future events, or the whole series.
+The calendar UI offers common recurrence presets, with raw RRULE input under the Custom rule option. All-day forms ask for the first and last included days; the UI converts the last day to an exclusive end boundary when saving. Event deletion requires confirmation naming the event and selected recurrence scope; cancellation leaves it unchanged. Event details show recurrence and tentative status, and editing a recurring occurrence asks whether the change applies to this event, this and all future events, or the whole series.
 
 The page leads with the calendar grid, then shows an infinite-scrolling event list. The list starts on upcoming events from today, supports past and all-event scopes, and searches event title, description, location, or redacted busy blocks through the team-scoped calendar query. These scopes cover the rolling list window of two years before and after today, so `eventScope=all` means all events in that window rather than the full historical archive. Past and future buckets are separated by event start time, while the all-event scope includes any event intersecting the rolling window. The list state is shareable through `eventScope=past|all` and `eventQ` URL parameters.
 

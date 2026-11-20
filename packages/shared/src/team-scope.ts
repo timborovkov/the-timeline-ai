@@ -48,6 +48,7 @@ import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
+import { createHandoffScope } from '#src/handoffs.js';
 import {
   acceptIngestWebhookEvidence,
   type AcceptIngestWebhookEvidenceInput,
@@ -101,6 +102,8 @@ import {
   type RankingInput,
   type RankingMetadata,
 } from '#src/retrieval/ranking.js';
+import { createSavedWorkViewScope } from '#src/saved-work-views.js';
+import { createSourceHealthScope } from '#src/source-health.js';
 import {
   createSuggestionAcceptanceUnitOfWork,
   type SuggestionAcceptanceTransaction,
@@ -3605,6 +3608,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
+    handoffs: createHandoffScope(db, teamId, userId, ensureMember),
+    savedViews: createSavedWorkViewScope({
+      db,
+      teamId,
+      userId,
+      ensureMember,
+      objects: objectScope,
+      boards: boardScope,
+      calendar: calendarScope,
+      suggestions: suggestionScope,
+    }),
+    sourceHealth: createSourceHealthScope(db, teamId, userId, ensureMember),
     audit: auditScope,
     telegram: telegramScope,
   };

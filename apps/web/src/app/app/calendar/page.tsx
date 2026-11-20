@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
+import { GoogleCalendarImport } from '@/components/calendar/google-calendar-import';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -30,6 +31,7 @@ interface PageProps {
     eventScope?: string;
     eventQ?: string;
     event?: string;
+    google?: string;
   }>;
 }
 
@@ -49,6 +51,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     memberUserMap,
     params,
     subscriptionRows,
+    googleImport,
     calendarSuggestions,
   } = await loadCalendarPage({ searchParams });
   return (
@@ -74,6 +77,20 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           return { id: m.userId, label: displayMemberLabel(u) };
         })}
         focusEventId={params.event ?? null}
+      />
+
+      <GoogleCalendarImport
+        connection={
+          googleImport
+            ? {
+                calendarName: googleImport.calendarName,
+                lastSyncAt: googleImport.lastSyncAt?.toISOString() ?? null,
+                syncStatus: googleImport.syncStatus,
+              }
+            : null
+        }
+        error={params.google === 'error'}
+        available={Boolean(getEnv().GOOGLE_CLIENT_ID && getEnv().GOOGLE_CLIENT_SECRET)}
       />
 
       <CalendarSubscriptionPanel
@@ -180,30 +197,32 @@ async function loadCalendarPage({ searchParams }: PageProps) {
   ]);
   const { from, to, eventListInput, eventQuery, eventScope } = calendarPageWindow(params, settings);
 
-  const [events, initialEventList, defaultRow, members, subscriptionRows] = await Promise.all([
-    scope.calendar.listCalendarEvents({ from, to }),
-    scope.calendar.listCalendarEventPage({
-      ...eventListInput,
-      offset: 0,
-    }),
-    scope.timeline.resolveVisibilityDefault('calendar'),
-    scope.timeline.listMembers(),
-    db
-      .select({
-        tokenPrefix: teamCalendarSubscriptions.tokenPrefix,
-        lastUsedAt: teamCalendarSubscriptions.lastUsedAt,
-        createdAt: teamCalendarSubscriptions.createdAt,
-        updatedAt: teamCalendarSubscriptions.updatedAt,
-      })
-      .from(teamCalendarSubscriptions)
-      .where(
-        and(
-          eq(teamCalendarSubscriptions.teamId, active.teamId),
-          eq(teamCalendarSubscriptions.userId, session.user.id),
-        ),
-      )
-      .limit(1),
-  ]);
+  const [events, initialEventList, defaultRow, members, subscriptionRows, googleImport] =
+    await Promise.all([
+      scope.calendar.listCalendarEvents({ from, to }),
+      scope.calendar.listCalendarEventPage({
+        ...eventListInput,
+        offset: 0,
+      }),
+      scope.timeline.resolveVisibilityDefault('calendar'),
+      scope.timeline.listMembers(),
+      db
+        .select({
+          tokenPrefix: teamCalendarSubscriptions.tokenPrefix,
+          lastUsedAt: teamCalendarSubscriptions.lastUsedAt,
+          createdAt: teamCalendarSubscriptions.createdAt,
+          updatedAt: teamCalendarSubscriptions.updatedAt,
+        })
+        .from(teamCalendarSubscriptions)
+        .where(
+          and(
+            eq(teamCalendarSubscriptions.teamId, active.teamId),
+            eq(teamCalendarSubscriptions.userId, session.user.id),
+          ),
+        )
+        .limit(1),
+      scope.calendar.google.getImport(),
+    ]);
   const eventList = {
     ...initialEventList,
     events: initialEventList.events.slice(0, CALENDAR_EVENT_LIST_PAGE_SIZE),
@@ -267,6 +286,7 @@ async function loadCalendarPage({ searchParams }: PageProps) {
     memberUserMap,
     params,
     subscriptionRows,
+    googleImport,
     calendarSuggestions,
   };
 }

@@ -1,4 +1,9 @@
-import { listDailyDigests, type DailyDigestPayload } from '@timeline/shared/messaging';
+import {
+  listDailyDigests,
+  presentSavedViewDigest,
+  type DailyDigestPayload,
+} from '@timeline/shared/messaging';
+import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
@@ -34,6 +39,26 @@ export default async function DigestsPage({
     limit: 90,
   });
 
+  const scope = withTeam(db, active.teamId, session.user.id);
+  // One `now` + request-scoped match cache so history rows reuse each view scan.
+  const now = new Date();
+  const presented = await Promise.all(
+    rows.map(async (row) => {
+      const { payload } = await presentSavedViewDigest(
+        scope,
+        row.payload as DailyDigestPayload,
+        now,
+      );
+      return {
+        id: row.id,
+        status: row.status,
+        summary: payload.summary,
+        windowEnd: row.windowEnd.toISOString(),
+        timezone: payload.timezone,
+        payload,
+      };
+    }),
+  );
   return (
     <div data-app-width="collection" className="space-y-6">
       <PageHeader
@@ -43,20 +68,7 @@ export default async function DigestsPage({
         metadata={[{ label: 'days', value: rows.length, mono: true }]}
         srLabel={`Digests · ${String(rows.length)} days`}
       />
-      <DigestHistoryTable
-        selectedId={selectedId}
-        digests={rows.map((row) => {
-          const payload = row.payload as DailyDigestPayload;
-          return {
-            id: row.id,
-            status: row.status,
-            summary: row.summary,
-            windowEnd: row.windowEnd.toISOString(),
-            timezone: payload.timezone,
-            payload,
-          };
-        })}
-      />
+      <DigestHistoryTable selectedId={selectedId} digests={presented} />
     </div>
   );
 }

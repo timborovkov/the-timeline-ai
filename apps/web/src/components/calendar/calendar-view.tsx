@@ -7,7 +7,17 @@ import {
   localDateSpanToUtcRange,
   startOfIsoWeek,
 } from '@timeline/shared/time';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -29,6 +39,7 @@ import {
   updateCalendarEventAction,
 } from '@/app/actions/calendar';
 import { loadCalendarEventListPageAction } from '@/app/actions/collection-pages';
+import { CalendarEventDisclosure } from '@/components/calendar/calendar-event-disclosure';
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import {
   EMPTY_CALENDAR_OVERLAY,
@@ -37,6 +48,7 @@ import {
   calendarOverlayReducer,
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
+import { EventReminders } from '@/components/calendar/event-reminders';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
@@ -50,6 +62,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -111,6 +124,7 @@ const RECURRENCE_PRESETS = [
 ] as const;
 
 function recurrencePresetValue(rrule: string): string {
+  if (!rrule.trim()) return '';
   const normalized = rrule
     .trim()
     .split(/\r?\n/)
@@ -879,7 +893,6 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         draft={model.draft}
         error={model.error}
         pending={model.pending}
-        timezone={model.timezone}
         titleInputRef={model.titleInputRef}
         members={model.members}
         onOpenChange={(nextOpen) => {
@@ -1403,7 +1416,6 @@ function CalendarEventDialog({
   draft,
   error,
   pending,
-  timezone,
   titleInputRef,
   members,
   onOpenChange,
@@ -1416,7 +1428,6 @@ function CalendarEventDialog({
   draft: Draft;
   error: string | null;
   pending: boolean;
-  timezone: string;
   titleInputRef: RefObject<HTMLInputElement | null>;
   members: NonNullable<CalendarViewProps['members']>;
   onOpenChange: (open: boolean) => void;
@@ -1424,67 +1435,137 @@ function CalendarEventDialog({
   onSave: () => void;
   onRemove: () => void;
 }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  if (editing?.readOnly) {
+    return (
+      <ImportedCalendarEventDialog
+        event={editing}
+        draft={draft}
+        open={open}
+        onOpenChange={onOpenChange}
+      />
+    );
+  }
   const titleError = error === TITLE_REQUIRED_ERROR ? error : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader className="flex-row items-start justify-between gap-2 pr-8 text-left">
-          <div className="min-w-0 space-y-2">
-            <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
-            <DialogDescription>
-              Times are saved in {timezone}. For all-day events, choose the first and last included
-              days.
-            </DialogDescription>
-          </div>
-          {editing && !editing.redacted ? (
+      <DialogContent
+        showCloseButton={false}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          headingRef.current?.focus({ preventScroll: true });
+        }}
+        className="flex max-h-[calc(100dvh-1rem)] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-3rem)] sm:max-w-xl sm:p-0"
+      >
+        <DialogHeader className="shrink-0 flex-row items-center gap-2 border-b border-border py-3 ps-4 pe-3 text-start sm:ps-6 sm:pe-4">
+          <span className="grid size-9 shrink-0 place-items-center rounded-md bg-signal-soft text-signal">
+            <CalendarDays aria-hidden="true" className="size-[18px]" />
+          </span>
+          <DialogTitle ref={headingRef} tabIndex={-1} className="flex-1 leading-tight outline-none">
+            {editing ? 'Edit event' : 'New event'}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Set the title, schedule and event details.
+          </DialogDescription>
+          {editing && !editing.redacted && (
             <PinButton
               target={{ kind: 'calendar_event', key: editing.id }}
               initialPinned={editing.pinned}
             />
-          ) : null}
+          )}
+          <DialogClose asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-11 shrink-0"
+              aria-label="Close"
+            >
+              <X aria-hidden="true" className="size-4" />
+            </Button>
+          </DialogClose>
         </DialogHeader>
-        <div className="grid gap-4">
+        <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
           <CalendarDraftFields
             draft={draft}
             members={members}
-            titleErrorId={titleError ? 'calendar-title-error' : undefined}
+            editing={editing}
+            titleError={titleError}
             titleInputRef={titleInputRef}
             onDraftChange={onDraftChange}
           />
-          {error ? (
-            <p
-              id={titleError ? 'calendar-title-error' : undefined}
-              role="alert"
-              className="text-sm text-destructive"
-            >
+        </div>
+        <DialogFooter className="shrink-0 flex-row flex-wrap items-center justify-between gap-1.5 border-t border-border bg-background px-4 py-3 sm:justify-between sm:px-6">
+          {error && !titleError && (
+            <p role="alert" className="basis-full pb-1.5 text-sm text-destructive">
               {error}
             </p>
-          ) : null}
-          {editing && !editing.redacted ? (
-            <CalendarLinkedObjectList objects={editing.linkedObjects} />
-          ) : null}
-        </div>
-        <DialogFooter className="gap-2 sm:justify-between">
-          <div>
-            {editing ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={onRemove}
-                disabled={pending}
-              >
-                <Trash2 className="mr-1 size-4" />
-                Delete
+          )}
+          {editing && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="-ms-2.5 min-h-11 text-destructive hover:text-destructive"
+              onClick={onRemove}
+              disabled={pending}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete
+            </Button>
+          )}
+          <div className="ms-auto flex items-center gap-2">
+            <DialogClose asChild>
+              <Button size="sm" variant="outline" className="min-h-11" disabled={pending}>
+                Cancel
               </Button>
-            ) : null}
+            </DialogClose>
+            <Button
+              type="button"
+              size="sm"
+              className="min-h-11 min-w-20"
+              onClick={onSave}
+              disabled={pending}
+            >
+              {pending ? 'Saving…' : 'Save'}
+            </Button>
           </div>
-          <Button type="button" size="sm" onClick={onSave} disabled={pending}>
-            <Check className="mr-1 size-4" />
-            {pending ? 'Saving…' : 'Save'}
-          </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ImportedCalendarEventDialog({
+  event,
+  draft,
+  open,
+  onOpenChange,
+}: {
+  event: CalendarEvent;
+  draft: Draft;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{event.title}</DialogTitle>
+          <DialogDescription>Imported from Google Calendar</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 text-sm">
+          <p>
+            {draft.allDay ? draft.startDate : draft.startDateTime} –{' '}
+            {draft.allDay ? draft.endDate : draft.endDateTime} · {draft.timezone}
+          </p>
+          {event.location ? <p>{event.location}</p> : null}
+          {event.description ? <p className="whitespace-pre-wrap">{event.description}</p> : null}
+        </div>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <EventReminders key={event.id} eventId={event.id} />
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -1493,23 +1574,30 @@ function CalendarEventDialog({
 function CalendarDraftFields({
   draft,
   members,
-  titleErrorId,
+  editing,
+  titleError,
   titleInputRef,
   onDraftChange,
 }: {
   draft: Draft;
   members: NonNullable<CalendarViewProps['members']>;
-  titleErrorId?: string;
+  editing: CalendarEvent | null;
+  titleError: string | null;
   titleInputRef: RefObject<HTMLInputElement | null>;
   onDraftChange: Dispatch<SetStateAction<Draft>>;
 }) {
+  const titleErrorId = titleError ? 'calendar-title-error' : undefined;
+  const editableEvent = editing?.redacted ? null : editing;
+
   return (
     <>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <Label htmlFor="calendar-title">Title</Label>
         <Input
           id="calendar-title"
           ref={titleInputRef}
+          className="h-11 font-medium md:text-base"
+          placeholder="Event name"
           value={draft.title}
           aria-describedby={titleErrorId}
           aria-invalid={Boolean(titleErrorId)}
@@ -1518,22 +1606,82 @@ function CalendarDraftFields({
           }}
           maxLength={200}
         />
+        {titleError && (
+          <p id={titleErrorId} role="alert" className="text-sm text-destructive">
+            {titleError}
+          </p>
+        )}
       </div>
-      <CalendarDraftOptions draft={draft} members={members} onDraftChange={onDraftChange} />
-      <CalendarDraftTimes draft={draft} onDraftChange={onDraftChange} />
-      <CalendarDraftRecurrence draft={draft} onDraftChange={onDraftChange} />
-      <div className="space-y-2">
+      <section aria-label="Schedule" className="space-y-3 rounded-lg bg-surface-2 p-3.5 sm:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <div>
+            <h3 className="text-sm font-semibold text-fg">Schedule</h3>
+            <p className="text-xs text-fg-muted">{draft.timezone.replaceAll('_', ' ')}</p>
+          </div>
+          <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={draft.allDay}
+              onChange={(e) => {
+                onDraftChange((d) => ({ ...d, allDay: e.target.checked }));
+              }}
+            />
+            All day
+          </label>
+        </div>
+        <CalendarDraftTimes draft={draft} onDraftChange={onDraftChange} />
+        <CalendarDraftRecurrence
+          draft={draft}
+          key={editing?.id ?? 'new-event'}
+          showEditScope={Boolean(editing?.recurringParentId)}
+          onDraftChange={onDraftChange}
+        />
+      </section>
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+        <CalendarEventDisclosure
+          icon={FileText}
+          label="Location and description"
+          value={draft.location}
+        >
+          <CalendarDraftNotes draft={draft} onDraftChange={onDraftChange} />
+        </CalendarEventDisclosure>
+        <CalendarEventDisclosure
+          icon={SlidersHorizontal}
+          label="Event settings"
+          value={`${statusLabel(draft.visibility)} · ${statusLabel(draft.showAs)}`}
+        >
+          <CalendarDraftOptions draft={draft} members={members} onDraftChange={onDraftChange} />
+        </CalendarEventDisclosure>
+        {editableEvent && <EventReminders key={editableEvent.id} eventId={editableEvent.id} />}
+      </div>
+      {editableEvent && <CalendarLinkedObjectList objects={editableEvent.linkedObjects} />}
+    </>
+  );
+}
+
+function CalendarDraftNotes({
+  draft,
+  onDraftChange,
+}: {
+  draft: Draft;
+  onDraftChange: Dispatch<SetStateAction<Draft>>;
+}) {
+  return (
+    <>
+      <div className="space-y-1.5">
         <Label htmlFor="calendar-location">Location</Label>
         <Input
           id="calendar-location"
           value={draft.location}
+          placeholder="Place or meeting link"
           onChange={(e) => {
             onDraftChange((d) => ({ ...d, location: e.target.value }));
           }}
           maxLength={500}
         />
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <Label htmlFor="calendar-description">Description</Label>
         <Textarea
           id="calendar-description"
@@ -1561,17 +1709,7 @@ function CalendarDraftOptions({
   const selectedMemberIds = new Set(draft.visibilityUserIds);
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex min-h-9 items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={draft.allDay}
-            onChange={(e) => {
-              onDraftChange((d) => ({ ...d, allDay: e.target.checked }));
-            }}
-          />
-          All day
-        </label>
+      <div className="grid gap-3 min-[390px]:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="calendar-visibility">Visibility</Label>
           <NativeSelect
@@ -1628,24 +1766,27 @@ function CalendarDraftOptions({
 
 function CalendarDraftRecurrence({
   draft,
+  showEditScope,
   onDraftChange,
 }: {
   draft: Draft;
+  showEditScope: boolean;
   onDraftChange: Dispatch<SetStateAction<Draft>>;
 }) {
-  const [advancedOpen, setAdvancedOpen] = useState(recurrencePresetValue(draft.rrule) === 'custom');
+  const [customSelected, setCustomSelected] = useState(false);
+  const repeat = customSelected ? 'custom' : recurrencePresetValue(draft.rrule);
+
   return (
-    <div className="grid gap-4 sm:grid-cols-[12rem_1fr_12rem]">
-      <div className="space-y-2">
+    <div className="grid gap-3 min-[500px]:grid-cols-2">
+      <div className={showEditScope ? 'space-y-1.5' : 'space-y-1.5 min-[500px]:col-span-2'}>
         <Label htmlFor="calendar-recurrence-preset">Repeats</Label>
         <NativeSelect
           id="calendar-recurrence-preset"
-          value={recurrencePresetValue(draft.rrule)}
+          value={repeat}
           onChange={(e) => {
-            if (e.target.value === 'custom') {
-              setAdvancedOpen(true);
-              return;
-            }
+            const custom = e.target.value === 'custom';
+            setCustomSelected(custom);
+            if (custom) return;
             const preset = RECURRENCE_PRESETS.find((item) => item.value === e.target.value);
             if (!preset) return;
             onDraftChange((d) => ({ ...d, rrule: preset.rrule }));
@@ -1656,45 +1797,44 @@ function CalendarDraftRecurrence({
               {preset.label}
             </option>
           ))}
-          <option value="custom">Custom</option>
+          <option value="custom">Custom rule</option>
         </NativeSelect>
       </div>
-      <details
-        className="space-y-2"
-        open={advancedOpen}
-        onToggle={(event) => {
-          setAdvancedOpen(event.currentTarget.open);
-        }}
-      >
-        <summary className="min-h-9 cursor-pointer text-sm">Advanced repeat rule</summary>
-        <Label htmlFor="calendar-rrule">Recurrence rule (RRULE)</Label>
-        <Input
-          id="calendar-rrule"
-          placeholder="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-          value={draft.rrule}
-          onChange={(e) => {
-            onDraftChange((d) => ({ ...d, rrule: e.target.value }));
-          }}
-          maxLength={2000}
-        />
-      </details>
-      <div className="space-y-2">
-        <Label htmlFor="calendar-recurrence-edit">Edit scope</Label>
-        <NativeSelect
-          id="calendar-recurrence-edit"
-          value={draft.recurrenceEditMode}
-          onChange={(e) => {
-            onDraftChange((d) => ({
-              ...d,
-              recurrenceEditMode: e.target.value as Draft['recurrenceEditMode'],
-            }));
-          }}
-        >
-          <option value="single">This event</option>
-          <option value="this_and_future">This and future</option>
-          <option value="series">Series</option>
-        </NativeSelect>
-      </div>
+      {showEditScope && (
+        <div className="space-y-1.5">
+          <Label htmlFor="calendar-recurrence-edit">Edit scope</Label>
+          <NativeSelect
+            id="calendar-recurrence-edit"
+            value={draft.recurrenceEditMode}
+            onChange={(e) => {
+              onDraftChange((d) => ({
+                ...d,
+                recurrenceEditMode: e.target.value as Draft['recurrenceEditMode'],
+              }));
+            }}
+          >
+            <option value="single">This event</option>
+            <option value="this_and_future">This and future</option>
+            <option value="series">Entire series</option>
+          </NativeSelect>
+        </div>
+      )}
+      {repeat === 'custom' && (
+        <div className="space-y-1.5 min-[500px]:col-span-2">
+          <Label htmlFor="calendar-rrule">Recurrence rule (RRULE)</Label>
+          <Input
+            id="calendar-rrule"
+            className="font-mono md:text-xs"
+            placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR"
+            value={draft.rrule}
+            onChange={(e) => {
+              setCustomSelected(true);
+              onDraftChange((d) => ({ ...d, rrule: e.target.value }));
+            }}
+            maxLength={2000}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1708,8 +1848,8 @@ function CalendarDraftTimes({
 }) {
   if (draft.allDay) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
+      <div className="grid gap-3 min-[500px]:grid-cols-2">
+        <div className="space-y-1.5">
           <Label htmlFor="calendar-start-date">Start date</Label>
           <Input
             id="calendar-start-date"
@@ -1720,7 +1860,7 @@ function CalendarDraftTimes({
             }}
           />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="calendar-end-date">Last day (included)</Label>
           <Input
             id="calendar-end-date"
@@ -1735,8 +1875,8 @@ function CalendarDraftTimes({
     );
   }
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <div className="space-y-2">
+    <div className="grid gap-3 min-[500px]:grid-cols-2">
+      <div className="space-y-1.5">
         <Label htmlFor="calendar-start-time">Start</Label>
         <Input
           id="calendar-start-time"
@@ -1747,7 +1887,7 @@ function CalendarDraftTimes({
           }}
         />
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <Label htmlFor="calendar-end-time">End</Label>
         <Input
           id="calendar-end-time"

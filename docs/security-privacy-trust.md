@@ -762,3 +762,20 @@ Backups and content-free audits have separate retention; no total-erasure deadli
 claimed. Restore procedures must purge expired reports before serving requests.
 The privacy version advances for renewed acknowledgment. Repository changes are not
 counsel approval, deployment evidence, or evidence of completed backup deletion.
+
+## Calendar imports and workspace snapshots
+
+Google Calendar import requires affirmative OAuth consent for the read-only
+Calendar List and Events scopes. The refresh token is encrypted in the
+member's workspace connection. Imported event details are private to the
+importer. Teammates can see redacted busy time under the existing calendar
+contract. Disconnect removes the local credential and active derived mirrors.
+Live Google Cloud configuration and scope verification remain open. See
+[calendar import](calendar.md#google-calendar-import).
+
+Handoff snapshots and saved views follow workspace deletion. Handoff reads
+recheck the project, sources and commitments. Saved-view digests reevaluate
+matches for the recipient and use personal destinations. Source-health counts
+apply source visibility before aggregation. OCR correction history retains
+earlier derived text subject to the source document's access and deletion
+policy.

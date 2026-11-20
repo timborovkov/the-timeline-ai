@@ -48,6 +48,7 @@ import {
 import { saveChatTurn, type ChatSaveResult } from '@/lib/chat-turn-save';
 import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
+import { handoffProvenance } from '@/lib/handoff-provenance';
 import {
   payloadTooLargeResponse,
   readCappedTextBody,
@@ -371,6 +372,7 @@ async function deterministicChatResponse(input: {
   shouldTitleSession: boolean;
   saveUnavailable: boolean;
   expectedRevision: string | null;
+  freshTurn: boolean;
 }): Promise<Response> {
   const question = messageText(input.latestUserMessage);
   const wantsWorkspaceState =
@@ -397,6 +399,7 @@ async function deterministicChatResponse(input: {
               eventId: match.id,
               event_id: match.id,
               snippet: match.contentText ?? '',
+              citation: `[ev:${match.id}]`,
               source: match.source,
             },
           ],
@@ -418,27 +421,32 @@ async function deterministicChatResponse(input: {
     sessionId,
     save: sessionId
       ? async () => {
+          const assistantMessage: UIMessage = {
+            id: textId,
+            role: 'assistant',
+            parts: [
+              {
+                type: `tool-${toolName}`,
+                toolCallId,
+                state: 'output-available',
+                input: toolInput,
+                output: toolOutput,
+              },
+              { type: 'text', text: answer },
+            ],
+          };
           const result = await saveChatTurn({
             scope: input.scope,
             sessionId,
             expectedRevision: input.expectedRevision,
             turn: {
               userMessage: input.latestUserMessage,
-              assistantMessage: {
-                id: textId,
-                role: 'assistant',
-                parts: [
-                  {
-                    type: `tool-${toolName}`,
-                    toolCallId,
-                    state: 'output-available',
-                    input: toolInput,
-                    output: toolOutput,
-                  },
-                  { type: 'text', text: answer },
-                ],
+              assistantMessage,
+              metadata: {
+                finish_reason: 'stop',
+                prompt_version: agent.AGENT_PROMPT_VERSION,
+                handoff_provenance: handoffProvenance(assistantMessage, input.freshTurn),
               },
-              metadata: { finish_reason: 'stop', prompt_version: agent.AGENT_PROMPT_VERSION },
             },
           });
           if (result.status === 'saved' && input.shouldTitleSession) {
@@ -692,6 +700,7 @@ export async function POST(req: Request): Promise<Response> {
       shouldTitleSession,
       saveUnavailable,
       expectedRevision,
+      freshTurn: uiMessages.length === 1,
     });
   }
 
@@ -1041,6 +1050,10 @@ export async function POST(req: Request): Promise<Response> {
                   metadata: {
                     ...completionMetadata,
                     interrupted: isAborted || Boolean(isCancelled),
+                    handoff_provenance: handoffProvenance(
+                      responseMessage,
+                      uiMessages.length === 1 && !isContinuation && !isAborted && !isCancelled,
+                    ),
                   },
                 },
               });

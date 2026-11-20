@@ -11,6 +11,24 @@
     }
   },
   "exports": {
+    "./saved-work-views": {
+      "types": "./src/saved-work-views.ts",
+      "development": "./src/saved-work-views.ts",
+      "import": "./dist/saved-work-views.js",
+      "default": "./dist/saved-work-views.js"
+    },
+    "./work-filters": {
+      "types": "./src/work-filters.ts",
+      "development": "./src/work-filters.ts",
+      "import": "./dist/work-filters.js",
+      "default": "./dist/work-filters.js"
+    },
+    "./task-statuses": {
+      "types": "./src/task-statuses.ts",
+      "development": "./src/task-statuses.ts",
+      "import": "./dist/task-statuses.js",
+      "default": "./dist/task-statuses.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "development": "./src/index.ts",

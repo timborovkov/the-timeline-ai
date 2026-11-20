@@ -27,15 +27,17 @@ import {
 } from 'react';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
+import { saveProjectHandoff } from '@/app/actions/handoffs';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
+import { Button } from '@/components/ui/button';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
 import type { ChatSaveResult } from '@/lib/chat-turn-save';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
 import { displayObjectLabel } from '@/lib/display-labels';
-import { notifyError } from '@/lib/notify';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
@@ -232,6 +234,12 @@ function ChatSurfaceContent({
         retrying={history.retrying}
         onRetry={history.retrySave}
       />
+      <ChatHandoffControl
+        sessionId={sessionId}
+        pinned={Boolean(visiblePinnedEntity)}
+        streaming={isStreaming}
+        messages={messages}
+      />
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
           href={`/app/diagnostics?session=${encodeURIComponent(sessionId)}`}
@@ -248,6 +256,56 @@ function ChatSurfaceContent({
         onSubmit={submit}
       />
     </div>
+  );
+}
+
+function ChatHandoffControl({
+  sessionId,
+  pinned,
+  streaming,
+  messages,
+}: {
+  sessionId: string | null;
+  pinned: boolean;
+  streaming: boolean;
+  messages: UIMessage[];
+}) {
+  if (!sessionId || !pinned || streaming) return null;
+  const message = messages.find(
+    (item) =>
+      item.role === 'assistant' &&
+      item.parts.some((part) => part.type === 'text' && numberCitations(part.text).size > 0),
+  );
+  return message ? <SaveHandoffButton sessionId={sessionId} messageId={message.id} /> : null;
+}
+
+function SaveHandoffButton({ sessionId, messageId }: { sessionId: string; messageId: string }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  return (
+    <Button
+      className="self-start"
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={saving}
+      title="Save a snapshot for teammates who can read the project and its sources"
+      onClick={() => {
+        setSaving(true);
+        void notifyAction({
+          id: `handoff:${messageId}`,
+          loading: 'Saving handoff…',
+          success: 'Handoff saved',
+          error: 'Couldn’t save handoff',
+          run: () => saveProjectHandoff(sessionId, messageId),
+        }).then((result) => {
+          setSaving(false);
+          if ('id' in result && result.id) router.push(`/app/handoffs/${result.id}`);
+        });
+      }}
+    >
+      Save handoff
+    </Button>
   );
 }
 

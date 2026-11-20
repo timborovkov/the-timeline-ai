@@ -2,15 +2,19 @@
 
 import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { FileText, Image as ImageIcon, Link2, Paperclip, Upload } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 import type { ReactNode } from 'react';
 
 import { promoteCapturedFileAction } from '@/app/actions/documents';
+import { bulkCapturedFileAction } from '@/app/actions/file-extraction';
+import { FileExtractionAction } from '@/components/captured-files/file-extraction-action';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyState } from '@/components/empty-state';
@@ -28,6 +32,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatCollectionCount } from '@/lib/collection-count';
@@ -51,10 +56,12 @@ interface CapturedFileItem {
     contentType: string | null;
     byteSize: number | null;
     processingStatus: string;
+    processingError?: string | null;
     createdAt: string;
   } | null;
   provenance: {
     source: string;
+    sender?: string | null;
     parentEventId: string | null;
     occurredAt: string | null;
     summary: string | null;
@@ -76,6 +83,7 @@ interface FolderOption {
 
 interface Props {
   files: CapturedFileItem[];
+  filters?: { sources: string[]; sender: string };
   nextCursor?: string | null;
   folders: FolderOption[];
   members: { id: string; label: string }[];
@@ -171,7 +179,10 @@ function paginationReducer(state: PaginationState, action: PaginationAction): Pa
   };
 }
 
-export function CapturedFilesList({ files, nextCursor = null, folders, members }: Props) {
+export function CapturedFilesList({ files, nextCursor = null, folders, members, filters }: Props) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkPending, runBulk] = useTransition();
   const [paginationState, setPaginationState] = useState(() =>
     paginationStateForProps(files, nextCursor),
   );
@@ -189,8 +200,15 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   const { loadedFiles, cursor } = paginationState;
 
   const sources = useMemo(
-    () => Array.from(new Set(loadedFiles.map((file) => file.provenance.source))).sort(),
-    [loadedFiles],
+    () =>
+      Array.from(
+        new Set([
+          ...loadedFiles.map((file) => file.provenance.source),
+          ...(filters?.sources ?? []),
+          ...(filters ? ['slack', 'telegram', 'email', 'website', 'integration'] : []),
+        ]),
+      ).sort(),
+    [loadedFiles, filters],
   );
   const statuses = useMemo(
     () =>
@@ -214,7 +232,8 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   );
   const typeOptions = useMemo(() => [...FILE_TYPE_OPTIONS], []);
   const activeFilterCount =
-    selectedValues(uiState.sourceFilter, sourceOptions).length +
+    (filters?.sources.length ?? selectedValues(uiState.sourceFilter, sourceOptions).length) +
+    (filters?.sender ? 1 : 0) +
     selectedValues(uiState.typeFilter, typeOptions).length +
     selectedValues(uiState.statusFilter, statusOptions).length +
     (uiState.dateFilter !== ALL ? 1 : 0);
@@ -238,6 +257,8 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     startLoadMore(async () => {
       try {
         const params = new URLSearchParams({ cursor });
+        if (filters?.sources.length) params.set('source', filters.sources.join(','));
+        if (filters?.sender) params.set('sender', filters.sender);
         const response = await fetch(`/api/documents/captured?${params.toString()}`);
         if (!response.ok) throw new Error('captured_files_load_failed');
         const page = (await response.json()) as CapturedFilesPageResponse;
@@ -256,7 +277,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
     });
   }
 
-  if (loadedFiles.length === 0) {
+  if (loadedFiles.length === 0 && !filters?.sources.length && !filters?.sender) {
     return (
       <EmptyState
         icon={Paperclip}
@@ -268,125 +289,53 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   return (
     <section aria-label="Captured files" className="space-y-4">
-      <CollectionToolbar
-        activeFilters={[
-          ...(uiState.sourceFilter
-            ? [
-                {
-                  key: 'source',
-                  label: 'Source',
-                  value: uiState.sourceFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'source', value: '' });
-                  },
-                },
-              ]
-            : []),
-          ...(uiState.typeFilter
-            ? [
-                {
-                  key: 'type',
-                  label: 'Type',
-                  value: uiState.typeFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'fileType', value: '' });
-                  },
-                },
-              ]
-            : []),
-          ...(uiState.statusFilter
-            ? [
-                {
-                  key: 'status',
-                  label: 'Status',
-                  value: uiState.statusFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'status', value: '' });
-                  },
-                },
-              ]
-            : []),
-          ...(uiState.dateFilter !== ALL
-            ? [
-                {
-                  key: 'date',
-                  label: 'Date',
-                  value: uiState.dateFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'date', value: ALL });
-                  },
-                },
-              ]
-            : []),
-        ]}
-      >
-        {cursor ? null : (
-          <CollectionToolbar.Count>
-            {formatCollectionCount({
-              matching: visibleFiles.length,
-              total: loadedFiles.length,
-              filtered: activeFilterCount > 0,
-            })}
-          </CollectionToolbar.Count>
-        )}
-        <CollectionToolbar.Filters>
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              label="Source"
-              value={uiState.sourceFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'source', value });
-              }}
-              placeholder="All sources"
-              options={sourceOptions}
-            />
-            <FilterMultiSelect
-              label="Type"
-              value={uiState.typeFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'fileType', value });
-              }}
-              placeholder="All types"
-              options={typeOptions}
-            />
-            <FilterMultiSelect
-              label="Status"
-              value={uiState.statusFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'status', value });
-              }}
-              placeholder="All statuses"
-              options={statusOptions}
-            />
-            <FilterSelect
-              label="Date"
-              value={uiState.dateFilter}
-              onChange={(value) => {
-                dispatchUi({ type: 'date', value });
-              }}
-            >
-              <option value={ALL}>Any time</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </FilterSelect>
-          </div>
-        </CollectionToolbar.Filters>
-        <CollectionToolbar.Actions>
-          {activeFilterCount > 0 ? (
+      <CapturedFilesToolbar
+        filters={filters}
+        loadedCount={loadedFiles.length}
+        visibleCount={visibleFiles.length}
+        cursor={cursor}
+        activeFilterCount={activeFilterCount}
+        uiState={uiState}
+        dispatchUi={dispatchUi}
+        sourceOptions={sourceOptions}
+        statusOptions={statusOptions}
+        typeOptions={typeOptions}
+      />
+      {filters ? (
+        <SelectionBar
+          count={selected.length}
+          onClear={() => {
+            setSelected([]);
+          }}
+          actions={(['promote', 'extract'] as const).map((action) => (
             <Button
+              key={action}
               type="button"
-              variant="ghost"
               size="sm"
+              variant="outline"
+              disabled={bulkPending}
               onClick={() => {
-                dispatchUi({ type: 'clear_filters' });
+                runBulk(async () => {
+                  const result = await notifyAction({
+                    id: `captured:bulk:${action}`,
+                    loading: 'Working on selected files…',
+                    success:
+                      action === 'promote' ? 'Selected files promoted' : 'Extractions queued',
+                    error: 'Couldn’t process every file',
+                    run: () => bulkCapturedFileAction(selected, action),
+                  });
+                  setSelected(
+                    'failedItemIds' in result ? result.failedItemIds : result.error ? selected : [],
+                  );
+                  router.refresh();
+                });
               }}
             >
-              Clear all
+              {action === 'promote' ? 'Promote selected' : 'Re-extract selected'}
             </Button>
-          ) : null}
-        </CollectionToolbar.Actions>
-      </CollectionToolbar>
-
+          ))}
+        />
+      ) : null}
       <Dialog
         open={uiState.promoting !== null}
         onOpenChange={(open) => {
@@ -401,6 +350,20 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             renderItem={(file) => (
               <CapturedFileRow
                 file={file}
+                {...(filters
+                  ? {
+                      selected: selected.includes(file.id),
+                      onSelect: () => {
+                        setSelected((current) =>
+                          current.includes(file.id)
+                            ? current.filter((id) => id !== file.id)
+                            : current.length < 50
+                              ? [...current, file.id]
+                              : current,
+                        );
+                      },
+                    }
+                  : {})}
                 onPromote={() => {
                   dispatchUi({ type: 'promote', file });
                 }}
@@ -442,6 +405,179 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   );
 }
 
+function CapturedFilesToolbar({
+  filters,
+  loadedCount,
+  visibleCount,
+  cursor,
+  activeFilterCount,
+  uiState,
+  dispatchUi,
+  sourceOptions,
+  statusOptions,
+  typeOptions,
+}: {
+  filters: Props['filters'];
+  loadedCount: number;
+  visibleCount: number;
+  cursor: string | null;
+  activeFilterCount: number;
+  uiState: CapturedFilesUiState;
+  dispatchUi: (action: CapturedFilesUiAction) => void;
+  sourceOptions: { value: string; label: string }[];
+  statusOptions: { value: string; label: string }[];
+  typeOptions: { value: string; label: string }[];
+}) {
+  const router = useRouter();
+  return (
+    <CollectionToolbar
+      activeFilters={[
+        ...(uiState.sourceFilter
+          ? [
+              {
+                key: 'source',
+                label: 'Source',
+                value: uiState.sourceFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'source', value: '' });
+                },
+              },
+            ]
+          : []),
+        ...(uiState.typeFilter
+          ? [
+              {
+                key: 'type',
+                label: 'Type',
+                value: uiState.typeFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'fileType', value: '' });
+                },
+              },
+            ]
+          : []),
+        ...(uiState.statusFilter
+          ? [
+              {
+                key: 'status',
+                label: 'Status',
+                value: uiState.statusFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'status', value: '' });
+                },
+              },
+            ]
+          : []),
+        ...(uiState.dateFilter !== ALL
+          ? [
+              {
+                key: 'date',
+                label: 'Date',
+                value: uiState.dateFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'date', value: ALL });
+                },
+              },
+            ]
+          : []),
+      ]}
+    >
+      {cursor ? null : (
+        <CollectionToolbar.Count>
+          {formatCollectionCount({
+            matching: visibleCount,
+            total: loadedCount,
+            filtered: activeFilterCount > 0,
+          })}
+        </CollectionToolbar.Count>
+      )}
+      <CollectionToolbar.Filters>
+        <div className="flex min-w-0 flex-wrap items-end gap-2">
+          <FilterMultiSelect
+            label="Source"
+            value={filters?.sources.join(',') ?? uiState.sourceFilter}
+            onValueChange={(value) => {
+              if (!filters) {
+                dispatchUi({ type: 'source', value });
+                return;
+              }
+              const params = new URLSearchParams();
+              if (value) params.set('source', value);
+              if (filters.sender) params.set('sender', filters.sender);
+              router.push(`/app/documents/captured?${params.toString()}`);
+            }}
+            placeholder="All sources"
+            options={sourceOptions}
+          />
+          {filters ? (
+            <form className="flex items-end gap-2" action="/app/documents/captured">
+              <input type="hidden" name="source" value={filters.sources.join(',')} />
+              <label className="space-y-1">
+                <span className="block text-[11px] text-fg-dim">Sender</span>
+                <Input
+                  name="sender"
+                  key={filters.sender}
+                  defaultValue={filters.sender}
+                  maxLength={160}
+                  className="h-9"
+                />
+              </label>
+              <Button type="submit" variant="outline" size="sm">
+                Filter sender
+              </Button>
+            </form>
+          ) : null}
+          <FilterMultiSelect
+            label="Type"
+            value={uiState.typeFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'fileType', value });
+            }}
+            placeholder="All types"
+            options={typeOptions}
+          />
+          <FilterMultiSelect
+            label="Status"
+            value={uiState.statusFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'status', value });
+            }}
+            placeholder="All statuses"
+            options={statusOptions}
+          />
+          <FilterSelect
+            label="Date"
+            value={uiState.dateFilter}
+            onChange={(value) => {
+              dispatchUi({ type: 'date', value });
+            }}
+          >
+            <option value={ALL}>Any time</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </FilterSelect>
+        </div>
+      </CollectionToolbar.Filters>
+      <CollectionToolbar.Actions>
+        {activeFilterCount > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              dispatchUi({ type: 'clear_filters' });
+              if (filters?.sources.length || filters?.sender)
+                router.push('/app/documents/captured');
+            }}
+          >
+            Clear all
+          </Button>
+        ) : null}
+      </CollectionToolbar.Actions>
+    </CollectionToolbar>
+  );
+}
+
 function FilterSelect({
   label,
   value,
@@ -478,11 +614,20 @@ function matchesMultiFilter(
   return selected.length === 0 || selected.includes(value);
 }
 
-function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromote: () => void }) {
+function CapturedFileRow({
+  file,
+  onPromote,
+  selected,
+  onSelect,
+}: {
+  file: CapturedFileItem;
+  onPromote: () => void;
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
   const timezone = useWorkspaceTimezone();
   const contentType = file.currentVersion?.contentType ?? '';
   const Icon = contentType.startsWith('image/') ? ImageIcon : FileText;
-  const eventId = file.provenance.parentEventId ?? file.sourceRawEventId;
   const presentation = file.presentation;
   const storedName = presentation.isGeneratedName
     ? truncateFilenameMiddle(presentation.storedName)
@@ -497,6 +642,15 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </span>
         </CollectionRow.Leading>
         <CollectionRow.Title>
+          {onSelect ? (
+            <input
+              type="checkbox"
+              className="mr-2"
+              aria-label={`Select ${presentation.displayTitle}`}
+              checked={selected}
+              onChange={onSelect}
+            />
+          ) : null}
           <span className="min-w-0">
             <span
               className="block whitespace-normal text-sm font-semibold leading-5 text-fg [overflow-wrap:anywhere]"
@@ -531,8 +685,15 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
             </Badge>
             <CollectionStatus
               value={file.currentVersion?.processingStatus ?? 'pending'}
-              label={processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')}
+              label={
+                file.currentVersion?.processingError === 'vision_budget_deferred'
+                  ? 'Deferred by OCR budget'
+                  : processingStatusLabel(file.currentVersion?.processingStatus ?? 'pending')
+              }
             />
+            {file.provenance.sender ? (
+              <span className="text-xs text-fg-muted">{file.provenance.sender}</span>
+            ) : null}
             <Badge variant="outline" className="text-[11px] text-fg-muted">
               {visibilityLabel(file.visibility)}
             </Badge>
@@ -542,43 +703,68 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
           </>
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
-          <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
-            <PinOverflowMenu
-              target={{ kind: 'document', key: file.id }}
-              title={presentation.displayTitle}
-              initialPinned={file.pinned}
-            />
-            {file.currentVersion?.id &&
-            ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
-              <DocumentPreview
-                target={{ versionId: file.currentVersion.id }}
-                compact
-                label="Preview"
-                className="w-full md:w-auto"
-              />
-            ) : null}
-            {eventId ? (
-              <EvidenceLink
-                eventId={eventId}
-                previewText={file.provenance.summary}
-                source={file.provenance.source}
-                occurredAt={file.provenance.occurredAt}
-                className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-              >
-                <Link2 aria-hidden="true" className="size-3.5" />
-                View evidence
-              </EvidenceLink>
-            ) : null}
-            <DialogTrigger asChild>
-              <Button type="button" variant="outline" size="sm" onClick={onPromote}>
-                <Upload aria-hidden="true" className="mr-2 size-4" />
-                Promote
-              </Button>
-            </DialogTrigger>
-          </ItemActionGroup>
+          <CapturedFileRowActions file={file} onPromote={onPromote} triage={Boolean(onSelect)} />
         </CollectionRow.Actions>
       </CollectionRow>
     </div>
+  );
+}
+
+function CapturedFileRowActions({
+  file,
+  onPromote,
+  triage,
+}: {
+  file: CapturedFileItem;
+  onPromote: () => void;
+  triage: boolean;
+}) {
+  const contentType = file.currentVersion?.contentType ?? '';
+  const eventId = file.provenance.parentEventId ?? file.sourceRawEventId;
+  const presentation = file.presentation;
+  return (
+    <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
+      <PinOverflowMenu
+        target={{ kind: 'document', key: file.id }}
+        title={presentation.displayTitle}
+        initialPinned={file.pinned}
+      />
+      {file.currentVersion?.id &&
+      ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
+        <DocumentPreview
+          target={{ versionId: file.currentVersion.id }}
+          compact
+          label="Preview"
+          className="w-full md:w-auto"
+        />
+      ) : null}
+      {eventId ? (
+        <EvidenceLink
+          eventId={eventId}
+          previewText={file.provenance.summary}
+          source={file.provenance.source}
+          occurredAt={file.provenance.occurredAt}
+          className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
+        >
+          <Link2 aria-hidden="true" className="size-3.5" />
+          View evidence
+        </EvidenceLink>
+      ) : null}
+      {file.currentVersion && triage ? (
+        <Button asChild size="sm" variant="ghost">
+          <Link href={`/app/documents/captured/${file.id}/extraction`}>Extraction history</Link>
+        </Button>
+      ) : null}
+      {file.currentVersion?.processingError === 'vision_budget_deferred' ? (
+        <FileExtractionAction id={file.id} resume />
+      ) : null}
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" onClick={onPromote}>
+          <Upload aria-hidden="true" className="mr-2 size-4" />
+          Promote
+        </Button>
+      </DialogTrigger>
+    </ItemActionGroup>
   );
 }
 

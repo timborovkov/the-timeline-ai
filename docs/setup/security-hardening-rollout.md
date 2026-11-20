@@ -5,7 +5,8 @@
 Pause invitation traffic and stop old notification and billing consumers before
 any web or worker service can apply `0109_invite_token_digests`. The journal
 applies `0109_first_run_connector_paths` first, then
-`0109_invite_token_digests`, then `0110_legal_acceptance_content_hashes`.
+`0109_invite_token_digests`, then `0110_legal_acceptance_content_hashes`,
+then `0111_workspace_follow_through`.
 Railway pre-deploy hooks for those services can apply migrations before routing
 switches.
 The migration replaces the old token column values in place. Cut over to updated

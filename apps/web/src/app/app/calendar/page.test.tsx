@@ -33,6 +33,7 @@ await vi.mock(
     withTeam: () => ({
       requireMembership: fakes.requireMembership,
       calendar: {
+        google: { getImport: () => Promise.resolve(null) },
         getCalendarSettings: fakes.getCalendarSettings,
         listCalendarEventPage: fakes.listCalendarEventPage,
         listCalendarEvents: fakes.listCalendarEvents,

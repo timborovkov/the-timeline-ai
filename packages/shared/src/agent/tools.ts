@@ -3483,6 +3483,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const input = executeCalendarUpdateInput.parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, error: 'not_found' };
+          if (event.source !== 'internal') {
+            return {
+              ok: false,
+              error: 'read_only_imported',
+              message:
+                'Imported calendar events are read-only. Change them in the source calendar instead.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            };
+          }
           const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
           for (const field of Object.keys(input.patch)) {
             if (field === 'recurrenceEditMode') continue;
@@ -3563,6 +3572,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const input = executeCalendarCancelInput.parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, error: 'not_found' };
+          if (event.source !== 'internal') {
+            return {
+              ok: false,
+              error: 'read_only_imported',
+              message:
+                'Imported calendar events are read-only. Change them in the source calendar instead.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            };
+          }
           const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
           for (const [field, expectedRaw] of Object.entries(input.expectedCurrent)) {
             const expected = normalizeCalendarPatchValue(field, expectedRaw);
@@ -3792,6 +3810,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             .parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, message: 'Calendar event not found' };
+          if (event.source !== 'internal') {
+            return {
+              ok: false,
+              error: 'read_only_imported',
+              message:
+                'Imported calendar events are read-only. Change them in the source calendar instead.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            };
+          }
           if (options.toolMode === 'proposal_only' && input.patch?.visibility === 'private') {
             return { ok: false, error: 'team_visibility_required' };
           }

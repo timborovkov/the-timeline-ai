@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { type Db, rawEvents } from '@timeline/db';
+import { type Db, documentChunks, rawEvents, sourceIndexReceipts } from '@timeline/db';
 import {
   childLogger,
   chunkText,
@@ -14,7 +14,7 @@ import {
 import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { completeWebsiteChunk } from '@timeline/shared/websites';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
@@ -348,6 +348,7 @@ async function finalizeSourceEmbedding(input: {
   client: qdrant.QdrantClient;
   data: queue.EmbedJobData;
   scope: qdrant.PointScope;
+  sourceUpdatedAt?: Date;
   sourceId: string;
   model: string;
   chunkCount: number;
@@ -370,9 +371,26 @@ async function finalizeSourceEmbedding(input: {
       input.model,
     );
 
-  // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
-  // rationale below. Non-event scopes don't have a single canonical row to
-  // stamp; their freshness is tracked by the coverage audit script.
+  if (input.publishWebsiteVersion && input.sourceUpdatedAt) {
+    await input.db
+      .insert(sourceIndexReceipts)
+      .values({
+        teamId: input.data.teamId,
+        kind: input.scope,
+        sourceId: input.sourceId,
+        model: input.model,
+        sourceUpdatedAt: input.sourceUpdatedAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          sourceIndexReceipts.teamId,
+          sourceIndexReceipts.kind,
+          sourceIndexReceipts.sourceId,
+        ],
+        set: { model: input.model, sourceUpdatedAt: input.sourceUpdatedAt, indexedAt: new Date() },
+        setWhere: sql`${sourceIndexReceipts.sourceUpdatedAt} <= ${input.sourceUpdatedAt.toISOString()}::timestamptz`,
+      });
+  }
   if (input.scope === 'event' && 'rawEventId' in input.data) {
     const successPatch = JSON.stringify({
       embedded_at: new Date().toISOString(),
@@ -488,6 +506,7 @@ export async function processEmbedJob(
       data,
       scope: plan.scope,
       sourceId: plan.sourceId,
+      ...(plan.sourceUpdatedAt ? { sourceUpdatedAt: plan.sourceUpdatedAt } : {}),
       model,
       chunkCount: chunks.length,
       publishWebsiteVersion:
@@ -498,6 +517,7 @@ export async function processEmbedJob(
       reason: 'empty_continuation_finalized',
       scope: plan.scope,
       sourceId: plan.sourceId,
+      ...(plan.sourceUpdatedAt ? { sourceUpdatedAt: plan.sourceUpdatedAt } : {}),
       model,
     };
   }
@@ -537,6 +557,23 @@ export async function processEmbedJob(
     await client.upsertVector(pointId, chunk.vector, { ...payload, chunk_index: chunk.index });
   }
 
+  // A correction may replace this source while the provider is embedding it.
+  if (plan.scope === 'doc_chunk') {
+    const [current] = await deps.db
+      .select({ id: documentChunks.id })
+      .from(documentChunks)
+      .where(and(eq(documentChunks.teamId, data.teamId), eq(documentChunks.id, plan.sourceId)));
+    if (!current) {
+      await client.deletePointsForSource({
+        teamId: data.teamId,
+        scope: plan.scope,
+        sourceId: plan.sourceId,
+        model,
+      });
+      return { skipped: true, reason: 'superseded_document_chunk' };
+    }
+  }
+
   const nextChunk = startChunk + embeddedChunks.length;
   if (nextChunk < chunks.length) {
     const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
@@ -548,6 +585,7 @@ export async function processEmbedJob(
       data,
       scope: plan.scope,
       sourceId: plan.sourceId,
+      ...(plan.sourceUpdatedAt ? { sourceUpdatedAt: plan.sourceUpdatedAt } : {}),
       model,
       chunkCount: chunks.length,
       publishWebsiteVersion:

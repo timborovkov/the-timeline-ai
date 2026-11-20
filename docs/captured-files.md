@@ -18,9 +18,10 @@ evidence; documents are curated workspace knowledge.
   unpromoted captured files. Captured files can appear in a dedicated triage
   view, source-event detail, search results, and agent citations.
 - Folders belong to promoted documents. Unpromoted captured files are organized
-  by source evidence and the current Captured inbox filters: source, date, file
-  type, and processing status. Sender filters, bulk triage, and promotion-state
-  filters remain follow-ups.
+  by source evidence. The Captured inbox supports source and sender filters
+  over the collection, plus date, file type, and processing-status filters.
+  Select multiple files to promote them with their current visibility or
+  queue another extraction.
 - Promotion is identity-preserving: the original captured file becomes visible
   and manageable as a document without copying its blob or losing its source
   evidence link. The original capture can become version 1; later uploads can
@@ -68,9 +69,10 @@ evidence; documents are curated workspace knowledge.
   Richer transcript/OCR/visual-description indicators remain follow-up UI work;
   full extracted representations belong in event detail, citations, and agent
   tools.
-- Representation corrections are planned as layered, audited user edits over
-  model output. They should not mutate the source file or require the workspace
-  approval queue.
+- Request a second extraction from a file's extraction history. Review and
+  apply the candidate to update the active representation and queue indexing.
+  The original blob and earlier extraction remain available with the request
+  and application history.
 - Agents should have a targeted file-inspection tool for asking narrow
   questions about a known captured file or document version. Precomputed
   representations support recall; targeted inspection supports precision.
@@ -109,3 +111,15 @@ evidence; documents are curated workspace knowledge.
   lifecycle rows as pulses. Native Drive v1 judged captures are communication
   events (compact hunks, never a document-drive copy). See
   [relational-memory.md](./relational-memory.md).
+
+## OCR budget
+
+Owners can set a monthly USD limit and see actual spend, active reservations,
+and the maximum amount reserved per vision request. The cap starts unset.
+Zero pauses paid OCR. Before sending bytes for vision, Timeline reserves
+against the configured cap. Text and office extraction continue through
+their usual paths. The UTC budget period resets each month.
+
+A deferred captured file keeps its existing previews and shows a Resume OCR
+action. Retrying reserves against the current cap. A second extraction can
+also defer and be retried from its history.
