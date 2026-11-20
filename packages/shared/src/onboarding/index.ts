@@ -36,6 +36,8 @@ export {
   TEAM_WORK_STYLES,
   FIRST_RUN_PHASES,
   FIRST_RUN_PATHS,
+  ONBOARDING_SOURCE_INTENTS,
+  CHOOSER_BASE_SOURCES,
   GETTING_STARTED_STEPS,
   WORK_STYLE_OPTIONS,
   SETUP_SHELL_PHASES,
@@ -47,7 +49,10 @@ export {
   documentProcessingSteps,
   firstCaptureJustLanded,
   gettingStartedIndex,
+  isConnectorStarterPath,
   orderChecklistItems,
+  orderChooserSources,
+  parseOnboardingSourceIntent,
   parsePublicWebsiteUrl,
   prefilledAskQuestion,
   guidedAskEmptyHint,
@@ -63,6 +68,7 @@ export {
 export { processWebsiteScanJob } from '#src/onboarding/website-scan-job.js';
 export type {
   WebsiteSubject,
+  ChooserSourceId,
   FirstRunPath,
   FirstRunPhase,
   FirstRunScanFailureReason,
@@ -72,6 +78,7 @@ export type {
   GettingStartedStep,
   GoLiveChannel,
   NamedProcessingStep,
+  OnboardingSourceIntent,
   TeamWorkStyle,
   WorkStyleOption,
 } from '#src/onboarding/first-run.js';

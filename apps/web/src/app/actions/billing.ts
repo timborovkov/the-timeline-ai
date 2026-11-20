@@ -21,7 +21,6 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
-
 async function requireBillingAdmin() {
   const session = await auth();
   if (!session) redirect('/sign-in');
@@ -118,12 +117,16 @@ export async function startBillingCheckout(input: {
           return { ok: true as const, url: checkout.url };
         },
       );
-      if (checkoutResult.ok)
+      if (checkoutResult.ok) {
+        // Keep plan intent until Polar confirms payment (or the user dismisses).
+        // Creating a checkout session is not confirmation — abandoned checkout
+        // must leave Free and keep the finish-setup reminder available.
         trackProductEventBestEffort(
           { kind: 'user', userId: gate.userId, teamId: gate.active.teamId },
           'billing_checkout_created',
           { plan },
         );
+      }
       return checkoutResult;
     } catch (error) {
       return {

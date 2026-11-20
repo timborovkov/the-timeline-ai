@@ -97,9 +97,12 @@ function ChooserPreview({ inboundEmail }: { inboundEmail: string }) {
     <SetupShell progress="Setup · 2 of 2">
       <ChooserScreen
         inboundEmail={inboundEmail}
+        connectors={['slack', 'telegram']}
         onWebsite={noop}
         onDocument={noop}
         onEmail={noop}
+        onSlack={noop}
+        onTelegram={noop}
         onSkip={noop}
       />
     </SetupShell>

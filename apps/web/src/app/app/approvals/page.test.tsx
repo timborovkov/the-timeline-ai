@@ -47,7 +47,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/active-team'),
-  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  async () => ({
+    ...(await import('@/lib/active-team')),
+    resolveActiveTeam: fakes.resolveActiveTeam,
+  }),
   () => import('@/lib/active-team'),
 );
 await vi.mock(

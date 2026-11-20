@@ -361,12 +361,12 @@ const PRODUCT_EVENT_SCHEMAS = {
     .strict(),
   onboarding_first_path_selected: z
     .object({
-      path: z.enum(['website', 'document', 'email', 'skip']),
+      path: z.enum(['website', 'document', 'email', 'slack', 'telegram', 'skip']),
     })
     .strict(),
   first_capture_landed: z
     .object({
-      path: z.enum(['website', 'document', 'email']),
+      path: z.enum(['website', 'document', 'email', 'slack', 'telegram']),
     })
     .strict(),
   agent_deployed_on_channel: z
@@ -519,11 +519,11 @@ export const PRODUCT_EVENT_METADATA: Record<ProductEventName, ProductEventMetada
   ),
   onboarding_first_path_selected: metadata(
     'Measure which starter capture path a new team chooses.',
-    'A teammate picks website, document, email, or skip on the first-run chooser.',
+    'A teammate picks website, document, email, Slack, Telegram, or skip on the first-run chooser.',
   ),
   first_capture_landed: metadata(
     'Measure time-to-first starter capture.',
-    'The first document, forwarded email, or website page from first-run is persisted.',
+    'The first document, forwarded email, website page, Slack message, or Telegram message from first-run is persisted.',
   ),
   agent_deployed_on_channel: metadata(
     'Measure go-live channel adoption after first run.',
