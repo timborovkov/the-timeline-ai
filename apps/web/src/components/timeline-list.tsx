@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
@@ -46,6 +46,7 @@ import {
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
@@ -56,6 +57,7 @@ import {
   buildTimelineMoments,
   actorLabelsByTelegramUserId,
   filterTimelineMomentsByImpact,
+  formatDateSection,
   meetingDetailHrefForMoment,
   displayMeta,
   telegramUsernameLabel,
@@ -571,6 +573,37 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
     else groups.set(moment.dateKey, [moment]);
   }
   return [...groups.entries()];
+}
+
+type TimelineArchiveRow = { kind: 'day' | 'moment'; moment: TimelineMoment };
+
+const STICKY_DATE_BAND = {
+  isHeader: (row: TimelineArchiveRow) => row.kind === 'day',
+  className: 'sticky top-[var(--timeline-toolbar-height,2.75rem)] z-10',
+};
+
+function timelineArchiveRows(dateGroups: [string, TimelineMoment[]][]): TimelineArchiveRow[] {
+  const rows: TimelineArchiveRow[] = [];
+  for (const [, moments] of dateGroups) {
+    const first = moments[0];
+    if (first) rows.push({ kind: 'day', moment: first });
+    for (const moment of moments) rows.push({ kind: 'moment', moment });
+  }
+  return rows;
+}
+
+function subscribeToDayChanges(checkLabel: () => void): () => void {
+  const timer = window.setInterval(checkLabel, 30_000);
+  return () => window.clearInterval(timer);
+}
+
+function TimelineDayLabel({ moment, timezone }: { moment: TimelineMoment; timezone: string }) {
+  const occurredAt = moment.rawEvents[0]?.occurredAt;
+  return useSyncExternalStore(
+    subscribeToDayChanges,
+    () => (occurredAt ? formatDateSection(occurredAt, new Date(), timezone) : moment.dateLabel),
+    () => moment.dateLabel,
+  );
 }
 
 function InspectorBody({
@@ -1628,7 +1661,11 @@ export function TimelineList({
                   : 'sticky top-[var(--timeline-toolbar-height,2.75rem)] z-10 bg-surface py-2.5 text-xs font-medium',
               )}
             >
-              {group[0]?.dateLabel ?? dateKey}
+              {group[0] ? (
+                <TimelineDayLabel moment={group[0]} timezone={resolvedTimezone} />
+              ) : (
+                dateKey
+              )}
             </h2>
             <ol>
               {group.map((moment) => (
@@ -1651,34 +1688,38 @@ export function TimelineList({
         ))
       ) : (
         <VirtualList
-          items={visibleMoments}
-          getItemKey={(moment) => moment.id}
-          estimateSize={(moment) => (moment.visualWeight === 'pulse' ? 52 : 64)}
-          onEndReached={onEndReached}
-          renderSticky={(moment) =>
-            moment ? (
-              <h2
-                data-slot="collection-sticky-band"
-                className="sticky top-[var(--timeline-toolbar-height,2.75rem)] z-10 -mx-3 bg-surface px-3 py-2.5 text-xs font-medium text-fg-muted"
-              >
-                {moment.dateLabel}
-              </h2>
-            ) : null
+          items={timelineArchiveRows(dateGroups)}
+          getItemKey={({ kind, moment }) => (kind === 'day' ? `day:${moment.dateKey}` : moment.id)}
+          estimateSize={({ kind, moment }) =>
+            kind === 'day' ? 36 : moment.visualWeight === 'pulse' ? 52 : 64
           }
-          renderItem={(moment) => (
-            <TimelineMomentRow
-              moment={moment}
-              audioUrlMap={audioUrlMap}
-              currentUserId={currentUserId}
-              isAdmin={isAdmin}
-              members={members}
-              capturedFilesByEventId={capturedFilesByEventId}
-              focused={moment.id === focusedMoment?.id}
-              compact={compact}
-              pinned={pinnedMomentIds.has(moment.id)}
-              timezone={resolvedTimezone}
-            />
-          )}
+          getScrollElement={getAppMainScrollElement}
+          offsetWithinScrollElement
+          onEndReached={onEndReached}
+          stickyGroupHeader={STICKY_DATE_BAND}
+          renderItem={({ kind, moment }) =>
+            kind === 'day' ? (
+              <h2
+                data-slot="collection-group-header"
+                className="-mx-3 bg-surface px-3 py-2.5 text-xs font-medium text-fg-muted"
+              >
+                <TimelineDayLabel moment={moment} timezone={resolvedTimezone} />
+              </h2>
+            ) : (
+              <TimelineMomentRow
+                moment={moment}
+                audioUrlMap={audioUrlMap}
+                currentUserId={currentUserId}
+                isAdmin={isAdmin}
+                members={members}
+                capturedFilesByEventId={capturedFilesByEventId}
+                focused={moment.id === focusedMoment?.id}
+                compact={compact}
+                pinned={pinnedMomentIds.has(moment.id)}
+                timezone={resolvedTimezone}
+              />
+            )
+          }
         />
       )}
     </div>

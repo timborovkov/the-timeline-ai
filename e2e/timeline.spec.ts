@@ -1281,10 +1281,18 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
     await expect(ownerPage.getByText(dateMismatchText)).toHaveCount(0);
     await expect(ownerPage.getByRole('button', { name: /^Filters [1-9]\d*$/ })).toBeVisible();
 
+    // Keep an in-memory marker to catch a full document reload on the clear link.
+    await ownerPage.evaluate(() => {
+      document.documentElement.dataset.timelineNavigation = 'same-document';
+    });
     await ownerPage
       .getByRole('link', { name: 'Remove Timeline filters filter', exact: true })
       .click();
     await expect(ownerPage).toHaveURL(/\/app\/timeline\?mode=events$/);
+    await expect(ownerPage.locator('html')).toHaveAttribute(
+      'data-timeline-navigation',
+      'same-document',
+    );
     await expect(ownerPage.getByText(targetText).first()).toBeVisible();
     await expect(ownerPage.getByText(sourceMismatchText).first()).toBeVisible();
   } finally {

@@ -155,11 +155,15 @@ separate competing headings. Stories and records share that same skeleton;
 pulses stay one muted line. Impact on the row is omitted; the inspector shows
 workspace consequences, structured facts, a matching `[ev:…]` citation chip per
 source evidence item, and a collapsed Original source
-disclosure. Attached files link to Documents. Sticky date bands and row boundaries extend to the main-pane edges while their
-content stays bounded. The date offset follows the measured toolbar height,
-including wrapped controls and expanded filters. Infinite scroll retains
-virtualized rows. The default view ends at the current instant so
-materialized calendar occurrences do not displace recent work. Upcoming context
+disclosure. Attached files link to Documents. A date band separates each
+workspace day in Moments and All events. Today and Yesterday use the current
+date in the workspace timezone. Date bands and row boundaries extend to the
+main-pane edges while their content stays bounded. Each date band sticks below
+the measured toolbar until the next day reaches it, including when controls
+wrap or filters expand. Clearing the active filter chip updates the timeline
+in place. Infinite scroll retains virtualized rows. The default view ends at
+the current instant so materialized calendar occurrences do not displace recent
+work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
 source, and title only, linking into this surface. Timeline pin and overflow
