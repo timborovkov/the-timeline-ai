@@ -993,6 +993,36 @@ test('mobile navigation keeps the team switcher visible, closable, and actionabl
   );
 });
 
+test('mobile Timeline presets and Team settings reveal focused and selected links', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await signIn(page, e2eUsers.owner.email);
+  await page.goto('/app/timeline');
+
+  const presets = page.getByRole('navigation', { name: 'Timeline presets' });
+  await expect(page.getByText('Swipe or scroll for more timeline filters.')).toBeVisible();
+  await presets.getByRole('link', { name: 'Documents', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  const calendar = presets.getByRole('link', { name: 'Calendar', exact: true });
+  await expect(calendar).toBeFocused();
+  await expect(calendar).toBeInViewport({ ratio: 0.99 });
+
+  await page.keyboard.press('Tab');
+  const integrations = presets.getByRole('link', { name: 'Integrations', exact: true });
+  await expect(integrations).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(integrations).toHaveAttribute('aria-current', 'page');
+  await expect(integrations).toBeInViewport({ ratio: 0.99 });
+
+  await page.goto('/app/team?section=exports');
+  const settings = page.getByRole('navigation', { name: 'Team settings' });
+  await expect(page.getByText('Swipe or scroll to see more settings.')).toBeVisible();
+  const exports = settings.getByRole('link', { name: 'Exports', exact: true });
+  await expect(exports).toHaveAttribute('aria-current', 'page');
+  await expect(exports).toBeInViewport({ ratio: 0.99 });
+});
+
 test.describe
   .serial('task categories and primary project stay distinct and filter together', () => {
   let ownerPage: Page;

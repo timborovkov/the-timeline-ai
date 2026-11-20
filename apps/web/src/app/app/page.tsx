@@ -1,5 +1,9 @@
 import { teams, users } from '@timeline/db';
-import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
+import {
+  latestDailyDigest,
+  presentSavedViewDigest,
+  type DailyDigestPayload,
+} from '@timeline/shared/messaging';
 import {
   GUIDED_SHELL_PHASES,
   isConnectorStarterPath,
@@ -409,7 +413,11 @@ async function HomeDigest({ scope }: { scope: TeamScope }) {
   const digest = await loadHomePanel('home_digest', () =>
     latestDailyDigest({ db, teamId: scope.teamId, userId: scope.userId }),
   );
-  return <DailyDigestBlock digest={digest?.payload as DailyDigestPayload | undefined} />;
+  const payload = digest?.payload as DailyDigestPayload | undefined;
+  const rendered = payload?.savedViewChanges
+    ? (await presentSavedViewDigest(scope, payload)).payload
+    : payload;
+  return <DailyDigestBlock digest={rendered} />;
 }
 
 async function HomePins({ scope }: { scope: TeamScope }) {

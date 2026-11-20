@@ -46,6 +46,12 @@ export function WorkOverviewHeader({
           </Link>
         ) : null}
         <Link
+          href="/app/work/views"
+          className="inline-flex min-h-8 items-center text-fg hover:underline"
+        >
+          Saved views
+        </Link>
+        <Link
           href="#pinned-work"
           className="inline-flex min-h-8 items-center text-fg hover:underline xl:hidden"
         >

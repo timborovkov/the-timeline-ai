@@ -58,5 +58,10 @@ const migrationResult = await run(process.execPath, [...bunRuntimeArgs, migrateP
 if (migrationResult.code !== 0 || receivedSignal) {
   process.exit(receivedSignal ? SIGNAL_EXIT_CODES[receivedSignal] : migrationResult.code);
 }
-const result = await run(process.execPath, [...bunRuntimeArgs, serverPath]);
+const result = await run(process.execPath, [
+  ...bunRuntimeArgs,
+  '--preload',
+  resolve(appRoot, 'redact-request-warnings.mjs'),
+  serverPath,
+]);
 process.exit(receivedSignal ? SIGNAL_EXIT_CODES[receivedSignal] : result.code);

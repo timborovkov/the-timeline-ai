@@ -1091,6 +1091,7 @@ export async function generateDailyDigest(
       skipped: false,
     };
   }
+  const savedViewChanges = persist ? await scope.savedViews.evaluate(input.windowEnd, now) : [];
   const freshCutoff = freshDigestCutoff(input.windowEnd, preference.timezone, preference.hour);
   const upcomingTo = addDays(now, 7);
   const [
@@ -1305,18 +1306,17 @@ export async function generateDailyDigest(
       { label: 'Boards', href: '/app/boards' },
     ],
   };
-  if (
-    !hasUsefulDigestContent({
-      events,
-      freshCutoff,
-      objectChangesByType,
-      newMemberCount: newMembers.length,
-      pendingApprovals,
-      windowCalendarCount: windowCalendarRows.length,
-      newObjectCount: createdTaskCount + newObjectRows.length,
-      completedTaskCount,
-    })
-  ) {
+  const usefulDigest = hasUsefulDigestContent({
+    events,
+    freshCutoff,
+    objectChangesByType,
+    newMemberCount: newMembers.length,
+    pendingApprovals,
+    windowCalendarCount: windowCalendarRows.length,
+    newObjectCount: createdTaskCount + newObjectRows.length,
+    completedTaskCount,
+  });
+  if (!usefulDigest && savedViewChanges.length === 0) {
     return persist
       ? persistQuietDailyDigest({
           request: input,
@@ -1407,11 +1407,14 @@ export async function generateDailyDigest(
       createdAt: member.createdAt.toISOString(),
     })),
   };
-  const digestText = await summarizeMomentBriefs(ctx, momentBriefs, fallback, input.summarize);
+  const digestText = usefulDigest
+    ? await summarizeMomentBriefs(ctx, momentBriefs, fallback, input.summarize)
+    : { summary: 'Your saved views have new matches.', sections: [] };
 
   const payload: DailyDigestPayload = {
     ...payloadBase,
     summary: digestText.summary,
+    ...(savedViewChanges.length > 0 ? { savedViewChanges, savedViewsOnly: !usefulDigest } : {}),
     sections: digestContentSections({
       summary: digestText.summary,
       sections: digestText.sections,

@@ -199,6 +199,9 @@ Use Railway's "shared variables" feature at the project level for anything used 
 
 <span id="staging-vs-production"></span>
 
+Review the [security rollout guide](setup/security-hardening-rollout.md) for
+credential URL logging, endpoint size limits, and the browser policy rollout.
+
 ## Staging vs production
 
 The Git branch `main` is for development; `production` is the protected release branch. Verify the deployed source branch for web, worker and extractor before release. The intended release branch is `production`; a repository policy does not change Railway settings.

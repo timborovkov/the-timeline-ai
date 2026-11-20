@@ -100,6 +100,8 @@ await vi.mock(
   () => import('@timeline/shared/rate-limit'),
 );
 
+const { REQUEST_BODY_LIMITS } = await import('@/lib/request-body');
+
 const { POST } = await import('./route.js');
 
 const USER_ID = '22222222-2222-2222-2222-222222222222';
@@ -269,6 +271,31 @@ beforeEach(() => {
 });
 
 describe('POST /api/search/global', () => {
+  it('rejects oversized JSON before parsing declared and chunked bodies', async () => {
+    const cap = REQUEST_BODY_LIMITS.globalSearch;
+    const url = 'https://timeline.test/api/search/global';
+    const declared = new Request(url, {
+      method: 'POST',
+      body: '{',
+      headers: { 'content-length': String(cap + 1) },
+    });
+    const chunked = new Request(url, {
+      method: 'POST',
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(cap));
+          controller.enqueue(new Uint8Array(1));
+          controller.close();
+        },
+      }),
+    });
+    for (const req of [declared, chunked]) {
+      const response = await POST(req);
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({ ok: false, reason: 'payload_too_large' });
+    }
+  });
+
   it('rejects unauthenticated users', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
 

@@ -270,6 +270,7 @@ Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
 The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
+The agent setup card and evidence ledger are labelled sections within the landing main content.
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
 and Pricing (`/pricing`). Desktop headers show them directly; below the hamburger
@@ -505,10 +506,11 @@ Long technical values wrap without changing bytes or hiding content. Small
 callout labels, homepage dim text and signal text meet 4.5:1 contrast against
 their actual surfaces in both themes. Cookie preferences inherit the dialog's
 viewport height cap and scrolling, with overscroll contained; all controls and
-disclosures remain reachable on short screens. Reject and Accept stay equally
-prominent in the compact desktop bottom-right analytics banner; no optional
-analytics is sent before a choice. Cookie settings remains a persistent button
-with the footer links' typography and treatment.
+disclosures remain reachable on short screens. The analytics banner sits below
+the public header in normal flow on narrow or short screens. On larger viewports
+it floats at the bottom right. Reject and Accept stay equally prominent, and
+optional analytics starts only after acceptance. Cookie settings remains a
+persistent button with the footer links' typography and treatment.
 
 ### Guides directory
 

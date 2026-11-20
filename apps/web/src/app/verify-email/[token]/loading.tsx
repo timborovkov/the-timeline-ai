@@ -3,9 +3,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function VerifyEmailLoading() {
   return (
-    <AuthShell title="Verifying email">
+    <AuthShell title="Checking verification link">
       <output className="sr-only" aria-live="polite">
-        Verifying email
+        Checking verification link
       </output>
       <section
         aria-busy="true"

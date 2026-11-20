@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { LegalPage } from '@/components/legal-page';
+import { LegalContact, LegalPage } from '@/components/legal-page';
 import { SupportMailto } from '@/components/support-email-provider';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
@@ -227,9 +227,9 @@ function TermsResponsibleUseSections() {
       </ul>
       <p>
         Report suspected vulnerabilities privately to{' '}
-        <SupportMailto subject="[Security] Vulnerability report" />; do not put credentials,
-        Customer Content, or undisclosed exploits in public issues. We may rate limit, investigate,
-        or block activity reasonably believed to create risk.
+        <LegalContact subject="[Security] Vulnerability report" />; do not put credentials, Customer
+        Content, or undisclosed exploits in public issues. We may rate limit, investigate, or block
+        activity reasonably believed to create risk.
       </p>
 
       <h2>11. Confidentiality and security responsibilities</h2>
@@ -251,7 +251,7 @@ function TermsResponsibleUseSections() {
       <h2>12. Privacy and data protection</h2>
       <p>
         To request deletion of captured data, use our <Link href="/help/support">support form</Link>{' '}
-        or contact <SupportMailto />. Requests are handled manually after identity and workspace
+        or contact <LegalContact />. Requests are handled manually after identity and workspace
         authority checks. Removing a personal connection or disconnecting a team source does not
         automatically delete captured history. The <Link href="/privacy">Privacy Policy</Link> and{' '}
         <Link href="/help/integrations">integration help</Link> explain these actions and applicable
@@ -262,7 +262,7 @@ function TermsResponsibleUseSections() {
         Our <Link href="/privacy">Privacy Policy</Link> describes our controller activities. For
         Customer Content where we act as processor, the customer is responsible for its instructions
         and lawful basis. Customers needing a data-processing agreement or transfer terms should
-        contact <SupportMailto /> before using the Service for data that depends on those terms.
+        contact <LegalContact /> before using the Service for data that depends on those terms.
       </p>
       <p>
         Our <Link href="/cookies">Cookies and similar technologies notice</Link> lists current
@@ -344,13 +344,13 @@ function TermsProductAndLifecycleSections() {
         Cancellation normally stops renewal at the end of the current billing period, as confirmed
         in the portal. Charges incurred before cancellation takes effect remain due. Stopping use,
         disconnecting sources or deleting content does not cancel a subscription. If the portal is
-        unavailable or does not offer cancellation, contact <SupportMailto /> for help.
+        unavailable or does not offer cancellation, contact <LegalContact /> for help.
       </p>
       <p>
         Fees and consumed usage are generally non-refundable, including unused time in a billing
         period, unless applicable law requires otherwise or we agree to a refund. This does not
         limit mandatory consumer cancellation, withdrawal or refund rights. Report duplicate,
-        incorrect or unauthorized charges to <SupportMailto /> with the workspace and invoice
+        incorrect or unauthorized charges to <LegalContact /> with the workspace and invoice
         reference so we and Polar can investigate and correct confirmed errors. Do not send full
         payment-card details. Agreed enterprise terms take precedence where they differ.
       </p>
@@ -466,8 +466,8 @@ function TermsClosingSections() {
 
       <h2>24. Contact</h2>
       <p>
-        Legal questions and notices: <SupportMailto />. Provider: {LEGAL_PROVIDER}, Estonian
-        registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
+        Legal questions and notices: <LegalContact />. Provider: {LEGAL_PROVIDER}, Estonian registry
+        code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
       </p>
     </>
   );

@@ -260,6 +260,7 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [
           {
             ...event('event-1', 'Daily call'),
+            recurringParentId: 'parent-1',
             showAs: 'tentative',
             rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
           },
@@ -271,12 +272,13 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     await user.click(screen.getByRole('button', { name: /Daily call/ }));
 
+    await user.click(screen.getByText('Event settings', { exact: true }));
     expect(screen.getByLabelText('Show as')).toHaveProperty('value', 'tentative');
     expect(screen.getByLabelText('Recurrence rule (RRULE)')).toHaveProperty(
       'value',
       'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
     );
-    expect(screen.getByLabelText('Edit scope')).toHaveProperty('value', 'series');
+    expect(screen.getByLabelText('Edit scope')).toHaveProperty('value', 'single');
 
     await user.selectOptions(screen.getByLabelText('Show as'), 'free');
     await user.clear(screen.getByLabelText('Recurrence rule (RRULE)'));
@@ -315,6 +317,8 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /Weekly sync/ }));
 
     expect(screen.getByLabelText('Repeats')).toHaveProperty('value', 'weekly');
+    expect(screen.queryByLabelText('Recurrence rule (RRULE)')).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Repeats'), 'custom');
     expect(screen.getByLabelText('Recurrence rule (RRULE)')).toHaveProperty(
       'value',
       'RRULE:FREQ=WEEKLY',
@@ -563,6 +567,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     );
 
     await user.click(screen.getByRole('button', { name: /New/ }));
+    await user.click(screen.getByText('Event settings', { exact: true }));
     expect(screen.getByLabelText<HTMLSelectElement>('Visibility').value).toBe('specific_users');
     expect(screen.getByLabelText<HTMLInputElement>('Ada Lovelace').checked).toBe(true);
     expect(screen.getByLabelText<HTMLInputElement>('Grace Hopper').checked).toBe(false);
@@ -782,7 +787,7 @@ describe('calendar review regressions', () => {
       }),
     );
     await user.click(screen.getByRole('button', { name: /Weekly planning/ }));
-    await user.selectOptions(screen.getByLabelText('Edit scope'), 'single');
+    expect(screen.queryByLabelText('Edit scope')).toBeNull();
     await user.click(screen.getByRole('button', { name: /^Delete$/ }));
     expect(
       screen.getByText('The entire series will be permanently deleted. This cannot be undone.'),
@@ -839,10 +844,12 @@ describe('calendar review regressions', () => {
       }),
     );
     await user.click(screen.getByRole('button', { name: /Custom repeat/ }));
+    expect(screen.getByLabelText('Repeats')).toHaveProperty('value', '');
+    expect(screen.queryByLabelText('Edit scope')).toBeNull();
     await user.selectOptions(screen.getByLabelText('Repeats'), 'custom');
     const rule = screen.getByLabelText('Recurrence rule (RRULE)');
     await user.type(rule, 'FREQ=DAILY;COUNT=3');
-    expect(rule.closest('details')?.open).toBe(true);
+    expect(screen.getByLabelText('Repeats')).toHaveProperty('value', 'custom');
     expect(rule).toHaveProperty('value', 'FREQ=DAILY;COUNT=3');
   });
 });

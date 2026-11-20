@@ -201,6 +201,10 @@ sits beside the heading as truncated muted text. The mobile session summary
 uses that same resolved title, including deep-linked chats outside the recent
 list. Session counts do not appear in the header.
 
+The full Ask composer grows with the draft to a viewport-aware limit, then
+scrolls internally. Enter sends, Shift+Enter adds a line break, and
+composition keystrokes stay with the input method.
+
 A context-aware floating Ask sits on every authenticated page except Home and
 the full Ask route. It is a quiet icon button in the bottom-right corner, with
 `⌘J` / `Ctrl+J` as the shortcut on the launcher. Desktop opens a non-modal
@@ -243,6 +247,8 @@ preloaded window so a pipeline is not limited to recent tasks. Loading placehold
 the requested view: Tasks default to list, boards default to kanban, and
 list/kanban each have a matching skeleton. Timeline loading uses the same
 toolbar row without a page header or inventory chip, then Linear feed rows.
+The shared app fallback announces workspace loading. Route-specific skeletons,
+including Documents, announce their own destinations.
 Collection pages load as flat rows, not boxed card grids. Objects New object and
 Boards Create board use the same compact toolbar/header action as Add item, not a
 filled primary chip. Kanban cards stay compact: a wrapping title plus one
@@ -372,12 +378,15 @@ date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
 and tight padding so names remain readable in a seven-column grid. Week
 numbers belong on the week column, not inside every month cell.
 
-The Edit event dialog stays a calendar-event editor. When the event is linked
-to workspace objects, those objects appear as quiet title links under
-**Linked objects**, never as a large Open button. Object Calendar sections
-link the other way to the focused calendar event. Subscription create/last-used
-times use relative age with a timestamp tooltip. Event dialog selects use
-`NativeSelect`.
+The event editor puts the title and schedule first. The schedule groups the
+timezone, all-day control, start and end, and repeat settings. The custom rule
+field appears when Custom rule is selected. Edit scope appears on recurring
+occurrences. Location and description, event settings, and reminders open from
+compact disclosure rows. The form scrolls inside the dialog and keeps its
+header and Save, Cancel, and Delete actions in view. Linked objects appear as
+quiet title links. Object Calendar sections link back to the focused event.
+Subscription create and last-used times use relative age with a timestamp
+tooltip. Event dialog selects use `NativeSelect`.
 
 Job recovery is an admin-only queue, not a processing inventory.
 Members who open `/app/team/jobs` see an Admins-only empty state. Home
@@ -781,9 +790,9 @@ copy describes the download's 24-hour expiry, not the archive's data range.
 Slack destination choices load only for Preferences. Editable member roles do not
 repeat their current role in a second badge.
 
-Work and Team tab strips reveal the active destination after navigation and
-resize, without mandatory snap points. Mobile Work navigation includes a scroll
-hint. Calendar month cells use day event counts on phones; opening a count shows
+Work, Timeline presets, and Team settings reveal the active link after navigation
+and resize, without mandatory snap points. Each strip shows a swipe or scroll
+hint when it overflows. Calendar month cells use day event counts on phones; opening a count shows
 the readable day view. Approval actions stack beneath their context on phones.
 Work relevance badges do not duplicate the canonical Blocked status, and normal
 pending approval uses the signal tone rather than danger. Narrow object property
@@ -836,3 +845,22 @@ requires a deliberate audited open action, never automatic list previews.
 Team settings links to `/app/team/evaluation`. Explain the quality purpose before the opt-in control; default it off, leave source choices unchecked initially, and require a separate acknowledgment to enable it. Show capture availability separately from the saved preference. Onboarding offers the same disclosure in a new tab without interrupting completion. Distinguish automatic sampled source extraction from individually reviewed conversation reports.
 
 Quality-sharing forms keep the material consent summary visible in short bullets, with sampling and cleanup details in an expandable disclosure. Source choices use a compact responsive grid. Saves use shared loading/success/error toasts and disable the save button while pending. Platform Admin → Teams shows saved evaluation/report permissions; team detail adds selected sources, consent version and this web instance’s configuration readiness. Readiness is not evidence of worker capture or received traces, and platform staff cannot grant workspace consent from this view.
+
+## Recovery and saved views
+
+Capture detail gives recorder outcomes and the available recovery action near
+the transcript. Calendar shows the personal Google import and its last sync
+beside the existing subscription controls. Event reminder controls appear
+inside the event dialog.
+
+Connections leads admins to Source health, where selections, evidence
+delivery, and indexing have separate status fields. Recovery opens the
+specific connection or queues indexing for visible records. Captured files
+reuses the collection toolbar and selection bar for triage. Extraction history
+shows the candidate and previous representations. Workspace owners can open
+the OCR budget from Captured files.
+
+Approvals, Tasks, Objects, and individual Boards offer Save view for their
+current filters. Work links to personal saved views, where each member can
+opt in to new-match updates through their daily digest. Project handoffs use
+a dated snapshot header and a separate link to the current project.

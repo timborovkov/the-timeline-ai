@@ -9,6 +9,7 @@ import { SignOutButton } from '@/components/sign-out-button';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { hashInviteToken } from '@/lib/invite-token';
 
 export const metadata: Metadata = {
   title: 'Accept invite',
@@ -41,7 +42,7 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
     .innerJoin(teams, eq(teams.id, teamInvites.teamId))
     .where(
       and(
-        eq(teamInvites.token, token),
+        eq(teamInvites.tokenHash, hashInviteToken(token)),
         isNull(teamInvites.acceptedAt),
         isNull(teamInvites.revokedAt),
       ),

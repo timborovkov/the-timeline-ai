@@ -18,6 +18,7 @@ import { HistoryBackLink } from '@/components/history-back-link';
 import { ObjectPeekFrame } from '@/components/objects/object-peek-frame';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { visibleBoardDescription } from '@/lib/board-description';
@@ -277,6 +278,11 @@ export function BoardDetailClient({
           label={boardName}
           boardId={boardId}
         />
+        <SaveViewButton
+          collection="boards"
+          targetId={boardId}
+          filters={{ ...filterParams, view }}
+        />
         <PinButton target={{ kind: 'board', key: boardId }} initialPinned={pinned} />
         <BoardActionsMenu
           id={boardId}
@@ -287,7 +293,7 @@ export function BoardDetailClient({
         />
       </div>
     ),
-    [boardId, boardName, lanes, pinned, purpose, qualification],
+    [boardId, boardName, filterParams, lanes, pinned, purpose, qualification, view],
   );
 
   return (

@@ -26,7 +26,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: ChatError } = await import('@/app/app/chat/error');
 const { default: AppError } = await import('@/app/app/error');
 const { default: InboxError } = await import('@/app/app/inbox/error');
-const { default: HomeLoading } = await import('@/app/app/loading');
+const { default: AppLoading } = await import('@/app/app/loading');
 const { default: TeamError } = await import('@/app/app/team/error');
 const { default: SlackError } = await import('@/app/app/team/slack/error');
 const { default: SlackLoading } = await import('@/app/app/team/slack/loading');
@@ -91,14 +91,13 @@ describe('authenticated route states', () => {
     expect(html).not.toContain('href="/app/team"');
   });
 
-  it('announces a row-shaped Home loading state outside the busy fallback', () => {
-    render(<HomeLoading />);
+  it('announces neutral workspace loading outside the busy fallback', () => {
+    render(<AppLoading />);
 
     const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Loading Home');
+    expect(announcement.textContent).toBe('Loading workspace');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading Home').getAttribute('aria-busy')).toBe('true');
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Home' })).toHaveLength(1);
-    expect(screen.getByRole('region', { name: 'Home loading placeholder' })).toBeTruthy();
+    expect(screen.getByLabelText('Loading workspace').getAttribute('aria-busy')).toBe('true');
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
   });
 });

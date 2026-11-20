@@ -7960,7 +7960,8 @@ export interface NotificationRow {
     | 'follow_up_overdue'
     | 'mention'
     | 'agent_suggestion'
-    | 'connection_attention';
+    | 'connection_attention'
+    | 'calendar_reminder';
   entityId: string | null;
   objectChangeId: string | null;
   agentSuggestionId: string | null;

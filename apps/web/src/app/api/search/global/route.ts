@@ -27,6 +27,11 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { resolveSearchDateBound, searchDateBound, searchDateOnly } from '@/lib/global-search-dates';
 import { GLOBAL_SEARCH_SOURCE_VALUES } from '@/lib/global-search-sources';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -589,7 +594,15 @@ async function searchResponse(req: Request): Promise<Response> {
     );
   }
 
-  const parsed = schema.safeParse(await req.json().catch(() => null));
+  let json: unknown = null;
+  try {
+    const body = await readCappedTextBody(req, REQUEST_BODY_LIMITS.globalSearch);
+    if (body.tooLarge) return payloadTooLargeResponse();
+    json = JSON.parse(body.text) as unknown;
+  } catch {
+    // Preserve the existing invalid-input response for malformed or unreadable JSON.
+  }
+  const parsed = schema.safeParse(json);
   if (!parsed.success) {
     return Response.json(
       { ok: false, error: parsed.error.issues[0]?.message ?? 'invalid_input' },
