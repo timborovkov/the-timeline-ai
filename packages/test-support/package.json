@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
-    "@sinonjs/fake-timers": "15.4.0",
+    "@sinonjs/fake-timers": "15.5.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
