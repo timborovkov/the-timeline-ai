@@ -44,29 +44,38 @@ function SessionLinks() {
 }
 
 describe('public session island', () => {
-  it('server-renders both account states as inert sizing placeholders', () => {
+  it('server-renders usable guest account links before the session resolves', () => {
     const html = renderToStaticMarkup(<PublicHeader currentSection="product" />);
 
     expect(html).toContain('data-public-session="unknown"');
     expect(html).toContain('href="/sign-in"');
+    expect(html).toContain('href="/sign-up"');
     expect(html).toContain('>Start free</a>');
-    expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain('inert');
+    expect(html).toContain('>Sign in</a>');
+    expect(html).toContain('data-active="true"');
     expect(html).toContain('>Dashboard</a>');
+    expect(html).toMatch(
+      /<span[^>]*data-active="false"[^>]*aria-hidden="true"[^>]*inert[^>]*>[\s\S]*?>Dashboard<\/a>/,
+    );
   });
 
-  it('resolves Sign in versus Dashboard from the session endpoint without flashing the wrong CTA', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ user: { name: 'Ada', email: 'ada@example.test' } }),
+  it('keeps guest CTAs usable while the session request is in flight, then swaps to Dashboard', async () => {
+    let release!: (response: Response) => void;
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
     });
+    const fetchMock = vi.fn().mockReturnValue(held);
     vi.stubGlobal('fetch', fetchMock);
 
     render(<PublicHeader currentSection="help" />);
 
     expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+    for (const link of screen.getAllByRole('link', { name: 'Sign in' })) {
+      expect(link.getAttribute('href')).toBe('/sign-in');
+    }
+    expect(screen.getByRole('link', { name: 'Start free' }).getAttribute('href')).toBe('/sign-up');
+
+    release(Response.json({ user: { name: 'Ada', email: 'ada@example.test' } }));
 
     await waitFor(() => {
       expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');

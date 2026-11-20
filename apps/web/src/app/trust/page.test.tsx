@@ -55,6 +55,24 @@ describe('Trust page', () => {
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="https://github.com/timborovkov/the-timeline-ai"');
+    expect(html).toContain('Deployment options');
+    expect(html).toContain('Hosted Timeline cloud');
+    expect(html).toContain('Self-hosted by you');
+    expect(html).toContain('Managed on-premise by us');
+    expect(html).toContain('source-available');
+    expect(html).toContain('Elastic License 2.0');
+    expect(html).toContain('OpenAI-compatible');
+    expect(html).toContain(
+      'href="https://github.com/timborovkov/the-timeline-ai/blob/main/docs/self-hosting.md"',
+    );
+    expect(html).toContain(
+      'href="https://github.com/timborovkov/the-timeline-ai/blob/main/LICENSE"',
+    );
+    expect(html).toContain(
+      'href="/contact/enterprise?topics=on_premise_deployment&amp;from=trust"',
+    );
+    expect(html).not.toMatch(/\bopen source\b/i);
+    expect(html).not.toContain('href="/help/support">Discuss a controlled deployment');
     expect(html).toContain('Firecrawl');
     expect(html).toContain('public pages of a website URL submitted during first-run onboarding');
     expect(html).toContain('What Timeline preserves');

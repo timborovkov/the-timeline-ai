@@ -24,6 +24,9 @@ describe('product tour route', () => {
     expect(html).toContain(PRODUCT_TOUR.title);
     expect(html).toContain('data-product-tour');
     expect(html).toContain('Start free');
+    expect(html).toContain('/sign-up?source=slack');
+    expect(html).toContain('/sign-up?source=telegram');
+    expect(html).toContain('Or start with Telegram');
     expect(html).toContain('See pricing');
     expect(html).toContain('Lasting record changes wait for your approval.');
     expect(html).not.toContain('Nothing changes until you approve it.');

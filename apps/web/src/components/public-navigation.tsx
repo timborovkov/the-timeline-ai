@@ -464,9 +464,10 @@ export function PublicNavigationDisclosure({
           event.currentTarget.open = false;
       }}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm border border-border bg-bg px-3 text-sm font-medium text-fg outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-details-marker]:hidden">
-        <Menu aria-hidden="true" className="size-4" />
-        <span>Menu</span>
+      {/* Native details/summary expose expanded state; keep a stable name so
+          no-JS and pre-hydration opens stay accurate for assistive tech. */}
+      <summary aria-label="Menu" className={styles.menuTrigger}>
+        <Menu aria-hidden="true" className={styles.menuTriggerIcon} />
       </summary>
       <nav aria-label="Public navigation menu" className={styles.mobilePanel}>
         <MobileNavigationItems currentSection={currentSection} onNavigate={closeDisclosure} />

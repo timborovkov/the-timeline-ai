@@ -157,6 +157,11 @@ async function FirstRunHomeBanner(input: {
     <FirstRunHomeCapture
       failed={result.failed}
       emailWaiting={input.firstRun?.starterPath === 'email'}
+      connectorWaiting={
+        input.firstRun?.starterPath === 'slack' || input.firstRun?.starterPath === 'telegram'
+          ? input.firstRun.starterPath
+          : null
+      }
     />
   );
 }

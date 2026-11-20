@@ -40,6 +40,8 @@ export interface SupportRequestMessageInput {
   supportEmail: string;
   requestId: string;
   requestType: 'technical_support' | 'sales' | 'billing' | 'security' | 'other';
+  /** Inbox tag for dedicated forms that still use a sales request_type row. */
+  tag?: 'enterprise';
   name: string;
   email: string;
   message: string;

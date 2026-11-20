@@ -34,11 +34,6 @@ export function PublicHeader({
         />
       </nav>
       <div className={styles.actions}>
-        <PublicNavigationDisclosure
-          currentSection={currentSection}
-          className={styles.publicMenu}
-          showAccountActions={showAccountActions}
-        />
         <GitHubSourceLink compact className={styles.githubLink} />
         {showAccountActions ? (
           <PublicSessionBranch
@@ -78,6 +73,11 @@ export function PublicHeader({
             }
           />
         ) : null}
+        <PublicNavigationDisclosure
+          currentSection={currentSection}
+          className={styles.publicMenu}
+          showAccountActions={showAccountActions}
+        />
       </div>
     </header>
   );

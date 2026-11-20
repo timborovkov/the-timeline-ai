@@ -811,7 +811,14 @@
       "idx": 115,
       "version": "7",
       "when": 1795658300000,
-      "tag": "0109_workspace_follow_through",
+      "tag": "0109_first_run_connector_paths",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1795658400000,
+      "tag": "0110_workspace_follow_through",
       "breakpoints": true
     }
   ]

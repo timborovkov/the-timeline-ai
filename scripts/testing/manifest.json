@@ -71,6 +71,9 @@
   "apps/web/src/app/actions/documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/enterprise.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/events.test.ts": {
     "group": "unit"
   },
@@ -545,6 +548,9 @@
   "apps/web/src/app/compare/route.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/contact/enterprise/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/cookies/page.test.tsx": {
     "group": "unit"
   },
@@ -593,6 +599,12 @@
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/sign-in/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/sign-up/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/product-tour/route.test.tsx": {
     "group": "unit"
   },
@@ -604,9 +616,6 @@
   },
   "apps/web/src/app/root-route-states.test.tsx": {
     "group": "dom"
-  },
-  "apps/web/src/app/sign-up/page.test.tsx": {
-    "group": "unit"
   },
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
@@ -1049,6 +1058,9 @@
   "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/onboarding/setup-flow.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
     "group": "dom"
   },
@@ -1311,7 +1323,16 @@
   "apps/web/src/lib/email-verification.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/enterprise-enquiry.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/first-run-status.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-connectors.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-source-intent.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/floating-chat-session-storage.test.ts": {
