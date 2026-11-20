@@ -181,11 +181,11 @@ export function normalizeGoogleCalendarEvent(
   if (!startAt || !endAt || !Number.isFinite(startAt.getTime()) || endAt <= startAt) {
     return { externalEventId: input.id, cancelled: true as const };
   }
-  const summary = input.summary?.trim().slice(0, 500);
+  const summary = input.summary?.trim();
   return {
     externalEventId: input.id,
     cancelled: false as const,
-    title: summary ? summary : 'Calendar event',
+    title: summary ? summary.slice(0, 500) : 'Calendar event',
     description: input.description?.slice(0, 20_000) ?? null,
     location: input.location?.slice(0, 2000) ?? null,
     startAt,

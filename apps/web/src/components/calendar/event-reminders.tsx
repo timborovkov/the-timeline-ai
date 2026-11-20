@@ -78,7 +78,7 @@ export function EventReminders({ eventId }: { eventId: string }) {
             >
               <option value="">Off</option>
               {LEAD_TIMES.map((lead) => (
-                <option key={lead} value={lead} disabled={Boolean(blocked) || preferences.started}>
+                <option key={lead} value={lead} disabled={blocked || preferences.started}>
                   {lead === 1440 ? '1 day before' : `${lead} minutes before`}
                 </option>
               ))}
