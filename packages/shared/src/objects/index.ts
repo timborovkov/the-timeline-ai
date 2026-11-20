@@ -4425,7 +4425,7 @@ export async function createObject(
   return txResult.object;
 }
 
-type PostCommitEffect = () => void;
+type PostCommitEffect = () => void | Promise<void>;
 
 interface ObjectMutationOptions {
   expectedUpdatedAt?: string | undefined;
@@ -5127,7 +5127,9 @@ export async function archiveSuggestionCreatedObjectIfUnadopted(
     return 'archived' as const;
   });
   if (runsOwnPostCommitEffects) {
-    for (const effect of postCommitEffects) await effect();
+    for (const effect of postCommitEffects) {
+      await Promise.resolve(effect());
+    }
   }
   return outcome;
 }

@@ -15,11 +15,60 @@ export const FIRST_RUN_PHASES = [
 ] as const;
 export type FirstRunPhase = (typeof FIRST_RUN_PHASES)[number];
 
-export const FIRST_RUN_PATHS = ['website', 'document', 'email', 'skip'] as const;
+export const FIRST_RUN_PATHS = [
+  'website',
+  'document',
+  'email',
+  'slack',
+  'telegram',
+  'skip',
+] as const;
 export const WEBSITE_SUBJECTS = ['own_team', 'other_company'] as const;
 export type WebsiteSubject = (typeof WEBSITE_SUBJECTS)[number];
 
 export type FirstRunPath = (typeof FIRST_RUN_PATHS)[number];
+
+/** Marketing/sign-up intent that can lead the first-run chooser. */
+export const ONBOARDING_SOURCE_INTENTS = ['slack', 'telegram'] as const;
+export type OnboardingSourceIntent = (typeof ONBOARDING_SOURCE_INTENTS)[number];
+
+export const CHOOSER_BASE_SOURCES = ['document', 'email', 'website'] as const;
+export type ChooserSourceId = OnboardingSourceIntent | (typeof CHOOSER_BASE_SOURCES)[number];
+
+export function parseOnboardingSourceIntent(value: unknown): OnboardingSourceIntent | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return ONBOARDING_SOURCE_INTENTS.find((intent) => intent === normalized) ?? null;
+}
+
+/**
+ * Order chooser tabs: preferred connector first (when available), then other
+ * live connectors, then Document / Email / Website.
+ */
+export function orderChooserSources(input: {
+  connectors: readonly OnboardingSourceIntent[];
+  preferred?: OnboardingSourceIntent | null;
+}): ChooserSourceId[] {
+  const seen = new Set<OnboardingSourceIntent>();
+  const connectors: OnboardingSourceIntent[] = [];
+  for (const connector of input.connectors) {
+    if (!ONBOARDING_SOURCE_INTENTS.includes(connector) || seen.has(connector)) continue;
+    seen.add(connector);
+    connectors.push(connector);
+  }
+  const preferred =
+    input.preferred && connectors.includes(input.preferred) ? input.preferred : null;
+  const rest = preferred ? connectors.filter((connector) => connector !== preferred) : connectors;
+  return preferred
+    ? [preferred, ...rest, ...CHOOSER_BASE_SOURCES]
+    : [...rest, ...CHOOSER_BASE_SOURCES];
+}
+
+export function isConnectorStarterPath(
+  path: FirstRunPath | null | undefined,
+): path is OnboardingSourceIntent {
+  return path === 'slack' || path === 'telegram';
+}
 
 export type FirstRunScanFailureReason =
   | 'no_readable_text'
@@ -184,7 +233,9 @@ export function firstCaptureJustLanded(
   if (
     after.starterPath === 'document' ||
     after.starterPath === 'email' ||
-    after.starterPath === 'website'
+    after.starterPath === 'website' ||
+    after.starterPath === 'slack' ||
+    after.starterPath === 'telegram'
   ) {
     return after.starterPath;
   }
@@ -205,6 +256,8 @@ export function shouldShowGettingStartedStrip(input: {
 function captureChecklistKey(path: FirstRunPath | null): string {
   if (path === 'document') return 'first_document';
   if (path === 'email') return 'email_forwarding';
+  if (path === 'slack') return 'slack';
+  if (path === 'telegram') return 'telegram';
   return 'first_note';
 }
 
@@ -212,6 +265,8 @@ function captureChecklistLabel(path: FirstRunPath | null): string {
   if (path === 'document') return 'Upload a document';
   if (path === 'email') return 'Forward email into the timeline';
   if (path === 'website') return 'Scan your website';
+  if (path === 'slack') return 'Connect a Slack channel';
+  if (path === 'telegram') return 'Link a Telegram group';
   return 'Capture one timeline event';
 }
 
@@ -232,6 +287,12 @@ export function prefilledAskQuestion(input: {
     }
     return 'What is this document about, and who does it name?';
   }
+  if (input.path === 'slack') {
+    return 'What was decided in this Slack channel, and who owns the next step?';
+  }
+  if (input.path === 'telegram') {
+    return 'What was decided in this Telegram chat, and who owns the next step?';
+  }
   return input.recordTitle
     ? `What should I know from ${input.recordTitle}?`
     : 'What should happen next?';
@@ -246,6 +307,12 @@ export function guidedAskEmptyHint(path: FirstRunPath | null): string {
   }
   if (path === 'document') {
     return 'We filled in a question your upload can answer. Edit it or send it as it is.';
+  }
+  if (path === 'slack') {
+    return 'We filled in a question this Slack channel can answer. Edit it or send it as it is.';
+  }
+  if (path === 'telegram') {
+    return 'We filled in a question this Telegram chat can answer. Edit it or send it as it is.';
   }
   return 'We filled in a question your capture can answer. Edit it or send it as it is.';
 }

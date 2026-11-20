@@ -18,7 +18,14 @@ export const firstRunPhase = pgEnum('first_run_phase', [
   'failed',
 ]);
 
-export const firstRunPath = pgEnum('first_run_path', ['website', 'document', 'email', 'skip']);
+export const firstRunPath = pgEnum('first_run_path', [
+  'website',
+  'document',
+  'email',
+  'slack',
+  'telegram',
+  'skip',
+]);
 
 export const firstRunScanFailureReason = pgEnum('first_run_scan_failure_reason', [
   'no_readable_text',

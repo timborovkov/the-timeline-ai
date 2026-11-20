@@ -9,6 +9,7 @@ import { AppPageTransition } from '@/components/app-page-transition';
 import { AppMainScrollRestoration } from '@/components/app-shell-scroll-restoration';
 import { ChatViewProvider } from '@/components/chat/chat-view-context';
 import { FloatingAgentChat } from '@/components/chat/floating-agent-chat';
+import { ClearPlanIntent } from '@/components/clear-plan-intent';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { GlobalSearchPalette } from '@/components/global-search-palette';
 import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
@@ -18,6 +19,7 @@ import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
 import type { NavBadgeMap } from '@/components/nav-items';
 import { GettingStartedStrip } from '@/components/onboarding/getting-started-strip';
+import { PlanIntentPrompt } from '@/components/plan-intent-prompt';
 import { SkipLink } from '@/components/skip-link';
 import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
 import type { RecipientInvite } from '@/components/team-switcher';
@@ -28,6 +30,7 @@ import { WorkNavigation } from '@/components/work-subnav';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import type { TeamMembership } from '@/lib/active-team';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
+import type { PaidSignupPlanId } from '@/lib/signup-plan';
 
 interface Props {
   active: TeamMembership;
@@ -45,6 +48,14 @@ interface Props {
   platformAdmin?: boolean;
   impersonation?: { email: string; teamName: string; readOnly: boolean; expiresAt: string } | null;
   gettingStarted?: { phase: FirstRunPhase; hidden: boolean } | null;
+  planIntent?: {
+    planId: PaidSignupPlanId;
+    title: string;
+    body: string;
+    ctaLabel: string;
+    href: string;
+  } | null;
+  clearPlanIntent?: boolean;
   children: ReactNode;
 }
 
@@ -72,6 +83,8 @@ export function AppShell({
   platformAdmin = false,
   impersonation = null,
   gettingStarted = null,
+  planIntent = null,
+  clearPlanIntent = false,
   children,
 }: Props) {
   return (
@@ -79,6 +92,7 @@ export function AppShell({
       <ChatViewProvider>
         <InspectorProvider>
           <AppDocumentScrollLock />
+          <ClearPlanIntent active={clearPlanIntent} />
           <SkipLink />
           <div className="dashboard-shell flex h-dvh w-full overflow-hidden bg-bg">
             {/* ── Left rail (desktop) ─────────────────────────────────── */}
@@ -154,6 +168,16 @@ export function AppShell({
                   />
                 </div>
               </header>
+              {planIntent ? (
+                <PlanIntentPrompt
+                  teamId={active.teamId}
+                  planId={planIntent.planId}
+                  title={planIntent.title}
+                  body={planIntent.body}
+                  ctaLabel={planIntent.ctaLabel}
+                  href={planIntent.href}
+                />
+              ) : null}
               {gettingStarted ? (
                 <GettingStartedStrip phase={gettingStarted.phase} hidden={gettingStarted.hidden} />
               ) : null}

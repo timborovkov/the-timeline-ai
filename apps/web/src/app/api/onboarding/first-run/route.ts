@@ -34,6 +34,9 @@ export async function GET() {
     if (before?.starterPath === 'email') {
       await scope.onboarding.detectEmailArrival();
     }
+    if (before?.starterPath === 'slack' || before?.starterPath === 'telegram') {
+      await scope.onboarding.detectConnectorArrival();
+    }
     const record = await scope.onboarding.getFirstRunRecord();
     const firstRun = record?.firstRun ?? (await scope.onboarding.getFirstRun());
     const landedPath = firstCaptureJustLanded(before, firstRun);

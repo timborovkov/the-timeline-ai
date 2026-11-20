@@ -6,6 +6,8 @@ import {
   documentProcessingSteps,
   firstCaptureJustLanded,
   orderChecklistItems,
+  orderChooserSources,
+  parseOnboardingSourceIntent,
   parsePublicWebsiteUrl,
   guidedAskEmptyHint,
   listedWebsiteSourceEvents,
@@ -141,6 +143,30 @@ describe('first-run helpers', () => {
     expect(firstCaptureJustLanded(processing, landed)).toBe('document');
     expect(firstCaptureJustLanded(landed, landed)).toBeNull();
     expect(firstCaptureJustLanded(processing, { ...landed, starterPath: 'skip' })).toBeNull();
+    expect(
+      firstCaptureJustLanded(
+        { firstCaptureLandedAt: null, starterPath: 'slack' },
+        { firstCaptureLandedAt: landed.firstCaptureLandedAt, starterPath: 'slack' },
+      ),
+    ).toBe('slack');
+  });
+
+  it('parses marketing source intent and orders chooser tabs', () => {
+    expect(parseOnboardingSourceIntent('slack')).toBe('slack');
+    expect(parseOnboardingSourceIntent('TELEGRAM')).toBe('telegram');
+    expect(parseOnboardingSourceIntent('email')).toBeNull();
+    expect(orderChooserSources({ connectors: ['slack', 'telegram'], preferred: 'slack' })).toEqual([
+      'slack',
+      'telegram',
+      'document',
+      'email',
+      'website',
+    ]);
+    expect(orderChooserSources({ connectors: [], preferred: 'telegram' })).toEqual([
+      'document',
+      'email',
+      'website',
+    ]);
   });
 
   it('only sends the starter back to setup for welcome and choose', () => {

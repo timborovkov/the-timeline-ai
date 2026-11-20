@@ -159,6 +159,16 @@ await vi.mock(
   () => import('@/lib/sentry-action'),
 );
 await vi.mock(
+  import.meta.resolve('@/lib/onboarding-source-intent'),
+  () => ({
+    clearOnboardingSourceIntent: vi.fn(() => Promise.resolve()),
+    parseOnboardingSourceIntent: (value: unknown) =>
+      value === 'slack' || value === 'telegram' ? value : null,
+    onboardingCallbackForSource: (intent: string) => `/onboarding?source=${intent}`,
+  }),
+  () => import('@/lib/onboarding-source-intent'),
+);
+await vi.mock(
   import.meta.resolve('@/lib/team-rename'),
   async () => ({
     ...(await import('@/lib/team-rename')),
