@@ -2,7 +2,7 @@ import { devices, expect, test, type Page } from '@playwright/test';
 
 import { newSignedInContext } from './helpers.js';
 
-const POSTHOG_ORIGIN = 'https://eu.i.posthog.com';
+const POSTHOG_URL = /^https:\/\/(?:m\.thetimeline\.cc|eu\.i\.posthog\.com)\//u;
 const POSTHOG_PERSISTENCE_KEY = 'ph_timeline_public_analytics_v1';
 const TIMELINE_CONSENT_COOKIE = 'tl_analytics_consent';
 const ATTRIBUTION_COOKIE = 'tl_public_attribution';
@@ -11,6 +11,36 @@ test.skip(
   !process.env.NEXT_PUBLIC_POSTHOG_KEY,
   'Run with NEXT_PUBLIC_POSTHOG_KEY=ph-e2e to exercise the consented browser bundle.',
 );
+
+test('keeps the focused Free plan action clear of the analytics banner at 320px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto('/pricing');
+
+  const banner = page.getByRole('complementary', { name: 'Optional public analytics' });
+  await expect(banner).toBeVisible();
+  await expect(banner).toHaveCSS('position', 'static');
+
+  const freePlan = page.locator('[data-pricing-plan="free"]').getByRole('link');
+  await expect(freePlan).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeFocused();
+
+  for (let i = 0; i < 20; i++) {
+    if (await freePlan.evaluate((link) => link.matches(':focus-visible'))) break;
+    await page.keyboard.press('Tab');
+  }
+
+  await expect(freePlan).toBeFocused();
+  await expect(freePlan).toBeInViewport({ ratio: 1 });
+  expect(
+    await freePlan.evaluate((link) => {
+      const { x, y, width, height } = link.getBoundingClientRect();
+      return link.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+    }),
+  ).toBe(true);
+});
 
 test('public PostHog stays absent until consent and is removed before private app use', async ({
   browser,
@@ -38,9 +68,9 @@ test('public PostHog stays absent until consent and is removed before private ap
   const page = await context.newPage();
   const providerRequests: string[] = [];
   page.on('request', (request) => {
-    if (request.url().startsWith(POSTHOG_ORIGIN)) providerRequests.push(request.url());
+    if (POSTHOG_URL.test(request.url())) providerRequests.push(request.url());
   });
-  await page.route(`${POSTHOG_ORIGIN}/**`, async (route) => {
+  await page.route(POSTHOG_URL, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 

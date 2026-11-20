@@ -17,6 +17,7 @@ import {
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { hashInviteToken } from '@/lib/invite-token';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -112,7 +113,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           .from(teamInvites)
           .where(
             and(
-              eq(teamInvites.token, token),
+              eq(teamInvites.tokenHash, hashInviteToken(token)),
               isNull(teamInvites.acceptedAt),
               isNull(teamInvites.revokedAt),
             ),

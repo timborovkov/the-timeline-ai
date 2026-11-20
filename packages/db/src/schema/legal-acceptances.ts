@@ -18,6 +18,8 @@ export const legalAcceptances = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     termsVersion: text('terms_version').notNull(),
     privacyVersion: text('privacy_version').notNull(),
+    termsContentHash: text('terms_content_hash'),
+    privacyContentHash: text('privacy_content_hash'),
     acceptedAt: timestamp('accepted_at', { mode: 'date', withTimezone: true }).notNull(),
     recordedAt: timestamp('recorded_at', { mode: 'date', withTimezone: true })
       .defaultNow()
@@ -30,6 +32,13 @@ export const legalAcceptances = pgTable(
     check(
       'legal_acceptances_source_chk',
       sql`${table.source} IN ('credentials_signup', 'legal_gate', 'legacy_snapshot')`,
+    ),
+    check(
+      'legal_acceptances_content_hashes_chk',
+      sql`(${table.termsContentHash} IS NULL AND ${table.privacyContentHash} IS NULL)
+        OR (${table.termsContentHash} IS NOT NULL AND ${table.privacyContentHash} IS NOT NULL
+          AND ${table.termsContentHash} ~ '^[a-f0-9]{64}$'
+          AND ${table.privacyContentHash} ~ '^[a-f0-9]{64}$')`,
     ),
     uniqueIndex('legal_acceptances_user_versions_unq').on(
       table.userId,

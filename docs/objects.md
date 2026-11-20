@@ -122,6 +122,14 @@ once earlier steps have confirmed outcomes. The new claim replaces the previous
 execution authorization, and resumed mutations still enforce their domain
 preconditions.
 
+### Project handoffs
+
+Start a fresh project-pinned Ask session and ask it to cite evidence from
+List events. You can save the cited answer as a dated handoff. The snapshot preserves the answer and source references alongside
+outstanding commitments and their owners at save time. Its stable link works
+for workspace members who can currently read the project, source material and
+commitments. The current project link opens the latest record.
+
 ### Direct chat workspace actions
 
 The web agent can create boards, rename/configure them (including lanes and membership settings), archive boards, restore archived objects, create/edit/delete notes, and add/remove relationships, alongside existing object, board-card and calendar mutations. Each direct canonical mutation requires in-chat approval and uses the same team-scoped domain services as the UI. Read-only and proposal-only agent surfaces do not receive these mutation tools. Incidental memory continues through proposals.

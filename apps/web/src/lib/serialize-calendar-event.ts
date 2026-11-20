@@ -42,6 +42,7 @@ export function serializeCalendarEvent(
     isException: boolean;
     metadata: Record<string, unknown>;
     redacted: boolean;
+    source?: string;
     visibility: CalendarEvent['visibility'];
     visibilityUserIds: string[] | null;
   },
@@ -64,6 +65,7 @@ export function serializeCalendarEvent(
     isException: event.isException,
     metadata: event.metadata,
     redacted: event.redacted,
+    ...(event.source === 'google' ? { readOnly: true } : {}),
     visibility: event.visibility,
     visibilityUserIds: event.visibilityUserIds,
     pinned,

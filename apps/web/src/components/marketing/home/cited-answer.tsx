@@ -31,7 +31,7 @@ export function CitedAnswer() {
         </div>
       </article>
 
-      <aside className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
+      <section className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
         <header className={styles.ledgerTitle}>
           <span id="receipt-ledger-title">Sources behind this answer</span>
           <span>5 sources</span>
@@ -50,7 +50,7 @@ export function CitedAnswer() {
             </li>
           ))}
         </ol>
-      </aside>
+      </section>
     </div>
   );
 }

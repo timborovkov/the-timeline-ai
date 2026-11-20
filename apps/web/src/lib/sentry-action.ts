@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nextjs';
 const PRE_ACCEPTANCE_ACTIONS = new Set([
   'accept_invite',
   'accept_legal',
+  'confirm_email_verification',
   'resend_email_verification',
   'sign_in',
   'request_password_reset',

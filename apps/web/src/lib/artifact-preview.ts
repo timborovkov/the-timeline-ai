@@ -1,0 +1,889 @@
+import {
+  entities,
+  entityRelationships,
+  factEntities,
+  facts,
+  objectChanges,
+  rawEvents,
+} from '@timeline/db';
+import {
+  artifactPreviewActionLabel,
+  attachArtifactPreviewActions,
+  citationQuote,
+  meetingDetailHref,
+  timelineEventFocusHref,
+  type ArtifactCitationCard,
+  type ArtifactKind,
+  type ArtifactPreview,
+  type ArtifactPreviewAction,
+  type ArtifactPreviewSection,
+  type ArtifactRef,
+} from '@timeline/shared/citation';
+import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
+import type { TeamScope } from '@timeline/shared/team-scope';
+import { localDateFromInstant, presentDueDate } from '@timeline/shared/time';
+import { timelineMomentLookupPlan } from '@timeline/shared/timeline-moments';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { z } from 'zod';
+
+import { getArtifactRoutePreview } from '@/lib/artifact-routes';
+import { citationAuthorHint, citationLogoSrc, citationSourceLabel } from '@/lib/citation-source';
+import { db } from '@/lib/db';
+import { hasSourceOriginal, sourceOriginalFromEvent } from '@/lib/source-original';
+
+const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const UUID_RE = new RegExp(`^${UUID_SOURCE}$`, 'i');
+const uuid = z.string().regex(UUID_RE);
+const routeId = z.string().regex(/^[a-z][a-z0-9_/-]{0,80}$/);
+
+export const artifactRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('timeline_event'), id: uuid }),
+  z.object({ kind: z.literal('object'), id: uuid }),
+  z.object({ kind: z.literal('object_note'), id: uuid }),
+  z.object({
+    kind: z.literal('document_chunk'),
+    id: uuid,
+    documentId: uuid,
+    version: z.number().int().min(0).max(100_000),
+    chunkId: uuid,
+  }),
+  z.object({ kind: z.literal('calendar_event'), id: uuid }),
+  z.object({ kind: z.literal('board'), id: uuid }),
+  z.object({ kind: z.literal('board_item'), id: uuid }),
+  z.object({ kind: z.literal('task'), id: uuid }),
+  z.object({ kind: z.literal('fact'), id: uuid }),
+  z.object({ kind: z.literal('relationship'), id: uuid }),
+  z.object({ kind: z.literal('object_change'), id: uuid }),
+  z.object({ kind: z.literal('route'), id: routeId }),
+]);
+
+function compact(value: string | null | undefined, max = 900): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+function citationCard(input: {
+  kind: ArtifactKind;
+  source?: string | null;
+  metadata?: Record<string, unknown>;
+  sourceLabel: string;
+  author?: string | null;
+  date?: Date | string | null;
+  quote?: string | null;
+}): ArtifactCitationCard {
+  const metadata = input.metadata ?? {};
+  return {
+    sourceKey: input.source ?? input.kind,
+    sourceLabel: citationSourceLabel({
+      kind: input.kind,
+      source: input.source,
+      metadata,
+      fallback: input.sourceLabel,
+    }),
+    logoSrc: citationLogoSrc({
+      kind: input.kind,
+      source: input.source,
+      metadata,
+    }),
+    author: input.author?.trim() ? input.author.trim() : citationAuthorHint(metadata),
+    dateLabel: dateLabel(input.date),
+    quote: citationQuote(input.quote),
+  };
+}
+
+function isoDate(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function dateLabel(value: Date | string | null | undefined): string | null {
+  const iso = isoDate(value);
+  if (!iso) return null;
+  return new Date(iso).toLocaleString('en', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function stringValue(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) return dateLabel(value);
+  if (typeof value === 'object') return JSON.stringify(value);
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return value.toString();
+  }
+  if (typeof value === 'symbol') return value.description ?? null;
+  return null;
+}
+
+function metadataObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function metadataText(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function uuidMeta(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadataText(metadata, key);
+  return value && UUID_RE.test(value) ? value : null;
+}
+
+function calendarEventFocusHref(id: string, startAt: Date | string, timezone: string): string {
+  const iso = startAt instanceof Date ? startAt.toISOString() : startAt;
+  return `/app/calendar?date=${localDateFromInstant(iso, timezone)}&view=day&event=${id}`;
+}
+
+function previewOriginal(
+  source: string,
+  contentText: string | null | undefined,
+  sourceMetadata: unknown,
+): ArtifactPreview['original'] {
+  const original = sourceOriginalFromEvent({ source, contentText, sourceMetadata });
+  return hasSourceOriginal(original) ? original : null;
+}
+
+function externalHref(metadata: Record<string, unknown>): string | null {
+  const github = metadataObject(metadata.github);
+  const url =
+    metadataText(metadata, 'external_url') ??
+    metadataText(github, 'url') ??
+    metadataText(metadata, 'url');
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
+function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    email: 'Email',
+    ingest_webhook: 'Webhook',
+    slack: 'Slack',
+    telegram: 'Telegram',
+  };
+  return (
+    labels[source] ??
+    source
+      .split('_')
+      .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+      .join(' ')
+  );
+}
+
+function conversationLabel(source: string, sourceMetadata: unknown): string | null {
+  const metadata = metadataObject(sourceMetadata);
+  if (source === 'telegram') return metadataText(metadata, 'tg_chat_title');
+  if (source === 'slack') {
+    return (
+      metadataText(metadata, 'slack_channel_name') ?? metadataText(metadata, 'slack_channel_id')
+    );
+  }
+  if (source === 'email') return metadataText(metadata, 'subject');
+  return null;
+}
+
+function senderLabel(
+  sender: { displayName: string | null; handle: string | null } | null | undefined,
+  resolved: { canonicalName: string } | null | undefined,
+): string | null {
+  const externalParts = [sender?.displayName, sender?.handle].filter(
+    (value, index, values): value is string =>
+      Boolean(value) && values.findIndex((candidate) => candidate === value) === index,
+  );
+  const external = externalParts.join(', ');
+  if (resolved?.canonicalName && external && resolved.canonicalName !== sender?.displayName) {
+    return `${resolved.canonicalName} (${external})`;
+  }
+  return resolved?.canonicalName ?? (external || null);
+}
+
+function badges(values: (string | null | undefined | false)[]): string[] {
+  return values.filter((value): value is string => typeof value === 'string' && value.length > 0);
+}
+
+function items(entries: [string, unknown][]): { label: string; value: string }[] {
+  return entries
+    .map(([label, value]) => {
+      const rendered = stringValue(value);
+      return rendered ? { label, value: rendered } : null;
+    })
+    .filter((entry): entry is { label: string; value: string } => entry !== null);
+}
+
+function dueLabel(value: Date | string | null | undefined, timezone: string): string {
+  const due = presentDueDate(value, { timezone });
+  if (due.status === 'invalid') return due.compactText;
+  return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
+}
+
+function schedulableObjectType(type: string): boolean {
+  return type === 'task' || type === 'follow_up' || type === 'project' || type === 'deal';
+}
+
+async function signedAudioUrl(key: string | null): Promise<string | null> {
+  if (!key) return null;
+  try {
+    const s3 = getS3PresignClient();
+    return await getSignedGetObjectUrl(s3, getAudioBucket(), key, 3600);
+  } catch {
+    return null;
+  }
+}
+
+async function timelineEventPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'timeline_event') return null;
+  const event = (await scope.timeline.getEventsByIds([ref.id]))[0];
+  if (!event) return null;
+  const [audioUrl, senderMap] = await Promise.all([
+    signedAudioUrl(event.contentAudioUrl),
+    scope.timeline.resolveEventSenders([event]),
+  ]);
+  const senderInfo = senderMap.get(event.id);
+  const sender = senderLabel(senderInfo?.sender, senderInfo?.resolvedSenderObject);
+  const conversation = conversationLabel(event.source, event.sourceMetadata);
+  const source = sourceLabel(event.source);
+  const metadata = metadataObject(event.sourceMetadata);
+  const meetingId = uuidMeta(metadata, 'meeting_id');
+  const calendarEventId = uuidMeta(metadata, 'calendar_event_id');
+  const documentId = uuidMeta(metadata, 'document_id') ?? uuidMeta(metadata, 'documentId');
+  const actions: ArtifactPreviewAction[] = [];
+  if (meetingId) {
+    actions.push({ href: meetingDetailHref(meetingId), label: 'Open transcript' });
+  }
+  if (documentId) {
+    actions.push({ href: `/app/documents/${documentId}`, label: 'Open in Documents' });
+  }
+  if (calendarEventId) {
+    const calendar = await scope.calendar.getCalendarEvent(calendarEventId);
+    actions.push({
+      href: calendar
+        ? calendarEventFocusHref(calendar.id, calendar.startAt, calendar.timezone)
+        : calendarEventFocusHref(calendarEventId, event.occurredAt, timezone),
+      label: 'Open calendar',
+    });
+  }
+  actions.push({ href: timelineEventFocusHref(event.id), label: 'Open on Timeline' });
+  const sourceUrl = externalHref(metadata);
+  if (sourceUrl) {
+    actions.push({ href: sourceUrl, label: 'Open source', external: true });
+  }
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: sender ? `${source} from ${sender}` : `${source} event`,
+      subtitle: [conversation, dateLabel(event.occurredAt)].filter(Boolean).join(' · '),
+      body: compact(event.contentText),
+      badges: [source],
+      media: audioUrl ? { kind: 'audio', url: audioUrl, label: 'Event audio' } : null,
+      original: previewOriginal(event.source, event.contentText, event.sourceMetadata),
+      card: citationCard({
+        kind: ref.kind,
+        source: event.source,
+        metadata,
+        sourceLabel: source,
+        author: sender ?? conversation ?? metadataText(metadata, 'title'),
+        date: event.occurredAt,
+        quote: event.contentText,
+      }),
+      sections: [
+        {
+          title: 'Metadata',
+          items: items([
+            ['Source', source],
+            ['Sender', sender],
+            ['Conversation', conversation],
+            ['Occurred', event.occurredAt],
+            ['Visibility', event.visibility],
+          ]),
+        },
+      ],
+    },
+    actions,
+  );
+}
+
+async function objectPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'object' && ref.kind !== 'task') return null;
+  const object = await scope.objects.getObject(ref.id);
+  if (!object) return null;
+  if (ref.kind === 'task' && object.type !== 'task' && object.type !== 'follow_up') return null;
+  const sections: ArtifactPreviewSection[] = [
+    {
+      title: 'Details',
+      items: items([
+        ['Type', object.type],
+        ['Status', object.status],
+        ['Stage', object.stage],
+        ['Priority', object.priority],
+        ...(schedulableObjectType(object.type)
+          ? ([['Due', dueLabel(object.dueAt, timezone)]] as [string, unknown][])
+          : []),
+        ['Aliases', object.aliases.join(', ')],
+      ]),
+    },
+  ];
+  if (object.notes.length > 0) {
+    sections.push({
+      title: 'Recent Notes',
+      items: object.notes.slice(0, 4).map((note) => ({
+        label: dateLabel(note.createdAt) ?? 'Note',
+        value: compact(note.body, 240) ?? '',
+      })),
+    });
+  }
+  if (object.openTasks.length > 0) {
+    sections.push({
+      title: 'Open Tasks',
+      items: object.openTasks.slice(0, 6).map((task) => ({
+        label: task.status,
+        value: `${task.canonicalName} · ${dueLabel(task.dueAt, timezone)}`,
+      })),
+    });
+  }
+  if (object.relationships.length > 0) {
+    sections.push({
+      title: 'Relationships',
+      items: object.relationships.slice(0, 6).map((relationship) => ({
+        label: relationship.kind,
+        value: relationship.otherName,
+      })),
+    });
+  }
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: object.canonicalName,
+      subtitle: `${object.type} · ${object.status}`,
+      body: compact(object.notes[0]?.body ?? null, 500),
+      badges: badges([object.type, object.status, object.stage]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: object.type,
+        author: object.canonicalName,
+        date: object.updatedAt,
+        quote: object.notes[0]?.body ?? object.status,
+      }),
+      sections,
+    },
+    [{ href: `/app/objects/${object.id}`, label: artifactPreviewActionLabel(ref.kind) }],
+  );
+}
+
+async function notePreview(scope: TeamScope, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'object_note') return null;
+  const note = await scope.objects.getObjectNotePreview(ref.id);
+  if (!note) return null;
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: `Note on ${note.object.canonicalName}`,
+      subtitle: `${note.object.type} · ${dateLabel(note.createdAt) ?? 'object note'}`,
+      body: compact(note.body),
+      badges: ['note', note.object.type],
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Note',
+        author: note.object.canonicalName,
+        date: note.createdAt,
+        quote: note.body,
+      }),
+      sections: [
+        {
+          title: 'Object',
+          items: items([
+            ['Name', note.object.canonicalName],
+            ['Status', note.object.status],
+            ['Updated', note.updatedAt],
+          ]),
+        },
+      ],
+    },
+    [{ href: `/app/objects/${note.object.id}`, label: 'Open object' }],
+  );
+}
+
+async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'fact') return null;
+  const rows = await db
+    .select({
+      fact: facts,
+      rawEventId: rawEvents.id,
+      source: rawEvents.source,
+      occurredAt: rawEvents.occurredAt,
+      contentText: rawEvents.contentText,
+      sourceMetadata: rawEvents.sourceMetadata,
+      entityId: entities.id,
+      entityName: entities.canonicalName,
+      entityType: entities.type,
+    })
+    .from(facts)
+    .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
+    .leftJoin(factEntities, eq(factEntities.factId, facts.id))
+    .leftJoin(entities, and(eq(entities.id, factEntities.entityId), eq(entities.teamId, teamId)))
+    .where(
+      and(
+        eq(facts.id, ref.id),
+        eq(facts.teamId, teamId),
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.visibility, 'team'),
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+      ),
+    )
+    .orderBy(
+      sql`CASE ${factEntities.role} WHEN 'subject' THEN 0 WHEN 'object' THEN 1 ELSE 2 END`,
+      entities.canonicalName,
+      entities.id,
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: 'Fact',
+      subtitle: [row.entityName, row.source, dateLabel(row.occurredAt)].filter(Boolean).join(' · '),
+      body: row.fact.statement,
+      badges: badges(['fact', row.entityType, `confidence ${row.fact.confidence.toFixed(2)}`]),
+      card: citationCard({
+        kind: ref.kind,
+        source: row.source,
+        metadata: metadataObject(row.sourceMetadata),
+        sourceLabel: sourceLabel(row.source),
+        author: row.entityName,
+        date: row.occurredAt,
+        quote: row.fact.statement,
+      }),
+      original: previewOriginal(row.source, row.contentText, row.sourceMetadata),
+      sections: [
+        {
+          title: 'Source',
+          items: items([
+            ['Object', row.entityName],
+            ['Source', row.source],
+            ['Occurred', row.occurredAt],
+            ['Extracted', row.fact.extractedAt],
+          ]),
+        },
+        ...(row.contentText
+          ? [
+              {
+                title: 'Event Text',
+                body: compact(row.contentText, 700),
+              },
+            ]
+          : []),
+      ],
+    },
+    [{ href: timelineEventFocusHref(row.rawEventId), label: 'Open on Timeline' }],
+  );
+}
+
+async function relationshipPreview(
+  teamId: string,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'relationship') return null;
+  const rows = await db
+    .select()
+    .from(entityRelationships)
+    .where(and(eq(entityRelationships.id, ref.id), eq(entityRelationships.teamId, teamId)))
+    .limit(1);
+  const relationship = rows[0];
+  if (!relationship) return null;
+  const objectRows = await db
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      type: entities.type,
+      status: entities.status,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        inArray(entities.id, [relationship.fromEntityId, relationship.toEntityId]),
+        isNull(entities.mergedIntoId),
+      ),
+    );
+  const from = objectRows.find((object) => object.id === relationship.fromEntityId);
+  const to = objectRows.find((object) => object.id === relationship.toEntityId);
+  if (!from || !to) return null;
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: 'Relationship',
+      subtitle: `${from.canonicalName} -> ${to.canonicalName}`,
+      body: `${from.canonicalName} is linked to ${to.canonicalName} as ${relationship.kind}.`,
+      badges: ['relationship', relationship.kind],
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Relationship',
+        author: from.canonicalName,
+        date: relationship.createdAt,
+        quote: `${from.canonicalName} is linked to ${to.canonicalName} as ${relationship.kind}.`,
+      }),
+      sections: [
+        {
+          title: 'Endpoints',
+          items: [
+            { label: 'From', value: `${from.canonicalName} (${from.type} · ${from.status})` },
+            { label: 'To', value: `${to.canonicalName} (${to.type} · ${to.status})` },
+            {
+              label: 'Created',
+              value: dateLabel(relationship.createdAt) ?? relationship.createdAt.toISOString(),
+            },
+          ],
+        },
+      ],
+    },
+    [{ href: `/app/objects/${from.id}`, label: 'Open object' }],
+  );
+}
+
+async function objectChangePreview(
+  teamId: string,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'object_change') return null;
+  const rows = await db
+    .select({
+      change: objectChanges,
+      objectName: entities.canonicalName,
+      objectType: entities.type,
+    })
+    .from(objectChanges)
+    .innerJoin(entities, eq(entities.id, objectChanges.entityId))
+    .where(
+      and(
+        eq(objectChanges.id, ref.id),
+        eq(objectChanges.teamId, teamId),
+        eq(entities.teamId, teamId),
+        isNull(objectChanges.sourceEventId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const body =
+    row.change.note ??
+    `${row.change.field}: ${stringValue(row.change.previousValue) ?? 'empty'} -> ${
+      stringValue(row.change.newValue) ?? 'empty'
+    }`;
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: 'Object Change',
+      subtitle: `${row.objectName} · ${dateLabel(row.change.changedAt) ?? 'change'}`,
+      body,
+      badges: badges(['change', row.objectType, row.change.status]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Change',
+        author: row.objectName,
+        date: row.change.changedAt,
+        quote: body,
+      }),
+      sections: [
+        {
+          title: 'Change',
+          items: items([
+            ['Object', row.objectName],
+            ['Field', row.change.field],
+            ['Status', row.change.status],
+            ['Changed', row.change.changedAt],
+          ]),
+        },
+      ],
+    },
+    [{ href: `/app/objects/${row.change.entityId}`, label: 'Open object' }],
+  );
+}
+
+async function documentChunkPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'document_chunk') return null;
+  if (ref.id !== ref.chunkId) return null;
+  const [document, currentChunk, versions] = await Promise.all([
+    scope.documents.getDocument(ref.documentId),
+    scope.documents.getDocumentChunk(ref.chunkId),
+    scope.documents.listDocumentVersions(ref.documentId),
+  ]);
+  const version = versions.find((entry) => entry.version === ref.version);
+  const chunk =
+    currentChunk ??
+    (document && version
+      ? await scope.documents.getHistoricalDocumentChunk(document.id, version.id, ref.chunkId)
+      : null);
+  if (
+    !document ||
+    !chunk ||
+    !version ||
+    chunk.documentId !== document.id ||
+    chunk.documentVersionId !== version.id
+  ) {
+    return null;
+  }
+  const href = currentChunk
+    ? `/app/documents/${document.id}?version=${String(ref.version)}#chunk-${chunk.id}`
+    : `/app/documents/captured/${document.id}/extraction?version=${version.id}&chunk=${chunk.id}`;
+  const actions: ArtifactPreviewAction[] = [{ href, label: 'Open in Documents' }];
+  if (document.sourceRawEventId) {
+    actions.push({
+      href: timelineEventFocusHref(document.sourceRawEventId),
+      label: 'Open on Timeline',
+    });
+  }
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: document.name,
+      subtitle: `Document · v${String(ref.version)} · chunk ${String(chunk.chunkIndex + 1)}`,
+      body: compact(chunk.text),
+      badges: badges([
+        document.fileKind,
+        chunk.representationKind,
+        chunk.pageNumber ? `p.${String(chunk.pageNumber)}` : null,
+      ]),
+      card: citationCard({
+        kind: ref.kind,
+        source: 'document',
+        metadata: metadataObject(document.metadata),
+        sourceLabel: 'Document',
+        author: document.name,
+        date: chunk.createdAt,
+        quote: chunk.summary ?? chunk.text,
+      }),
+      sections: [
+        {
+          title: 'Chunk',
+          items: items([
+            ['Summary', chunk.summary],
+            ['Page', chunk.pageNumber],
+            ['Tokens', chunk.tokenCount],
+            ['Created', chunk.createdAt],
+          ]),
+        },
+      ],
+    },
+    actions,
+  );
+}
+
+async function calendarEventPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'calendar_event') return null;
+  const event = await scope.calendar.getCalendarEvent(ref.id);
+  if (!event || event.redacted) return null;
+  const href = calendarEventFocusHref(event.id, event.startAt, event.timezone);
+  const plan = timelineMomentLookupPlan(`moment:calendar:${event.id}`);
+  const related = plan ? await scope.timeline.listEventsForMomentLookup(plan) : [];
+  const rawEvent = related[0];
+  const actions: ArtifactPreviewAction[] = [{ href, label: 'Open calendar' }];
+  if (rawEvent?.id) {
+    actions.push({ href: timelineEventFocusHref(rawEvent.id), label: 'Open on Timeline' });
+  }
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: event.title,
+      subtitle: [dateLabel(event.startAt), event.timezone].filter(Boolean).join(' · '),
+      body: compact(event.description),
+      badges: badges([
+        event.showAs,
+        event.allDay ? 'all-day' : null,
+        event.rrule ? 'recurring' : null,
+      ]),
+      card: citationCard({
+        kind: ref.kind,
+        source: 'calendar',
+        metadata: rawEvent ? metadataObject(rawEvent.sourceMetadata) : {},
+        sourceLabel: 'Calendar',
+        author: event.title,
+        date: event.startAt,
+        quote: event.description ?? event.location,
+      }),
+      original: rawEvent
+        ? previewOriginal(rawEvent.source, rawEvent.contentText, rawEvent.sourceMetadata)
+        : null,
+      sections: [
+        {
+          title: 'Calendar',
+          items: items([
+            ['Start', event.startAt],
+            ['End', event.endAt],
+            ['Location', event.location],
+            ['Visibility', event.visibility],
+          ]),
+        },
+      ],
+    },
+    actions,
+  );
+}
+
+async function boardPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'board') return null;
+  const board = await scope.boards.getBoard(ref.id, { itemLimit: 12 });
+  if (!board) return null;
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: board.name,
+      subtitle: `${board.templateKind} · ${String(board.itemCount)} items`,
+      body: compact(board.purpose),
+      badges: badges([
+        board.templateKind,
+        board.pinned ? 'pinned' : null,
+        board.isShared ? 'shared' : null,
+      ]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Board',
+        author: board.name,
+        quote: board.purpose,
+      }),
+      sections: [
+        {
+          title: 'Lanes',
+          items: board.lanes.slice(0, 8).map((lane) => ({
+            label: lane.kind ?? 'lane',
+            value: lane.name,
+          })),
+        },
+        {
+          title: 'Items',
+          items: board.items.slice(0, 8).map((item) => ({
+            label: item.object.type,
+            value: `${item.object.canonicalName} · ${dueLabel(item.dueAt, timezone)}`,
+          })),
+        },
+      ],
+    },
+    [{ href: `/app/boards/${board.id}`, label: 'Open board' }],
+  );
+}
+
+async function boardItemPreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
+  if (ref.kind !== 'board_item') return null;
+  const item = await scope.boards.getBoardItem(ref.id);
+  if (!item) return null;
+  const board = await scope.boards.getBoard(item.boardId, { itemLimit: 0 });
+  if (!board) return null;
+  const lane = board.lanes.find((entry) => entry.id === item.laneId);
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: item.object.canonicalName,
+      subtitle: `${board.name}${lane ? ` · ${lane.name}` : ''}`,
+      body: compact(item.notes?.trim() ? item.notes : item.nextStep),
+      badges: badges([
+        item.object.type,
+        item.object.status,
+        item.priority ? `P${String(item.priority)}` : null,
+      ]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Board item',
+        author: item.object.canonicalName,
+        date: item.dueAt ?? item.updatedAt,
+        quote: item.notes?.trim() ? item.notes : item.nextStep,
+      }),
+      sections: [
+        {
+          title: 'Board Item',
+          items: items([
+            ['Board', board.name],
+            ['Lane', lane?.name],
+            ['Next step', item.nextStep],
+            ['Due', dueLabel(item.dueAt, timezone)],
+            ['Responsible', item.responsibleUserId],
+          ]),
+        },
+      ],
+    },
+    [{ href: `/app/boards/${item.boardId}?item=${item.id}`, label: 'Open board item' }],
+  );
+}
+
+function routePreview(ref: ArtifactRef): ArtifactPreview | null {
+  if (ref.kind !== 'route') return null;
+  const route = getArtifactRoutePreview(ref.id);
+  if (!route) return null;
+  return attachArtifactPreviewActions(
+    {
+      ref,
+      title: route.title,
+      subtitle: route.group === 'help' ? 'Usage guide' : 'Dashboard route',
+      body: route.description,
+      badges: [route.group],
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: route.group === 'help' ? 'Help' : 'Page',
+        author: route.title,
+        quote: route.description,
+      }),
+    },
+    [{ href: route.href, label: 'Open page' }],
+  );
+}
+
+export async function hydrateArtifactPreview(
+  scope: TeamScope,
+  teamId: string,
+  ref: ArtifactRef,
+  timezone: string,
+): Promise<ArtifactPreview | null> {
+  switch (ref.kind) {
+    case 'timeline_event':
+      return timelineEventPreview(scope, ref, timezone);
+    case 'object':
+    case 'task':
+      return objectPreview(scope, ref, timezone);
+    case 'object_note':
+      return notePreview(scope, ref);
+    case 'fact':
+      return factPreview(teamId, ref);
+    case 'relationship':
+      return relationshipPreview(teamId, ref);
+    case 'object_change':
+      return objectChangePreview(teamId, ref);
+    case 'document_chunk':
+      return documentChunkPreview(scope, ref);
+    case 'calendar_event':
+      return calendarEventPreview(scope, ref);
+    case 'board':
+      return boardPreview(scope, ref, timezone);
+    case 'board_item':
+      return boardItemPreview(scope, ref, timezone);
+    case 'route':
+      return routePreview(ref);
+  }
+}

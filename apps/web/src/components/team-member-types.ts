@@ -13,7 +13,6 @@ export interface TeamInviteRow {
   id: string;
   email: string;
   role: string;
-  token: string;
   expiresAt: Date;
   lastSentAt: Date | null;
   sendStatus: string;

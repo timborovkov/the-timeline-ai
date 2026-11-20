@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
+import { VISION_BUDGET_DEFERRED } from '#src/billing/vision-budget.js';
 import { getEnv } from '#src/env.js';
 import {
   compactDrivePermissionGrants,
@@ -743,7 +744,13 @@ async function loadDriveText(
       return { text: existing.text, consumeReadyExtract: true };
     }
     if (existing?.status === 'failed' && revisionMatches) {
-      return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
+      // OCR budget deferrals are recoverable once the monthly budget resets;
+      // clear the terminal marker and fall through to re-download + enqueue.
+      if (existing.error === VISION_BUDGET_DEFERRED) {
+        await discardTransientDriveExtract(ctx, file.id);
+      } else {
+        return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
+      }
     } else if (existing?.status === 'pending' && revisionMatches) {
       return {
         text: '',

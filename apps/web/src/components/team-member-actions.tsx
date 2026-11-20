@@ -2,7 +2,7 @@
 
 import { RotateCw, UserMinus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useRef, type SyntheticEvent } from 'react';
+import { useActionState, useRef, type SyntheticEvent } from 'react';
 
 import {
   changeMemberRoleAction,
@@ -11,6 +11,7 @@ import {
   revokeInviteAction,
   type TeamMutationResult,
 } from '@/app/actions/teams';
+import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -160,22 +161,30 @@ export function PendingInviteActions({
   inviteId: string;
 }) {
   const router = useRouter();
+  const [inviteUrl, resend, pending] = useActionState(
+    async (_previous: string | null, formData: FormData) => {
+      const result = await notifyAction({
+        id: `invite:resend:${inviteId}`,
+        loading: 'Resending invite…',
+        success: 'Fresh invite link ready',
+        error: 'Couldn’t resend invite',
+        run: () => resendInviteAction(formData),
+      });
+      if (result.error) return null;
+      router.refresh();
+      return 'inviteUrl' in result ? (result.inviteUrl ?? null) : null;
+    },
+    null,
+  );
+
   return (
     <ItemActionGroup label={`Actions for invite to ${inviteEmail}`}>
-      <form
-        action={async (formData) => {
-          const result = await notifyAction({
-            id: `invite:resend:${inviteId}`,
-            loading: 'Resending invite…',
-            success: 'Invite resent',
-            error: 'Couldn’t resend invite',
-            run: () => runTeamMutation(resendInviteAction, formData),
-          });
-          if (!result.error) router.refresh();
-        }}
-      >
+      {inviteUrl && !pending ? (
+        <CopyButton appearance="icon" label="Copy fresh invite link" value={inviteUrl} />
+      ) : null}
+      <form action={resend}>
         <input type="hidden" name="inviteId" value={inviteId} />
-        <ItemIconButton type="submit" label="Resend invite">
+        <ItemIconButton type="submit" label="Resend invite" disabled={pending}>
           <RotateCw />
         </ItemIconButton>
       </form>

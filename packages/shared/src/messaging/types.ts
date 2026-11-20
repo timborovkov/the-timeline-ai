@@ -1,3 +1,4 @@
+import type { SavedWorkViewChange } from '@timeline/db';
 import type { dailyDigests, messageDeliveries } from '@timeline/db';
 
 export type MessageIntent =
@@ -84,6 +85,7 @@ export type DailyDigestSectionTitle =
   | 'Decisions'
   | 'Risks'
   | 'Follow-ups'
+  | 'Saved views'
   /** @deprecated Stored on older payloads; renderers remap this to Status. */
   | 'Product status';
 
@@ -138,6 +140,8 @@ export interface DailyDigestPayload {
   windowEnd: string;
   summary: string;
   sections?: DailyDigestSection[];
+  savedViewChanges?: SavedWorkViewChange[];
+  savedViewsOnly?: boolean;
   pendingApprovals: number;
   eventCount: number;
   momentCount?: number;

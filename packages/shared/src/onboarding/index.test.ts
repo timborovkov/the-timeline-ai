@@ -173,7 +173,7 @@ describe('onboarding checklist scope', () => {
       VALUES (
         '${OTHER_TEAM_ID}',
         'new@example.test',
-        'invite-token',
+        encode(sha256(convert_to('invite-token', 'UTF8')), 'hex'),
         '${OWNER_ID}',
         now() + interval '7 days'
       );
@@ -190,7 +190,7 @@ describe('onboarding checklist scope', () => {
       VALUES (
         '${OTHER_TEAM_ID}',
         'stale@example.test',
-        'expired-invite-token',
+        encode(sha256(convert_to('expired-invite-token', 'UTF8')), 'hex'),
         '${OWNER_ID}',
         now() - interval '1 day'
       );

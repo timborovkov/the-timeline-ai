@@ -16,6 +16,7 @@ import {
   closeBoardQualificationQueue,
   scheduleBoardQualification,
 } from '#src/workers/boardQualification.js';
+import { startGoogleCalendarWorker } from '#src/workers/calendarMaintenance.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
 import { startChatDeliveryWorker } from '#src/workers/chatDelivery.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
@@ -142,7 +143,13 @@ async function main(): Promise<void> {
       name: queue.QUEUE_NAMES.calendarRecurrence,
       start: () => startCalendarRecurrenceWorker({ db }),
       closeQueue: queue.closeCalendarRecurrenceQueue,
-      schedule: queue.scheduleCalendarRecurrenceMaterialization,
+      schedule: queue.scheduleCalendarJobs,
+    },
+    {
+      name: queue.QUEUE_NAMES.googleCalendar,
+      start: () => startGoogleCalendarWorker({ db }),
+      closeQueue: queue.closeGoogleCalendarQueue,
+      schedule: queue.scheduleGoogleCalendarImports,
     },
     {
       name: queue.QUEUE_NAMES.chatDelivery,

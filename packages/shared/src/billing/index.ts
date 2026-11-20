@@ -22,3 +22,5 @@ export * from '#src/billing/customer-identity.js';
 export * from '#src/billing/polar-identity-api.js';
 
 export * from '#src/billing/presentation.js';
+
+export { VISION_BUDGET_DEFERRED, VisionBudgetDeferredError } from '#src/billing/vision-budget.js';
