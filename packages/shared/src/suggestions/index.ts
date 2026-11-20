@@ -3910,6 +3910,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         id: calendarEvents.id,
         teamId: calendarEvents.teamId,
         deletedAt: calendarEvents.deletedAt,
+        source: calendarEvents.source,
       })
       .from(calendarEvents)
       .where(eq(calendarEvents.id, calendarEventId))
@@ -3917,6 +3918,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!row) return null;
     if (row.teamId !== teamId) return null;
     if (row.deletedAt) return 'The target calendar event was deleted.';
+    if (row.source !== 'internal') {
+      return 'Imported calendar events are read-only. Change them in the source calendar instead.';
+    }
     return null;
   }
 
@@ -6013,16 +6017,26 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
         };
       }
-      await calendar.updateCalendarEvent(targetId, patch);
-      return targetId;
+      const updated = await calendar.updateCalendarEvent(targetId, patch);
+      if (!updated) {
+        throw new Error(
+          'Imported calendar events are read-only. Change them in the source calendar instead.',
+        );
+      }
+      return updated.id;
     }
     const parsed = calendarUpdatePayload.parse(
       normalizeCalendarPayload(item, { fallbackTitle: false }),
     );
-    await calendar.deleteCalendarEvent(
+    const deleted = await calendar.deleteCalendarEvent(
       targetId,
       parsed.recurrenceEditMode ? { recurrenceEditMode: parsed.recurrenceEditMode } : {},
     );
+    if (!deleted) {
+      throw new Error(
+        'Imported calendar events are read-only. Change them in the source calendar instead.',
+      );
+    }
     return targetId;
   }
 

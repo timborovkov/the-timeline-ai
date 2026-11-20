@@ -72,8 +72,10 @@ Subscription feeds include team events, the subscriber's private event details, 
 A member can connect Google Calendar and select one calendar for the active
 workspace. The read-only connection uses Google's Calendar List and Events
 scopes. The importer sees the event details. Teammates see the existing
-redacted busy blocks. Imported events open read-only in Calendar and use the
-same private visibility rules in outbound subscriptions.
+redacted busy blocks. Imported events open read-only in Calendar; chat and
+approval proposals reject update or cancel mutations against them, and the
+source calendar remains the place to change those events. They use the same
+private visibility rules in outbound subscriptions.
 
 Calendar shows the selected calendar, the last successful sync, and connection
 recovery. The worker polls every 15 minutes, applies cancellations, and

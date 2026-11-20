@@ -12,9 +12,13 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
+type TeamScope = ReturnType<typeof withTeam>;
+type ExtractionHistory = Awaited<ReturnType<TeamScope['documents']['listExtractionCorrections']>>;
+type CapturedFile = { id: string; name: string; currentVersionId: string };
+
 async function renderPreviousExtraction(
-  scope: ReturnType<typeof withTeam>,
-  file: { id: string; name: string },
+  scope: TeamScope,
+  file: CapturedFile,
   versionId?: string,
   chunkId?: string,
 ) {
@@ -38,6 +42,51 @@ async function renderPreviousExtraction(
   );
 }
 
+function canStartExtraction(
+  deferred: boolean,
+  latest: ExtractionHistory[number] | undefined,
+  staleExtracting: boolean,
+) {
+  if (deferred || staleExtracting || !latest) return true;
+  return latest.status === 'deferred' || ['applied', 'failed', 'pending'].includes(latest.status);
+}
+
+async function renderCurrentExtraction(scope: TeamScope, file: CapturedFile) {
+  const [version, history] = await Promise.all([
+    scope.documents.getDocumentVersion(file.currentVersionId),
+    scope.documents.listExtractionCorrections(file.id),
+  ]);
+  if (!version) notFound();
+  const deferred = version.processingError === VISION_BUDGET_DEFERRED;
+  const latest = history[0];
+  const staleExtracting = Boolean(latest && isStaleExtractionAttempt(latest));
+  return (
+    <div className="space-y-5">
+      <Link className="text-sm underline" href="/app/documents/captured">
+        Captured files
+      </Link>
+      <PageHeader title={file.name} subtitle="Extraction history" />
+      {deferred ? (
+        <p className="text-sm text-fg-muted">
+          Deferred by OCR budget. The original file remains available.
+        </p>
+      ) : null}
+      {staleExtracting ? (
+        <p className="text-sm text-fg-muted">
+          The previous extraction attempt stalled. You can retry it.
+        </p>
+      ) : null}
+      {canStartExtraction(deferred, latest, staleExtracting) ? (
+        <FileExtractionAction id={file.id} resume={deferred} />
+      ) : null}
+      {!history.length ? (
+        <p className="text-sm text-fg-muted">No second extraction has been requested.</p>
+      ) : null}
+      <ExtractionAttempts history={history} id={file.id} />
+    </div>
+  );
+}
+
 export default async function FileExtractionPage({
   params,
   searchParams,
@@ -57,57 +106,18 @@ export default async function FileExtractionPage({
   const scope = withTeam(db, active.teamId, session.user.id);
   const file = await scope.documents.getDocument(id);
   if (!file?.currentVersionId) notFound();
+  const current = {
+    id: file.id,
+    name: file.name,
+    currentVersionId: file.currentVersionId,
+  };
   if (citedVersionId || citedChunkId) {
-    return renderPreviousExtraction(scope, file, citedVersionId, citedChunkId);
+    return renderPreviousExtraction(scope, current, citedVersionId, citedChunkId);
   }
-  const [version, history] = await Promise.all([
-    scope.documents.getDocumentVersion(file.currentVersionId),
-    scope.documents.listExtractionCorrections(id),
-  ]);
-  if (!version) notFound();
-  const deferred = version.processingError === VISION_BUDGET_DEFERRED;
-  const latest = history[0];
-  const staleExtracting = latest ? isStaleExtractionAttempt(latest) : false;
-  return (
-    <div className="space-y-5">
-      <Link className="text-sm underline" href="/app/documents/captured">
-        Captured files
-      </Link>
-      <PageHeader title={file.name} subtitle="Extraction history" />
-      {deferred ? (
-        <p className="text-sm text-fg-muted">
-          Deferred by OCR budget. The original file remains available.
-        </p>
-      ) : null}
-      {staleExtracting ? (
-        <p className="text-sm text-fg-muted">
-          The previous extraction attempt stalled. You can retry it.
-        </p>
-      ) : null}
-      {deferred ||
-      latest?.status === 'deferred' ||
-      staleExtracting ||
-      !latest ||
-      ['applied', 'failed', 'pending'].includes(latest.status) ? (
-        <FileExtractionAction id={id} resume={deferred} />
-      ) : null}
-      {!history.length ? (
-        <p className="text-sm text-fg-muted">No second extraction has been requested.</p>
-      ) : null}
-      <ExtractionAttempts history={history} id={id} />
-    </div>
-  );
+  return renderCurrentExtraction(scope, current);
 }
 
-function ExtractionAttempts({
-  history,
-  id,
-}: {
-  history: Awaited<
-    ReturnType<ReturnType<typeof withTeam>['documents']['listExtractionCorrections']>
-  >;
-  id: string;
-}) {
+function ExtractionAttempts({ history, id }: { history: ExtractionHistory; id: string }) {
   return (
     <>
       {history.map((attempt) => (
@@ -116,7 +126,7 @@ function ExtractionAttempts({
             {attempt.status === 'deferred' ? 'Deferred by OCR budget' : attempt.status}
           </h2>
           <RelativeTimestamp value={attempt.createdAt} />
-          {attempt.representations?.map((representation) => (
+          {attempt.nxt?.map((representation) => (
             <details key={representation.kind} className="space-y-2 text-sm">
               <summary>{representation.kind.replaceAll('_', ' ')}</summary>
               <p className="max-h-80 overflow-auto whitespace-pre-wrap">{representation.text}</p>

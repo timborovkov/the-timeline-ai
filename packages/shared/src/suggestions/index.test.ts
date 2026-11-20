@@ -51,7 +51,7 @@ const {
   reconciliationOutputs,
   users,
 } = await import('@timeline/db');
-const { asc, eq, or, sql } = await import('drizzle-orm');
+const { asc, eq, inArray, or, sql } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
 const { calendarEventMutationLockKey } = await import('#src/calendar/locking.js');
 const { resetEnvForTests } = await import('#src/env.js');
@@ -12618,6 +12618,107 @@ describe('suggestion scope', () => {
       `SELECT deleted_at FROM calendar_events WHERE id = '${event.id}'`,
     );
     expect(result.rows[0]?.deleted_at).toBeInstanceOf(Date);
+  });
+
+  it('supersedes imported calendar update and cancel proposals without mutating them', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const updateEvent = await scope.calendar.createCalendarEvent({
+      title: 'Imported standup',
+      startAt: new Date('2026-06-03T10:00:00.000Z'),
+      endAt: new Date('2026-06-03T10:30:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      visibility: 'team',
+    });
+    const cancelEvent = await scope.calendar.createCalendarEvent({
+      title: 'Imported sync',
+      startAt: new Date('2026-06-03T11:00:00.000Z'),
+      endAt: new Date('2026-06-03T11:30:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      visibility: 'team',
+    });
+    await pg.exec(
+      `UPDATE calendar_events
+       SET source = 'google'::calendar_event_source
+       WHERE id IN ('${updateEvent.id}', '${cancelEvent.id}')`,
+    );
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Rename imported standup',
+      dedupeKey: 'imported-calendar-update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: updateEvent.id,
+          title: 'Rename imported standup',
+          dedupeKey: 'imported-calendar-update:item',
+          proposedPayload: { title: 'Should not apply' },
+        },
+      ],
+    });
+    const cancelBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Cancel imported sync',
+      dedupeKey: 'imported-calendar-cancel',
+      items: [
+        {
+          operation: 'archive_or_cancel',
+          targetKind: 'calendar_event',
+          targetId: cancelEvent.id,
+          title: 'Cancel imported sync',
+          dedupeKey: 'imported-calendar-cancel:item',
+          proposedPayload: {},
+        },
+      ],
+    });
+    const updateItemId = updateBundle.items[0]?.id;
+    const cancelItemId = cancelBundle.items[0]?.id;
+    expect(updateItemId).toBeDefined();
+    expect(cancelItemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(updateItemId ?? '')).resolves.toBe(true);
+    await expect(scope.suggestions.acceptSuggestionItem(cancelItemId ?? '')).resolves.toBe(true);
+
+    const items = await db
+      .select({
+        id: agentSuggestionItems.id,
+        status: agentSuggestionItems.status,
+        supersededReason: agentSuggestionItems.supersededReason,
+        resultId: agentSuggestionItems.resultId,
+      })
+      .from(agentSuggestionItems)
+      .where(inArray(agentSuggestionItems.id, [updateItemId ?? '', cancelItemId ?? '']));
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: updateItemId,
+          status: 'superseded',
+          supersededReason:
+            'Imported calendar events are read-only. Change them in the source calendar instead.',
+          resultId: null,
+        }),
+        expect.objectContaining({
+          id: cancelItemId,
+          status: 'superseded',
+          supersededReason:
+            'Imported calendar events are read-only. Change them in the source calendar instead.',
+          resultId: null,
+        }),
+      ]),
+    );
+
+    const rows = await pg.query<{ title: string; deleted_at: Date | null }>(
+      `SELECT title, deleted_at
+       FROM calendar_events
+       WHERE id IN ('${updateEvent.id}', '${cancelEvent.id}')
+       ORDER BY title`,
+    );
+    expect(rows.rows).toEqual([
+      { title: 'Imported standup', deleted_at: null },
+      { title: 'Imported sync', deleted_at: null },
+    ]);
   });
 
   it('supersedes a legacy calendar update whose target id is missing', async () => {

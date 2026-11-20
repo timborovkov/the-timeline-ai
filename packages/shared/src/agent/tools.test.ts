@@ -1431,6 +1431,67 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('rejects imported calendar mutations instead of proposing or mutating them', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture({ source: 'google' }));
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const propose = tools.propose_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const update = tools.execute_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const cancel = tools.execute_calendar_cancel?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      propose({ id: CALENDAR_EVENT_ID, patch: { title: 'Synced rename' } }, {}),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'read_only_imported',
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+    });
+    await expect(
+      update(
+        {
+          id: CALENDAR_EVENT_ID,
+          expectedCurrent: { title: 'Daily standup' },
+          patch: { title: 'Synced rename' },
+          reason: 'User asked to rename the imported event.',
+        },
+        {},
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'read_only_imported',
+    });
+    await expect(
+      cancel(
+        {
+          id: CALENDAR_EVENT_ID,
+          expectedCurrent: {
+            title: 'Daily standup',
+            startAt: '2026-06-14T09:00:00.000Z',
+            endAt: '2026-06-14T09:30:00.000Z',
+          },
+          reason: 'User asked to cancel the imported event.',
+        },
+        {},
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'read_only_imported',
+    });
+
+    expect(scope.suggestions.createOrMergeSuggestionBundle).not.toHaveBeenCalled();
+    expect(scope.calendar.updateCalendarEvent).not.toHaveBeenCalled();
+    expect(scope.calendar.deleteCalendarEvent).not.toHaveBeenCalled();
+  });
+
   it('search_objects forwards structured filters and returns typed citations', async () => {
     const scope = makeFakeScope();
     scope.objects.searchObjects.mockResolvedValue([

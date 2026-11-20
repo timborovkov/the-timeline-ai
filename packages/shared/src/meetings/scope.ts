@@ -1059,13 +1059,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
               sql`${meetings.metadata}->>'recovery_of_meeting_id' = ${id}`,
             ),
           )) as MeetingRow[];
-        const activeStatuses = new Set([
-          'pending',
-          'scheduled',
-          'joining',
-          'active',
-          'processing',
-        ]);
+        const activeStatuses = new Set(['pending', 'scheduled', 'joining', 'active', 'processing']);
         const active = replacements.find((row) => activeStatuses.has(row.status));
         if (active) return active;
         const failed = replacements.find((row) => row.status === 'failed');

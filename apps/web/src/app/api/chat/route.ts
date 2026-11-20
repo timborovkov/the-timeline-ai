@@ -1045,10 +1045,7 @@ export async function POST(req: Request): Promise<Response> {
                     interrupted: isAborted || Boolean(isCancelled),
                     handoff_provenance: handoffProvenance(
                       responseMessage,
-                      uiMessages.length === 1 &&
-                        !isContinuation &&
-                        !isAborted &&
-                        !isCancelled,
+                      uiMessages.length === 1 && !isContinuation && !isAborted && !isCancelled,
                     ),
                   },
                 },
