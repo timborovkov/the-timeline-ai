@@ -2,6 +2,11 @@ name: E2E
 
 on:
   workflow_dispatch:
+  # Temporary same-repo trigger: cloud-agent tokens cannot workflow_dispatch
+  # (actions:write 403). Remove after Production-ish web smoke + Playwright
+  # both pass on this PR head.
+  pull_request:
+    branches: [main]
 
 jobs:
   e2e:
