@@ -148,15 +148,27 @@ beforeEach(() => {
 });
 
 describe('MCP OAuth consent page', () => {
-  it('is uncached, does not leak request URLs as referrers, and cannot be framed', () => {
+  it('is uncached, does not leak request URLs as referrers, and cannot be framed', async () => {
     const config = readFileSync(new URL('../../../../next.config.ts', import.meta.url), 'utf8');
-
-    expect(config).toContain("source: '/oauth/authorize'");
-    expect(config).toContain("{ key: 'Cache-Control', value: 'no-store' }");
-    expect(config).toContain(
-      "{ key: 'Content-Security-Policy', value: \"frame-ancestors 'none'\" }",
+    const { baseContentSecurityPolicy } = await import('@/lib/content-security-policy');
+    const { sensitiveLinkHeaderSources, sensitiveLinkHeaders } = await import(
+      '@/lib/sensitive-links'
     );
-    expect(config).toContain("{ key: 'Referrer-Policy', value: 'no-referrer' }");
+
+    expect(config).toContain('baseContentSecurityPolicy');
+    expect(config).toContain('sensitiveLinkHeaderSources.map');
+    expect(config).toContain('sensitiveLinkHeaders');
+    expect(sensitiveLinkHeaderSources).toContain('/oauth/:path*');
+    expect(sensitiveLinkHeaders).toEqual(
+      expect.arrayContaining([
+        { key: 'Cache-Control', value: 'no-store' },
+        { key: 'Referrer-Policy', value: 'no-referrer' },
+      ]),
+    );
+    expect(baseContentSecurityPolicy).toEqual({
+      key: 'Content-Security-Policy',
+      value: "frame-ancestors 'none'; base-uri 'self'",
+    });
     expect(config).toContain("{ key: 'X-Frame-Options', value: 'DENY' }");
   });
 

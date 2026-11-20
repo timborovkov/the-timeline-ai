@@ -840,7 +840,7 @@ describe('team lifecycle', () => {
     await expect(assertActivePrincipal(db, TEAM)).rejects.toThrow('disabled');
     await expect(
       pg.exec(
-        `INSERT INTO team_invites (team_id,email,role,token,invited_by_user_id,expires_at) VALUES ('${TEAM}','late@example.test','member','late','${OWNER}',now())`,
+        `INSERT INTO team_invites (team_id,email,role,token,invited_by_user_id,expires_at) VALUES ('${TEAM}','late@example.test','member',encode(sha256(convert_to('late', 'UTF8')), 'hex'),'${OWNER}',now())`,
       ),
     ).rejects.toThrow('disabled');
   });

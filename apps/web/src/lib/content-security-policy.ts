@@ -25,7 +25,8 @@ function publicStorageOrigin(raw: string | undefined): string | undefined {
 export function contentSecurityPolicyHeaders(env: NodeJS.ProcessEnv) {
   if (env.NODE_ENV !== 'production') return [];
 
-  const storage = publicStorageOrigin(env.S3_PUBLIC_ENDPOINT?.trim() || env.S3_ENDPOINT);
+  const publicEndpoint = env.S3_PUBLIC_ENDPOINT?.trim();
+  const storage = publicStorageOrigin(publicEndpoint ? publicEndpoint : env.S3_ENDPOINT);
   const storageSource = storage ? ` ${storage}` : '';
   const policy = [
     baseContentSecurityPolicy.value,
