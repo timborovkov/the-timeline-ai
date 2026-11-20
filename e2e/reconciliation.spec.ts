@@ -923,13 +923,20 @@ test.describe.serial('reconciliation dashboard', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/approvals');
 
-    const acceptApproval = page
-      .locator('article')
-      .filter({ hasText: fixtures.approvalActions.acceptItemTitle });
-    await expect(acceptApproval).toBeVisible();
-    await acceptApproval
-      .getByRole('button', { name: `Accept ${fixtures.approvalActions.acceptItemTitle}` })
+    await expect(
+      page.getByRole('button', {
+        name: `Preview ${fixtures.approvalActions.acceptItemTitle}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole('button', {
+        name: `Preview ${fixtures.approvalActions.acceptItemTitle}`,
+        exact: true,
+      })
       .click();
+    const acceptReview = page.getByRole('region', { name: 'Review proposal' });
+    await acceptReview.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(page.getByText(fixtures.approvalActions.acceptItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.acceptItemTitle)).toBe(1);
     await expect
@@ -938,13 +945,15 @@ test.describe.serial('reconciliation dashboard', () => {
       )
       .toBe(1);
 
-    const rejectApproval = page
-      .locator('article')
-      .filter({ hasText: fixtures.approvalActions.rejectItemTitle });
-    await expect(rejectApproval).toBeVisible();
-    await rejectApproval
-      .getByRole('button', { name: `Reject ${fixtures.approvalActions.rejectItemTitle}` })
+    await page
+      .getByRole('button', {
+        name: `Preview ${fixtures.approvalActions.rejectItemTitle}`,
+        exact: true,
+      })
       .click();
+    const rejectReview = page.getByRole('region', { name: 'Review proposal' });
+    await rejectReview.getByRole('button', { name: 'Reject', exact: true }).click();
+    await rejectReview.getByRole('button', { name: 'Reject proposal', exact: true }).click();
     await expect(page.getByText(fixtures.approvalActions.rejectItemTitle)).toHaveCount(0);
     await expect.poll(() => countEntitiesByName(fixtures.approvalActions.rejectItemTitle)).toBe(0);
     await expect
