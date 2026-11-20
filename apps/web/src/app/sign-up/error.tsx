@@ -11,10 +11,8 @@ export default function SignUpError({
   reset: () => void;
 }) {
   return (
-    <AuthShell
-      title="Create your account"
-      subtitle="Name your team next, then bring something in."
-    >      <ErrorState
+    <AuthShell title="Create your account" subtitle="Name your team next, then bring something in.">
+      <ErrorState
         title="Unable to load account creation"
         description="No account was created by this failed load. Check your connection, then try again."
         error={error}
