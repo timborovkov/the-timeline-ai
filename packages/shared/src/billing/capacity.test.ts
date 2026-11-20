@@ -73,7 +73,7 @@ describe('billing capacity (not Polar meters)', () => {
         '${TEAM_ID}',
         'pending@example.test',
         'member',
-        'pending-invite-token',
+        encode(sha256(convert_to('pending-invite-token', 'UTF8')), 'hex'),
         '${USER_ID}',
         NOW() + INTERVAL '7 days'
       );
@@ -105,7 +105,7 @@ describe('billing capacity (not Polar meters)', () => {
         '${TEAM_ID}',
         'expired@example.test',
         'member',
-        'expired-invite-token',
+        encode(sha256(convert_to('expired-invite-token', 'UTF8')), 'hex'),
         '${USER_ID}',
         NOW() - INTERVAL '1 day'
       );

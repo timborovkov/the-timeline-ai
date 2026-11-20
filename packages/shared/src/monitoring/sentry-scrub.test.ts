@@ -47,6 +47,22 @@ describe('Sentry scrubber', () => {
     );
   });
 
+  it('redacts calendar and webhook credentials from request and diagnostic fields', () => {
+    const url = 'https://app.timeline.test/api/calendar/feed/calendar-test.ics?key=query-test';
+    const message = 'Callback failed at /api/webhooks/ingest/ingest-test?token=query-test';
+    const event = scrubSentryRequestEvent({
+      request: { url, query_string: 'key=query-test' },
+      transaction: `GET ${url}`,
+      message,
+      exception: { values: [{ value: message }] },
+    });
+    expect(event.request.url).toBe('https://app.timeline.test/api/calendar/feed/[redacted]');
+    expect(event.transaction).toBe('GET https://app.timeline.test/api/calendar/feed/[redacted]');
+    expect(event.message).toBe('Callback failed at /api/webhooks/ingest/[redacted]');
+    expect(event.exception.values[0]?.value).toBe(event.message);
+    expect(event.request.query_string).toBeUndefined();
+  });
+
   it('redacts Telegram bot tokens embedded in Bot API URLs', () => {
     expect(
       redactTelegramBotTokenInUrl(

@@ -19,7 +19,7 @@ Password recovery uses `AUTH_URL` for trusted reset links. Apply migration `0095
 
 Team addresses are `<slug>@<INBOUND_EMAIL_DOMAIN>`. Use either your receiving domain or your Resend-managed subdomain. Existing team records must contain the intended address; this migration does not rewrite stored team data.
 
-`TRANSACTIONAL_EMAIL_FROM` is the sender for all outgoing email, including invitations. `SUPPORT_EMAIL` is the support recipient and the contact address shown on public, help, legal, and trust pages. The Docker web image does not receive that value at build time, so prerendered pages load it from `/api/public/runtime` after paint. Without it, public links default to contact@thetimeline.cc and support requests are saved without email delivery.
+`TRANSACTIONAL_EMAIL_FROM` is the sender for all outgoing email, including invitations. `SUPPORT_EMAIL` is the support recipient and the support contact shown on public, help, and trust pages. The published Terms and Privacy Policy use the versioned legal contact included in their archive. The Docker web image does not receive that value at build time, so prerendered pages load it from `/api/public/runtime` after paint. Without it, public links default to contact@thetimeline.cc and support requests are saved without email delivery.
 
 Sender restrictions are enabled by default for new and existing teams. Active members can send from their account email; admins can add additional addresses or disable the restriction in team settings. Membership changes apply automatically. Existing extra addresses are preserved. Messages with failed receiver authentication are rejected when the restriction is enabled; unknown authentication retains the existing audit policy.
 

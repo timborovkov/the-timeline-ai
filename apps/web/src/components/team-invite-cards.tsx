@@ -7,7 +7,6 @@ import type {
   TeamInviteRow,
   TeamMemberMap,
 } from '@/components/team-member-types';
-import { getSiteUrl } from '@/lib/site-url';
 
 export function TeamInviteCards({
   isOwner,
@@ -25,7 +24,7 @@ export function TeamInviteCards({
       <SettingsSection id="invite" title="Invite a teammate">
         <InviteMemberForm canInviteAdmin={isOwner} />
       </SettingsSection>
-      <PendingInvitesCard siteUrl={getSiteUrl()} invites={invites} userMap={userMap} />
+      <PendingInvitesCard invites={invites} userMap={userMap} />
       <RemovedMembersCard removedMembers={removedMembers} userMap={userMap} />
     </>
   );

@@ -196,7 +196,9 @@ try {
   const db = join(fixture, 'packages/db/dist');
   mkdirSync(app, { recursive: true });
   mkdirSync(db, { recursive: true });
-  copyFileSync(new URL('../../web/start.mjs', import.meta.url), join(app, 'start.mjs'));
+  for (const runtimeFile of ['start.mjs', 'redact-request-warnings.mjs']) {
+    copyFileSync(new URL(`../../web/${runtimeFile}`, import.meta.url), join(app, runtimeFile));
+  }
   writeFileSync(
     join(db, 'migrate.js'),
     'if (!process.execArgv.includes("--bun")) process.exit(11); process.exit(7);',
@@ -212,7 +214,10 @@ try {
     join(db, 'migrate.js'),
     'if (!process.execArgv.includes("--bun")) process.exit(11); console.log("migration-complete");',
   );
-  writeFileSync(join(app, 'server.js'), 'process.exit(9);');
+  writeFileSync(
+    join(app, 'server.js'),
+    'console.warn("Request body exceeded 10MB for /verify-email/synthetic-token?email=fixture@example.test. See middlewareClientMaxBodySize"); process.exit(9);',
+  );
   const serverFailed = spawnSync(
     process.execPath,
     ['--bun', '--no-env-file', join(app, 'start.mjs')],
@@ -222,6 +227,9 @@ try {
     },
   );
   assert.equal(serverFailed.status, 9, serverFailed.stderr);
+  assert(serverFailed.stderr.includes('Request body exceeded the Next.js Proxy buffer limit.'));
+  assert(!serverFailed.stderr.includes('synthetic-token'));
+  assert(!serverFailed.stderr.includes('fixture@example.test'));
   writeFileSync(
     join(app, 'server.js'),
     'process.on("SIGTERM", () => { console.log("signal-received"); process.exit(0); }); console.log("server-ready"); setInterval(() => {}, 1000);',
@@ -241,7 +249,9 @@ try {
   assert.equal(code, 143);
   assert(output.indexOf('migration-complete') < output.indexOf('server-ready'));
   assert(output.includes('signal-received'));
-  console.log('Migration failure, startup ordering, and signal forwarding passed');
+  console.log(
+    'Migration failure, startup ordering, request warning redaction, and signal forwarding passed',
+  );
 } finally {
   rmSync(fixture, { recursive: true, force: true });
 }

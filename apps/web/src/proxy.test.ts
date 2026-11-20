@@ -6,7 +6,13 @@ import { afterEach, describe, it } from 'bun:test';
 import { NextRequest } from 'next/server';
 
 import { canonicalHostRedirect } from '@/lib/canonical-host';
+import { contentSecurityPolicyHeaders } from '@/lib/content-security-policy';
+import {
+  protectSensitiveLinkResponse,
+  sensitiveLinkRequestLogPattern,
+} from '@/lib/sensitive-links';
 import { isCookieIndependentPublicRead } from '@/proxy';
+
 const ORIGINAL_AUTH_URL = process.env.AUTH_URL;
 const ORIGINAL_NEXTAUTH_URL = process.env.NEXTAUTH_URL;
 
@@ -89,6 +95,54 @@ describe('canonicalHostRedirect', () => {
 
     expect(canonicalHostRedirect(request)).toBeNull();
   });
+});
+
+describe('credential URL privacy', () => {
+  for (const path of [
+    '/verify-email/synthetic?email=fixture@example.test',
+    '/sign-up?invite=synthetic',
+    '/api/calendar/feed/synthetic.ics',
+    '/api/webhooks/ingest/synthetic',
+    '/api/integrations/github/callback?code=synthetic',
+  ]) {
+    it(`protects the response and excludes request logging for ${path.split('?')[0]}`, () => {
+      const response = Response.redirect('https://timeline.test/sign-in');
+      const protectedResponse = protectSensitiveLinkResponse(response, path);
+      expect(sensitiveLinkRequestLogPattern.test(path)).toBe(true);
+      expect(protectedResponse?.headers.get('cache-control')).toBe('no-store');
+      expect(protectedResponse?.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(protectedResponse?.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+      expect(protectedResponse?.headers.get('location')).toBe('https://timeline.test/sign-in');
+      expect(protectedResponse?.status).toBe(302);
+    });
+  }
+});
+
+it('stages CSP and allows only the reviewed browser resource origins', () => {
+  const env: NodeJS.ProcessEnv = {
+    NODE_ENV: 'production',
+    S3_PUBLIC_ENDPOINT: 'https://storage.example.test/path',
+  };
+  const [report] = contentSecurityPolicyHeaders(env);
+  expect(report?.key).toBe('Content-Security-Policy-Report-Only');
+  expect(report?.value).toContain('https://challenges.cloudflare.com');
+  expect(report?.value).toContain('https://eu.i.posthog.com');
+  expect(report?.value).toContain('object-src https://storage.example.test');
+  expect(report?.value).not.toContain('storage.example.test/path');
+  expect(contentSecurityPolicyHeaders({ ...env, WEB_CSP_MODE: 'enforce' })).toEqual([
+    { key: 'Content-Security-Policy', value: report?.value },
+  ]);
+  const [withStorageFallback] = contentSecurityPolicyHeaders({
+    ...env,
+    S3_PUBLIC_ENDPOINT: ' ',
+    S3_ENDPOINT: 'https://fallback-storage.example.test',
+  });
+  expect(withStorageFallback?.value).toContain('object-src https://fallback-storage.example.test');
+  const [withoutStorage] = contentSecurityPolicyHeaders({
+    ...env,
+    S3_PUBLIC_ENDPOINT: 'https://credential@storage.example.test',
+  });
+  expect(withoutStorage?.value).toContain("object-src 'none'");
 });
 
 describe('public request routing', () => {
