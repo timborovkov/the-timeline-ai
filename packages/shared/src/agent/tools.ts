@@ -3200,6 +3200,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               retrieval = value;
             },
             source: 'integration',
+            // Integration embeds stamp source_kind=integration_event; the
+            // default searchEvents kinds omit it (raw_event/fact/doc/meeting).
+            sourceKind: 'integration_event',
             eventIds: candidates.eventIds,
             limit: requestedLimit,
           });

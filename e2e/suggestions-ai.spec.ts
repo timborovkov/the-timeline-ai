@@ -221,9 +221,20 @@ test('routes a signed and replayed GitHub delivery through indexing and approval
     );
   expect(captured).toHaveLength(1);
   const event = captured[0]!;
-  await runQueuedEmbed(event.id);
+  await expect(runQueuedEmbed(event.id)).resolves.toMatchObject({
+    scope: 'event',
+    sourceId: event.id,
+  });
+  // Integration captures stamp Qdrant as source_kind=integration_event; the
+  // default timeline searchKinds omit that kind (search_integration_events /
+  // explicit sourceKind must opt in — see scripts/verify-demo.ts).
   await expect(
-    scope.timeline.searchEvents({ query: event.contentText ?? title, eventIds: [event.id] }),
+    scope.timeline.searchEvents({
+      query: event.contentText ?? title,
+      source: 'integration',
+      sourceKind: 'integration_event',
+      eventIds: [event.id],
+    }),
   ).resolves.toMatchObject([{ eventId: event.id }]);
   await expect(
     withTeam(db, e2eTeam.id, e2eUsers.nonMember.id).timeline.getEvent(event.id),
