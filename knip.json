@@ -3,7 +3,8 @@
   "workspaces": {
     ".": {
       "project": ["*.{js,ts}", "scripts/testing/*.ts", "scripts/performance/*.mjs"],
-      "entry": ["scripts/testing/*.ts", "scripts/performance/*.mjs"]
+      "entry": ["scripts/testing/*.ts", "scripts/performance/*.mjs"],
+      "ignoreDependencies": ["@typescript/native"]
     },
     "apps/web": {
       "entry": [

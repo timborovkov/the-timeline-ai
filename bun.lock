@@ -13,6 +13,7 @@
         "@timeline/db": "workspace:*",
         "@timeline/shared": "workspace:*",
         "@types/bun": "1.4.5",
+        "@typescript/native": "npm:typescript@7.0.2",
         "bullmq": "6.7.3",
         "drizzle-orm": "^0.45.4",
         "eslint": "^10.14.0",
@@ -158,7 +159,6 @@
       "devDependencies": {
         "@sinonjs/fake-timers": "15.4.0",
         "@types/bun": "1.4.5",
-        "@typescript/native": "npm:typescript@7.0.2",
         "typescript": "npm:@typescript/typescript6@6.0.2",
       },
     },
