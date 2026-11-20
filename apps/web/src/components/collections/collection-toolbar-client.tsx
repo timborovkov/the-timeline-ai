@@ -1,6 +1,7 @@
 'use client';
 
 import { SlidersHorizontal, X } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { readCollectionSlots } from '@/components/collections/collection-slot';
@@ -136,13 +137,14 @@ export function CollectionToolbar({
               {filter.value ? <span className="text-fg">{filter.value}</span> : null}
               {filter.clear ??
                 (filter.href ? (
-                  <a
+                  <Link
                     href={filter.href}
+                    scroll={false}
                     aria-label={`Remove ${filterLabelText(filter.label, filter.key)} filter`}
                     className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
                   >
                     <X aria-hidden="true" className="size-3" />
-                  </a>
+                  </Link>
                 ) : filter.onRemove ? (
                   <button
                     type="button"
