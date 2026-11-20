@@ -43,6 +43,7 @@ import { MarketingProductScreenshot } from '@/components/marketing/product-scree
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
+import { PublicAnalyticsChoice } from '@/components/public-analytics';
 import { PublicFooter } from '@/components/public-footer';
 import { PublicHeader } from '@/components/public-header';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -129,6 +130,7 @@ export default function LandingPage() {
         <span />
       </div>
       <PublicHeader currentSection="product" />
+      <PublicAnalyticsChoice />
       <main id="main" tabIndex={-1}>
         <ClaimScene />
         <IntakeScene />

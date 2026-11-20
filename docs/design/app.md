@@ -198,6 +198,10 @@ sits beside the heading as truncated muted text. The mobile session summary
 uses that same resolved title, including deep-linked chats outside the recent
 list. Session counts do not appear in the header.
 
+The full Ask composer grows with the draft to a viewport-aware limit, then
+scrolls internally. Enter sends, Shift+Enter adds a line break, and
+composition keystrokes stay with the input method.
+
 A context-aware floating Ask sits on every authenticated page except Home and
 the full Ask route. It is a quiet icon button in the bottom-right corner, with
 `⌘J` / `Ctrl+J` as the shortcut on the launcher. Desktop opens a non-modal
@@ -240,6 +244,8 @@ preloaded window so a pipeline is not limited to recent tasks. Loading placehold
 the requested view: Tasks default to list, boards default to kanban, and
 list/kanban each have a matching skeleton. Timeline loading uses the same
 toolbar row without a page header or inventory chip, then Linear feed rows.
+The shared app fallback announces workspace loading. Route-specific skeletons,
+including Documents, announce their own destinations.
 Collection pages load as flat rows, not boxed card grids. Objects New object and
 Boards Create board use the same compact toolbar/header action as Add item, not a
 filled primary chip. Kanban cards stay compact: a wrapping title plus one
@@ -778,9 +784,9 @@ copy describes the download's 24-hour expiry, not the archive's data range.
 Slack destination choices load only for Preferences. Editable member roles do not
 repeat their current role in a second badge.
 
-Work and Team tab strips reveal the active destination after navigation and
-resize, without mandatory snap points. Mobile Work navigation includes a scroll
-hint. Calendar month cells use day event counts on phones; opening a count shows
+Work, Timeline presets, and Team settings reveal the active link after navigation
+and resize, without mandatory snap points. Each strip shows a swipe or scroll
+hint when it overflows. Calendar month cells use day event counts on phones; opening a count shows
 the readable day view. Approval actions stack beneath their context on phones.
 Work relevance badges do not duplicate the canonical Blocked status, and normal
 pending approval uses the signal tone rather than danger. Narrow object property

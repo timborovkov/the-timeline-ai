@@ -12,6 +12,36 @@ test.skip(
   'Run with NEXT_PUBLIC_POSTHOG_KEY=ph-e2e to exercise the consented browser bundle.',
 );
 
+test('keeps the focused Free plan action clear of the analytics banner at 320px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto('/pricing');
+
+  const banner = page.getByRole('complementary', { name: 'Optional public analytics' });
+  await expect(banner).toBeVisible();
+  await expect(banner).toHaveCSS('position', 'static');
+
+  const freePlan = page.locator('[data-pricing-plan="free"]').getByRole('link');
+  await expect(freePlan).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeFocused();
+
+  for (let i = 0; i < 20; i++) {
+    if (await freePlan.evaluate((link) => link.matches(':focus-visible'))) break;
+    await page.keyboard.press('Tab');
+  }
+
+  await expect(freePlan).toBeFocused();
+  await expect(freePlan).toBeInViewport({ ratio: 1 });
+  expect(
+    await freePlan.evaluate((link) => {
+      const { x, y, width, height } = link.getBoundingClientRect();
+      return link.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+    }),
+  ).toBe(true);
+});
+
 test('public PostHog stays absent until consent and is removed before private app use', async ({
   browser,
 }) => {

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { PublicAnalyticsChoice } from '@/components/public-analytics';
 import { PublicFooter } from '@/components/public-footer';
 import { PublicHeader } from '@/components/public-header';
 import { type PublicNavigationSection } from '@/components/public-navigation';
@@ -27,6 +28,7 @@ export function PublicShell({
     <div className={cn(publicSiteStyles.canvas, 'min-h-dvh overflow-x-hidden text-fg')}>
       <SkipLink />
       <PublicHeader currentSection={currentSection} showAccountActions={showAccountActions} />
+      <PublicAnalyticsChoice />
       {children}
       <PublicFooter
         currentSection={currentSection}

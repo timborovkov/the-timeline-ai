@@ -42,7 +42,7 @@ await vi.mock(
 const { cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { StrictMode } = await import('react');
-const { CookieSettingsButton, PublicAnalyticsBoundary } =
+const { CookieSettingsButton, PublicAnalyticsBoundary, PublicAnalyticsChoice } =
   await import('@/components/public-analytics');
 const {
   clearPublicAnalyticsConsent,
@@ -95,8 +95,6 @@ describe('PublicAnalyticsBoundary', () => {
     const bannerHeading = await screen.findByRole('heading', { name: 'Optional public analytics' });
     const banner = bannerHeading.closest('aside');
     expect(banner?.hasAttribute('data-analytics-choice-banner')).toBe(true);
-    expect(banner?.className).toContain('sm:max-w-sm');
-    expect(banner?.className).toContain('sm:right-4');
     expect(banner?.textContent).toContain('visits and selected actions on public pages');
     expect(banner?.textContent).not.toContain('PostHog');
     expect(screen.getByRole('button', { name: 'Reject' })).not.toBeNull();
@@ -262,6 +260,7 @@ describe('PublicAnalyticsBoundary', () => {
 function renderBoundary() {
   return render(
     <PublicAnalyticsBoundary>
+      <PublicAnalyticsChoice />
       <CookieSettingsButton />
       <button type="button" data-public-analytics-cta="try_project">
         Try project

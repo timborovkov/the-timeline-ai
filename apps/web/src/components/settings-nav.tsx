@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 
+import { ScrollableNav } from '@/components/scrollable-nav';
 import { cn } from '@/lib/utils';
 
 interface SettingsNavItem {
@@ -29,51 +29,35 @@ export function SettingsNav({
   className,
 }: SettingsNavProps) {
   const visibleItems = items.filter((item) => !item.adminOnly || isAdmin);
-  const activeItemRef = useRef<HTMLAnchorElement>(null);
-
-  useEffect(() => {
-    const revealActive = () => {
-      activeItemRef.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
-    };
-    revealActive();
-    const nav = activeItemRef.current?.closest('nav');
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(revealActive);
-    if (nav) observer?.observe(nav);
-    return () => observer?.disconnect();
-  }, [activeSection]);
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <nav
-        aria-label="Team settings"
-        className="w-full max-w-full overflow-x-auto scroll-px-3 border-b border-border lg:w-52 lg:shrink-0 lg:overflow-visible lg:border-r lg:border-b-0 lg:pr-4"
+    <div className={cn('min-w-0', className)}>
+      <ScrollableNav
+        activeKey={activeSection}
+        label="Team settings"
+        cue="Swipe or scroll to see more settings."
+        className="w-full scroll-px-3 border-b border-border lg:w-52 lg:shrink-0 lg:overflow-visible lg:border-r lg:border-b-0 lg:pr-4"
+        itemsClassName="lg:min-w-0 lg:flex-col"
       >
-        <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
-          {visibleItems.map((item) => {
-            const active = item.value === activeSection;
-            return (
-              <Link
-                key={item.value}
-                ref={active ? activeItemRef : undefined}
-                href={`${basePath}?section=${encodeURIComponent(item.value)}`}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex min-h-11 shrink-0 touch-manipulation items-center gap-2 rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:min-h-8',
-                  active &&
-                    'bg-surface-2 font-medium text-fg lg:shadow-[inset_2px_0_0_var(--color-signal)]',
-                )}
-              >
-                {item.icon}
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
-      <p aria-hidden="true" className="text-xs text-fg-dim lg:sr-only">
-        Swipe or scroll to see more settings.
-      </p>
+        {visibleItems.map((item) => {
+          const active = item.value === activeSection;
+          return (
+            <Link
+              key={item.value}
+              href={`${basePath}?section=${encodeURIComponent(item.value)}`}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex min-h-11 shrink-0 touch-manipulation items-center gap-2 rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:min-h-8',
+                active &&
+                  'bg-surface-2 font-medium text-fg lg:shadow-[inset_2px_0_0_var(--color-signal)]',
+              )}
+            >
+              {item.icon}
+              {item.label}
+            </Link>
+          );
+        })}
+      </ScrollableNav>
     </div>
   );
 }
