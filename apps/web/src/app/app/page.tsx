@@ -1,6 +1,10 @@
 import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
-import { GUIDED_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboarding/first-run';
+import {
+  GUIDED_SHELL_PHASES,
+  isConnectorStarterPath,
+  type FirstRunState,
+} from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
@@ -137,6 +141,7 @@ async function FirstRunHomeBanner({
     <FirstRunHomeCapture
       failed={failed}
       emailWaiting={firstRun.starterPath === 'email'}
+      connectorWaiting={isConnectorStarterPath(firstRun.starterPath) ? firstRun.starterPath : null}
       initialStatus={status ?? { firstRun, teamId, teamName, inboundEmail: null, record: null }}
     />
   );

@@ -1,7 +1,11 @@
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { pollFirstRun, type FirstRunStatusPayload } from '@/lib/first-run-poll';
+import {
+  firstRunPollingNeeded,
+  pollFirstRun,
+  type FirstRunStatusPayload,
+} from '@/lib/first-run-poll';
 
 const starter = {
   teamId: 'team-test',
@@ -57,6 +61,24 @@ describe('first-run status polling', () => {
     expect(callbacks.refresh).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetchStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps waiting for the first connector capture and stops on document extraction failure', () => {
+    const waiting = {
+      ...starter,
+      firstRun: { ...starter.firstRun, phase: 'processing', starterPath: 'slack' },
+      record: {
+        ...starter.record,
+        processingSteps: [{ id: 'extract', label: 'Extracting', status: 'failed' }],
+      },
+    } as FirstRunStatusPayload;
+    expect(firstRunPollingNeeded(waiting)).toBe(true);
+    expect(
+      firstRunPollingNeeded({
+        ...waiting,
+        firstRun: { ...waiting.firstRun!, starterPath: 'document' },
+      }),
+    ).toBe(false);
   });
 
   it('pauses on a hidden tab and ignores a late response or another workspace', async () => {

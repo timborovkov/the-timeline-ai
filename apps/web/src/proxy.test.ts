@@ -108,7 +108,13 @@ describe('public request routing', () => {
   });
 
   it('retains auth for actions, session APIs and product routes', () => {
-    for (const path of ['/app', '/api/auth/session', '/sign-up?plan=team', '/onboarding']) {
+    for (const path of [
+      '/app',
+      '/api/auth/session',
+      '/sign-up?plan=team',
+      '/sign-up?source=slack',
+      '/onboarding',
+    ]) {
       expect(isCookieIndependentPublicRead(new NextRequest(`https://example.test${path}`))).toBe(
         false,
       );

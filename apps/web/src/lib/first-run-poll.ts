@@ -1,4 +1,5 @@
 import {
+  isConnectorStarterPath,
   SETUP_SHELL_PHASES,
   type FirstRunPhase,
   type FirstRunState,
@@ -36,6 +37,16 @@ function progressKey(status: FirstRunStatusPayload) {
     status.record?.processingSteps,
     status.record?.emailArrived,
   ]);
+}
+
+export function firstRunPollingNeeded(status: FirstRunStatusPayload): boolean {
+  if (status.firstRun?.phase !== 'processing') return false;
+  const path = status.firstRun.starterPath;
+  const waitingForCapture =
+    (path === 'email' || isConnectorStarterPath(path)) && !status.record?.emailArrived;
+  return (
+    waitingForCapture || !status.record?.processingSteps.some((step) => step.status === 'failed')
+  );
 }
 
 export function pollFirstRun(
@@ -120,12 +131,7 @@ export function pollFirstRun(
       delay = progress === lastProgress ? Math.min(delay * 2, MAX_DELAY_MS) : INITIAL_DELAY_MS;
       lastProgress = progress;
       callbacks.update(status);
-      if (
-        phase !== 'processing' ||
-        status.record?.processingSteps.some((step) => step.status === 'failed')
-      ) {
-        stop();
-      }
+      if (!firstRunPollingNeeded(status)) stop();
     } catch {
       if (!wasAborted()) delay = Math.min(delay * 2, MAX_DELAY_MS);
     } finally {
