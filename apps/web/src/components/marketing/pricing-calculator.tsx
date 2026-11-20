@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import styles from '@/components/marketing/pricing-page.module.css';
 import { NativeSelect } from '@/components/ui/native-select';
+import { buildEnterpriseEnquiryHref } from '@/lib/enterprise-enquiry';
 import {
   CALCULATOR_ACTIVITY_ASSUMPTIONS,
   CALCULATOR_PLANS,
@@ -99,10 +100,12 @@ function PlanResults({
   estimate,
   selected,
   onSelect,
+  enterpriseHref,
 }: {
   estimate: ReturnType<typeof estimatePricing>;
   selected: SelfServePaidPlanId;
   onSelect: (plan: SelfServePaidPlanId) => void;
+  enterpriseHref: string;
 }) {
   const bill = estimate.bills[selected];
   const plan = PLAN_CATALOG[selected];
@@ -196,8 +199,12 @@ function PlanResults({
             {estimate.cheapest === null && (
               <p className="mt-4 text-sm">
                 Your usage exceeds the measured limits of all self-serve plans.{' '}
-                <Link href="/help/support" className="underline">
-                  Contact sales
+                <Link
+                  href={enterpriseHref}
+                  data-public-analytics-cta="contact_enterprise"
+                  className="underline"
+                >
+                  Contact us about Enterprise
                 </Link>
                 .
               </p>
@@ -450,6 +457,20 @@ function usePricingCalculatorState() {
     ? (USAGE_PRESETS.find((preset) => preset.id === activePresetId) ?? null)
     : presetMatchingDraft(draft, websiteInput);
   const estimate = values ? estimatePricing(values, websiteInput) : null;
+  const enterpriseHref = buildEnterpriseEnquiryHref({
+    from: 'pricing-calculator',
+    plan: selected,
+    members: draft.members,
+    ai: draft.ai,
+    meetings: draft.meetings,
+    email: draft.email,
+    storage: draft.storage,
+    sources: draft.sources,
+    websites: String(websiteInput.websites),
+    pages: String(websiteInput.pages),
+    frequency: websiteInput.frequency,
+    manualScans: String(websiteInput.manualScans),
+  });
 
   function applyPreset(id: UsagePresetId) {
     const preset = USAGE_PRESETS.find((item) => item.id === id);
@@ -477,6 +498,7 @@ function usePricingCalculatorState() {
     setSelected,
     matchedPreset,
     estimate,
+    enterpriseHref,
     errors,
     applyPreset,
     update,
@@ -541,6 +563,7 @@ export function PricingCalculator() {
             estimate={state.estimate}
             selected={state.selected}
             onSelect={state.setSelected}
+            enterpriseHref={state.enterpriseHref}
           />
         ) : (
           <p

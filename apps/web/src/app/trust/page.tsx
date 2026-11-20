@@ -200,18 +200,34 @@ function TrustAssuranceSection() {
 function TrustDeploymentSection() {
   return (
     <section id="deployment" tabIndex={-1} className="bg-surface">
-      <MarketingContainer className="grid gap-10 py-10 sm:py-14 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div>
-          <h2 className="mt-5 max-w-4xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-            Can you inspect or control the deployment?
+      <MarketingContainer className="space-y-10 py-10 sm:py-14">
+        <div className="max-w-4xl space-y-5">
+          <h2 className="text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+            Deployment options
           </h2>
-          <p className="mt-5 max-w-3xl text-base leading-8 text-fg-muted">
-            The repository is public so teams can inspect architecture, open issues, and propose
-            security patches. If the hosted boundary is not enough, contact us about a dedicated or
-            self-managed deployment and the terms that apply.
+          <p className="max-w-3xl text-base leading-8 text-fg-muted">
+            Choose hosted Timeline, self-host the source-available repository yourself, or ask us to
+            run a managed on-premise or private-cloud deployment. Each path changes who operates the
+            stack and which data leaves your network.
           </p>
         </div>
-        <div className="flex flex-col items-start gap-4 lg:items-end">
+
+        <div className="grid gap-px border border-border bg-border lg:grid-cols-3">
+          <DeploymentOption
+            title="Hosted Timeline cloud"
+            body="Timeline operates the application, workers, database, search, and object storage. Relevant content is sent to the processors listed on this page to deliver the features you use. Assurance claims stay limited to what this page states — Timeline does not currently claim SOC 2, ISO 27001, or HIPAA."
+          />
+          <DeploymentOption
+            title="Self-hosted by you"
+            body="Deploy from the public GitHub repository under the Elastic License 2.0 (source-available; not an OSI-approved license). You may use, modify, and self-host for your own organisation; you may not offer it to third parties as a hosted or managed service, and you may not remove licensing notices. You run the stack, configure connectors, and point LLM calls at an OpenAI-compatible endpoint you choose."
+          />
+          <DeploymentOption
+            title="Managed on-premise by us"
+            body="The Timeline team can set up and maintain an on-premise or private-cloud deployment for your organisation. Data residency and outbound processor paths depend on the environment we agree; use the Enterprise enquiry form to start that conversation. This page does not invent SLA or certification terms that are not otherwise documented."
+          />
+        </div>
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
           <a
             href="https://github.com/timborovkov/the-timeline-ai"
             className="inline-flex min-h-12 items-center gap-6 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
@@ -219,15 +235,37 @@ function TrustDeploymentSection() {
             Inspect the source
             <ArrowRight aria-hidden="true" className="size-4" />
           </a>
-          <Link
-            href="/help/support"
+          <a
+            href="https://github.com/timborovkov/the-timeline-ai/blob/main/docs/self-hosting.md"
             className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            Discuss a controlled deployment
+            Self-hosting guide
+          </a>
+          <a
+            href="https://github.com/timborovkov/the-timeline-ai/blob/main/LICENSE"
+            className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            Elastic License 2.0
+          </a>
+          <Link
+            href="/contact/enterprise?topics=on_premise_deployment&from=trust"
+            data-public-analytics-cta="contact_enterprise"
+            className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            Enquire about managed on-premise
           </Link>
         </div>
       </MarketingContainer>
     </section>
+  );
+}
+
+function DeploymentOption({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="flex flex-col bg-bg p-5 sm:p-6">
+      <h3 className="text-base font-semibold text-fg">{title}</h3>
+      <p className="mt-3 flex-1 text-sm leading-6 text-fg-muted">{body}</p>
+    </div>
   );
 }
 

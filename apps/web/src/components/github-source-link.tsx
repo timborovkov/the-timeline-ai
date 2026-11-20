@@ -1,6 +1,5 @@
+import { GITHUB_REPOSITORY_URL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
-
-const GITHUB_REPOSITORY_URL = 'https://github.com/timborovkov/the-timeline-ai';
 
 export function GitHubSourceLink({
   className,
