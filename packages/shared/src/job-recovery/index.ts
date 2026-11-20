@@ -12,6 +12,7 @@ import {
   rawEvents,
   type Db,
 } from '@timeline/db';
+import type { JobType } from 'bullmq';
 import {
   and,
   count,
@@ -31,8 +32,6 @@ import { isProviderCooldownErrorMessage } from '#src/integrations/types.js';
 import { RECOVERY_STALE_AFTER_MS } from '#src/job-recovery/policy.js';
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
-
-import type { JobType } from 'bullmq';
 
 type TeamRole = 'owner' | 'admin' | 'member';
 

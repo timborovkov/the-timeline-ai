@@ -26,7 +26,7 @@ const log = childLogger('telegram');
 
 /**
  * Minimal Telegram Bot API client. We only implement the handful of methods
- * the webhook flow needs, plus `setMyCommands` for startup `/` menu
+ * the webhook flow needs, plus `setMyCommands` for the `/` menu
  * registration. No SDK — `fetch` is enough and keeps the dependency
  * surface tiny.
  */

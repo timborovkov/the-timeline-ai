@@ -1465,6 +1465,45 @@ describe('database schema contracts', () => {
     `);
   });
 
+  it('backfills invites on disabled teams and retains the lifecycle write guard', async () => {
+    const legacy = new PGlite();
+    try {
+      await applyMigrations(legacy, { throughFile: '0108_workspace_evaluation_tracing.sql' });
+      await seedBase(legacy);
+      await legacy.exec(`
+        INSERT INTO team_invites (team_id, email, role, token, invited_by_user_id, expires_at)
+        VALUES ('${TEAM_ID}', 'legacy@example.test', 'member', 'synthetic-invite', '${OWNER_ID}', now() + interval '1 day');
+        INSERT INTO message_deliveries (intent, channel, team_id, dedupe_key)
+        VALUES ('team_invite', 'email', '${TEAM_ID}', 'team_invite:legacy-id:synthetic-invite');
+        INSERT INTO billing_usage_ledger (team_id, operation_id, kind, meter_id, native_units, metadata)
+        VALUES ('${TEAM_ID}', 'email_out:team_invite:legacy-id:synthetic-invite', 'settlement', 'email_units', 1,
+          '{"polar_ingest_status":"in_progress","polar_ingest_operation_id":"email_out:team_invite:legacy-id:synthetic-invite","polar_ingest_units":1}');
+        UPDATE teams SET disabled_at = now() WHERE id = '${TEAM_ID}';
+      `);
+      await applyMigrationFile(legacy, '0109_invite_token_digests.sql');
+      const { rows } = await legacy.query<{ digestMatches: boolean; active: boolean }>(`
+        SELECT token = encode(sha256(convert_to('synthetic-invite', 'UTF8')), 'hex') AS "digestMatches",
+          accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() AS active
+        FROM team_invites WHERE team_id = '${TEAM_ID}'
+      `);
+      expect(rows).toEqual([{ digestMatches: true, active: true }]);
+      const billing = await legacy.query(`
+        SELECT l.operation_id = 'email_out:' || m.dedupe_key AS linked, l.metadata
+        FROM billing_usage_ledger l JOIN message_deliveries m USING (team_id)
+        WHERE l.team_id = '${TEAM_ID}'
+      `);
+      expect(billing.rows).toEqual([
+        {
+          linked: true,
+          metadata: { polar_ingest_status: 'reconciliation_required', polar_ingest_units: 1 },
+        },
+      ]);
+      await expect(legacy.exec("UPDATE team_invites SET send_status = 'sent'")).rejects.toThrow();
+    } finally {
+      await legacy.close();
+    }
+  });
+
   it('enforces member, invite, visibility-default, and enum invariants', async () => {
     await expect(
       pg.exec(`INSERT INTO team_members (team_id, user_id, role)
@@ -1473,11 +1512,11 @@ describe('database schema contracts', () => {
 
     await pg.exec(`
       INSERT INTO team_invites (team_id, email, role, token, invited_by_user_id, expires_at)
-      VALUES ('${TEAM_ID}', 'new@example.test', 'member', 'tok-1', '${OWNER_ID}', now() + interval '1 day')
+      VALUES ('${TEAM_ID}', 'new@example.test', 'member', repeat('a', 64), '${OWNER_ID}', now() + interval '1 day')
     `);
     await expect(
       pg.exec(`INSERT INTO team_invites (team_id, email, role, token, invited_by_user_id, expires_at)
-               VALUES ('${OTHER_TEAM_ID}', 'new@example.test', 'member', 'tok-1', '${OWNER_ID}', now() + interval '1 day')`),
+               VALUES ('${OTHER_TEAM_ID}', 'new@example.test', 'member', repeat('a', 64), '${OWNER_ID}', now() + interval '1 day')`),
     ).rejects.toThrow();
 
     await pg.exec(`

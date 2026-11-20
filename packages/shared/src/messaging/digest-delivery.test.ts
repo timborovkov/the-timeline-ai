@@ -17,9 +17,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
 import type * as TelegramApiModule from '#src/telegram/api.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
 const send = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 await vi.mock(

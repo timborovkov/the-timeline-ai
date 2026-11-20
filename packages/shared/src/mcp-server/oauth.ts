@@ -1,10 +1,10 @@
+import type { Db } from '@timeline/db';
+
 import {
   applyMcpOAuthConsentScopes,
   type ValidatedAuthorizationRequest,
 } from '#src/mcp-server/oauth-core.js';
 import { withTeam } from '#src/team-scope.js';
-
-import type { Db } from '@timeline/db';
 
 export {
   applyMcpOAuthConsentScopes,

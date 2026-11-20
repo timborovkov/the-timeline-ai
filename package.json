@@ -9,8 +9,8 @@
     "deps": "bun install",
     "dev": "turbo run dev --env-mode=loose",
     "build": "turbo run build",
-    "lint": "turbo run lint --concurrency=1",
-    "typecheck": "turbo run typecheck --concurrency=1",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
     "test": "bun scripts/testing/run.ts",
     "test:ci": "bun run test:e2e-env && bun run test:demo-fixture && bun run test:eval && bun run test:reconciliation-eval && bun run test:dist-imports",
     "test:eval": "bun --conditions=development scripts/testing/run.ts src/agent/evals.test.ts src/agent/ask.test.ts src/agent/surface-evals.test.ts src/objects/summary-evals.test.ts src/task-categories/evals.test.ts src/team-scope.search.test.ts && bun --conditions=development scripts/testing/run.ts src/agent/mcp-evals.test.ts && bun --conditions=development scripts/testing/run.ts src/app/api/chat/route.test.ts && bun --conditions=development scripts/testing/run.ts src/workers/suggestions.evals.test.ts",
@@ -26,9 +26,12 @@
     "test:dist-imports": "bun run --filter @timeline/db build && bun run --filter @timeline/shared build && bun scripts/check-dist-imports.mjs",
     "test:e2e-env": "bun scripts/e2e-env.test.ts",
     "check:web-bundle": "bun scripts/check-web-bundle-hygiene.ts",
+    "check:public-origin": "bun --cwd apps/web --no-env-file --conditions=development scripts/check-public-origin.ts",
     "e2e": "bun scripts/run-e2e-strict.ts",
     "e2e:ui": "bun scripts/run-e2e-command.ts bun x --bun --no-install playwright test --ui",
     "e2e:prod-smoke": "bun scripts/run-e2e-prod-smoke.ts",
+    "ops:restore-drill": "bun --no-env-file --conditions=development scripts/restore-drill.ts",
+    "telegram:provision": "bun --no-env-file --conditions=development scripts/provision-telegram.ts",
     "canary:integrations": "bun --conditions=development scripts/check-live-integrations.ts",
     "canary:integrations:strict": "bun --conditions=development scripts/check-live-integrations.ts --strict",
     "openrouter:attestation": "bun --conditions=development scripts/print-openrouter-privacy-attestation.ts",
@@ -64,6 +67,44 @@
     "eval:agent:compare": "bun --conditions=development packages/shared/src/scripts/agent-experiment.ts",
     "eval:suggestions:sync": "bun --conditions=development apps/worker/src/scripts/suggestion-experiment.ts --sync",
     "eval:suggestions:compare": "bun --conditions=development apps/worker/src/scripts/suggestion-experiment.ts"
+  },
+  "overrides": {
+    "@babel/helper-compilation-targets": {
+      "browserslist": "4.28.7"
+    },
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.1"
+    },
+    "@sentry/cli": {
+      "undici": "6.29.1"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    },
+    "ajv": {
+      "fast-uri": "3.1.9"
+    },
+    "browserslist": {
+      "baseline-browser-mapping": "2.11.0"
+    },
+    "eslint": {
+      "minimatch": "11.0.1"
+    },
+    "mammoth": {
+      "@xmldom/xmldom": "0.8.15"
+    },
+    "pino-pretty": {
+      "fast-copy": "4.1.0"
+    },
+    "postcss": {
+      "source-map-js": "1.2.2"
+    },
+    "posthog-js": {
+      "fflate": "0.4.9"
+    }
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1165.0",

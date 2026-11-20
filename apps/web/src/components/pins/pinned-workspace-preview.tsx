@@ -1,9 +1,8 @@
 'use client';
 
+import type { PinnedItem } from '@timeline/shared/pins';
 import Link from 'next/link';
 import { useState } from 'react';
-
-import type { PinnedItem } from '@timeline/shared/pins';
 
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { SectionHeading } from '@/components/section-heading';

@@ -2,7 +2,6 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { NextRequest } from 'next/server';
-
 import type { Session } from 'next-auth';
 
 import { authorizeProductRequest, hasCurrentLegalSession } from '@/lib/auth.config';

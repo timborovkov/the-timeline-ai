@@ -173,7 +173,7 @@ describe('onboarding checklist scope', () => {
       VALUES (
         '${OTHER_TEAM_ID}',
         'new@example.test',
-        'invite-token',
+        encode(sha256(convert_to('invite-token', 'UTF8')), 'hex'),
         '${OWNER_ID}',
         now() + interval '7 days'
       );
@@ -190,7 +190,7 @@ describe('onboarding checklist scope', () => {
       VALUES (
         '${OTHER_TEAM_ID}',
         'stale@example.test',
-        'expired-invite-token',
+        encode(sha256(convert_to('expired-invite-token', 'UTF8')), 'hex'),
         '${OWNER_ID}',
         now() - interval '1 day'
       );
@@ -472,6 +472,67 @@ describe('first-run scope', () => {
     const record = await scope().getFirstRunRecord();
     expect(record?.summary).toBeNull();
     expect(record?.emailArrived).toBe(false);
+  });
+
+  it('ignores tombstoned Slack messages when detecting connector first-run arrival', async () => {
+    const deletedId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01';
+    const activeId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02';
+    await pg.exec(`
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, starter_selected_at, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'processing', 'slack', NOW(), NOW() - INTERVAL '1 hour'
+      );
+      INSERT INTO raw_events (
+        id, team_id, author_user_id, source, content_text, visibility, created_at, source_metadata
+      )
+      VALUES
+        (
+          '${deletedId}', '${TEAM_ID}', '${OWNER_ID}', 'slack', 'deleted kickoff', 'team',
+          NOW() - INTERVAL '20 minutes', '{"deleted":true,"channel_id":"C1"}'::jsonb
+        ),
+        (
+          '${activeId}', '${TEAM_ID}', '${OWNER_ID}', 'slack', 'live kickoff', 'team',
+          NOW() - INTERVAL '5 minutes', '{"channel_id":"C1"}'::jsonb
+        );
+    `);
+
+    const arrival = await scope().detectConnectorArrival();
+    expect(arrival.arrived).toBe(true);
+    expect(arrival.eventId).toBe(activeId);
+
+    const record = await scope().getFirstRunRecord();
+    expect(record?.summary).toBe('live kickoff');
+    expect(record?.emailArrived).toBe(true);
+  });
+
+  it('stops showing a connector first-run record after the captured Slack message is tombstoned', async () => {
+    const eventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11';
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id, team_id, author_user_id, source, content_text, visibility, source_metadata
+      )
+      VALUES (
+        '${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'slack', 'removed message', 'team',
+        '{"deleted":true,"channel_id":"C1"}'::jsonb
+      );
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_event_id, first_capture_landed_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'record', 'slack', '${eventId}', NOW()
+      );
+    `);
+
+    const arrival = await scope().detectConnectorArrival();
+    expect(arrival.arrived).toBe(false);
+    expect(arrival.eventId).toBeNull();
+
+    const record = await scope().getFirstRunRecord();
+    expect(record?.summary).toBeNull();
+    expect(record?.emailArrived).toBe(false);
+    expect(record?.recordTitle).toBe('Waiting for Slack');
   });
 
   it('hides a private proposal that cites a team-visible starter event', async () => {

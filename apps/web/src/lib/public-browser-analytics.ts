@@ -1,5 +1,4 @@
 import { PUBLIC_ANALYTICS_SURFACES, type PublicSurface } from '@timeline/shared/analytics';
-
 import type { CaptureResult, PostHog } from 'posthog-js';
 
 import { expireFirstPartyCookie, readPublicAnalyticsConsent } from '@/lib/public-analytics-consent';
@@ -19,6 +18,7 @@ const PUBLIC_ANALYTICS_CTA_VALUES = [
   'sign_in',
   'open_dashboard',
   'contact_support',
+  'contact_enterprise',
   'view_integrations',
   'view_how_it_works',
   'view_pricing',

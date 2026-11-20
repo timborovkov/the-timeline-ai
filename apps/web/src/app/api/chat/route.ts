@@ -45,8 +45,15 @@ import {
   selectAgentToolGroups,
   selectedNativeToolNames,
 } from '@/lib/chat-tool-selection';
+import { saveChatTurn, type ChatSaveResult } from '@/lib/chat-turn-save';
 import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
+import { handoffProvenance } from '@/lib/handoff-provenance';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 /**
@@ -363,6 +370,9 @@ async function deterministicChatResponse(input: {
   teamId: string;
   userId: string;
   shouldTitleSession: boolean;
+  saveUnavailable: boolean;
+  expectedRevision: string | null;
+  freshTurn: boolean;
 }): Promise<Response> {
   const question = messageText(input.latestUserMessage);
   const wantsWorkspaceState =
@@ -389,6 +399,7 @@ async function deterministicChatResponse(input: {
               eventId: match.id,
               event_id: match.id,
               snippet: match.contentText ?? '',
+              citation: `[ev:${match.id}]`,
               source: match.source,
             },
           ],
@@ -399,56 +410,7 @@ async function deterministicChatResponse(input: {
       : "I couldn't verify that from the accessible timeline.";
   }
 
-  if (input.sessionId) {
-    const assistantMessage: UIMessage = {
-      id: textId,
-      role: 'assistant',
-      parts: [
-        {
-          type: `tool-${toolName}`,
-          toolCallId,
-          state: 'output-available',
-          input: toolInput,
-          output: toolOutput,
-        },
-        { type: 'text', text: answer },
-      ],
-    };
-    try {
-      await input.scope.objects.persistChatTurn(input.sessionId, {
-        userMessage: input.latestUserMessage,
-        assistantMessage,
-        metadata: { finish_reason: 'stop', prompt_version: agent.AGENT_PROMPT_VERSION },
-      });
-    } catch (err) {
-      log.warn(
-        { err, sessionId: input.sessionId, teamId: input.teamId, userId: input.userId },
-        'deterministic chat session append failed',
-      );
-      return createDeterministicResponse({
-        streamId: textId,
-        toolCallId,
-        toolName,
-        toolInput,
-        toolOutput,
-        answer,
-        sessionId: input.sessionId,
-      });
-    }
-    if (input.shouldTitleSession) {
-      await titleChatSession({
-        scope: input.scope,
-        sessionId: input.sessionId,
-        titleSourceMessage: input.titleSourceMessage,
-      }).catch((err: unknown) => {
-        log.warn(
-          { err, sessionId: input.sessionId, teamId: input.teamId, userId: input.userId },
-          'deterministic chat title update failed',
-        );
-      });
-    }
-  }
-
+  const sessionId = input.sessionId;
   return createDeterministicResponse({
     streamId: textId,
     toolCallId,
@@ -456,7 +418,51 @@ async function deterministicChatResponse(input: {
     toolInput,
     toolOutput,
     answer,
-    sessionId: input.sessionId,
+    sessionId,
+    save: sessionId
+      ? async () => {
+          const assistantMessage: UIMessage = {
+            id: textId,
+            role: 'assistant',
+            parts: [
+              {
+                type: `tool-${toolName}`,
+                toolCallId,
+                state: 'output-available',
+                input: toolInput,
+                output: toolOutput,
+              },
+              { type: 'text', text: answer },
+            ],
+          };
+          const result = await saveChatTurn({
+            scope: input.scope,
+            sessionId,
+            expectedRevision: input.expectedRevision,
+            turn: {
+              userMessage: input.latestUserMessage,
+              assistantMessage,
+              metadata: {
+                finish_reason: 'stop',
+                prompt_version: agent.AGENT_PROMPT_VERSION,
+                handoff_provenance: handoffProvenance(assistantMessage, input.freshTurn),
+              },
+            },
+          });
+          if (result.status === 'saved' && input.shouldTitleSession) {
+            await titleChatSession({
+              scope: input.scope,
+              sessionId,
+              titleSourceMessage: input.titleSourceMessage,
+            }).catch((err: unknown) => {
+              reportCaughtError(err, { surface: 'background', operation: 'chat_title_update' });
+            });
+          }
+          return result;
+        }
+      : input.saveUnavailable
+        ? () => Promise.resolve({ status: 'unavailable', sessionId: null })
+        : undefined,
   });
 }
 
@@ -468,9 +474,10 @@ function createDeterministicResponse(input: {
   toolOutput: Record<string, unknown>;
   answer: string;
   sessionId: string | undefined;
+  save?: () => Promise<ChatSaveResult>;
 }): Response {
   const stream = createUIMessageStream({
-    execute: ({ writer }) => {
+    execute: async ({ writer }) => {
       writer.write({ type: 'start', messageId: input.streamId });
       writer.write({
         type: 'tool-input-available',
@@ -486,6 +493,8 @@ function createDeterministicResponse(input: {
       writer.write({ type: 'text-start', id: input.streamId });
       writer.write({ type: 'text-delta', id: input.streamId, delta: input.answer });
       writer.write({ type: 'text-end', id: input.streamId });
+      if (input.save)
+        writer.write({ type: 'data-turn-save', transient: true, data: await input.save() });
       writer.write({ type: 'finish', finishReason: 'stop' });
     },
   });
@@ -534,7 +543,9 @@ export async function POST(req: Request): Promise<Response> {
 
   let parsedBody: unknown;
   try {
-    parsedBody = await req.json();
+    const body = await readCappedTextBody(req, REQUEST_BODY_LIMITS.chat);
+    if (body.tooLarge) return payloadTooLargeResponse();
+    parsedBody = JSON.parse(body.text) as unknown;
   } catch {
     return Response.json({ ok: false, error: 'invalid_json' }, { status: 400 });
   }
@@ -589,6 +600,7 @@ export async function POST(req: Request): Promise<Response> {
   // See the schema comment above for why bare requests do NOT auto-create.
   let sessionId = parsed.data.sessionId;
   let shouldTitleSession = false;
+  let saveUnavailable = false;
   if (sessionId) {
     // Validate the session belongs to this team. 404 (not 403) is the
     // canonical "no resource here" — it doesn't distinguish "wrong team"
@@ -614,6 +626,7 @@ export async function POST(req: Request): Promise<Response> {
     } catch (err) {
       // Pinned object not in this team / bad uuid. Fall back to no
       // persistence rather than refuse the chat.
+      saveUnavailable = true;
       log.warn({ err }, 'chat session create failed');
       reportCaughtError(err, { surface: 'api', operation: 'chat_session_create' });
     }
@@ -650,16 +663,22 @@ export async function POST(req: Request): Promise<Response> {
   ) {
     return Response.json({ ok: false, error: 'invalid_user_message' }, { status: 400 });
   }
+  let expectedRevision: string | null = null;
   if (hasApprovalDecisions) {
     if (!sessionId)
       return Response.json({ ok: false, error: 'approval_session_required' }, { status: 409 });
     try {
-      uiMessages[uiMessages.length - 1] = await scope.objects.claimChatApprovals(
-        sessionId,
-        continuation,
-      );
+      const claim = await scope.objects.claimChatApprovals(sessionId, continuation);
+      uiMessages[uiMessages.length - 1] = claim.message;
+      expectedRevision = claim.revision;
     } catch {
       return Response.json({ ok: false, error: 'approval_no_longer_available' }, { status: 409 });
+    }
+  } else if (sessionId) {
+    try {
+      expectedRevision = await scope.objects.chatTurnRevision(sessionId);
+    } catch {
+      return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
     }
   }
   const titleSourceMessage = firstUserMessageWithText(uiMessages);
@@ -679,6 +698,9 @@ export async function POST(req: Request): Promise<Response> {
       teamId: active.teamId,
       userId: session.user.id,
       shouldTitleSession,
+      saveUnavailable,
+      expectedRevision,
+      freshTurn: uiMessages.length === 1,
     });
   }
 
@@ -999,25 +1021,46 @@ export async function POST(req: Request): Promise<Response> {
   });
 
   const response = createUIMessageStreamResponse({
-    stream: toUIMessageStream({
-      stream: result.stream,
-      originalMessages: uiMessages,
-      generateMessageId: randomUUID,
-      onEnd: async ({ responseMessage, isContinuation, isAborted, isCancelled }) => {
-        if (!sessionId) return;
-        try {
-          await scope.objects.persistChatTurn(sessionId, {
-            userMessage: isContinuation ? null : latestUserMessage,
-            assistantMessage: responseMessage,
-            metadata: { ...completionMetadata, interrupted: isAborted || Boolean(isCancelled) },
-          });
-        } catch (err) {
-          log.warn(
-            { err, sessionId, teamId: active.teamId, userId: session.user.id },
-            'chat session append failed',
-          );
-          reportCaughtError(err, { surface: 'background', operation: 'chat_session_append' });
-        }
+    stream: createUIMessageStream({
+      execute: ({ writer }) => {
+        writer.merge(
+          toUIMessageStream({
+            stream: result.stream,
+            originalMessages: uiMessages,
+            generateMessageId: randomUUID,
+            onEnd: async ({ responseMessage, isContinuation, isAborted, isCancelled }) => {
+              if (!responseMessage.id || !responseMessage.parts.length) return;
+              if (!sessionId) {
+                if (saveUnavailable)
+                  writer.write({
+                    type: 'data-turn-save',
+                    transient: true,
+                    data: { status: 'unavailable', sessionId: null } satisfies ChatSaveResult,
+                  });
+                return;
+              }
+              const result = await saveChatTurn({
+                scope,
+                sessionId,
+                expectedRevision,
+                replace: isContinuation,
+                turn: {
+                  userMessage: isContinuation ? null : latestUserMessage,
+                  assistantMessage: responseMessage,
+                  metadata: {
+                    ...completionMetadata,
+                    interrupted: isAborted || Boolean(isCancelled),
+                    handoff_provenance: handoffProvenance(
+                      responseMessage,
+                      uiMessages.length === 1 && !isContinuation && !isAborted && !isCancelled,
+                    ),
+                  },
+                },
+              });
+              writer.write({ type: 'data-turn-save', transient: true, data: result });
+            },
+          }),
+        );
       },
     }),
   });

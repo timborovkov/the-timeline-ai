@@ -13,6 +13,7 @@ import {
 } from '#src/agent/tool-policy.js';
 import { buildWorkspaceTools } from '#src/agent/workspace-tools.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
+import type * as boards from '#src/boards/index.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
@@ -27,6 +28,7 @@ import { PIN_TARGET_KINDS } from '#src/pins/index.js';
 import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { enrichEvidenceContext } from '#src/retrieval/context.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
   enrichTaskProposalCategories,
@@ -53,9 +55,6 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
-
-import type * as boards from '#src/boards/index.js';
-import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('agent:tools');
 
@@ -3484,6 +3483,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const input = executeCalendarUpdateInput.parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, error: 'not_found' };
+          if (event.source !== 'internal') {
+            return {
+              ok: false,
+              error: 'read_only_imported',
+              message:
+                'Imported calendar events are read-only. Change them in the source calendar instead.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            };
+          }
           const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
           for (const field of Object.keys(input.patch)) {
             if (field === 'recurrenceEditMode') continue;
@@ -3564,6 +3572,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const input = executeCalendarCancelInput.parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, error: 'not_found' };
+          if (event.source !== 'internal') {
+            return {
+              ok: false,
+              error: 'read_only_imported',
+              message:
+                'Imported calendar events are read-only. Change them in the source calendar instead.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            };
+          }
           const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
           for (const [field, expectedRaw] of Object.entries(input.expectedCurrent)) {
             const expected = normalizeCalendarPatchValue(field, expectedRaw);
@@ -3793,6 +3810,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             .parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, message: 'Calendar event not found' };
+          if (event.source !== 'internal') {
+            return {
+              ok: false,
+              error: 'read_only_imported',
+              message:
+                'Imported calendar events are read-only. Change them in the source calendar instead.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            };
+          }
           if (options.toolMode === 'proposal_only' && input.patch?.visibility === 'private') {
             return { ok: false, error: 'team_visibility_required' };
           }

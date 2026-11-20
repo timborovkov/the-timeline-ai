@@ -1,6 +1,6 @@
-import Link from 'next/link';
-
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
+import Link from 'next/link';
+import { use } from 'react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -36,6 +36,20 @@ function memberLimitLabel(planId: SidebarBillingSummary['planId']): string {
  * Compact plan + usage meter for admins. Members only see a limit notice.
  */
 export function SidebarBillingUsage({
+  summary: source,
+  expanded,
+  className,
+}: {
+  summary: SidebarBillingSummary | null | Promise<SidebarBillingSummary | null>;
+  expanded: boolean;
+  className?: string;
+}) {
+  const summary = source && 'then' in source ? use(source) : source;
+  if (!summary) return null;
+  return <SidebarBillingSummaryView summary={summary} expanded={expanded} className={className} />;
+}
+
+function SidebarBillingSummaryView({
   summary,
   expanded,
   className,

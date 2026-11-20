@@ -2,7 +2,6 @@
 
 import { Plus, Video } from 'lucide-react';
 import { useState } from 'react';
-
 import type { ComponentProps } from 'react';
 
 import { SavedMeetingForm, ScheduleMeetingBotForm } from '@/components/meeting-forms';

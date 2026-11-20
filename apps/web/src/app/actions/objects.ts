@@ -8,11 +8,10 @@ import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
-import type { ObjectActionState } from '@/lib/object-action-result';
-
 import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
+import type { ObjectActionState } from '@/lib/object-action-result';
 import { loadObjectRowsPage } from '@/lib/object-page';
 import { publicActionError } from '@/lib/public-error';
 import { refreshMutation } from '@/lib/refresh-mutation';

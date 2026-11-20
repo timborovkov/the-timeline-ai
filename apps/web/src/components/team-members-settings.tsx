@@ -1,11 +1,10 @@
+import { TeamInviteCards } from '@/components/team-invite-cards';
 import type {
   RemovedTeamMemberRow,
   TeamInviteRow,
   TeamMemberMap,
   TeamMemberRow,
 } from '@/components/team-member-types';
-
-import { TeamInviteCards } from '@/components/team-invite-cards';
 import { MembersCard } from '@/components/team-members-card';
 
 export type {

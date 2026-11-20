@@ -26,6 +26,7 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      objects: { listObjects: () => Promise.resolve([]) },
       suggestions: {
         getApprovalItemCounts: fakes.getApprovalItemCounts,
         listSuggestions: fakes.listSuggestions,
@@ -47,7 +48,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/active-team'),
-  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  async () => ({
+    ...(await import('@/lib/active-team')),
+    resolveActiveTeam: fakes.resolveActiveTeam,
+  }),
   () => import('@/lib/active-team'),
 );
 await vi.mock(

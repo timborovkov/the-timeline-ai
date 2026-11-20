@@ -1,7 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-
 import type { ReactElement } from 'react';
 
 import { WorkSubnav as ShellWorkTabs } from '@/components/work-subnav';

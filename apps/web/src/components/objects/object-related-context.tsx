@@ -1,6 +1,7 @@
 'use client';
 
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+import type { ObjectDetail } from '@timeline/shared/objects/types';
 import {
   ExternalLink,
   FileText,
@@ -10,8 +11,6 @@ import {
   Paperclip,
 } from 'lucide-react';
 import Link from 'next/link';
-
-import type { ObjectDetail } from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';

@@ -1,10 +1,10 @@
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type * as QueueModule from '#src/queue/queues.js';
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
 type PGlite = PGliteType;
 // Direct-chat state must remain private, idempotent, bounded, and reusable by
 // provider identifiers that the product does not know about at compile time.

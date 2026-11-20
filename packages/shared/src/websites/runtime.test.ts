@@ -1,10 +1,10 @@
 // Terminal persistent scans must also finish the matching onboarding progress state.
+import type { Db } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, it } from 'bun:test';
 
 import type * as ScanModule from '#src/onboarding/website-scan.js';
 import type * as QueueModule from '#src/queue/queues.js';
-import type { Db } from '@timeline/db';
 
 const scan = vi.hoisted(() => vi.fn());
 const queued = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));

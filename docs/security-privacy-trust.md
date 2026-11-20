@@ -234,7 +234,11 @@ pair, with the user snapshot used as a fast current-state check. Direct updates
 and deletes are blocked while the user exists; privacy-driven deletion of the
 parent account may cascade the evidence. A team owner represents that they have
 authority to create and administer the team; a second mutable “team accepted”
-flag is not a substitute for each user's acceptance.
+flag is not a substitute for each user's acceptance. New acceptance records also
+carry SHA-256 digests for the rendered Terms and Privacy versions. The
+[versioned archive](../apps/web/src/lib/legal-archive/hashes.json) preserves the
+text and link destinations independently of site styling. Older records retain
+the version and request evidence captured when they were made.
 
 A material Terms update must bump its version and require renewed acceptance. A
 material Privacy Policy update must bump its version and require renewed
@@ -723,6 +727,13 @@ Consent reporting edits are restricted to current owners/admins and committed at
 
 ## Email and source recovery
 
+Opening an email verification link displays a confirmation form. Submitting the
+form claims the token and verifies the account in one transaction. Team
+invitation lookups use digests. Admins can copy a link immediately after creation
+or request a fresh link through resend. The
+[security rollout guide](setup/security-hardening-rollout.md) owns migration,
+ingress checks and dated evidence requirements.
+
 Signed email webhooks queue provider IDs; workers admit senders before downloading bounded content/attachments. Recovery requires the scoped internal ingest principal and fails closed for restricted parents. Retry payloads are encrypted; temporary URLs and credentials do not enter source snapshots. Provider delivery/retention evidence remains in the provider register.
 
 Disconnect, source removal and erasure are separate operations. Follow [manual support deletion](setup/manual-support-deletion.md); disclose retained history, backups, legal/billing records and processor copies without promising unverified completion.
@@ -751,3 +762,20 @@ Backups and content-free audits have separate retention; no total-erasure deadli
 claimed. Restore procedures must purge expired reports before serving requests.
 The privacy version advances for renewed acknowledgment. Repository changes are not
 counsel approval, deployment evidence, or evidence of completed backup deletion.
+
+## Calendar imports and workspace snapshots
+
+Google Calendar import requires affirmative OAuth consent for the read-only
+Calendar List and Events scopes. The refresh token is encrypted in the
+member's workspace connection. Imported event details are private to the
+importer. Teammates can see redacted busy time under the existing calendar
+contract. Disconnect removes the local credential and active derived mirrors.
+Live Google Cloud configuration and scope verification remain open. See
+[calendar import](calendar.md#google-calendar-import).
+
+Handoff snapshots and saved views follow workspace deletion. Handoff reads
+recheck the project, sources and commitments. Saved-view digests reevaluate
+matches for the recipient and use personal destinations. Source-health counts
+apply source visibility before aggregation. OCR correction history retains
+earlier derived text subject to the source document's access and deletion
+policy.

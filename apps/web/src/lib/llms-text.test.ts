@@ -1,8 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import type { PublicDocument } from '@/lib/public-site';
-
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_SETUP_PROMPT,
@@ -13,6 +11,7 @@ import {
 } from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
 import { buildLlmsFullTxt, buildLlmsTxt } from '@/lib/llms-text';
+import type { PublicDocument } from '@/lib/public-site';
 import {
   createPublicDocumentRegistry,
   definePublicDocuments,
@@ -38,7 +37,8 @@ describe('llms text files', () => {
     expect(text).toContain('## Start here');
     expect(text).toContain('Researching Timeline');
     expect(text).toContain('Connecting an agent to an existing account');
-    expect(text).toContain('signup creates your first team automatically');
+    expect(text).toContain('name your team on Welcome');
+    expect(text).toContain('Invite-only signup joins an existing team');
     expect(text).toContain('Already connected');
     expect(text).toContain('[Timeline skill](https://thetimeline.cc/agents/SKILL.md)');
     expect(text).toContain('[Agent setup](https://thetimeline.cc/agents/setup.md)');
@@ -46,7 +46,7 @@ describe('llms text files', () => {
     expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
-    expect(text).toContain('Capture and live access are different capabilities');
+    expect(text).toContain('Integration capabilities');
     expect(text).toContain('does not automatically import');
     expect(text).toContain('## Optional');
     expect(text).not.toContain('Set up The Timeline -');
@@ -129,10 +129,22 @@ describe('llms text files', () => {
     }
   });
 
+  it('uses the intended origin for first-party links and preserves external citations', () => {
+    const siteUrl = 'https://preview.example.test';
+    const markdown = buildLlmsFullTxt({ siteUrl });
+
+    expect(markdown).toContain(`${siteUrl}/api/webhooks/ingest`);
+    expect(markdown).toContain(`${siteUrl}/api/mcp/server`);
+    expect(markdown).toContain(`[Agent setup](${siteUrl}/agents/setup.md)`);
+    expect(markdown).toContain(`[Connect MCP tools](${siteUrl}/integrations/mcp)`);
+    expect(markdown).toContain('https://day.ai');
+    expect(markdown).not.toContain('https://thetimeline.cc/');
+  });
+
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-11-10',
-      reviewed: '2026-11-10',
+      modified: '2026-11-19',
+      reviewed: '2026-11-19',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
       modified: '2026-11-03',

@@ -1,10 +1,9 @@
 'use client';
 
+import type * as boards from '@timeline/shared/boards';
 import { MoreHorizontal, Pencil, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
-
-import type * as boards from '@timeline/shared/boards';
 
 import { deleteBoardAction, updateBoardSettingsAction } from '@/app/actions/boards';
 import { BoardQualificationFields } from '@/components/boards/board-qualification-fields';

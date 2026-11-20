@@ -1,8 +1,8 @@
+import type { PinnedItem } from '@timeline/shared/pins';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { PinnedItem } from '@timeline/shared/pins';
 // Test environment: happy-dom
 
 // Pin controls are shared across every work surface. These tests guard their

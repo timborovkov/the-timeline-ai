@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-
 import type * as boards from '@timeline/shared/boards';
+import Link from 'next/link';
 
 import { displayText } from '@/lib/display-dates';
 

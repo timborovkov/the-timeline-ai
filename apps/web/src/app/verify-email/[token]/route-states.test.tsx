@@ -22,7 +22,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/email-verification'),
-  () => ({ verifyEmailToken: vi.fn() }),
+  () => ({ inspectEmailVerificationToken: vi.fn(), verifyEmailToken: vi.fn() }),
   () => import('@/lib/email-verification'),
 );
 
@@ -36,7 +36,11 @@ const { resolveAuthContinuation } = await import('@/lib/auth-continuation');
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { verifyEmailToken } = await import('@/lib/email-verification');
+const { inspectEmailVerificationToken, verifyEmailToken } =
+  await import('@/lib/email-verification');
+const { confirmEmailVerification } = await import('./actions.js');
+const TOKEN = 'a'.repeat(43);
+const CONTINUATION = 'b'.repeat(43);
 
 const { default: VerifyEmailError } = await import('./error.js');
 const { default: VerifyEmailLoading } = await import('./loading.js');
@@ -60,36 +64,44 @@ describe('VerifyEmail route states', () => {
     expect(html).toContain('Verification link invalid');
   });
 
-  it('resumes a valid authorization and explains an expired continuation', async () => {
+  it('renders the confirmation form without consuming tokens or continuations', async () => {
+    vi.mocked(inspectEmailVerificationToken).mockResolvedValueOnce('confirm');
+    const html = renderToStaticMarkup(
+      await VerifyEmailPage({
+        params: Promise.resolve({ token: TOKEN }),
+        searchParams: Promise.resolve({ email: 'person@example.com', continuation: CONTINUATION }),
+      }),
+    );
+    expect(html).toContain('Confirm email');
+    expect(verifyEmailToken).not.toHaveBeenCalled();
+    expect(resolveAuthContinuation).not.toHaveBeenCalled();
+  });
+
+  it('resolves a continuation only after successful confirmation', async () => {
     for (const destination of ['/oauth/authorize?state=saved', null]) {
       vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
       vi.mocked(resolveAuthContinuation).mockResolvedValueOnce(destination);
-      const html = renderToStaticMarkup(
-        await VerifyEmailPage({
-          params: Promise.resolve({ token: 'verification-token' }),
-          searchParams: Promise.resolve({
-            email: 'person@example.com',
-            continuation: 'opaque-reference',
-          }),
-        }),
+      const result = await confirmEmailVerification(
+        { email: 'person@example.com', token: TOKEN, continuation: CONTINUATION },
+        null,
       );
-      expect(html).toContain(
-        destination ? 'Continue connecting your agent' : 'Restart authorization from your agent',
-      );
-      expect(resolveAuthContinuation).toHaveBeenCalledWith(
-        {},
-        'opaque-reference',
-        'person@example.com',
-      );
+      expect(result).toMatchObject({
+        status: 'verified',
+        continuationExpired: !destination,
+        next: destination ? 'agent' : 'dashboard',
+      });
+      expect(resolveAuthContinuation).toHaveBeenCalledWith({}, CONTINUATION, 'person@example.com');
     }
   });
 
   it('lets verification-service failures reach the route error boundary', async () => {
-    vi.mocked(verifyEmailToken).mockRejectedValueOnce(new Error('database unavailable'));
+    vi.mocked(inspectEmailVerificationToken).mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
 
     await expect(
       VerifyEmailPage({
-        params: Promise.resolve({ token: 'verification-token' }),
+        params: Promise.resolve({ token: TOKEN }),
         searchParams: Promise.resolve({ email: 'person@example.com' }),
       }),
     ).rejects.toThrow('database unavailable');
@@ -99,9 +111,11 @@ describe('VerifyEmail route states', () => {
     render(<VerifyEmailLoading />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Verifying email');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      'Checking verification link',
+    );
     const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Verifying email');
+    expect(announcement.textContent).toBe('Checking verification link');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(
       screen.getByLabelText('Email verification loading placeholder').getAttribute('aria-busy'),
@@ -125,7 +139,7 @@ describe('VerifyEmail route states', () => {
     expect(screen.getByText('Confirm the email address for your Timeline account.')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 2, name: 'Unable to verify email' })).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain(
-      'Unable to verify emailEmail verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again.RetryGet support',
+      'Unable to verify emailEmail verification could not be confirmed. If you submitted the confirmation, your address may already be verified. Check your connection, then try again.RetryGet support',
     );
     expect(screen.getByRole('link', { name: 'Open dashboard' }).getAttribute('href')).toBe('/app');
 
@@ -140,23 +154,17 @@ describe('VerifyEmail route states', () => {
 
 it('preserves an allowlisted plan through a verified email and fresh sign-in', async () => {
   vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
-  const html = renderToStaticMarkup(
-    await VerifyEmailPage({
-      params: Promise.resolve({ token: 'token' }),
-      searchParams: Promise.resolve({ email: 'user@example.test', plan: 'payg' }),
-    }),
-  );
-  expect(html).toContain('Continue to billing');
-  expect(html).toContain(
-    '/sign-in?callbackUrl=%2Fapp%2Fteam%3Fsection%3Dbilling%26plan%3Dpayg%23change-plan',
-  );
+  await expect(
+    confirmEmailVerification({ token: TOKEN, email: 'user@example.test', plan: 'payg' }, null),
+  ).resolves.toMatchObject({
+    next: 'billing',
+    href: '/sign-in?callbackUrl=%2Fapp%2Fteam%3Fsection%3Dbilling%26plan%3Dpayg%23change-plan',
+  });
   vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
-  const invalid = renderToStaticMarkup(
-    await VerifyEmailPage({
-      params: Promise.resolve({ token: 'token' }),
-      searchParams: Promise.resolve({ email: 'user@example.test', plan: '//evil.test' }),
-    }),
-  );
-  expect(invalid).toContain('href="/app"');
-  expect(invalid).not.toContain('evil.test');
+  await expect(
+    confirmEmailVerification(
+      { token: TOKEN, email: 'user@example.test', plan: '//evil.test' },
+      null,
+    ),
+  ).resolves.toMatchObject({ next: 'dashboard', href: '/app' });
 });

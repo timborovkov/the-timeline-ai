@@ -14,6 +14,7 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
+import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 import {
   CAPACITY_BY_PLAN,
   PLAN_CATALOG,
@@ -28,8 +29,6 @@ import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
 import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
-
-import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
 function admissionCodeForPlan(planId: string): BillingReserveFailureCode {
   return planId === 'free' ? 'free_allowance_reached' : 'usage_limit_reached';

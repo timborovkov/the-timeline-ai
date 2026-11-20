@@ -25,8 +25,8 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
-    // The complete metadata row reserves both session variants; only one is visible.
-    expect(html.match(/>Source on GitHub</g)).toHaveLength(2);
+    // The source link is shared by both session variants.
+    expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Know where the work stands.');
@@ -118,7 +118,8 @@ describe('LandingPage', () => {
     expect(html).toContain('A person approves each one.');
     expect(html).not.toContain('Suggested changes wait — human approval required.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(4);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(1);
+    expect(html.match(/data-home-panel-motion/g)).toHaveLength(3);
     expect(html.match(/data-home-proof=/g)).toHaveLength(5);
     expect(html).toContain('data-home-proof="11-timeline-dark.png"');
     expect(html).toContain('data-home-proof="17-timeline-voice-dark.png"');
@@ -278,6 +279,9 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
+    expect(html).toContain('source-available GitHub repo');
+    expect(html).toContain('managed on-premise deployment');
+    expect(html).toContain('href="/trust#deployment"');
     expect(html).toContain(
       'Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place.',
     );
@@ -353,7 +357,8 @@ describe('LandingPage', () => {
   it('shows every source detail inline without dialogs, disclosures or navigation', () => {
     const { container } = render(<LandingPage />);
     const block = container.querySelector('[data-scene="04-ask"]');
-    const ledger = screen.getByRole('complementary', { name: 'Sources behind this answer' });
+    const ledger = screen.getByRole('region', { name: 'Sources behind this answer' });
+    expect(screen.getByRole('main').querySelector('aside')).toBeNull();
     expect(block?.querySelector('dialog')).toBeNull();
     expect(ledger.querySelector('button, a, details')).toBeNull();
     expect(block?.querySelector('a[href^="#acme-source-"]')).toBeNull();

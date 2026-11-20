@@ -9,7 +9,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { listChargeCentsForMeter } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
-import { getEnv } from '#src/env.js';
+import { getEnv, isFirecrawlConfigured } from '#src/env.js';
 import { cancelWebsiteCrawl } from '#src/onboarding/firecrawl-website-scan.js';
 import { withTeam } from '#src/team-scope.js';
 import { websiteSourceUnits } from '#src/websites/usage.js';
@@ -65,7 +65,7 @@ export async function failWebsiteRun(
     .from(websiteSources)
     .where(and(eq(websiteSources.teamId, teamId), eq(websiteSources.id, runId)));
   let providerFinishedAt: Date | undefined;
-  if (checkpoint?.crawlId && getEnv().FIRECRAWL_API_KEY) {
+  if (checkpoint?.crawlId && isFirecrawlConfigured()) {
     try {
       await cancelWebsiteCrawl(checkpoint.crawlId, getEnv().FIRECRAWL_API_KEY ?? '');
       providerFinishedAt = new Date();
@@ -114,7 +114,11 @@ export async function failWebsiteRun(
     if (run?.trigger === 'onboarding')
       await tx
         .update(teamFirstRun)
-        .set({ phase: 'failed', scanFailureReason: 'unreachable', updatedAt: new Date() })
+        .set({
+          phase: 'failed',
+          scanFailureReason: reason === 'not_enabled' ? 'not_enabled' : 'unreachable',
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(teamFirstRun.teamId, teamId),

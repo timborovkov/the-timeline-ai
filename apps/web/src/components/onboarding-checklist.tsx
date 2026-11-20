@@ -4,11 +4,10 @@ import { Check, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject } from 'react';
 
-import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
-
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { notifyError } from '@/lib/notify';
+import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';

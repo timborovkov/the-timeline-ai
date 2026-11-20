@@ -2,7 +2,6 @@ import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
-
 import {
   findEditorialGuideByRoute,
   HOW_IT_WORKS_ROUTE,

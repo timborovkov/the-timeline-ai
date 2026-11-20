@@ -69,6 +69,7 @@ export function ProductTourPage() {
         title={PRODUCT_TOUR.closingTitle}
         body={PRODUCT_TOUR.closingBody}
         firstRun
+        sourceIntent="slack"
       />
     </main>
   );

@@ -7,7 +7,6 @@ import {
   driveSyncIntentKind,
   driveTargetCompletesFeedRecovery,
 } from '#src/integrations/google-drive-scheduling.js';
-
 import type * as TestModule1 from '#src/queue/index.js';
 
 /**

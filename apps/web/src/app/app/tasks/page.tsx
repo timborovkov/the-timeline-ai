@@ -1,16 +1,15 @@
 import { getEnv } from '@timeline/shared/env';
+import type { ObjectListFilter } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { ListTodo, Plus } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { TaskRowsPage } from '@/lib/task-page';
-import type { ObjectListFilter } from '@timeline/shared/objects';
-import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { TaskViewToggle } from '@/components/tasks/task-view-toggle';
@@ -22,6 +21,7 @@ import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+import type { TaskRowsPage } from '@/lib/task-page';
 import { countTaskRows, loadTaskRowsPage } from '@/lib/task-page';
 import { TASK_STATUS_COLUMNS } from '@/lib/task-statuses';
 import {
@@ -83,6 +83,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       <PageHeader
         variant="collection"
         title="Tasks"
+        trailing={<SaveViewButton collection="tasks" filters={{ ...taskLoadFilterParams, view }} />}
         subtitle="Assigned work and follow-ups from your timeline."
         metadata={[
           { label: 'Total', value: counts.total, mono: true },

@@ -1,9 +1,9 @@
+import type * as PostHogNodeAnalytics from '@timeline/shared/analytics/posthog-node';
 import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import type * as TestModule1 from '@/lib/analytics';
-import type * as PostHogNodeAnalytics from '@timeline/shared/analytics/posthog-node';
 const capturePostHogProductEvent = vi.fn();
 const capturePostHogPersonlessSurfaceRequest = vi.fn();
 const scheduleAfter = vi.fn();

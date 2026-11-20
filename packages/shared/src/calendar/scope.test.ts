@@ -1,8 +1,8 @@
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
 type PGlite = PGliteType;
 
 interface DeletePointsForSourceInput {
@@ -1383,6 +1383,33 @@ describe('calendar scope', () => {
       .where(eq(calendarEvents.id, CALENDAR_EVENT_ID));
     expect(row?.visibility).toBe('team');
     expect(row?.visibilityUserIds).toBeNull();
+  });
+
+  it('refuses update and delete for imported calendar events', async () => {
+    await db.insert(calendarEvents).values({
+      id: CALENDAR_EVENT_ID,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: 'Imported review',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      source: 'google',
+      metadata: {},
+    });
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(
+      scope.calendar.updateCalendarEvent(CALENDAR_EVENT_ID, { title: 'Should not apply' }),
+    ).resolves.toBeNull();
+    await expect(scope.calendar.deleteCalendarEvent(CALENDAR_EVENT_ID)).resolves.toBe(false);
+
+    const [row] = await db
+      .select({ title: calendarEvents.title, deletedAt: calendarEvents.deletedAt })
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, CALENDAR_EVENT_ID));
+    expect(row).toEqual({ title: 'Imported review', deletedAt: null });
   });
 
   it('rejects non-owner visibility user changes even when visibility value is unchanged', async () => {

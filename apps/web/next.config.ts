@@ -4,10 +4,25 @@ import { withSentryConfig } from '@sentry/nextjs/config';
 
 import type { NextConfig } from 'next';
 
+import { baseContentSecurityPolicy } from './src/lib/content-security-policy';
+
+import {
+  sensitiveLinkHeaders,
+  sensitiveLinkHeaderSources,
+  sensitiveLinkRequestLogPattern,
+} from './src/lib/sensitive-links';
+
 const workspaceRoot = join(__dirname, '../..');
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  images: {
+    localPatterns: [
+      // Public screenshot revisions keep the optimized cache coherent after recaptures.
+      { pathname: '/marketing/screenshots/*.png' },
+      { pathname: '/**', search: '' },
+    ],
+  },
   // Load routes on first use instead of retaining every server bundle at startup.
   // This trades cold-route latency for a lower idle footprint on Railway.
   experimental: {
@@ -16,7 +31,7 @@ const nextConfig: NextConfig = {
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
     serverFunctions: false,
-    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password|verify-email)(?:[/?]|$)/] },
+    incomingRequests: { ignore: [sensitiveLinkRequestLogPattern] },
   },
   outputFileTracingRoot: workspaceRoot,
   outputFileTracingIncludes: {
@@ -32,10 +47,7 @@ const nextConfig: NextConfig = {
       {
         source: '/:path*',
         headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: "frame-ancestors 'none'; base-uri 'self'",
-          },
+          baseContentSecurityPolicy,
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
@@ -44,23 +56,10 @@ const nextConfig: NextConfig = {
             : []),
         ],
       },
-      {
-        source: '/:path(forgot-password|reset-password)',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store' },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
-          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
-        ],
-      },
-      {
-        source: '/oauth/authorize',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store' },
-          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-        ],
-      },
+      ...sensitiveLinkHeaderSources.map((source) => ({
+        source,
+        headers: [...sensitiveLinkHeaders],
+      })),
     ]);
   },
   // `postgres` is a CJS module with native pg-wire code paths that webpack

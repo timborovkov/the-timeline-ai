@@ -1,16 +1,19 @@
 import { getEnv } from '@timeline/shared/env';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
+import { z } from 'zod';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { GuidedContinue } from '@/components/onboarding/guided-continue';
 import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';
 import { PageHeader } from '@/components/page-header';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
+import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
@@ -54,7 +57,7 @@ const EMPTY_STATES: Record<
 };
 
 interface PageProps {
-  searchParams: Promise<{ status?: string; boardId?: string }>;
+  searchParams: Promise<{ status?: string; boardId?: string; project?: string; decision?: string }>;
 }
 
 const GUIDED_APPROVAL_PHASES = new Set(['ask', 'approve', 'record']);
@@ -90,6 +93,111 @@ function GuidedApprovalsContinue({ enabled }: { enabled: boolean }) {
   );
 }
 
+function ApprovalFiltersToolbar({
+  status,
+  filters,
+  projects,
+  counts,
+  showCounts,
+}: {
+  status: ApprovalFilter;
+  filters: Record<string, string>;
+  projects: { id: string; canonicalName: string }[];
+  counts: { pending: number; failed: number };
+  showCounts: boolean;
+}) {
+  return (
+    <CollectionToolbar>
+      <CollectionToolbar.Search>
+        <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
+          {STATUS_FILTERS.map((filter) => (
+            <Link
+              key={filter}
+              href={`/app/approvals?${new URLSearchParams({ ...filters, status: filter }).toString()}`}
+              aria-current={status === filter ? 'page' : undefined}
+              className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
+                status === filter
+                  ? 'bg-signal-soft text-signal'
+                  : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+              }`}
+            >
+              {filter}
+              {showCounts && (filter === 'pending' || filter === 'failed')
+                ? ` ${counts[filter]}`
+                : ''}
+            </Link>
+          ))}
+        </nav>
+      </CollectionToolbar.Search>
+      <CollectionToolbar.Filters>
+        <form action="/app/approvals" className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="status" value={status} />
+          {filters.boardId ? <input type="hidden" name="boardId" value={filters.boardId} /> : null}
+          <label className="block space-y-1 text-xs">
+            Project
+            <NativeSelect name="project" defaultValue={filters.project ?? ''}>
+              <option value="">All projects</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.canonicalName}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          <label className="block space-y-1 text-xs">
+            Change type
+            <NativeSelect name="decision" defaultValue={filters.decision ?? ''}>
+              <option value="">All changes</option>
+              <option value="1">Decisions</option>
+            </NativeSelect>
+          </label>
+          <Button size="sm" variant="outline" type="submit">
+            Apply filters
+          </Button>
+        </form>
+      </CollectionToolbar.Filters>
+    </CollectionToolbar>
+  );
+}
+
+function getApprovalFilters(params: Awaited<PageProps['searchParams']>) {
+  const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
+    ? (params.status as ApprovalFilter)
+    : 'pending';
+  const projectId = z.uuid().safeParse(params.project).data;
+  const decisionOnly = params.decision === '1';
+  const approvalFilters = {
+    status,
+    ...(params.boardId ? { boardId: params.boardId } : {}),
+    ...(projectId ? { project: projectId } : {}),
+    ...(decisionOnly ? { decision: '1' } : {}),
+  };
+  return {
+    status,
+    projectId,
+    decisionOnly,
+    approvalFilters,
+    showCounts: !params.boardId && !projectId && !decisionOnly,
+  };
+}
+
+function visibleApprovalBundles(
+  rows: Parameters<typeof serializeSuggestionBundle>[0][],
+  status: ApprovalFilter,
+  boardId?: string,
+) {
+  return rows.flatMap((bundle) => {
+    const items = bundle.items.filter((item) => {
+      if (boardId && item.proposedPayload.boardId !== boardId) return false;
+      if (status === 'pending') return item.status === 'pending';
+      if (status === 'failed') return item.status === 'failed';
+      if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
+      return item.status !== 'failed';
+    });
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
+  });
+}
+
 export default async function ApprovalsPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -100,14 +208,15 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   const guidedApprovals = await loadGuidedApprovals(scope);
   const itemIds = guidedApprovals ? await guidedApprovalItemIds(scope) : undefined;
   const params = await searchParams;
-  const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
-    ? (params.status as ApprovalFilter)
-    : 'pending';
-  const [suggestionRows, calendarSettings, approvalCounts] = await Promise.all([
+  const { status, projectId, decisionOnly, approvalFilters, showCounts } =
+    getApprovalFilters(params);
+  const [suggestionRows, calendarSettings, approvalCounts, projects] = await Promise.all([
     scope.suggestions.withCalendarResolutionHints(
       await scope.suggestions.listSuggestions({
         status,
         boardId: params.boardId,
+        projectId,
+        decisionOnly,
         itemIds,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: null,
@@ -115,25 +224,15 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     ),
     scope.calendar.getCalendarSettings(),
     scope.suggestions.getApprovalItemCounts({ itemIds }),
+    scope.objects.listObjects({ type: 'project', archived: false, limit: 100 }),
   ]);
   const page = pageWindow(suggestionRows, SUGGESTIONS_PAGE_SIZE, (row) => ({
     at: row.createdAt.toISOString(),
     id: row.id,
   }));
-  const visibleSuggestions = page.items.flatMap((bundle) => {
-    const items = bundle.items.filter((item) => {
-      if (params.boardId && item.proposedPayload.boardId !== params.boardId) return false;
-      if (status === 'pending') return item.status === 'pending';
-      if (status === 'failed') return item.status === 'failed';
-      if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
-      return item.status !== 'failed';
-    });
-    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
-  });
+  const visibleSuggestions = visibleApprovalBundles(page.items, status, params.boardId);
   const inventoryCount =
-    !params.boardId && (status === 'pending' || status === 'failed')
-      ? approvalCounts[status]
-      : null;
+    showCounts && (status === 'pending' || status === 'failed') ? approvalCounts[status] : null;
 
   return (
     <div data-app-width="overview" className="space-y-4">
@@ -141,6 +240,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         variant="default"
 
         title="Approvals"
+        trailing={<SaveViewButton collection="approvals" filters={approvalFilters} />}
         subtitle={
           params.boardId
             ? 'Membership changes for this board. Each decision is separate from object approval.'
@@ -159,34 +259,20 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         ]}
       />
       <div>
-        <CollectionToolbar>
-          <CollectionToolbar.Search>
-            <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
-              {STATUS_FILTERS.map((filter) => (
-                <Link
-                  key={filter}
-                  href={`/app/approvals?status=${filter}${params.boardId ? `&boardId=${encodeURIComponent(params.boardId)}` : ''}`}
-                  aria-current={status === filter ? 'page' : undefined}
-                  className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
-                    status === filter
-                      ? 'bg-signal-soft text-signal'
-                      : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
-                  }`}
-                >
-                  {filter}
-                  {!params.boardId && (filter === 'pending' || filter === 'failed')
-                    ? ` ${approvalCounts[filter]}`
-                    : ''}
-                </Link>
-              ))}
-            </nav>
-          </CollectionToolbar.Search>
-        </CollectionToolbar>
+        <ApprovalFiltersToolbar
+          status={status}
+          filters={approvalFilters}
+          projects={projects}
+          counts={approvalCounts}
+          showCounts={showCounts}
+        />
         <GuidedApprovalsChrome enabled={guidedApprovals} />
         <ApprovalsClient
           layout="inbox"
-          key={`${status}:${params.boardId ?? 'all'}`}
+          key={`${status}:${params.boardId ?? 'all'}:${projectId ?? 'all'}:${decisionOnly}`}
           boardId={params.boardId}
+          projectId={projectId}
+          decisionOnly={decisionOnly}
           suggestions={visibleSuggestions}
           nextCursor={page.nextCursor}
           status={status}

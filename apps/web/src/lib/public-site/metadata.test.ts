@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import { metadataForPublicDocument } from '@/lib/public-site/metadata';
 import type { PublicDocument } from '@/lib/public-site/types';
 
-import { metadataForPublicDocument } from '@/lib/public-site/metadata';
 describe('public document metadata', () => {
   it('uses the registry canonical path and indexability', () => {
     const metadata = metadataForPublicDocument(document());
@@ -22,7 +22,9 @@ describe('public document metadata', () => {
       alternates: { canonical: '/guide' },
       openGraph: { url: '/guide' },
     });
-    expect(metadata.robots).toBeUndefined();
+    expect(metadata.robots).toMatchObject({
+      googleBot: { 'max-image-preview': 'large' },
+    });
     expect(draftMetadata.robots).toEqual({ index: false, follow: false });
   });
 });

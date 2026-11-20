@@ -17,7 +17,6 @@ import {
   formatDigestTaskDetail,
   formatDigestWindowRange,
 } from '#src/messaging/digest-format.js';
-
 import type {
   BillingUsageAlertMessageInput,
   ConnectionAttentionMessageInput,
@@ -239,10 +238,12 @@ function renderTeamInvite(input: TeamInviteMessageInput): RenderedMessage {
 }
 
 function renderSupportRequest(input: SupportRequestMessageInput): RenderedMessage {
-  const subject = `[Timeline support] ${input.requestType} from ${input.name}`;
+  const typeLabel = input.tag ?? input.requestType;
+  const subject = `[Timeline support] ${typeLabel} from ${input.name}`;
   const textBody = [
     `Support request ${input.requestId}`,
     `Type: ${input.requestType}`,
+    ...(input.tag ? [`Tag: ${input.tag}`] : []),
     `Name: ${input.name}`,
     `Email: ${input.email}`,
     `Surface: ${input.surface ?? 'n/a'}`,
@@ -256,7 +257,7 @@ function renderSupportRequest(input: SupportRequestMessageInput): RenderedMessag
   ].join('\n');
   const htmlBody = htmlLayout({
     preview: `Support request from ${input.name}`,
-    title: `Support request: ${input.requestType}`,
+    title: `Support request: ${typeLabel}`,
     body: renderBody('support-request', {
       name: input.name,
       email: input.email,
@@ -282,6 +283,7 @@ function renderSupportRequest(input: SupportRequestMessageInput): RenderedMessag
       message_intent: 'support_request',
       support_request_id: input.requestId,
       request_type: input.requestType,
+      ...(input.tag ? { support_tag: input.tag } : {}),
     },
   };
 }

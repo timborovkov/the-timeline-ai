@@ -538,6 +538,22 @@ export function chooseContentText(payload: InboundEmail): string {
   return '';
 }
 
+/** Read the stored forward representation without changing inbound sender parsing. */
+export function splitStoredEmailContent(text: string): {
+  intro: string;
+  forwarded: ForwardedMessage[];
+} {
+  const textBody = text.replace(
+    /^Forwarded message \d+:\s*$/gim,
+    '---------- Forwarded message ----------',
+  );
+  const forwarded = parseForwardedChain({ subject: '', textBody });
+  return {
+    intro: forwarded.length ? forwardedIntro({ subject: '', textBody }) : text,
+    forwarded,
+  };
+}
+
 function forwardedIntro(opts: { subject: string; textBody: string }): string {
   const { subject, textBody } = opts;
   const lines = indexedLines(textBody);

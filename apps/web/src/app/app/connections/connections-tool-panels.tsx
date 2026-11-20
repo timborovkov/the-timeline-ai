@@ -5,8 +5,6 @@ import Link from 'next/link';
 import { type MouseEvent, type ReactNode } from 'react';
 
 import type { ConnectionsToolSheet } from '@/app/app/connections/connection-directory';
-import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
-
 import {
   agentMcpAccessMatchesQuery,
   openConnectionsPanel,
@@ -16,6 +14,7 @@ import {
   CONNECTIONS_ROW_ACTION_CLASS,
   ConnectionsEmptyHint,
 } from '@/app/app/connections/connections-directory';
+import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';

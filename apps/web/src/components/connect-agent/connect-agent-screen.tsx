@@ -1,6 +1,5 @@
 import { Download } from 'lucide-react';
 import Link from 'next/link';
-
 import type { ComponentProps } from 'react';
 
 import { AgentReportingSettings } from '@/components/agent-reporting-settings';

@@ -1,5 +1,4 @@
 import { ChevronDown } from 'lucide-react';
-
 import type { ReactNode } from 'react';
 
 export function MarketingDisclosure({

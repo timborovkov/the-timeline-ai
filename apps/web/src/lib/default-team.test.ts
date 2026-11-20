@@ -45,12 +45,12 @@ beforeEach(() => {
   grant.mockReset().mockResolvedValue({ ok: true });
   transact.mockClear();
 });
-describe('OAuth solo-team fallback', () => {
-  it('keeps the existing naming and grant behavior without adding calendar defaults', async () => {
+describe('ensureSoloTeam recovery helper', () => {
+  it('keeps lowercase naming and grant behavior without adding calendar defaults', async () => {
     expect(await ensureSoloTeam('owner', { name: 'Alex' })).toBe('new-team');
     expect(initialize).toHaveBeenCalledWith(transaction, {
       ownerId: 'owner',
-      name: "Alex's Team",
+      name: "Alex's team",
       slug: 'alex-team-fixed',
       inboundEmail: 'alex-team-fixed@inbound.test',
     });

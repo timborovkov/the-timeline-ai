@@ -1,7 +1,6 @@
+import type { SuggestionBundle } from '@timeline/shared/suggestions';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
-import type { SuggestionBundle } from '@timeline/shared/suggestions';
 
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 describe('serializeSuggestionBundle', () => {

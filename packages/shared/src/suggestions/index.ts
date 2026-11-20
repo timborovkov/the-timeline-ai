@@ -7,6 +7,7 @@ import {
   engineMaintenanceRuns,
   agentSuggestionEvidence,
   agentSuggestionItems,
+  entityRelationships,
   agentSuggestions,
   boardItems,
   boardItemChanges,
@@ -52,8 +53,15 @@ import {
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
+import type { BoardScope } from '#src/boards/index.js';
 import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
 import { boardQualificationFacts } from '#src/boards/qualification.js';
+import type {
+  CalendarEventWithRedaction,
+  CalendarScope,
+  CreateCalendarEventInput,
+  UpdateCalendarEventInput,
+} from '#src/calendar/index.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
@@ -62,6 +70,14 @@ import {
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
+import { isObjectNotFoundError } from '#src/mutation-errors.js';
+import type {
+  CreateObjectInput,
+  IdentityFacetInput,
+  ObjectPatch,
+  ObjectScope,
+  ObjectType,
+} from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
@@ -73,6 +89,7 @@ import {
 } from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
+import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { identitiesConflict } from '#src/suggestions/identity-resolution.js';
 import {
@@ -86,6 +103,7 @@ import {
   taskCategorySchema,
   type TaskCategory,
 } from '#src/task-categories/types.js';
+import type { TeamRole } from '#src/team-scope.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 import {
   intersectVisibilityEnvelopes,
@@ -93,28 +111,14 @@ import {
   rawEventVisibleToUser,
 } from '#src/visibility.js';
 
-import type { BoardScope } from '#src/boards/index.js';
-import type {
-  CalendarEventWithRedaction,
-  CalendarScope,
-  CreateCalendarEventInput,
-  UpdateCalendarEventInput,
-} from '#src/calendar/index.js';
-import type {
-  CreateObjectInput,
-  IdentityFacetInput,
-  ObjectPatch,
-  ObjectScope,
-  ObjectType,
-} from '#src/objects/index.js';
-import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
-import type { TeamRole } from '#src/team-scope.js';
-
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
   attachUniqueHubsToBundles,
+  chronologicalLifecycleEvidence,
+  explicitLifecycleState,
   hubEvidenceText,
   hubsChanged,
+  qualifyWorkspaceContainerHubs,
   qualifyWorkspaceHubs,
   recallRelatedOpenWork,
   selectPromptObjects,
@@ -361,10 +365,15 @@ function isEntityCanonicalNameDuplicate(err: unknown): boolean {
 }
 
 function isExpectedApplyFailure(err: unknown): boolean {
-  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+  return (
+    err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err) || isObjectNotFoundError(err)
+  );
 }
 
 function suggestionApplyFailureReason(err: unknown): string {
+  if (isObjectNotFoundError(err)) {
+    return 'The target workspace object no longer exists. Reject this proposal or recreate it against a current object.';
+  }
   if (isEntityCanonicalNameDuplicate(err)) {
     return 'A workspace object with this name already exists. Reject this proposal or update the existing object instead.';
   }
@@ -643,6 +652,7 @@ const objectCreatePayload = z.object({
 
 const objectUpdatePayload = z.object({
   ...objectPayloadFields,
+  parentObjectId: uuid.nullable().optional(),
   ownerUserId: blankStringAsUndefined(uuid.nullable()),
   assigneeUserId: blankStringAsUndefined(uuid.nullable()),
   dueAt: blankStringAsUndefined(z.iso.datetime().nullable()),
@@ -1329,25 +1339,10 @@ function normalizedLocalRef(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim().toLowerCase() : null;
 }
 
-function approvalTextForItem(item: typeof agentSuggestionItems.$inferSelect): string {
-  const payload = normalizeLifecyclePayload(item);
-  return [
-    item.title,
-    item.description,
-    payload.canonicalName,
-    payload.title,
-    payload.name,
-    payload.description,
-  ]
-    .map(normalizedApprovalText)
-    .filter(Boolean)
-    .join(' ');
-}
-
 function distinctiveApprovalTokens(item: typeof agentSuggestionItems.$inferSelect): string[] {
   return [
     ...new Set(
-      approvalTextForItem(item)
+      normalizedPrimaryApprovalName(item)
         .split(/\s+/)
         .filter((token) => token.length >= 8 && !APPROVAL_TOKEN_STOPWORDS.has(token)),
     ),
@@ -1415,21 +1410,37 @@ function aliasesForPendingItem(item: typeof agentSuggestionItems.$inferSelect): 
 
 function createSubjectCandidates(item: typeof agentSuggestionItems.$inferSelect): string[] {
   const payload = normalizeLifecyclePayload(item);
+  const canonicalName = stringPayloadValue(payload, 'canonicalName');
+  // Approval headings describe actions (e.g. "Create company"), not object identity.
+  // Once a canonical name exists, only that name and explicit aliases can match.
+  if (canonicalName) return [canonicalName, ...aliasesForPendingItem(item)];
   return [
     normalizedPrimaryApprovalName(item),
     item.title,
-    item.description ?? '',
     stringPayloadValue(payload, 'name') ?? '',
     stringPayloadValue(payload, 'title') ?? '',
-    stringPayloadValue(payload, 'description') ?? '',
     ...aliasesForPendingItem(item),
   ].filter((value) => value.trim().length > 0);
+}
+
+function normalizedExactApprovalName(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function sameExactCreateIdentity(
+  olderItem: typeof agentSuggestionItems.$inferSelect,
+  newerItem: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const left = createSubjectCandidates(olderItem).map(normalizedExactApprovalName);
+  const right = new Set(createSubjectCandidates(newerItem).map(normalizedExactApprovalName));
+  return left.some((name) => name.length > 0 && right.has(name));
 }
 
 function sameCreateSubject(
   olderItem: typeof agentSuggestionItems.$inferSelect,
   newerItem: typeof agentSuggestionItems.$inferSelect,
 ): boolean {
+  if (sameExactCreateIdentity(olderItem, newerItem)) return true;
   const olderCandidates = createSubjectCandidates(olderItem);
   const newerCandidates = createSubjectCandidates(newerItem);
   return olderCandidates.some((older) =>
@@ -1483,6 +1494,12 @@ function samePendingCreateApprovalSubject(args: {
 }): boolean {
   const { olderItem, olderSuggestion, newerItem, newerSuggestion } = args;
   if (olderItem.operation !== 'create' || newerItem.operation !== 'create') return false;
+  // Relationship identity is its endpoints, never similar display titles.
+  if (
+    olderItem.targetKind === 'object_relationship' ||
+    newerItem.targetKind === 'object_relationship'
+  )
+    return false;
   if (olderItem.targetId || newerItem.targetId) return false;
   if (!sameConversationReview(olderSuggestion, newerSuggestion)) return false;
 
@@ -1782,6 +1799,24 @@ function sameConversationReview(
   );
 }
 
+/** Similar task text is recall, not identity, when both names add distinct terms. */
+function compatibleTaskNames(
+  left: typeof agentSuggestionItems.$inferSelect,
+  right: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const leftName = normalizedPrimaryApprovalName(left);
+  const rightName = normalizedPrimaryApprovalName(right);
+  if (leftName && leftName === rightName) return true;
+  const a = [...approvalSubjectTokensFromText(leftName)];
+  const b = [...approvalSubjectTokensFromText(rightName)];
+  const matches = (x: string, y: string) => x === y || sameLongTokenFamily(x, y);
+  return (
+    a.length > 0 &&
+    b.length > 0 &&
+    (a.every((x) => b.some((y) => matches(x, y))) || b.every((y) => a.some((x) => matches(x, y))))
+  );
+}
+
 function shouldSupersedePendingItem(args: {
   olderItem: typeof agentSuggestionItems.$inferSelect;
   olderSuggestion: typeof agentSuggestions.$inferSelect;
@@ -1818,6 +1853,16 @@ function shouldSupersedePendingItem(args: {
 
   const olderExternalKey = artifactExternalKey(olderItem);
   if (olderExternalKey && olderExternalKey === artifactExternalKey(newerItem)) return true;
+
+  if (
+    isObjectTaskCreatePair &&
+    normalizedObjectCreateType(olderItem) === 'task' &&
+    normalizedObjectCreateType(newerItem) === 'task' &&
+    !compatibleTaskNames(olderItem, newerItem) &&
+    olderItem.dedupeKey !== newerItem.dedupeKey &&
+    !sameExactCreateIdentity(olderItem, newerItem)
+  )
+    return false;
 
   const newerArtifactIds = itemArtifactIds(newerItem);
   const sameArtifact = [...itemArtifactIds(olderItem)].some((id) => newerArtifactIds.has(id));
@@ -3865,6 +3910,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         id: calendarEvents.id,
         teamId: calendarEvents.teamId,
         deletedAt: calendarEvents.deletedAt,
+        source: calendarEvents.source,
       })
       .from(calendarEvents)
       .where(eq(calendarEvents.id, calendarEventId))
@@ -3872,6 +3918,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!row) return null;
     if (row.teamId !== teamId) return null;
     if (row.deletedAt) return 'The target calendar event was deleted.';
+    if (row.source !== 'internal') {
+      return 'Imported calendar events are read-only. Change them in the source calendar instead.';
+    }
     return null;
   }
 
@@ -4003,10 +4052,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function lockAcceptanceProject(projectId: unknown, client: DbOrTx = db): Promise<void> {
+    if (typeof projectId !== 'string' || !UUID_RE.test(projectId)) return;
+    // Project mutations and relationship creation lock project before linked tasks.
+    await client
+      .select({ id: entities.id })
+      .from(entities)
+      .where(
+        and(eq(entities.id, projectId), eq(entities.teamId, teamId), eq(entities.type, 'project')),
+      )
+      .for('update');
+  }
+
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     if (deps.acceptance.kind !== 'transaction') return;
+
+    if (item.targetKind === 'object' || item.targetKind === 'task')
+      await lockAcceptanceProject(recordFromUnknown(item.proposedPayload).parentObjectId);
 
     if (
       item.operation !== 'create' &&
@@ -5027,6 +5091,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       };
     }
     try {
+      if (type === 'task') await lockAcceptanceProject(project?.id);
       await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
       if (type === 'task') {
         await objects.setTaskProject(
@@ -5690,12 +5755,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
+        await lockAcceptanceProject(parsed.parentObjectId);
+        const mutationOptions =
+          deps.acceptance.kind === 'transaction'
+            ? { postCommitEffects: deps.acceptance.postCommitEffects }
+            : {};
         await objects.updateObject(
           targetId,
           patch,
           { kind: 'agent', userId: null },
-          { requireActive: true },
+          {
+            requireActive: true,
+            ...mutationOptions,
+          },
         );
+        if (parsed.parentObjectId !== undefined)
+          await objects.setTaskProject(
+            targetId,
+            parsed.parentObjectId,
+            { kind: 'agent', userId: null },
+            {
+              ...mutationOptions,
+              preserveUserChangesAfter: taskProposalFieldRevisionBoundary(item, 'primaryProjectId'),
+            },
+          );
         return targetId;
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });
@@ -5934,16 +6017,26 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
         };
       }
-      await calendar.updateCalendarEvent(targetId, patch);
-      return targetId;
+      const updated = await calendar.updateCalendarEvent(targetId, patch);
+      if (!updated) {
+        throw new Error(
+          'Imported calendar events are read-only. Change them in the source calendar instead.',
+        );
+      }
+      return updated.id;
     }
     const parsed = calendarUpdatePayload.parse(
       normalizeCalendarPayload(item, { fallbackTitle: false }),
     );
-    await calendar.deleteCalendarEvent(
+    const deleted = await calendar.deleteCalendarEvent(
       targetId,
       parsed.recurrenceEditMode ? { recurrenceEditMode: parsed.recurrenceEditMode } : {},
     );
+    if (!deleted) {
+      throw new Error(
+        'Imported calendar events are read-only. Change them in the source calendar instead.',
+      );
+    }
     return targetId;
   }
 
@@ -5970,6 +6063,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
       isPackBacked ||
+      (row.item.operation === 'update' &&
+        (row.item.targetKind === 'task' || row.item.targetKind === 'object') &&
+        recordFromUnknown(row.item.proposedPayload).parentObjectId !== undefined) ||
       typeof recordFromUnknown(row.suggestion.metadata).document_version_id === 'string' ||
       row.item.targetKind === 'board_membership';
     if (requiresTransactionalAcceptance && deps.acceptance.kind === 'root') {
@@ -6345,6 +6441,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       limit?: number;
       cursor?: string | null;
       itemIds?: string[];
+      projectId?: string | undefined;
+      decisionOnly?: boolean | undefined;
     } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
@@ -6352,6 +6450,66 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (opts.itemIds) conditions.push(captureItemsPredicate(opts.itemIds));
+    const filteredItem =
+      opts.projectId || opts.decisionOnly
+        ? and(
+            eq(agentSuggestionItems.teamId, teamId),
+            status === 'pending'
+              ? eq(agentSuggestionItems.status, 'pending')
+              : status === 'failed'
+                ? eq(agentSuggestionItems.status, 'failed')
+                : status === 'resolved'
+                  ? sql`${agentSuggestionItems.status} NOT IN ('pending', 'failed')`
+                  : sql`${agentSuggestionItems.status} <> 'failed'`,
+            opts.boardId
+              ? sql`${agentSuggestionItems.proposedPayload}->>'boardId' = ${opts.boardId}`
+              : undefined,
+            opts.decisionOnly
+              ? sql`(
+            ${agentSuggestionItems.proposedPayload}->>'type' = 'decision'
+            OR ${agentSuggestionItems.proposedPayload}->>'objectType' = 'decision'
+            OR EXISTS (SELECT 1 FROM ${entities} WHERE ${entities.teamId} = ${teamId}
+              AND ${entities.id} = ${agentSuggestionItems.targetId} AND ${entities.type} = 'decision')
+          )`
+              : undefined,
+            opts.projectId
+              ? sql`(
+            ${agentSuggestionItems.targetId} = ${opts.projectId}::uuid
+            OR ${agentSuggestionItems.proposedPayload}->>'parentObjectId' = ${opts.projectId}
+            OR ${agentSuggestionItems.proposedPayload}->>'projectId' = ${opts.projectId}
+            OR EXISTS (
+              SELECT 1 FROM agent_suggestion_items AS sibling
+              WHERE sibling.team_id = ${teamId}::uuid AND sibling.suggestion_id = ${agentSuggestionItems.suggestionId}
+              AND sibling.target_kind = 'object_relationship'
+              AND sibling.status IN ('pending', 'accepted')
+              AND (
+                (sibling.proposed_payload->>'fromRef' = ${agentSuggestionItems.proposedPayload}->>'localRef'
+                  AND sibling.proposed_payload->>'toEntityId' = ${opts.projectId})
+                OR
+                (sibling.proposed_payload->>'toRef' = ${agentSuggestionItems.proposedPayload}->>'localRef'
+                  AND sibling.proposed_payload->>'fromEntityId' = ${opts.projectId})
+              )
+            )
+            OR ${agentSuggestionItems.proposedPayload}->>'primaryProjectId' = ${opts.projectId}
+            OR ${agentSuggestionItems.metadata}->>'project_id' = ${opts.projectId}
+            OR EXISTS (SELECT 1 FROM ${entityRelationships}
+              WHERE ${entityRelationships.teamId} = ${teamId}
+              AND ((${entityRelationships.fromEntityId} = ${agentSuggestionItems.targetId} AND ${entityRelationships.toEntityId} = ${opts.projectId}::uuid)
+                OR (${entityRelationships.toEntityId} = ${agentSuggestionItems.targetId} AND ${entityRelationships.fromEntityId} = ${opts.projectId}::uuid)))
+          )`
+              : undefined,
+          )
+        : undefined;
+    if (filteredItem) {
+      conditions.push(
+        exists(
+          db
+            .select({ id: agentSuggestionItems.id })
+            .from(agentSuggestionItems)
+            .where(and(eq(agentSuggestionItems.suggestionId, agentSuggestions.id), filteredItem)),
+        ),
+      );
+    }
     if (opts.boardId)
       conditions.push(
         exists(
@@ -6406,7 +6564,25 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(...conditions))
       .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestions.id))
       .limit(Math.min(Math.max(opts.limit ?? 100, 1), 200));
-    return hydrateBundles(rows);
+    const bundles = await hydrateBundles(rows);
+    if (!filteredItem || rows.length === 0) return bundles;
+    const matching = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          filteredItem,
+          inArray(
+            agentSuggestionItems.suggestionId,
+            rows.map((row) => row.id),
+          ),
+        ),
+      );
+    const matches = new Set(matching.map((row) => row.id));
+    return bundles.map((bundle) => ({
+      ...bundle,
+      items: bundle.items.filter((item) => matches.has(item.id)),
+    }));
   }
 
   async function calendarResolutionHintForItem(

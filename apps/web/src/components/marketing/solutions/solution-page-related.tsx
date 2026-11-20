@@ -1,9 +1,8 @@
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
-import type { SolutionContent } from '@/components/marketing/solutions/content';
-
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
+import type { SolutionContent } from '@/components/marketing/solutions/content';
 
 const focusLink =
   'rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';

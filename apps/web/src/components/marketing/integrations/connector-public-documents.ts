@@ -1,5 +1,4 @@
-import type { PublicDocument } from '@/lib/public-site/types';
-
+import { INTEGRATION_CAPABILITY_ANSWERS } from '@/components/marketing/integrations/capability-answers';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import {
   CONNECTORS,
@@ -8,8 +7,9 @@ import {
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
+import type { PublicDocument } from '@/lib/public-site/types';
 
-export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-12' as const;
+export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-19' as const;
 
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
   canonicalPath: '/integrations',
@@ -40,9 +40,10 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
         title: 'Provider record sync',
         body: CONNECTORS.map((connector) => connector.name).join(', '),
       },
+      ...INTEGRATION_CAPABILITY_ANSWERS,
       {
-        title: 'Capability boundary',
-        body: 'First-party capture accepts deliberately routed conversations and payloads. Native integrations sync selected provider records into durable cited events. Hosted MCP access provides live tools without passive ingestion; see /integrations/mcp. Figma desktop MCP requires Timeline on the same machine and is not connectable from hosted Timeline. Planned native support cannot be connected yet.',
+        title: 'Planned integrations',
+        body: 'Planned native integrations cannot be connected yet.',
       },
     ],
   },

@@ -1,8 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
+import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-
-import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 // Test environment: happy-dom

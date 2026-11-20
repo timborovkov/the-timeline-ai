@@ -1,8 +1,7 @@
 import { getDigestPreference } from '@timeline/shared/messaging';
 import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { GoLiveScreen } from '@/components/onboarding/go-live-screen';
 import { resolveActiveTeam } from '@/lib/active-team';

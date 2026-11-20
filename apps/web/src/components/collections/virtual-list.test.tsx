@@ -10,9 +10,17 @@ const virtualizerOptions = vi.hoisted(() => ({
 
 await vi.mock(
   import.meta.resolve('@tanstack/react-virtual'),
-  () => ({
+  async () => ({
+    ...(await import('@tanstack/react-virtual')),
     useVirtualizer: (options: {
       count: number;
+      overscan: number;
+      rangeExtractor: (range: {
+        count: number;
+        startIndex: number;
+        endIndex: number;
+        overscan: number;
+      }) => number[];
       getScrollElement: () => HTMLElement | null;
       scrollMargin: number;
     }) => {
@@ -20,14 +28,18 @@ await vi.mock(
       const { count, scrollMargin } = options;
       return {
         getTotalSize: () => count * 40,
-        getVirtualItems: () =>
-          Array.from({ length: count }, (_, index) => ({
-            key: String(index),
-            index,
-            start: index * 40 + scrollMargin,
-            size: 40,
-            end: (index + 1) * 40,
-          })).slice(...(virtualizerOptions.window ?? [0, count])),
+        getVirtualItems: () => {
+          const [startIndex, end] = virtualizerOptions.window ?? [0, count];
+          return options
+            .rangeExtractor({ count, startIndex, endIndex: end - 1, overscan: options.overscan })
+            .map((index) => ({
+              key: String(index),
+              index,
+              start: index * 40 + scrollMargin,
+              size: 40,
+              end: (index + 1) * 40,
+            }));
+        },
         measureElement: vi.fn(),
       };
     },
@@ -133,6 +145,7 @@ describe('VirtualList', () => {
         items={Array.from({ length: 10 }, (_, index) => String(index))}
         getItemKey={(item) => item}
         estimateSize={40}
+        overscan={0}
         renderItem={(item) => <p>{item}</p>}
       />,
     );
@@ -143,6 +156,30 @@ describe('VirtualList', () => {
     expect(row?.className).not.toContain('absolute');
     expect(container.querySelector('[data-index="1"]')).toBeNull();
     expect(container.querySelector('[data-index="5"]')).toBeNull();
+  });
+
+  it('retains a group heading when the window starts mid-group', () => {
+    virtualizerOptions.window = [3, 7];
+    const { container } = render(
+      <VirtualList
+        items={['Newer', 'A', 'B', 'C', 'D', 'Older', 'E']}
+        getItemKey={(item) => item}
+        estimateSize={40}
+        overscan={0}
+        stickyGroupHeader={{
+          isHeader: (item) => item === 'Newer' || item === 'Older',
+          className: 'sticky',
+        }}
+        renderItem={(item) => <p>{item}</p>}
+      />,
+    );
+
+    const newer = screen.getByText('Newer').closest('section');
+    const older = screen.getByText('Older').closest('section');
+    expect(newer?.textContent).toBe('NewerCD');
+    expect(older?.textContent).toBe('OlderE');
+    expect(newer?.querySelector<HTMLElement>('[aria-hidden]')?.style.height).toBe('80px');
+    expect(container.querySelector('[data-index="2"]')).toBeNull();
   });
 
   it('waits for an explicit nested scrollport instead of binding to a fallback', () => {

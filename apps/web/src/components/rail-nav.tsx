@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-
-import type { TeamMembership } from '@/lib/active-team';
+import { use } from 'react';
 
 import {
   formatNavBadge,
@@ -13,6 +12,7 @@ import {
   visibleNavGroups,
 } from '@/components/nav-items';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { TeamMembership } from '@/lib/active-team';
 import { cn } from '@/lib/utils';
 
 const EMPTY_BADGES: NavBadgeMap = {};
@@ -24,12 +24,13 @@ const EMPTY_BADGES: NavBadgeMap = {};
 export function RailNav({
   role,
   expanded = false,
-  badges = EMPTY_BADGES,
+  badges: source = EMPTY_BADGES,
 }: {
   role: TeamMembership['role'];
   expanded?: boolean;
-  badges?: NavBadgeMap;
+  badges?: NavBadgeMap | Promise<NavBadgeMap>;
 }) {
+  const badges = 'then' in source ? use(source) : source;
   const pathname = usePathname();
   return (
     <nav

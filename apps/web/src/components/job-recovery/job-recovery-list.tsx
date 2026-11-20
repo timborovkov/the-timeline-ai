@@ -1,10 +1,9 @@
 'use client';
 
+import type * as jobRecovery from '@timeline/shared/job-recovery';
 import { Archive, CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-
-import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';

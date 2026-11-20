@@ -2,9 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AgentMarkdownDoc } from '@/lib/agent-setup';
-
 import { buildAgentProvisioningMarkdown } from '@/lib/agent-provisioning-content';
+import type { AgentMarkdownDoc } from '@/lib/agent-setup';
 import { buildAgentSetupMarkdown } from '@/lib/agent-setup';
 
 const TIMELINE_SKILL_RELATIVE = 'plugins/timeline/skills/timeline/SKILL.md';

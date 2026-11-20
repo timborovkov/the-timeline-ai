@@ -1,8 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
-
 import {
   agentMcpAccessMatchesQuery,
   buildDirectoryProviders,
@@ -19,6 +17,7 @@ import {
   providerRowStatus,
   providerStatusLabel,
 } from '@/app/app/connections/connection-directory';
+import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 const nativeCatalog = [
   {

@@ -1,3 +1,4 @@
+import type { SavedWorkViewChange } from '@timeline/db';
 import type { dailyDigests, messageDeliveries } from '@timeline/db';
 
 export type MessageIntent =
@@ -39,6 +40,8 @@ export interface SupportRequestMessageInput {
   supportEmail: string;
   requestId: string;
   requestType: 'technical_support' | 'sales' | 'billing' | 'security' | 'other';
+  /** Inbox tag for dedicated forms that still use a sales request_type row. */
+  tag?: 'enterprise';
   name: string;
   email: string;
   message: string;
@@ -82,6 +85,7 @@ export type DailyDigestSectionTitle =
   | 'Decisions'
   | 'Risks'
   | 'Follow-ups'
+  | 'Saved views'
   /** @deprecated Stored on older payloads; renderers remap this to Status. */
   | 'Product status';
 
@@ -136,6 +140,8 @@ export interface DailyDigestPayload {
   windowEnd: string;
   summary: string;
   sections?: DailyDigestSection[];
+  savedViewChanges?: SavedWorkViewChange[];
+  savedViewsOnly?: boolean;
   pendingApprovals: number;
   eventCount: number;
   momentCount?: number;

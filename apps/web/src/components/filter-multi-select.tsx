@@ -2,7 +2,6 @@
 
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { useId, useMemo, useReducer, useRef } from 'react';
-
 import type { KeyboardEvent, ReactNode } from 'react';
 
 import {

@@ -1,8 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { TimelineEvent } from '@/lib/timeline-types';
-
 import {
   buildTimelineMoments,
   filterTimelineMomentsByImpact,
@@ -11,6 +9,8 @@ import {
   timelineGroupKey,
   type TimelineAuthor,
 } from '@/lib/timeline-moments';
+import type { TimelineEvent } from '@/lib/timeline-types';
+
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 const authorMap = new Map<string, TimelineAuthor>([

@@ -15,7 +15,6 @@ import {
   useSyncExternalStore,
   useTransition,
 } from 'react';
-
 import type { JSX } from 'react';
 
 import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
@@ -245,6 +244,8 @@ function serverReviewSnapshot() {
 interface Props {
   layout?: 'list' | 'inbox';
   boardId?: string;
+  projectId?: string;
+  decisionOnly?: boolean;
   guided?: boolean;
   suggestions: SuggestionBundle[];
   nextCursor?: string | null;
@@ -714,6 +715,8 @@ export function ApprovalsClient({
   guided = false,
   suggestions,
   nextCursor = null,
+  projectId,
+  decisionOnly,
   status = 'pending',
   taskCategoriesEnabled = true,
   allowBulkAccept = true,
@@ -848,7 +851,14 @@ export function ApprovalsClient({
   function loadMore(): void {
     if (!pageCursor || loadingMore) return;
     startLoadingMore(async () => {
-      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status, guided, boardId });
+      const page = await loadSuggestionsPageAction({
+        cursor: pageCursor,
+        status,
+        guided,
+        boardId,
+        projectId,
+        decisionOnly,
+      });
       if (page.error) {
         setPageState((current) => ({
           ...current,

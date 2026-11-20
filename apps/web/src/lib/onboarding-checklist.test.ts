@@ -1,8 +1,8 @@
+import type { OnboardingChecklistState } from '@timeline/shared/onboarding';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
-import type { OnboardingChecklistState } from '@timeline/shared/onboarding';
 const fakes = vi.hoisted(() => ({
   cachedJson: vi.fn(async (_key: string, _ttl: number, load: () => Promise<unknown>) => load()),
   cacheKey: vi.fn((parts: unknown[]) => parts.join(':')),

@@ -1,11 +1,11 @@
 name: CI
+# Warm-cache timing probe (unrelated to check coverage).
 
 on:
   push:
     branches: [main, production]
   pull_request:
     branches: [main, production]
-
   workflow_dispatch:
 
 concurrency:
@@ -15,9 +15,100 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  AUTH_SECRET: ci_dummy_secret_at_least_16_chars
+  DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
+  # Type-aware ESLint + parallel package work needs headroom on ubuntu-latest.
+  NODE_OPTIONS: --max-old-space-size=6144
+
 jobs:
-  ci:
-    name: Static checks
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Verify legal archive renders
+        run: bun run test legal-archive.test.tsx
+
+      - name: Verify published legal archives are immutable
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+          bun scripts/check-legal-archive.ts "$PR_BASE_SHA"
+
+      - name: Prettier check
+        run: bun run format:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            .turbo
+            node_modules/.cache/turbo
+          key: turbo-typecheck-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-typecheck-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json') }}-
+            turbo-typecheck-${{ runner.os }}-
+
+      - name: Typecheck
+        run: bun run typecheck
+
+  lint:
+    name: Lint and knip
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            .turbo
+            node_modules/.cache/turbo
+          key: turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-
+            turbo-lint-${{ runner.os }}-
+
+      # Do not restore/save node_modules/.cache/eslint across CI commits. ESLint
+      # --cache does not track cross-file type dependencies, so typed rules can
+      # skip an unchanged consumer when an imported symbol changes. Local
+      # package scripts still use --cache for iterative work; CI always starts
+      # with a fresh ESLint cache (Turbo still hashes source inputs).
+
+      # Keep package lint serial on CI. Parallel type-aware ESLint + import-x
+      # disagrees with local Bun on `import type` ranking (see eslint.config.js
+      # worker note); concurrency=1 matches the prior green Static checks lane
+      # while format/typecheck/smoke still run as sibling jobs.
+      - name: Lint
+        run: bun x --bun --no-install turbo run lint --concurrency=1
+
+      - name: Knip
+        run: bun run knip
+
+  smoke:
+    name: Runtime smoke and doctor
     runs-on: ubuntu-latest
     services:
       redis:
@@ -27,25 +118,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Cache Bun downloads
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
-
-      - name: Install dependencies
-        run: bun run deps --frozen-lockfile
-
-      - name: Static checks
-        env:
-          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
-          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: bun run validate
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
 
       - name: Bun runtime smoke tests
         run: bun run test:runtime
@@ -57,42 +131,44 @@ jobs:
         run: bun run test:e2e-env
 
       - name: Dist import smoke test
-        env:
-          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
-          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: bun run test:dist-imports
+
+  # Required status check name for branch protection. Gates on the parallel jobs.
+  ci:
+    name: Static checks
+    needs: [format, typecheck, lint, smoke]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Require every static check job
+        run: |
+          set -euo pipefail
+          for result in \
+            '${{ needs.format.result }}' \
+            '${{ needs.typecheck.result }}' \
+            '${{ needs.lint.result }}' \
+            '${{ needs.smoke.result }}'
+          do
+            if [ "$result" != 'success' ]; then
+              echo "Static check dependency finished as: $result"
+              exit 1
+            fi
+          done
+          echo 'All static checks passed'
 
   full-tests:
     name: Full test suite
     if: github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: [6379:6379]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Cache Bun downloads
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
-
-      - name: Install dependencies
-        run: bun run deps --frozen-lockfile
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
 
       - name: Unit and integration tests
         run: bun run test
 
       - name: Reconciliation evals
-        env:
-          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
-          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: bun run test:reconciliation-eval

@@ -17,7 +17,7 @@ import {
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { ensureSoloTeam } from '@/lib/default-team';
+import { hashInviteToken } from '@/lib/invite-token';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -113,7 +113,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           .from(teamInvites)
           .where(
             and(
-              eq(teamInvites.token, token),
+              eq(teamInvites.tokenHash, hashInviteToken(token)),
               isNull(teamInvites.acceptedAt),
               isNull(teamInvites.revokedAt),
             ),
@@ -186,28 +186,21 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         tags: { reason },
       });
 
-      // Fallback: an OAuth user who arrived via /sign-up?invite=<token> skipped
-      // the default solo-team creation in createUser. If invite acceptance then
-      // fails (expired, revoked, email mismatch), they would be stranded with
-      // zero memberships and no way to self-recover — createUser doesn't refire.
-      // Spin them a solo team so they have a usable workspace, then surface the
-      // invite error on the accept-invite page.
-      //
-      // Best-effort: a DB hiccup during the fallback must NOT mask the original
-      // invite error. Log and continue to the redirect so the user lands on a
-      // page they can act on (instead of a generic 500).
+      // Invite-only OAuth signups never receive an owned team. If acceptance
+      // fails they stay at zero memberships and can name a workspace later via
+      // /onboarding (or retry the invite). Clear the pending-invite cookie so
+      // they are not stuck looping on accept-invite.
       try {
-        await ensureSoloTeam(userId, { name: session.user.name, email: session.user.email });
         const { clearPendingInvite } = await import('@/lib/pending-invite');
         await clearPendingInvite();
-      } catch (fallbackErr) {
+      } catch (clearErr) {
         log.error(
-          { err: (fallbackErr as Error).message, userId, reason },
-          'invite_fallback_solo_team_failed',
+          { err: (clearErr as Error).message, userId, reason },
+          'invite_failure_clear_pending_failed',
         );
-        reportCaughtError(fallbackErr, {
+        reportCaughtError(clearErr, {
           surface: 'server_action',
-          operation: 'restore_solo_team_after_invite_failure',
+          operation: 'clear_pending_invite_after_invite_failure',
         });
       }
       failedInviteRedirect = `/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(

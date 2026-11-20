@@ -1,7 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { jobsPageSubtitle } from '@/components/job-recovery/jobs-attention';
 import { JobsForbiddenView, JobsPageView } from '@/components/job-recovery/jobs-page-view';

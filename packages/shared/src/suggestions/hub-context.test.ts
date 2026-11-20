@@ -559,3 +559,245 @@ describe('attachUniqueHubsToBundles', () => {
     expect(hubsChanged(before, before)).toBe(false);
   });
 });
+
+describe('explicit completion among recalled candidates', () => {
+  const relatedOpenWork = [
+    { id: 'access', name: 'Review access matrix' },
+    { id: 'backup', name: 'Review backup matrix' },
+  ];
+  for (const evidenceText of [
+    'Is the access matrix review finished?',
+    'If the access matrix review is finished, tell me.',
+    'I think the access matrix review is finished.',
+    'The access matrix review is not finished.',
+    'Review access matrix is finished. Review access matrix is not finished.',
+    'Review access matrix is finished. Review access matrix is still not done.',
+    'Review access matrix is finished. Review access matrix is only partially finished.',
+    'Review access matrix is finished. Review access matrix isn’t finished.',
+    'Review access matrix is finished. Review access matrix is still in progress.',
+    'Review access matrix is finished. Review access matrix has been reopened.',
+    'The matrix review is finished.',
+    'Review access matrix is still pending while the deployment finished.',
+  ]) {
+    it(`does not treat uncertain or incomplete identification as completion: ${evidenceText}`, () => {
+      expect(
+        stripAmbiguousLifecycleUpdates({
+          evidenceText,
+          relatedOpenWork,
+          relatedOpenWorkIds: ['access', 'backup'],
+          bundles: [
+            {
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: 'access',
+                  title: 'Access review',
+                  proposedPayload: { status: 'done' },
+                },
+              ],
+            },
+          ],
+        }),
+      ).toEqual([]);
+    });
+  }
+  it('does not lose short words that distinguish two identities', () => {
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        evidenceText: 'Review US policy is done.',
+        relatedOpenWork: [
+          { id: 'eu', name: 'Review EU policy' },
+          { id: 'backup', name: 'Review backup matrix' },
+        ],
+        relatedOpenWorkIds: ['eu', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'eu',
+                title: 'Review EU policy',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+  it('does not let older linked evidence override a later correction', () => {
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        sourceEvidence: [
+          { contentText: 'Review access matrix is not done.', occurredAt: new Date('2026-06-12') },
+          { contentText: 'Review access matrix is done.', occurredAt: new Date('2026-06-11') },
+        ],
+        relatedOpenWork,
+        relatedOpenWorkIds: ['access', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'access',
+                title: 'Access review',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+  it('does not let a forwarded body override the envelope introduction', () => {
+    for (const date of ['', 'Date: Thu, 11 Jun 2026 08:00:00 GMT\n']) {
+      expect(
+        stripAmbiguousLifecycleUpdates({
+          sourceEvidence: [
+            {
+              source: 'email',
+              occurredAt: new Date('2026-06-12T08:00:00Z'),
+              contentText: `Review access matrix is not done.\n\nForwarded message 1:\nFrom: Jordan <jordan@example.test>\n${date}Subject: Review access matrix\n\nReview access matrix is done.`,
+            },
+          ],
+          relatedOpenWork,
+          relatedOpenWorkIds: ['access', 'backup'],
+          bundles: [
+            {
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'object',
+                  targetId: 'access',
+                  title: 'Access review',
+                  proposedPayload: { status: 'done' },
+                },
+              ],
+            },
+          ],
+        }),
+      ).toEqual([]);
+    }
+  });
+  it('orders an undated nested forward before the dated enclosing message', () => {
+    const contentText = [
+      'Forwarded message 1:',
+      'From: Jordan <jordan@example.test>',
+      'Date: Thu, 11 Jun 2026 08:00:00 GMT',
+      '',
+      'Review access matrix is not done.',
+      '',
+      'Forwarded message 2:',
+      'From: Lee <lee@example.test>',
+      '',
+      'Review access matrix is done.',
+    ].join('\n');
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        sourceEvidence: [
+          { source: 'email', occurredAt: new Date('2026-06-12T08:00:00Z'), contentText },
+        ],
+        relatedOpenWork,
+        relatedOpenWorkIds: ['access', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'access',
+                title: 'Access review',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+  it('cannot complete a migration in the opposite direction', () => {
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        evidenceText: 'Migrate US to EU is done.',
+        relatedOpenWork: [
+          { id: 'eu-to-us', name: 'Migrate EU to US' },
+          { id: 'backup', name: 'Review backup matrix' },
+        ],
+        relatedOpenWorkIds: ['eu-to-us', 'backup'],
+        bundles: [
+          {
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: 'eu-to-us',
+                title: 'Migrate EU to US',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+  it('preserves the latest affirmative completion after a denial', () => {
+    const bundles = [
+      {
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'object',
+            targetId: 'access',
+            title: 'Access review',
+            proposedPayload: { status: 'done' },
+          },
+        ],
+      },
+    ];
+    expect(
+      stripAmbiguousLifecycleUpdates({
+        evidenceText: 'Review access matrix is not finished. Review access matrix is finished.',
+        relatedOpenWork,
+        relatedOpenWorkIds: ['access', 'backup'],
+        bundles,
+      }),
+    ).toEqual(bundles);
+  });
+});
+
+it('does not use a model project name to resolve a broad shared client mention', () => {
+  const hubs = ['Orion Client Portal', 'Orion Team Console'].map((name, index) => ({
+    ...fabaProject,
+    id: `orion-${index}`,
+    name,
+  }));
+  const qualified = qualifyWorkspaceHubs({
+    hubs,
+    text: 'For Orion, prepare the migration checklist.',
+  });
+  expect(qualified.mentioned).toHaveLength(2);
+  expect(qualified.explicitlyNamed).toEqual([]);
+  const [bundle] = attachUniqueHubsToBundles({
+    qualified,
+    bundles: [
+      {
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Prepare migration checklist',
+            proposedPayload: {
+              canonicalName: 'Prepare migration checklist',
+              parentObjectId: 'orion-0',
+              projectName: 'Orion Client Portal',
+            },
+          },
+        ],
+      },
+    ],
+  });
+  expect(bundle?.items[0]?.proposedPayload.parentObjectId).toBeUndefined();
+});

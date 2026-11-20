@@ -1,9 +1,10 @@
-import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
-
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
+import { INTEGRATION_CAPABILITY_ANSWERS } from '@/components/marketing/integrations/capability-answers';
 import { TIMELINE_HOSTED_MCP_TOOLS_LIST } from '@/lib/agent-install-content';
 import { buildLlmsAgentSetupPointer, buildLlmsForAgentsSection } from '@/lib/agent-setup';
+import { withLlmsOrigin } from '@/lib/llms-url-references';
+import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
 import { PUBLIC_DOCUMENT_REGISTRY, canonicalPublicUrl } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -67,7 +68,7 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
     referenceKinds.has(document.kind) || document.canonicalPath === '/pricing';
   const url = (path: Parameters<typeof canonicalPublicUrl>[1]) => canonicalPublicUrl(siteUrl, path);
 
-  return [
+  const markdown = [
     '# The Timeline',
     '',
     `> ${PRODUCT_SUMMARY}`,
@@ -80,7 +81,7 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
     '',
     '- Researching Timeline or answering a product question: use the topic links below. No account or agent connection is needed to read the public documentation.',
     `- Connecting an agent to an existing account: follow [Agent setup](${url('/agents/setup.md')}) for your client, sign in, select the intended team, and approve access.`,
-    `- New to Timeline: [create a free account](${url('/sign-up')}); signup creates your first team automatically. Complete email verification as prompted, then follow [Agent setup](${url('/agents/setup.md')}). A new workspace has no work history until you add evidence or connect sources.`,
+    `- New to Timeline: [create a free account](${url('/sign-up')}), name your team on Welcome, then complete email verification as prompted and follow [Agent setup](${url('/agents/setup.md')}). Invite-only signup joins an existing team with no separate workspace. A new workspace has no work history until you add evidence or connect sources.`,
     `- Already connected: use the [Timeline skill](${url('/agents/SKILL.md')}) for tool selection, retrieval, citations, and recording notes. Continue with the requested task; setup is only needed if the connection is missing or needs authorization.`,
     '',
     ...renderLinkSection(
@@ -92,7 +93,9 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
     ...renderLinkSection('How Timeline works', registry.forLlms('how-it-works'), siteUrl),
     '## Integrations',
     '',
-    'Capture and live access are different capabilities. Native connectors preserve selected provider records; custom MCP connections allow live lookups through enabled tools. A connection does not mean all provider history is captured. Check each integration page for supported records, setup, and limitations; planned connectors are not available today.',
+    `[Integration capabilities](${url('/integrations')}#capabilities)`,
+    '',
+    ...INTEGRATION_CAPABILITY_ANSWERS.map(({ title, body }) => `- ${title}: ${body}`),
     '',
     ...registry
       .forLlms('integrations')
@@ -124,6 +127,7 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
     'Public product and help pages are the sources for product research. llms-full.txt provides an expanded Markdown reference; setup.md and SKILL.md are Markdown agent guides. Signed-in app routes, auth routes, invite routes, and API routes are not public research sources. Use signup and MCP links only for their stated account and connection purposes.',
     '',
   ].join('\n');
+  return withLlmsOrigin(markdown, siteUrl);
 }
 
 export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
@@ -138,7 +142,7 @@ export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
   const contributedSections = CONTRIBUTED_LLM_SECTIONS.flatMap(({ section, heading }) =>
     renderFullDocumentSection(heading, registry.forLlms(section), siteUrl),
   );
-  return [
+  const markdown = [
     '# The Timeline',
     '',
     buildLlmsAgentSetupPointer(siteUrl),
@@ -205,6 +209,7 @@ export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
     '- Do not cite signed-in app pages or API routes as public documentation sources.',
     '',
   ].join('\n');
+  return withLlmsOrigin(markdown, siteUrl);
 }
 
 function renderLinkSection(

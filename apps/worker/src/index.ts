@@ -16,6 +16,7 @@ import {
   closeBoardQualificationQueue,
   scheduleBoardQualification,
 } from '#src/workers/boardQualification.js';
+import { startGoogleCalendarWorker } from '#src/workers/calendarMaintenance.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
 import { startChatDeliveryWorker } from '#src/workers/chatDelivery.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
@@ -52,9 +53,6 @@ initWorkerSentry();
 
 async function main(): Promise<void> {
   const env = getEnv();
-  if (env.WORKER_MODE !== 'document-extract' && !env.FIRECRAWL_API_KEY?.trim()) {
-    throw new Error('FIRECRAWL_API_KEY is required to start the worker service.');
-  }
   if (env.WORKER_MODE === 'document-extract') {
     throw new Error(
       'WORKER_MODE=document-extract must use apps/worker/dist/extract-main.js (refusing full worker boot)',
@@ -145,7 +143,13 @@ async function main(): Promise<void> {
       name: queue.QUEUE_NAMES.calendarRecurrence,
       start: () => startCalendarRecurrenceWorker({ db }),
       closeQueue: queue.closeCalendarRecurrenceQueue,
-      schedule: queue.scheduleCalendarRecurrenceMaterialization,
+      schedule: queue.scheduleCalendarJobs,
+    },
+    {
+      name: queue.QUEUE_NAMES.googleCalendar,
+      start: () => startGoogleCalendarWorker({ db }),
+      closeQueue: queue.closeGoogleCalendarQueue,
+      schedule: queue.scheduleGoogleCalendarImports,
     },
     {
       name: queue.QUEUE_NAMES.chatDelivery,

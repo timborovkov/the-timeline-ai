@@ -9,8 +9,6 @@ import {
   ProviderSyncDeferredError,
   isProviderRateLimitError,
 } from '#src/integrations/types.js';
-import { childLogger } from '#src/logger.js';
-
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -19,6 +17,7 @@ import type {
   ProviderResource,
   SyncContext,
 } from '#src/integrations/types.js';
+import { childLogger } from '#src/logger.js';
 
 const fetch = providerFetch('linear');
 

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { isExpectedBillingAdmissionFailure } from '@timeline/shared/billing/errors';
 
 import { isStaleServerActionError } from '@/lib/stale-server-action';
 
@@ -13,6 +14,7 @@ interface ReportOptions {
 
 interface ReportMessageOptions extends ReportOptions {
   message: string;
+  measurements?: Record<string, number | null>;
 }
 
 const HANDLED_EVENT_WINDOW_MS = 60_000;
@@ -28,6 +30,7 @@ export function shouldReportToSentry(
   options?: Pick<ReportOptions, 'surface' | 'operation'>,
 ): boolean {
   if (isStaleServerActionError(err)) return false;
+  if (isExpectedBillingAdmissionFailure(err)) return false;
   if (isExpectedAuthCredentialsRateLimitError(err, options)) return false;
   if (isExpectedAuthCredentialsSigninError(err, options)) return false;
   return true;
@@ -41,6 +44,19 @@ export function reportCaughtError(err: unknown, options: ReportOptions): void {
       surface: options.surface,
       operation: options.operation,
       tags: { reason: 'invalid_credentials' },
+    });
+    return;
+  }
+  if (isExpectedBillingAdmissionFailure(err)) {
+    Sentry.addBreadcrumb({
+      category: 'billing',
+      level: 'warning',
+      message: err instanceof Error ? err.message : String(err),
+      data: {
+        surface: options.surface,
+        operation: options.operation,
+        ...stringifyTags(options.tags),
+      },
     });
     return;
   }
@@ -65,6 +81,7 @@ export function reportHandledEvent(options: ReportMessageOptions): void {
   const throttle = handledEventThrottle(options.message, tags, Date.now());
   if (!throttle.capture) return;
   Sentry.captureMessage(options.message, {
+    ...(options.measurements ? { extra: options.measurements } : {}),
     level: options.level ?? 'warning',
     tags: {
       ...tags,

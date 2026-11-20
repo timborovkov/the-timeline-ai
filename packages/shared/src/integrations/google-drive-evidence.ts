@@ -14,16 +14,15 @@ import {
   driveCommentChangeIsWitnessed,
   type DriveCommentSnapshot,
 } from '#src/integrations/google-drive-comments.js';
+import type {
+  DriveSnapshotRecord,
+  DrivePermissionGrant,
+} from '#src/integrations/google-drive-contracts.js';
 import {
   driveHunksContainChangedSpan,
   type DriveSnapshotLocate,
   type DriveTextDiff,
 } from '#src/integrations/google-drive-diff.js';
-
-import type {
-  DriveSnapshotRecord,
-  DrivePermissionGrant,
-} from '#src/integrations/google-drive-contracts.js';
 
 export interface DrivePackedChangeEvent {
   contentText: string;

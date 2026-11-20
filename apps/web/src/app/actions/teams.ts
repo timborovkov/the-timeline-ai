@@ -43,11 +43,13 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { CONNECTIONS_HREF, CONNECTIONS_LEGACY_HREF } from '@/lib/connections';
 import { db } from '@/lib/db';
+import { hashInviteToken } from '@/lib/invite-token';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { changeMemberRole, removeMember } from '@/lib/platform-membership';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { getSiteUrl } from '@/lib/site-url';
+import { applyTeamRename, teamDisplayNameSchema } from '@/lib/team-rename';
 import { normalizeTimezone } from '@/lib/timezones';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -58,7 +60,7 @@ const createTeamSchema = z.object({
 });
 const renameTeamSchema = z.object({
   teamId: z.uuid(),
-  name: z.string().trim().min(1).max(80),
+  name: teamDisplayNameSchema,
 });
 const updateTeamTimezoneSchema = z.object({
   timezone: z.string().trim().min(1).max(100),
@@ -133,40 +135,14 @@ export async function renameTeamAction(
     });
     if (!parsed.success) return { error: 'Invalid team name' };
 
-    const scope = withTeam(db, parsed.data.teamId, session.user.id);
-    try {
-      await scope.requireMembership('admin');
-    } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'rename_team_auth' });
-      return { error: 'Only admins can rename a team' };
-    }
+    const result = await applyTeamRename({
+      teamId: parsed.data.teamId,
+      userId: session.user.id,
+      name: parsed.data.name,
+    });
+    if ('error' in result) return { error: result.error };
+    if (!result.changed) return { ok: true };
 
-    let changed: boolean;
-    try {
-      changed = await db.transaction(async (tx) => {
-        const updated = await tx
-          .update(teams)
-          .set({ name: parsed.data.name })
-          .where(and(eq(teams.id, parsed.data.teamId), ne(teams.name, parsed.data.name)))
-          .returning({ id: teams.id });
-        if (!updated[0]) return false;
-        await tx.insert(auditLog).values({
-          teamId: parsed.data.teamId,
-          actorUserId: session.user.id,
-          action: 'settings.change',
-          targetType: 'team',
-          targetId: parsed.data.teamId,
-          targetVisibility: 'team',
-          metadata: { setting: 'team.name' },
-        });
-        return true;
-      });
-    } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'rename_team' });
-      return { error: 'Failed to rename team' };
-    }
-
-    if (!changed) return { ok: true };
     trackProductEventBestEffort(
       { kind: 'user', userId: session.user.id, teamId: parsed.data.teamId },
       'team_management_action_completed',
@@ -654,6 +630,7 @@ interface InviteDeliveryInput {
   email: string;
   role: 'admin' | 'member';
   token: string;
+  tokenHash: string;
   expiresAt: Date;
   teamName: string;
   inviterName: string;
@@ -679,26 +656,27 @@ async function deliverInviteEmail(input: InviteDeliveryInput): Promise<InviteSta
       db,
       teamId: input.teamId,
       userId: input.inviterUserId,
-      dedupeKey: `team_invite:${input.id}:${input.token}`,
+      dedupeKey: `team_invite:${input.id}:${input.tokenHash}`,
       metadata: { inviteId: input.id, role: input.role },
     },
   );
-  if (result.ok && !result.skipped) {
-    await db
-      .update(teamInvites)
-      .set({ sendStatus: 'sent', sendError: null, lastSentAt: new Date() })
-      .where(eq(teamInvites.id, input.id));
-    return { inviteUrl: url, sendStatus: 'sent' };
-  }
-  if (result.ok && result.skipped) {
-    return { inviteUrl: url };
-  }
-  const sendError = result.error ?? 'Failed to send invite email';
-  await db
+  const sendStatus = result.ok ? (result.skipped ? 'pending' : 'sent') : 'failed';
+  const sendError = result.ok ? null : (result.error ?? 'Failed to send invite email');
+  const [current] = await db
     .update(teamInvites)
-    .set({ sendStatus: 'failed', sendError, lastSentAt: new Date() })
-    .where(eq(teamInvites.id, input.id));
-  return { inviteUrl: url, sendStatus: 'failed', sendError };
+    .set({ sendStatus, sendError, lastSentAt: sendStatus === 'pending' ? null : new Date() })
+    .where(
+      and(
+        eq(teamInvites.id, input.id),
+        eq(teamInvites.teamId, input.teamId),
+        eq(teamInvites.tokenHash, input.tokenHash),
+        isNull(teamInvites.acceptedAt),
+        isNull(teamInvites.revokedAt),
+      ),
+    )
+    .returning({ id: teamInvites.id });
+  if (!current) return { error: 'This invite changed. Refresh to see its current status.' };
+  return { inviteUrl: url, sendStatus, ...(sendError ? { sendError } : {}) };
 }
 
 export async function inviteMemberAction(
@@ -730,6 +708,7 @@ export async function inviteMemberAction(
     }
 
     const token = randomToken(24);
+    const tokenHash = hashInviteToken(token);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
     const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
     let delivery: InviteDeliveryInput;
@@ -780,7 +759,7 @@ export async function inviteMemberAction(
               .update(teamInvites)
               .set({
                 role: parsed.data.role,
-                token,
+                tokenHash,
                 invitedByUserId: session.user.id,
                 expiresAt,
                 sendStatus: 'pending',
@@ -795,7 +774,7 @@ export async function inviteMemberAction(
                 teamId: active.teamId,
                 email: parsed.data.email,
                 role: parsed.data.role,
-                token,
+                tokenHash,
                 invitedByUserId: session.user.id,
                 expiresAt,
                 sendStatus: 'pending',
@@ -823,6 +802,7 @@ export async function inviteMemberAction(
           email: parsed.data.email,
           role: parsed.data.role,
           token,
+          tokenHash,
           expiresAt,
           teamName: active.teamName,
           inviterName,
@@ -858,7 +838,9 @@ export async function inviteMemberAction(
   });
 }
 
-export async function resendInviteAction(formData: FormData): Promise<TeamMutationResult> {
+export async function resendInviteAction(
+  formData: FormData,
+): Promise<InviteState & TeamMutationResult> {
   return runSentryServerAction('resend_invite', async () => {
     const session = await auth();
     if (!session?.user) return { error: 'Not signed in' };
@@ -870,6 +852,7 @@ export async function resendInviteAction(formData: FormData): Promise<TeamMutati
     const scope = withTeam(db, active.teamId, session.user.id);
     const callerRole = await scope.requireMembership('admin');
     const token = randomToken(24);
+    const tokenHash = hashInviteToken(token);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
     const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
     let delivery: { ok: true; input: InviteDeliveryInput } | TeamMutationResult;
@@ -907,7 +890,7 @@ export async function resendInviteAction(formData: FormData): Promise<TeamMutati
           });
           await tx
             .update(teamInvites)
-            .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
+            .set({ tokenHash, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
             .where(eq(teamInvites.id, invite.id));
           return {
             ok: true,
@@ -918,6 +901,7 @@ export async function resendInviteAction(formData: FormData): Promise<TeamMutati
               email: invite.email,
               role: invite.role,
               token,
+              tokenHash,
               expiresAt,
               teamName: active.teamName,
               inviterName,
@@ -935,9 +919,9 @@ export async function resendInviteAction(formData: FormData): Promise<TeamMutati
       throw err;
     }
     if (!('input' in delivery)) return { error: delivery.error ?? 'Couldn’t resend invite' };
-    await deliverInviteEmail(delivery.input);
+    const result = await deliverInviteEmail(delivery.input);
     revalidatePath('/app/team');
-    return { ok: true };
+    return result.error ? result : { ...result, ok: true };
   });
 }
 

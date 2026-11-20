@@ -1,10 +1,10 @@
 import { expect, vi } from '@timeline/test-support';
+import type { EmbeddingModel } from 'ai';
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
 
 import type { OpenRouterFinishEvent } from '#src/billing/openrouter-usage.js';
-import type { EmbeddingModel } from 'ai';
 
 const { embeddingFinishes } = vi.hoisted(() => ({
   embeddingFinishes: [] as unknown[],

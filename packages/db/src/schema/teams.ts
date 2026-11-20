@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   jsonb,
   pgEnum,
@@ -10,9 +12,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { users } from '#src/schema/users.js';
-
 import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
+import { users } from '#src/schema/users.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
 
@@ -145,7 +146,7 @@ export const teamInvites = pgTable(
       .references(() => teams.id, { onDelete: 'cascade' }),
     email: text('email').notNull(),
     role: teamRole('role').notNull().default('member'),
-    token: text('token').notNull().unique(),
+    tokenHash: text('token').notNull().unique(),
     invitedByUserId: uuid('invited_by_user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -164,6 +165,7 @@ export const teamInvites = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    check('team_invites_token_hash_chk', sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
     index('team_invites_team_created_idx').on(table.teamId, table.createdAt),
     index('team_invites_team_email_idx').on(table.teamId, table.email),
   ],

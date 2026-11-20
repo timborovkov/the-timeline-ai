@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from 'next/server';
-
 import type { NextAuthConfig, Session } from 'next-auth';
 
 import {

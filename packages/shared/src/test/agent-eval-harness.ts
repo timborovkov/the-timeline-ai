@@ -1,3 +1,4 @@
+import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
 import {
@@ -6,13 +7,11 @@ import {
   type AskAgentInput,
   type AskAgentResult,
 } from '#src/agent/ask.js';
-import { buildAgentTools } from '#src/agent/tools.js';
-import { withTeam } from '#src/team-scope.js';
-
 import type { AgentTurnObservability } from '#src/agent/observability.js';
+import { buildAgentTools } from '#src/agent/tools.js';
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
-import type { LanguageModel } from 'ai';
+import { withTeam } from '#src/team-scope.js';
 
 interface MockFinishReason {
   unified: 'stop' | 'tool-calls';

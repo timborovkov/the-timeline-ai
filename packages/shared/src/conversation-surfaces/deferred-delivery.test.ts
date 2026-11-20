@@ -11,7 +11,6 @@ import {
 } from '#src/conversation-surfaces/deferred-delivery.js';
 import { decryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
-
 import type { ChatDeliveryJobData } from '#src/queue/queues.js';
 
 const fake = vi.hoisted(() => ({ queue: null as Queue<ChatDeliveryJobData> | null }));

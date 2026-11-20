@@ -2,9 +2,8 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { summarizeLiveEvalManifestCases } from '#src/reconciliation/live-artifact-manifest-summary.js';
-import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
-
 import type { LiveEvalArtifact, LiveEvalRunManifest } from '#src/reconciliation/live-artifacts.js';
+import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 export type ProductionSamplingRunKind = 'closed_beta' | 'post_deploy' | 'manual';
 

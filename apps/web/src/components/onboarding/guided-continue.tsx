@@ -1,9 +1,8 @@
 'use client';
 
+import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
-
-import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 
 import { setFirstRunPhaseAction } from '@/app/actions/first-run';
 import { Button } from '@/components/ui/button';

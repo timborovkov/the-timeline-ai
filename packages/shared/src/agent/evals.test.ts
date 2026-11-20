@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { buildAgentTools } from '#src/agent/tools.js';
+import type { SearchOpts } from '#src/qdrant/client.js';
+import type { SearchHit } from '#src/qdrant/client.js';
 import { withTeam } from '#src/team-scope.js';
 import {
   type AgentEvalToolName,
@@ -22,8 +24,6 @@ import {
 } from '#src/test/agent-eval-harness.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
-import type { SearchOpts } from '#src/qdrant/client.js';
-import type { SearchHit } from '#src/qdrant/client.js';
 // Fast agent evals: these run the real Timeline agent tools against seeded
 // workspace state with deterministic retrieval. Success means the tool trace
 // and synthesized answer have the right evidence and no cross-team/private

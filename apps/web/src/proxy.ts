@@ -5,8 +5,21 @@ import { migrateLegacyActiveTeamCookie } from '@/lib/active-team-cookie-migratio
 import { authConfig } from '@/lib/auth.config';
 import { canonicalHostRedirect } from '@/lib/canonical-host';
 import { connectionsLegacyRedirectLocation } from '@/lib/connections';
+import { contentSecurityPolicyHeaders } from '@/lib/content-security-policy';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
+import {
+  parseOnboardingSourceIntent,
+  stashOnboardingSourceIntentCookie,
+} from '@/lib/onboarding-source-intent';
 import { platformRequestGate } from '@/lib/platform-request-gate';
+import { classifyPublicAnalyticsPath } from '@/lib/public-analytics-routes';
+import {
+  hasOversizedContentLength,
+  payloadTooLargeResponse,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
+import { protectSensitiveLinkResponse } from '@/lib/sensitive-links';
+import { applySignupPlanIntentFromRequest } from '@/lib/signup-plan-intent';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
 type ProxyHandler = (
@@ -17,17 +30,57 @@ type ProxyHandler = (
 const authProxy = NextAuth(authConfig).auth(async (request) => {
   const denied = await platformRequestGate(request, request.auth);
   if (denied) return denied;
+  if (request.auth?.user && request.method === 'POST') {
+    const path = request.nextUrl.pathname;
+    const limit =
+      path === '/api/chat'
+        ? REQUEST_BODY_LIMITS.chat
+        : path === '/api/search/global'
+          ? REQUEST_BODY_LIMITS.globalSearch
+          : undefined;
+    if (limit && hasOversizedContentLength(request, limit)) return payloadTooLargeResponse();
+  }
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-timeline-path', request.nextUrl.pathname);
   requestHeaders.set('x-timeline-method', request.method);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   await migrateLegacyActiveTeamCookie(request, response);
+  applySignupPlanIntentFromRequest(request, response);
+  if (request.nextUrl.pathname === '/sign-up') {
+    const sourceIntent = parseOnboardingSourceIntent(request.nextUrl.searchParams.get('source'));
+    if (sourceIntent) {
+      stashOnboardingSourceIntentCookie(response, sourceIntent);
+    }
+  }
   return response;
 }) as unknown as ProxyHandler;
 
+const additionalPublicPages = new Set([
+  '/docs',
+  '/guides',
+  '/guides/automate-daily-team-updates-in-slack',
+  '/guides/software-project-handover-checklist-template',
+  '/guides/summarize-slack-channels',
+  '/guides/track-action-items-meetings-slack-email',
+  '/help/contact',
+  '/help/support',
+  '/integrations/websites',
+  '/record',
+  '/security',
+]);
+
+export function isCookieIndependentPublicRead(
+  request: Pick<NextRequest, 'method' | 'nextUrl' | 'headers'>,
+) {
+  if ((request.method !== 'GET' && request.method !== 'HEAD') || request.headers.has('next-action'))
+    return false;
+  const path = request.nextUrl.pathname;
+  return Boolean(classifyPublicAnalyticsPath(path)) || additionalPublicPages.has(path);
+}
+
 export const proxy: ProxyHandler = async (request, context) => {
   const redirect = canonicalHostRedirect(request);
-  if (redirect) return redirect;
+  if (redirect) return protectSensitiveLinkResponse(redirect, request.nextUrl.pathname);
   const connectionsLocation = connectionsLegacyRedirectLocation(
     request.nextUrl.pathname,
     request.nextUrl.searchParams,
@@ -36,10 +89,18 @@ export const proxy: ProxyHandler = async (request, context) => {
     return NextResponse.redirect(new URL(connectionsLocation, request.url), 308);
   }
   const invalidMultipart = rejectInvalidMultipartRequest(request);
-  if (invalidMultipart) return invalidMultipart;
-  const response = await authProxy(request, context);
+  if (invalidMultipart)
+    return protectSensitiveLinkResponse(invalidMultipart, request.nextUrl.pathname);
+  const response = isCookieIndependentPublicRead(request)
+    ? NextResponse.next()
+    : await authProxy(request, context);
+  if (response && !request.nextUrl.pathname.startsWith('/api/')) {
+    for (const { key, value } of contentSecurityPolicyHeaders(process.env)) {
+      response.headers.set(key, value);
+    }
+  }
   schedulePersonlessSurfaceRequest(request, response, context);
-  return response;
+  return protectSensitiveLinkResponse(response, request.nextUrl.pathname);
 };
 
 export const config = {

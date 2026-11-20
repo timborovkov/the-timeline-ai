@@ -2,10 +2,9 @@
 
 import { Search } from 'lucide-react';
 import Link from 'next/link';
-
-import type { ConnectionsTab } from '@/app/app/connections/connection-directory';
 import type { KeyboardEvent } from 'react';
 
+import type { ConnectionsTab } from '@/app/app/connections/connection-directory';
 import { CONNECTIONS_TABS, connectionsTabHref } from '@/app/app/connections/connection-directory';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';

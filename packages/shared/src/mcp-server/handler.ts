@@ -22,6 +22,7 @@ import {
 } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { askBillingUserMessage } from '#src/billing/admission.js';
+import type * as boards from '#src/boards/index.js';
 import {
   artifactRefCitation,
   citationPartToArtifactRef,
@@ -39,6 +40,7 @@ import * as objects from '#src/objects/index.js';
 import { serializeObjectRowsWithProjects } from '#src/objects/tool-serialization.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
 import { enrichEvidenceContext } from '#src/retrieval/context.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 import { taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
@@ -54,9 +56,6 @@ import {
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
 import { startWebsiteScan, normalizeWebsiteUrl } from '#src/websites/index.js';
-
-import type * as boards from '#src/boards/index.js';
-import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('mcp-server');
 

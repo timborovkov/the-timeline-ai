@@ -1,12 +1,14 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import type * as boards from '@timeline/shared/boards';
 import {
   artifactRefCitation,
   numberArtifactRefs,
   type ArtifactRef,
 } from '@timeline/shared/citation';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
+import type * as objects from '@timeline/shared/objects/types';
 import { presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -24,10 +26,6 @@ import {
   useState,
   useTransition,
 } from 'react';
-
-import type { SaveState } from '@/lib/utils';
-import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects/types';
 
 import {
   acceptObjectChangeAction,
@@ -100,6 +98,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';
 import { TASK_STATUS_COLUMNS, taskDisplayStatus } from '@/lib/task-statuses';
+import type { SaveState } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [

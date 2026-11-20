@@ -1,12 +1,11 @@
 'use client';
 
+import type * as boards from '@timeline/shared/boards';
 import { objectSupportsIdentityFacets } from '@timeline/shared/objects/identity-facets';
+import type * as objects from '@timeline/shared/objects/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
-
-import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects/types';
 
 import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';

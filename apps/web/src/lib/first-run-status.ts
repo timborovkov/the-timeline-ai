@@ -1,3 +1,4 @@
+import type { Db } from '@timeline/db';
 import {
   firstCaptureJustLanded,
   prefilledAskQuestion,
@@ -5,8 +6,6 @@ import {
   type FirstRunState,
 } from '@timeline/shared/onboarding';
 import { withTeam } from '@timeline/shared/team-scope';
-
-import type { Db } from '@timeline/db';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { displayInboundEmail } from '@/lib/hub-status';
@@ -26,6 +25,9 @@ export async function loadFirstRunStatus(input: {
   if (before?.starterPath === 'email') {
     await scope.onboarding.detectEmailArrival();
   }
+  if (before?.starterPath === 'slack' || before?.starterPath === 'telegram') {
+    await scope.onboarding.detectConnectorArrival();
+  }
   const record = await scope.onboarding.getFirstRunRecord();
   const firstRun = record?.firstRun ?? (await scope.onboarding.getFirstRun());
   const landedPath = firstCaptureJustLanded(before, firstRun);
@@ -43,6 +45,7 @@ export async function loadFirstRunStatus(input: {
       inboundEmail: record?.inboundEmail ?? null,
     }),
     teamName: record?.teamName ?? input.teamName,
+    teamId: input.teamId,
     recommendedChannel: recommendedGoLiveChannel(firstRun?.workStyle ?? null),
     prefilledQuestion: prefilledAskQuestion({
       path: firstRun?.starterPath ?? null,

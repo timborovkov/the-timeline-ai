@@ -1,5 +1,7 @@
 'use client';
 
+import { useId } from 'react';
+
 import { CopyButton } from '@/components/copy-button';
 import styles from '@/components/marketing/agents/agent-setup-card.module.css';
 import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
@@ -34,10 +36,15 @@ export function AgentSetupCard({
   className?: string;
   compact?: boolean;
 }) {
+  const titleId = useId();
   return (
-    <aside className={cn(styles.card, compact && styles.compact, className)} data-agent-setup>
+    <section
+      aria-labelledby={titleId}
+      className={cn(styles.card, compact && styles.compact, className)}
+      data-agent-setup
+    >
       <div className={styles.copy}>
-        <p className={styles.title}>
+        <p id={titleId} className={styles.title}>
           {compact ? 'Get started with your agent' : AGENT_SETUP_CARD.title}
         </p>
         <p className={styles.lede}>
@@ -62,6 +69,6 @@ export function AgentSetupCard({
           className={styles.copyButton}
         />
       </div>
-    </aside>
+    </section>
   );
 }

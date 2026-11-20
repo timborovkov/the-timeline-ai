@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
+import type { ReactNode } from 'react';
 
 import type { TeamMembership } from '@/lib/active-team';
-import type { ReactNode } from 'react';
 await vi.mock(
   import.meta.resolve('@/components/app-document-scroll-lock'),
   () => ({
@@ -27,6 +27,14 @@ await vi.mock(
     FloatingAgentChat: () => createElement('div', { 'data-testid': 'floating-agent-chat' }),
   }),
   () => import('@/components/chat/floating-agent-chat'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/components/clear-plan-intent'),
+  () => ({
+    ClearPlanIntent: () => null,
+  }),
+  () => import('@/components/clear-plan-intent'),
 );
 
 await vi.mock(

@@ -1,5 +1,4 @@
 import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/meters.js';
-
 import type {
   PolarIdentityApi,
   PolarPerson,

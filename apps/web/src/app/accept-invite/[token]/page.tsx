@@ -1,8 +1,7 @@
 import { teamInvites, teams } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { acceptInviteAction } from '@/app/actions/invites';
 import { AuthShell } from '@/components/auth-shell';
@@ -10,6 +9,7 @@ import { SignOutButton } from '@/components/sign-out-button';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { hashInviteToken } from '@/lib/invite-token';
 
 export const metadata: Metadata = {
   title: 'Accept invite',
@@ -68,7 +68,7 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
     .innerJoin(teams, eq(teams.id, teamInvites.teamId))
     .where(
       and(
-        eq(teamInvites.token, token),
+        eq(teamInvites.tokenHash, hashInviteToken(token)),
         isNull(teamInvites.acceptedAt),
         isNull(teamInvites.revokedAt),
       ),

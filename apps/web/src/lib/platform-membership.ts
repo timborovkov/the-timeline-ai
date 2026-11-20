@@ -1,5 +1,8 @@
 import {
   auditLog,
+  calendarEvents,
+  calendarReminderPreferences,
+  googleCalendarImports,
   ingestWebhookCredentials,
   ingestWebhooks,
   integrations,
@@ -13,6 +16,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
+import type { Db } from '@timeline/db';
 import {
   completePolarMembershipChange,
   lockTeamBillingIdentity,
@@ -35,8 +39,6 @@ import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import type { TeamMutationResult } from '@/app/actions/teams';
-import type { Db } from '@timeline/db';
-
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
@@ -285,6 +287,41 @@ export async function removeMember(
             userId: memberUserId,
           });
         }
+        // Serialize against the import worker before retiring the connection
+        // and its busy blocks when the importer leaves the workspace.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`calendar-import:${active.teamId}:${memberUserId}`}, 0))`,
+        );
+        const [calendarImport] = await tx
+          .delete(googleCalendarImports)
+          .where(
+            and(
+              eq(googleCalendarImports.teamId, active.teamId),
+              eq(googleCalendarImports.userId, memberUserId),
+            ),
+          )
+          .returning({ id: googleCalendarImports.id });
+        if (calendarImport) {
+          await tx
+            .update(calendarEvents)
+            .set({ deletedAt: new Date(), updatedAt: new Date() })
+            .where(
+              and(
+                eq(calendarEvents.teamId, active.teamId),
+                eq(calendarEvents.externalCalendarId, calendarImport.id),
+                eq(calendarEvents.source, 'google'),
+                isNull(calendarEvents.deletedAt),
+              ),
+            );
+        }
+        await tx
+          .delete(calendarReminderPreferences)
+          .where(
+            and(
+              eq(calendarReminderPreferences.teamId, active.teamId),
+              eq(calendarReminderPreferences.userId, memberUserId),
+            ),
+          );
         await tx
           .delete(teamCalendarSubscriptions)
           .where(

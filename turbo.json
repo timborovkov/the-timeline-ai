@@ -1,6 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["**/.env.*"],
+  "globalDependencies": [
+    "**/.env.*",
+    "eslint.config.js",
+    "tsconfig.base.json",
+    "bun.lock",
+    ".bun-version"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -11,10 +17,17 @@
       "persistent": true
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../eslint.config.js",
+        "../../tsconfig.base.json",
+        "tsconfig*.json"
+      ]
     },
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "../../tsconfig.base.json", "tsconfig*.json"]
     },
     "test": {
       "dependsOn": ["^build"]

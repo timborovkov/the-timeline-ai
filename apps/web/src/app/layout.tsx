@@ -1,7 +1,6 @@
+import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import Script from 'next/script';
-
-import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 import { PublicAnalyticsBoundary } from '@/components/public-analytics';
@@ -77,7 +76,6 @@ export const metadata: Metadata = {
   publisher: 'The Timeline',
   category: 'Business software',
   formatDetection: { telephone: false, email: false, address: false },
-  alternates: { canonical: '/' },
   manifest: '/manifest.webmanifest',
   icons: {
     icon: [
@@ -90,7 +88,6 @@ export const metadata: Metadata = {
   openGraph: {
     title: `${PRODUCT_POSITIONING.title} · The Timeline`,
     description: PRODUCT_POSITIONING.description,
-    url: '/',
     siteName: 'The Timeline',
     images: [
       {
@@ -108,17 +105,6 @@ export const metadata: Metadata = {
     title: `${PRODUCT_POSITIONING.title} · The Timeline`,
     description: PRODUCT_POSITIONING.description,
     images: ['/twitter-image'],
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
   },
 };
 

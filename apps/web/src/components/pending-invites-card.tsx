@@ -2,21 +2,18 @@
 
 import { Mail } from 'lucide-react';
 
-import type { TeamInviteRow, TeamMemberMap } from '@/components/team-member-types';
-
 import { EmptyState } from '@/components/empty-state';
 import { PendingInviteItem } from '@/components/pending-invite-item';
 import { SettingsSection } from '@/components/section-heading';
 import { TeamListPagination, useTeamListPage } from '@/components/team-list-pagination';
+import type { TeamInviteRow, TeamMemberMap } from '@/components/team-member-types';
 
 export function PendingInvitesCard({
   invites,
   userMap,
-  siteUrl,
 }: {
   invites: TeamInviteRow[];
   userMap: TeamMemberMap;
-  siteUrl: string;
 }) {
   const { visibleItems, pagination, listRef } = useTeamListPage(invites);
   return (
@@ -41,7 +38,6 @@ export function PendingInvitesCard({
             <PendingInviteItem
               key={invite.id}
               invite={invite}
-              siteUrl={siteUrl}
               inviter={userMap.get(invite.invitedByUserId)}
             />
           ))}

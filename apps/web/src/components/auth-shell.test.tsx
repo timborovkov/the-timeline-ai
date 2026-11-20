@@ -1,7 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
 import type { ReactNode } from 'react';
 await vi.mock(
   import.meta.resolve('next/link'),

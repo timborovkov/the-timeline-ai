@@ -1,7 +1,7 @@
+import type { Db } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, it } from 'bun:test';
 
-import type { Db } from '@timeline/db';
 const mocks = vi.hoisted(() => ({ start: vi.fn(), add: vi.fn(), list: vi.fn(), member: vi.fn() }));
 await vi.mock(
   import.meta.resolve('#src/websites/runtime.js'),

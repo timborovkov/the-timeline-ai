@@ -18,7 +18,7 @@ Polar billing setup and required variables are documented in [Polar setup](setup
 | `postgres`                      | Database template | —                                               | (customer-operated service)                                                                                     |
 | `redis`                         | Database template | —                                               | (customer-operated service)                                                                                     |
 | `qdrant`                        | Docker image      | `qdrant/qdrant:v1.20.0`                         | (configured in Railway)                                                                                         |
-| `rustfs`                        | Docker image      | `rustfs/rustfs:latest`                          | (configured in Railway)                                                                                         |
+| `rustfs`                        | Docker image      | `rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b`                          | (configured in Railway)                                                                                         |
 
 Railway provisions PostgreSQL and Redis from database templates. They remain customer-operated services rather than managed databases. Qdrant and RustFS are deployed as custom services using their official Docker images. Portable app Dockerfiles live under `docker/` for local/container-platform builds; keep the repo root free of an app `Dockerfile`; each service selects its image through `railway.json`.
 
@@ -52,7 +52,7 @@ This repository does not change the Railway project. After merging, an operator 
 
 ## Environment variables
 
-Website scanning requires `FIRECRAWL_API_KEY` on web and full worker services, but not the document-extract-only service. See the [scan lifecycle](relational-memory.md#website-scans).
+Set `FIRECRAWL_API_KEY` on web and full worker services to enable website scanning. See the [scan lifecycle](relational-memory.md#website-scans).
 
 Shared variables for `web` and `worker` (not the credential-thin `document-extract-orchestrator` service). Railway's service-to-service references (`${{ Postgres.DATABASE_URL }}`) keep things DRY.
 
@@ -195,9 +195,12 @@ Use Railway's "shared variables" feature at the project level for anything used 
 
 **About `S3_PUBLIC_ENDPOINT`:** the browser uploads voice notes, document files, and fetches audio for playback directly against this URL, so it must be publicly reachable over HTTPS. Expose the RustFS service via a Railway public domain (Settings → Networking → Generate Domain) and set `S3_PUBLIC_ENDPOINT` to that URL. `S3_ENDPOINT` stays on the private network — workers and server-side code keep using it.
 
-**About `TURNSTILE_*`:** Turnstile is used only on anonymous abuse surfaces: email/password registration and the public support/contact form. The web Docker build does not receive these variables, so set them on the running `web` service. `/help/support` is statically prerendered and loads `TURNSTILE_SITE_KEY` at request time; sign-up is dynamic and reads the runtime env directly. OAuth signup and signed-in product flows rely on Redis-backed rate limits, team permissions, and existing quota checks. In production, leave neither key blank; the server action rejects missing or invalid Turnstile tokens.
+**About `TURNSTILE_*`:** Turnstile is used only on anonymous abuse surfaces: email/password registration, the public support form, and the Enterprise enquiry form. The web Docker build does not receive these variables, so set them on the running `web` service. `/help/support` and `/contact/enterprise` load `TURNSTILE_SITE_KEY` at request time with the same Turnstile action (`support`); sign-up is dynamic and reads the runtime env directly. OAuth signup and signed-in product flows rely on Redis-backed rate limits, team permissions, and existing quota checks. In production, leave neither key blank; the server action rejects missing or invalid Turnstile tokens.
 
 <span id="staging-vs-production"></span>
+
+Review the [security rollout guide](setup/security-hardening-rollout.md) for
+credential URL logging, endpoint size limits, and the browser policy rollout.
 
 ## Staging vs production
 
@@ -244,12 +247,12 @@ Do not assume a PostgreSQL backup exists from the template alone. Enable and inv
 
 RustFS backup is an operating task, not a shipped repository guarantee. After choosing the secondary store, set up a scheduled service (Railway cron), for example:
 
-    rclone sync s3:timeline-audio backblaze-b2:timeline-backup-audio
-    rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
-    rclone sync s3:timeline-documents backblaze-b2:timeline-backup-documents
-    rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
+    rclone copy s3:timeline-audio backblaze-b2:timeline-backup-audio
+    rclone copy s3:timeline-attachments backblaze-b2:timeline-backup-attachments
+    rclone copy s3:timeline-documents backblaze-b2:timeline-backup-documents
+    rclone copy s3:timeline-exports backblaze-b2:timeline-backup-exports
 
-Backblaze B2 or any cheap S3-compatible store works. Test restores quarterly.
+Keep destination version history and an object-key and checksum manifest for each recovery point. Backblaze B2 or another S3-compatible store works. Rehearse recovery quarterly using the [restore runbook](runbooks/restore.md).
 
 Qdrant snapshots are also an operating task. Add a nightly job through Qdrant's snapshot API and upload the result to an independently protected store such as B2. Vector data can be regenerated by re-embedding source records, but a tested snapshot avoids that cost when the only failure is Qdrant data loss.
 
@@ -273,14 +276,7 @@ Telegram, Slack, Resend, and team-managed ingest webhooks point at the `web` ser
 
 Native integration OAuth callbacks also land on the web service, including `/api/auth/callback/google` (sign-in; `openid email profile` only), `/api/integrations/google_drive/callback`, `/api/integrations/linear/callback`, `/api/integrations/github/callback`, `/api/integrations/monday/callback`, `/api/integrations/slack/callback`, and `/api/integrations/sentry/callback`.
 
-The Telegram webhook and `/` command menu are registered automatically by the `web` service on startup. The Next.js instrumentation hook at `apps/web/src/instrumentation.ts` runs once per server process. If `TELEGRAM_BOT_TOKEN` is set, it calls `setMyCommands` for the default, private-chat, and group-chat scopes so Telegram clients can list bot commands when someone types `/`. In production it also reads `TELEGRAM_WEBHOOK_SECRET` and `AUTH_URL`, then always calls `setWebhook` (idempotent; required to push a rotated secret since `getWebhookInfo` doesn't expose Telegram's stored secret) and verifies via `getWebhookInfo`. Both calls are fire-and-forget so they never block readiness. Missing env vars → it logs a skip line and continues.
-
-To register manually (e.g. from a laptop pointed at staging):
-
-    curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-      -d "url=https://thetimeline.cc/api/telegram/webhook" \
-      -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-      -d "allowed_updates=[\"message\",\"edited_message\",\"callback_query\"]"
+Register Telegram's webhook and command menu from an operator shell using the [Telegram provisioning procedure](setup/telegram.md#register). Validate the configured bot and target origin during provisioning and secret rotation.
 
 The `web` service verifies the `X-Telegram-Bot-Api-Secret-Token` header on every request and rejects anything that doesn't match.
 
@@ -313,6 +309,18 @@ Ingest webhook credentials are managed in the dashboard and stored as database h
 5.  **Legal-version release warning.** Changing the current Terms or Privacy version intentionally makes every existing human session stale, but production first defaults `LEGAL_PUBLICATION_READY=false`. That default withholds binding Terms, legal acceptance, and first-time account signup while preserving existing users' signed-in dashboard access. Set it to true after approving the legal text for publication. Then signed-in app and invite routes redirect to `/legal/accept`; human product APIs return a no-store `428 legal_acceptance_required` response until the person accepts. Before a version bump, publish and review both documents, notify support and API consumers, and confirm the immutable acceptance-history migration is deployed. Service webhooks, cron jobs, health checks, inbound email, calendar feeds, and bearer-authenticated outbound MCP remain exempt because they cannot complete human clickwrap.
 
 6.  Services restart with new image. Healthcheck on `web` (`/api/health`) must pass before traffic shifts.
+
+    From a checkout of the deployed revision, verify the public origin after
+    the web deployment is healthy. Pass the intended origin first and any
+    configured host aliases afterward.
+
+        bun run check:public-origin https://thetimeline.cc https://www.thetimeline.cc
+
+    The check verifies the sitemap advertised in robots, the sitemap pages and
+    their canonical tags, legacy and host-alias redirects, and the link
+    destinations in both LLM files. If build-time output points to another
+    origin, align the Docker build argument and runtime `AUTH_URL`, then
+    rebuild and redeploy before rechecking.
 
 7.  Workers restart with same image — they share the codebase, just different entry points.
 

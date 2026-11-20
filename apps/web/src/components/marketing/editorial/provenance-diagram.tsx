@@ -1,5 +1,4 @@
 import type { EditorialDiagram } from '@/components/marketing/editorial/content';
-
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { ProvenanceReveal } from '@/components/marketing/editorial/provenance-reveal';
 

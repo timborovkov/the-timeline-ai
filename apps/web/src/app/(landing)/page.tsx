@@ -11,10 +11,9 @@ import {
   Video,
   Webhook,
 } from 'lucide-react';
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
-
-import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
@@ -44,6 +43,7 @@ import { MarketingProductScreenshot } from '@/components/marketing/product-scree
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
+import { PublicAnalyticsChoice } from '@/components/public-analytics';
 import { PublicFooter } from '@/components/public-footer';
 import { PublicHeader } from '@/components/public-header';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -99,11 +99,6 @@ export const metadata: Metadata = {
     'meeting transcript search',
     'project status AI',
   ],
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
-  },
 };
 
 function getHomeDocument() {
@@ -135,6 +130,7 @@ export default function LandingPage() {
         <span />
       </div>
       <PublicHeader currentSection="product" />
+      <PublicAnalyticsChoice />
       <main id="main" tabIndex={-1}>
         <ClaimScene />
         <IntakeScene />
@@ -238,24 +234,20 @@ function ClaimScene() {
                   {SEE_IT_FIRST_LABEL}
                 </Link>
               </div>
-              <PublicSessionBranch
-                signedOut={
-                  <div className={styles.heroMeta}>
+              <div className={styles.heroMeta}>
+                <PublicSessionBranch
+                  signedOut={
                     <p className={styles.ctaFinePrint}>
                       {CTA_MICROCOPY_LEAD}{' '}
                       <Link href="/pricing" className={styles.textLink}>
                         See pricing
                       </Link>
                     </p>
-                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
-                  </div>
-                }
-                signedIn={
-                  <div className={styles.heroMeta}>
-                    <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
-                  </div>
-                }
-              />
+                  }
+                  signedIn={null}
+                />
+                <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+              </div>
               <AgentSetupCard compact className={styles.heroAgentSetup} />
             </div>
           </div>
@@ -366,7 +358,7 @@ function TimelineScene() {
         title={<>Everything lands on one timeline.</>}
         copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
       />
-      <div className={styles.timelineStage} data-home-diagram>
+      <div className={styles.timelineStage} data-home-panel-motion>
         <div className={styles.timelineHeader}>
           <span>Acme rollout · Illustrative example / Last 7 days</span>
           <span>5 items</span>
@@ -579,13 +571,25 @@ function AudienceScene() {
         copy="For client delivery, product and operations work that happens in conversation."
       />
       <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
-      <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
+      <div
+        className={styles.trustFlowPanel}
+        data-home-panel-motion
+        aria-labelledby="trust-flow-title"
+      >
         <header>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
           <div className={styles.trustIntro}>
             <p>
               Access is checked when a source is retrieved. The answer only uses evidence you can
               see.
+            </p>
+            <p>
+              Hosted by us, self-hosted from the source-available GitHub repo, or a managed
+              on-premise deployment we run for you — see{' '}
+              <Link href="/trust#deployment" className={styles.textLink}>
+                deployment options
+              </Link>
+              .
             </p>
             <Link href="/trust" className={styles.trustCta}>
               Explore trust &amp; security <span aria-hidden="true">↗</span>
@@ -705,6 +709,7 @@ function HomeProof({
           alt={shot.alt}
           caption={shot.caption}
           chrome="media"
+          sizes="(min-width: 1280px) 800px, (min-width: 960px) 62vw, calc(100vw - 3rem)"
         />
       </div>
     </div>

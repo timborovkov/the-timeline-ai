@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { instrumentAgentTools } from '#src/agent/observability.js';
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
 import { resetEnvForTests } from '#src/env.js';
+import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 import { type TeamScope } from '#src/team-scope.js';
 
-import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
   process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
 
@@ -379,6 +379,22 @@ describe('buildAgentTools — team isolation', () => {
     await expect(exec({}, {})).resolves.toEqual({ error: 'tool_failed' });
     expect(sanitizeError).toHaveBeenCalledWith(privateError);
     expect(onToolError).toHaveBeenCalledWith(safeError, { tool: 'list_team_members' });
+  });
+
+  it('reports billing admission failures from search_timeline_moments without changing tool error shape', async () => {
+    const { BillingAdmissionError } = await import('#src/billing/errors.js');
+    const scope = makeFakeScope();
+    const admission = new BillingAdmissionError('free_allowance_reached');
+    const onToolError = vi.fn();
+    scope.timeline.searchEvents.mockRejectedValue(admission);
+    const tools = buildAgentTools(scope as unknown as TeamScope, { onToolError });
+    const exec = tools.search_timeline_moments?.execute as (
+      input: { query: string },
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({ query: 'northstar' }, {})).resolves.toEqual({ error: 'tool_failed' });
+    expect(onToolError).toHaveBeenCalledWith(admission, { tool: 'search_timeline_moments' });
   });
 
   it('lists and mutates only pins exposed by the bound personal scope', async () => {
@@ -1413,6 +1429,67 @@ describe('buildAgentTools — team isolation', () => {
       cancelled: true,
       reconciled_approvals: 3,
     });
+  });
+
+  it('rejects imported calendar mutations instead of proposing or mutating them', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture({ source: 'google' }));
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const propose = tools.propose_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const update = tools.execute_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const cancel = tools.execute_calendar_cancel?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      propose({ id: CALENDAR_EVENT_ID, patch: { title: 'Synced rename' } }, {}),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'read_only_imported',
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+    });
+    await expect(
+      update(
+        {
+          id: CALENDAR_EVENT_ID,
+          expectedCurrent: { title: 'Daily standup' },
+          patch: { title: 'Synced rename' },
+          reason: 'User asked to rename the imported event.',
+        },
+        {},
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'read_only_imported',
+    });
+    await expect(
+      cancel(
+        {
+          id: CALENDAR_EVENT_ID,
+          expectedCurrent: {
+            title: 'Daily standup',
+            startAt: '2026-06-14T09:00:00.000Z',
+            endAt: '2026-06-14T09:30:00.000Z',
+          },
+          reason: 'User asked to cancel the imported event.',
+        },
+        {},
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'read_only_imported',
+    });
+
+    expect(scope.suggestions.createOrMergeSuggestionBundle).not.toHaveBeenCalled();
+    expect(scope.calendar.updateCalendarEvent).not.toHaveBeenCalled();
+    expect(scope.calendar.deleteCalendarEvent).not.toHaveBeenCalled();
   });
 
   it('search_objects forwards structured filters and returns typed citations', async () => {

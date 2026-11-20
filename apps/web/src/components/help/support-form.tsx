@@ -2,8 +2,6 @@
 
 import { useActionState, useEffect, useRef, useState } from 'react';
 
-import type { SupportSurface } from '@/lib/support-context';
-
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
 import { FormActionToast } from '@/components/form-action-toast';
 import { useSupportEmail } from '@/components/support-email-provider';
@@ -13,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { usePublicRuntime, type PublicRuntime } from '@/lib/public-runtime';
+import type { SupportSurface } from '@/lib/support-context';
 
 interface SupportFormProps {
   defaultName?: string;

@@ -1,6 +1,5 @@
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-
 import type { ReactNode } from 'react';
 
 import { CTA_MICROCOPY_LEAD, START_FREE_HREF, START_FREE_LABEL } from '@/components/marketing/copy';
@@ -17,16 +16,18 @@ export function StartFreeLink({
   children = START_FREE_LABEL,
   showArrow = true,
   analyticsCta = 'start_free',
+  href = START_FREE_HREF,
 }: {
   className?: string;
   children?: ReactNode;
   showArrow?: boolean;
   analyticsCta?: string;
+  href?: string;
 }) {
   return (
     <PublicSessionBranch
       signedOut={
-        <Link href={START_FREE_HREF} data-public-analytics-cta={analyticsCta} className={className}>
+        <Link href={href} data-public-analytics-cta={analyticsCta} className={className}>
           {children}
           {showArrow ? <ArrowRight aria-hidden="true" className="size-4" /> : null}
         </Link>
@@ -73,11 +74,15 @@ export function MarketingCtaBand({
   title,
   body,
   firstRun = false,
+  sourceIntent,
 }: {
   title: string;
   body: string;
   firstRun?: boolean;
+  /** When set, Start free preserves connector intent into sign-up/onboarding. */
+  sourceIntent?: 'slack' | 'telegram';
 }) {
+  const startHref = sourceIntent ? `${START_FREE_HREF}?source=${sourceIntent}` : START_FREE_HREF;
   return (
     <section className={styles.cta} aria-labelledby="cta-title">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -93,7 +98,23 @@ export function MarketingCtaBand({
             {firstRun ? <FirstRunPath compact showNote={false} /> : null}
           </div>
           <div className={styles.ctaAction}>
-            <StartFreeLink className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-signal px-6 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface" />
+            <div className="flex flex-col gap-3 sm:items-start">
+              <StartFreeLink
+                href={startHref}
+                analyticsCta={sourceIntent ? `start_free_${sourceIntent}` : 'start_free'}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-signal px-6 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              />
+              {sourceIntent === 'slack' ? (
+                <StartFreeLink
+                  href={`${START_FREE_HREF}?source=telegram`}
+                  analyticsCta="start_free_telegram"
+                  showArrow={false}
+                  className="inline-flex min-h-10 items-center text-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  Or start with Telegram
+                </StartFreeLink>
+              ) : null}
+            </div>
             <CtaMicrocopy />
           </div>
         </div>

@@ -1,16 +1,17 @@
 import { users } from '@timeline/db';
+import { VISION_BUDGET_DEFERRED } from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 
 import { CapturedFilesList } from '@/components/captured-files/captured-files-list';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { capturedFileFilters } from '@/lib/captured-file-filters';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 
@@ -25,15 +26,22 @@ const documentsAction = (
   </Button>
 );
 
-export default async function CapturedFilesPage() {
+export default async function CapturedFilesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string; sender?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const params = await searchParams;
+  const filters = capturedFileFilters(params.source, params.sender);
+  const role = await scope.requireMembership();
   const [page, folders, members] = await Promise.all([
-    scope.documents.listCapturedFilesPage({ limit: 50 }),
+    scope.documents.listCapturedFilesPage({ limit: 50, ...filters }),
     scope.documents.listFolders({ parentFolderId: null }),
     scope.timeline.listMembers(),
   ]);
@@ -62,9 +70,20 @@ export default async function CapturedFilesPage() {
         variant="collection"
         title="Captured files"
         subtitle="Review source attachments, then promote the files your team should keep in Documents."
-        trailing={documentsAction}
+        trailing={
+          <div className="flex flex-wrap gap-2">
+            {role === 'owner' ? (
+              <Button variant="outline" asChild>
+                <Link href="/app/team/ocr">OCR budget</Link>
+              </Button>
+            ) : null}
+            {documentsAction}
+          </div>
+        }
       />
       <CapturedFilesList
+        key={JSON.stringify(filters)}
+        filters={filters}
         folders={folders.map((folder) => ({ id: folder.id, name: folder.name }))}
         members={members.map((member) => {
           const user = ownerMap.get(member.userId);
@@ -90,11 +109,16 @@ export default async function CapturedFilesPage() {
                   contentType: file.currentVersion.contentType,
                   byteSize: file.currentVersion.byteSize,
                   processingStatus: file.currentVersion.processingStatus,
+                  processingError:
+                    file.currentVersion.processingError === VISION_BUDGET_DEFERRED
+                      ? VISION_BUDGET_DEFERRED
+                      : null,
                   createdAt: file.currentVersion.createdAt.toISOString(),
                 }
               : null,
             provenance: {
               source: file.provenance.source,
+              sender: file.provenance.sender ?? null,
               parentEventId: file.provenance.parentEventId,
               occurredAt: file.provenance.occurredAt?.toISOString() ?? null,
               summary: file.provenance.summary,

@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nextjs';
 const PRE_ACCEPTANCE_ACTIONS = new Set([
   'accept_invite',
   'accept_legal',
+  'confirm_email_verification',
   'resend_email_verification',
   'sign_in',
   'request_password_reset',
@@ -10,6 +11,7 @@ const PRE_ACCEPTANCE_ACTIONS = new Set([
   'sign_in_with_git_hub',
   'sign_up',
   'submit_support_request',
+  'submit_enterprise_enquiry',
 ]);
 
 // These actions authenticate the real actor with requireAdmin inside their callback.

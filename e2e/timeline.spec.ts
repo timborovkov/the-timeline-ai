@@ -993,6 +993,36 @@ test('mobile navigation keeps the team switcher visible, closable, and actionabl
   );
 });
 
+test('mobile Timeline presets and Team settings reveal focused and selected links', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await signIn(page, e2eUsers.owner.email);
+  await page.goto('/app/timeline');
+
+  const presets = page.getByRole('navigation', { name: 'Timeline presets' });
+  await expect(page.getByText('Swipe or scroll for more timeline filters.')).toBeVisible();
+  await presets.getByRole('link', { name: 'Documents', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  const calendar = presets.getByRole('link', { name: 'Calendar', exact: true });
+  await expect(calendar).toBeFocused();
+  await expect(calendar).toBeInViewport({ ratio: 0.99 });
+
+  await page.keyboard.press('Tab');
+  const integrations = presets.getByRole('link', { name: 'Integrations', exact: true });
+  await expect(integrations).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(integrations).toHaveAttribute('aria-current', 'page');
+  await expect(integrations).toBeInViewport({ ratio: 0.99 });
+
+  await page.goto('/app/team?section=exports');
+  const settings = page.getByRole('navigation', { name: 'Team settings' });
+  await expect(page.getByText('Swipe or scroll to see more settings.')).toBeVisible();
+  const exports = settings.getByRole('link', { name: 'Exports', exact: true });
+  await expect(exports).toHaveAttribute('aria-current', 'page');
+  await expect(exports).toBeInViewport({ ratio: 0.99 });
+});
+
 test.describe
   .serial('task categories and primary project stay distinct and filter together', () => {
   let ownerPage: Page;
@@ -1218,23 +1248,24 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
   const ownerPage = await newSignedInPage(browser, 'owner');
   const db = getDb();
   const sql = getDbClient();
+  const ownerScope = withTeam(db, e2eTeam.id, e2eUsers.owner.id);
+  const { defaultTimezone } = await ownerScope.calendar.getCalendarSettings();
   const occurredAt = new Date();
-  const filterDate = occurredAt.toISOString().slice(0, 10);
+  const filterDate = occurredAt.toLocaleDateString('en-CA', { timeZone: defaultTimezone });
   const stamp = String(occurredAt.getTime());
   const targetText = `${E2E_PREFIX} timeline filter email owner ${stamp}`;
   const sourceMismatchText = `${E2E_PREFIX} timeline filter web member ${stamp}`;
   const dateMismatchText = `${E2E_PREFIX} timeline filter old email owner ${stamp}`;
 
   try {
-    const ownerScope = withTeam(db, e2eTeam.id, e2eUsers.owner.id).timeline;
     const memberScope = withTeam(db, e2eTeam.id, e2eUsers.member.id).timeline;
-    await ownerScope.createEvent({
+    await ownerScope.timeline.createEvent({
       authorUserId: e2eUsers.owner.id,
       source: 'email',
       contentText: targetText,
       occurredAt: occurredAt,
       visibility: 'team',
-      sourceMetadata: { e2e: 'timeline-filter', stamp, subject: 'E2E filtered email' },
+      sourceMetadata: { e2e: 'timeline-filter', stamp, subject: targetText },
     });
     await memberScope.createEvent({
       authorUserId: e2eUsers.member.id,
@@ -1244,13 +1275,13 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
       visibility: 'team',
       sourceMetadata: { e2e: 'timeline-filter', stamp },
     });
-    await ownerScope.createEvent({
+    await ownerScope.timeline.createEvent({
       authorUserId: e2eUsers.owner.id,
       source: 'email',
       contentText: dateMismatchText,
-      occurredAt: new Date(occurredAt.getTime() - 86_400_000),
+      occurredAt: new Date(occurredAt.getTime() - 2 * 86_400_000),
       visibility: 'team',
-      sourceMetadata: { e2e: 'timeline-filter', stamp, subject: 'E2E old filtered email' },
+      sourceMetadata: { e2e: 'timeline-filter', stamp, subject: dateMismatchText },
     });
 
     await ownerPage.goto('/app/timeline?mode=events');
@@ -1269,7 +1300,9 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
     await ownerPage.keyboard.press('Escape');
     await ownerPage.locator('input[name="from"]').fill(filterDate);
     await ownerPage.locator('input[name="to"]').fill(filterDate);
-    await ownerPage.keyboard.press('Escape');
+    const filterTrigger = ownerPage.getByRole('button', { name: /^Filters(?: \d+)?$/ });
+    await filterTrigger.click();
+    await expect(filterTrigger).toHaveAttribute('aria-expanded', 'false');
 
     await expect(ownerPage).toHaveURL(/mode=events/);
     await expect(ownerPage).toHaveURL(/source=email/);
@@ -1281,10 +1314,18 @@ test('timeline filters source, author, and dates without leaving audit-trail mod
     await expect(ownerPage.getByText(dateMismatchText)).toHaveCount(0);
     await expect(ownerPage.getByRole('button', { name: /^Filters [1-9]\d*$/ })).toBeVisible();
 
+    // Keep an in-memory marker to catch a full document reload on the clear link.
+    await ownerPage.evaluate(() => {
+      document.documentElement.dataset.timelineNavigation = 'same-document';
+    });
     await ownerPage
       .getByRole('link', { name: 'Remove Timeline filters filter', exact: true })
       .click();
     await expect(ownerPage).toHaveURL(/\/app\/timeline\?mode=events$/);
+    await expect(ownerPage.locator('html')).toHaveAttribute(
+      'data-timeline-navigation',
+      'same-document',
+    );
     await expect(ownerPage.getByText(targetText).first()).toBeVisible();
     await expect(ownerPage.getByText(sourceMismatchText).first()).toBeVisible();
   } finally {
@@ -2553,7 +2594,10 @@ test.describe.serial('team admin invite, role, and removal journeys enforce perm
     ).toBeVisible();
 
     await inviteePage.goto('/app');
-    await expect(inviteePage.getByRole('heading', { name: 'No team yet' })).toBeVisible();
+    // Removed members have zero memberships — app shell routes them to Welcome
+    // so they can name a new owned workspace (invite-only never left them one).
+    await expect(inviteePage).toHaveURL(/\/onboarding/);
+    await expect(inviteePage.getByRole('heading', { name: 'Name your team' })).toBeVisible();
     await expect(inviteePage.getByText(e2eTeam.name)).toHaveCount(0);
   });
 });

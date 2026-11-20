@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
+import type { z } from 'zod';
 
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import {
   RECONCILIATION_PLANNER_PROMPT_VERSION,
   buildReconciliationPlannerPrompt,
@@ -8,9 +10,6 @@ import {
   reconciliationPlannerResultSchema,
   type ReconciliationPlannerResult,
 } from '#src/reconciliation/planner.js';
-
-import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
-import type { z } from 'zod';
 
 describe('reconciliation planner', () => {
   it('builds a policy prompt with surfaces, source refs, and authority guardrails', () => {

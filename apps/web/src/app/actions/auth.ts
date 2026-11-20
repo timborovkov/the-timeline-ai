@@ -1,12 +1,10 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { initializeOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
 import { sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
-import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -20,9 +18,16 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
+import {
+  inviteTokenFromCallback,
+  postSignupDestination,
+  selectedPlanFromCallback,
+} from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
+import { hashInviteToken } from '@/lib/invite-token';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
@@ -30,6 +35,7 @@ import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { readSignupPlanIntent, rememberSignupPlanIntent } from '@/lib/signup-plan-intent';
 import { getSiteUrl } from '@/lib/site-url';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
@@ -37,7 +43,7 @@ const signUpSchema = z.object({
   name: z.string().min(1).max(80),
   email: z.email().toLowerCase(),
   password: z.string().min(8).max(200),
-  inviteToken: z.string().optional(),
+  inviteToken: z.string().max(256).optional(),
   callbackUrl: z.string().max(2048).optional(),
   legalAccepted: z.literal('on'),
   termsVersion: z.literal(TERMS_VERSION),
@@ -68,7 +74,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     const clientIp = clientIpFromHeaders(h);
     const submittedTermsVersion = formData.get('termsVersion');
     const submittedPrivacyVersion = formData.get('privacyVersion');
-    if (submittedTermsVersion !== TERMS_VERSION || submittedPrivacyVersion !== PRIVACY_VERSION) {
+    const { termsContentHash, privacyContentHash } = legalDocumentHashes();
+    if (
+      submittedTermsVersion !== TERMS_VERSION ||
+      submittedPrivacyVersion !== PRIVACY_VERSION ||
+      formData.get('termsContentHash') !== termsContentHash ||
+      formData.get('privacyContentHash') !== privacyContentHash
+    ) {
       return { error: LEGAL_VERSION_CHANGED_ERROR };
     }
     const parsed = signUpSchema.safeParse({
@@ -84,7 +96,11 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
     }
-    const { name, email, password, inviteToken } = parsed.data;
+    const { name, email, password } = parsed.data;
+    // Sign-in → "Create one" may only carry callbackUrl=/accept-invite/<token>.
+    // Treat that as invite signup so we never invent a solo workspace instead.
+    const inviteToken =
+      parsed.data.inviteToken ?? inviteTokenFromCallback(parsed.data.callbackUrl) ?? undefined;
     const legalRequestMetadata = legalAcceptanceRequestMetadata(h);
 
     if (clientIp) {
@@ -133,12 +149,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     const INVITE_INVALID = 'INVITE_INVALID';
     const INVITE_WRONG_EMAIL = 'INVITE_WRONG_EMAIL';
 
-    // All-or-nothing: user + (invite acceptance OR new team + membership) land
-    // atomically. A mid-stream failure leaves zero orphan rows.
+    // All-or-nothing: user + legal (+ invite membership when joining) land
+    // atomically. Solo workspaces are created later on the Welcome step — invite
+    // signups never get an owned team.
     let createdAccount: {
-      activeTeamId: string;
+      activeTeamId: string | null;
       userId: string;
-      event: 'team_created' | 'invite_accepted';
+      event: 'account_created' | 'invite_accepted';
       role?: 'admin' | 'member';
     };
     try {
@@ -160,7 +177,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
             .from(teamInvites)
             .where(
               and(
-                eq(teamInvites.token, inviteToken),
+                eq(teamInvites.tokenHash, hashInviteToken(inviteToken)),
                 isNull(teamInvites.acceptedAt),
                 isNull(teamInvites.revokedAt),
               ),
@@ -219,19 +236,8 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           source: 'credentials_signup',
           ...legalRequestMetadata,
         });
-        const baseSlug = slugify(`${name}-team`) || 'team';
-        const slug = `${baseSlug}-${randomSlugSuffix()}`;
-        const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-        const team = await initializeOwnedWorkspace(tx, {
-          ownerId: userId,
-          name: `${name}'s Team`,
-          slug,
-          inboundEmail,
-        });
-        const teamId = team?.id;
-        if (!teamId) throw new Error('Failed to create team');
-        // Email verification claims the Free grant; signup keeps restricted billing.
-        return { activeTeamId: teamId, userId, event: 'team_created' as const };
+        // Team name / slug / inbound email wait for the Welcome step.
+        return { activeTeamId: null, userId, event: 'account_created' as const };
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '';
@@ -261,18 +267,22 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(
-      ACTIVE_TEAM_COOKIE,
-      serializeActiveTeamCookie(createdAccount.activeTeamId),
-      activeTeamCookieOptions(),
-    );
+    if (createdAccount.activeTeamId) {
+      cookieStore.set(
+        ACTIVE_TEAM_COOKIE,
+        serializeActiveTeamCookie(createdAccount.activeTeamId),
+        activeTeamCookieOptions(),
+      );
+    }
 
     const attribution = readConsentedPublicAttributionCookie(cookieStore);
-    const actor = {
-      kind: 'user' as const,
-      userId: createdAccount.userId,
-      teamId: createdAccount.activeTeamId,
-    };
+    const actor = createdAccount.activeTeamId
+      ? {
+          kind: 'user' as const,
+          userId: createdAccount.userId,
+          teamId: createdAccount.activeTeamId,
+        }
+      : { kind: 'user' as const, userId: createdAccount.userId };
     trackProductEventBestEffort(actor, 'account_registered', {
       source: 'credentials',
       joinedViaInvite: createdAccount.event === 'invite_accepted',
@@ -281,40 +291,14 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
     });
 
-    if (createdAccount.event === 'team_created') {
-      trackProductEventBestEffort(actor, 'team_created', {
-        source: 'signup',
-      });
-    } else {
+    if (createdAccount.event === 'invite_accepted') {
       trackProductEventBestEffort(actor, 'invite_accepted', {
         role: createdAccount.role ?? 'member',
         source: 'signup',
       });
     }
 
-    const teamRows = await db
-      .select({ name: teams.name })
-      .from(teams)
-      .where(eq(teams.id, createdAccount.activeTeamId))
-      .limit(1);
-    await Promise.all([
-      sendMessage(
-        'welcome',
-        {
-          to: email,
-          name,
-          dashboardUrl: `${getSiteUrl()}/app`,
-          teamName: teamRows[0]?.name ?? 'your team',
-        },
-        {
-          db,
-          teamId: createdAccount.activeTeamId,
-          userId: createdAccount.userId,
-          dedupeKey: `welcome:${createdAccount.userId}`,
-        },
-      ).catch((err: unknown) => {
-        reportCaughtError(err, { surface: 'server_action', operation: 'welcome_email' });
-      }),
+    const outbound: Promise<unknown>[] = [
       sendEmailVerification({
         db,
         userId: createdAccount.userId,
@@ -324,7 +308,36 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       }).catch((err: unknown) => {
         reportCaughtError(err, { surface: 'server_action', operation: 'signup_verify_email' });
       }),
-    ]);
+    ];
+    // Invite joiners already have a team — send welcome now. Solo owners get it
+    // when Welcome creates their workspace.
+    if (createdAccount.activeTeamId) {
+      const teamRows = await db
+        .select({ name: teams.name })
+        .from(teams)
+        .where(eq(teams.id, createdAccount.activeTeamId))
+        .limit(1);
+      outbound.push(
+        sendMessage(
+          'welcome',
+          {
+            to: email,
+            name,
+            dashboardUrl: `${getSiteUrl()}/app`,
+            teamName: teamRows[0]?.name ?? 'your team',
+          },
+          {
+            db,
+            teamId: createdAccount.activeTeamId,
+            userId: createdAccount.userId,
+            dedupeKey: `welcome:${createdAccount.userId}`,
+          },
+        ).catch((err: unknown) => {
+          reportCaughtError(err, { surface: 'server_action', operation: 'welcome_email' });
+        }),
+      );
+    }
+    await Promise.all(outbound);
 
     // Best-effort auto-signin. The account already exists and is committed —
     // if signIn throws for any reason (Auth.js misconfig, transient adapter
@@ -346,11 +359,20 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       }
     }
     const callbackDestination = safeCallbackUrl(parsed.data.callbackUrl);
-    const destination = inviteToken
-      ? '/app'
-      : createdAccount.event === 'team_created' && callbackDestination === '/app'
-        ? '/onboarding'
-        : callbackDestination;
+    if (!inviteToken) {
+      // Paid intent may be in the Billing callback and/or the proxy cookie.
+      // Team stays Free until Polar confirms; intent never grants a plan.
+      await rememberSignupPlanIntent(
+        selectedPlanFromCallback(callbackDestination) ?? (await readSignupPlanIntent()),
+      );
+    }
+    // Solo accounts mint the workspace on Welcome (/onboarding). Invite joiners
+    // go straight in. Plan intent survives as a cookie for the finish-setup prompt.
+    const destination = postSignupDestination({
+      inviteToken,
+      event: createdAccount.event,
+      callbackUrl: callbackDestination,
+    });
     if (signInFailed)
       redirect(
         destination === '/app'
@@ -422,6 +444,9 @@ async function signInWithOAuthProvider(
     const { setPendingInvite } = await import('@/lib/pending-invite');
     await setPendingInvite(inviteToken);
   }
+  await rememberSignupPlanIntent(
+    selectedPlanFromCallback(callbackUrl) ?? (await readSignupPlanIntent()),
+  );
   // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
   // Let it propagate; Next handles the response.
   await signIn(provider, { redirectTo: callbackUrl });

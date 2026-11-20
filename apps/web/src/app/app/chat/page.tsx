@@ -10,9 +10,8 @@ import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
-import { redirect } from 'next/navigation';
-
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { AskHeader } from '@/components/chat/ask-header';
 import { ChatPane } from '@/components/chat/chat-pane';
@@ -73,15 +72,15 @@ export default async function ChatPage({
         nextCursor={sessionPage.nextCursor}
         sessions={sessionEntries}
       />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
-        <MobileSessionNav
-          activeSessionId={activeSessionId}
-          activeTitle={activeTitle}
-          nextCursor={sessionPage.nextCursor}
-          sessions={sessionEntries}
-        />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <AskHeader activeTitle={activeTitle} teamName={team?.name ?? active.teamName} />
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col px-4 pb-5 pt-4 md:px-8 md:pb-6">
+          <MobileSessionNav
+            activeSessionId={activeSessionId}
+            activeTitle={activeTitle}
+            nextCursor={sessionPage.nextCursor}
+            sessions={sessionEntries}
+          />
           <ChatPane
             // Key on activeSessionId (or "new" when none) so React remounts
             // ChatPane on every session switch. Without this, navigating from

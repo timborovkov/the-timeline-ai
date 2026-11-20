@@ -93,7 +93,7 @@ import { getEnv } from '#src/env.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
-import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
+import { ObjectNotFoundError, StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import { createChatTurnScope } from '#src/objects/chat-turns.js';
 import {
   normalizeIdentityFacet,
@@ -129,6 +129,7 @@ import {
   type PersonPrimaryCompanyRow,
   type TaskPrimaryProjectRow,
 } from '#src/objects/types.js';
+import type { UpdateActor } from '#src/objects/types.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
@@ -171,11 +172,9 @@ import {
   taskCategorySchema,
   type TaskCategory,
 } from '#src/task-categories/types.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
-
-import type { UpdateActor } from '#src/objects/types.js';
 import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 export type { UpdateActor } from '#src/objects/types.js';
 export {
@@ -4426,7 +4425,7 @@ export async function createObject(
   return txResult.object;
 }
 
-type PostCommitEffect = () => void;
+type PostCommitEffect = () => void | Promise<void>;
 
 interface ObjectMutationOptions {
   expectedUpdatedAt?: string | undefined;
@@ -4477,7 +4476,7 @@ export async function updateObject(
       .for('update')
       .limit(1);
     const currentRow = currentRows[0];
-    if (!currentRow) throw new Error('Object not found');
+    if (!currentRow) throw new ObjectNotFoundError();
     const current: EntityRow = currentRow;
     if (options?.expectedUpdatedAt && current.updatedAt.toISOString() !== options.expectedUpdatedAt)
       throw new StaleWorkspaceStateError();
@@ -4949,7 +4948,7 @@ export async function archiveObject(
       ),
     )
     .limit(1);
-  if (!current) throw new Error('Object not found');
+  if (!current) throw new ObjectNotFoundError();
   if (current.archivedAt) return { ...toObjectRow(current), changedFields: [] };
 
   const result = await updateObject(
@@ -5128,7 +5127,9 @@ export async function archiveSuggestionCreatedObjectIfUnadopted(
     return 'archived' as const;
   });
   if (runsOwnPostCommitEffects) {
-    for (const effect of postCommitEffects) await effect();
+    for (const effect of postCommitEffects) {
+      await Promise.resolve(effect());
+    }
   }
   return outcome;
 }
@@ -6023,6 +6024,7 @@ export async function setTaskProject(
   }
 
   const result = await (options?.transactionClient ?? db).transaction(async (tx) => {
+    // Match relationship creation and project mutations: project before linked tasks.
     const project = projectId ? await lockActiveProject(tx, scope.teamId, projectId) : null;
     if (projectId && !project) throw new Error('Project not found');
 
@@ -6914,7 +6916,7 @@ export async function createNote(
       )
       .for('update')
       .limit(1);
-    if (!ent[0]) throw new Error('Object not found');
+    if (!ent[0]) throw new ObjectNotFoundError();
     if (
       ent[0].archivedAt !== null &&
       typeof recordFromUnknown(ent[0].metadata).agent_suggestion_project_for_item_id === 'string'
@@ -7152,7 +7154,7 @@ export async function createIdentityFacet(
       )
       .for('update')
       .limit(1);
-    if (!ent[0]) throw new Error('Object not found');
+    if (!ent[0]) throw new ObjectNotFoundError();
     if (!objectSupportsIdentityFacets(ent[0].type)) {
       throw new Error('Identity facets can only be added to people and companies');
     }
@@ -7953,7 +7955,8 @@ export interface NotificationRow {
     | 'follow_up_overdue'
     | 'mention'
     | 'agent_suggestion'
-    | 'connection_attention';
+    | 'connection_attention'
+    | 'calendar_reminder';
   entityId: string | null;
   objectChangeId: string | null;
   agentSuggestionId: string | null;
@@ -8734,7 +8737,7 @@ export async function proposeObjectChange(
       )
       .limit(1);
     const ent = entRows[0];
-    if (!ent) throw new Error('Object not found');
+    if (!ent) throw new ObjectNotFoundError();
 
     const previousValue = (ent as Record<string, unknown>)[input.field] ?? null;
 

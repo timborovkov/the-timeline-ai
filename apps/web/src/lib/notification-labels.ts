@@ -6,6 +6,7 @@ const NOTIFICATION_KIND_LABELS: Record<string, string> = {
   follow_up_overdue: 'Follow-up overdue',
   mention: 'Mention',
   agent_suggestion: 'Suggestion ready',
+  calendar_reminder: 'Calendar reminder',
   connection_attention: 'Connection needs attention',
 };
 

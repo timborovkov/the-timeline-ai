@@ -1,14 +1,13 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { PublicDocument } from '@/lib/public-site/types';
-
 import {
   canonicalPublicUrl,
   createPublicDocumentRegistry,
   definePublicDocuments,
   resolvePublicLlmsResourceHref,
 } from '@/lib/public-site/registry';
+import type { PublicDocument } from '@/lib/public-site/types';
 import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
 
 describe('public document registry', () => {

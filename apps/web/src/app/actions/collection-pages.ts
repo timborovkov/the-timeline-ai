@@ -4,7 +4,6 @@ import { pageWindow } from '@timeline/shared/pagination';
 import { z } from 'zod';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
-
 import { resolveScope } from '@/lib/action-scope';
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import {
@@ -78,6 +77,8 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
         status: z.enum(['pending', 'failed', 'resolved', 'all']).default('pending'),
         guided: z.boolean().default(false),
         boardId: z.uuid().optional(),
+        projectId: z.uuid().optional(),
+        decisionOnly: z.boolean().optional(),
       })
       .safeParse(input);
     if (!parsed.success) return { suggestions: [], nextCursor: null, error: 'Invalid cursor' };
@@ -87,6 +88,8 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
       await r.scope.suggestions.listSuggestions({
         status: parsed.data.status,
         boardId: parsed.data.boardId,
+        projectId: parsed.data.projectId,
+        decisionOnly: parsed.data.decisionOnly,
         itemIds: parsed.data.guided ? await guidedApprovalItemIds(r.scope) : undefined,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: parsed.data.cursor ?? null,

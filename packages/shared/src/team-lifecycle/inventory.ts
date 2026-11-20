@@ -33,6 +33,14 @@ export const RETAINED_TEAM_TABLES = [
   'team_billing_accounts',
 ] as const;
 export const PURGED_TEAM_TABLES = [
+  'calendar_reminder_preferences',
+  'calendar_reminder_blocks',
+  'document_extraction_attempts',
+  'google_calendar_imports',
+  'handoff_snapshots',
+  'saved_work_view_digests',
+  'saved_work_views',
+  'source_index_receipts',
   'evaluation_trace_projects',
   'diagnostic_reports',
   'agent_suggestion_evidence',

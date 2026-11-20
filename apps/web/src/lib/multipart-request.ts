@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-
 import type { NextRequest } from 'next/server';
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);

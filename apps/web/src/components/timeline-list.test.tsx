@@ -1,9 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-
-import type { TimelineEvent } from '@/lib/timeline-types';
 import type { ComponentProps, ReactNode } from 'react';
+
+import { buildTimelineMoments } from '@/lib/timeline-moments';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -88,20 +89,28 @@ await vi.mock(
     VirtualList: ({
       items,
       renderItem,
-      renderSticky,
+      stickyGroupHeader,
       getItemKey,
     }: {
-      items: { id: string }[];
-      renderItem: (item: { id: string }, index: number) => ReactNode;
-      renderSticky?: (item: { id: string } | undefined) => ReactNode;
-      getItemKey: (item: { id: string }, index: number) => string;
+      items: unknown[];
+      renderItem: (item: unknown, index: number) => ReactNode;
+      stickyGroupHeader?: { isHeader: (item: unknown) => boolean; className: string };
+      getItemKey: (item: unknown, index: number) => string;
     }) =>
       createElement(
         'div',
         null,
-        renderSticky?.(items[0]),
         items.map((item, index) =>
-          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+          createElement(
+            'div',
+            {
+              key: getItemKey(item, index),
+              className: stickyGroupHeader?.isHeader(item)
+                ? stickyGroupHeader.className
+                : undefined,
+            },
+            renderItem(item, index),
+          ),
         ),
       ),
   }),
@@ -127,6 +136,7 @@ afterEach(() => {
   fakes.refresh.mockClear();
   fakes.removeConversationalEvent.mockReset();
   fakes.notifyAction.mockClear();
+  vi.useRealTimers();
 });
 
 function renderLastInspector(): string {
@@ -348,6 +358,71 @@ describe('TimelineList compact home rows', () => {
 });
 
 describe('TimelineList archive virtualization', () => {
+  it('recomputes relative day labels from cached moments when the timeline opens', () => {
+    const timezone = 'Europe/London';
+    const events = [
+      timelineEvent({ id: 'latest', occurredAt: '2026-08-14T08:30:00Z', source: 'web' }),
+      timelineEvent({ id: 'older', occurredAt: '2026-08-13T13:00:00Z', source: 'web' }),
+    ];
+    const authorMap: ComponentProps<typeof TimelineList>['authorMap'] = new Map();
+    const serverMoments = buildTimelineMoments<TimelineEvent, TimelineArtifactCluster>(
+      events,
+      authorMap,
+      {
+        now: new Date('2026-08-15T08:00:00Z'),
+        timezone,
+      },
+    );
+    vi.setSystemTime(new Date('2026-08-14T22:59:00Z'));
+
+    render(
+      createElement(TimelineList, {
+        events,
+        serverMoments,
+        authorMap,
+        currentUserId: 'user-1',
+        isAdmin: false,
+        timezone,
+      }),
+    );
+
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual(['Today', 'Yesterday']);
+  });
+
+  it.each(['moments', 'events'] as const)('separates each workspace day in %s mode', (mode) => {
+    const html = renderTimeline(
+      [
+        timelineEvent({
+          id: 'today',
+          occurredAt: '2026-08-14T09:00:00Z',
+          contentText: 'Newer event',
+          source: 'web',
+        }),
+        timelineEvent({
+          id: 'same-day',
+          occurredAt: '2026-08-13T23:30:00Z',
+          contentText: 'After London midnight',
+          source: 'web',
+        }),
+        timelineEvent({
+          id: 'previous-day',
+          occurredAt: '2026-08-13T22:30:00Z',
+          contentText: 'Before London midnight',
+          source: 'web',
+        }),
+      ],
+      { mode, timezone: 'Europe/London' },
+    );
+
+    expectTextOrder(html, 'Friday, Aug 14', 'Newer event');
+    expectTextOrder(html, 'Newer event', 'After London midnight');
+    expectTextOrder(html, 'After London midnight', 'Thursday, Aug 13');
+    expectTextOrder(html, 'Thursday, Aug 13', 'Before London midnight');
+    expect(html.match(/Friday, Aug 14/g)).toHaveLength(1);
+  });
+
   it('virtualizes full archive rows with sticky dates under the toolbar', () => {
     const html = renderTimeline([
       timelineEvent({

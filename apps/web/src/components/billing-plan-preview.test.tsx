@@ -1,8 +1,7 @@
+import type { CheapestPlanPreview, SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-
-import type { CheapestPlanPreview, SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
 

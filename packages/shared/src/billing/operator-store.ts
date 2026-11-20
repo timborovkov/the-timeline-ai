@@ -32,14 +32,13 @@ import {
   type TeamPriceOverride,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
+import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 import { getEnv } from '#src/env.js';
 import {
   directoryOrder,
   directoryDates,
   type DirectoryOptions,
 } from '#src/platform-admin/directory.js';
-
-import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 
 /** Move a legacy JSON fee onto the column before a usage override replaces it. */
 function preservedEnterprisePlatformFee(existing: {

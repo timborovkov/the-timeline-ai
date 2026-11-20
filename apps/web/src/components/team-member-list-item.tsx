@@ -1,8 +1,7 @@
-import type { TeamMemberInfo, TeamMemberRow } from '@/components/team-member-types';
-
 import { CollectionRow } from '@/components/collections/collection-row';
 import { TeamListRow } from '@/components/team-list-row';
 import { MemberRoleForm, RemoveMemberForm } from '@/components/team-member-actions';
+import type { TeamMemberInfo, TeamMemberRow } from '@/components/team-member-types';
 import { Badge } from '@/components/ui/badge';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displayMemberLabel } from '@/lib/display-labels';

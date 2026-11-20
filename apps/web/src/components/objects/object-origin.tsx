@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-
 import type { ObjectDetail } from '@timeline/shared/objects/types';
+import Link from 'next/link';
 
 import {
   OBJECT_BODY_CLASS,

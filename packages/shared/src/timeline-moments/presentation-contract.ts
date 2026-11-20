@@ -4,7 +4,6 @@ import { z } from 'zod';
 
 import { classifyCapturedEvent } from '#src/event-class.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-
 import type { TimelineMoment, TimelineMomentEvent } from '#src/timeline-moments/index.js';
 
 export const TIMELINE_MOMENT_PRESENTATION_PROMPT_VERSION = 'timeline_moment_presentation.v1';

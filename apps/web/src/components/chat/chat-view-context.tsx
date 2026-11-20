@@ -1,5 +1,6 @@
 'use client';
 
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   createContext,
@@ -11,10 +12,8 @@ import {
   type ReactNode,
 } from 'react';
 
-import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
-import type { ChatContextRef } from '@timeline/shared/chat-context';
-
 import { buildChatView, type ChatViewOverlay } from '@/lib/chat-view';
+import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
 
 interface ChatViewActions {
   register: (overlay: ChatViewOverlay) => void;

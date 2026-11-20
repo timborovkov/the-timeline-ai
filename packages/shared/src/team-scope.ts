@@ -48,6 +48,7 @@ import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
+import { createHandoffScope } from '#src/handoffs.js';
 import {
   acceptIngestWebhookEvidence,
   type AcceptIngestWebhookEvidenceInput,
@@ -56,10 +57,12 @@ import {
 import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
+import type { chatStructured } from '#src/llm/chat.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
+import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
 import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
@@ -81,6 +84,7 @@ import {
   type SearchOpts,
   type SourceKind,
 } from '#src/qdrant/client.js';
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { createReconciliationScope } from '#src/reconciliation/scope.js';
@@ -98,6 +102,8 @@ import {
   type RankingInput,
   type RankingMetadata,
 } from '#src/retrieval/ranking.js';
+import { createSavedWorkViewScope } from '#src/saved-work-views.js';
+import { createSourceHealthScope } from '#src/source-health.js';
 import {
   createSuggestionAcceptanceUnitOfWork,
   type SuggestionAcceptanceTransaction,
@@ -115,10 +121,6 @@ import {
 } from '#src/visibility.js';
 import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 import { createWebsiteScope } from '#src/websites/scope.js';
-
-import type { chatStructured } from '#src/llm/chat.js';
-import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
-import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -3606,6 +3608,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
+    handoffs: createHandoffScope(db, teamId, userId, ensureMember),
+    savedViews: createSavedWorkViewScope({
+      db,
+      teamId,
+      userId,
+      ensureMember,
+      objects: objectScope,
+      boards: boardScope,
+      calendar: calendarScope,
+      suggestions: suggestionScope,
+    }),
+    sourceHealth: createSourceHealthScope(db, teamId, userId, ensureMember),
     audit: auditScope,
     telegram: telegramScope,
   };

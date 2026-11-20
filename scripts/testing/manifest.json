@@ -1,4 +1,7 @@
 {
+  "apps/web/scripts/check-public-origin.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/agent/workspace-tools.test.ts": {
     "group": "integration"
   },
@@ -69,6 +72,9 @@
     "group": "unit"
   },
   "apps/web/src/app/actions/documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/enterprise.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/actions/events.test.ts": {
@@ -545,6 +551,9 @@
   "apps/web/src/app/compare/route.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/contact/enterprise/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/cookies/page.test.tsx": {
     "group": "unit"
   },
@@ -592,6 +601,12 @@
   },
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/sign-in/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/sign-up/page.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/app/product-tour/route.test.tsx": {
     "group": "unit"
@@ -1046,6 +1061,9 @@
   "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/onboarding/setup-flow.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
     "group": "dom"
   },
@@ -1071,6 +1089,9 @@
     "group": "dom"
   },
   "apps/web/src/components/payg-value-nudge.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/plan-intent-prompt.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
@@ -1120,6 +1141,9 @@
   },
   "apps/web/src/components/sidebar-billing-usage.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/components/signup-plan-summary.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/components/skip-link.test.tsx": {
     "group": "dom"
@@ -1302,7 +1326,19 @@
   "apps/web/src/lib/email-verification.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/enterprise-enquiry.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/first-run-poll.test.ts": {
+    "group": "dom"
+  },
   "apps/web/src/lib/first-run-status.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-connectors.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-source-intent.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/floating-chat-session-storage.test.ts": {
@@ -1312,6 +1348,9 @@
     "group": "dom"
   },
   "apps/web/src/lib/google-drive-limited-use.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/handoff-provenance.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/hub-status.test.ts": {
@@ -1327,6 +1366,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/last-login-method.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/legal-archive.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/lib/legal-publication.test.ts": {
@@ -1383,7 +1425,13 @@
   "apps/web/src/lib/platform-request-gate.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/plan-intent-prompt.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/pricing-calculator.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/processing-health.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {
@@ -1465,6 +1513,12 @@
   "apps/web/src/lib/sign-out-session.test.ts": {
     "group": "dom"
   },
+  "apps/web/src/lib/signup-plan-intent.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/signup-plan.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/site-url.test.ts": {
     "group": "unit"
   },
@@ -1489,7 +1543,10 @@
   "apps/web/src/lib/task-statuses.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/telegram-bot-startup.test.ts": {
+  "apps/web/src/lib/team-rename.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/telegram-bot-provision.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/timeline-controls.test.ts": {
@@ -1798,6 +1855,9 @@
   },
   "packages/shared/src/billing/customer-identity.test.ts": {
     "group": "pglite"
+  },
+  "packages/shared/src/billing/errors.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/billing/openrouter-usage.test.ts": {
     "group": "unit"
@@ -2430,6 +2490,9 @@
   "packages/shared/src/visibility.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/workspace-follow-through.test.ts": {
+    "group": "integration"
+  },
   "packages/test-support/runtime.test.ts": {
     "group": "unit",
     "isolation": "registration"
@@ -2532,6 +2595,12 @@
     "group": "integration"
   },
   "apps/worker/src/evals/communication-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/communication-grounding.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/communication-audit.test.ts": {
     "group": "unit"
   }
 }

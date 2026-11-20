@@ -1,7 +1,6 @@
+import type * as objects from '@timeline/shared/objects';
 import { encodeCursor } from '@timeline/shared/pagination';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
-
-import type * as objects from '@timeline/shared/objects';
 
 import { TASK_BOARD_PAGE_SIZE, TASK_OPEN_STATUSES_EXCLUDED } from '@/lib/task-board-config';
 

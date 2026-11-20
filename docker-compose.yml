@@ -72,7 +72,7 @@ services:
   # ---- RustFS (S3-compatible object storage) ----
   # S3 API on 9000, console on 9001. Bucket creation handled by `rustfs-init`.
   rustfs:
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
     restart: unless-stopped
     ports:
       - '9000:9000'
@@ -139,6 +139,10 @@ services:
       - '3000:3000'
     environment:
       NODE_ENV: production
+      # Compose app profile is operator-run, not Timeline-hosted Railway.
+      # Default self-managed so a custom OPENROUTER_BASE_URL is accepted without
+      # hosted OpenRouter guardrail/attestation variables.
+      TIMELINE_DEPLOYMENT_MODE: ${TIMELINE_DEPLOYMENT_MODE:-self-managed}
       DATABASE_URL: postgres://timeline:timeline_dev@postgres:5432/timeline
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
@@ -151,6 +155,8 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_URL: http://localhost:3000
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
@@ -194,6 +200,7 @@ services:
       TRANSACTIONAL_EMAIL_FROM: ${TRANSACTIONAL_EMAIL_FROM:-}
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
       NODE_ENV: production
+      TIMELINE_DEPLOYMENT_MODE: ${TIMELINE_DEPLOYMENT_MODE:-self-managed}
       DATABASE_URL: postgres://timeline:timeline_dev@postgres:5432/timeline
       REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
@@ -204,6 +211,8 @@ services:
       S3_SECRET_ACCESS_KEY: timeline_dev_secret
       S3_FORCE_PATH_STYLE: 'true'
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
       SENTRY_DSN: ${SENTRY_DSN:-}

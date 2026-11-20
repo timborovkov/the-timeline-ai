@@ -1,7 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
 import type { ReactNode } from 'react';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn((): Promise<{ user: { id: string; name: string; email: string } } | null> =>
@@ -66,7 +65,11 @@ await vi.mock(
         unreadNotificationCount: fakes.unreadNotificationCount,
       },
       billing: {
-        getDashboard: () => Promise.resolve({ sidebar: null }),
+        getDashboard: () =>
+          Promise.resolve({
+            sidebar: null,
+            account: { planId: 'free', polarSubscriptionId: null },
+          }),
       },
       onboarding: {
         getFirstRun: fakes.getFirstRun,

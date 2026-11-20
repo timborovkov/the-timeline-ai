@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
-import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
-import { intersectVisibilityEnvelopes } from '#src/visibility.js';
-
 import type { SourceRef, VisibilityEnvelope } from '#src/reconciliation/core.js';
+import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import type { SearchEventArtifactClusterEvidence, TeamScope } from '#src/team-scope.js';
+import { intersectVisibilityEnvelopes } from '#src/visibility.js';
 
 export const EVIDENCE_PACK_VERSION = 'evidence-pack-v1';
 
@@ -129,6 +128,29 @@ function metadataPerson(value: unknown): { name: string | null; email: string | 
   return { name, email };
 }
 
+export function emailEvidenceSender(sourceMetadata: unknown) {
+  const metadata = metadataObject(sourceMetadata);
+  const forwarded = metadataObject(metadata.forwarded_from);
+  const original = metadataPerson(forwarded.from ?? metadata.forwarded_from);
+  const direct = metadataPerson(metadata.from);
+  const envelopeEmail =
+    direct.email ??
+    metadataString(metadata, 'from_email') ??
+    metadataString(metadata, 'sender_email');
+  return {
+    name:
+      original.name ??
+      original.email ??
+      direct.name ??
+      direct.email ??
+      metadataString(metadata, 'from_name') ??
+      metadataString(metadata, 'from_email') ??
+      metadataString(metadata, 'sender_email'),
+    email: original.email ?? envelopeEmail,
+    envelopeEmail,
+  };
+}
+
 export function evidenceSourceContextForPrompt(
   source: string,
   sourceMetadata: unknown,
@@ -154,22 +176,9 @@ export function evidenceSourceContextForPrompt(
       metadataString(metadata, 'slack_channel_name') ??
       metadataString(metadata, 'slack_channel_id');
   } else if (source === 'email') {
-    const forwarded = metadataObject(metadata.forwarded_from);
-    const forwardedPerson = metadataPerson(forwarded.from ?? metadata.forwarded_from);
-    const directPerson = metadataPerson(metadata.from);
-    senderName =
-      forwardedPerson.name ??
-      forwardedPerson.email ??
-      directPerson.name ??
-      directPerson.email ??
-      metadataString(metadata, 'from_name') ??
-      metadataString(metadata, 'from_email') ??
-      metadataString(metadata, 'sender_email');
-    senderHandle =
-      forwardedPerson.email ??
-      directPerson.email ??
-      metadataString(metadata, 'from_email') ??
-      metadataString(metadata, 'sender_email');
+    const sender = emailEvidenceSender(metadata);
+    senderName = sender.name;
+    senderHandle = sender.email;
     conversationName = metadataString(metadata, 'subject');
   } else if (source === 'integration') {
     const actor = metadataObject(metadata.actor);

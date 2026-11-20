@@ -1,13 +1,12 @@
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
+import type { UIMessage } from 'ai';
 import { beforeAll, beforeEach, afterAll, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-import type { PGlite } from '@electric-sql/pglite';
-import type { Db } from '@timeline/db';
-import type { UIMessage } from 'ai';
 
 // Persisted chat preserves completed/pending tools and admits each approval only once.
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
@@ -80,11 +79,51 @@ function decision(approved = true): UIMessage {
   return message;
 }
 describe('chat turn persistence and approval claims', () => {
+  it('saves a guarded turn idempotently and rejects stale parallel or approval writes', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const session = await scope.createChatSession({});
+    const expectedRevision = await scope.chatTurnRevision(session.id);
+    const request = {
+      userMessage: user,
+      assistantMessage: pending,
+      save: { id: 'first', expectedRevision },
+    };
+    expect(await scope.persistChatTurn(session.id, request)).toBe('saved');
+    expect(await scope.persistChatTurn(session.id, request)).toBe('saved');
+    expect(
+      await scope.persistChatTurn(session.id, {
+        ...request,
+        assistantMessage: { ...pending, id: 'another-turn' },
+        save: { id: 'second', expectedRevision },
+      }),
+    ).toBe('conflict');
+    const beforeApproval = await scope.chatTurnRevision(session.id);
+    const claim = await scope.claimChatApprovals(session.id, decision());
+    expect(
+      await scope.persistChatTurn(session.id, {
+        ...request,
+        save: { id: 'stale-approval', expectedRevision: beforeApproval },
+      }),
+    ).toBe('conflict');
+    expect(
+      await scope.persistChatTurn(session.id, {
+        assistantMessage: { ...pending, id: 'newer-turn' },
+      }),
+    ).toBe('saved');
+    const continuation = {
+      assistantMessage: claim.message,
+      save: { id: 'completed-approval', expectedRevision: claim.revision, replace: true },
+    };
+    expect(await scope.persistChatTurn(session.id, continuation)).toBe('saved');
+    expect(await scope.persistChatTurn(session.id, continuation)).toBe('saved');
+    expect((await scope.getChatSession(session.id))?.messages).toHaveLength(3);
+  });
+
   it('deduplicates users and replaces continued assistant messages without losing tool results', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const session = await scope.createChatSession();
     await scope.persistChatTurn(session.id, { userMessage: user, assistantMessage: pending });
-    const approved = await scope.claimChatApprovals(session.id, decision());
+    const { message: approved } = await scope.claimChatApprovals(session.id, decision());
     expect(approved.parts[1]).toMatchObject({
       state: 'approval-responded',
       approval: { approved: true },
@@ -133,7 +172,9 @@ describe('chat turn persistence and approval claims', () => {
         denied.persistChatTurn(session.id, { assistantMessage: pending }),
       ).rejects.toThrow('Session not found');
     }
-    expect((await scope.claimChatApprovals(session.id, decision(false))).parts[1]).toMatchObject({
+    expect(
+      (await scope.claimChatApprovals(session.id, decision(false))).message.parts[1],
+    ).toMatchObject({
       approval: { approved: false },
     });
   });

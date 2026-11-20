@@ -11,9 +11,6 @@ import {
 import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
-import { timelineEventMatchesGroup } from '#src/timeline-moments/index.js';
-import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
-
 import type {
   EventListFilters,
   ListIntegrationSearchEventIdsInput,
@@ -22,7 +19,9 @@ import type {
   TimelineOriginFilter,
   TimelineSourceFacet,
 } from '#src/timeline/types.js';
+import { timelineEventMatchesGroup } from '#src/timeline-moments/index.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
+import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 const RECENT_SOURCE_FACET_EVENT_LIMIT = 2_000;
 

@@ -108,6 +108,23 @@ export interface MeetingRow {
   updatedAt: Date;
 }
 
+export function meetingRecoveryAction(
+  meeting: Pick<MeetingRow, 'status' | 'scheduledEndAt' | 'createdAt' | 'metadata'>,
+  hasTranscript: boolean,
+  now = new Date(),
+): 'process' | 'rejoin' | null {
+  if (meeting.status === 'failed' && hasTranscript) return 'process';
+  if (
+    meeting.status !== 'failed' &&
+    meeting.status !== 'no_show' &&
+    !(['completed', 'completed_partial'].includes(meeting.status) && !hasTranscript)
+  ) {
+    return null;
+  }
+  const joinUntil = meeting.scheduledEndAt ?? new Date(meeting.createdAt.getTime() + 60 * 60_000);
+  return joinUntil > now && meeting.metadata.provider_leave_pending !== true ? 'rejoin' : null;
+}
+
 export interface CreateMeetingInput {
   platform: MeetingPlatform;
   meetingUrl: string;
@@ -979,6 +996,116 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         .where(and(eq(meetings.id, id), eq(meetings.teamId, teamId), meetingVisibility))
         .limit(1);
       return (rows[0] as MeetingRow | undefined) ?? null;
+    },
+
+    async prepareMeetingRecovery(
+      id: string,
+      action: 'process' | 'rejoin',
+      consentGiven: boolean,
+    ): Promise<MeetingRow | null> {
+      const role = await ensureMember();
+      return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`);
+        const [meeting] = await tx
+          .select()
+          .from(meetings)
+          .where(and(eq(meetings.id, id), eq(meetings.teamId, teamId), meetingVisibility))
+          .for('update');
+        if (
+          !meeting ||
+          (meeting.createdByUserId !== userId && role !== 'owner' && role !== 'admin')
+        ) {
+          return null;
+        }
+        const original = meeting as MeetingRow;
+        if (
+          action === 'process' &&
+          original.status === 'processing' &&
+          typeof original.metadata.recovery_requested_at === 'string'
+        ) {
+          return original;
+        }
+        const [chunk] = await tx
+          .select({ id: meetingTranscriptChunks.id })
+          .from(meetingTranscriptChunks)
+          .where(eq(meetingTranscriptChunks.meetingId, original.id))
+          .limit(1);
+        if (meetingRecoveryAction(original, Boolean(chunk)) !== action) return null;
+        if (action === 'process') {
+          const [updated] = await tx
+            .update(meetings)
+            .set({
+              status: 'processing',
+              metadata: {
+                ...original.metadata,
+                capture_status: 'completed_partial',
+                partial_capture: true,
+                recovery_requested_at: new Date().toISOString(),
+                recovery_requested_by: userId,
+              },
+              updatedAt: new Date(),
+            })
+            .where(and(eq(meetings.id, id), eq(meetings.teamId, teamId)))
+            .returning();
+          return (updated as MeetingRow | undefined) ?? null;
+        }
+        const replacements = (await tx
+          .select()
+          .from(meetings)
+          .where(
+            and(
+              eq(meetings.teamId, teamId),
+              meetingVisibility,
+              sql`${meetings.metadata}->>'recovery_of_meeting_id' = ${id}`,
+            ),
+          )) as MeetingRow[];
+        const activeStatuses = new Set(['pending', 'scheduled', 'joining', 'active', 'processing']);
+        const active = replacements.find((row) => activeStatuses.has(row.status));
+        if (active) return active;
+        const failed = replacements.find((row) => row.status === 'failed');
+        if (failed) {
+          // Provider join already failed once. Reset so retry contacts the
+          // provider again instead of reporting success against a dead capture.
+          const [reset] = await tx
+            .update(meetings)
+            .set({
+              status: 'pending',
+              providerBotId: null,
+              metadata: {
+                ...failed.metadata,
+                recovery_of_meeting_id: id,
+                recovery_requested_by: userId,
+                consent_given_at: consentGiven ? new Date().toISOString() : null,
+                recovery_retry_at: new Date().toISOString(),
+              },
+              updatedAt: new Date(),
+            })
+            .where(and(eq(meetings.id, failed.id), eq(meetings.teamId, teamId)))
+            .returning();
+          return (reset as MeetingRow | undefined) ?? null;
+        }
+        const [replacement] = await tx
+          .insert(meetings)
+          .values({
+            teamId,
+            createdByUserId: original.createdByUserId ?? userId,
+            provider: original.provider,
+            platform: original.platform,
+            meetingUrl: original.meetingUrl,
+            title: original.title,
+            scheduledEndAt: original.scheduledEndAt,
+            defaultVisibility: original.defaultVisibility,
+            visibilityUserIds: original.visibilityUserIds,
+            metadata: {
+              silent: true,
+              recovery_of_meeting_id: id,
+              recovery_requested_by: userId,
+              consent_given_at: consentGiven ? new Date().toISOString() : null,
+            },
+          })
+          .returning();
+        return (replacement as MeetingRow | undefined) ?? null;
+      });
     },
 
     async listMeetings(

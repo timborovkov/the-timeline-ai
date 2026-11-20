@@ -1,11 +1,5 @@
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 
-import type {
-  PublicDocument,
-  PublicIsoDate,
-  PublicLlmsContentSection,
-} from '@/lib/public-site/types';
-
 import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-documents';
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
@@ -30,6 +24,11 @@ import {
 import { HELP_PAGES } from '@/lib/help-content';
 import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
+import type {
+  PublicDocument,
+  PublicIsoDate,
+  PublicLlmsContentSection,
+} from '@/lib/public-site/types';
 import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-claims';
 
 // Legal consent versions may have a same-day .N revision; public dates cannot.
@@ -143,12 +142,24 @@ const TRUST_SECTIONS = [
     body: 'Timeline does not currently claim a SOC 2 report, ISO 27001 certification, or HIPAA compliance. Do not submit highly regulated or special-category data without Timeline’s express prior written approval for your use case.',
   },
   {
-    title: 'Inspect or control the deployment',
-    body: 'The source repository is public so teams can inspect architecture, report issues, and propose patches. Public source availability is not itself a software license. Contact Timeline to discuss a dedicated or self-managed deployment and the applicable terms.',
+    title: 'Deployment options',
+    body: 'Hosted Timeline cloud is operated by Timeline with the processors listed on the Trust page. Self-hosting uses the public GitHub repository under Elastic License 2.0 (source-available): use, modify, and self-host for your own organisation; do not offer it as a hosted/managed service to third parties; keep licensing notices. Self-hosted operators configure connectors and an OpenAI-compatible LLM endpoint. Timeline can also set up and maintain a managed on-premise or private-cloud deployment via the Enterprise enquiry form. This page does not invent certifications or SLAs that are not otherwise documented.',
     links: [
       {
         label: 'Inspect the public source repository',
         href: 'https://github.com/timborovkov/the-timeline-ai',
+      },
+      {
+        label: 'Self-hosting guide',
+        href: 'https://github.com/timborovkov/the-timeline-ai/blob/main/docs/self-hosting.md',
+      },
+      {
+        label: 'Elastic License 2.0',
+        href: 'https://github.com/timborovkov/the-timeline-ai/blob/main/LICENSE',
+      },
+      {
+        label: 'Enterprise enquiry for managed on-premise',
+        href: 'https://thetimeline.cc/contact/enterprise?topics=on_premise_deployment&from=trust',
       },
     ],
   },
@@ -161,7 +172,7 @@ export const TRUST_DOCUMENT = {
   description:
     'How The Timeline protects team data across AI inference, storage, permissions, meetings, analytics, and human access.',
   indexability: 'index',
-  dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
+  dates: { modified: '2026-11-19', reviewed: '2026-11-19' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   structuredData: [{ type: 'web-page' }],
@@ -343,6 +354,26 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     },
   },
   {
+    canonicalPath: '/contact/enterprise',
+    kind: 'support',
+    title: 'Enterprise enquiry',
+    description:
+      'Contact Timeline about procurement, security review, SSO, SLA, data residency, or a custom Enterprise plan.',
+    indexability: 'index',
+    dates: { modified: '2026-11-19', reviewed: '2026-11-19' },
+    capability: { kind: 'not-applicable' },
+    sitemap: { changeFrequency: 'monthly', priority: 0.4 },
+    structuredData: [{ type: 'web-page' }],
+    llms: {
+      section: 'primary',
+      order: 31,
+      summary:
+        'Dedicated Enterprise enquiry form for procurement, governance, and SLA conversations.',
+      fullSummary:
+        'Short Enterprise form that emails the same support inbox, tagged enterprise, with pricing-context prefill.',
+    },
+  },
+  {
     canonicalPath: '/terms',
     kind: 'legal',
     title: 'Terms of Use',
@@ -443,7 +474,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
+    dates: { modified: '2026-11-19', reviewed: '2026-11-19' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

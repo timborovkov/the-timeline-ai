@@ -1,11 +1,10 @@
-import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site';
-
 import { PRODUCT_TOUR } from '@/components/marketing/product-tour/content';
 import {
   USE_CASE_HUB,
   USE_CASES,
   type UseCaseContent,
 } from '@/components/marketing/use-cases/content';
+import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const REVIEW_DATE = '2026-11-12' as const;

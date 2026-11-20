@@ -1,10 +1,8 @@
 import { TIMELINE_AI_PRIVACY_POLICY_VERSION } from '@timeline/shared/llm';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import type { Metadata } from 'next';
-
-import { LegalPage } from '@/components/legal-page';
-import { SupportMailto } from '@/components/support-email-provider';
+import { LegalContact, LegalPage } from '@/components/legal-page';
 import {
   LEGAL_ADDRESS,
   LEGAL_PROVIDER,
@@ -56,7 +54,7 @@ function PrivacyOverviewSections() {
       <p>
         For our website, account administration, service operations, security, product analytics,
         and direct support, the data controller is {LEGAL_PROVIDER}, Estonian registry code{' '}
-        {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}. Contact us at <SupportMailto />.
+        {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}. Contact us at <LegalContact />.
       </p>
       <p>
         For messages, documents, recordings, transcripts, integration records, and other content
@@ -442,7 +440,7 @@ function PrivacyAiAndProviderSections() {
       </p>
       <p>
         To request deletion of captured Google Drive data, use our{' '}
-        <Link href="/help/support">support form</Link> or contact <SupportMailto />. We handle
+        <Link href="/help/support">support form</Link> or contact <LegalContact />. We handle
         requests manually after checking identity and workspace authority and confirming the scope.
         The review includes captured records and derived data such as search indexes. We explain
         applicable retention, backup expiry, or provider follow-up and confirm what has been
@@ -735,7 +733,7 @@ function PrivacyRightsAndClosingSections() {
       </p>
       <p>
         To request deletion of personal data or assistance with workspace Customer Content, email{' '}
-        <SupportMailto /> or use our <Link href="/help/support">private support form</Link>. Do not
+        <LegalContact /> or use our <Link href="/help/support">private support form</Link>. Do not
         put account details or a privacy request in a public GitHub issue. We will verify identity
         and authority before acting. Timeline does not currently provide a complete self-serve admin
         or support console that erases every store. After we process a valid request, copies can
@@ -780,7 +778,7 @@ function PrivacyRightsAndClosingSections() {
 
       <h2>19. Contact</h2>
       <p>
-        Privacy requests and questions: <SupportMailto />. Provider: {LEGAL_PROVIDER}, Estonian
+        Privacy requests and questions: <LegalContact />. Provider: {LEGAL_PROVIDER}, Estonian
         registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
       </p>
     </>

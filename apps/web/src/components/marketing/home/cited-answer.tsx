@@ -3,7 +3,7 @@ import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 export function CitedAnswer() {
   return (
-    <div className={styles.answerLayout} data-home-diagram>
+    <div className={styles.answerLayout} data-home-panel-motion>
       <article className={styles.answerWindow}>
         <div className={styles.answerBar}>
           <span>/ask / Acme rollout</span>
@@ -31,7 +31,7 @@ export function CitedAnswer() {
         </div>
       </article>
 
-      <aside className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
+      <section className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
         <header className={styles.ledgerTitle}>
           <span id="receipt-ledger-title">Sources behind this answer</span>
           <span>5 sources</span>
@@ -50,7 +50,7 @@ export function CitedAnswer() {
             </li>
           ))}
         </ol>
-      </aside>
+      </section>
     </div>
   );
 }

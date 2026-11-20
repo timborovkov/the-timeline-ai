@@ -1,9 +1,9 @@
+import type * as boards from '@timeline/shared/boards';
+import type * as objects from '@timeline/shared/objects/types';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
-import type * as boards from '@timeline/shared/boards';
-import type * as objects from '@timeline/shared/objects/types';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({

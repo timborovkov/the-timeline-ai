@@ -1,6 +1,5 @@
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { SEE_IT_FIRST_HREF, SEE_IT_FIRST_LABEL } from '@/components/marketing/copy';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-
 import type { ComponentProps } from 'react';
 
 /** Keeps the whole explanation visible; only decorative motion waits for visibility. */

@@ -2,15 +2,15 @@ import { users } from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
+import { ScrollableNav } from '@/components/scrollable-nav';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { TimelineSearchField } from '@/components/timeline-search-field';
 import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
@@ -362,6 +362,15 @@ function TimelineFilterPanel({
     to: maxUpcomingInput,
   });
   const upcomingActive = fromValue === todayInput && toValue === maxUpcomingInput;
+  const activePreset = TIMELINE_PRESETS.find((preset) =>
+    isTimelinePresetActive(preset, {
+      sourceFilters,
+      impactCount: impactFilters.length,
+      hasOriginFilter,
+    }),
+  );
+  const upcomingCurrent = upcomingActive && (!activePreset || 'all' in activePreset);
+  const currentPreset = upcomingCurrent ? 'Upcoming' : activePreset?.label;
   const upcomingClassName = `inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs font-medium transition-colors ${upcomingActive ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`;
   return (
     <DebouncedFilterForm id={formId} basePath="/app/timeline">
@@ -476,13 +485,16 @@ function TimelineFilterPanel({
           </nav>
         </CollectionToolbar.View>
       </CollectionToolbar>
-      <nav
-        aria-label="Timeline presets"
-        className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto border-b border-border py-1"
+      <ScrollableNav
+        label="Timeline presets"
+        cue="Swipe or scroll for more timeline filters."
+        activeKey={currentPreset}
+        className="border-b border-border py-1"
+        itemsClassName="gap-1.5"
       >
         <Link
           href={upcomingHref}
-          aria-current={upcomingActive ? 'page' : undefined}
+          aria-current={upcomingCurrent ? 'page' : undefined}
           className={upcomingClassName}
         >
           Upcoming · {TIMELINE_UPCOMING_DAYS} days
@@ -492,23 +504,19 @@ function TimelineFilterPanel({
             'all' in preset
               ? timelineHref(baseParams, { source: null, origin: null, impact: null })
               : timelineHref(baseParams, { source: preset.source, origin: null, impact: null });
-          const active = isTimelinePresetActive(preset, {
-            sourceFilters,
-            impactCount: impactFilters.length,
-            hasOriginFilter,
-          });
+          const active = preset === activePreset;
           return (
             <Link
               key={preset.label}
               href={href}
-              aria-current={active ? 'page' : undefined}
-              className={`inline-flex min-h-11 items-center sm:min-h-9 rounded-sm px-2.5 text-xs font-medium transition-colors ${active ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`}
+              aria-current={preset.label === currentPreset ? 'page' : undefined}
+              className={`inline-flex min-h-11 items-center rounded-sm px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:min-h-9 ${active ? 'bg-signal-soft text-signal' : 'text-fg-muted hover:bg-surface hover:text-fg'}`}
             >
               {preset.label}
             </Link>
           );
         })}
-      </nav>
+      </ScrollableNav>
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

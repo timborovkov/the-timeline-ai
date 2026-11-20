@@ -2,8 +2,6 @@
 import { ExternalLink, Plug } from 'lucide-react';
 import Link from 'next/link';
 
-import type { IngestWebhookRow } from '@/components/integrations/ingest-webhooks';
-
 import {
   needsAttention,
   type IntegrationsPageModel,
@@ -13,6 +11,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { EmptyState } from '@/components/empty-state';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
+import type { IngestWebhookRow } from '@/components/integrations/ingest-webhooks';
 import { IngestWebhooksUi } from '@/components/integrations/ingest-webhooks';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';

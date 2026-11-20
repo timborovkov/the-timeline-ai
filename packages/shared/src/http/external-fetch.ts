@@ -1,12 +1,11 @@
+import type { LookupAddress, LookupOptions } from 'node:dns';
 import { lookup as dnsLookup } from 'node:dns/promises';
+import type { LookupFunction } from 'node:net';
 
 import { Agent, fetch as undiciFetch } from 'undici/index.js';
 
 import { formatErrorCause } from '#src/http/error-cause.js';
 import { validateMcpUrl, validatePublicIpAddress } from '#src/mcp/auth.js';
-
-import type { LookupAddress, LookupOptions } from 'node:dns';
-import type { LookupFunction } from 'node:net';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;

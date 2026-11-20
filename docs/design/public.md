@@ -182,15 +182,18 @@ pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
 referenced by the public screenshot inventory. Each public slot has matching `<stem>-light.png`
 and `<stem>-dark.png` twins from the same fictional seed and framing. The
-resolved site theme selects one unoptimized image after hydration, including
+resolved site theme selects one responsive optimized image after hydration, including
 saved Light/Dark overrides and System changes. No variant is preloaded before
 the preference is known; the reserved loading frame prevents layout shift.
 Each screenshot reserves its aspect box and shows a loading label until painted.
 Screenshots are display-only, without links, zoom actions or instructions to click.
 Inventory tests require both twins, including legacy unthemed mobile slots.
 See the [recapture guide](../../apps/web/public/marketing/screenshots/README.md).
-Landscape slots use a 16×10 top crop; mobile
-portrait slots keep the full capture so Ask citations stay in frame. The
+The product tour uses phone captures for Sources, Timeline, project detail,
+Approvals, and Ask (`53`–`57` mobile stems) below the `md` breakpoint, keeping
+desktop landscape frames on larger viewports. Landscape slots use a 16×10 top
+crop; mobile portrait slots keep the full capture so Ask citations stay in
+frame. The
 homepage shows proof shots in alternating split rows (screenshot beside the
 copy, stacked on small screens): voice notes, work record, stored cited Ask
 answer, client record, and daily update. On small screens those landscape
@@ -204,8 +207,7 @@ board), and Share the context (team daily log and onboarding). Each group has
 an aligned heading and two descriptive link rows, followed by one shared-record
 explanation. Do not repeat the chooser as a second diagram. Referenced screenshot files are
 inventory-tested so a missing asset fails CI instead of shipping as a silent
-placeholder. Public screenshot slots serve the committed PNG bytes (unoptimized)
-so a recapture cannot stay hidden behind a stale image-optimizer cache. Ask
+placeholder. Public screenshot URLs carry a hash of the committed PNG bytes so recaptures invalidate optimized variants. Ask
 captures are stored examples; captions explain the pictured workflow without
 repeated demo disclaimers or implementation noise.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
@@ -256,8 +258,11 @@ with the same warm public palette, wordmark position, active state, GitHub and
 theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
 signed-out visitors see `Sign in` and `Start free` (free / no-card). Session-dependent
 content reserves the larger of both states in a shared grid cell from the server
-render onward. Pending and inactive branches remain invisible, inert, and hidden
-from assistive technology; resolving authentication must not move adjacent content,
+render onward. While the session is still unknown, guest CTAs stay visible and
+usable (including with JavaScript disabled) so conversion links are present in
+SSR HTML; destination routes redirect already-authenticated visitors. After the
+session resolves, only the inactive branch is invisible, inert, and hidden from
+assistive technology. Resolving authentication must not move adjacent content,
 even when one branch is empty. The shared public canvas
 inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
@@ -265,13 +270,19 @@ Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
 The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
+The agent setup card and evidence ledger are labelled sections within the landing main content.
 The masthead exposes five primary destinations in this order:
 Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
-and Pricing (`/pricing`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and the shared footer repeats them alongside How it works, Resources, and a legal/privacy rail. The
-current destination uses `aria-current="page"`. At phone widths, sign-in and
-theme controls move into the disclosure instead of disappearing, and the
-disclosure closes after link activation or a persisted-layout route change.
+and Pricing (`/pricing`). Desktop headers show them directly; below the hamburger
+breakpoint the top bar keeps only the wordmark, `Start free`, and a far-right
+native menu disclosure (icon-only hamburger, stable accessible name `Menu`, no
+border box, focus ring retained). `Sign in` moves into that disclosure (still
+server-rendered and usable without JavaScript via native `<details>`). At phone
+widths the header theme control also moves into the disclosure instead of
+disappearing, and the disclosure closes after link activation or a
+persisted-layout route change. The shared footer repeats the
+primary destinations alongside How it works, Resources, and a legal/privacy
+rail. The current destination uses `aria-current="page"`.
 Native connector labels on the landing page link to their integration detail
 pages, while native source badges in public walkthroughs link back to the same
 provider truth. The landing hero and public navigation also link directly to
@@ -361,7 +372,10 @@ visitors or sessions, and notes that bots and retries can contribute.
 account-specific or sensitive requests to the private form/email, reproducible
 non-sensitive defects to the structured public issue form, vulnerabilities to
 the private security policy, and proposed contributions to the issue-first
-contribution guide. Signed-in support context is disclosed and limited to
+contribution guide. Procurement, governance, SSO, SLA, and data-residency
+prospects use `/contact/enterprise` instead of the general support form; that
+page reuses the support inbox with an enterprise tag, Turnstile, honeypot, and
+rate limits. Signed-in support context is disclosed and limited to
 server-resolved account/team identifiers and role, a normalized app surface,
 release, optional error reference, and bounded browser diagnostics. Never put
 that context or workspace content in a GitHub issue. Dashboard desktop and
@@ -383,8 +397,12 @@ members and pooled usage credit, and keep Free/PAYG monthly allowances visible
 below the plans. The plan grid uses four columns on wide screens, two on tablet
 and one on phones. No repeated plan-name eyebrows or recommended-plan badge.
 The optional signup walkthrough is a disclosure; Enterprise is a quiet contact
-line. Follow the estimator with complete comparison, spending boundaries,
-billing-focused questions and a final Start free action.
+block that links to `/contact/enterprise` (not general support) and may mention
+managed on-premise plus self-hosting from the public source-available repository
+under Elastic License 2.0. Follow the estimator with complete comparison,
+spending boundaries, billing-focused questions and a final Start free action.
+When calculator usage exceeds every self-serve plan, the breakdown links the
+same Enterprise enquiry path with the current estimate as query-param context.
 
 Comparison tables have row/column scopes, a keyboard-focusable labelled scroll
 region, a mobile scroll hint and a sticky row-label column. Billing copy makes
@@ -394,19 +412,24 @@ applied after the cap check, and capacity limits are separate.
 ### Public pricing calculator
 
 The pricing Usage section compares PAYG, Team and Business through paired native
-sliders and exact number fields. A labelled editable example renders on the server.
-Desktop inputs sit beside a single hairline results panel; mobile stacks them
-with a compact selected-plan estimate that stays visible while editing. Number
-inputs and slider targets are at least 44px high. Reset restores both the usage
-example and Pay as you go selection. Invalid inputs suppress all estimates.
-Plan totals share one border with the selected breakdown underneath — no nested
-cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
-and Business show a pooled usage-credit deduction. Capacity warnings exclude
-unsuitable plans from the lowest-estimated-cost badge. Accepted sources live in
-Advanced usage with their value visible when closed. Metadata stays at the 12px
-floor. Rates and workspace eligibility remain in the closed How this estimate
-works disclosure. Inputs stay local; the calculator neither changes billing nor
-collects telemetry.
+sliders and exact number fields. Example starting-point presets (for example a
+five-person client team, a Slack-heavy engineering team, and a meeting-heavy
+delivery team) fill the fields and stay editable; they are labelled as examples,
+not quotes. Do not repeat those values in a separate activity breakdown panel.
+At most one short muted line states catalog unit assumptions (website pages and
+email units), with no per-question euro figure. A labelled editable example
+renders on the server. Desktop inputs sit beside a single hairline results panel;
+mobile stacks them with a compact selected-plan estimate that stays visible while
+editing. Number inputs and slider targets are at least 44px high. Reset restores
+the default usage example and Pay as you go selection. Invalid inputs suppress
+all estimates. Plan totals share one border with the selected breakdown underneath
+— no nested cards or extra plan-card chrome. PAYG shows native allowances per
+meter; Team and Business show a pooled usage-credit deduction. Capacity warnings
+exclude unsuitable plans from the lowest-estimated-cost badge. Accepted sources
+live in Advanced usage with their value visible when closed. Metadata stays at
+the 12px floor. Rates and workspace eligibility remain in the closed How this
+estimate works disclosure. Inputs stay local; the calculator neither changes
+billing nor collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
 
@@ -483,10 +506,11 @@ Long technical values wrap without changing bytes or hiding content. Small
 callout labels, homepage dim text and signal text meet 4.5:1 contrast against
 their actual surfaces in both themes. Cookie preferences inherit the dialog's
 viewport height cap and scrolling, with overscroll contained; all controls and
-disclosures remain reachable on short screens. Reject and Accept stay equally
-prominent in the compact desktop bottom-right analytics banner; no optional
-analytics is sent before a choice. Cookie settings remains a persistent button
-with the footer links' typography and treatment.
+disclosures remain reachable on short screens. The analytics banner sits below
+the public header in normal flow on narrow or short screens. On larger viewports
+it floats at the bottom right. Reject and Accept stay equally prominent, and
+optional analytics starts only after acceptance. Cookie settings remains a
+persistent button with the footer links' typography and treatment.
 
 ### Guides directory
 
@@ -509,8 +533,9 @@ Use it for the hero, root metadata defaults, manifest and homepage registry entr
 Specialized pages retain their own search intent and capability boundaries in the
 [public document registry](../public-site-registry.md).
 
-OG and Twitter cards share a 1200 × 630 composition: the official mark, Switzer,
-near-black background and lime emphasis. Describe the living record, connected
-objects, attached sources and approval boundary; avoid fabricated event IDs or
-version labels. Static social font subsets and their generation instructions live
+OG and Twitter cards share the 1200 × 630 format, the official mark, Switzer,
+near-black background, and lime emphasis. The default artwork presents the
+living record. Pricing, Product tour, and selected guides use their own
+headlines and show the options or steps covered on the page. Static social
+font subsets and their generation instructions live
 in `apps/web/public/fonts/switzer/SOCIAL-FONTS.md`.

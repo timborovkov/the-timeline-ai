@@ -25,6 +25,7 @@ describe('sitemap', () => {
         'https://thetimeline.cc/',
         'https://thetimeline.cc/help',
         'https://thetimeline.cc/help/support',
+        'https://thetimeline.cc/contact/enterprise',
         'https://thetimeline.cc/trust',
         'https://thetimeline.cc/terms',
         'https://thetimeline.cc/privacy',
@@ -48,12 +49,12 @@ describe('sitemap', () => {
 
     expect(second).toEqual(first);
     expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-11-12');
-    expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-11-12');
+    expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-11-19');
     expect(byUrl.get('https://thetimeline.cc/integrations/mcp')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/use-cases')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/product-tour')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-11-12');
-    expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-10');
+    expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-19');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe(TERMS_VERSION.slice(0, 10));
     expect(byUrl.get('https://thetimeline.cc/privacy')).toBe(PRIVACY_VERSION.slice(0, 10));
     expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-10-24');

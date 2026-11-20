@@ -1,7 +1,6 @@
 import { revalidatePath } from 'next/cache';
 
 import type { MutationChange } from '@/lib/mutation-surfaces';
-
 import { mutationSurfaces } from '@/lib/mutation-surfaces';
 import { reportCaughtError } from '@/lib/sentry-report';
 

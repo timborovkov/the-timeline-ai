@@ -2,6 +2,7 @@
 
 These records retain unique observations or decisions, not current instructions. Read each baseline/date and limitation. [Security gaps](../security-gaps.md) owns unresolved controls; release PRs own deployment/submission evidence. Never infer current settings from an old snapshot.
 
+- [Architecture verification and recovery rehearsal](architecture-verification-2026-11-19.md)
 - [GDPR, cookies, and consent audit](gdpr-cookie-consent-audit-2026-08-21.md)
 - [Marketplace verification observations](marketplace-verification-2026.md)
 - [Platform retention decision, 3 November 2026](platform-retention-decision-2026-11-03.md)
@@ -9,6 +10,7 @@ These records retain unique observations or decisions, not current instructions.
 - [PostHog rollout evidence](posthog-rollout-evidence-2026-08-26.md)
 - [Provider privacy research and dated observations](provider-privacy-research.md)
 - [Railway capacity observations](railway-capacity-2026-11.md)
+- [Synthetic active-store erasure rehearsal, 19 November 2026](security-erasure-2026-11-19.md)
 
 Historical benchmark JSON remains under `docs/research`; [the harness](../../scripts/performance/README.md) explains its methodology and limitations.
 
@@ -27,3 +29,7 @@ Historical benchmark JSON remains under `docs/research`; [the harness](../../scr
 - [Forwarded email customer/project recall, 15 November 2026](forwarded-email-recall-2026-11-15.json).
 
 - [Cross-source communications and approval benchmark, 15 November 2026](communications-benchmark-2026-11-15.json).
+
+- [Communication follow-up fixes and diagnostics, 15 November 2026](communications-follow-up-2026-11-15.json).
+
+- [Communication grounding and expanded field evaluation, 16 November 2026](communications-grounding-2026-11-16.json).

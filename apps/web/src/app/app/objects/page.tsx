@@ -1,15 +1,14 @@
 import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
+import type * as objects from '@timeline/shared/objects/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { Plus, Shapes } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-
-import type * as objects from '@timeline/shared/objects/types';
-import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
@@ -17,6 +16,7 @@ import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-su
 import { ObjectIndexPeek } from '@/components/objects/object-index-peek';
 import { ObjectListViewport } from '@/components/objects/object-list-viewport';
 import { PageHeader } from '@/components/page-header';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -96,6 +96,7 @@ export default async function ObjectsIndexPage({
         className="w-full shrink-0 px-4 md:px-8"
         variant="collection"
         title="Objects"
+        trailing={<SaveViewButton collection="objects" filters={filterParams} />}
         subtitle="Projects, people, decisions, and other durable team context."
         metadata={[
           { label: 'Total', value: objectWindow.totalCount, mono: true },

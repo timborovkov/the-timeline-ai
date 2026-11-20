@@ -40,6 +40,7 @@ const fakes = vi.hoisted(() => ({
   fakeChatStructured: vi.fn(),
   fakeStreamChat: vi.fn(),
   fakePersistChatTurn: vi.fn(),
+  fakeChatTurnRevision: vi.fn(),
   fakeClaimChatApprovals: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
   fakeCreateUIMessageStreamResponse: vi.fn(),
@@ -90,7 +91,9 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
-    withTeam: () => ({
+    withTeam: (_db: unknown, teamId: string, userId: string) => ({
+      teamId,
+      userId,
       requireMembership: fakes.fakeRequireMembership,
       billing: {},
       timeline: {
@@ -99,6 +102,7 @@ await vi.mock(
       },
       objects: {
         persistChatTurn: fakes.fakePersistChatTurn,
+        chatTurnRevision: fakes.fakeChatTurnRevision,
         claimChatApprovals: fakes.fakeClaimChatApprovals,
         chatSessionExists: fakes.fakeChatSessionExists,
         chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
@@ -219,7 +223,11 @@ await vi.mock(
   () => import('ai'),
 );
 
+const { REQUEST_BODY_LIMITS } = await import('@/lib/request-body');
+
 const { POST } = await import('./route.js');
+const { POST: RETRY } = await import('./save/route.js');
+const { openChatRecovery } = await import('@/lib/chat-turn-save');
 const { releaseBillingReservation, settleAskAiFromOpenRouterUsd } =
   await import('@timeline/shared/billing');
 
@@ -234,6 +242,7 @@ const followUpMessage = {
   role: 'user',
   parts: [{ type: 'text', text: 'What changed since then?' }],
 };
+let capturedSaveChunks: { type: string; data?: unknown }[] = [];
 let capturedUiEnd:
   | ((input: {
       responseMessage: unknown;
@@ -408,19 +417,23 @@ beforeEach(() => {
       return { stream: { kind: 'chat' } };
     },
   );
-  fakes.fakePersistChatTurn.mockResolvedValue(undefined);
+  fakes.fakePersistChatTurn.mockResolvedValue('saved');
+  fakes.fakeChatTurnRevision.mockResolvedValue(null);
   fakes.fakeClaimChatApprovals.mockRejectedValue(new Error('Approval no longer available'));
+  capturedSaveChunks = [];
   fakes.fakeCreateUIMessageStream.mockImplementation(
-    (input: { execute: (args: unknown) => void }) => {
-      const chunks: unknown[] = [];
-      input.execute({
+    (input: { execute: (args: unknown) => void | Promise<void> }) => {
+      const chunks = capturedSaveChunks;
+      const stream = { chunks, merged: false, ready: undefined as void | Promise<void> };
+      stream.ready = input.execute({
         writer: {
-          write: (chunk: unknown) => {
-            chunks.push(chunk);
+          write: (chunk: (typeof chunks)[number]) => chunks.push(chunk),
+          merge: () => {
+            stream.merged = true;
           },
         },
       });
-      return { chunks };
+      return stream;
     },
   );
   fakes.fakeToUIMessageStream.mockImplementation((input: { onEnd: typeof capturedUiEnd }) => {
@@ -428,14 +441,54 @@ beforeEach(() => {
     return { kind: 'ui-stream' };
   });
   fakes.fakeCreateUIMessageStreamResponse.mockImplementation(
-    ({ stream }: { stream: { chunks?: unknown[]; kind?: string } }) =>
-      Array.isArray(stream.chunks)
-        ? Response.json({ chunks: stream.chunks }, { status: 200 })
-        : streamResponse(),
+    ({
+      stream,
+    }: {
+      stream: { chunks: unknown[]; merged: boolean; ready: void | Promise<void> };
+    }) =>
+      stream.merged
+        ? streamResponse()
+        : new Response(
+            new ReadableStream({
+              async start(controller) {
+                await stream.ready;
+                controller.enqueue(
+                  new TextEncoder().encode(JSON.stringify({ chunks: stream.chunks })),
+                );
+                controller.close();
+              },
+            }),
+            { status: 200 },
+          ),
   );
 });
 
 describe('POST /api/chat', () => {
+  it('rejects oversized JSON before parsing declared and chunked bodies', async () => {
+    const cap = REQUEST_BODY_LIMITS.chat;
+    const url = 'https://timeline.test/api/chat';
+    const declared = new Request(url, {
+      method: 'POST',
+      body: '{',
+      headers: { 'content-length': String(cap + 1) },
+    });
+    const chunked = new Request(url, {
+      method: 'POST',
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(cap));
+          controller.enqueue(new Uint8Array(1));
+          controller.close();
+        },
+      }),
+    });
+    for (const req of [declared, chunked]) {
+      const response = await POST(req);
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({ ok: false, reason: 'payload_too_large' });
+    }
+  });
+
   it('rejects historical decisions and unclaimed assistant continuations before inference', async () => {
     fakes.fakeSafeValidateUIMessages.mockImplementation(({ messages }: { messages: unknown }) =>
       Promise.resolve({ success: true, data: messages }),
@@ -503,7 +556,10 @@ describe('POST /api/chat', () => {
         },
       ],
     };
-    fakes.fakeClaimChatApprovals.mockResolvedValue(decision);
+    fakes.fakeClaimChatApprovals.mockResolvedValue({
+      message: decision,
+      revision: 'claimed-revision',
+    });
     const response = await POST(
       request(validBody({ sessionId: SESSION_ID, messages: [userMessage, decision] })),
     );
@@ -613,6 +669,51 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ ok: false, error: 'invalid_messages' });
     expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+  });
+
+  it('returns the admission error when Ask billing reservation hits a free allowance cap', async () => {
+    const { reserveAskAi } = await import('@timeline/shared/billing');
+    vi.mocked(reserveAskAi).mockResolvedValueOnce({
+      ok: false,
+      code: 'free_allowance_reached',
+    });
+
+    const response = await POST(request(validBody()));
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'free_allowance_reached',
+      message: 'free_allowance_reached',
+    });
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+  });
+
+  it('forwards chat tool BillingAdmissionError through reportCaughtError for expected caps', async () => {
+    let onToolError: ((err: unknown, context: { tool: string }) => void) | undefined;
+    fakes.fakeBuildAgentTools.mockImplementation(
+      (_scope: unknown, options?: { onToolError?: typeof onToolError }) => {
+        onToolError = options?.onToolError;
+        return { search_timeline_moments: { type: 'native' } };
+      },
+    );
+
+    const response = await POST(request(validBody()));
+    expect(response.status).toBe(200);
+    expect(onToolError).toBeTypeOf('function');
+
+    const admission = Object.assign(new Error('Billing admission failed: free_allowance_reached'), {
+      name: 'BillingAdmissionError',
+      code: 'free_allowance_reached',
+    });
+    onToolError?.(admission, { tool: 'search_timeline_moments' });
+
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(admission, {
+      surface: 'api',
+      operation: 'chat_agent_tool_call',
+      tags: { tool: 'search_timeline_moments' },
+    });
   });
 
   it('requires an existing persisted session when sessionId is provided', async () => {
@@ -1359,16 +1460,12 @@ describe('POST /api/chat', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     await finishUi();
-    await vi.waitFor(() => {
-      expect(fakes.fakeLoggerWarn).toHaveBeenCalledWith(
-        matchingObject({
-          sessionId: SESSION_ID,
-          teamId: TEAM_ID,
-          userId: USER_ID,
-        }),
-        'chat session append failed',
-      );
-    });
+    expect(capturedSaveChunks).toContainEqual(
+      matchingObject({
+        type: 'data-turn-save',
+        data: matchingObject({ status: 'retry', sessionId: SESSION_ID }),
+      }),
+    );
 
     expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
       SESSION_ID,
@@ -1398,6 +1495,13 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('x-tl-session-id')).toBeNull();
+    await finishUi();
+    expect(capturedSaveChunks).toContainEqual(
+      matchingObject({
+        type: 'data-turn-save',
+        data: { status: 'unavailable', sessionId: null },
+      }),
+    );
     const createSessionWarning = fakes.fakeLoggerWarn.mock.calls.find(
       (call) => call[1] === 'chat session create failed',
     )?.[0] as { err?: unknown } | undefined;
@@ -1408,7 +1512,7 @@ describe('POST /api/chat', () => {
     );
   });
 
-  it('persists latest user turn and assistant turn on finish, logging append failures without changing response', async () => {
+  it('retries a streamed turn with the same payload and no second generation', async () => {
     fakes.fakePersistChatTurn.mockRejectedValue(new Error('append failed'));
     const expectedObservability = {
       toolObservations: [
@@ -1480,15 +1584,32 @@ describe('POST /api/chat', () => {
         }),
       }),
     );
-    await Promise.resolve();
-    expect(fakes.fakeLoggerWarn).toHaveBeenCalledWith(
-      matchingObject({
-        sessionId: SESSION_ID,
-        teamId: TEAM_ID,
-        userId: USER_ID,
-      }),
-      'chat session append failed',
+    const save = capturedSaveChunks.find((chunk) => chunk.type === 'data-turn-save')?.data as {
+      status: string;
+      token: string;
+    };
+    expect(save.status).toBe('retry');
+    expect(openChatRecovery(save.token, { teamId: PINNED_ID, userId: USER_ID })).toBeNull();
+    expect(openChatRecovery(save.token, { teamId: TEAM_ID, userId: PINNED_ID })).toBeNull();
+    expect(openChatRecovery(`x${save.token}`, { teamId: TEAM_ID, userId: USER_ID })).toBeNull();
+
+    fakes.fakePersistChatTurn.mockResolvedValue('saved');
+    const retry = () =>
+      RETRY(
+        new Request('https://app.test/api/chat/save', {
+          method: 'POST',
+          headers: { 'content-type': 'text/plain' },
+          body: save.token,
+        }),
+      );
+    expect((await retry()).status).toBe(200);
+    expect(fakes.fakePersistChatTurn.mock.calls[0]).toEqual(
+      fakes.fakePersistChatTurn.mock.calls[1],
     );
+    expect(fakes.fakeStreamChat).toHaveBeenCalledTimes(1);
+    expect(fakes.fakeClaimChatApprovals).not.toHaveBeenCalled();
+    fakes.fakePersistChatTurn.mockResolvedValue('conflict');
+    expect((await retry()).status).toBe(409);
   });
 
   it('reports stream-time AI provider failures as handled telemetry events', async () => {

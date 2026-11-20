@@ -1,13 +1,12 @@
 import { users } from '@timeline/db';
+import type { SavedMeetingRow } from '@timeline/shared/meetings';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { Video } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-
-import type { SavedMeetingRow } from '@timeline/shared/meetings';
-import type { Metadata } from 'next';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';

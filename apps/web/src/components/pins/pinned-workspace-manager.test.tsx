@@ -1,8 +1,7 @@
+import type { PinnedItem } from '@timeline/shared/pins';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
-import type { PinnedItem } from '@timeline/shared/pins';
 import type { ReactNode } from 'react';
 // Test environment: happy-dom
 

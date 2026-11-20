@@ -3323,17 +3323,17 @@
 .heroMeshMotion {
   display: none;
 }
-.motionReady .heroMeshStatic {
+.motionReady [data-mesh-ready] .heroMeshStatic {
   display: none;
 }
-.motionReady .heroMeshMotion {
+.motionReady [data-mesh-ready] .heroMeshMotion {
   display: inline;
 }
 @media (prefers-reduced-motion: reduce) {
-  .motionReady .heroMeshStatic {
+  .motionReady [data-mesh-ready] .heroMeshStatic {
     display: inline;
   }
-  .motionReady .heroMeshMotion {
+  .motionReady [data-mesh-ready] .heroMeshMotion {
     display: none;
   }
 }

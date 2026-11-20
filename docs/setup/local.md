@@ -28,18 +28,36 @@ Fill in at minimum:
 
 - `AUTH_SECRET` — `openssl rand -base64 32`
 - `OPENROUTER_API_KEY` — a funded development key for demo indexing, semantic search, and AI features.
-- `FIRECRAWL_API_KEY` — required before the web app or full worker boots. Get a key at [firecrawl.dev](https://firecrawl.dev); the free plan works.
+- `FIRECRAWL_API_KEY` — enables website scanning with Firecrawl Cloud. Firecrawl Local accepts a loopback origin outside production (see below).
 - `SECRETS_ENCRYPTION_KEY` — 32-byte base64 key required as soon as you connect any integration or custom MCP server. Generate with `openssl rand -base64 32`. See [integrations setup](integrations.md).
 
 Other third-party service keys can stay empty for the demo.
 
-The rest of the defaults already match `docker-compose.yml`. When you use `docker compose --profile app up`, Compose forwards `TELEGRAM_BOT_TOKEN` and `SECRETS_ENCRYPTION_KEY` to the worker so Telegram and Slack direct-agent replies use the production-parity external-chat profile.
+The rest of the defaults already match `docker-compose.yml`. When you use `docker compose --profile app up`, Compose forwards `TELEGRAM_BOT_TOKEN` and `SECRETS_ENCRYPTION_KEY` to the worker so Telegram and Slack direct-agent replies use the production-parity external-chat profile. Those containers also run with `NODE_ENV=production` and forward `TIMELINE_DEPLOYMENT_MODE`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, and `FIRECRAWL_API_KEY` from `.env`. Set `TIMELINE_DEPLOYMENT_MODE=self-managed` (and your chosen `OPENROUTER_BASE_URL`) before that path so an operator-selected OpenAI-compatible endpoint works without Timeline-hosted OpenRouter attestation. See [self-hosting](../self-hosting.md).
 
 `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` can stay empty locally. Empty Turnstile secrets fail open outside production so developers can create email/password accounts without a Cloudflare widget. Optional GitHub sign-in uses `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` with callback `http://localhost:3000/api/auth/callback/github`. Optional Google sign-in reuses the Drive OAuth client (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`) with callback `http://localhost:3000/api/auth/callback/google` and scopes `openid email profile` only — never Drive. See [Google sign-in setup](google-sign-in.md).
 
 For local document parsing without Daytona, set `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true`. This development-only option is rejected in production; leave it false when using a Daytona extractor.
 
-Web and full worker startup require `FIRECRAWL_API_KEY`; missing configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
+The web app and worker start without Cloud credentials. Website scanning requires the key or a supported Firecrawl Local configuration. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
+
+<span id="firecrawl-local"></span>
+
+### Firecrawl Local (optional)
+
+Production website scans stay pinned to Firecrawl Cloud (`https://api.firecrawl.dev`). For local development and the live website-scan eval you can run [Firecrawl Local](https://docs.firecrawl.dev/quickstarts/firecrawl-local) instead — a Rust binary that serves the Firecrawl v2 API on loopback:
+
+    cargo install firecrawl-local
+    firecrawl-local serve
+
+Then in `.env` (non-production only):
+
+    FIRECRAWL_API_ORIGIN=http://localhost:3002
+    FIRECRAWL_API_KEY=
+
+Leave the key empty or set a dummy. `FIRECRAWL_API_ORIGIN` may only be loopback `http` (`localhost`, `127.0.0.1`, `[::1]`) or an `https` origin outside production; production refuses any value other than `https://api.firecrawl.dev`. Do not set this override on Railway or other production hosts.
+
+For the opt-in live scan with Firecrawl Local, export the origin (and `OPENROUTER_API_KEY`), start local RustFS, then run `bun run test:website-scan:live`.
 
 Local Compose uses PostgreSQL 18. For an existing PostgreSQL 16 volume, follow the [data-preserving PostgreSQL upgrade procedure](postgres18.md) before startup. Keep `POSTGRES_DATA_VOLUME=postgres_data` until the documented migration; the image refuses old data rather than silently replacing it. Never use a volume reset to resolve this upgrade error.
 
@@ -80,7 +98,9 @@ Open <http://localhost:3000>.
 
 ## Verify a capture
 
-1.  Sign up as user A — you land on `/app` with a default team.
+1.  Sign up as user A — you land on `/onboarding` to name your team (slug and
+    inbound email are minted then). Invite-only signup joins the inviting team
+    with no owned workspace.
 2.  Post a text note — appears in the timeline.
 3.  Go to **Team settings** → invite user B by email. If `RESEND_API_KEY` and `TRANSACTIONAL_EMAIL_FROM` are set, user B receives the invite email. Otherwise the invite is still created with a visible send error and copyable fallback URL.
 4.  Open the invite URL in an incognito window, sign up as user B → user B is added to the team. If user B is already signed in with an account whose email matches the invite, the invite also appears in the team switcher modal with accept and decline actions; email verification is encouraged but not required for invite acceptance.

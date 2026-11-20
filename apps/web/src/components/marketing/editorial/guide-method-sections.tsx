@@ -1,7 +1,6 @@
 import { ShieldCheck } from 'lucide-react';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
-
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';

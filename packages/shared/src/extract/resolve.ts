@@ -8,11 +8,10 @@ import {
   type DbOrTx,
   type LookupEntityInput,
 } from '#src/extract/lookup.js';
+import type { EntityMention } from '#src/extract/schema.js';
 import { type ChatDeps } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { enqueueEntityEmbedJob } from '#src/queue/queues.js';
-
-import type { EntityMention } from '#src/extract/schema.js';
 
 const embedLog = childLogger('extract:embed');
 

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { auth, updateSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
@@ -41,7 +42,13 @@ export async function acceptLegalAction(
 
     const submittedTermsVersion = formData.get('termsVersion');
     const submittedPrivacyVersion = formData.get('privacyVersion');
-    if (submittedTermsVersion !== TERMS_VERSION || submittedPrivacyVersion !== PRIVACY_VERSION) {
+    const { termsContentHash, privacyContentHash } = legalDocumentHashes();
+    if (
+      submittedTermsVersion !== TERMS_VERSION ||
+      submittedPrivacyVersion !== PRIVACY_VERSION ||
+      formData.get('termsContentHash') !== termsContentHash ||
+      formData.get('privacyContentHash') !== privacyContentHash
+    ) {
       return { error: LEGAL_VERSION_CHANGED_ERROR };
     }
 

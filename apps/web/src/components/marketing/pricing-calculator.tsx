@@ -1,23 +1,30 @@
 'use client';
 
 import { PLAN_CATALOG, formatEuroFromCents } from '@timeline/shared/billing/catalog';
+import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
-
 import styles from '@/components/marketing/pricing-page.module.css';
 import { NativeSelect } from '@/components/ui/native-select';
+import { buildEnterpriseEnquiryHref } from '@/lib/enterprise-enquiry';
 import {
+  CALCULATOR_ACTIVITY_ASSUMPTIONS,
   CALCULATOR_PLANS,
-  EXAMPLE_USAGE,
+  DEFAULT_USAGE_PRESET,
   MAX_USAGE_VALUE,
   SOURCES_FIELD,
   USAGE_FIELDS,
+  USAGE_PRESETS,
   estimatePricing,
+  formatUnitAssumption,
   parseUsage,
+  presetMatchingDraft,
   type UsageDraft,
   type UsageKey,
+  type UsagePreset,
+  type UsagePresetId,
+  type WebsiteDraft,
 } from '@/lib/pricing-calculator';
 import { cn } from '@/lib/utils';
 
@@ -25,6 +32,8 @@ const CONTROL =
   'h-11 rounded-sm border border-border bg-surface-2 px-2.5 text-base sm:text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const SLIDER =
   'block h-11 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
+const PRESET_BUTTON =
+  'min-h-11 rounded-sm border px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 function UsageControl({
   field,
@@ -91,10 +100,12 @@ function PlanResults({
   estimate,
   selected,
   onSelect,
+  enterpriseHref,
 }: {
   estimate: ReturnType<typeof estimatePricing>;
   selected: SelfServePaidPlanId;
   onSelect: (plan: SelfServePaidPlanId) => void;
+  enterpriseHref: string;
 }) {
   const bill = estimate.bills[selected];
   const plan = PLAN_CATALOG[selected];
@@ -188,8 +199,12 @@ function PlanResults({
             {estimate.cheapest === null && (
               <p className="mt-4 text-sm">
                 Your usage exceeds the measured limits of all self-serve plans.{' '}
-                <Link href="/help/support" className="underline">
-                  Contact sales
+                <Link
+                  href={enterpriseHref}
+                  data-public-analytics-cta="contact_enterprise"
+                  className="underline"
+                >
+                  Contact us about Enterprise
                 </Link>
                 .
               </p>
@@ -226,192 +241,330 @@ function CostRow({ label, hint, cents }: { label: string; hint?: string; cents: 
   );
 }
 
-export function PricingCalculator() {
-  const [websiteInput, setWebsiteInput] = useState({
-    websites: 0,
-    pages: 5,
-    frequency: 'manual' as 'manual' | 'daily' | 'weekly',
-    manualScans: 1,
-  });
-  const [draft, setDraft] = useState<UsageDraft>(EXAMPLE_USAGE);
-  const [selected, setSelected] = useState<SelfServePaidPlanId>('payg');
-  const { values, errors } = parseUsage(draft);
-  const estimate = values ? estimatePricing(values, websiteInput) : null;
-  function update(key: UsageKey, value: string) {
-    setDraft((previous) => ({ ...previous, [key]: value }));
-  }
+function ExamplePresets({
+  matchedPreset,
+  onSelect,
+  onReset,
+}: {
+  matchedPreset: UsagePreset | null;
+  onSelect: (id: UsagePresetId) => void;
+  onReset: () => void;
+}) {
   return (
-    <div className="mt-10" data-pricing-calculator>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-fg-muted">
-          Illustrative example — adjust it to your monthly usage.
-        </p>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-medium text-fg">Example starting points</p>
+          <p className="text-sm text-fg-muted">
+            Pick an example to fill the fields, then edit anything. These are illustrations, not
+            quotes.
+          </p>
+        </div>
         <button
           type="button"
-          onClick={() => {
-            setDraft(EXAMPLE_USAGE);
-            setSelected('payg');
-            setWebsiteInput({ websites: 0, pages: 5, frequency: 'manual', manualScans: 1 });
-          }}
+          onClick={onReset}
           className="min-h-11 rounded-sm text-sm text-fg-muted underline decoration-border-strong underline-offset-4 outline-none hover:text-fg hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
         >
           Reset example
         </button>
       </div>
-      <div className={styles.mobileEstimate} data-mobile-estimate>
-        {estimate ? (
-          <>
-            <div>
-              <p>{PLAN_CATALOG[selected].name} estimate</p>
-              <strong>{formatEuroFromCents(estimate.bills[selected].totalCents)}</strong>
-              <span className="ml-2 text-sm text-fg-muted">/mo, excl. VAT</span>
-            </div>
-            <a href="#pricing-breakdown">View breakdown</a>
-            {estimate.capacityWarnings[selected].length > 0 ? (
-              <p className="basis-full">Exceeds this plan’s capacity. Check the breakdown.</p>
-            ) : null}
-          </>
-        ) : (
-          <p>Check your usage fields to see an estimate.</p>
-        )}
+      <div
+        role="group"
+        aria-label="Example starting points"
+        className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"
+      >
+        {USAGE_PRESETS.map((preset) => {
+          const pressed = matchedPreset?.id === preset.id;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              aria-pressed={pressed}
+              onClick={() => {
+                onSelect(preset.id);
+              }}
+              className={cn(
+                PRESET_BUTTON,
+                'sm:max-w-[16rem] sm:flex-1',
+                pressed
+                  ? 'border-signal bg-signal-soft text-fg'
+                  : 'border-border bg-surface-2 text-fg hover:border-border-strong',
+              )}
+            >
+              <span className="block font-medium">{preset.label}</span>
+              <span className="mt-1 block text-xs leading-4 text-fg-muted">
+                {preset.description}
+              </span>
+            </button>
+          );
+        })}
       </div>
+      <p className="text-xs leading-5 text-fg-muted">{formatUnitAssumption()}</p>
+    </div>
+  );
+}
+
+function MobileEstimate({
+  estimate,
+  selected,
+}: {
+  estimate: ReturnType<typeof estimatePricing> | null;
+  selected: SelfServePaidPlanId;
+}) {
+  if (!estimate) {
+    return (
+      <div className={styles.mobileEstimate} data-mobile-estimate>
+        <p>Check your usage fields to see an estimate.</p>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.mobileEstimate} data-mobile-estimate>
+      <div>
+        <p>{PLAN_CATALOG[selected].name} estimate</p>
+        <strong>{formatEuroFromCents(estimate.bills[selected].totalCents)}</strong>
+        <span className="ml-2 text-sm text-fg-muted">/mo, excl. VAT</span>
+      </div>
+      <a href="#pricing-breakdown">View breakdown</a>
+      {estimate.capacityWarnings[selected].length > 0 ? (
+        <p className="basis-full">Exceeds this plan’s capacity. Check the breakdown.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function WebsiteScanControls({
+  websiteInput,
+  websiteUsage,
+  onChange,
+}: {
+  websiteInput: WebsiteDraft;
+  websiteUsage: ReturnType<typeof estimatePricing>['websiteUsage'] | null;
+  onChange: (next: WebsiteDraft) => void;
+}) {
+  return (
+    <details className="border-t border-border pt-4">
+      <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Website scans{' '}
+        <span className="font-normal text-fg-muted">
+          · {websiteInput.websites === 0 ? 'Optional' : `${websiteInput.websites} websites`}
+        </span>
+      </summary>
+      <fieldset className="mt-4 grid grid-cols-2 gap-3">
+        <legend className="sr-only">Website scanning</legend>
+        <label className="space-y-1.5 text-sm">
+          Websites{' '}
+          <input
+            className={`${CONTROL} block w-full min-w-0`}
+            type="number"
+            min={0}
+            max={100}
+            value={websiteInput.websites}
+            onChange={(event) => {
+              onChange({
+                ...websiteInput,
+                websites: Math.min(100, Math.max(0, Math.floor(Number(event.target.value) || 0))),
+              });
+            }}
+          />
+        </label>
+        <label className="space-y-1.5 text-sm">
+          Pages per scan{' '}
+          <input
+            className={`${CONTROL} block w-full min-w-0`}
+            type="number"
+            min={1}
+            max={5}
+            value={websiteInput.pages}
+            onChange={(event) => {
+              onChange({
+                ...websiteInput,
+                pages: Math.min(5, Math.max(1, Math.floor(Number(event.target.value) || 1))),
+              });
+            }}
+          />
+        </label>
+        <label className="space-y-1.5 text-sm">
+          Scan frequency{' '}
+          <NativeSelect
+            className={`${CONTROL} block w-full min-w-0`}
+            value={websiteInput.frequency}
+            onChange={(event) => {
+              onChange({
+                ...websiteInput,
+                frequency: event.target.value as 'manual' | 'daily' | 'weekly',
+              });
+            }}
+          >
+            <option value="manual">Manual</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </NativeSelect>
+        </label>
+        {websiteInput.frequency === 'manual' ? (
+          <label className="space-y-1.5 text-sm">
+            Scans / month{' '}
+            <input
+              className={`${CONTROL} block w-full min-w-0`}
+              type="number"
+              min={0}
+              max={720}
+              value={websiteInput.manualScans}
+              onChange={(event) => {
+                onChange({
+                  ...websiteInput,
+                  manualScans: Math.min(
+                    720,
+                    Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                  ),
+                });
+              }}
+            />
+          </label>
+        ) : null}
+      </fieldset>
+      {websiteUsage && websiteInput.websites > 0 ? (
+        <p className="mt-4 text-sm tabular-nums" aria-live="polite">
+          {websiteUsage.pages.toLocaleString()} pages / month
+          <span className="block text-fg-muted">
+            {websiteUsage.sourceUnits.toLocaleString()} source units · included in total
+          </span>
+        </p>
+      ) : null}
+      <details className="mt-3 text-xs text-fg-muted">
+        <summary className="w-fit cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          How it’s calculated
+        </summary>
+        <p className="mt-2 leading-5">
+          {CALCULATOR_ACTIVITY_ASSUMPTIONS.websitePageSourceUnits} units per captured page, even if
+          unchanged. Daily assumes 30 scans/month; weekly assumes 5. AI and storage are separate.
+          Schedules are available once enabled for the service.
+        </p>
+      </details>
+    </details>
+  );
+}
+
+function usePricingCalculatorState() {
+  const [websiteInput, setWebsiteInput] = useState<WebsiteDraft>(DEFAULT_USAGE_PRESET.website);
+  const [draft, setDraft] = useState<UsageDraft>(DEFAULT_USAGE_PRESET.usage);
+  const [selected, setSelected] = useState<SelfServePaidPlanId>('payg');
+  const [activePresetId, setActivePresetId] = useState<UsagePresetId | null>(
+    DEFAULT_USAGE_PRESET.id,
+  );
+  const { values, errors } = parseUsage(draft);
+  const matchedPreset = activePresetId
+    ? (USAGE_PRESETS.find((preset) => preset.id === activePresetId) ?? null)
+    : presetMatchingDraft(draft, websiteInput);
+  const estimate = values ? estimatePricing(values, websiteInput) : null;
+  const enterpriseHref = buildEnterpriseEnquiryHref({
+    from: 'pricing-calculator',
+    plan: selected,
+    members: draft.members,
+    ai: draft.ai,
+    meetings: draft.meetings,
+    email: draft.email,
+    storage: draft.storage,
+    sources: draft.sources,
+    websites: String(websiteInput.websites),
+    pages: String(websiteInput.pages),
+    frequency: websiteInput.frequency,
+    manualScans: String(websiteInput.manualScans),
+  });
+
+  function applyPreset(id: UsagePresetId) {
+    const preset = USAGE_PRESETS.find((item) => item.id === id);
+    if (!preset) return;
+    setDraft(preset.usage);
+    setWebsiteInput(preset.website);
+    setSelected('payg');
+    setActivePresetId(preset.id);
+  }
+
+  function update(key: UsageKey, value: string) {
+    setActivePresetId(null);
+    setDraft((previous) => ({ ...previous, [key]: value }));
+  }
+
+  function updateWebsite(next: WebsiteDraft) {
+    setActivePresetId(null);
+    setWebsiteInput(next);
+  }
+
+  return {
+    websiteInput,
+    draft,
+    selected,
+    setSelected,
+    matchedPreset,
+    estimate,
+    enterpriseHref,
+    errors,
+    applyPreset,
+    update,
+    updateWebsite,
+    reset: () => {
+      applyPreset(DEFAULT_USAGE_PRESET.id);
+    },
+  };
+}
+
+export function PricingCalculator() {
+  const state = usePricingCalculatorState();
+  return (
+    <div className="mt-10" data-pricing-calculator>
+      <div className="mb-6">
+        <ExamplePresets
+          matchedPreset={state.matchedPreset}
+          onSelect={state.applyPreset}
+          onReset={state.reset}
+        />
+      </div>
+      <MobileEstimate estimate={state.estimate} selected={state.selected} />
       <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <div className="space-y-5">
           {USAGE_FIELDS.filter((field) => field.key !== 'sources').map((field) => (
             <UsageControl
               key={field.key}
               field={field}
-              value={draft[field.key]}
-              error={errors[field.key]}
+              value={state.draft[field.key]}
+              error={state.errors[field.key]}
               onChange={(value) => {
-                update(field.key, value);
+                state.update(field.key, value);
               }}
             />
           ))}
-          <details className="border-t border-border pt-4">
-            <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Website scans{' '}
-              <span className="font-normal text-fg-muted">
-                · {websiteInput.websites === 0 ? 'Optional' : `${websiteInput.websites} websites`}
-              </span>
-            </summary>
-            <fieldset className="mt-4 grid grid-cols-2 gap-3">
-              <legend className="sr-only">Website scanning</legend>
-              <label className="space-y-1.5 text-sm">
-                Websites{' '}
-                <input
-                  className={`${CONTROL} block w-full min-w-0`}
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={websiteInput.websites}
-                  onChange={(event) => {
-                    setWebsiteInput({
-                      ...websiteInput,
-                      websites: Math.min(
-                        100,
-                        Math.max(0, Math.floor(Number(event.target.value) || 0)),
-                      ),
-                    });
-                  }}
-                />
-              </label>
-              <label className="space-y-1.5 text-sm">
-                Pages per scan{' '}
-                <input
-                  className={`${CONTROL} block w-full min-w-0`}
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={websiteInput.pages}
-                  onChange={(event) => {
-                    setWebsiteInput({
-                      ...websiteInput,
-                      pages: Math.min(5, Math.max(1, Math.floor(Number(event.target.value) || 1))),
-                    });
-                  }}
-                />
-              </label>
-              <label className="space-y-1.5 text-sm">
-                Scan frequency{' '}
-                <NativeSelect
-                  className={`${CONTROL} block w-full min-w-0`}
-                  value={websiteInput.frequency}
-                  onChange={(event) => {
-                    setWebsiteInput({
-                      ...websiteInput,
-                      frequency: event.target.value as 'manual' | 'daily' | 'weekly',
-                    });
-                  }}
-                >
-                  <option value="manual">Manual</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                </NativeSelect>
-              </label>
-              {websiteInput.frequency === 'manual' && (
-                <label className="space-y-1.5 text-sm">
-                  Scans / month{' '}
-                  <input
-                    className={`${CONTROL} block w-full min-w-0`}
-                    type="number"
-                    min={0}
-                    max={720}
-                    value={websiteInput.manualScans}
-                    onChange={(event) => {
-                      setWebsiteInput({
-                        ...websiteInput,
-                        manualScans: Math.min(
-                          720,
-                          Math.max(0, Math.floor(Number(event.target.value) || 0)),
-                        ),
-                      });
-                    }}
-                  />
-                </label>
-              )}
-            </fieldset>
-            {estimate && websiteInput.websites > 0 && (
-              <p className="mt-4 text-sm tabular-nums" aria-live="polite">
-                {estimate.websiteUsage.pages.toLocaleString()} pages / month
-                <span className="block text-fg-muted">
-                  {estimate.websiteUsage.sourceUnits.toLocaleString()} source units · included in
-                  total
-                </span>
-              </p>
-            )}
-            <details className="mt-3 text-xs text-fg-muted">
-              <summary className="w-fit cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                How it’s calculated
-              </summary>
-              <p className="mt-2 leading-5">
-                20 units per captured page, even if unchanged. Daily assumes 30 scans/month; weekly
-                assumes 5. AI and storage are separate. Schedules are available once enabled for the
-                service.
-              </p>
-            </details>
-          </details>
+          <WebsiteScanControls
+            websiteInput={state.websiteInput}
+            websiteUsage={state.estimate?.websiteUsage ?? null}
+            onChange={state.updateWebsite}
+          />
           <details className="border-t border-border pt-4">
             <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
               Advanced usage ·{' '}
-              {errors.sources
+              {state.errors.sources
                 ? 'Check accepted sources'
-                : `${Number(draft.sources).toLocaleString('en-IE')} accepted sources`}
+                : `${Number(state.draft.sources).toLocaleString('en-IE')} accepted sources`}
             </summary>
             <div className="mt-4">
               <UsageControl
                 field={SOURCES_FIELD}
-                value={draft.sources}
-                error={errors.sources}
+                value={state.draft.sources}
+                error={state.errors.sources}
                 onChange={(value) => {
-                  update('sources', value);
+                  state.update('sources', value);
                 }}
               />
             </div>
           </details>
         </div>
-        {estimate ? (
-          <PlanResults estimate={estimate} selected={selected} onSelect={setSelected} />
+        {state.estimate ? (
+          <PlanResults
+            estimate={state.estimate}
+            selected={state.selected}
+            onSelect={state.setSelected}
+            enterpriseHref={state.enterpriseHref}
+          />
         ) : (
           <p
             role="status"

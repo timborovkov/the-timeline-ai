@@ -71,6 +71,7 @@ import {
 } from '#src/billing/plan-history.js';
 import { buildBillingPresentation } from '#src/billing/presentation.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
+import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import {
   expireStaleBillingReservations,
   failedAttemptSettlementMetadata,
@@ -90,10 +91,13 @@ import {
   spendCapUtilization,
 } from '#src/billing/status.js';
 import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
+import {
+  loadVisionBudgetUsage,
+  VisionBudgetDeferredError,
+  VISION_BUDGET_ESTIMATE_CENTS,
+} from '#src/billing/vision-budget.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
-
-import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
@@ -862,6 +866,32 @@ export function createBillingScope(deps: BillingScopeDeps) {
      * costly paths when the account cannot afford the reservation (unless
      * shadow billing is on — then we record but do not block).
      */
+    async getVisionBudget() {
+      await ensureMember('owner');
+      const account = await ensureAccount();
+      const usage = await loadVisionBudgetUsage(db, teamId, new Date());
+      return {
+        capCents: account.visionBudgetCents,
+        estimateCents: VISION_BUDGET_ESTIMATE_CENTS,
+        ...usage,
+      };
+    },
+
+    async setVisionBudget(capCents: number | null) {
+      await ensureMember('owner');
+      if (
+        capCents !== null &&
+        (!Number.isInteger(capCents) || capCents < 0 || capCents > 100_000_000)
+      ) {
+        throw new Error('Invalid OCR budget');
+      }
+      await ensureAccount();
+      await db
+        .update(teamBillingAccounts)
+        .set({ visionBudgetCents: capCents, updatedAt: new Date() })
+        .where(eq(teamBillingAccounts.teamId, teamId));
+    },
+
     async reserve(input: {
       operationId: string;
       meterId: BillingMeterId;
@@ -944,6 +974,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
           existingReservation.expiresAt.getTime() > Date.now()
         ) {
           return { kind: 'reused' as const, row: existingReservation };
+        }
+        if (input.metadata?.operation_class === 'vision' && locked.visionBudgetCents !== null) {
+          const usage = await loadVisionBudgetUsage(tx, teamId, new Date());
+          if (
+            usage.spentCents + usage.reservedCents + VISION_BUDGET_ESTIMATE_CENTS >
+            locked.visionBudgetCents
+          ) {
+            throw new VisionBudgetDeferredError();
+          }
+          input.metadata.vision_budget_enforced = true;
         }
         const entitlementsPlanId = effectiveBillingPlanId(locked);
         const commercial = resolveTeamCommercialTerms(locked);

@@ -1,6 +1,5 @@
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { LegalPage } from '@/components/legal-page';
 import { CookieSettingsButton } from '@/components/public-analytics';
@@ -63,6 +62,19 @@ function CurrentBrowserStorage() {
               <strong>pending_invite</strong>, a signed HTTP-only cookie lasting 15 minutes.
             </td>
             <td>Preserve an invitation while a user completes an external sign-in flow.</td>
+          </tr>
+          <tr>
+            <td>
+              <strong>tl_pricing_plan_intent</strong>, a host-only, HTTP-only, SameSite=Lax cookie
+              lasting up to 7 days. It is Secure in production.
+            </td>
+            <td>
+              Remember a self-serve plan chosen on Pricing or sign-up (Pay as you go, Team, or
+              Business) so we can remind you after setup and highlight it in Team settings →
+              Billing. It stores only the plan id, never payment details, and never changes your
+              plan, limits, or entitlements — those stay Free until Polar confirms a paid
+              subscription.
+            </td>
           </tr>
           <tr>
             <td>

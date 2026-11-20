@@ -1,25 +1,20 @@
-import type { TeamInviteRow, TeamMemberInfo } from '@/components/team-member-types';
-
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CopyButton } from '@/components/copy-button';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TeamListRow } from '@/components/team-list-row';
 import { PendingInviteActions } from '@/components/team-member-actions';
+import type { TeamInviteRow, TeamMemberInfo } from '@/components/team-member-types';
 import { displayMemberLabel } from '@/lib/display-labels';
 
 export function PendingInviteItem({
   invite,
   inviter,
-  siteUrl,
 }: {
   invite: TeamInviteRow;
   inviter: TeamMemberInfo | undefined;
-  siteUrl: string;
 }) {
-  const inviteUrl = `${siteUrl}/accept-invite/${invite.token}`;
   const deliveryFailed = invite.sendStatus === 'failed';
   const deliveryStatus = deliveryFailed
-    ? `Email delivery failed. ${invite.sendError ?? 'Try resending the invite or share the link.'}`
+    ? `Email delivery failed. ${invite.sendError ?? 'Resend to get a fresh link.'}`
     : invite.sendStatus === 'sent'
       ? 'Email sent'
       : `Email ${invite.sendStatus}`;
@@ -30,9 +25,6 @@ export function PendingInviteItem({
       <CollectionRow.Context>
         {invite.role} · invited by {displayMemberLabel(inviter)}
       </CollectionRow.Context>
-      <CollectionRow.Subtitle>
-        <span className="font-mono text-[11px] text-fg-dim">{inviteUrl}</span>
-      </CollectionRow.Subtitle>
       <CollectionRow.Metadata>
         <>
           <RelativeTimestamp prefix="Expires" value={invite.expiresAt} />
@@ -43,7 +35,6 @@ export function PendingInviteItem({
         </>
       </CollectionRow.Metadata>
       <CollectionRow.Actions>
-        <CopyButton appearance="icon" label="Copy invite link" value={inviteUrl} />
         <PendingInviteActions inviteEmail={invite.email} inviteId={invite.id} />
       </CollectionRow.Actions>
     </TeamListRow>

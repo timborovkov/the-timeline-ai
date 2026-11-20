@@ -21,7 +21,7 @@ export const PRODUCT_TOUR = {
       file: '18-sources-light.png',
       alt: 'Sources page showing Telegram, Slack, email and synced tools connected to a workspace.',
       reshoot: undefined,
-      mobileFile: undefined,
+      mobileFile: '55-sources-mobile.png',
     },
     {
       index: '02',
@@ -30,7 +30,7 @@ export const PRODUCT_TOUR = {
         'Messages, notes, documents and code activity in order, each with who said it, where and when.',
       file: '11-timeline-dark.png',
       alt: 'Timeline chronology of messages, notes, documents and code activity.',
-      reshoot: 'To reshoot after citation redesign and seed update (demo dates).',
+      reshoot: undefined,
       mobileFile: '53-timeline-mobile.png',
     },
     {
@@ -40,7 +40,7 @@ export const PRODUCT_TOUR = {
         'A Telegram voice memo arrives with its transcript and the original audio, linked to its source.',
       file: '17-timeline-voice-dark.png',
       alt: 'Timeline event for a Telegram voice memo with transcript and original audio.',
-      reshoot: 'To reshoot after citation redesign and seed update (citation chip, demo dates).',
+      reshoot: undefined,
       mobileFile: undefined,
     },
     {
@@ -50,9 +50,8 @@ export const PRODUCT_TOUR = {
         'A project’s status, blocker and review date, written from the evidence and linked back to it.',
       file: '23-project-northstar-dark.png',
       alt: 'Project Northstar record with status, blocker and review date.',
-      reshoot:
-        'To reshoot after citation redesign and seed update (evidence chips, demo dates, Overdue tasks).',
-      mobileFile: undefined,
+      reshoot: undefined,
+      mobileFile: '56-project-northstar-mobile.png',
     },
     {
       index: '05',
@@ -61,7 +60,7 @@ export const PRODUCT_TOUR = {
         'A client record gathers its open tasks, pending approvals, documents and related evidence.',
       file: '22-client-northstar-dark.png',
       alt: 'Client record gathering open tasks, pending approvals, documents and related evidence.',
-      reshoot: 'To reshoot after citation redesign and seed update (demo dates, Overdue tasks).',
+      reshoot: undefined,
       mobileFile: undefined,
     },
     {
@@ -71,8 +70,8 @@ export const PRODUCT_TOUR = {
         'Proposed tasks, dates and record changes wait in a queue, each with why it was suggested and its source. Captured evidence still lands on the timeline automatically.',
       file: '29-approvals-dark.png',
       alt: 'Approvals queue of proposed tasks, dates and record changes.',
-      reshoot: 'To reshoot after citation redesign and seed update (demo dates).',
-      mobileFile: undefined,
+      reshoot: undefined,
+      mobileFile: '57-approvals-mobile.png',
     },
     {
       index: '07',
@@ -81,8 +80,7 @@ export const PRODUCT_TOUR = {
         'Highlights, status, follow-ups, new tasks and upcoming calendar, written once a day from the record.',
       file: '33-digest-dark.png',
       alt: 'Daily workspace update with highlights, status, follow-ups, new tasks and calendar.',
-      reshoot:
-        'To reshoot after citation redesign and seed update. Also capture from the top of the page.',
+      reshoot: undefined,
       mobileFile: undefined,
     },
     {
@@ -91,8 +89,7 @@ export const PRODUCT_TOUR = {
       caption: 'Every line cites where it came from.',
       file: '32-ask-handoff-dark.png',
       alt: 'Ask handoff brief with every line cited to its source.',
-      reshoot:
-        'To reshoot after citation redesign and seed update (citation chips). Remove the Last week recap chat from the Ask sidebar before reshooting.',
+      reshoot: undefined,
       mobileFile: '54-ask-recap-mobile.png',
     },
   ],

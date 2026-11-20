@@ -1,7 +1,6 @@
 'use client';
-import Link from 'next/link';
-
 import type { PinnedItem } from '@timeline/shared/pins';
+import Link from 'next/link';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { PinTargetIcon } from '@/components/pins/pin-icon';
