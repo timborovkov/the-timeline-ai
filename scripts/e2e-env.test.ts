@@ -201,6 +201,18 @@ function lookupPort(container: string, port: number): string | null {
   const compose = readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8');
   assert.match(compose, /<AllowedOrigin>http:\/\/localhost:\*<\/AllowedOrigin>/);
   assert.match(compose, /<AllowedOrigin>http:\/\/127\.0\.0\.1:\*<\/AllowedOrigin>/);
+  assert.match(compose, /TIMELINE_DEPLOYMENT_MODE: \$\{TIMELINE_DEPLOYMENT_MODE:-self-managed\}/);
+  assert.match(
+    compose,
+    /OPENROUTER_BASE_URL: \$\{OPENROUTER_BASE_URL:-https:\/\/openrouter\.ai\/api\/v1\}/,
+  );
+  const webEnv = compose.slice(compose.indexOf('web:'), compose.indexOf('worker:'));
+  const workerEnv = compose.slice(compose.indexOf('worker:'));
+  for (const block of [webEnv, workerEnv]) {
+    assert.match(block, /TIMELINE_DEPLOYMENT_MODE:/);
+    assert.match(block, /OPENROUTER_BASE_URL:/);
+    assert.match(block, /OPENROUTER_API_KEY:/);
+  }
 }
 
 {

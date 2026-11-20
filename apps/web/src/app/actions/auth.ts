@@ -18,7 +18,11 @@ import {
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
-import { inviteTokenFromCallback } from '@/lib/auth-redirect';
+import {
+  inviteTokenFromCallback,
+  postSignupDestination,
+  selectedPlanFromCallback,
+} from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { hashInviteToken } from '@/lib/invite-token';
@@ -31,6 +35,7 @@ import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { readSignupPlanIntent, rememberSignupPlanIntent } from '@/lib/signup-plan-intent';
 import { getSiteUrl } from '@/lib/site-url';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
@@ -353,9 +358,21 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         throw e;
       }
     }
-    // Solo signups always finish team creation on /onboarding before any other
-    // destination (including pricing plan intent). Invite joiners go straight in.
-    const destination = inviteToken ? '/app' : '/onboarding';
+    const callbackDestination = safeCallbackUrl(parsed.data.callbackUrl);
+    if (!inviteToken) {
+      // Paid intent may be in the Billing callback and/or the proxy cookie.
+      // Team stays Free until Polar confirms; intent never grants a plan.
+      await rememberSignupPlanIntent(
+        selectedPlanFromCallback(callbackDestination) ?? (await readSignupPlanIntent()),
+      );
+    }
+    // Solo accounts mint the workspace on Welcome (/onboarding). Invite joiners
+    // go straight in. Plan intent survives as a cookie for the finish-setup prompt.
+    const destination = postSignupDestination({
+      inviteToken,
+      event: createdAccount.event,
+      callbackUrl: callbackDestination,
+    });
     if (signInFailed)
       redirect(
         destination === '/app'
@@ -427,6 +444,9 @@ async function signInWithOAuthProvider(
     const { setPendingInvite } = await import('@/lib/pending-invite');
     await setPendingInvite(inviteToken);
   }
+  await rememberSignupPlanIntent(
+    selectedPlanFromCallback(callbackUrl) ?? (await readSignupPlanIntent()),
+  );
   // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
   // Let it propagate; Next handles the response.
   await signIn(provider, { redirectTo: callbackUrl });

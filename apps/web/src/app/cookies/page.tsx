@@ -65,6 +65,19 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
+              <strong>tl_pricing_plan_intent</strong>, a host-only, HTTP-only, SameSite=Lax cookie
+              lasting up to 7 days. It is Secure in production.
+            </td>
+            <td>
+              Remember a self-serve plan chosen on Pricing or sign-up (Pay as you go, Team, or
+              Business) so we can remind you after setup and highlight it in Team settings →
+              Billing. It stores only the plan id, never payment details, and never changes your
+              plan, limits, or entitlements — those stay Free until Polar confirms a paid
+              subscription.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <strong>tl_platform_impersonation</strong>, a host-only, HTTP-only, SameSite=Lax
               cookie lasting at most 30 minutes. It is Secure in production.
             </td>

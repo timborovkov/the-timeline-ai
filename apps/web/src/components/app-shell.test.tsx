@@ -30,6 +30,14 @@ await vi.mock(
 );
 
 await vi.mock(
+  import.meta.resolve('@/components/clear-plan-intent'),
+  () => ({
+    ClearPlanIntent: () => null,
+  }),
+  () => import('@/components/clear-plan-intent'),
+);
+
+await vi.mock(
   import.meta.resolve('@/components/app-shell-scroll-restoration'),
   () => ({
     AppMainScrollRestoration: () => null,

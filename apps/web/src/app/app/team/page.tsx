@@ -54,6 +54,8 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
+import { paidSignupPlan } from '@/lib/signup-plan';
+import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -107,6 +109,7 @@ export default async function TeamSettingsPage({
     placeholderInbound,
     billingDashboard,
     query,
+    selectedPlan,
     entitlementsPlanId,
     comp,
     showOperatorLink,
@@ -149,6 +152,7 @@ export default async function TeamSettingsPage({
           placeholderInbound={placeholderInbound}
           billingDashboard={billingDashboard}
           query={query}
+          selectedPlan={selectedPlan}
           entitlementsPlanId={entitlementsPlanId}
           comp={comp}
           showOperatorLink={showOperatorLink}
@@ -182,6 +186,7 @@ function TeamSettingsSections({
   placeholderInbound,
   billingDashboard,
   query,
+  selectedPlan,
   entitlementsPlanId,
   comp,
   showOperatorLink,
@@ -248,6 +253,7 @@ function TeamSettingsSections({
           <TeamBillingSettings
             billingDashboard={billingDashboard}
             query={query}
+            selectedPlan={selectedPlan}
             active={active}
             entitlementsPlanId={entitlementsPlanId}
             isAdmin={isAdmin}
@@ -418,6 +424,7 @@ function TeamEmailSettings({
 function TeamBillingSettings({
   billingDashboard,
   query,
+  selectedPlan,
   active,
   entitlementsPlanId,
   isAdmin,
@@ -426,7 +433,14 @@ function TeamBillingSettings({
   commercial,
 }: Pick<
   Awaited<ReturnType<typeof loadTeamSettingsPage>>,
-  'query' | 'active' | 'entitlementsPlanId' | 'isAdmin' | 'comp' | 'showOperatorLink' | 'commercial'
+  | 'query'
+  | 'selectedPlan'
+  | 'active'
+  | 'entitlementsPlanId'
+  | 'isAdmin'
+  | 'comp'
+  | 'showOperatorLink'
+  | 'commercial'
 > & {
   billingDashboard: NonNullable<
     Awaited<ReturnType<typeof loadTeamSettingsPage>>['billingDashboard']
@@ -440,7 +454,7 @@ function TeamBillingSettings({
         (!query.checkoutTeam || query.checkoutTeam === active.teamId)
       }
       checkoutPlan={query.checkoutPlan}
-      selectedPlan={query.plan}
+      selectedPlan={selectedPlan}
       planId={entitlementsPlanId}
       planName={PLAN_CATALOG[entitlementsPlanId].name}
       billingState={billingDashboard.account.billingState}
@@ -729,6 +743,7 @@ async function loadTeamSettingsPage({
   const showOperatorLink =
     Boolean(currentSettingsUser?.emailVerified) &&
     isPlatformAdminEmail(currentSettingsUser?.email ?? '', getEnv().PLATFORM_ADMIN_EMAILS);
+  const selectedPlan = paidSignupPlan(query.plan) ?? (await readSignupPlanIntent());
 
   return {
     active,
@@ -752,6 +767,7 @@ async function loadTeamSettingsPage({
     placeholderInbound,
     billingDashboard,
     query,
+    selectedPlan,
     entitlementsPlanId,
     comp,
     showOperatorLink,

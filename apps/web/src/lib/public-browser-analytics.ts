@@ -18,6 +18,7 @@ const PUBLIC_ANALYTICS_CTA_VALUES = [
   'sign_in',
   'open_dashboard',
   'contact_support',
+  'contact_enterprise',
   'view_integrations',
   'view_how_it_works',
   'view_pricing',

@@ -7,6 +7,10 @@ import { canonicalHostRedirect } from '@/lib/canonical-host';
 import { connectionsLegacyRedirectLocation } from '@/lib/connections';
 import { contentSecurityPolicyHeaders } from '@/lib/content-security-policy';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
+import {
+  parseOnboardingSourceIntent,
+  stashOnboardingSourceIntentCookie,
+} from '@/lib/onboarding-source-intent';
 import { platformRequestGate } from '@/lib/platform-request-gate';
 import {
   hasOversizedContentLength,
@@ -14,6 +18,7 @@ import {
   REQUEST_BODY_LIMITS,
 } from '@/lib/request-body';
 import { protectSensitiveLinkResponse } from '@/lib/sensitive-links';
+import { applySignupPlanIntentFromRequest } from '@/lib/signup-plan-intent';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
 type ProxyHandler = (
@@ -44,6 +49,13 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
     }
   }
   await migrateLegacyActiveTeamCookie(request, response);
+  applySignupPlanIntentFromRequest(request, response);
+  if (request.nextUrl.pathname === '/sign-up') {
+    const sourceIntent = parseOnboardingSourceIntent(request.nextUrl.searchParams.get('source'));
+    if (sourceIntent) {
+      stashOnboardingSourceIntentCookie(response, sourceIntent);
+    }
+  }
   return response;
 }) as unknown as ProxyHandler;
 

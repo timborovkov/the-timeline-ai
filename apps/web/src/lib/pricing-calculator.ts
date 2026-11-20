@@ -11,7 +11,21 @@ import {
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
 import { cheapestPlanPreview, type SelfServePaidPlanId } from '@timeline/shared/billing/preview';
-import { estimateWebsiteUsage } from '@timeline/shared/websites/usage';
+import {
+  WEBSITE_SOURCE_UNITS_PER_PAGE,
+  estimateWebsiteUsage,
+} from '@timeline/shared/websites/usage';
+
+/** Catalog-backed unit rates shown as a short calculator assumption line. */
+export const CALCULATOR_ACTIVITY_ASSUMPTIONS = {
+  ordinaryAcceptedSourceUnits: 1,
+  websitePageSourceUnits: WEBSITE_SOURCE_UNITS_PER_PAGE,
+  emailUnitPerMessageOrRecipient: 1,
+} as const;
+
+export function formatUnitAssumption(): string {
+  return `Website pages count as ${CALCULATOR_ACTIVITY_ASSUMPTIONS.websitePageSourceUnits} source units; each email message or recipient as ${CALCULATOR_ACTIVITY_ASSUMPTIONS.emailUnitPerMessageOrRecipient}.`;
+}
 
 export const CALCULATOR_PLANS = ['payg', 'team', 'business'] as const;
 /** Exact fields may exceed slider ranges; this is the parse ceiling, not a billed cap. */
@@ -81,6 +95,33 @@ export const USAGE_FIELDS = [
 export type UsageKey = (typeof USAGE_FIELDS)[number]['key'];
 export type UsageDraft = Record<UsageKey, string>;
 export type UsageValues = Record<UsageKey, number>;
+
+export interface WebsiteDraft {
+  websites: number;
+  pages: number;
+  frequency: 'manual' | 'daily' | 'weekly';
+  manualScans: number;
+}
+
+const DEFAULT_WEBSITE_INPUT: WebsiteDraft = {
+  websites: 0,
+  pages: 5,
+  frequency: 'manual',
+  manualScans: 1,
+};
+
+export type UsagePresetId = 'client-delivery' | 'slack-engineering' | 'meeting-delivery';
+
+export interface UsagePreset {
+  id: UsagePresetId;
+  /** Short example label shown on the preset control. */
+  label: string;
+  /** How the team works — not a quote or offer. */
+  description: string;
+  usage: UsageDraft;
+  website: WebsiteDraft;
+}
+
 export const EXAMPLE_USAGE: UsageDraft = {
   members: '5',
   ai: '20',
@@ -89,9 +130,63 @@ export const EXAMPLE_USAGE: UsageDraft = {
   storage: '1',
   sources: '2000',
 };
+
+export const DEFAULT_USAGE_PRESET: UsagePreset = {
+  id: 'client-delivery',
+  label: 'Five-person client team',
+  description: 'Client delivery across shared email, documents, and a handful of calls.',
+  usage: EXAMPLE_USAGE,
+  website: DEFAULT_WEBSITE_INPUT,
+};
+
+export const USAGE_PRESETS: readonly UsagePreset[] = [
+  DEFAULT_USAGE_PRESET,
+  {
+    id: 'slack-engineering',
+    label: 'Slack-heavy engineering team',
+    description: 'Busy Slack channels, pull-request notes, and frequent Ask questions.',
+    usage: {
+      members: '12',
+      ai: '45',
+      meetings: '8',
+      email: '1500',
+      storage: '5',
+      sources: '25000',
+    },
+    website: DEFAULT_WEBSITE_INPUT,
+  },
+  {
+    id: 'meeting-delivery',
+    label: 'Meeting-heavy delivery team',
+    description: 'Lots of transcribed calls with lighter chat and a weekly site check.',
+    usage: {
+      members: '8',
+      ai: '35',
+      meetings: '40',
+      email: '2500',
+      storage: '3',
+      sources: '6000',
+    },
+    website: { websites: 1, pages: 5, frequency: 'weekly', manualScans: 1 },
+  },
+];
+
 const sourcesField = USAGE_FIELDS.find((field) => field.key === 'sources');
 if (!sourcesField) throw new Error('Accepted sources must remain a calculator field');
 export const SOURCES_FIELD = sourcesField;
+
+export function presetMatchingDraft(draft: UsageDraft, website: WebsiteDraft): UsagePreset | null {
+  return (
+    USAGE_PRESETS.find(
+      (preset) =>
+        USAGE_FIELDS.every((field) => preset.usage[field.key] === draft[field.key]) &&
+        preset.website.websites === website.websites &&
+        preset.website.pages === website.pages &&
+        preset.website.frequency === website.frequency &&
+        preset.website.manualScans === website.manualScans,
+    ) ?? null
+  );
+}
 
 export function parseUsage(draft: UsageDraft) {
   const values = {} as UsageValues;

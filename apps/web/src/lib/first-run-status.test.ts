@@ -6,6 +6,7 @@ const fakes = vi.hoisted(() => ({
   getFirstRun: vi.fn(),
   refreshDocumentCapture: vi.fn(),
   detectEmailArrival: vi.fn(),
+  detectConnectorArrival: vi.fn(),
   getFirstRunRecord: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   displayInboundEmail: vi.fn(),
@@ -23,7 +24,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/env'),
-  () => ({ getEnv: () => ({}) }),
+  async () => ({
+    ...(await import('@timeline/shared/env')),
+    getEnv: () => ({}),
+  }),
   () => import('@timeline/shared/env'),
 );
 await vi.mock(
@@ -41,6 +45,7 @@ await vi.mock(
         getFirstRun: fakes.getFirstRun,
         refreshDocumentCapture: fakes.refreshDocumentCapture,
         detectEmailArrival: fakes.detectEmailArrival,
+        detectConnectorArrival: fakes.detectConnectorArrival,
         getFirstRunRecord: fakes.getFirstRunRecord,
       },
     }),
