@@ -11,6 +11,7 @@ import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 
 function SubmitButton({ disabled = false, label }: { disabled?: boolean; label: string }) {
@@ -113,6 +114,12 @@ export function SignUpForm({
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}
       <input type="hidden" name="termsVersion" value={TERMS_VERSION} />
       <input type="hidden" name="privacyVersion" value={PRIVACY_VERSION} />
+      <input type="hidden" name="termsContentHash" value={legalDocumentHashes().termsContentHash} />
+      <input
+        type="hidden"
+        name="privacyContentHash"
+        value={legalDocumentHashes().privacyContentHash}
+      />
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input

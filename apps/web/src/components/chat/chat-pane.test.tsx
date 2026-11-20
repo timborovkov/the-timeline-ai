@@ -61,7 +61,7 @@ await vi.mock(
   () => import('@/components/chat/tool-step'),
 );
 
-const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement, StrictMode, useEffect } = await import('react');
 const { renderToStaticMarkup } = await import('react-dom/server');
@@ -194,7 +194,7 @@ describe('ChatPane', () => {
     expect(html).toContain('/app/documents/55555555-5555-4555-8555-555555555555');
   });
 
-  it('submits the Ask composer with Enter', async () => {
+  it('inserts line breaks, ignores composing Enter, and sends the full prompt with Enter', async () => {
     const user = userEvent.setup();
     const sendMessage = vi.fn();
     fakes.useChat.mockReturnValue({
@@ -215,12 +215,19 @@ describe('ChatPane', () => {
       }),
     );
 
-    await user.type(
-      screen.getByRole('textbox', { name: /Ask the timeline/ }),
-      'What changed?{Enter}',
-    );
+    const composer = screen.getByRole('textbox', { name: /Ask the timeline/ });
+    await user.type(composer, 'What changed?{Shift>}{Enter}{/Shift}Which blockers remain?');
 
-    expect(sendMessage).toHaveBeenCalledWith({ text: 'What changed?' });
+    fireEvent.keyDown(composer, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(composer, { key: 'Enter', keyCode: 229 });
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    await user.keyboard('{Enter}');
+
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledWith({
+      text: 'What changed?\nWhich blockers remain?',
+    });
   });
 
   it('consumes a Home handoff and sends it exactly once after SDK effect cleanup', async () => {

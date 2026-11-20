@@ -234,7 +234,11 @@ pair, with the user snapshot used as a fast current-state check. Direct updates
 and deletes are blocked while the user exists; privacy-driven deletion of the
 parent account may cascade the evidence. A team owner represents that they have
 authority to create and administer the team; a second mutable “team accepted”
-flag is not a substitute for each user's acceptance.
+flag is not a substitute for each user's acceptance. New acceptance records also
+carry SHA-256 digests for the rendered Terms and Privacy versions. The
+[versioned archive](../apps/web/src/lib/legal-archive/hashes.json) preserves the
+text and link destinations independently of site styling. Older records retain
+the version and request evidence captured when they were made.
 
 A material Terms update must bump its version and require renewed acceptance. A
 material Privacy Policy update must bump its version and require renewed
@@ -722,6 +726,13 @@ See [agent coworkers](agent-coworkers.md) for the implemented authority boundari
 Consent reporting edits are restricted to current owners/admins and committed atomically with the OAuth grant, authorization code and reporting audit. Member consent exposes only that member/client’s preference. Raw project scope is excluded from redirect parameters and issuance exception telemetry. Inherited or retained ongoing settings never expand capture permission.
 
 ## Email and source recovery
+
+Opening an email verification link displays a confirmation form. Submitting the
+form claims the token and verifies the account in one transaction. Team
+invitation lookups use digests. Admins can copy a link immediately after creation
+or request a fresh link through resend. The
+[security rollout guide](setup/security-hardening-rollout.md) owns migration,
+ingress checks and dated evidence requirements.
 
 Signed email webhooks queue provider IDs; workers admit senders before downloading bounded content/attachments. Recovery requires the scoped internal ingest principal and fails closed for restricted parents. Retry payloads are encrypted; temporary URLs and credentials do not enter source snapshots. Provider delivery/retention evidence remains in the provider register.
 

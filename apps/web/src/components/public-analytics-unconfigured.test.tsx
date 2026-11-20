@@ -31,7 +31,7 @@ await vi.mock(
 
 const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
-const { CookieSettingsButton, PublicAnalyticsBoundary } =
+const { CookieSettingsButton, PublicAnalyticsBoundary, PublicAnalyticsChoice } =
   await import('@/components/public-analytics');
 const { clearPublicAnalyticsConsent, readPublicAnalyticsConsent, writePublicAnalyticsConsent } =
   await import('@/lib/public-analytics-consent');
@@ -54,6 +54,7 @@ describe('PublicAnalyticsBoundary without a public PostHog key', () => {
 
     render(
       <PublicAnalyticsBoundary>
+        <PublicAnalyticsChoice />
         <CookieSettingsButton />
       </PublicAnalyticsBoundary>,
     );

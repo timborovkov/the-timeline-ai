@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
+import { legalDocumentHashes } from '@/lib/legal-document-hashes';
 /**
  * The legal gate must require an affirmative checkbox and commit acceptance
  * evidence before navigation. These tests cover the server-action boundary so
@@ -78,6 +80,9 @@ function form(values: Record<string, string> = {}): FormData {
   const result = new FormData();
   result.set('termsVersion', TERMS_VERSION);
   result.set('privacyVersion', PRIVACY_VERSION);
+  const { termsContentHash, privacyContentHash } = legalDocumentHashes();
+  result.set('termsContentHash', termsContentHash);
+  result.set('privacyContentHash', privacyContentHash);
   for (const [key, value] of Object.entries(values)) result.set(key, value);
   return result;
 }

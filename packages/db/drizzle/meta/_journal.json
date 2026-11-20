@@ -818,7 +818,21 @@
       "idx": 116,
       "version": "7",
       "when": 1795658400000,
-      "tag": "0110_workspace_follow_through",
+      "tag": "0109_invite_token_digests",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1795658500000,
+      "tag": "0110_legal_acceptance_content_hashes",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1795658600000,
+      "tag": "0111_workspace_follow_through",
       "breakpoints": true
     }
   ]
