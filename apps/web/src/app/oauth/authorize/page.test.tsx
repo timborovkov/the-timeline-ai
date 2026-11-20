@@ -151,9 +151,8 @@ describe('MCP OAuth consent page', () => {
   it('is uncached, does not leak request URLs as referrers, and cannot be framed', async () => {
     const config = readFileSync(new URL('../../../../next.config.ts', import.meta.url), 'utf8');
     const { baseContentSecurityPolicy } = await import('@/lib/content-security-policy');
-    const { sensitiveLinkHeaderSources, sensitiveLinkHeaders } = await import(
-      '@/lib/sensitive-links'
-    );
+    const { sensitiveLinkHeaderSources, sensitiveLinkHeaders } =
+      await import('@/lib/sensitive-links');
 
     expect(config).toContain('baseContentSecurityPolicy');
     expect(config).toContain('sensitiveLinkHeaderSources.map');
