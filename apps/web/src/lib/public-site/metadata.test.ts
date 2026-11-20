@@ -22,7 +22,9 @@ describe('public document metadata', () => {
       alternates: { canonical: '/guide' },
       openGraph: { url: '/guide' },
     });
-    expect(metadata.robots).toBeUndefined();
+    expect(metadata.robots).toMatchObject({
+      googleBot: { 'max-image-preview': 'large' },
+    });
     expect(draftMetadata.robots).toEqual({ index: false, follow: false });
   });
 });

@@ -1,4 +1,7 @@
 {
+  "apps/web/scripts/check-public-origin.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/agent/workspace-tools.test.ts": {
     "group": "integration"
   },
@@ -1326,6 +1329,9 @@
   "apps/web/src/lib/enterprise-enquiry.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/first-run-poll.test.ts": {
+    "group": "dom"
+  },
   "apps/web/src/lib/first-run-status.test.ts": {
     "group": "unit"
   },
@@ -1417,6 +1423,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/pricing-calculator.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/processing-health.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {
@@ -1531,7 +1540,7 @@
   "apps/web/src/lib/team-rename.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/telegram-bot-startup.test.ts": {
+  "apps/web/src/lib/telegram-bot-provision.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/timeline-controls.test.ts": {

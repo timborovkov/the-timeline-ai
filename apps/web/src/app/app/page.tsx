@@ -2,12 +2,13 @@ import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
 import { isConnectorStarterPath, type FirstRunState } from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
-import { withTeam } from '@timeline/shared/team-scope';
+import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
 import { Boxes, CircleAlert, CircleCheckBig, ListTodo } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
@@ -114,30 +115,30 @@ function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: s
   };
 }
 
-function firstRunStarterPath(row: FirstRunState | null) {
-  return row?.starterPath ?? null;
-}
-
-function homeTeamSlug(teamRow: { slug: string } | null, teamId: string) {
-  return teamRow?.slug ?? teamId;
-}
-
 const HOME_CAPTURE_PHASES = new Set<FirstRunState['phase']>(['processing', 'failed', 'record']);
 
-async function FirstRunHomeBanner(input: {
+async function FirstRunHomeBanner({
+  firstRun,
+  teamId,
+  userId,
+  teamSlug,
+  teamName,
+}: {
   firstRun: FirstRunState | null;
   teamId: string;
   userId: string;
   teamSlug: string;
+  teamName: string;
 }) {
-  const { firstRun } = input;
-  if (firstRun?.startedByUserId !== input.userId) return null;
+  if (firstRun?.startedByUserId !== userId) return null;
   if (!HOME_CAPTURE_PHASES.has(firstRun.phase)) return null;
 
   const status =
     firstRun.phase === 'failed'
       ? null
-      : await loadFirstRunStatus({ db, ...input, teamName: 'Your team' });
+      : await loadHomePanel('home_first_run_status', () =>
+          loadFirstRunStatus({ db, teamId, userId, teamSlug, teamName }),
+        );
   const current = status?.firstRun ?? firstRun;
   const captureKey = firstRunCaptureKey(current);
   if (!captureKey) return null;
@@ -162,92 +163,103 @@ async function FirstRunHomeBanner(input: {
   );
 }
 
-export default async function HomeDashboardPage() {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
+function HomePanelFallback() {
+  return <div aria-hidden="true" className="h-12 rounded-sm bg-surface-2" />;
+}
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const [role, calendarSettings] = await Promise.all([
-    scope.requireMembership(),
-    scope.calendar.getCalendarSettings(),
-  ]);
-  const isAdmin = role === 'owner' || role === 'admin';
-  const now = new Date();
-  const firstRunRow = await scope.onboarding.getFirstRun();
-  const starterPath = firstRunStarterPath(firstRunRow);
+function loadHomePanel<T>(operation: string, load: () => Promise<T>): Promise<T | null> {
+  return load().catch((err: unknown) => {
+    reportCaughtError(err, { surface: 'render', operation });
+    return null;
+  });
+}
 
-  const [
-    workAttention,
-    openObjectCounts,
-    eventPage,
-    members,
-    webDefault,
-    pinnedPage,
-    latestDigest,
-    connectionAttention,
-    initialChecklist,
-    recoverableJobs,
-    billingDashboard,
-    teamRow,
-    sourceDocuments,
-  ] = await Promise.all([
-    getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
-    getHomeOpenObjectCounts(scope),
-    scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT, to: now }),
-    scope.timeline.listMembers(),
-    scope.timeline.resolveVisibilityDefault('web'),
-    scope.pins.list({ limit: 6 }),
-    latestDailyDigest({ db, teamId: active.teamId, userId: session.user.id }),
-    scope.integrations.listConnectionAttention(),
-    loadOnboardingChecklistView({
-      teamId: active.teamId,
-      userId: session.user.id,
-      getChecklistState: () => scope.onboarding.getChecklistState(),
-      starterPath,
-    }).catch((err: unknown) => {
-      reportCaughtError(err, { surface: 'render', operation: 'onboarding_checklist' });
-      return null;
-    }),
-    isAdmin ? scope.jobRecovery.listRecoverableJobs() : Promise.resolve([]),
-    scope.billing.getDashboard({ canManageBilling: isAdmin }).catch((err: unknown) => {
-      reportCaughtError(err, { surface: 'render', operation: 'billing_dashboard' });
-      return null;
-    }),
-    db
-      .select({ slug: teams.slug, inboundEmail: teams.inboundEmail })
-      .from(teams)
-      .where(eq(teams.id, active.teamId))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-    scope.documents.listDocuments({ limit: 1 }),
-  ]);
-  const showPaygSuggestion = await shouldShowPaygSuggestion({
-    isAdmin,
-    dashboard: billingDashboard,
-    hasAnswer: () => scope.objects.hasCompletedChatAnswer(),
-  });
-  const inboundEmail = displayInboundEmail(teamRow);
-  const firstRunBanner = await FirstRunHomeBanner({
-    firstRun: firstRunRow,
-    teamId: active.teamId,
-    userId: session.user.id,
-    teamSlug: homeTeamSlug(teamRow, active.teamId),
-  });
-  const events = eventPage.items;
+type HomeTimezone = ReturnType<TeamScope['calendar']['getCalendarSettings']>;
+
+async function HomeWork({
+  scope,
+  now,
+  calendar,
+}: {
+  scope: TeamScope;
+  now: Date;
+  calendar: HomeTimezone;
+}) {
+  const result = await loadHomePanel('home_work', () =>
+    Promise.all([
+      calendar.then(({ defaultTimezone }) => getWorkAttentionSummary(scope, now, defaultTimezone)),
+      getHomeOpenObjectCounts(scope),
+    ]),
+  );
+  if (!result) return null;
+  const [workAttention, openObjectCounts] = result;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
   const openObjectTotal = homeOpenObjectTotal(openObjectCounts);
+  return (
+    <HomeAttention
+      title="Your work"
+      groups={[
+        {
+          href: '/app/approvals',
+          label: 'Pending approvals',
+          singularLabel: 'Pending approval',
+          count: pendingApprovals,
+          action: 'Review proposals',
+          icon: <CircleCheckBig aria-hidden="true" />,
+        },
+        {
+          href: '/app/work',
+          label: 'Items needing attention',
+          singularLabel: 'Item needing attention',
+          count: urgentWorkCount,
+          action: 'Open work queue',
+          icon: <CircleAlert aria-hidden="true" />,
+          danger: true,
+        },
+        {
+          href: '/app/tasks',
+          label: 'Open tasks',
+          singularLabel: 'Open task',
+          count: openObjectCounts.task,
+          action: 'Open tasks',
+          icon: <ListTodo aria-hidden="true" />,
+        },
+        {
+          href: '/app/objects',
+          label: 'Open objects',
+          singularLabel: 'Open object',
+          count: openObjectTotal,
+          action: 'Browse objects',
+          icon: <Boxes aria-hidden="true" />,
+        },
+      ]}
+    />
+  );
+}
 
+type HomeEvents = ReturnType<TeamScope['timeline']['listEventsPage']>;
+
+async function loadRecentActivity(
+  scope: TeamScope,
+  eventsPage: HomeEvents,
+  calendar: HomeTimezone,
+) {
+  const [{ items: events }, members, { defaultTimezone: timezone }, role] = await Promise.all([
+    eventsPage,
+    scope.timeline.listMembers(),
+    calendar,
+    scope.requireMembership(),
+  ]);
+  const isAdmin = role === 'owner' || role === 'admin';
   const [impactItems, artifactClusters, audioUrlMap, capturedFiles] = await Promise.all([
     scope.timeline.listImpactItems(events.map((event) => event.id)),
     scope.timeline.listArtifactClusters(events.map((event) => event.id)),
     signAudio(events),
     listTimelineCapturedFilesByEventId({
       db,
-      teamId: active.teamId,
-      userId: session.user.id,
+      teamId: scope.teamId,
+      userId: scope.userId,
       eventIds: events.map((event) => event.id),
     }),
   ]);
@@ -269,13 +281,231 @@ export default async function HomeDashboardPage() {
   const homeMoments = buildTimelineMoments(events, userMap, {
     impactItemsByEventId: impactItems,
     artifactClustersByEventId: artifactClusters,
-    timezone: calendarSettings.defaultTimezone,
+    timezone: timezone,
   });
   const homeMomentPinState = await scope.pins.isPinnedMany(
     homeMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
   );
-  const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
+
+  return {
+    events,
+    members,
+    timezone,
+    isAdmin,
+    impactItems,
+    artifactClusters,
+    audioUrlMap,
+    capturedFiles,
+    userRows,
+    userMap,
+    homeMoments,
+    homeMomentPinState,
+  };
+}
+
+async function HomeRecentActivity({
+  scope,
+  eventsPage,
+  calendar,
+}: {
+  scope: TeamScope;
+  eventsPage: HomeEvents;
+  calendar: HomeTimezone;
+}) {
+  const result = await loadHomePanel('home_recent_activity', () =>
+    loadRecentActivity(scope, eventsPage, calendar),
+  );
+  if (!result) return null;
+  const {
+    events,
+    members,
+    timezone,
+    isAdmin,
+    impactItems,
+    artifactClusters,
+    audioUrlMap,
+    capturedFiles,
+    userRows,
+    userMap,
+    homeMoments,
+    homeMomentPinState,
+  } = result;
   const emptyTimeline = homeEmptyTimelineCopy(events.length === 0);
+  return (
+    <section className="space-y-4 border-t border-border pt-6" aria-label="Recent moments">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">Recent activity</h2>
+        <Link
+          href="/app/timeline"
+          className="inline-flex min-h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          View timeline →
+        </Link>
+      </div>
+      <TimelineFeed
+        initialPage={{
+          items: events.map((event) => ({
+            ...event,
+            occurredAt: event.occurredAt.toISOString(),
+            createdAt: event.createdAt.toISOString(),
+          })),
+          nextCursor: null,
+          pinnedMomentIds: homeMoments.flatMap((moment) =>
+            homeMomentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
+          ),
+          authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
+          audioUrls: Object.fromEntries(audioUrlMap),
+          impactItems,
+          artifactClusters,
+          capturedFiles,
+        }}
+        filters={{}}
+        currentUserId={scope.userId}
+        isAdmin={isAdmin}
+        members={members.map((member) => ({
+          id: member.userId,
+          label: displayMemberLabel(userMap.get(member.userId)),
+        }))}
+        compact
+        maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
+        live={false}
+        timezone={timezone}
+        emptyLabel={emptyTimeline.label}
+        emptyAction={{
+          href: '/app/timeline',
+          label: 'Open timeline',
+          body: emptyTimeline.actionBody,
+        }}
+      />
+    </section>
+  );
+}
+
+async function HomeDigest({ scope }: { scope: TeamScope }) {
+  const digest = await loadHomePanel('home_digest', () =>
+    latestDailyDigest({ db, teamId: scope.teamId, userId: scope.userId }),
+  );
+  return <DailyDigestBlock digest={digest?.payload as DailyDigestPayload | undefined} />;
+}
+
+async function HomePins({ scope }: { scope: TeamScope }) {
+  const page = await loadHomePanel('home_pins', () => scope.pins.list({ limit: 3 }));
+  return page && <PinnedWorkspacePreview initialItems={page.items} />;
+}
+
+async function HomeEmail({ teamId }: { teamId: string }) {
+  const team = await loadHomePanel('home_email', async () => {
+    const [row] = await db
+      .select({ slug: teams.slug, inboundEmail: teams.inboundEmail })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    return row ?? null;
+  });
+  return <HomeTeamEmail inboundEmail={displayInboundEmail(team)} />;
+}
+
+async function HomeProcessing({ scope, isAdmin }: { scope: TeamScope; isAdmin: boolean }) {
+  const [jobs, connections] = await Promise.all([
+    isAdmin
+      ? loadHomePanel('home_recoverable_jobs', () => scope.jobRecovery.listRecoverableJobs())
+      : null,
+    loadHomePanel('home_connections', () => scope.integrations.listConnectionAttention()),
+  ]);
+  return (
+    <HomeProcessingAttention
+      isAdmin={isAdmin}
+      recoverableJobs={jobs?.length ?? 0}
+      connectionIssues={connections?.length ?? 0}
+    />
+  );
+}
+
+type HomeBillingData = Promise<Awaited<ReturnType<TeamScope['billing']['getDashboard']>> | null>;
+
+async function HomeBillingRestriction({ billing }: { billing: HomeBillingData }) {
+  const dashboard = await billing;
+  return (
+    dashboard?.restrictionReason && (
+      <BillingRestrictionNotice reason={dashboard.restrictionReason} />
+    )
+  );
+}
+
+async function HomeBillingNudges({
+  scope,
+  billing,
+  isAdmin,
+}: {
+  scope: TeamScope;
+  billing: HomeBillingData;
+  isAdmin: boolean;
+}) {
+  const dashboard = await billing;
+  const showPaygSuggestion = await shouldShowPaygSuggestion({
+    isAdmin,
+    dashboard,
+    hasAnswer: () => scope.objects.hasCompletedChatAnswer(),
+  });
+  return (
+    <>
+      {isAdmin && dashboard?.nudge ? <BillingUpgradeNudge nudge={dashboard.nudge} /> : null}
+      {showPaygSuggestion ? (
+        <PaygValueNudge storageKey={`tl-coachmark:payg:${scope.userId}:${scope.teamId}`} />
+      ) : null}
+    </>
+  );
+}
+
+type HomeChecklistData = Promise<Awaited<ReturnType<typeof loadOnboardingChecklistView>> | null>;
+
+async function HomeChecklist({ data, agent }: { data: HomeChecklistData; agent?: boolean }) {
+  const initialData = await data;
+  return agent ? (
+    <ConnectAgentOnboardingCard initialData={initialData} />
+  ) : (
+    <OnboardingChecklist initialData={initialData} />
+  );
+}
+
+export default async function HomeDashboardPage() {
+  const session = await auth();
+  if (!session?.user) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const [role, webDefault, firstRun] = await Promise.all([
+    scope.requireMembership(),
+    scope.timeline.resolveVisibilityDefault('web'),
+    scope.onboarding.getFirstRun(),
+  ]);
+  const isAdmin = role === 'owner' || role === 'admin';
+  const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
+  const now = new Date();
+  const calendar = scope.calendar.getCalendarSettings();
+  const eventsPage = scope.timeline.listEventsPage({ limit: HOME_TIMELINE_EVENT_LIMIT, to: now });
+  const hasSources = eventsPage
+    .then(
+      ({ items }) =>
+        items.length > 0 ||
+        scope.documents.listDocuments({ limit: 1 }).then((docs) => docs.length > 0),
+    )
+    .catch((err: unknown) => {
+      reportCaughtError(err, { surface: 'render', operation: 'home_ask_sources' });
+      return true;
+    });
+  const billing = loadHomePanel('billing_dashboard', () =>
+    scope.billing.getDashboard({ canManageBilling: isAdmin }),
+  );
+  const checklist = loadHomePanel('onboarding_checklist', () =>
+    loadOnboardingChecklistView({
+      teamId: active.teamId,
+      userId: session.user.id,
+      getChecklistState: () => scope.onboarding.getChecklistState(),
+      starterPath: firstRun?.starterPath ?? null,
+    }),
+  );
 
   return (
     <div data-app-width="overview" className="home-overview space-y-8">
@@ -302,125 +532,56 @@ export default async function HomeDashboardPage() {
             </CaptureDialog>
           </div>
         </div>
-        <HomeAskComposer
-          teamId={active.teamId}
-          hasSources={events.length > 0 || sourceDocuments.length > 0}
-        />
+        <HomeAskComposer teamId={active.teamId} hasSources={hasSources} />
       </header>
-      {firstRunBanner}
-      {billingDashboard?.restrictionReason ? (
-        <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
-      ) : null}
 
-      <OnboardingChecklist initialData={initialChecklist} />
+      <Suspense fallback={null}>
+        <FirstRunHomeBanner
+          firstRun={firstRun}
+          teamId={active.teamId}
+          userId={session.user.id}
+          teamSlug={active.teamSlug}
+          teamName={active.teamName}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <HomeBillingRestriction billing={billing} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <HomeChecklist data={checklist} />
+      </Suspense>
 
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-8">
-          <HomeAttention
-            title="Your work"
-            groups={[
-              {
-                href: '/app/approvals',
-                label: 'Pending approvals',
-                singularLabel: 'Pending approval',
-                count: pendingApprovals,
-                action: 'Review proposals',
-                icon: <CircleCheckBig aria-hidden="true" />,
-              },
-              {
-                href: '/app/work',
-                label: 'Items needing attention',
-                singularLabel: 'Item needing attention',
-                count: urgentWorkCount,
-                action: 'Open work queue',
-                icon: <CircleAlert aria-hidden="true" />,
-                danger: true,
-              },
-              {
-                href: '/app/tasks',
-                label: 'Open tasks',
-                singularLabel: 'Open task',
-                count: openObjectCounts.task,
-                action: 'Open tasks',
-                icon: <ListTodo aria-hidden="true" />,
-              },
-              {
-                href: '/app/objects',
-                label: 'Open objects',
-                singularLabel: 'Open object',
-                count: openObjectTotal,
-                action: 'Browse objects',
-                icon: <Boxes aria-hidden="true" />,
-              },
-            ]}
-          />
-
-          <section className="space-y-4 border-t border-border pt-6" aria-label="Recent moments">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold">Recent activity</h2>
-              <Link
-                href="/app/timeline"
-                className="inline-flex min-h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                View timeline →
-              </Link>
-            </div>
-            <TimelineFeed
-              initialPage={{
-                items: events.map((event) => ({
-                  ...event,
-                  occurredAt: event.occurredAt.toISOString(),
-                  createdAt: event.createdAt.toISOString(),
-                })),
-                nextCursor: null,
-                pinnedMomentIds: homeMoments.flatMap((moment) =>
-                  homeMomentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
-                ),
-                authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
-                audioUrls: Object.fromEntries(audioUrlMap),
-                impactItems,
-                artifactClusters,
-                capturedFiles,
-              }}
-              filters={{}}
-              currentUserId={session.user.id}
-              isAdmin={isAdmin}
-              members={members.map((member) => ({
-                id: member.userId,
-                label: displayMemberLabel(userMap.get(member.userId)),
-              }))}
-              compact
-              maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
-              live={false}
-              timezone={calendarSettings.defaultTimezone}
-              emptyLabel={emptyTimeline.label}
-              emptyAction={{
-                href: '/app/timeline',
-                label: 'Open timeline',
-                body: emptyTimeline.actionBody,
-              }}
-            />
-          </section>
-          <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
+          <Suspense fallback={<HomePanelFallback />}>
+            <HomeWork scope={scope} now={now} calendar={calendar} />
+          </Suspense>
+          <Suspense fallback={<HomePanelFallback />}>
+            <HomeRecentActivity scope={scope} eventsPage={eventsPage} calendar={calendar} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <HomeDigest scope={scope} />
+          </Suspense>
         </div>
         <aside
           aria-label="Workspace context"
           className="min-w-0 space-y-6 border-t border-border pt-6 xl:border-t-0 xl:border-l xl:pl-6 xl:pt-0"
         >
-          <PinnedWorkspacePreview initialItems={pinnedPage.items.slice(0, 3)} />
-          <ConnectAgentOnboardingCard initialData={initialChecklist} />
-          <HomeTeamEmail inboundEmail={inboundEmail} />
-          <HomeProcessingAttention
-            isAdmin={isAdmin}
-            recoverableJobs={recoverableJobs.length}
-            connectionIssues={connectionAttention.length}
-          />
-          {isAdmin && billingDashboard?.nudge ? (
-            <BillingUpgradeNudge nudge={billingDashboard.nudge} />
-          ) : null}
-          {showPaygSuggestion ? (
-            <PaygValueNudge storageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`} />
-          ) : null}
+          <Suspense fallback={<HomePanelFallback />}>
+            <HomePins scope={scope} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <HomeChecklist data={checklist} agent />
+          </Suspense>
+          <Suspense fallback={null}>
+            <HomeEmail teamId={active.teamId} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <HomeProcessing scope={scope} isAdmin={isAdmin} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <HomeBillingNudges scope={scope} billing={billing} isAdmin={isAdmin} />
+          </Suspense>
         </aside>
       </div>
     </div>

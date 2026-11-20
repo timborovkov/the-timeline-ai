@@ -5,7 +5,6 @@ import {
   type FirstRunPhase,
   type FirstRunScanFailureReason,
   type FirstRunState,
-  type NamedProcessingStep,
   type OnboardingSourceIntent,
   type TeamWorkStyle,
   type WebsiteSubject,
@@ -15,20 +14,7 @@ import { ChooserScreen } from '@/components/onboarding/chooser-screen';
 import { FailedScanScreen } from '@/components/onboarding/failed-scan-screen';
 import { ProcessingScreen } from '@/components/onboarding/processing-screen';
 import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
-
-export interface FirstRunStatusPayload {
-  firstRun: FirstRunState | null;
-  inboundEmail: string | null;
-  teamName: string;
-  /** Workspace shown on Welcome; null when deferred solo create has no team yet. */
-  teamId: string | null;
-  record: {
-    title: string;
-    meta: string;
-    processingSteps: NamedProcessingStep[];
-    emailArrived: boolean;
-  } | null;
-}
+import type { FirstRunStatusPayload } from '@/lib/first-run-poll';
 
 function processingTitle(status: FirstRunStatusPayload): string {
   const path = status.firstRun?.starterPath;
@@ -45,20 +31,33 @@ function processingTitle(status: FirstRunStatusPayload): string {
   return 'Working on it';
 }
 
+function processingDescription(
+  starterPath: FirstRunState['starterPath'] | null | undefined,
+  connectorWaiting: OnboardingSourceIntent | null,
+): string {
+  if (starterPath === 'email') {
+    return 'Send one real thread to your team address. This screen opens the record as soon as it arrives.';
+  }
+  if (connectorWaiting) {
+    return 'Finish connecting, then send one message. This screen opens the record as soon as it lands.';
+  }
+  return 'You can leave this screen. The record also appears on Home when it is ready.';
+}
+
 function SetupProcessingBody({
   status,
   captureUrl,
-  onLeave,
   firstRun,
   telegramBotUsername,
   onSwitch,
+  onHome,
 }: {
   status: FirstRunStatusPayload;
   captureUrl: string | null;
-  onLeave: () => void;
   firstRun: FirstRunState | null | undefined;
   telegramBotUsername: string | null;
   onSwitch: () => void;
+  onHome: () => void;
 }) {
   const connectorWaiting =
     isConnectorStarterPath(firstRun?.starterPath) && !status.record?.emailArrived
@@ -67,7 +66,7 @@ function SetupProcessingBody({
   return (
     <ProcessingScreen
       title={processingTitle(status)}
-      description="You can keep working on Home while this finishes. Open your capture status there to check progress."
+      description={processingDescription(firstRun?.starterPath, connectorWaiting)}
       startedAt={firstRun?.starterSelectedAt ?? null}
       captureUrl={captureUrl}
       steps={status.record?.processingSteps ?? []}
@@ -76,7 +75,7 @@ function SetupProcessingBody({
       connectorWaiting={connectorWaiting}
       telegramBotUsername={telegramBotUsername}
       onSwitch={onSwitch}
-      onHome={onLeave}
+      onHome={onHome}
     />
   );
 }
@@ -84,7 +83,6 @@ function SetupProcessingBody({
 export function SetupFlowBody({
   status,
   captureUrl,
-  onLeave,
   phase,
   firstRun,
   preferredSource,
@@ -97,12 +95,12 @@ export function SetupFlowBody({
   onSlack,
   onTelegram,
   onSkip,
+  onHome,
   onReturnToChooser,
   onPickEmail,
 }: {
   status: FirstRunStatusPayload;
   captureUrl: string | null;
-  onLeave: () => void;
   phase: FirstRunPhase;
   firstRun: FirstRunState | null | undefined;
   preferredSource: OnboardingSourceIntent | null;
@@ -119,6 +117,7 @@ export function SetupFlowBody({
   onSlack?: () => Promise<void>;
   onTelegram?: () => Promise<void>;
   onSkip: () => Promise<void>;
+  onHome: () => void;
   onReturnToChooser: () => void;
   onPickEmail: () => void;
 }) {
@@ -156,10 +155,10 @@ export function SetupFlowBody({
       <SetupProcessingBody
         status={status}
         captureUrl={captureUrl}
-        onLeave={onLeave}
         firstRun={firstRun}
         telegramBotUsername={telegramBotUsername}
         onSwitch={onReturnToChooser}
+        onHome={onHome}
       />
     );
   }

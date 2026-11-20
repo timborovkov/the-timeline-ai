@@ -1,8 +1,4 @@
-import {
-  SETUP_SHELL_PHASES,
-  type FirstRunPhase,
-  type FirstRunState,
-} from '@timeline/shared/onboarding';
+import { SETUP_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboarding';
 import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
@@ -14,6 +10,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { defaultSoloTeamName } from '@/lib/default-team';
 import { firstRunCaptureHref, firstRunCaptureKey } from '@/lib/first-run-links';
+import { firstRunDestination } from '@/lib/first-run-poll';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 import { resolveOnboardingConnectors } from '@/lib/onboarding-connectors';
 import {
@@ -39,14 +36,6 @@ function prefillTeamName(
   return defaultSoloTeamName('team');
 }
 
-function redirectForLaterPhase(phase: FirstRunPhase): never {
-  if (phase === 'record') redirect('/app/onboarding/record');
-  if (phase === 'ask') redirect('/app/chat');
-  if (phase === 'approve') redirect('/app/approvals');
-  if (phase === 'live') redirect('/app/onboarding/live');
-  redirect('/app');
-}
-
 type SetupCaptureView =
   | { kind: 'unavailable' }
   | { kind: 'redirect'; href: string }
@@ -66,7 +55,7 @@ function setupCaptureView(
     return { kind: 'redirect', href: firstRunCaptureHref(key, 'record') };
   }
   if (!SETUP_SHELL_PHASES.includes(firstRun.phase)) {
-    redirectForLaterPhase(firstRun.phase);
+    redirect(firstRunDestination(firstRun.phase));
   }
   const resumeHref = key ? firstRunCaptureHref(key) : null;
   return resumeHref && capture === undefined

@@ -3,7 +3,7 @@
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import { ChevronLeft, ChevronRight, ExternalLink, LifeBuoy } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 
 import { Logo, Wordmark } from '@/components/brand/logo';
 import type { NavBadgeMap } from '@/components/nav-items';
@@ -20,9 +20,9 @@ interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
-  badges?: NavBadgeMap;
+  badges?: NavBadgeMap | Promise<NavBadgeMap>;
   initialExpanded: boolean;
-  billingSummary?: SidebarBillingSummary | null;
+  billingSummary?: SidebarBillingSummary | null | Promise<SidebarBillingSummary | null>;
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
@@ -114,15 +114,17 @@ export function DesktopSidebar({
       </div>
 
       <div className="min-h-0 w-full flex-1 overflow-y-auto">
-        <RailNav role={active.role} expanded={expanded} badges={badges} />
+        <Suspense fallback={<RailNav role={active.role} expanded={expanded} />}>
+          <RailNav role={active.role} expanded={expanded} badges={badges} />
+        </Suspense>
       </div>
 
       <div
         className={cn('flex shrink-0 flex-col gap-3 pt-3', expanded ? 'w-full' : 'items-center')}
       >
-        {billingSummary ? (
+        <Suspense fallback={null}>
           <SidebarBillingUsage summary={billingSummary} expanded={expanded} />
-        ) : null}
+        </Suspense>
         <Tooltip>
           <TooltipTrigger asChild>
             <Link

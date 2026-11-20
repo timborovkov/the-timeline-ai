@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { use } from 'react';
 
 import {
   formatNavBadge,
@@ -23,12 +24,13 @@ const EMPTY_BADGES: NavBadgeMap = {};
 export function RailNav({
   role,
   expanded = false,
-  badges = EMPTY_BADGES,
+  badges: source = EMPTY_BADGES,
 }: {
   role: TeamMembership['role'];
   expanded?: boolean;
-  badges?: NavBadgeMap;
+  badges?: NavBadgeMap | Promise<NavBadgeMap>;
 }) {
+  const badges = 'then' in source ? use(source) : source;
   const pathname = usePathname();
   return (
     <nav

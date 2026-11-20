@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  isConnectorStarterPath,
   setupProgressLabel,
   type FirstRunPhase,
   type OnboardingSourceIntent,
@@ -22,10 +21,13 @@ import {
   skipFirstRunAction,
   submitWorkStyleAction,
 } from '@/app/actions/first-run';
-import { SetupFlowBody, type FirstRunStatusPayload } from '@/components/onboarding/setup-flow-body';
+import { SetupFlowBody } from '@/components/onboarding/setup-flow-body';
 import { SetupShell } from '@/components/onboarding/setup-shell';
-
-export type { FirstRunStatusPayload };
+import {
+  firstRunPollingNeeded,
+  pollFirstRun,
+  type FirstRunStatusPayload,
+} from '@/lib/first-run-poll';
 
 async function uploadOnboardingDocument(file: File): Promise<void> {
   const contentType = file.type || 'application/octet-stream';
@@ -72,8 +74,13 @@ export function SetupFlow({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const intentStarted = useRef(false);
-  const leaving = useRef(false);
-  const firstRun = initialStatus.firstRun;
+  const stopPolling = useRef<(() => void) | null>(null);
+  const [polled, setPolled] = useState<{
+    baseline: FirstRunStatusPayload;
+    status: FirstRunStatusPayload;
+  } | null>(null);
+  const status = polled?.baseline === initialStatus ? polled.status : initialStatus;
+  const firstRun = status.firstRun;
   const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
   const shouldAutoStart =
     phase === 'choose' && preferredSource !== null && connectors.includes(preferredSource);
@@ -82,6 +89,7 @@ export function SetupFlow({
   const [autoStartSettled, setAutoStartSettled] = useState(!shouldAutoStart);
 
   function recover(action: () => Promise<void>) {
+    stopPolling.current?.();
     setError(null);
     startTransition(async () => {
       try {
@@ -92,24 +100,25 @@ export function SetupFlow({
     });
   }
 
-  const stepsFailed = (initialStatus.record?.processingSteps ?? []).some(
-    (step) => step.status === 'failed',
-  );
-  const waitingForCapture =
-    phase === 'processing' &&
-    (firstRun?.starterPath === 'email' || isConnectorStarterPath(firstRun?.starterPath)) &&
-    !initialStatus.record?.emailArrived;
+  const shouldPoll = firstRunPollingNeeded(status);
   const saving = pending || (shouldAutoStart && !autoStartSettled);
 
   useEffect(() => {
-    if (saving || ((phase !== 'processing' || stepsFailed) && !waitingForCapture)) return;
-    const id = setInterval(() => {
-      if (!leaving.current && document.visibilityState === 'visible') router.refresh();
-    }, 2500);
-    return () => {
-      clearInterval(id);
-    };
-  }, [phase, router, saving, stepsFailed, waitingForCapture]);
+    if (!shouldPoll || saving) return;
+    const stop = pollFirstRun(initialStatus, {
+      update: (next) => {
+        setPolled({ baseline: initialStatus, status: next });
+      },
+      navigate: (destination) => {
+        router.replace(destination);
+      },
+      refresh: () => {
+        router.refresh();
+      },
+    });
+    stopPolling.current = stop;
+    return stop;
+  }, [initialStatus, router, saving, shouldPoll]);
 
   useEffect(() => {
     setAutoStartSettled(!shouldAutoStart);
@@ -210,11 +219,8 @@ export function SetupFlow({
       ) : null}
       <fieldset disabled={saving} aria-busy={saving} className="min-w-0">
         <SetupFlowBody
-          status={initialStatus}
+          status={status}
           captureUrl={captureUrl}
-          onLeave={() => {
-            leaving.current = true;
-          }}
           phase={phase}
           firstRun={firstRun}
           preferredSource={preferredSource}
@@ -227,6 +233,10 @@ export function SetupFlow({
           onSlack={connectors.includes('slack') ? pickSlack : undefined}
           onTelegram={connectors.includes('telegram') ? pickTelegram : undefined}
           onSkip={skip}
+          onHome={() => {
+            stopPolling.current?.();
+            router.push('/app');
+          }}
           onReturnToChooser={() => {
             recover(returnToChooser);
           }}

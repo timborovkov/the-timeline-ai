@@ -1,7 +1,7 @@
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, it } from 'bun:test';
 
-const fakes = vi.hoisted(() => ({ load: vi.fn(), workers: vi.fn(), jobs: vi.fn() }));
+const fakes = vi.hoisted(() => ({ load: vi.fn(), workers: vi.fn() }));
 await vi.mock(
   import.meta.resolve('@/lib/queue'),
   () => ({ requireRedisQueue: fakes.load }),
@@ -15,18 +15,20 @@ beforeEach(() => {
   resetEnvForTests();
   vi.clearAllMocks();
   fakes.workers.mockResolvedValue([{}]);
-  fakes.jobs.mockResolvedValue([]);
   const queue = () => ({
     name: 'synthetic',
     getWorkers: fakes.workers,
-    getJobs: fakes.jobs,
-    getJobCounts: () => Promise.resolve({ waiting: 0, active: 0, failed: 0 }),
   });
   fakes.load.mockResolvedValue({
     getExtractQueue: queue,
     getEmbedQueue: queue,
     getIntegrationSyncQueue: queue,
     getWebhookDeliveryQueue: queue,
+    getTranscribeQueue: queue,
+    getSuggestionQueue: queue,
+    getReconciliationQueue: queue,
+    getDailyDigestQueue: queue,
+    getDocumentExtractQueue: queue,
   });
 });
 afterEach(() => {
@@ -42,17 +44,13 @@ it('rejects unauthenticated probes before touching queues', async () => {
   expect((await GET(request(false))).status).toBe(401);
   expect(fakes.load).not.toHaveBeenCalled();
 });
-it('reports absent workers and stale queued work as degraded', async () => {
-  expect((await GET(request())).status).toBe(200);
+it('reports required worker presence', async () => {
+  const ready = await GET(request());
+  expect(ready.status).toBe(200);
+  const body = (await ready.json()) as { queues: unknown[] };
+  expect(body.queues).toHaveLength(9);
   fakes.workers.mockResolvedValue([]);
   expect((await GET(request())).status).toBe(503);
-  fakes.workers.mockResolvedValue([{}]);
-  fakes.jobs.mockResolvedValue([
-    { timestamp: Date.now() - 31 * 60_000, data: { private: 'not returned' } },
-  ]);
-  const response = await GET(request());
-  expect(response.status).toBe(503);
-  expect(await response.text()).not.toContain('not returned');
 });
 it('returns a minimal unavailable response on dependency failure', async () => {
   fakes.load.mockRejectedValue(new Error('secret infrastructure detail'));

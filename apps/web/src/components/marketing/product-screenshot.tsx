@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type {
@@ -15,8 +16,19 @@ const PUBLIC_ROOTS = [
   join(process.cwd(), 'apps/web/public'),
 ] as const;
 
-function marketingScreenshotFileExists(file: string): boolean {
-  return PUBLIC_ROOTS.some((root) => existsSync(join(root, 'marketing/screenshots', file)));
+const revisions = new Map<string, { modified: number; size: number; hash: string }>();
+
+function marketingScreenshotRevision(file: string): string | undefined {
+  const path = PUBLIC_ROOTS.map((root) => join(root, 'marketing/screenshots', file)).find(
+    existsSync,
+  );
+  if (!path) return undefined;
+  const { mtimeMs, size } = statSync(path);
+  const cached = revisions.get(path);
+  if (cached?.modified === mtimeMs && cached.size === size) return cached.hash;
+  const hash = createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 12);
+  revisions.set(path, { modified: mtimeMs, size, hash });
+  return hash;
 }
 
 export function MarketingProductScreenshot({
@@ -28,6 +40,7 @@ export function MarketingProductScreenshot({
   frame = 'landscape',
   callouts,
   chrome = 'full',
+  sizes,
 }: {
   file: string;
   alt: string;
@@ -37,10 +50,12 @@ export function MarketingProductScreenshot({
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
   chrome?: 'full' | 'media';
+  sizes?: string;
 }) {
-  const present = Object.values(marketingScreenshotVariants(file)).every(
-    marketingScreenshotFileExists,
-  );
+  const variants = marketingScreenshotVariants(file);
+  const light = marketingScreenshotRevision(variants.light);
+  const dark = marketingScreenshotRevision(variants.dark);
+  const present = Boolean(light && dark);
   const portrait = frame === 'portrait';
 
   return (
@@ -56,7 +71,7 @@ export function MarketingProductScreenshot({
           portrait ? 'mx-auto aspect-[390/844] w-full max-w-sm' : 'aspect-[16/10]',
         )}
       >
-        {present ? (
+        {light && dark ? (
           <>
             <div
               data-screenshot-pending
@@ -65,7 +80,14 @@ export function MarketingProductScreenshot({
             >
               <p className="text-xs text-fg-muted">Loading screenshot</p>
             </div>
-            <ThemedScreenshotImage file={file} alt={alt} portrait={portrait} priority={priority} />
+            <ThemedScreenshotImage
+              file={file}
+              alt={alt}
+              portrait={portrait}
+              priority={priority}
+              sizes={sizes}
+              revisions={{ light, dark }}
+            />
           </>
         ) : (
           <div

@@ -1,7 +1,7 @@
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 import type { ReactNode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToReadableStream } from 'react-dom/server';
 
 // Home must compose only actionable attention with deliberately bounded, static previews.
 const fakes = vi.hoisted(() => ({
@@ -287,6 +287,18 @@ await vi.mock(
 
 const { default: HomeDashboardPage } = await import('@/app/app/page');
 
+async function renderHome() {
+  const errors: unknown[] = [];
+  const stream = await renderToReadableStream(await HomeDashboardPage(), {
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const html = await new Response(stream).text();
+  if (errors.length > 0) throw errors[0];
+  return html;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.captureVisibility = null;
@@ -337,7 +349,7 @@ beforeEach(() => {
 
 describe('HomeDashboardPage', () => {
   it('composes the caught-up state without zero-count attention links for a member', async () => {
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('Acme Labs');
     expect(html).toContain('data-testid="home-onboarding"');
@@ -365,7 +377,7 @@ describe('HomeDashboardPage', () => {
     fakes.listRecoverableJobs.mockResolvedValue([{}, {}]);
     fakes.listConnectionAttention.mockResolvedValue([{}, {}]);
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('href="/app/approvals"');
     expect(html).toContain('href="/app/work"');
@@ -388,7 +400,7 @@ describe('HomeDashboardPage', () => {
       deal: 0,
     });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('href="/app/tasks"');
     expect(html).toContain('open tasks');
@@ -404,9 +416,9 @@ describe('HomeDashboardPage', () => {
   });
 
   it('keeps Home previews bounded and its recent-moments feed static', async () => {
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
-    expect(fakes.listPins).toHaveBeenCalledWith({ limit: 6 });
+    expect(fakes.listPins).toHaveBeenCalledWith({ limit: 3 });
     const eventFilters = fakes.listEventsPage.mock.calls[0]?.[0] as { limit: number; to: Date };
     expect(eventFilters.limit).toBe(16);
     expect(eventFilters.to).toBeInstanceOf(Date);
@@ -424,24 +436,20 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('View timeline');
   });
 
-  it('keeps email in workspace context after the primary work content', async () => {
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+  it('renders workspace email and primary activity in independently streamed sections', async () => {
+    const html = await renderHome();
 
     expect(fakes.homeTeamEmail).toBe('acme@inbound.timeline.dev');
     expect(html).toContain('data-testid="home-team-email"');
-    expect(html.indexOf('data-testid="home-pins"')).toBeLessThan(
-      html.indexOf('data-testid="home-team-email"'),
-    );
-    expect(html.indexOf('aria-label="Recent moments"')).toBeLessThan(
-      html.indexOf('data-testid="home-team-email"'),
-    );
+    expect(html).toContain('data-testid="home-pins"');
+    expect(html).toContain('aria-label="Recent moments"');
     expect(html).toContain('aria-label="Workspace context"');
   });
 
   it('still renders Home when the inbound address is not configured', async () => {
     fakes.teamRow = { slug: 'acme', inboundEmail: 'acme@inbound.invalid' };
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('data-testid="home-team-email"');
     expect(fakes.homeTeamEmail).toBeNull();
@@ -454,7 +462,7 @@ describe('HomeDashboardPage', () => {
     };
     fakes.loadOnboardingChecklistView.mockResolvedValue(snapshot);
 
-    renderToStaticMarkup(await HomeDashboardPage());
+    await renderHome();
 
     expect(fakes.loadOnboardingChecklistView).toHaveBeenCalledOnce();
     const loadArgs = fakes.loadOnboardingChecklistView.mock.calls[0]?.[0];
@@ -468,7 +476,7 @@ describe('HomeDashboardPage', () => {
   it('still renders Home when the checklist snapshot fails to load', async () => {
     fakes.loadOnboardingChecklistView.mockRejectedValue(new Error('checklist unavailable'));
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('data-testid="home-onboarding"');
     expect(fakes.onboardingInitialData).toBeNull();
@@ -489,7 +497,7 @@ describe('HomeDashboardPage', () => {
       },
     });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).not.toContain('data-billing-nudge');
     expect(html).not.toContain('You are close to the Free allowance');
@@ -508,7 +516,7 @@ describe('HomeDashboardPage', () => {
       },
     });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('data-billing-nudge="free_near_limit"');
     expect(html).toContain('You are close to the Free allowance');
@@ -522,7 +530,7 @@ describe('HomeDashboardPage', () => {
   it('still renders Home when the billing dashboard fails to load', async () => {
     fakes.getDashboard.mockRejectedValue(new Error('billing unavailable'));
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('Acme Labs');
     expect(html).not.toContain('data-billing-nudge');
@@ -546,7 +554,7 @@ describe('HomeDashboardPage', () => {
       firstRun: capture,
     });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('data-testid="first-run-home-capture"');
     expect(html).toContain('processing');
@@ -566,7 +574,7 @@ describe('HomeDashboardPage', () => {
       record: { processingSteps: [], sources: [{ href: '/app/documents/example' }] },
     });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
     expect(html).toContain(
       '/onboarding?capture=team-1.document.' + String(capture.starterSelectedAt.getTime()),
     );
@@ -576,7 +584,7 @@ describe('HomeDashboardPage', () => {
   it('shows a failed first-run capture on Home', async () => {
     fakes.getFirstRun.mockResolvedValue({ ...capture, phase: 'failed', starterPath: 'website' });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('data-testid="first-run-home-capture"');
     expect(html).toContain('failed');
@@ -598,7 +606,7 @@ describe('HomeDashboardPage', () => {
         record: { processingSteps: [], sources: [] },
       });
 
-      const html = renderToStaticMarkup(await HomeDashboardPage());
+      const html = await renderHome();
 
       expect(html).toContain(
         `/onboarding?capture=team-1.${starterPath}.${String(capture.starterSelectedAt.getTime())}`,
@@ -614,7 +622,7 @@ describe('HomeDashboardPage', () => {
       record: { processingSteps: [{ id: 'extract', status: 'failed' }] },
     });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+    const html = await renderHome();
 
     expect(html).toContain('data-testid="first-run-home-capture"');
     expect(html).toContain('failed');
@@ -629,7 +637,7 @@ it('keeps Home usable when optional PAYG eligibility cannot be loaded', async ()
     restrictionReason: null,
   });
   fakes.hasCompletedChatAnswer.mockRejectedValue(new Error('lookup unavailable'));
-  const html = renderToStaticMarkup(await HomeDashboardPage());
+  const html = await renderHome();
   expect(html).toContain('Acme Labs');
   expect(html).not.toContain('Optional PAYG suggestion');
   expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
@@ -646,22 +654,22 @@ it('shows optional PAYG followup only for an unrestricted Free admin with an ans
     restrictionReason: null,
   });
   fakes.hasCompletedChatAnswer.mockResolvedValue(false);
-  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  expect(await renderHome()).not.toContain('Optional PAYG suggestion');
   fakes.hasCompletedChatAnswer.mockResolvedValue(true);
-  expect(renderToStaticMarkup(await HomeDashboardPage())).toContain('Optional PAYG suggestion');
+  expect(await renderHome()).toContain('Optional PAYG suggestion');
   fakes.role = 'member';
-  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  expect(await renderHome()).not.toContain('Optional PAYG suggestion');
   fakes.role = 'owner';
   fakes.getDashboard.mockResolvedValue({
     account: { planId: 'free' },
     nudge: null,
     restrictionReason: 'email_unverified',
   });
-  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  expect(await renderHome()).not.toContain('Optional PAYG suggestion');
   fakes.getDashboard.mockResolvedValue({
     account: { planId: 'payg' },
     nudge: null,
     restrictionReason: null,
   });
-  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  expect(await renderHome()).not.toContain('Optional PAYG suggestion');
 });

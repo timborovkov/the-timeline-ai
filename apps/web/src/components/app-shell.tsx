@@ -2,7 +2,7 @@ import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import { Search } from 'lucide-react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
 import { AppPageTransition } from '@/components/app-page-transition';
@@ -32,19 +32,21 @@ import type { TeamMembership } from '@/lib/active-team';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
 import type { PaidSignupPlanId } from '@/lib/signup-plan';
 
+interface ShellInbox {
+  unreadCount: number;
+  notifications: InboxBellNotification[];
+}
+
 interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
   user: { name?: string | null; email?: string | null; emailVerified?: Date | string | null };
-  badges?: NavBadgeMap;
-  inbox?: {
-    unreadCount: number;
-    notifications: InboxBellNotification[];
-  };
+  badges?: NavBadgeMap | Promise<NavBadgeMap>;
+  inbox?: ShellInbox | Promise<ShellInbox>;
   sidebarInitiallyExpanded: boolean;
   workspaceTimezone: string;
-  billingSummary?: SidebarBillingSummary | null;
+  billingSummary?: SidebarBillingSummary | null | Promise<SidebarBillingSummary | null>;
   platformAdmin?: boolean;
   impersonation?: { email: string; teamName: string; readOnly: boolean; expiresAt: string } | null;
   gettingStarted?: { phase: FirstRunPhase; hidden: boolean } | null;
@@ -56,6 +58,7 @@ interface Props {
     href: string;
   } | null;
   clearPlanIntent?: boolean;
+  planIntentContent?: ReactNode;
   children: ReactNode;
 }
 
@@ -85,6 +88,7 @@ export function AppShell({
   gettingStarted = null,
   planIntent = null,
   clearPlanIntent = false,
+  planIntentContent,
   children,
 }: Props) {
   return (
@@ -149,7 +153,13 @@ export function AppShell({
                   >
                     <Search aria-hidden="true" className="size-4" />
                   </Link>
-                  <InboxBell unreadCount={inbox.unreadCount} notifications={inbox.notifications} />
+                  <Suspense fallback={<div aria-hidden="true" className="size-9" />}>
+                    {inbox instanceof Promise ? (
+                      <ShellInboxBell inbox={inbox} />
+                    ) : (
+                      <InboxBell {...inbox} />
+                    )}
+                  </Suspense>
                   <TeamSetupChecklistChip />
                   <InspectorToggle />
                   <ThemeToggle />
@@ -168,6 +178,7 @@ export function AppShell({
                   />
                 </div>
               </header>
+              {planIntentContent}
               {planIntent ? (
                 <PlanIntentPrompt
                   teamId={active.teamId}
@@ -201,4 +212,9 @@ export function AppShell({
       </ChatViewProvider>
     </WorkspaceTimezoneProvider>
   );
+}
+
+async function ShellInboxBell({ inbox }: { inbox: ShellInbox | Promise<ShellInbox> }) {
+  const { unreadCount, notifications } = await inbox;
+  return <InboxBell unreadCount={unreadCount} notifications={notifications} />;
 }
