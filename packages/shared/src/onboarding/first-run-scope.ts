@@ -786,6 +786,7 @@ export function createFirstRunHandlers({
                       ]
                     : [gte(rawEvents.createdAt, firstRun.starterSelectedAt)]),
                   rawEventVisibleToUser(userId),
+                  rawEventIsActive(),
                   sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
                 ),
               )
@@ -823,6 +824,7 @@ export function createFirstRunHandlers({
                   eq(rawEvents.teamId, teamId),
                   eq(rawEvents.source, 'web'),
                   rawEventVisibleToUser(userId),
+                  rawEventIsActive(),
                   sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
                 ),
               )

@@ -160,6 +160,8 @@ test('capture reports saved parts and retries only the failed file', async ({ br
 test('Inbox opens the item while the read update fails', async ({ browser }, info) => {
   const id = randomUUID();
   const taskId = e2eSeedTasks.mobileKanban.id;
+  const updateUrl = '**/api/inbox/' + id + '/read';
+  const failedRead = Promise.withResolvers<void>();
   await withE2eDataTransaction(async (sql) => {
     await sql`
       INSERT INTO notifications (id, team_id, user_id, kind, entity_id, summary)
@@ -173,21 +175,34 @@ test('Inbox opens the item while the read update fails', async ({ browser }, inf
     await page.getByRole('button', { name: /Open inbox, .* unread/ }).click();
     const item = page.getByRole('link', { name: /The release checklist changed/ });
     await expect(item).toBeVisible();
-    await page.route('**/app', async (route) => {
-      if (!route.request().headers()['next-action']) return route.continue();
-      await route.abort();
+    await page.route(updateUrl, async (route) => {
+      await failedRead.promise;
+      await route.fulfill({ status: 503 });
     });
-    await Promise.all([
-      page.waitForEvent('requestfailed', (request) => Boolean(request.headers()['next-action'])),
-      item.click(),
-    ]);
+    await Promise.all([page.waitForRequest(updateUrl), item.click()]);
     await expect(page).toHaveURL(new RegExp('/app/objects/' + taskId + '$'));
     await expect(
       page.getByRole('heading', { name: e2eSeedTasks.mobileKanban.canonicalName }),
     ).toBeVisible();
+    const response = page.waitForResponse(updateUrl);
+    failedRead.resolve();
+    expect((await response).status()).toBe(503);
     await expect(page.getByRole('button', { name: /Open inbox, .* unread/ })).toBeVisible();
     await screenshot(page, info, 'inbox-opened-with-read-update-failure');
+
+    await page.unroute(updateUrl);
+    await page.getByRole('button', { name: /Open inbox, .* unread/ }).click();
+    const read = page.waitForResponse(updateUrl);
+    await item.click();
+    expect((await read).status()).toBe(204);
+    await withE2eDataTransaction(async (sql) => {
+      const [notification] = await sql<{ read_at: Date | null }[]>`
+        SELECT read_at FROM notifications WHERE id = ${id}
+      `;
+      expect(notification?.read_at).toBeTruthy();
+    });
   } finally {
+    failedRead.resolve();
     await page.context().close();
     await withE2eDataTransaction(async (sql) => {
       await sql`DELETE FROM notifications WHERE id = ${id}`;

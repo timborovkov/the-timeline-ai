@@ -31,7 +31,7 @@ import { displayMemberLabel } from '@/lib/display-labels';
 import {
   firstRunCaptureHref,
   firstRunCaptureKey,
-  firstRunConnectorCaptureUnavailable,
+  firstRunCaptureUnavailable,
 } from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 import {
@@ -122,6 +122,8 @@ function homeTeamSlug(teamRow: { slug: string } | null, teamId: string) {
   return teamRow?.slug ?? teamId;
 }
 
+const HOME_CAPTURE_PHASES = new Set<FirstRunState['phase']>(['processing', 'failed', 'record']);
+
 async function FirstRunHomeBanner(input: {
   firstRun: FirstRunState | null;
   teamId: string;
@@ -130,33 +132,28 @@ async function FirstRunHomeBanner(input: {
 }) {
   const { firstRun } = input;
   if (firstRun?.startedByUserId !== input.userId) return null;
-  if (firstRun.phase !== 'processing' && firstRun.phase !== 'failed' && firstRun.phase !== 'record')
-    return null;
+  if (!HOME_CAPTURE_PHASES.has(firstRun.phase)) return null;
 
   const status =
-    firstRun.phase === 'processing' ||
-    (firstRun.phase === 'record' && isConnectorStarterPath(firstRun.starterPath))
-      ? await loadFirstRunStatus({ db, ...input, teamName: 'Your team' })
-      : null;
+    firstRun.phase === 'failed'
+      ? null
+      : await loadFirstRunStatus({ db, ...input, teamName: 'Your team' });
   const current = status?.firstRun ?? firstRun;
   const captureKey = firstRunCaptureKey(current);
   if (!captureKey) return null;
   const steps = status?.record?.processingSteps ?? [];
-  const unavailable = firstRunConnectorCaptureUnavailable(current, status?.record ?? null);
+  const unavailable = firstRunCaptureUnavailable(current, status?.record ?? null);
   const ready = Boolean(current.firstCaptureLandedAt) && !unavailable;
   const failed =
     unavailable || current.phase === 'failed' || steps.some((step) => step.status === 'failed');
+  const waitingPath = ready || failed ? null : current.starterPath;
 
   return (
     <FirstRunHomeCapture
       ready={ready}
       failed={failed}
-      emailWaiting={current.starterPath === 'email' && !ready}
-      connectorWaiting={
-        !ready && !failed && isConnectorStarterPath(current.starterPath)
-          ? current.starterPath
-          : null
-      }
+      emailWaiting={waitingPath === 'email'}
+      connectorWaiting={isConnectorStarterPath(waitingPath) ? waitingPath : null}
       startedAt={current.starterSelectedAt}
       completed={steps.filter((step) => step.status === 'done').length}
       total={steps.length}

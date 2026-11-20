@@ -10,7 +10,7 @@ import { db } from '@/lib/db';
 import {
   firstRunCaptureHref,
   firstRunCaptureKey,
-  firstRunConnectorCaptureUnavailable,
+  firstRunCaptureUnavailable,
 } from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 
@@ -45,6 +45,19 @@ function recordDestination(
   return firstRunCaptureHref(capture);
 }
 
+function recordContent(record: Awaited<ReturnType<typeof loadFirstRunStatus>>['record']) {
+  return {
+    title: record?.title ?? 'Your first record',
+    meta: record?.meta ?? '',
+    summary: record?.summary ?? null,
+    note:
+      record?.note ??
+      'The record starts updating itself once a channel or your email is connected.',
+    sources: record?.sources ?? [],
+    suggestions: record?.suggestions ?? [],
+  };
+}
+
 export default async function FirstRecordPage({
   searchParams,
 }: {
@@ -66,8 +79,8 @@ export default async function FirstRecordPage({
   const destination = recordDestination(firstRun, capture, session.user.id);
   if (destination) redirect(destination);
   const record = status.record;
-  if (capture !== undefined && firstRunConnectorCaptureUnavailable(firstRun, record)) {
-    return <CaptureUnavailable />;
+  if (capture !== undefined && firstRunCaptureUnavailable(firstRun, record)) {
+    return <CaptureUnavailable currentCapture />;
   }
   const captureStatus =
     capture && firstRun
@@ -78,15 +91,7 @@ export default async function FirstRecordPage({
     <FirstRecordScreen
       captureStatus={captureStatus}
       readOnly={Boolean(capture) && firstRun?.phase !== 'record'}
-      title={record?.title ?? 'Your first record'}
-      meta={record?.meta ?? ''}
-      summary={record?.summary ?? null}
-      note={
-        record?.note ??
-        'The record starts updating itself once a channel or your email is connected.'
-      }
-      sources={record?.sources ?? []}
-      suggestions={record?.suggestions ?? []}
+      {...recordContent(record)}
     />
   );
 }

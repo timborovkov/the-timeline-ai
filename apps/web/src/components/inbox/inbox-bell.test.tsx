@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   markAllRead: vi.fn(),
-  markRead: vi.fn(),
   refresh: vi.fn(),
   push: vi.fn(),
 }));
@@ -14,7 +13,6 @@ await vi.mock(
   import.meta.resolve('@/app/actions/objects'),
   () => ({
     markAllNotificationsReadAction: fakes.markAllRead,
-    markNotificationReadAction: fakes.markRead,
   }),
   () => import('@/app/actions/objects'),
 );
@@ -67,6 +65,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('InboxBell', () => {
@@ -119,12 +118,13 @@ describe('InboxBell', () => {
   });
 
   it('keeps the native link usable while the read update is pending or fails', async () => {
-    let finish: (result: { error: string }) => void = () => undefined;
-    fakes.markRead.mockReturnValue(
-      new Promise((resolve) => {
+    let finish: (response: Response) => void = () => undefined;
+    const fetchMock = vi.fn().mockReturnValue(
+      new Promise<Response>((resolve) => {
         finish = resolve;
       }),
     );
+    vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     render(<InboxBell unreadCount={1} notifications={[notification]} />);
@@ -133,9 +133,12 @@ describe('InboxBell', () => {
     expect(item.getAttribute('href')).toBe('/app/inbox');
     await user.click(item);
     expect(item.getAttribute('aria-disabled')).toBeNull();
-    expect(fakes.markRead).toHaveBeenCalledWith(notification.id);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/inbox/${notification.id}/read`, {
+      method: 'POST',
+      keepalive: true,
+    });
 
-    finish({ error: 'Database unavailable' });
+    finish(new Response(null, { status: 503 }));
     await waitFor(() => {
       expect(fakes.refresh).not.toHaveBeenCalled();
       expect(item.getAttribute('href')).toBe('/app/inbox');

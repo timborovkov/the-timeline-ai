@@ -416,14 +416,8 @@ describe('POST /api/search/global', () => {
     const response = await POST(request({ query: 'Legacy launch', kinds: ['calendar_event'] }));
     expect(response.status).toBe(200);
     const data = (await response.json()) as GlobalSearchResponse;
-    expect(data.results).toContainEqual(
-      expect.objectContaining({
-        title: 'Legacy launch',
-        metadata: expect.objectContaining({
-          allDayDate: '2026-03-29',
-        }),
-      }),
-    );
+    const event = data.results.find((result) => result.title === 'Legacy launch');
+    expect(event?.metadata?.allDayDate).toBe('2026-03-29');
   });
 
   it('rejects impossible dates and reversed ranges before retrieval', async () => {

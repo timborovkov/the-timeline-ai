@@ -563,6 +563,7 @@ describe('HomeDashboardPage', () => {
         phase: 'record',
         firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
       },
+      record: { processingSteps: [], sources: [{ href: '/app/documents/example' }] },
     });
 
     const html = renderToStaticMarkup(await HomeDashboardPage());
@@ -582,26 +583,29 @@ describe('HomeDashboardPage', () => {
     expect(fakes.loadFirstRunStatus).not.toHaveBeenCalled();
   });
 
-  it('keeps the capture link when the first Slack message is no longer available', async () => {
-    const firstRun = {
-      ...capture,
-      phase: 'record',
-      starterPath: 'slack',
-      firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
-    };
-    fakes.getFirstRun.mockResolvedValue(firstRun);
-    fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun,
-      record: { processingSteps: [], emailArrived: false },
-    });
+  it.each(['document', 'email', 'slack', 'telegram', 'website'])(
+    'keeps the capture link when the first %s source is no longer available',
+    async (starterPath) => {
+      const firstRun = {
+        ...capture,
+        phase: 'record',
+        starterPath,
+        firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
+      };
+      fakes.getFirstRun.mockResolvedValue(firstRun);
+      fakes.loadFirstRunStatus.mockResolvedValue({
+        firstRun,
+        record: { processingSteps: [], sources: [] },
+      });
 
-    const html = renderToStaticMarkup(await HomeDashboardPage());
+      const html = renderToStaticMarkup(await HomeDashboardPage());
 
-    expect(html).toContain(
-      '/onboarding?capture=team-1.slack.' + String(capture.starterSelectedAt.getTime()),
-    );
-    expect(html).toContain('>failed</a>');
-  });
+      expect(html).toContain(
+        `/onboarding?capture=team-1.${starterPath}.${String(capture.starterSelectedAt.getTime())}`,
+      );
+      expect(html).toContain('>failed</a>');
+    },
+  );
 
   it('stops waiting on Home when document extract failed', async () => {
     fakes.getFirstRun.mockResolvedValue(capture);

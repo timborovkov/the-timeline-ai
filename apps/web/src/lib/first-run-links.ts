@@ -1,14 +1,10 @@
-import { isConnectorStarterPath, type FirstRunState } from '@timeline/shared/onboarding/first-run';
+import type { FirstRunState } from '@timeline/shared/onboarding/first-run';
 
-export function firstRunConnectorCaptureUnavailable(
+export function firstRunCaptureUnavailable(
   firstRun: FirstRunState | null,
-  record: { emailArrived: boolean } | null,
+  record: { sources: readonly unknown[] } | null,
 ): boolean {
-  return Boolean(
-    firstRun?.firstCaptureLandedAt &&
-    isConnectorStarterPath(firstRun.starterPath) &&
-    !record?.emailArrived,
-  );
+  return Boolean(firstRun?.firstCaptureLandedAt && !record?.sources.length);
 }
 
 export function firstRunCaptureKey(firstRun: FirstRunState | null): string | null {

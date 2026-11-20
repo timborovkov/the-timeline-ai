@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-import { markAllNotificationsReadAction, markNotificationReadAction } from '@/app/actions/objects';
+import { markAllNotificationsReadAction } from '@/app/actions/objects';
 import { EmptyState } from '@/components/empty-state';
 import { formatNavBadge } from '@/components/nav-items';
 import {
@@ -65,9 +65,10 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
   }
 
   function markRead(id: string): void {
-    void markNotificationReadAction(id)
-      .then((result) => {
-        if (!result.error) router.refresh();
+    // Keep this request independent of the App Router's Server Action queue.
+    void fetch(`/api/inbox/${encodeURIComponent(id)}/read`, { method: 'POST', keepalive: true })
+      .then((response) => {
+        if (response.ok) router.refresh();
       })
       .catch(() => undefined);
   }
