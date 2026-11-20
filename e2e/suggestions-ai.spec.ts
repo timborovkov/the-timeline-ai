@@ -47,7 +47,24 @@ async function runQueuedEmbed(rawEventId: string) {
     (entry) => 'rawEventId' in entry.data && entry.data.rawEventId === rawEventId,
   );
   if (!job) throw new Error('Expected capture to enqueue indexing');
-  return processEmbedJobForTests({ db: getDb() }, job.data);
+  // Integration embeds share a Redis rate-limit slot. Parallel Playwright
+  // workers can return `{ delayed: true }` once; keep draining until the
+  // point is written or the test budget expires.
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const result = await processEmbedJobForTests({ db: getDb() }, job.data);
+    if (
+      result &&
+      typeof result === 'object' &&
+      'delayed' in result &&
+      result.delayed === true &&
+      typeof result.retryAfterMs === 'number'
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(50, result.retryAfterMs)));
+      continue;
+    }
+    return result;
+  }
+  throw new Error('Expected capture indexing to leave the ingest rate-limit delay');
 }
 
 test('indexes an authenticated ingest webhook without creating an approval for a pulse', async ({
