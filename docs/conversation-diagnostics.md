@@ -16,6 +16,9 @@ attachments, source documents and system prompts are excluded. Long conversation
 must be edited to 60,000 characters; the system does not silently truncate them.
 
 The user describes the failure, removes sensitive text, and explicitly consents.
+For answer feedback, they can select unsupported claim, wrong document version,
+or missing context. The selected category is included in the encrypted report
+and appears during the same audited staff review.
 The server checks the consent version, current workspace permission and membership,
 and ownership of the active conversation. Text edits are intentional: submitted text
 is user-provided diagnostic evidence, not an authenticated model transcript. No new

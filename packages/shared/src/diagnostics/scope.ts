@@ -110,6 +110,7 @@ export function createDiagnosticScope({
         teamId,
         userId,
         description: parsed.data.description,
+        category: parsed.data.category,
         conversation: parsed.data.conversation,
       });
       const [report] = await tx

@@ -1,11 +1,14 @@
 'use client';
 
-import { Check, GitMerge, X } from 'lucide-react';
+import type { SuggestionRejectionReason } from '@timeline/shared/suggestions/rejection';
+import { Check, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { ComponentProps } from 'react';
 
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
+import { RejectionReason, RejectProposal } from '@/components/approvals/reject-proposal';
+import { StaleEvidence } from '@/components/approvals/stale-evidence';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EvidenceLink } from '@/components/evidence-link';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -78,6 +81,7 @@ export function ApprovalPreviewDialog({
     title: string;
     description: string | null;
     proposedPayload: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
     evidence?: PreviewEvidence[];
   };
   timezone: string;
@@ -87,7 +91,7 @@ export function ApprovalPreviewDialog({
   pending: boolean;
   mergeHref?: string | null;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (reason?: SuggestionRejectionReason) => void;
 }) {
   const requestKey = `${item.id}:${item.targetKind}:${item.targetId ?? ''}:${open ? 'open' : 'closed'}`;
   const [loaded, setLoaded] = useState<{
@@ -152,10 +156,13 @@ export function ApprovalPreviewDialog({
     <>
       <div className="space-y-3">
         {acceptDisabled ? (
-          <p role="status" className="text-sm text-danger">
-            Source evidence has changed. Regenerate this proposal before accepting.
-          </p>
+          <StaleEvidence key={item.id} itemId={item.id} timezone={timezone} />
         ) : null}
+        <RejectionReason
+          metadata={item.metadata}
+          status={item.status}
+          className="text-sm text-fg-muted"
+        />
         {reason ? (
           <section>
             <h3 className="text-sm font-semibold">Why this change</h3>
@@ -275,10 +282,7 @@ function PreviewDecisionActions({
           />
         </>
       )}
-      <Button type="button" size="sm" variant="ghost" disabled={pending || busy} onClick={onReject}>
-        <X className="size-4" />
-        Reject
-      </Button>
+      <RejectProposal key={item.id} disabled={pending || busy} onReject={onReject} />
     </ItemActionGroup>
   ) : (
     <p className="text-sm capitalize text-fg-muted">

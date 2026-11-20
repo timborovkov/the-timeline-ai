@@ -2,10 +2,21 @@ import { z } from 'zod';
 
 export const DIAGNOSTIC_CONSENT_VERSION = '2026-11-14';
 export const DIAGNOSTIC_TEXT_LIMIT = 60000;
+export const diagnosticCategory = z.enum([
+  'unsupported_claim',
+  'wrong_document_version',
+  'missing_context',
+]);
+export const diagnosticCategoryLabels: Record<z.infer<typeof diagnosticCategory>, string> = {
+  unsupported_claim: 'Unsupported claim',
+  wrong_document_version: 'Wrong document version',
+  missing_context: 'Missing context',
+};
 export const diagnosticInput = z
   .object({
     sessionId: z.uuid(),
     description: z.string().trim().min(10).max(2000),
+    category: diagnosticCategory.optional(),
     conversation: z.string().trim().min(1).max(DIAGNOSTIC_TEXT_LIMIT),
     consent: z.literal(true),
     consentVersion: z.literal(DIAGNOSTIC_CONSENT_VERSION),

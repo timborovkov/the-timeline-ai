@@ -782,26 +782,32 @@ function toolStepPresentation(
     state === 'approval-requested' && approval && onApprovalResponse ? approval : null;
   const approvalResponse = needsApproval && onApprovalResponse ? onApprovalResponse : null;
   const toolStateLabel =
-    state === 'output-denied'
-      ? 'Denied'
-      : state === 'approval-unavailable'
-        ? 'Approval no longer active'
-        : state === 'interrupted'
-          ? 'Interrupted'
-          : state === 'result-unavailable'
-            ? 'Result unavailable'
-            : isApprovalPending
-              ? 'Approval needed'
-              : isRunning
-                ? 'Running'
-                : isError
-                  ? 'Unable to complete'
-                  : 'Completed';
+    state === 'approval-unstarted'
+      ? 'Approved · step did not start'
+      : state === 'approval-needs-check'
+        ? 'Outcome needs checking'
+        : state === 'output-denied'
+          ? 'Denied'
+          : state === 'approval-unavailable'
+            ? 'Approval no longer active'
+            : state === 'interrupted'
+              ? 'Interrupted'
+              : state === 'result-unavailable'
+                ? 'Result unavailable'
+                : isApprovalPending
+                  ? 'Approval needed'
+                  : isRunning
+                    ? 'Running'
+                    : isError
+                      ? 'Unable to complete'
+                      : 'Completed';
   const StateIcon = [
     'output-denied',
     'interrupted',
     'result-unavailable',
     'approval-unavailable',
+    'approval-unstarted',
+    'approval-needs-check',
   ].includes(state)
     ? CirclePause
     : isApprovalPending

@@ -3,6 +3,7 @@ import { jsonSchema } from 'ai';
 import type { ToolSet } from 'ai';
 import { describe, it } from 'bun:test';
 
+import { answerEvidenceSchema, createAnswerEvidenceCollector } from '#src/agent/answer-evidence.js';
 import { instrumentAgentTools, summarizeAgentToolObservations } from '#src/agent/observability.js';
 import { capabilityTool } from '#src/agent/tool-policy.js';
 
@@ -13,6 +14,55 @@ const CHUNK_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 type TestToolExecute = (input: unknown, options: unknown) => Promise<unknown>;
 
 describe('agent tool observability', () => {
+  it('reports queried sources, latest returned citations and verified index availability', () => {
+    const collector = createAnswerEvidenceCollector();
+    collector.observe(
+      'search_timeline',
+      { source: 'slack' },
+      {
+        results: [
+          { event_id: EVENT_ID, occurred_at: '2026-11-18T10:00:00Z' },
+          { event_id: DOCUMENT_ID, occurred_at: '2026-11-15T10:00:00Z' },
+        ],
+      },
+    );
+    collector.observe('search_timeline', { source: 'email' }, { error: 'retrieval unavailable' });
+    collector.observe(
+      'search_documents',
+      { documentId: DOCUMENT_ID },
+      {
+        current_version: {
+          version: 3,
+          processing_status: 'chunked',
+          ranking: { evidenceDate: '2026-11-19T12:00:00Z', dateBasis: 'uploaded' },
+        },
+        results: [
+          {
+            citation: `[doc:${DOCUMENT_ID}#v2:chunk:${CHUNK_ID}]`,
+            ranking: { evidenceDate: '2026-11-18T13:00:00Z', dateBasis: 'source' },
+          },
+        ],
+      },
+    );
+    expect(answerEvidenceSchema.parse(collector.snapshot())).toEqual([
+      {
+        source: 'slack',
+        status: 'queried',
+        latest: {
+          citation: `[ev:${EVENT_ID}]`,
+          date: '2026-11-18T10:00:00.000Z',
+          version: null,
+          basis: 'unknown',
+        },
+      },
+      { source: 'email', status: 'unavailable', latest: null },
+      {
+        source: 'documents',
+        status: 'indexing',
+        latest: { citation: null, date: '2026-11-19T12:00:00.000Z', version: 3, basis: 'uploaded' },
+      },
+    ]);
+  });
   it('records result counts, retrieval recipes, artifact refs, and warning codes', async () => {
     const observations: unknown[] = [];
     const tools = instrumentAgentTools(

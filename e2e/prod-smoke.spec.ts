@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { signIn } from './helpers.js';
-import { e2eUsers } from './test-data.js';
+import { e2eTeam, e2eUsers } from './test-data.js';
 
 test('public 404 responses carry one noindex directive and no canonical', async ({ request }) => {
   for (const path of ['/seo-smoke-missing-page', '/help/seo-smoke-missing-article']) {
@@ -51,7 +51,9 @@ test('production build lets a seeded owner load app and timeline', async ({ page
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app');
-  await expect(page.getByRole('heading', { name: /timeline/i, level: 1 })).toBeVisible();
+  // Home now also exposes a screen-reader "Ask the timeline" heading; pin the
+  // seeded team title so the matcher stays unique after that layout change.
+  await expect(page.getByRole('heading', { name: e2eTeam.name, level: 1 })).toBeVisible();
 
   await page.goto('/app/timeline');
   await expect(page.getByRole('heading', { name: 'Timeline', level: 1 })).toBeVisible();

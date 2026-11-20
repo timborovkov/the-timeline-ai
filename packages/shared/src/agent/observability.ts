@@ -93,6 +93,7 @@ const RECIPE_FILTER_KEYS = [
 export function instrumentAgentTools<TTools extends ToolSet>(
   tools: TTools,
   onObservation: (observation: AgentToolObservation) => void,
+  onResult?: (tool: string, input: unknown, output: unknown) => void,
 ): TTools {
   const out: Record<string, unknown> = {};
   for (const [name, definition] of Object.entries(tools)) {
@@ -108,11 +109,13 @@ export function instrumentAgentTools<TTools extends ToolSet>(
         const started = Date.now();
         try {
           const output = await original(...args);
+          onResult?.(name, args[0], output);
           onObservation(
             buildToolObservation(name, definition, args[0], output, Date.now() - started),
           );
           return output;
         } catch (err) {
+          onResult?.(name, args[0], { error: 'thrown' });
           onObservation(
             buildToolObservation(
               name,

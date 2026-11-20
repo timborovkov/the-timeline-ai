@@ -142,6 +142,12 @@ Generic ingest webhooks are evidence-only
 
 ## Approval and durable state
 
+Reviewers can reject one or several proposals with an optional standard reason.
+The decision and reason are saved together. For visible stale evidence,
+**Inspect changes** compares the saved quote with the current source excerpt.
+Acceptance continues to require current evidence. An inaccessible source remains
+subject to the proposal's visibility rules.
+
 Authorized acceptance applies the supported change atomically with its provenance and audit history. Side effects use the outer transaction's after-commit collector: a released savepoint is not a committed transaction. Rejection does not erase the original source. Idempotent replay cannot reapply a completed mutation or lose a required retry.
 
 Objects, boards and calendar have distinct semantics. Boards have explicit curated membership. Calendar changes require a concrete timed range or all-day date span; vague future work is not a placeholder meeting. Task category is reversible derived classification, not lifecycle state or evidence. Their focused references own field-level rules.
@@ -211,6 +217,12 @@ cannot guarantee that every contradictory source was found.
 
 Customer explanations live in Help → Capture and the How it works FAQ; both must
 remain consistent with this contract and verified release behaviour.
+
+Web Ask lists the retrieval surfaces that ran under **Sources checked**. It shows
+the most recent relevant returned evidence for each, including known document
+versions and confirmed indexing or availability problems. Capture and upload
+dates retain their evidence basis. External chat includes a compact coverage
+summary and names the supporting source beside conflicting claims.
 
 ## Suggestion engine implementation map
 

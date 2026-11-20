@@ -2,6 +2,8 @@
 import {
   DIAGNOSTIC_CONSENT_VERSION,
   DIAGNOSTIC_TEXT_LIMIT,
+  diagnosticCategory,
+  diagnosticCategoryLabels,
   formatDiagnosticConversation,
   type DiagnosticMessage,
 } from '@timeline/shared/diagnostics/contract';
@@ -34,6 +36,7 @@ export function DiagnosticReportForm({
 }) {
   const [state, action, pending] = useActionState(submitDiagnosticAction, {});
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
   // react-doctor-disable-next-line react-doctor/no-derived-useState -- An editable draft is initialized once per session-keyed form; refreshed props must not overwrite redactions or exclusions.
   const [messages, setMessages] = useState<MessageDraft[]>(() =>
     initialMessages.map((message) => ({ ...message, included: true })),
@@ -55,6 +58,28 @@ export function DiagnosticReportForm({
       <input type="hidden" name="consentVersion" value={DIAGNOSTIC_CONSENT_VERSION} />
       <input type="hidden" name="conversation" value={text} />
       <fieldset disabled={pending} className="space-y-8">
+        <div className="grid gap-2">
+          <label htmlFor="diagnostic-category" className="font-medium">
+            Issue with the answer (optional)
+          </label>
+          <select
+            id="diagnostic-category"
+            name="category"
+            value={category}
+            className="min-h-11 max-w-sm rounded-sm border border-border bg-surface px-3"
+            onChange={(event) => {
+              setCategory(event.currentTarget.value);
+              setConsent(false);
+            }}
+          >
+            <option value="">Choose a category</option>
+            {diagnosticCategory.options.map((category) => (
+              <option key={category} value={category}>
+                {diagnosticCategoryLabels[category]}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="space-y-2">
           <label htmlFor="diagnostic-description" className="font-medium">
             What went wrong?
@@ -209,8 +234,8 @@ function ReportConsent({
   return (
     <section className="space-y-3 rounded-sm bg-muted/40 p-4" aria-label="Sharing and privacy">
       <p className="text-sm">
-        Only your description and selected message text are shared. Hidden tool results, attachments
-        and source documents stay out.
+        Your issue category, description, and selected message text are shared. Hidden tool results,
+        attachments and source documents stay out.
       </p>
       <p className="text-sm text-fg-muted">
         Authorized support staff can review your report. It expires after 30 days, and you can

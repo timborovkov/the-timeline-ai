@@ -171,6 +171,7 @@ export function scoreCommunications(row: CommunicationCase, observation: Communi
     noise,
     hardFailure,
     executionFailure,
+    citationChecks: { total: 0, passed: 0 },
     passed:
       !hardFailure &&
       !executionFailure &&

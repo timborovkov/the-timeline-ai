@@ -24,9 +24,11 @@ it('validates corpus sizes, labels, scenarios and independent splits', () => {
       rows.filter((row) => row.tags.includes('prompt-injection')).length,
     ).toBeGreaterThanOrEqual(20);
     const agents = AGENT_CASES.filter((row) => row.split === split);
-    expect(agents).toHaveLength(30);
+    expect(agents).toHaveLength(split === 'development' ? 31 : 30);
     for (const scenario of AGENT_SCENARIOS)
-      expect(agents.filter((row) => row.scenario === scenario)).toHaveLength(5);
+      expect(agents.filter((row) => row.scenario === scenario)).toHaveLength(
+        split === 'development' && scenario === 'citation-correctness' ? 6 : 5,
+      );
   }
   expect(CLASSIFICATION_CASES.slice(0, 120).every((row) => row.split === 'development')).toBe(true);
   const content = CLASSIFICATION_CASES.map((row) =>
@@ -37,7 +39,7 @@ it('validates corpus sizes, labels, scenarios and independent splits', () => {
     ]),
   );
   expect(new Set(content).size).toBe(400);
-  expect(new Set(AGENT_CASES.map((row) => row.question)).size).toBe(60);
+  expect(new Set(AGENT_CASES.map((row) => row.question)).size).toBe(61);
   for (const row of CLASSIFICATION_CASES) expect(TASK_CATEGORIES).toContain(row.expected);
   for (const row of AGENT_CASES) {
     for (const index of row.requiredEvidence) expect(row.evidence[index]?.access).toBe('team');

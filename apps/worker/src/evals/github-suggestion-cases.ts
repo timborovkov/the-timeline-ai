@@ -51,7 +51,7 @@ export const GITHUB_SUGGESTION_CASES: SuggestionCase[] = [
     id: 'github-merged-linked',
     events: ['Merged PR #42: Fix keyboard navigation.'],
     taskFixtures: [linked],
-    expected: [done],
+    expected: [{ ...done, evidenceEventIndices: [0] }],
     rationale:
       'A merged PR with the same provider identity as an open task supports a visible done proposal, not a direct status write.',
   },
