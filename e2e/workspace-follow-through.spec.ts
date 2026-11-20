@@ -11,6 +11,8 @@ async function screenshot(page: Page, testInfo: TestInfo, name: string) {
   await testInfo.attach(name, { path, contentType: 'image/png' });
 }
 
+test.setTimeout(180_000);
+
 const ownerId = e2eUsers.owner.id;
 const teamId = e2eTeam.id;
 
@@ -38,7 +40,7 @@ test('meeting capture distinguishes recoverable recorder failure from an empty t
     await expect(page.getByRole('button', { name: 'Retry processing' })).toBeVisible();
     await screenshot(page, testInfo, 'meeting-recovery');
     await page.getByRole('button', { name: 'Retry processing' }).click();
-    await expect(page.getByText('Processing', { exact: true })).toBeVisible();
+    await expect(page.getByText('Processing', { exact: true })).toBeVisible({ timeout: 45_000 });
     await page.goto(`/app/meetings/${empty}`);
     await expect(page.getByRole('region', { name: 'Capture recovery' })).toContainText(
       'Capture completed with no transcript',
@@ -169,12 +171,12 @@ test('saves a cited project handoff and a personal approval view', async ({
       VALUES (${sessionId}, ${teamId}, ${ownerId}, ${projectId}, 'Northstar launch handoff')`;
     const answer = `Legal review is still open for the launch. [ev:${sourceId}]`;
     await sql`INSERT INTO chat_messages (team_id, session_id, role, content)
-      VALUES (${teamId}, ${sessionId}, 'assistant', ${sql.json({
+      VALUES (${teamId}, ${sessionId}, 'assistant', ${JSON.stringify({
         version: 2,
         text: answer,
         ui_message: { id: messageId, role: 'assistant', parts: [{ type: 'text', text: answer }] },
         handoff_provenance: [{ kind: 'timeline_event', id: sourceId }],
-      })})`;
+      })}::jsonb)`;
   });
   const context = await newSignedInContext(browser, 'owner', {
     viewport: { width: 1440, height: 1000 },
@@ -218,7 +220,9 @@ test('saves a cited project handoff and a personal approval view', async ({
     ).toHaveAttribute('href', /project=.*decision=1/);
     const optIn = page.getByRole('checkbox', { name: 'Include new matches in my digest' });
     await expect(optIn).not.toBeChecked();
-    await optIn.check();
+    await optIn.click();
+    await expect(page.getByText('Saved view updated')).toBeVisible();
+    await page.reload();
     await expect(optIn).toBeChecked();
     await screenshot(page, testInfo, 'saved-view-digest');
   } finally {

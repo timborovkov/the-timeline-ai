@@ -5,6 +5,7 @@ import {
   calendarEvents,
   calendarReminderPreferences,
   googleCalendarImports,
+  teamMembers,
   type Db,
 } from '@timeline/db';
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -132,11 +133,12 @@ const calendarPage = z.object({
 
 const providerDate = z.object({
   date: z.iso.date().optional(),
-  dateTime: z.iso.datetime({ offset: true }).optional(),
+  dateTime: z.iso.datetime({ offset: true, local: true }).optional(),
   timeZone: z.string().optional(),
 });
 
 const providerEvent = z.object({
+  iCalUID: z.string().optional(),
   id: z.string().min(1),
   status: z.string().optional(),
   summary: z.string().optional(),
@@ -164,7 +166,15 @@ export function normalizeGoogleCalendarEvent(
     value?.date
       ? new Date(Temporal.PlainDate.from(value.date).toZonedDateTime(zone).epochMilliseconds)
       : value?.dateTime
-        ? new Date(value.dateTime)
+        ? /Z$|[+-]\d{2}:\d{2}$/.test(value.dateTime)
+          ? new Date(value.dateTime)
+          : value.timeZone
+            ? new Date(
+                Temporal.PlainDateTime.from(value.dateTime).toZonedDateTime(
+                  assertValidTimezone(value.timeZone),
+                ).epochMilliseconds,
+              )
+            : null
         : null;
   const startAt = boundary(input.start);
   const endAt = boundary(input.end);
@@ -208,7 +218,10 @@ async function fetchEvents(
     params.set('timeMin', new Date(now.getTime() - 365 * DAY_MS).toISOString());
     params.set('timeMax', new Date(now.getTime() + 730 * DAY_MS).toISOString());
   }
-  const events = new Map<string, ReturnType<typeof normalizeGoogleCalendarEvent>>();
+  const events = new Map<
+    string,
+    ReturnType<typeof normalizeGoogleCalendarEvent> & { iCalUID?: string }
+  >();
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const result = await fetchPage(
       `calendars/${encodeURIComponent(connection.calendarId)}/events`,
@@ -217,7 +230,10 @@ async function fetchEvents(
       eventPage,
     );
     for (const item of result.items) {
-      events.set(item.id, normalizeGoogleCalendarEvent(item, connection.timezone ?? 'UTC'));
+      events.set(item.id, {
+        ...normalizeGoogleCalendarEvent(item, connection.timezone ?? 'UTC'),
+        ...(item.iCalUID ? { iCalUID: item.iCalUID } : {}),
+      });
     }
     if (result.nextPageToken) {
       params.set('pageToken', result.nextPageToken);
@@ -315,9 +331,44 @@ export function createGoogleCalendarScope({ db, teamId, userId, ensureMember }: 
     async connect(refreshToken: string) {
       await ensureMember();
       const secret = encryptJson({ refreshToken });
+      const prior = await load();
+      const retainsSelection = prior?.calendarId
+        ? (await listChoices({ ...prior, ...secret })).some(
+            (choice) => choice.id === prior.calendarId,
+          )
+        : false;
       await db.transaction(async (tx) => {
         await lockSelection(tx);
+        const [membership] = await tx
+          .select({ userId: teamMembers.userId })
+          .from(teamMembers)
+          .where(
+            and(
+              eq(teamMembers.teamId, teamId),
+              eq(teamMembers.userId, userId),
+              isNull(teamMembers.removedAt),
+            ),
+          );
+        if (!membership) throw new Error('Workspace membership is required');
         const previous = await load(tx);
+        if (
+          previous &&
+          previous.id === prior?.id &&
+          previous.calendarId === prior.calendarId &&
+          retainsSelection
+        ) {
+          await tx
+            .update(googleCalendarImports)
+            .set({
+              ...secret,
+              syncToken: null,
+              nextSyncAt: new Date(),
+              syncStatus: null,
+              revision: previous.revision + 1,
+            })
+            .where(ownsConnection);
+          return;
+        }
         if (previous) {
           await removeMirrors(tx, previous, new Date());
           await tx.delete(googleCalendarImports).where(ownsConnection);
@@ -393,16 +444,43 @@ export function createGoogleCalendarScope({ db, teamId, userId, ensureMember }: 
           const stamp = new Date(
             Math.max(Date.now(), now.getTime(), (current.lastSyncAt?.getTime() ?? 0) + 1),
           );
+          // Google can subscribe to this workspace's outbound iCal feed.
+          // A matching iCal UID is already represented on this calendar.
+          const potentialEchoes = result.events.flatMap(({ iCalUID }) =>
+            iCalUID && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(iCalUID)
+              ? [iCalUID]
+              : [],
+          );
+          const ownUids = new Set(
+            potentialEchoes.length
+              ? (
+                  await tx
+                    .select({ id: calendarEvents.id })
+                    .from(calendarEvents)
+                    .where(
+                      and(
+                        eq(calendarEvents.teamId, teamId),
+                        sql`${calendarEvents.id} = ANY(${sql.param(potentialEchoes)}::uuid[])`,
+                      ),
+                    )
+                ).map((row) => row.id)
+              : [],
+          );
+          const isEcho = (uid: string | undefined) =>
+            Boolean(uid && ownUids.has(uid.toLowerCase()));
           const cancelledIds = result.events
-            .filter((event) => event.cancelled)
+            .filter((event) => event.cancelled || isEcho(event.iCalUID))
             .map((event) => event.externalEventId);
-          const currentEvents = result.events.filter((event) => !event.cancelled);
+          const currentEvents = result.events.filter(
+            (event): event is typeof event & { cancelled: false } =>
+              !event.cancelled && !isEcho(event.iCalUID),
+          );
           for (let offset = 0; offset < currentEvents.length; offset += 250) {
             const chunk = currentEvents.slice(offset, offset + 250);
             await tx
               .insert(calendarEvents)
               .values(
-                chunk.map(({ cancelled: _cancelled, ...event }) => ({
+                chunk.map(({ cancelled: _cancelled, iCalUID: _iCalUID, ...event }) => ({
                   ...event,
                   teamId,
                   createdByUserId: userId,

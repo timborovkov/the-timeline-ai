@@ -232,7 +232,8 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members, 
   );
   const typeOptions = useMemo(() => [...FILE_TYPE_OPTIONS], []);
   const activeFilterCount =
-    selectedValues(uiState.sourceFilter, sourceOptions).length +
+    (filters?.sources.length ?? selectedValues(uiState.sourceFilter, sourceOptions).length) +
+    (filters?.sender ? 1 : 0) +
     selectedValues(uiState.typeFilter, typeOptions).length +
     selectedValues(uiState.statusFilter, statusOptions).length +
     (uiState.dateFilter !== ALL ? 1 : 0);
@@ -288,150 +289,18 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members, 
 
   return (
     <section aria-label="Captured files" className="space-y-4">
-      <CollectionToolbar
-        activeFilters={[
-          ...(uiState.sourceFilter
-            ? [
-                {
-                  key: 'source',
-                  label: 'Source',
-                  value: uiState.sourceFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'source', value: '' });
-                  },
-                },
-              ]
-            : []),
-          ...(uiState.typeFilter
-            ? [
-                {
-                  key: 'type',
-                  label: 'Type',
-                  value: uiState.typeFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'fileType', value: '' });
-                  },
-                },
-              ]
-            : []),
-          ...(uiState.statusFilter
-            ? [
-                {
-                  key: 'status',
-                  label: 'Status',
-                  value: uiState.statusFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'status', value: '' });
-                  },
-                },
-              ]
-            : []),
-          ...(uiState.dateFilter !== ALL
-            ? [
-                {
-                  key: 'date',
-                  label: 'Date',
-                  value: uiState.dateFilter,
-                  onRemove: () => {
-                    dispatchUi({ type: 'date', value: ALL });
-                  },
-                },
-              ]
-            : []),
-        ]}
-      >
-        {cursor ? null : (
-          <CollectionToolbar.Count>
-            {formatCollectionCount({
-              matching: visibleFiles.length,
-              total: loadedFiles.length,
-              filtered: activeFilterCount > 0,
-            })}
-          </CollectionToolbar.Count>
-        )}
-        <CollectionToolbar.Filters>
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              label="Source"
-              value={filters?.sources.join(',') ?? uiState.sourceFilter}
-              onValueChange={(value) => {
-                if (!filters) {
-                  dispatchUi({ type: 'source', value });
-                  return;
-                }
-                const params = new URLSearchParams();
-                if (value) params.set('source', value);
-                if (filters.sender) params.set('sender', filters.sender);
-                router.push(`/app/documents/captured?${params.toString()}`);
-              }}
-              placeholder="All sources"
-              options={sourceOptions}
-            />
-            {filters ? (
-              <form className="flex items-end gap-2" action="/app/documents/captured">
-                <input type="hidden" name="source" value={filters.sources.join(',')} />
-                <label className="space-y-1">
-                  <span className="block text-[11px] text-fg-dim">Sender</span>
-                  <Input
-                    name="sender"
-                    key={filters.sender}
-                    defaultValue={filters.sender}
-                    maxLength={160}
-                    className="h-9"
-                  />
-                </label>
-                <Button type="submit" variant="outline" size="sm">
-                  Filter sender
-                </Button>
-              </form>
-            ) : null}
-            <FilterMultiSelect
-              label="Type"
-              value={uiState.typeFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'fileType', value });
-              }}
-              placeholder="All types"
-              options={typeOptions}
-            />
-            <FilterMultiSelect
-              label="Status"
-              value={uiState.statusFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'status', value });
-              }}
-              placeholder="All statuses"
-              options={statusOptions}
-            />
-            <FilterSelect
-              label="Date"
-              value={uiState.dateFilter}
-              onChange={(value) => {
-                dispatchUi({ type: 'date', value });
-              }}
-            >
-              <option value={ALL}>Any time</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </FilterSelect>
-          </div>
-        </CollectionToolbar.Filters>
-        <CollectionToolbar.Actions>
-          {activeFilterCount > 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                dispatchUi({ type: 'clear_filters' });
-              }}
-            >
-              Clear all
-            </Button>
-          ) : null}
-        </CollectionToolbar.Actions>
-      </CollectionToolbar>
-
+      <CapturedFilesToolbar
+        filters={filters}
+        loadedCount={loadedFiles.length}
+        visibleCount={visibleFiles.length}
+        cursor={cursor}
+        activeFilterCount={activeFilterCount}
+        uiState={uiState}
+        dispatchUi={dispatchUi}
+        sourceOptions={sourceOptions}
+        statusOptions={statusOptions}
+        typeOptions={typeOptions}
+      />
       {filters ? (
         <SelectionBar
           count={selected.length}
@@ -537,6 +406,179 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members, 
   );
 }
 
+function CapturedFilesToolbar({
+  filters,
+  loadedCount,
+  visibleCount,
+  cursor,
+  activeFilterCount,
+  uiState,
+  dispatchUi,
+  sourceOptions,
+  statusOptions,
+  typeOptions,
+}: {
+  filters: Props['filters'];
+  loadedCount: number;
+  visibleCount: number;
+  cursor: string | null;
+  activeFilterCount: number;
+  uiState: CapturedFilesUiState;
+  dispatchUi: (action: CapturedFilesUiAction) => void;
+  sourceOptions: { value: string; label: string }[];
+  statusOptions: { value: string; label: string }[];
+  typeOptions: { value: string; label: string }[];
+}) {
+  const router = useRouter();
+  return (
+    <CollectionToolbar
+      activeFilters={[
+        ...(uiState.sourceFilter
+          ? [
+              {
+                key: 'source',
+                label: 'Source',
+                value: uiState.sourceFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'source', value: '' });
+                },
+              },
+            ]
+          : []),
+        ...(uiState.typeFilter
+          ? [
+              {
+                key: 'type',
+                label: 'Type',
+                value: uiState.typeFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'fileType', value: '' });
+                },
+              },
+            ]
+          : []),
+        ...(uiState.statusFilter
+          ? [
+              {
+                key: 'status',
+                label: 'Status',
+                value: uiState.statusFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'status', value: '' });
+                },
+              },
+            ]
+          : []),
+        ...(uiState.dateFilter !== ALL
+          ? [
+              {
+                key: 'date',
+                label: 'Date',
+                value: uiState.dateFilter,
+                onRemove: () => {
+                  dispatchUi({ type: 'date', value: ALL });
+                },
+              },
+            ]
+          : []),
+      ]}
+    >
+      {cursor ? null : (
+        <CollectionToolbar.Count>
+          {formatCollectionCount({
+            matching: visibleCount,
+            total: loadedCount,
+            filtered: activeFilterCount > 0,
+          })}
+        </CollectionToolbar.Count>
+      )}
+      <CollectionToolbar.Filters>
+        <div className="flex min-w-0 flex-wrap items-end gap-2">
+          <FilterMultiSelect
+            label="Source"
+            value={filters?.sources.join(',') ?? uiState.sourceFilter}
+            onValueChange={(value) => {
+              if (!filters) {
+                dispatchUi({ type: 'source', value });
+                return;
+              }
+              const params = new URLSearchParams();
+              if (value) params.set('source', value);
+              if (filters.sender) params.set('sender', filters.sender);
+              router.push(`/app/documents/captured?${params.toString()}`);
+            }}
+            placeholder="All sources"
+            options={sourceOptions}
+          />
+          {filters ? (
+            <form className="flex items-end gap-2" action="/app/documents/captured">
+              <input type="hidden" name="source" value={filters.sources.join(',')} />
+              <label className="space-y-1">
+                <span className="block text-[11px] text-fg-dim">Sender</span>
+                <Input
+                  name="sender"
+                  key={filters.sender}
+                  defaultValue={filters.sender}
+                  maxLength={160}
+                  className="h-9"
+                />
+              </label>
+              <Button type="submit" variant="outline" size="sm">
+                Filter sender
+              </Button>
+            </form>
+          ) : null}
+          <FilterMultiSelect
+            label="Type"
+            value={uiState.typeFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'fileType', value });
+            }}
+            placeholder="All types"
+            options={typeOptions}
+          />
+          <FilterMultiSelect
+            label="Status"
+            value={uiState.statusFilter}
+            onValueChange={(value) => {
+              dispatchUi({ type: 'status', value });
+            }}
+            placeholder="All statuses"
+            options={statusOptions}
+          />
+          <FilterSelect
+            label="Date"
+            value={uiState.dateFilter}
+            onChange={(value) => {
+              dispatchUi({ type: 'date', value });
+            }}
+          >
+            <option value={ALL}>Any time</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </FilterSelect>
+        </div>
+      </CollectionToolbar.Filters>
+      <CollectionToolbar.Actions>
+        {activeFilterCount > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              dispatchUi({ type: 'clear_filters' });
+              if (filters?.sources.length || filters?.sender)
+                router.push('/app/documents/captured');
+            }}
+          >
+            Clear all
+          </Button>
+        ) : null}
+      </CollectionToolbar.Actions>
+    </CollectionToolbar>
+  );
+}
+
 function FilterSelect({
   label,
   value,
@@ -587,7 +629,6 @@ function CapturedFileRow({
   const timezone = useWorkspaceTimezone();
   const contentType = file.currentVersion?.contentType ?? '';
   const Icon = contentType.startsWith('image/') ? ImageIcon : FileText;
-  const eventId = file.provenance.parentEventId ?? file.sourceRawEventId;
   const presentation = file.presentation;
   const storedName = presentation.isGeneratedName
     ? truncateFilenameMiddle(presentation.storedName)
@@ -663,53 +704,68 @@ function CapturedFileRow({
           </>
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
-          <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
-            <PinOverflowMenu
-              target={{ kind: 'document', key: file.id }}
-              title={presentation.displayTitle}
-              initialPinned={file.pinned}
-            />
-            {file.currentVersion?.id &&
-            ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
-              <DocumentPreview
-                target={{ versionId: file.currentVersion.id }}
-                compact
-                label="Preview"
-                className="w-full md:w-auto"
-              />
-            ) : null}
-            {eventId ? (
-              <EvidenceLink
-                eventId={eventId}
-                previewText={file.provenance.summary}
-                source={file.provenance.source}
-                occurredAt={file.provenance.occurredAt}
-                className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-              >
-                <Link2 aria-hidden="true" className="size-3.5" />
-                View evidence
-              </EvidenceLink>
-            ) : null}
-            {file.currentVersion && onSelect ? (
-              <Button asChild size="sm" variant="ghost">
-                <Link href={`/app/documents/captured/${file.id}/extraction`}>
-                  Extraction history
-                </Link>
-              </Button>
-            ) : null}
-            {file.currentVersion?.processingError === 'vision_budget_deferred' ? (
-              <FileExtractionAction id={file.id} resume />
-            ) : null}
-            <DialogTrigger asChild>
-              <Button type="button" variant="outline" size="sm" onClick={onPromote}>
-                <Upload aria-hidden="true" className="mr-2 size-4" />
-                Promote
-              </Button>
-            </DialogTrigger>
-          </ItemActionGroup>
+          <CapturedFileRowActions file={file} onPromote={onPromote} triage={Boolean(onSelect)} />
         </CollectionRow.Actions>
       </CollectionRow>
     </div>
+  );
+}
+
+function CapturedFileRowActions({
+  file,
+  onPromote,
+  triage,
+}: {
+  file: CapturedFileItem;
+  onPromote: () => void;
+  triage: boolean;
+}) {
+  const contentType = file.currentVersion?.contentType ?? '';
+  const eventId = file.provenance.parentEventId ?? file.sourceRawEventId;
+  const presentation = file.presentation;
+  return (
+    <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
+      <PinOverflowMenu
+        target={{ kind: 'document', key: file.id }}
+        title={presentation.displayTitle}
+        initialPinned={file.pinned}
+      />
+      {file.currentVersion?.id &&
+      ['image', 'pdf', 'audio'].includes(documentKindLabel(contentType)) ? (
+        <DocumentPreview
+          target={{ versionId: file.currentVersion.id }}
+          compact
+          label="Preview"
+          className="w-full md:w-auto"
+        />
+      ) : null}
+      {eventId ? (
+        <EvidenceLink
+          eventId={eventId}
+          previewText={file.provenance.summary}
+          source={file.provenance.source}
+          occurredAt={file.provenance.occurredAt}
+          className="inline-flex h-8 items-center gap-1 rounded-sm border border-signal/30 bg-signal-soft px-2 font-mono text-[10px] text-signal transition-colors hover:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
+        >
+          <Link2 aria-hidden="true" className="size-3.5" />
+          View evidence
+        </EvidenceLink>
+      ) : null}
+      {file.currentVersion && triage ? (
+        <Button asChild size="sm" variant="ghost">
+          <Link href={`/app/documents/captured/${file.id}/extraction`}>Extraction history</Link>
+        </Button>
+      ) : null}
+      {file.currentVersion?.processingError === 'vision_budget_deferred' ? (
+        <FileExtractionAction id={file.id} resume />
+      ) : null}
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" onClick={onPromote}>
+          <Upload aria-hidden="true" className="mr-2 size-4" />
+          Promote
+        </Button>
+      </DialogTrigger>
+    </ItemActionGroup>
   );
 }
 

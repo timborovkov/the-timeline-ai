@@ -17,11 +17,11 @@ export default async function SavedViewsPage() {
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
   const views = await scope.savedViews.list();
-  const visible = await Promise.all(
+  const rows = await Promise.all(
     views.map(async (view) => {
       const boardId = view.collection === 'boards' ? view.targetId : view.filters.boardId;
-      if (boardId && !(await scope.boards.getBoard(boardId, { itemLimit: 0 }))) return null;
-      return view;
+      const available = !boardId || Boolean(await scope.boards.getBoard(boardId, { itemLimit: 0 }));
+      return { view, href: available ? savedWorkViewHref(view) : null };
     }),
   );
   return (
@@ -39,21 +39,17 @@ export default async function SavedViewsPage() {
         }
       />
       <section className="divide-y rounded-lg border">
-        {visible.flatMap((view) =>
-          view
-            ? [
-                <SavedViewSettings
-                  key={view.id}
-                  id={view.id}
-                  title={view.title}
-                  collection={view.collection}
-                  href={savedWorkViewHref(view)}
-                  notify={view.notify}
-                />,
-              ]
-            : [],
-        )}
-        {visible.every((view) => !view) ? (
+        {rows.map(({ view, href }) => (
+          <SavedViewSettings
+            key={view.id}
+            id={view.id}
+            title={view.title}
+            collection={view.collection}
+            href={href}
+            notify={view.notify}
+          />
+        ))}
+        {rows.length === 0 ? (
           <p className="p-4 text-sm text-fg-muted">
             Use Save view while browsing Approvals, Tasks, Objects, or a board.
           </p>

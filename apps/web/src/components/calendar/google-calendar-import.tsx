@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 
 import {
   disconnectGoogleCalendar,
@@ -28,20 +28,47 @@ export function GoogleCalendarImport({
   available: boolean;
 }) {
   const [choices, setChoices] = useState<{ id: string; name: string }[] | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, startTransition] = useTransition();
   const reconnect = connection?.syncStatus === 'reconnect';
 
-  async function loadChoices() {
-    setBusy(true);
-    const result = await notifyAction({
-      id: 'calendar:choices',
-      loading: 'Loading calendars…',
-      success: 'Calendars loaded',
-      error: 'Couldn’t load your calendars',
-      run: listGoogleCalendarChoices,
+  function loadChoices() {
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: 'calendar:choices',
+        loading: 'Loading calendars…',
+        success: 'Calendars loaded',
+        error: 'Couldn’t load your calendars',
+        run: listGoogleCalendarChoices,
+      });
+      if ('choices' in result && result.choices) setChoices(result.choices);
     });
-    if ('choices' in result && result.choices) setChoices(result.choices);
-    setBusy(false);
+  }
+
+  function disconnect() {
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: 'calendar:disconnect',
+        loading: 'Disconnecting…',
+        success: 'Google Calendar disconnected',
+        error: 'Couldn’t disconnect calendar',
+        run: disconnectGoogleCalendar,
+      });
+      if (!result.error) setChoices(null);
+    });
+  }
+
+  function selectCalendar(form: FormData) {
+    const calendarId = String(form.get('calendar') ?? '');
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: 'calendar:select',
+        loading: 'Selecting calendar…',
+        success: 'Calendar selected',
+        error: 'Couldn’t select calendar',
+        run: () => selectGoogleCalendar(calendarId),
+      });
+      if (!result.error) setChoices(null);
+    });
   }
 
   if (!connection && !available && !error) return null;
@@ -60,6 +87,36 @@ export function GoogleCalendarImport({
           Google Calendar couldn’t connect.
         </p>
       ) : null}
+      {connection ? <CalendarConnectionDetails connection={connection} /> : null}
+      <div className="flex flex-wrap gap-2">
+        {!connection || reconnect ? (
+          <form method="post" action="/api/calendar/google">
+            <Button size="sm" variant="outline" type="submit">
+              {reconnect ? 'Reconnect Google Calendar' : 'Connect Google Calendar'}
+            </Button>
+          </form>
+        ) : (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadChoices()}>
+            {connection.calendarName ? 'Change calendar' : 'Choose calendar'}
+          </Button>
+        )}
+        {connection ? (
+          <Button size="sm" variant="ghost" type="button" disabled={busy} onClick={disconnect}>
+            Disconnect
+          </Button>
+        ) : null}
+      </div>
+      {choices ? (
+        <CalendarChoices choices={choices} busy={busy} selectCalendar={selectCalendar} />
+      ) : null}
+    </section>
+  );
+}
+
+function CalendarConnectionDetails({ connection }: { connection: GoogleCalendarImportState }) {
+  const reconnect = connection.syncStatus === 'reconnect';
+  return (
+    <>
       {connection?.calendarName ? (
         <p className="text-sm">
           {connection.calendarName}
@@ -80,61 +137,23 @@ export function GoogleCalendarImport({
       {connection?.syncStatus === 'retrying' ? (
         <p className="text-sm text-fg-muted">Sync is delayed. Timeline will retry.</p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {!connection || reconnect ? (
-          <form method="post" action="/api/calendar/google">
-            <Button size="sm" variant="outline" type="submit">
-              {reconnect ? 'Reconnect Google Calendar' : 'Connect Google Calendar'}
-            </Button>
-          </form>
-        ) : (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadChoices()}>
-            {connection.calendarName ? 'Change calendar' : 'Choose calendar'}
-          </Button>
-        )}
-        {connection ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void notifyAction({
-                id: 'calendar:disconnect',
-                loading: 'Disconnecting…',
-                success: 'Google Calendar disconnected',
-                error: 'Couldn’t disconnect calendar',
-                run: disconnectGoogleCalendar,
-              }).then(() => {
-                setBusy(false);
-                setChoices(null);
-              });
-            }}
-          >
-            Disconnect
-          </Button>
-        ) : null}
-      </div>
-      {choices?.length ? (
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const calendarId = String(new FormData(event.currentTarget).get('calendar') ?? '');
-            setBusy(true);
-            void notifyAction({
-              id: 'calendar:select',
-              loading: 'Selecting calendar…',
-              success: 'Calendar selected',
-              error: 'Couldn’t select calendar',
-              run: () => selectGoogleCalendar(calendarId),
-            }).then((result) => {
-              setBusy(false);
-              if (!result.error) setChoices(null);
-            });
-          }}
-        >
+    </>
+  );
+}
+
+function CalendarChoices({
+  choices,
+  busy,
+  selectCalendar,
+}: {
+  choices: { id: string; name: string }[];
+  busy: boolean;
+  selectCalendar: (form: FormData) => void;
+}) {
+  return (
+    <>
+      {choices.length ? (
+        <form className="flex flex-wrap items-end gap-2" action={selectCalendar}>
           <label className="space-y-1 text-sm">
             <span className="block">Calendar to import</span>
             <NativeSelect name="calendar" required defaultValue="">
@@ -152,9 +171,9 @@ export function GoogleCalendarImport({
             Import this calendar
           </Button>
         </form>
-      ) : choices ? (
+      ) : (
         <p className="text-sm text-fg-muted">Google returned no calendars you can import.</p>
-      ) : null}
-    </section>
+      )}
+    </>
   );
 }

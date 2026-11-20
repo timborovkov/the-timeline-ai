@@ -1425,6 +1425,16 @@ function CalendarEventDialog({
   onSave: () => void;
   onRemove: () => void;
 }) {
+  if (editing?.readOnly) {
+    return (
+      <ImportedCalendarEventDialog
+        event={editing}
+        draft={draft}
+        open={open}
+        onOpenChange={onOpenChange}
+      />
+    );
+  }
   const titleError = error === TITLE_REQUIRED_ERROR ? error : null;
 
   return (
@@ -1432,13 +1442,10 @@ function CalendarEventDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader className="flex-row items-start justify-between gap-2 pr-8 text-left">
           <div className="min-w-0 space-y-2">
-            <DialogTitle>
-              {editing?.readOnly ? editing.title : editing ? 'Edit event' : 'New event'}
-            </DialogTitle>
+            <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
             <DialogDescription>
-              {editing?.readOnly
-                ? 'Imported from Google Calendar'
-                : `Times are saved in ${timezone}. For all-day events, choose the first and last included days.`}
+              Times are saved in {timezone}. For all-day events, choose the first and last included
+              days.
             </DialogDescription>
           </div>
           {editing && !editing.redacted ? (
@@ -1449,26 +1456,13 @@ function CalendarEventDialog({
           ) : null}
         </DialogHeader>
         <div className="grid gap-4">
-          {editing?.readOnly ? (
-            <div className="space-y-2 text-sm">
-              <p>
-                {draft.allDay ? draft.startDate : draft.startDateTime} –{' '}
-                {draft.allDay ? draft.endDate : draft.endDateTime} · {draft.timezone}
-              </p>
-              {editing.location ? <p>{editing.location}</p> : null}
-              {editing.description ? (
-                <p className="whitespace-pre-wrap">{editing.description}</p>
-              ) : null}
-            </div>
-          ) : (
-            <CalendarDraftFields
-              draft={draft}
-              members={members}
-              titleErrorId={titleError ? 'calendar-title-error' : undefined}
-              titleInputRef={titleInputRef}
-              onDraftChange={onDraftChange}
-            />
-          )}
+          <CalendarDraftFields
+            draft={draft}
+            members={members}
+            titleErrorId={titleError ? 'calendar-title-error' : undefined}
+            titleInputRef={titleInputRef}
+            onDraftChange={onDraftChange}
+          />
           {editing && !editing.redacted ? (
             <EventReminders key={editing.id} eventId={editing.id} />
           ) : null}
@@ -1485,28 +1479,58 @@ function CalendarEventDialog({
             <CalendarLinkedObjectList objects={editing.linkedObjects} />
           ) : null}
         </div>
-        {editing?.readOnly ? null : (
-          <DialogFooter className="gap-2 sm:justify-between">
-            <div>
-              {editing ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onRemove}
-                  disabled={pending}
-                >
-                  <Trash2 className="mr-1 size-4" />
-                  Delete
-                </Button>
-              ) : null}
-            </div>
-            <Button type="button" size="sm" onClick={onSave} disabled={pending}>
-              <Check className="mr-1 size-4" />
-              {pending ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        )}
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div>
+            {editing ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onRemove}
+                disabled={pending}
+              >
+                <Trash2 className="mr-1 size-4" />
+                Delete
+              </Button>
+            ) : null}
+          </div>
+          <Button type="button" size="sm" onClick={onSave} disabled={pending}>
+            <Check className="mr-1 size-4" />
+            {pending ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ImportedCalendarEventDialog({
+  event,
+  draft,
+  open,
+  onOpenChange,
+}: {
+  event: CalendarEvent;
+  draft: Draft;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{event.title}</DialogTitle>
+          <DialogDescription>Imported from Google Calendar</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 text-sm">
+          <p>
+            {draft.allDay ? draft.startDate : draft.startDateTime} –{' '}
+            {draft.allDay ? draft.endDate : draft.endDateTime} · {draft.timezone}
+          </p>
+          {event.location ? <p>{event.location}</p> : null}
+          {event.description ? <p className="whitespace-pre-wrap">{event.description}</p> : null}
+        </div>
+        <EventReminders key={event.id} eventId={event.id} />
       </DialogContent>
     </Dialog>
   );

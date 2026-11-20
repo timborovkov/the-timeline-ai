@@ -1323,6 +1323,9 @@
   "apps/web/src/lib/google-drive-limited-use.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/handoff-provenance.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/hub-status.test.ts": {
     "group": "unit"
   },

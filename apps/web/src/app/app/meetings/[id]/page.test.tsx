@@ -52,6 +52,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/components/meeting-forms'),
   () => ({
+    RecoverMeetingForm: () => <button type="button">Recover capture</button>,
     CancelMeetingButton: ({ meetingId }: { meetingId: string }) => (
       <button type="button">Cancel {meetingId}</button>
     ),

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useTransition } from 'react';
+import { useOptimistic, useTransition } from 'react';
 
 import { manageSavedWorkView } from '@/app/actions/saved-views';
 import { Button } from '@/components/ui/button';
@@ -18,12 +18,19 @@ export function SavedViewSettings({
   id: string;
   title: string;
   collection: string;
-  href: string;
+  href: string | null;
   notify: boolean;
 }) {
   const [pending, startTransition] = useTransition();
-  function manage(change: unknown) {
+  const [notifyEnabled, setNotifyEnabled] = useOptimistic(notify);
+  function manage(
+    change:
+      | { type: 'notify'; enabled: boolean }
+      | { type: 'rename'; title: FormDataEntryValue | null }
+      | { type: 'delete' },
+  ) {
     startTransition(async () => {
+      if (change.type === 'notify') setNotifyEnabled(change.enabled);
       await notifyAction({
         id: `work:view:${id}`,
         loading: 'Updating view…',
@@ -37,18 +44,24 @@ export function SavedViewSettings({
     <article className="flex flex-wrap items-start justify-between gap-4 p-4">
       <div>
         <h2 className="font-medium">
-          <Link href={href} className="underline underline-offset-4">
-            {title}
-          </Link>
+          {href ? (
+            <Link href={href} className="underline underline-offset-4">
+              {title}
+            </Link>
+          ) : (
+            title
+          )}
         </h2>
-        <p className="text-sm capitalize text-fg-muted">{collection}</p>
+        <p className="text-sm capitalize text-fg-muted">
+          {href ? collection : 'Board unavailable'}
+        </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={notify}
-            disabled={pending}
+            checked={notifyEnabled}
+            disabled={pending || (!href && !notify)}
             onChange={(event) => manage({ type: 'notify', enabled: event.currentTarget.checked })}
           />
           Include new matches in my digest
@@ -57,9 +70,8 @@ export function SavedViewSettings({
           <summary className="cursor-pointer text-sm">Manage view</summary>
           <form
             className="mt-2 flex flex-wrap items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              manage({ type: 'rename', title: new FormData(event.currentTarget).get('title') });
+            action={(form) => {
+              manage({ type: 'rename', title: form.get('title') });
             }}
           >
             <label className="block space-y-1 text-sm">

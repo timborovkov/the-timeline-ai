@@ -18,6 +18,7 @@ const OPAQUE_CONTEXT_KEYS = new Set([
   'proposals',
   'boardContext',
   'pendingApprovals',
+  'pending',
 ]);
 
 function citationRefs(text: string): ArtifactRef[] {

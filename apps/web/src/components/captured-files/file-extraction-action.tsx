@@ -15,15 +15,19 @@ export function FileExtractionAction({
   id,
   attemptId,
   resume = false,
+  retryIndex = false,
 }: {
   id: string;
   attemptId?: string;
   resume?: boolean;
+  retryIndex?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const label = attemptId
-    ? 'Apply extraction'
+    ? retryIndex
+      ? 'Retry indexing'
+      : 'Apply extraction'
     : resume
       ? 'Resume OCR'
       : 'Request second extraction';
@@ -47,7 +51,7 @@ export function FileExtractionAction({
                   ? resumeFileOcr(id)
                   : requestFileCorrection(id),
           });
-          if (!result.error) router.refresh();
+          if (attemptId || !result.error) router.refresh();
         })
       }
     >

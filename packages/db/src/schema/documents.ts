@@ -224,6 +224,11 @@ export const documentChunks = pgTable(
   ],
 );
 
+export interface HistoricalDocumentExtraction extends DocumentExtractionRepresentation {
+  id: string;
+  chunkIndex: number;
+}
+
 export interface DocumentExtractionRepresentation {
   kind: (typeof extractedRepresentationKind.enumValues)[number];
   text: string;
@@ -243,9 +248,10 @@ export const documentExtractionAttempts = pgTable(
     status: text('status').notNull().default('pending'),
     model: text('model'),
     representations: jsonb('representations').$type<DocumentExtractionRepresentation[]>(),
-    previous: jsonb('previous').$type<DocumentExtractionRepresentation[]>(),
+    previous: jsonb('previous').$type<HistoricalDocumentExtraction[]>(),
     appliedBy: uuid('applied_by').references(() => users.id, { onDelete: 'set null' }),
     appliedAt: timestamp('applied_at', { withTimezone: true }),
+    indexQueuedAt: timestamp('index_queued_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -50,6 +50,7 @@ CREATE TABLE document_extraction_attempts (
   previous jsonb,
   applied_by uuid REFERENCES users(id) ON DELETE SET NULL,
   applied_at timestamptz,
+  index_queued_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -85,6 +86,7 @@ CREATE TABLE saved_work_views (
   target_id uuid,
   filters jsonb NOT NULL,
   notify boolean NOT NULL DEFAULT false,
+  opted_in_at timestamptz,
   baseline jsonb NOT NULL DEFAULT '[]',
   evaluated_through timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),

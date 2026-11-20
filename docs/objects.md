@@ -116,8 +116,8 @@ Approval continuations claim the saved pending action before execution. The serv
 
 ### Project handoffs
 
-A fresh cited answer in a project-pinned Ask session can be saved as a dated
-handoff. The snapshot preserves the answer and source references alongside
+Start a fresh project-pinned Ask session and ask it to cite evidence from
+List events. You can save the cited answer as a dated handoff. The snapshot preserves the answer and source references alongside
 outstanding commitments and their owners at save time. Its stable link works
 for workspace members who can currently read the project, source material and
 commitments. The current project link opens the latest record.

@@ -32,15 +32,18 @@ export function EventReminders({ eventId }: { eventId: string }) {
 
   async function update(run: () => Promise<{ ok: boolean; error?: string }>) {
     setPending(true);
-    await notifyAction({
-      id: `calendar:reminder:${eventId}`,
-      loading: 'Saving reminder settings…',
-      success: 'Reminder settings saved',
-      error: 'Couldn’t save reminder settings',
-      run,
-    });
-    await refresh();
-    setPending(false);
+    try {
+      await notifyAction({
+        id: `calendar:reminder:${eventId}`,
+        loading: 'Saving reminder settings…',
+        success: 'Reminder settings saved',
+        error: 'Couldn’t save reminder settings',
+        run,
+      });
+      await refresh();
+    } finally {
+      setPending(false);
+    }
   }
 
   const blocked = preferences?.eventBlocked || preferences?.seriesBlocked;
@@ -81,42 +84,12 @@ export function EventReminders({ eventId }: { eventId: string }) {
               ))}
             </NativeSelect>
           </div>
-          {preferences.canBlock ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={pending}
-                onClick={() =>
-                  void update(() =>
-                    changeEventReminderBlock(eventId, !preferences.eventBlocked, false),
-                  )
-                }
-              >
-                {preferences.eventBlocked
-                  ? 'Allow event reminders'
-                  : 'Block reminders for everyone'}
-              </Button>
-              {preferences.hasSeries ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() =>
-                    void update(() =>
-                      changeEventReminderBlock(eventId, !preferences.seriesBlocked, true),
-                    )
-                  }
-                >
-                  {preferences.seriesBlocked
-                    ? 'Allow series reminders'
-                    : 'Block reminders for the series'}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
+          <OrganizerReminderControls
+            preferences={preferences}
+            pending={pending}
+            eventId={eventId}
+            update={update}
+          />
         </div>
       ) : (
         <p className="text-sm text-fg-muted">
@@ -124,5 +97,47 @@ export function EventReminders({ eventId }: { eventId: string }) {
         </p>
       )}
     </details>
+  );
+}
+
+function OrganizerReminderControls({
+  preferences,
+  pending,
+  eventId,
+  update,
+}: {
+  preferences: NonNullable<Awaited<ReturnType<typeof getEventReminder>>>;
+  pending: boolean;
+  eventId: string;
+  update: (run: () => Promise<{ ok: boolean; error?: string }>) => Promise<void>;
+}) {
+  if (!preferences.canBlock) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={pending}
+        onClick={() =>
+          void update(() => changeEventReminderBlock(eventId, !preferences.eventBlocked, false))
+        }
+      >
+        {preferences.eventBlocked ? 'Allow event reminders' : 'Block reminders for everyone'}
+      </Button>
+      {preferences.hasSeries ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() =>
+            void update(() => changeEventReminderBlock(eventId, !preferences.seriesBlocked, true))
+          }
+        >
+          {preferences.seriesBlocked ? 'Allow series reminders' : 'Block reminders for the series'}
+        </Button>
+      ) : null}
+    </div>
   );
 }

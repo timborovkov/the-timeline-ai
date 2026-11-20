@@ -22,6 +22,7 @@ export const QUEUE_NAMES = {
   // Phase 11 calendar recurrence materializer. Keeps a rolling window of
   // child occurrence rows warm for recurring calendar parents.
   calendarRecurrence: 'calendar-recurrence',
+  googleCalendar: 'google-calendar',
   // Phase 9: document upload → text extract → chunk → embed pipeline.
   // The `documentExtract` worker fans out to many `embed` jobs (one per
   // chunk) once chunking succeeds; embed shares the existing queue.
@@ -672,6 +673,29 @@ export async function scheduleCalendarJobs(): Promise<void> {
       data: {},
     }),
   ]);
+}
+
+let _googleCalendarQueue: TimelineQueue<CalendarRecurrenceJobData> | undefined;
+
+export async function scheduleGoogleCalendarImports(): Promise<void> {
+  _googleCalendarQueue ??= createTimelineQueue<CalendarRecurrenceJobData>(
+    QUEUE_NAMES.googleCalendar,
+    {
+      attempts: 2,
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  await upsertCronScheduler(_googleCalendarQueue, 'google-calendar-import-minute', '* * * * *', {
+    name: 'poll',
+    data: {},
+  });
+}
+
+export async function closeGoogleCalendarQueue(): Promise<void> {
+  await closeQueue(_googleCalendarQueue, () => {
+    _googleCalendarQueue = undefined;
+  });
 }
 
 export async function closeCalendarRecurrenceQueue(): Promise<void> {

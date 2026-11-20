@@ -639,25 +639,27 @@ export function RecoverMeetingForm({
   return (
     <form
       className="flex flex-wrap items-center gap-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const consentGiven = new FormData(event.currentTarget).has('consent');
+      action={async (form) => {
+        const consentGiven = form.has('consent');
         setPending(true);
-        void notifyAction({
-          id: `meeting:${meetingId}:recover`,
-          loading: 'Starting recovery…',
-          success: action === 'rejoin' ? 'Recovery attempt ready' : 'Transcript processing queued',
-          error: 'Couldn’t start recovery',
-          run: () => recoverMeetingCaptureAction({ meetingId, action, consentGiven }),
-        }).then((result) => {
-          setPending(false);
+        try {
+          const result = await notifyAction({
+            id: `meeting:${meetingId}:recover`,
+            loading: 'Starting recovery…',
+            success:
+              action === 'rejoin' ? 'Recovery attempt ready' : 'Transcript processing queued',
+            error: 'Couldn’t start recovery',
+            run: () => recoverMeetingCaptureAction({ meetingId, action, consentGiven }),
+          });
           if (result.error) return;
           if ('meetingId' in result && result.meetingId && result.meetingId !== meetingId) {
             router.push(`/app/meetings/${result.meetingId}`);
           } else {
             router.refresh();
           }
-        });
+        } finally {
+          setPending(false);
+        }
       }}
     >
       {action === 'rejoin' ? (

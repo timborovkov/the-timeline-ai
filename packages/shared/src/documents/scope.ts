@@ -1534,6 +1534,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .select({
             id: documentChunks.id,
             kind: documentChunks.representationKind,
+            chunkIndex: documentChunks.chunkIndex,
             text: documentChunks.text,
           })
           .from(documentChunks)
@@ -1541,7 +1542,11 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
             and(eq(documentChunks.teamId, teamId), eq(documentChunks.documentVersionId, versionId)),
           )
           .orderBy(asc(documentChunks.chunkIndex));
-        if (attempt.status === 'applied') return previous.map((chunk) => chunk.id);
+        if (attempt.status === 'applied')
+          return {
+            chunkIds: previous.map((chunk) => chunk.id),
+            replacedIds: (attempt.previous ?? []).map((chunk) => chunk.id),
+          };
         const chunks = attempt.representations.flatMap((representation) =>
           chunkText(representation.text).map((chunk) => ({
             ...chunk,
@@ -1588,15 +1593,38 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         await tx
           .update(documentExtractionAttempts)
           .set({
-            previous: previous.map(({ kind, text }) => ({ kind, text })),
+            previous,
             status: 'applied',
             appliedAt: now,
             appliedBy: userId,
             updatedAt: now,
           })
           .where(eq(documentExtractionAttempts.id, attempt.id));
-        return newChunks.map((chunk) => chunk.id);
+        return {
+          chunkIds: newChunks.map((chunk) => chunk.id),
+          replacedIds: previous.map((chunk) => chunk.id),
+        };
       });
+    },
+
+    async confirmExtractionCorrectionIndex(attemptId: string) {
+      await ensureMember();
+      await db
+        .update(documentExtractionAttempts)
+        .set({ indexQueuedAt: new Date() })
+        .from(documentVersions)
+        .innerJoin(documents, eq(documents.id, documentVersions.documentId))
+        .where(
+          and(
+            eq(documentExtractionAttempts.id, attemptId),
+            eq(documentExtractionAttempts.status, 'applied'),
+            eq(documentExtractionAttempts.teamId, teamId),
+            eq(documentExtractionAttempts.versionId, documentVersions.id),
+            eq(documents.teamId, teamId),
+            isNull(documents.deletedAt),
+            documentVisibility,
+          ),
+        );
     },
 
     async getDocument(
@@ -2206,6 +2234,41 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         });
         return row;
       });
+    },
+
+    async getHistoricalDocumentChunk(documentId: string, versionId: string, chunkId: string) {
+      await ensureMember();
+      const document = await getDocumentRaw(documentId);
+      if (!document) return null;
+      const [attempt] = await db
+        .select({
+          previous: documentExtractionAttempts.previous,
+          appliedAt: documentExtractionAttempts.appliedAt,
+        })
+        .from(documentExtractionAttempts)
+        .innerJoin(documentVersions, eq(documentVersions.id, documentExtractionAttempts.versionId))
+        .where(
+          and(
+            eq(documentExtractionAttempts.teamId, teamId),
+            eq(documentExtractionAttempts.versionId, versionId),
+            eq(documentVersions.documentId, documentId),
+            sql`${documentExtractionAttempts.previous} @> ${JSON.stringify([{ id: chunkId }])}::jsonb`,
+          ),
+        )
+        .limit(1);
+      const chunk = attempt?.previous?.find((item) => item.id === chunkId);
+      return chunk
+        ? {
+            ...chunk,
+            documentId,
+            documentVersionId: versionId,
+            representationKind: chunk.kind,
+            pageNumber: null,
+            tokenCount: Math.ceil(chunk.text.length / 4),
+            summary: null,
+            createdAt: attempt?.appliedAt ?? document.createdAt,
+          }
+        : null;
     },
 
     async getDocumentChunk(id: string): Promise<DocumentChunkRow | null> {

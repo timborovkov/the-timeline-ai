@@ -1,4 +1,4 @@
-import { meetingRecoveryAction } from '@timeline/shared/meetings';
+import { meetingRecoveryAction, type MeetingRow } from '@timeline/shared/meetings';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Captions, ExternalLink } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -70,6 +70,97 @@ function renderMeetingHeaderActions({
   );
 }
 
+function captureOutcome(status: MeetingRow['status'], hasTranscript: boolean) {
+  if (status === 'failed') return 'Recorder failed';
+  if (status === 'no_show') return 'Recorder could not join';
+  if (!hasTranscript && ['completed', 'completed_partial'].includes(status)) {
+    return 'Capture completed with no transcript';
+  }
+  return null;
+}
+
+function recoveryDescription(
+  recovery: ReturnType<typeof meetingRecoveryAction>,
+  canRecover: boolean,
+) {
+  if (recovery === 'process')
+    return 'Transcript lines are available. Process them again to recover the capture.';
+  if (recovery === 'rejoin')
+    return 'If the call is still running, invite the notetaker back in a new capture attempt.';
+  if (canRecover) return 'You can start a new capture from Meetings.';
+  return 'The capture owner or a workspace admin can check whether recovery is available.';
+}
+
+function CaptureRecoveryPanel({
+  meeting,
+  viewerId,
+  role,
+  hasTranscript,
+}: {
+  meeting: MeetingRow;
+  viewerId: string;
+  role: string;
+  hasTranscript: boolean;
+}) {
+  const canRecover = meeting.createdByUserId === viewerId || role === 'admin' || role === 'owner';
+  const outcome = captureOutcome(meeting.status, hasTranscript);
+  const recovery = canRecover ? meetingRecoveryAction(meeting, hasTranscript) : null;
+  if (!outcome && !recovery) return null;
+  return (
+    <section className="space-y-3 rounded-lg border p-4" aria-label="Capture recovery">
+      <SectionHeading>{outcome ?? 'Capture recovery'}</SectionHeading>
+      <p className="text-sm text-fg-muted">{recoveryDescription(recovery, canRecover)}</p>
+      {recovery && <RecoverMeetingForm meetingId={meeting.id} action={recovery} />}
+      {canRecover && !recovery && (
+        <Link className="text-sm underline" href="/app/meetings">
+          Open Meetings
+        </Link>
+      )}
+    </section>
+  );
+}
+
+function MeetingTranscript({
+  chunks,
+  status,
+}: {
+  chunks: Awaited<ReturnType<ReturnType<typeof withTeam>['meetings']['listChunks']>>;
+  status: MeetingRow['status'];
+}) {
+  const waiting = status === 'pending' || status === 'joining';
+  return (
+    <section className="space-y-2">
+      <SectionHeading>Transcript</SectionHeading>
+      {chunks.length === 0 ? (
+        <EmptyState
+          icon={Captions}
+          size="inset"
+          title={waiting ? 'Waiting for the notetaker to join' : 'No transcript captured'}
+          body={
+            waiting
+              ? 'Transcript lines will appear here after the notetaker joins the call.'
+              : 'This meeting has no captured transcript yet.'
+          }
+        />
+      ) : (
+        <ol className="space-y-2 py-3 text-sm">
+          {chunks.map((c) => (
+            <li key={c.id} className="flex gap-3">
+              <span className="w-12 shrink-0 font-mono text-xs text-fg-muted">
+                {formatMeetingOffset(c.startMs)}
+              </span>
+              <span className="flex-1">
+                {c.speaker ? <span className="font-medium text-fg">{c.speaker}: </span> : null}
+                {c.text}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 export default async function MeetingDetailPage({ params }: Props) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
@@ -90,17 +181,7 @@ export default async function MeetingDetailPage({ params }: Props) {
   ]);
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
-  const canRecover =
-    meeting.createdByUserId === session.user.id || role === 'admin' || role === 'owner';
-  const outcome =
-    meeting.status === 'failed'
-      ? 'Recorder failed'
-      : meeting.status === 'no_show'
-        ? 'Recorder could not join'
-        : chunks.length === 0 && ['completed', 'completed_partial'].includes(meeting.status)
-          ? 'Capture completed with no transcript'
-          : null;
-  const recovery = canRecover ? meetingRecoveryAction(meeting, chunks.length > 0) : null;
+  const outcome = captureOutcome(meeting.status, chunks.length > 0);
   const originalId = meeting.metadata.recovery_of_meeting_id;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);
   const title = displayMeetingLabel(meeting);
@@ -150,27 +231,12 @@ export default async function MeetingDetailPage({ params }: Props) {
           Open original capture
         </Link>
       ) : null}
-      {outcome || recovery ? (
-        <section className="space-y-3 rounded-lg border p-4" aria-label="Capture recovery">
-          <SectionHeading>{outcome ?? 'Capture recovery'}</SectionHeading>
-          <p className="text-sm text-fg-muted">
-            {recovery === 'process'
-              ? 'Transcript lines are available. Process them again to recover the capture.'
-              : recovery === 'rejoin'
-                ? 'If the call is still running, invite the notetaker back in a new capture attempt.'
-                : canRecover
-                  ? 'There is no recovery action available for this capture. You can start a new capture from Meetings.'
-                  : 'The capture owner or a workspace admin can check whether recovery is available.'}
-          </p>
-          {recovery ? (
-            <RecoverMeetingForm meetingId={meeting.id} action={recovery} />
-          ) : canRecover ? (
-            <Link className="text-sm underline" href="/app/meetings">
-              Open Meetings
-            </Link>
-          ) : null}
-        </section>
-      ) : null}
+      <CaptureRecoveryPanel
+        meeting={meeting}
+        viewerId={session.user.id}
+        role={role}
+        hasTranscript={chunks.length > 0}
+      />
 
       {summary ? (
         <section className="space-y-2 py-4">
@@ -179,39 +245,7 @@ export default async function MeetingDetailPage({ params }: Props) {
         </section>
       ) : null}
 
-      <section className="space-y-2">
-        <SectionHeading>Transcript</SectionHeading>
-        {chunks.length === 0 ? (
-          <EmptyState
-            icon={Captions}
-            size="inset"
-            title={
-              meeting.status === 'pending' || meeting.status === 'joining'
-                ? 'Waiting for the notetaker to join'
-                : 'No transcript captured'
-            }
-            body={
-              meeting.status === 'pending' || meeting.status === 'joining'
-                ? 'Transcript lines will appear here after the notetaker joins the call.'
-                : 'This meeting has no captured transcript yet.'
-            }
-          />
-        ) : (
-          <ol className="space-y-2 py-3 text-sm">
-            {chunks.map((c) => (
-              <li key={c.id} className="flex gap-3">
-                <span className="w-12 shrink-0 font-mono text-xs text-fg-muted">
-                  {formatMeetingOffset(c.startMs)}
-                </span>
-                <span className="flex-1">
-                  {c.speaker ? <span className="font-medium text-fg">{c.speaker}: </span> : null}
-                  {c.text}
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <MeetingTranscript chunks={chunks} status={meeting.status} />
       <TechnicalDetails
         items={[{ label: 'Meeting ID', value: meeting.id, copyValue: meeting.id }]}
       />

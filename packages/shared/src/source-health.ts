@@ -62,7 +62,7 @@ export function createSourceHealthScope(
   const calendarReceipt = receipt('calendar_event', calendarEvents.id, calendarEvents.updatedAt);
   const chunkReceipt = receipt('doc_chunk', documentChunks.id, documentChunks.createdAt);
   const complete = sql`${sourceIndexReceipts.sourceId} IS NOT NULL`;
-  const rawIndexed = sql`${rawEvents.sourceMetadata} ? 'embedded_at' AND ${rawEvents.sourceMetadata}->>'embedding_model' = ${TIMELINE_MODELS.embedding.id}`;
+  const rawIndexed = sql`coalesce(${rawEvents.sourceMetadata}->>'embedded_at', '') >= coalesce(${rawEvents.sourceMetadata}->>'visibility_changed_at', '') AND ${rawEvents.sourceMetadata} ? 'embedded_at' AND ${rawEvents.sourceMetadata}->>'embedding_model' = ${TIMELINE_MODELS.embedding.id}`;
   const rawEligible = sql`${rawEvents.visibility} = 'team' AND nullif(trim(${rawEvents.contentText}), '') IS NOT NULL`;
   const providerKey = sql<string>`coalesce(nullif(${rawEvents.sourceMetadata}->>'integration_id', ''), ${rawEvents.source}::text)`;
   const totals = (indexed: SQL) => ({

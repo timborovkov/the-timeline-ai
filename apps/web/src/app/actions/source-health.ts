@@ -21,8 +21,10 @@ export async function repairSourceIndex(form: FormData) {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const jobs = await scope.sourceHealth.indexJobs(parsed.data.kind, parsed.data.key);
-  const queue = await requireRedisQueue();
-  for (const job of jobs) await queue.enqueueEmbedJob(job);
+  const [jobs, queue] = await Promise.all([
+    scope.sourceHealth.indexJobs(parsed.data.kind, parsed.data.key),
+    requireRedisQueue(),
+  ]);
+  await Promise.all(jobs.map((job) => queue.enqueueEmbedJob(job)));
   revalidatePath('/app/connections/health');
 }

@@ -47,6 +47,7 @@ export const savedWorkViews = pgTable(
     targetId: uuid('target_id'),
     filters: jsonb('filters').$type<Record<string, string>>().notNull(),
     notify: boolean('notify').notNull().default(false),
+    optedInAt: timestamp('opted_in_at', { withTimezone: true }),
     // Item IDs for the last complete evaluation. Reset on each opt-in.
     evaluatedThrough: timestamp('evaluated_through', { withTimezone: true }),
     baseline: jsonb('baseline')

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
   calendarEventEntities,
   calendarEvents,
@@ -577,16 +578,38 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     return materializeParent(tx, parent, opts);
   }
 
+  function moveOccurrenceStart(
+    oldStart: Date,
+    before: Pick<CalendarEventRow, 'startAt' | 'timezone'>,
+    after: Pick<CalendarEventRow, 'startAt' | 'timezone'>,
+  ): number {
+    if (before.startAt.getTime() === after.startAt.getTime() && before.timezone === after.timezone)
+      return oldStart.getTime();
+    const local = (start: Date, timezone: string) =>
+      Temporal.Instant.fromEpochMilliseconds(start.getTime())
+        .toZonedDateTimeISO(timezone)
+        .toPlainDateTime();
+    const shift = local(before.startAt, before.timezone).until(
+      local(after.startAt, after.timezone),
+      { largestUnit: 'day' },
+    );
+    return local(oldStart, before.timezone).add(shift).toZonedDateTime(after.timezone)
+      .epochMilliseconds;
+  }
+
   async function transferOccurrenceReminderSettings(
     tx: DbOrTx,
     children: { id: string; originalStartAt: Date | null }[],
     replacements: { id: string; originalStartAt: Date | null }[],
+    before: Pick<CalendarEventRow, 'startAt' | 'timezone'>,
+    after: Pick<CalendarEventRow, 'startAt' | 'timezone'>,
   ) {
     const byStart = new Map(
       replacements.map((event) => [event.originalStartAt?.getTime(), event.id]),
     );
     const pairs = children.flatMap((event) => {
-      const id = byStart.get(event.originalStartAt?.getTime());
+      if (!event.originalStartAt) return [];
+      const id = byStart.get(moveOccurrenceStart(event.originalStartAt, before, after));
       return id && event.id !== id ? [{ old_id: event.id, new_id: id }] : [];
     });
     if (!pairs.length) return;
@@ -620,7 +643,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
   async function rematerializeParent(
     tx: DbOrTx,
     parent: CalendarEventRow,
-    opts: { from?: Date; to?: Date } = {},
+    previous: CalendarEventRow,
   ): Promise<{ materializedIds: string[]; deletedIds: string[] }> {
     const children = await tx
       .select({ id: calendarEvents.id, originalStartAt: calendarEvents.originalStartAt })
@@ -644,11 +667,13 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           isNull(calendarEvents.deletedAt),
         ),
       );
-    const materializedIds = await materializeParent(tx, parent, opts);
+    const materializedIds = await materializeParent(tx, parent);
     await transferOccurrenceReminderSettings(
       tx,
       children,
       await reminderOccurrenceRows(tx, materializedIds),
+      previous,
+      parent,
     );
     return { materializedIds, deletedIds };
   }
@@ -1092,10 +1117,16 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             SELECT ${hydrated.id}::uuid, team_id, true FROM calendar_reminder_blocks
             WHERE team_id = ${teamId}::uuid AND event_id = ${parentRow.id}::uuid AND series
             ON CONFLICT DO NOTHING`);
-          await transferOccurrenceReminderSettings(tx, futureChildren, [
-            { id: hydrated.id, originalStartAt: splitAt },
-            ...(await reminderOccurrenceRows(tx, materializedIds)),
-          ]);
+          await transferOccurrenceReminderSettings(
+            tx,
+            futureChildren,
+            [
+              { id: hydrated.id, originalStartAt: hydrated.startAt },
+              ...(await reminderOccurrenceRows(tx, materializedIds)),
+            ],
+            { startAt: splitAt, timezone: parentRow.timezone },
+            hydrated,
+          );
           return {
             event: redactIfNeeded(hydrated as CalendarEventRow),
             changedFields: [
@@ -1424,7 +1455,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             changedFields.has('visibilityUserIds') ||
             changedFields.has('showAs') ||
             changedFields.has('rrule'))
-            ? await rematerializeParent(tx, updated as CalendarEventRow)
+            ? await rematerializeParent(tx, updated as CalendarEventRow, row as CalendarEventRow)
             : null;
 
         return {

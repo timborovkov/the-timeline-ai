@@ -1,7 +1,6 @@
-import { sourceIndexReceipts } from '@timeline/db';
 import { createHash } from 'node:crypto';
 
-import { type Db, rawEvents } from '@timeline/db';
+import { type Db, documentChunks, rawEvents, sourceIndexReceipts } from '@timeline/db';
 import {
   childLogger,
   chunkText,
@@ -15,7 +14,7 @@ import {
 import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { completeWebsiteChunk } from '@timeline/shared/websites';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
@@ -556,6 +555,23 @@ export async function processEmbedJob(
     const pointId = qdrant.buildChunkedPointId(plan.scope, plan.sourceId, chunk.model, chunk.index);
     pointIds.push(pointId);
     await client.upsertVector(pointId, chunk.vector, { ...payload, chunk_index: chunk.index });
+  }
+
+  // A correction may replace this source while the provider is embedding it.
+  if (plan.scope === 'doc_chunk') {
+    const [current] = await deps.db
+      .select({ id: documentChunks.id })
+      .from(documentChunks)
+      .where(and(eq(documentChunks.teamId, data.teamId), eq(documentChunks.id, plan.sourceId)));
+    if (!current) {
+      await client.deletePointsForSource({
+        teamId: data.teamId,
+        scope: plan.scope,
+        sourceId: plan.sourceId,
+        model,
+      });
+      return { skipped: true, reason: 'superseded_document_chunk' };
+    }
   }
 
   const nextChunk = startChunk + embeddedChunks.length;

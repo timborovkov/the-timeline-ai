@@ -6467,6 +6467,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               SELECT 1 FROM agent_suggestion_items AS sibling
               WHERE sibling.team_id = ${teamId}::uuid AND sibling.suggestion_id = ${agentSuggestionItems.suggestionId}
               AND sibling.target_kind = 'object_relationship'
+              AND sibling.status IN ('pending', 'accepted')
               AND (
                 (sibling.proposed_payload->>'fromRef' = ${agentSuggestionItems.proposedPayload}->>'localRef'
                   AND sibling.proposed_payload->>'toEntityId' = ${opts.projectId})

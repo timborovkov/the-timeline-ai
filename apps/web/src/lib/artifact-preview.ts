@@ -621,12 +621,17 @@ async function documentChunkPreview(
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'document_chunk') return null;
   if (ref.id !== ref.chunkId) return null;
-  const [document, chunk, versions] = await Promise.all([
+  const [document, currentChunk, versions] = await Promise.all([
     scope.documents.getDocument(ref.documentId),
     scope.documents.getDocumentChunk(ref.chunkId),
     scope.documents.listDocumentVersions(ref.documentId),
   ]);
   const version = versions.find((entry) => entry.version === ref.version);
+  const chunk =
+    currentChunk ??
+    (document && version
+      ? await scope.documents.getHistoricalDocumentChunk(document.id, version.id, ref.chunkId)
+      : null);
   if (
     !document ||
     !chunk ||
@@ -636,7 +641,9 @@ async function documentChunkPreview(
   ) {
     return null;
   }
-  const href = `/app/documents/${document.id}?version=${String(ref.version)}#chunk-${chunk.id}`;
+  const href = currentChunk
+    ? `/app/documents/${document.id}?version=${String(ref.version)}#chunk-${chunk.id}`
+    : `/app/documents/captured/${document.id}/extraction?version=${version.id}&chunk=${chunk.id}`;
   const actions: ArtifactPreviewAction[] = [{ href, label: 'Open in Documents' }];
   if (document.sourceRawEventId) {
     actions.push({

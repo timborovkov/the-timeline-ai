@@ -11,8 +11,44 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
-export default async function FileExtractionPage({ params }: { params: Promise<{ id: string }> }) {
-  const [{ id }, session] = await Promise.all([params, auth()]);
+async function renderPreviousExtraction(
+  scope: ReturnType<typeof withTeam>,
+  file: { id: string; name: string },
+  versionId?: string,
+  chunkId?: string,
+) {
+  const version = z.uuid().safeParse(versionId);
+  const chunk = z.uuid().safeParse(chunkId);
+  if (!version.success || !chunk.success) notFound();
+  const citedChunk = await scope.documents.getHistoricalDocumentChunk(
+    file.id,
+    version.data,
+    chunk.data,
+  );
+  if (!citedChunk) notFound();
+  return (
+    <div className="space-y-5">
+      <Link className="text-sm underline" href={`/app/documents/captured/${file.id}/extraction`}>
+        Open current extraction
+      </Link>
+      <PageHeader title={file.name} subtitle="Previous extraction" />
+      <p className="whitespace-pre-wrap text-sm">{citedChunk.text}</p>
+    </div>
+  );
+}
+
+export default async function FileExtractionPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ version?: string; chunk?: string }>;
+}) {
+  const [{ id }, { version: citedVersionId, chunk: citedChunkId }, session] = await Promise.all([
+    params,
+    searchParams,
+    auth(),
+  ]);
   if (!session?.user) redirect('/sign-in');
   if (!z.uuid().safeParse(id).success) notFound();
   const { active } = await resolveActiveTeam(session.user.id);
@@ -20,6 +56,9 @@ export default async function FileExtractionPage({ params }: { params: Promise<{
   const scope = withTeam(db, active.teamId, session.user.id);
   const file = await scope.documents.getDocument(id);
   if (!file?.currentVersionId) notFound();
+  if (citedVersionId || citedChunkId) {
+    return renderPreviousExtraction(scope, file, citedVersionId, citedChunkId);
+  }
   const [version, history] = await Promise.all([
     scope.documents.getDocumentVersion(file.currentVersionId),
     scope.documents.listExtractionCorrections(id),
@@ -47,14 +86,30 @@ export default async function FileExtractionPage({ params }: { params: Promise<{
       {!history.length ? (
         <p className="text-sm text-fg-muted">No second extraction has been requested.</p>
       ) : null}
+      <ExtractionAttempts history={history} id={id} />
+    </div>
+  );
+}
+
+function ExtractionAttempts({
+  history,
+  id,
+}: {
+  history: Awaited<
+    ReturnType<ReturnType<typeof withTeam>['documents']['listExtractionCorrections']>
+  >;
+  id: string;
+}) {
+  return (
+    <>
       {history.map((attempt) => (
         <section key={attempt.id} className="space-y-2 rounded-lg border p-4">
           <h2 className="text-sm font-medium capitalize">
             {attempt.status === 'deferred' ? 'Deferred by OCR budget' : attempt.status}
           </h2>
           <RelativeTimestamp value={attempt.createdAt} />
-          {attempt.representations?.map((representation, index) => (
-            <details key={`${representation.kind}:${index}`} className="space-y-2 text-sm">
+          {attempt.representations?.map((representation) => (
+            <details key={representation.kind} className="space-y-2 text-sm">
               <summary>{representation.kind.replaceAll('_', ' ')}</summary>
               <p className="max-h-80 overflow-auto whitespace-pre-wrap">{representation.text}</p>
             </details>
@@ -67,11 +122,16 @@ export default async function FileExtractionPage({ params }: { params: Promise<{
               </p>
             </details>
           ) : null}
-          {attempt.status === 'ready' ? (
-            <FileExtractionAction id={id} attemptId={attempt.id} />
+          {attempt.status === 'ready' ||
+          (attempt.status === 'applied' && !attempt.indexQueuedAt) ? (
+            <FileExtractionAction
+              id={id}
+              attemptId={attempt.id}
+              retryIndex={attempt.status === 'applied'}
+            />
           ) : null}
         </section>
       ))}
-    </div>
+    </>
   );
 }

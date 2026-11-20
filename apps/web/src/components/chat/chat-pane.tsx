@@ -191,17 +191,6 @@ function ChatSurfaceContent({
     }
   }, [messages, status]);
 
-  const handoffMessage =
-    !isStreaming && visiblePinnedEntity && sessionId
-      ? messages.find(
-          (message) =>
-            message.role === 'assistant' &&
-            message.parts.some(
-              (part) => part.type === 'text' && numberCitations(part.text).size > 0,
-            ),
-        )
-      : null;
-
   function submit(text: string) {
     const t = text.trim();
     if (!t || isStreaming) return;
@@ -237,9 +226,12 @@ function ChatSurfaceContent({
         scrollRef={scrollRef}
         teamName={teamName}
       />
-      {handoffMessage && sessionId ? (
-        <SaveHandoffButton sessionId={sessionId} messageId={handoffMessage.id} />
-      ) : null}
+      <ChatHandoffControl
+        sessionId={sessionId}
+        pinned={Boolean(visiblePinnedEntity)}
+        streaming={isStreaming}
+        messages={messages}
+      />
       <ChatError error={error} />
       {sessionId && !isStreaming && messages.length > 0 && (
         <Link
@@ -253,6 +245,26 @@ function ChatSurfaceContent({
       <ChatComposer input={input} isStreaming={isStreaming} onChange={setInput} onSubmit={submit} />
     </div>
   );
+}
+
+function ChatHandoffControl({
+  sessionId,
+  pinned,
+  streaming,
+  messages,
+}: {
+  sessionId: string | null;
+  pinned: boolean;
+  streaming: boolean;
+  messages: UIMessage[];
+}) {
+  if (!sessionId || !pinned || streaming) return null;
+  const message = messages.find(
+    (item) =>
+      item.role === 'assistant' &&
+      item.parts.some((part) => part.type === 'text' && numberCitations(part.text).size > 0),
+  );
+  return message ? <SaveHandoffButton sessionId={sessionId} messageId={message.id} /> : null;
 }
 
 function SaveHandoffButton({ sessionId, messageId }: { sessionId: string; messageId: string }) {

@@ -42,9 +42,8 @@ export function SaveViewButton({
         </DialogHeader>
         <form
           className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const title = new FormData(event.currentTarget).get('title');
+          action={(form) => {
+            const title = form.get('title');
             startTransition(async () => {
               const result = await notifyAction({
                 id: 'work:save-view',

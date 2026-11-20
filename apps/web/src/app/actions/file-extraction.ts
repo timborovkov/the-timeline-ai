@@ -1,5 +1,7 @@
 'use server';
 
+import { getQdrantClient } from '@timeline/shared/qdrant';
+import { llm } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -56,12 +58,37 @@ export async function applyFileCorrection(id: string, attemptId: string) {
     return { ok: false, error: 'Correction unavailable.' };
   }
   const queue = await requireRedisQueue();
-  const chunks = await scope.documents.applyExtractionCorrection(id, attemptId);
-  if (!chunks) return { ok: false, error: 'This correction is unavailable.' };
-  for (const documentChunkId of chunks) {
-    await queue.enqueueEmbedJob({ scope: 'doc_chunk', teamId: scope.teamId, documentChunkId });
+  const correction = await scope.documents.applyExtractionCorrection(id, attemptId);
+  if (!correction) return { ok: false, error: 'This correction is unavailable.' };
+  const additions = new Set(correction.chunkIds);
+  const changedIds = [...additions, ...correction.replacedIds];
+  let failed = false;
+  for (let offset = 0; offset < changedIds.length; offset += 20) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Bound concurrent writes to the queue and index.
+    const results = await Promise.allSettled(
+      changedIds.slice(offset, offset + 20).map(async (chunkId) => {
+        if (additions.has(chunkId)) {
+          await queue.enqueueEmbedJob({
+            scope: 'doc_chunk',
+            teamId: scope.teamId,
+            documentChunkId: chunkId,
+          });
+        } else {
+          await getQdrantClient().deletePointsForSource({
+            teamId: scope.teamId,
+            scope: 'doc_chunk',
+            sourceId: chunkId,
+            model: llm.TIMELINE_MODELS.embedding.id,
+          });
+        }
+      }),
+    );
+    failed ||= results.some((result) => result.status === 'rejected');
   }
+  if (!failed) await scope.documents.confirmExtractionCorrectionIndex(attemptId);
   revalidatePath('/app/documents');
+  if (failed)
+    return { ok: false, error: 'Extraction applied. Retry indexing from extraction history.' };
   return { ok: true };
 }
 
@@ -72,12 +99,13 @@ export async function bulkCapturedFileAction(ids: string[], action: 'promote' | 
     return { ok: false, error: 'Select up to 50 available files.' };
   }
   const failedItemIds: string[] = [];
+  const queue = await requireRedisQueue();
+  // Apply shared workspace limits in selection order.
   for (const id of new Set(parsed.data)) {
     try {
-      if (action === 'extract') {
-        if (!(await queueCorrection(scope, id))) failedItemIds.push(id);
-      } else {
-        const queue = await requireRedisQueue();
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Each action can change shared workspace capacity.
+      const succeeded = await (async () => {
+        if (action === 'extract') return queueCorrection(scope, id);
         const result = await scope.documents.promoteCapturedFile({ id });
         if (result.reprocessVersionId) {
           await queue.enqueueDocumentExtractJob({
@@ -85,7 +113,9 @@ export async function bulkCapturedFileAction(ids: string[], action: 'promote' | 
             documentVersionId: result.reprocessVersionId,
           });
         }
-      }
+        return true;
+      })();
+      if (!succeeded) failedItemIds.push(id);
     } catch {
       failedItemIds.push(id);
     }

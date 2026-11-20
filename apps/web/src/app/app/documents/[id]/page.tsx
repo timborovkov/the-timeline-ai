@@ -22,6 +22,18 @@ interface Props {
   searchParams: Promise<{ version?: string }>;
 }
 
+function selectDocumentVersion<T extends { id: string; version: number }>(
+  versions: T[],
+  requestedVersion: number | null,
+  currentId: string | null,
+) {
+  const selected =
+    requestedVersion && Number.isFinite(requestedVersion)
+      ? versions.find((version) => version.version === requestedVersion)
+      : null;
+  return selected ?? versions.find((version) => version.id === currentId) ?? versions[0] ?? null;
+}
+
 export default async function DocumentDetailPage({ params, searchParams }: Props) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -51,15 +63,11 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   const listEntry = provenancePage.items[0] ?? null;
   const provenance = documentDetailProvenance(document, listEntry);
   const requestedVersion = sp.version ? Number.parseInt(sp.version, 10) : null;
-  const selectedVersion =
-    requestedVersion && Number.isFinite(requestedVersion)
-      ? (versions.find((version) => version.version === requestedVersion) ?? null)
-      : null;
-  const activeVersion =
-    selectedVersion ??
-    versions.find((version) => version.id === document.currentVersionId) ??
-    versions[0] ??
-    null;
+  const activeVersion = selectDocumentVersion(
+    versions,
+    requestedVersion,
+    document.currentVersionId,
+  );
   const activeVersionChunks = activeVersion
     ? await scope.documents.listDocumentVersionChunks(activeVersion.id)
     : [];

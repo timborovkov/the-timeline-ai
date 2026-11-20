@@ -1,6 +1,10 @@
 // Verify the workspace boundaries and retry behavior of recovery, imports, reminders, OCR, and saved views.
 import {
   calendarEvents,
+  documentChunks,
+  documentExtractionAttempts,
+  documents,
+  documentVersions,
   entities,
   meetings,
   notifications,
@@ -12,7 +16,7 @@ import {
 } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
@@ -109,6 +113,112 @@ describe('workspace follow-through', () => {
     expect(await db.select().from(notifications)).toHaveLength(1);
   });
 
+  it('carries a reminder block and personal preference when a series changes time', async () => {
+    const override = withTeam(db, TEAM, OWNER).calendar;
+    const other = withTeam(db, TEAM, MEMBER).calendar.reminders;
+    const startAt = new Date(Math.ceil(Date.now() / 60_000) * 60_000 + 2 * 86_400_000);
+    const endAt = new Date(startAt.getTime() + 1_800_000);
+    const parent = await override.createCalendarEvent({
+      title: 'Daily planning',
+      startAt,
+      endAt,
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    async function childAt(when: Date) {
+      const [child] = await db
+        .select()
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.recurringParentId, parent.id),
+            eq(calendarEvents.originalStartAt, when),
+            isNull(calendarEvents.deletedAt),
+          ),
+        );
+      if (!child) throw new Error('Missing series occurrence');
+      return child;
+    }
+    const occurrence = await childAt(new Date(startAt.getTime() + 86_400_000));
+    await other.setPreference(occurrence.id, 15);
+    await override.reminders.setBlock(occurrence.id, true, false);
+    await override.updateCalendarEvent(parent.id, {
+      startAt: new Date(startAt.getTime() + 3_600_000),
+      endAt: new Date(endAt.getTime() + 3_600_000),
+      recurrenceEditMode: 'series',
+    });
+    const moved = await childAt(new Date(startAt.getTime() + 86_400_000 + 3_600_000));
+    expect(moved.id).not.toBe(occurrence.id);
+    expect(await other.getPreference(moved.id)).toMatchObject({
+      leadMinutes: 15,
+      eventBlocked: true,
+    });
+  });
+
+  it('preserves replaced text and retries publishing a correction without changing the original object', async () => {
+    const [file] = await db
+      .insert(documents)
+      .values({
+        teamId: TEAM,
+        name: 'Capture',
+        fileKind: 'captured',
+        ownerUserId: OWNER,
+        visibility: 'private',
+      })
+      .returning();
+    if (!file) throw new Error('Missing fixture');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM,
+        documentId: file.id,
+        version: 1,
+        objectKey: 'original/capture',
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!version) throw new Error('Missing fixture');
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, file.id));
+    const [original] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM,
+        documentId: file.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'Initial extraction',
+        tokenCount: 4,
+      })
+      .returning();
+    if (!original) throw new Error('Missing fixture');
+    const owner = withTeam(db, TEAM, OWNER).documents;
+    const member = withTeam(db, TEAM, MEMBER).documents;
+    const request = await owner.requestExtractionCorrection(file.id);
+    if (!request) throw new Error('Missing correction');
+    await db
+      .update(documentExtractionAttempts)
+      .set({
+        status: 'ready',
+        representations: [{ kind: 'source_text', text: 'Corrected extraction' }],
+      })
+      .where(eq(documentExtractionAttempts.id, request.attemptId));
+    expect(await member.applyExtractionCorrection(file.id, request.attemptId)).toBeNull();
+    const replacement = await owner.applyExtractionCorrection(file.id, request.attemptId);
+    expect(replacement).toMatchObject({ replacedIds: [original.id] });
+    expect(await owner.applyExtractionCorrection(file.id, request.attemptId)).toEqual(replacement);
+    expect(await owner.getHistoricalDocumentChunk(file.id, version.id, original.id)).toMatchObject({
+      text: 'Initial extraction',
+    });
+    expect(await member.getHistoricalDocumentChunk(file.id, version.id, original.id)).toBeNull();
+    expect((await owner.listExtractionCorrections(file.id))[0]?.indexQueuedAt).toBeNull();
+    await owner.confirmExtractionCorrectionIndex(request.attemptId);
+    expect((await owner.listExtractionCorrections(file.id))[0]?.indexQueuedAt).toBeInstanceOf(Date);
+    expect((await owner.getDocumentVersion(version.id))?.objectKey).toBe(version.objectKey);
+  });
+
   it('reports visible index evidence and excludes another member’s private deliveries', async () => {
     await db.insert(rawEvents).values([
       {
@@ -129,8 +239,23 @@ describe('workspace follow-through', () => {
       },
     ]);
     await expect(withTeam(db, TEAM, MEMBER).sourceHealth.read()).rejects.toThrow();
-    const health = await withTeam(db, TEAM, OWNER).sourceHealth.read();
-    expect(health.sources).toMatchObject([{ key: 'web', total: 1, indexed: 1 }]);
+    const scope = withTeam(db, TEAM, OWNER).sourceHealth;
+    expect((await scope.read()).sources).toMatchObject([{ key: 'web', total: 1, indexed: 1 }]);
+    const [reopened] = await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: {
+          embedded_at: '2025-01-01T00:00:00.000Z',
+          visibility_changed_at: '2025-01-02T00:00:00.000Z',
+          embedding_model: TIMELINE_MODELS.embedding.id,
+        },
+      })
+      .where(eq(rawEvents.visibility, 'team'))
+      .returning({ id: rawEvents.id });
+    expect((await scope.read()).sources).toMatchObject([{ key: 'web', total: 1, indexed: 0 }]);
+    expect(await scope.indexJobs('source', 'web')).toMatchObject([
+      { scope: 'raw_event', rawEventId: reopened?.id },
+    ]);
   });
 
   it('reserves OCR budget only once across concurrent candidates', async () => {
@@ -156,14 +281,12 @@ describe('workspace follow-through', () => {
   });
 
   it('establishes a personal baseline, reports newly matching items once, and rechecks them before delivery', async () => {
-    await db
-      .insert(entities)
-      .values({
-        teamId: TEAM,
-        type: 'task',
-        canonicalName: 'Existing launch task',
-        status: 'open',
-      });
+    await db.insert(entities).values({
+      teamId: TEAM,
+      type: 'task',
+      canonicalName: 'Existing launch task',
+      status: 'open',
+    });
     const owner = withTeam(db, TEAM, OWNER).savedViews;
     const member = withTeam(db, TEAM, MEMBER).savedViews;
     const id = await owner.create({

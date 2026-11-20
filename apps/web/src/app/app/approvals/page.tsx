@@ -93,16 +93,74 @@ function GuidedApprovalsContinue({ enabled }: { enabled: boolean }) {
   );
 }
 
-export default async function ApprovalsPage({ searchParams }: PageProps) {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
+function ApprovalFiltersToolbar({
+  status,
+  filters,
+  projects,
+  counts,
+  showCounts,
+}: {
+  status: ApprovalFilter;
+  filters: Record<string, string>;
+  projects: { id: string; canonicalName: string }[];
+  counts: { pending: number; failed: number };
+  showCounts: boolean;
+}) {
+  return (
+    <CollectionToolbar>
+      <CollectionToolbar.Search>
+        <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
+          {STATUS_FILTERS.map((filter) => (
+            <Link
+              key={filter}
+              href={`/app/approvals?${new URLSearchParams({ ...filters, status: filter }).toString()}`}
+              aria-current={status === filter ? 'page' : undefined}
+              className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
+                status === filter
+                  ? 'bg-signal-soft text-signal'
+                  : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+              }`}
+            >
+              {filter}
+              {showCounts && (filter === 'pending' || filter === 'failed')
+                ? ` ${counts[filter]}`
+                : ''}
+            </Link>
+          ))}
+        </nav>
+      </CollectionToolbar.Search>
+      <CollectionToolbar.Filters>
+        <form action="/app/approvals" className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="status" value={status} />
+          {filters.boardId ? <input type="hidden" name="boardId" value={filters.boardId} /> : null}
+          <label className="block space-y-1 text-xs">
+            Project
+            <NativeSelect name="project" defaultValue={filters.project ?? ''}>
+              <option value="">All projects</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.canonicalName}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          <label className="block space-y-1 text-xs">
+            Change type
+            <NativeSelect name="decision" defaultValue={filters.decision ?? ''}>
+              <option value="">All changes</option>
+              <option value="1">Decisions</option>
+            </NativeSelect>
+          </label>
+          <Button size="sm" variant="outline" type="submit">
+            Apply filters
+          </Button>
+        </form>
+      </CollectionToolbar.Filters>
+    </CollectionToolbar>
+  );
+}
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const guidedApprovals = await loadGuidedApprovals(scope);
-  const itemIds = guidedApprovals ? await guidedApprovalItemIds(scope) : undefined;
-  const params = await searchParams;
+function getApprovalFilters(params: Awaited<PageProps['searchParams']>) {
   const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
     ? (params.status as ApprovalFilter)
     : 'pending';
@@ -114,6 +172,44 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     ...(projectId ? { project: projectId } : {}),
     ...(decisionOnly ? { decision: '1' } : {}),
   };
+  return {
+    status,
+    projectId,
+    decisionOnly,
+    approvalFilters,
+    showCounts: !params.boardId && !projectId && !decisionOnly,
+  };
+}
+
+function visibleApprovalBundles(
+  rows: Parameters<typeof serializeSuggestionBundle>[0][],
+  status: ApprovalFilter,
+  boardId?: string,
+) {
+  return rows.flatMap((bundle) => {
+    const items = bundle.items.filter((item) => {
+      if (boardId && item.proposedPayload.boardId !== boardId) return false;
+      if (status === 'pending') return item.status === 'pending';
+      if (status === 'failed') return item.status === 'failed';
+      if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
+      return item.status !== 'failed';
+    });
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
+  });
+}
+
+export default async function ApprovalsPage({ searchParams }: PageProps) {
+  const session = await auth();
+  if (!session?.user) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const guidedApprovals = await loadGuidedApprovals(scope);
+  const itemIds = guidedApprovals ? await guidedApprovalItemIds(scope) : undefined;
+  const params = await searchParams;
+  const { status, projectId, decisionOnly, approvalFilters, showCounts } =
+    getApprovalFilters(params);
   const [suggestionRows, calendarSettings, approvalCounts, projects] = await Promise.all([
     scope.suggestions.withCalendarResolutionHints(
       await scope.suggestions.listSuggestions({
@@ -134,20 +230,9 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     at: row.createdAt.toISOString(),
     id: row.id,
   }));
-  const visibleSuggestions = page.items.flatMap((bundle) => {
-    const items = bundle.items.filter((item) => {
-      if (params.boardId && item.proposedPayload.boardId !== params.boardId) return false;
-      if (status === 'pending') return item.status === 'pending';
-      if (status === 'failed') return item.status === 'failed';
-      if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
-      return item.status !== 'failed';
-    });
-    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
-  });
+  const visibleSuggestions = visibleApprovalBundles(page.items, status, params.boardId);
   const inventoryCount =
-    !params.boardId && !projectId && !decisionOnly && (status === 'pending' || status === 'failed')
-      ? approvalCounts[status]
-      : null;
+    showCounts && (status === 'pending' || status === 'failed') ? approvalCounts[status] : null;
 
   return (
     <div data-app-width="overview" className="space-y-4">
@@ -174,61 +259,13 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         ]}
       />
       <div>
-        <CollectionToolbar>
-          <CollectionToolbar.Search>
-            <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
-              {STATUS_FILTERS.map((filter) => (
-                <Link
-                  key={filter}
-                  href={`/app/approvals?${new URLSearchParams({ ...approvalFilters, status: filter }).toString()}`}
-                  aria-current={status === filter ? 'page' : undefined}
-                  className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
-                    status === filter
-                      ? 'bg-signal-soft text-signal'
-                      : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
-                  }`}
-                >
-                  {filter}
-                  {!params.boardId &&
-                  !projectId &&
-                  !decisionOnly &&
-                  (filter === 'pending' || filter === 'failed')
-                    ? ` ${approvalCounts[filter]}`
-                    : ''}
-                </Link>
-              ))}
-            </nav>
-          </CollectionToolbar.Search>
-          <CollectionToolbar.Filters>
-            <form action="/app/approvals" className="flex flex-wrap items-end gap-2">
-              <input type="hidden" name="status" value={status} />
-              {params.boardId ? (
-                <input type="hidden" name="boardId" value={params.boardId} />
-              ) : null}
-              <label className="block space-y-1 text-xs">
-                Project
-                <NativeSelect name="project" defaultValue={projectId ?? ''}>
-                  <option value="">All projects</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.canonicalName}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-              <label className="block space-y-1 text-xs">
-                Change type
-                <NativeSelect name="decision" defaultValue={decisionOnly ? '1' : ''}>
-                  <option value="">All changes</option>
-                  <option value="1">Decisions</option>
-                </NativeSelect>
-              </label>
-              <Button size="sm" variant="outline" type="submit">
-                Apply filters
-              </Button>
-            </form>
-          </CollectionToolbar.Filters>
-        </CollectionToolbar>
+        <ApprovalFiltersToolbar
+          status={status}
+          filters={approvalFilters}
+          projects={projects}
+          counts={approvalCounts}
+          showCounts={showCounts}
+        />
         <GuidedApprovalsChrome enabled={guidedApprovals} />
         <ApprovalsClient
           layout="inbox"
