@@ -285,18 +285,16 @@ async function uploadDocumentFile(
   }
   const versionId = progress.prepared.id;
   await uploadCaptureBytes(progress, file);
-  try {
-    const finalized = await finalizeDocumentVersionAction({ versionId });
-    if (!finalized.ok) {
-      // Document row survived but extract enqueue failed — keep the uploaded bytes.
-      if (finalized.documentId) return 'File saved. Processing could not be queued.';
-      // Billing/capacity (and similar) discard the S3 object after a successful PUT.
-      throw new Error(finalized.error ?? 'Could not save the file.');
-    }
-  } catch (error) {
+  const finalized = await finalizeDocumentVersionAction({ versionId });
+  if (!finalized.ok) {
+    // Document row survived but extract enqueue failed — keep the uploaded bytes.
+    if (finalized.documentId) return 'File saved. Processing could not be queued.';
+    // Confirmed discard (billing/capacity): S3 object is gone — force a fresh PUT.
+    // Uncertain transport errors must not reach here; they leave `uploaded` set so
+    // Retry re-calls the idempotent finalizer without resume/renewal.
     progress.uploaded = false;
     progress.needsRenewal = true;
-    throw error;
+    throw new Error(finalized.error ?? 'Could not save the file.');
   }
 }
 

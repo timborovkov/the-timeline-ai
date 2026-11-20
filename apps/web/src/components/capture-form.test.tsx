@@ -320,10 +320,41 @@ describe('CaptureForm', () => {
     expect(fakes.createTextEventAction).not.toHaveBeenCalled();
     expect(fakes.requestAudioUploadAction).toHaveBeenCalledOnce();
     expect(fakes.createAudioEventAction).toHaveBeenCalledOnce();
-    // Finalize discarded progress, so retry renews the PUT URL and re-uploads bytes.
-    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledTimes(2);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    // Uncertain finalize throw: keep uploaded bytes and re-call the finalizer only.
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(fakes.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries the idempotent finalizer when the finalize response is lost', async () => {
+    fakes.finalizeDocumentVersionAction
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true, documentId: 'doc-1' });
+    const user = userEvent.setup();
+    render(
+      createElement(CaptureForm, {
+        currentUser: { id: 'user-1', name: 'Ada', email: 'ada@example.test' },
+      }),
+    );
+
+    await user.upload(
+      screen.getByLabelText('Attach files'),
+      new File(['%PDF'], 'notes.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Failed to fetch');
+
+    await user.click(screen.getByRole('button', { name: 'Retry failed files' }));
+    await waitFor(() => {
+      expect(fakes.finalizeDocumentVersionAction).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+    // Do not resume/renew: a lost success response would reject resumeVersionId.
+    expect(fakes.requestDocumentUploadAction).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fakes.finalizeDocumentVersionAction).toHaveBeenNthCalledWith(2, {
+      versionId: 'version-1',
+    });
   });
 
   it('re-uploads after finalization discards bytes for capacity errors', async () => {
