@@ -396,7 +396,10 @@ test('shows coverage, diagnostics and an interrupted workflow on reload', async 
   try {
     const page = await mobile.newPage();
     await page.goto(`/app/chat?session=${session.id}`);
-    await expect(page.getByText('Approved · step did not start')).toBeVisible();
+    // Visible label is aria-hidden; the accessible name lives in the sr-only twin.
+    await expect(
+      page.getByText('Create board: Partner rollout: Approved · step did not start'),
+    ).toBeVisible();
     await screenshot(page, info, 'chat-recovery-mobile');
     await page.getByRole('button', { name: 'Review unstarted steps' }).click();
     await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
