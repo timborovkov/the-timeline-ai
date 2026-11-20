@@ -63,7 +63,7 @@ describe('Railway worker config', () => {
     expect(compose).toContain('SENTRY_RELEASE: ${SENTRY_RELEASE:-}');
     expect(dockerfile).toContain('ARG SENTRY_AUTH_TOKEN');
     expect(dockerfile).toContain('ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN');
-    expect(dockerfile).toContain('FROM oven/bun:1.4.4-debian AS base');
+    expect(dockerfile).toContain('FROM oven/bun:canary-debian AS base');
     expect(dockerfile).toContain(
       'CMD ["bun", "--bun", "--no-env-file", "apps/worker/dist/index.js"]',
     );

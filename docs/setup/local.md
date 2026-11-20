@@ -8,14 +8,15 @@ The full local stack runs in Docker Compose; the app and workers run on the host
 
 ## Prerequisites
 
-- Bun 1.4.4 (see `.bun-version`)
+- Bun canary matching `.bun-version` (required for `bun lint`; also provides `bun fmt` and `bun check`)
 - Docker Desktop (or compatible)
 
 <span id="first-time-setup"></span>
 
 ## First-time setup
 
-    curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"
+    curl -fsSL https://bun.com/install | bash
+    bun upgrade --canary
 
 Open a new shell after installing Bun. For a checkout previously installed with another package manager, remove generated root and workspace `node_modules` directories before running `bun run deps --frozen-lockfile`. Preserve `.env` and Docker volumes. Stop old Node development processes before starting the Bun app and workers.
 
@@ -176,14 +177,14 @@ This is a command reference, not a required local checklist. Follow the [validat
     bun run demo:verify                      # verify logins, downloaded document bytes, scoped Qdrant points, and corpus floors
     bun run lint && bun run typecheck           # quick static checks
     bun run knip                             # dead code / unused deps
-    bun run format                           # prettier write
+    bun run format                           # bun fmt write
     bun run db:studio                        # drizzle studio at localhost:4983
     docker compose logs -f postgres       # tail a service
     bun run demo:reset                  # disposable demo fixtures only
 
 Local E2E commands auto-detect published ports from a running `timeline-e2e-*` isolated Docker stack before falling back to the standard `localhost:5432`, `6379`, `9000`, and `6333` ports. Set `DATABASE_URL`, `REDIS_URL`, `S3_ENDPOINT`, or `QDRANT_URL` explicitly to override this, or set `E2E_USE_DOCKER_PORTS=0` to force the fallback defaults. Remote fixture services require the explicit `E2E_REMOTE_FIXTURES=isolated` opt-in; use only disposable synthetic data. Ordinary exported application secrets are replaced with fixture defaults. Configure custom fixture secrets with `E2E_AUTH_SECRET`, `E2E_SECRETS_ENCRYPTION_KEY`, `E2E_S3_ACCESS_KEY_ID`, `E2E_S3_SECRET_ACCESS_KEY`, and `E2E_QDRANT_API_KEY`. Setup and cleanup enforce the service guard before opening a database transaction. Keep `apps/web/bunfig.toml`: it prevents Bun subprocesses from loading the developer environment before the isolated E2E environment reaches Next.js. The E2E launcher separately disables Next.js environment-file loading.
 
-The static CI job runs formatting, TypeScript compilation, linting, Knip, the offline Bun suite, runtime smoke checks, React Doctor, deterministic reconciliation evaluations, environment contracts, and compiled-package import checks. Compilation uses TypeScript 7's `tsc` from `@typescript/native`; ESLint and other tools that import the compiler API use the TypeScript 6 compatibility package under the `typescript` package name. Shared `compilerOptions` in `tsconfig.base.json` include `erasableSyntaxOnly` for Bun type stripping. The web `lib` list uses `dom`, which includes `dom.iterable` in TypeScript 6. The separate production browser smoke job builds the web application. Run broader relevant test commands separately, including `bun run test:eval` for agent, retrieval, summary, dashboard chat, or proposal changes, and run the production build and bundle hygiene checks manually when changing deploy output, bundling, or server/client import boundaries.
+The static CI job runs formatting (`bun fmt --check`), typechecking (`bun check`), linting (`bun lint`), Knip, the offline Bun suite, runtime smoke checks, React Doctor, deterministic reconciliation evaluations, environment contracts, and compiled-package import checks. Package builds that emit `.d.ts` still use `tsc`; `bun check` replaces `tsc --noEmit`. `bun lint` reads `eslint.config.js` plus `bunfig.toml` (built-in `import` plugin). Tools that import the TypeScript compiler API keep the TypeScript 6 compatibility package under the `typescript` package name. Shared `compilerOptions` in `tsconfig.base.json` include `erasableSyntaxOnly` for Bun type stripping. The web `lib` list uses `dom`, which includes `dom.iterable` in TypeScript 6. The separate production browser smoke job builds the web application. Run broader relevant test commands separately, including `bun run test:eval` for agent, retrieval, summary, dashboard chat, or proposal changes, and run the production build and bundle hygiene checks manually when changing deploy output, bundling, or server/client import boundaries.
 
 <span id="resetting-local-data"></span>
 

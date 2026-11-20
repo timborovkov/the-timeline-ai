@@ -34,7 +34,7 @@ and [`docker/worker.Dockerfile`](../docker/worker.Dockerfile).
 
 ## Prerequisites
 
-- Bun matching [`.bun-version`](../.bun-version) (currently 1.4.4)
+- Bun matching [`.bun-version`](../.bun-version) (currently canary; required for `bun lint`)
 - Docker (or compatible) for the Compose services
 - A funded AI provider key for chat, embeddings, and related features when those
   features are required

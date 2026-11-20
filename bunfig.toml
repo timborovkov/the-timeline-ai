@@ -11,3 +11,21 @@ exact = true
 [test]
 # The canonical runner selects files and isolates each in its own process.
 timeout = 120000
+
+# Formatter reads .prettierrc / .prettierignore; options here mirror that config
+# so bun fmt stays aligned if the Prettier file is removed later.
+[fmt]
+printWidth = 100
+tabWidth = 2
+useTabs = false
+semi = true
+singleQuote = true
+trailingComma = "all"
+bracketSpacing = true
+arrowParens = "always"
+
+# Next to eslint.config.js, built-in plugins must be named before their rules
+# resolve. import/order options stay in eslint.config.js so flat-config file
+# overrides keep working.
+[lint]
+plugins = ["import"]

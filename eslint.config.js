@@ -1,7 +1,5 @@
 import { fileURLToPath } from 'node:url';
 import prettierConfig from 'eslint-config-prettier';
-import { importX } from 'eslint-plugin-import-x';
-import unusedImports from 'eslint-plugin-unused-imports';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -25,14 +23,10 @@ export default tseslint.config(
         tsconfigRootDir: fileURLToPath(new URL('.', import.meta.url)),
       },
     },
-    plugins: {
-      'import-x': importX,
-      'unused-imports': unusedImports,
-    },
     rules: {
-      '@typescript-eslint/no-unused-vars': 'off',
-      'unused-imports/no-unused-imports': 'error',
-      'unused-imports/no-unused-vars': [
+      // Bun's built-in unused-import cleanup covers unused-imports/*; keep the
+      // same ignore patterns the repo used with eslint-plugin-unused-imports.
+      '@typescript-eslint/no-unused-vars': [
         'error',
         { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' },
       ],
@@ -47,11 +41,10 @@ export default tseslint.config(
       ],
       eqeqeq: ['error', 'always'],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
-      // Rank type-only imports with their module path. A trailing `type` group
-      // parks them last locally, but GitHub Actions + typescript-eslint project
-      // service intermittently ranks them with the path instead, which failed
-      // CI for worker historically and now flakes for db/shared/web as well.
-      'import-x/order': [
+      // Bun loads the built-in import plugin via bunfig.toml [lint].plugins.
+      // Keep the previous import-x/order options under the native import/order
+      // name so ranking stays identical without eslint-plugin-import-x.
+      'import/order': [
         'error',
         {
           groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
@@ -59,7 +52,7 @@ export default tseslint.config(
             { pattern: 'bun', group: 'external' },
             { pattern: 'bun:**', group: 'external' },
           ],
-          // bun:test is a runtime builtin to import-x, but this repo groups it
+          // bun:test is a runtime builtin to import, but this repo groups it
           // with third-party imports. Allow pathGroups to rematch that builtin.
           pathGroupsExcludedImportTypes: ['type'],
           'newlines-between': 'always',

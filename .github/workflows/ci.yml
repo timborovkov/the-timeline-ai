@@ -43,7 +43,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
           bun scripts/check-legal-archive.ts "$PR_BASE_SHA"
 
-      - name: Prettier check
+      - name: Format check
         run: bun run format:check
 
   typecheck:
@@ -86,21 +86,15 @@ jobs:
           path: |
             .turbo
             node_modules/.cache/turbo
-          key: turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-${{ github.sha }}
+          key: turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'bunfig.toml', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-${{ github.sha }}
           restore-keys: |
-            turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-
+            turbo-lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json', 'bunfig.toml', 'tsconfig.base.json', '**/tsconfig*.json', '**/package.json', 'eslint.config.js') }}-
             turbo-lint-${{ runner.os }}-
 
-      # Do not restore/save node_modules/.cache/eslint across CI commits. ESLint
-      # --cache does not track cross-file type dependencies, so typed rules can
-      # skip an unchanged consumer when an imported symbol changes. Local
-      # package scripts still use --cache for iterative work; CI always starts
-      # with a fresh ESLint cache (Turbo still hashes source inputs).
-
-      # Keep package lint serial on CI. Parallel type-aware ESLint + import-x
-      # disagrees with local Bun on `import type` ranking (see eslint.config.js
-      # worker note); concurrency=1 matches the prior green Static checks lane
-      # while format/typecheck/smoke still run as sibling jobs.
+      # bun lint runs natively (plus JS only for rules that still need plugins).
+      # Keep package lint serial so type-aware project service load stays stable
+      # under ubuntu-latest memory limits while format/typecheck/smoke run as
+      # sibling jobs.
       - name: Lint
         run: bun x --bun --no-install turbo run lint --concurrency=1
 

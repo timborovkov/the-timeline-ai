@@ -38,7 +38,7 @@ exploit.
 
 ## Development expectations
 
-- Use Bun 1.4.4 (see `.bun-version`) for installation, scripts, and tests.
+- Use the Bun version in `.bun-version` (currently canary, required for `bun lint`) for installation, scripts, and tests.
 - Read [AGENTS.md](./AGENTS.md) and the documentation relevant to the changed
   subsystem.
 - Preserve team isolation, item visibility, secret handling, and the privacy
