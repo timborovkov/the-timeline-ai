@@ -263,6 +263,12 @@
       "import": "./dist/agent/index.js",
       "default": "./dist/agent/index.js"
     },
+    "./agent/answer-evidence": {
+      "types": "./src/agent/answer-evidence.ts",
+      "development": "./src/agent/answer-evidence.ts",
+      "import": "./dist/agent/answer-evidence.js",
+      "default": "./dist/agent/answer-evidence.js"
+    },
     "./cache": {
       "types": "./src/cache.ts",
       "development": "./src/cache.ts",
@@ -453,6 +459,12 @@
       "development": "./src/suggestions/index.ts",
       "import": "./dist/suggestions/index.js",
       "default": "./dist/suggestions/index.js"
+    },
+    "./suggestions/rejection": {
+      "types": "./src/suggestions/rejection.ts",
+      "development": "./src/suggestions/rejection.ts",
+      "import": "./dist/suggestions/rejection.js",
+      "default": "./dist/suggestions/rejection.js"
     },
     "./artifacts": {
       "types": "./src/artifacts/index.ts",

@@ -209,10 +209,11 @@ describe('agent ask surface evals', () => {
     const responseBody = responseInit?.body;
     expect(responseInit?.method).toBe('POST');
     expect(typeof responseBody).toBe('string');
-    expect(JSON.parse(responseBody as string)).toMatchObject({
-      text: 'Acme renewal pricing is due Friday.',
-      mrkdwn: false,
-    });
+    const delivered = JSON.parse(responseBody as string) as { text: string; mrkdwn: boolean };
+    expect(delivered.text).toContain(
+      'Acme renewal pricing is due Friday.\n\nSources checked · Timeline',
+    );
+    expect(delivered.mrkdwn).toBe(false);
     expect(observability).toEqual([
       expect.objectContaining({
         totalResultCount: 1,
@@ -261,10 +262,12 @@ describe('agent ask surface evals', () => {
       },
     );
 
-    expect(payloads).toContainEqual({
-      chat_id: TG_CHAT_ID,
-      text: 'Acme renewal pricing is due Friday.',
-    });
+    const delivered = payloads.find(
+      (payload) => payload.chat_id === TG_CHAT_ID && payload.text.includes('renewal pricing'),
+    );
+    expect(delivered?.text).toContain(
+      'Acme renewal pricing is due Friday.\n\nSources checked · Timeline',
+    );
     expect(observability).toEqual([
       expect.objectContaining({
         totalResultCount: 1,

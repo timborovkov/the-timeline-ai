@@ -499,6 +499,12 @@ function mentionedProjectIds(
   );
 }
 
+function projectTaskSubject(subject: string, project: string): string {
+  const name = normalize(subject);
+  const suffix = ` for ${project}`;
+  return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
+}
+
 function groupedProjectRequest(assertion: string, subject: string, projectName: string): boolean {
   const original = assertion.trim();
   const speaker =
@@ -510,12 +516,7 @@ function groupedProjectRequest(assertion: string, subject: string, projectName: 
   );
   if (/[.!?;]\s/u.test(statement)) return false;
   const project = normalize(projectName);
-  const scopeSuffix = ` for ${project}`;
-  const subjectName = normalize(subject);
-  const task = taskIdentityPattern(
-    subjectName.endsWith(scopeSuffix) ? subjectName.slice(0, -scopeSuffix.length) : subjectName,
-    true,
-  );
+  const task = taskIdentityPattern(projectTaskSubject(subject, project), true);
   if (!project || !task) return false;
   const literalProject = project.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const group = new RegExp(`^(?:separately, )?for (?:the )?${literalProject}[:,]\\s+`, 'iu').exec(
@@ -540,7 +541,9 @@ function affirmativeProjectMembership(
 ): boolean {
   const statement = normalize(assertion);
   const project = normalize(name);
-  const task = taskIdentityPattern(subject);
+  const task = taskIdentityPattern(
+    allowTaskRouting ? projectTaskSubject(subject, project) : subject,
+  );
   if (
     !project ||
     !task ||

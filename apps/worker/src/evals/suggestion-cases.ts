@@ -17,6 +17,7 @@ export interface ExpectedAction {
   fields?: Record<string, unknown> | undefined;
   targetId?: string;
   relatedNames?: [string, string];
+  evidenceEventIndices?: number[];
 }
 export interface SuggestionCase extends BenchmarkCase {
   source: 'slack' | 'telegram' | 'email' | 'integration' | 'document';
@@ -66,7 +67,12 @@ const definitions: (Omit<SuggestionCase, keyof BenchmarkCase> & {
     source: 'slack',
     tags: ['recall', 'project'],
     events: ['Maya: For Northstar rollout, I will send the pricing packet.'],
-    expected: [create([['send', 'share'], ['pricing']], { parentObjectId: PROJECT })],
+    expected: [
+      {
+        ...create([['send', 'share'], ['pricing']], { parentObjectId: PROJECT }),
+        evidenceEventIndices: [0],
+      },
+    ],
     rationale:
       'An explicit deliverable and named existing project support a task and project attachment.',
   },
@@ -88,7 +94,7 @@ const definitions: (Omit<SuggestionCase, keyof BenchmarkCase> & {
     source: 'email',
     tags: ['recall', 'request'],
     events: ['Please review the accessibility audit and send us your findings.'],
-    expected: [create([['review'], ['accessibility', 'audit']])],
+    expected: [{ ...create([['review'], ['accessibility', 'audit']]), evidenceEventIndices: [0] }],
     rationale: 'A concrete request supports an approval-backed task even without a resolved owner.',
   },
   {

@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { chatMessages, chatSessions, type Db } from '@timeline/db';
-import type { UIMessage } from 'ai';
+import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import { stableJson } from '#src/reconciliation/stable-json.js';
@@ -13,6 +13,7 @@ export interface ChatTurnInput {
   userMessage?: UIMessage | null;
   assistantMessage: UIMessage;
   metadata?: Record<string, unknown>;
+  approvalClaimId?: string;
   save?: { id: string; expectedRevision: string | null; replace?: boolean };
 }
 
@@ -23,10 +24,22 @@ function revision(row: { id: string; content: unknown } | undefined): string | n
         .digest('hex')
     : null;
 }
+
 interface TurnContent {
   version: 2;
   ui_message: UIMessage;
+  approval_claim_id?: string | null;
+  approval_steps?: Record<string, ApprovalStepState>;
   [key: string]: unknown;
+}
+
+export type ApprovalStepState =
+  'queued' | 'running' | 'completed' | 'failed' | 'needs-check' | 'declined';
+
+export interface ApprovalStepKey {
+  messageId: string;
+  toolCallId: string;
+  claimId: string;
 }
 
 /** UI turns and approval claims share the owner-scoped session row lock. */
@@ -69,6 +82,18 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
       .limit(1);
     return row;
   }
+  async function findLatestAssistant(tx: Tx, sessionId: string, messageId: string) {
+    const [row] = await tx
+      .select()
+      .from(chatMessages)
+      .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1);
+    const content = row?.content as Partial<TurnContent> | undefined;
+    if (row?.role !== 'assistant' || content?.version !== 2 || content.ui_message?.id !== messageId)
+      throw new Error('Approval no longer available');
+    return { row, content: { ...content, version: 2 as const, ui_message: content.ui_message } };
+  }
 
   return {
     async chatTurnRevision(sessionId: string) {
@@ -106,12 +131,26 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
           if (existing && existing.role !== message.role)
             throw new Error('Message identity conflict');
           if (existing && message.role === 'user') continue;
+          const previous = existing?.content as TurnContent | undefined;
+          if (input.approvalClaimId && previous?.approval_claim_id !== input.approvalClaimId)
+            continue;
+          const approvalSteps = previous?.approval_steps
+            ? { ...previous.approval_steps }
+            : undefined;
+          const assistantMessage =
+            approvalSteps && previous
+              ? withSavedApprovalOutcomes(message, previous, approvalSteps)
+              : message;
           const content: TurnContent = {
+            ...previous,
             ...(message.role === 'assistant' ? input.metadata : {}),
+            ...(approvalSteps && { approval_steps: approvalSteps }),
             ...(message.role === 'assistant' && input.save ? { turn_save_id: input.save.id } : {}),
             version: 2,
-            ui_message: message,
-            text: message.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n'),
+            ui_message: assistantMessage,
+            text: assistantMessage.parts
+              .flatMap((p) => (p.type === 'text' ? [p.text] : []))
+              .join('\n'),
           };
           if (existing) {
             await tx.update(chatMessages).set({ content }).where(eq(chatMessages.id, existing.id));
@@ -132,17 +171,22 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
         return 'saved';
       });
     },
-    async claimChatApprovals(sessionId: string, submitted: UIMessage) {
+    async claimChatApprovals(
+      sessionId: string,
+      submitted: UIMessage,
+      claimId: string = randomUUID(),
+    ): Promise<{ message: UIMessage; revision: string | null }> {
       await scope.requireMembership();
       return db.transaction(async (tx) => {
         if (!(await lock(tx, sessionId))) throw new Error('Session not found');
-        const row = await find(tx, sessionId, submitted.id);
-        const latestMessage = await latest(tx, sessionId);
-        if (!row || latestMessage?.id !== row.id) throw new Error('Approval no longer available');
-        const content = row.content as TurnContent | undefined;
-        const saved = content?.ui_message;
-        if (row.role !== 'assistant' || saved?.role !== 'assistant')
-          throw new Error('Approval no longer available');
+        const { row, content } = await findLatestAssistant(tx, sessionId, submitted.id);
+        const saved = content.ui_message;
+        if (
+          Object.values(content.approval_steps ?? {}).some(
+            (phase) => phase === 'running' || phase === 'needs-check',
+          )
+        )
+          throw new Error('Approval outcome needs checking');
         const pending = saved.parts.filter((p) => 'state' in p && p.state === 'approval-requested');
         const decisions = submitted.parts.filter(
           (p) => 'state' in p && p.state === 'approval-responded',
@@ -150,6 +194,7 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
         if (!pending.length || pending.length !== decisions.length)
           throw new Error('Approval no longer available');
         const result = structuredClone(saved);
+        const steps = { ...content.approval_steps };
         for (const decision of decisions) {
           if (
             !('toolCallId' in decision) ||
@@ -180,12 +225,156 @@ export function createChatTurnScope(db: Db, scope: TeamScopeCore) {
               ...(decision.approval.reason ? { reason: decision.approval.reason } : {}),
             },
           });
+          steps[decision.toolCallId] = decision.approval.approved ? 'queued' : 'declined';
         }
         // A claim is durable before execution. An interrupted claim is never automatically retried.
-        const claimed = { ...content, ui_message: result, approval_claimed: true };
+        const claimed = {
+          ...content,
+          ui_message: result,
+          approval_claimed: true,
+          approval_claim_id: claimId,
+          approval_steps: steps,
+        };
         await tx.update(chatMessages).set({ content: claimed }).where(eq(chatMessages.id, row.id));
         return { message: result, revision: revision({ id: row.id, content: claimed }) };
       });
     },
+
+    async startChatApprovalStep(
+      sessionId: string,
+      key: ApprovalStepKey,
+      tool: { name: string; input: unknown },
+    ): Promise<string | null> {
+      await scope.requireMembership();
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) return null;
+        const { row, content } = await findLatestAssistant(tx, sessionId, key.messageId);
+        if (
+          content.approval_claim_id !== key.claimId ||
+          content.approval_steps?.[key.toolCallId] !== 'queued'
+        )
+          return null;
+        const part = content.ui_message.parts.find(
+          (part) => isToolUIPart(part) && part.toolCallId === key.toolCallId,
+        );
+        if (
+          !part ||
+          !isToolUIPart(part) ||
+          part.state !== 'approval-responded' ||
+          !part.approval.approved ||
+          getToolName(part) !== tool.name ||
+          stableJson(part.input) !== stableJson(tool.input)
+        )
+          return null;
+        const next = {
+          ...content,
+          approval_steps: { ...content.approval_steps, [key.toolCallId]: 'running' as const },
+        };
+        await tx.update(chatMessages).set({ content: next }).where(eq(chatMessages.id, row.id));
+        // Callers must carry this revision into the final guarded save.
+        return revision({ id: row.id, content: next });
+      });
+    },
+
+    async finishChatApprovalStep(
+      sessionId: string,
+      key: ApprovalStepKey,
+      status: 'completed' | 'failed' | 'needs-check',
+      output: unknown,
+    ): Promise<string> {
+      await scope.requireMembership();
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) throw new Error('Approval step unavailable');
+        const row = await find(tx, sessionId, key.messageId);
+        const content = row?.content as TurnContent | undefined;
+        if (
+          !row ||
+          content?.approval_claim_id !== key.claimId ||
+          content.approval_steps?.[key.toolCallId] !== 'running'
+        )
+          throw new Error('Approval step unavailable');
+        const message = structuredClone(content.ui_message);
+        const part = message.parts.find(
+          (part) => isToolUIPart(part) && part.toolCallId === key.toolCallId,
+        );
+        if (!part) throw new Error('Approval step unavailable');
+        if (status !== 'needs-check') Object.assign(part, { state: 'output-available', output });
+        const next = {
+          ...content,
+          ui_message: message,
+          approval_steps: { ...content.approval_steps, [key.toolCallId]: status },
+        };
+        await tx.update(chatMessages).set({ content: next }).where(eq(chatMessages.id, row.id));
+        // Stream completion must use this revision, not the original claim revision.
+        const nextRevision = revision({ id: row.id, content: next });
+        if (!nextRevision) throw new Error('Approval step unavailable');
+        return nextRevision;
+      });
+    },
+
+    async prepareChatApprovalResume(sessionId: string, messageId: string): Promise<UIMessage> {
+      await scope.requireMembership();
+      return db.transaction(async (tx) => {
+        if (!(await lock(tx, sessionId))) throw new Error('Session not found');
+        const { row, content } = await findLatestAssistant(tx, sessionId, messageId);
+        const message = structuredClone(content.ui_message);
+        const phases = Object.values(content.approval_steps ?? {});
+        if (
+          !phases.includes('queued') ||
+          phases.some((phase) => phase !== 'queued' && phase !== 'completed') ||
+          message.parts.some((part) => isToolUIPart(part) && part.state === 'approval-requested')
+        )
+          throw new Error('Approval cannot be resumed');
+        let prepared = 0;
+        for (const part of message.parts) {
+          if (
+            !isToolUIPart(part) ||
+            part.state !== 'approval-responded' ||
+            content.approval_steps?.[part.toolCallId] !== 'queued'
+          )
+            continue;
+          Object.assign(part, { state: 'approval-requested', approval: { id: randomUUID() } });
+          prepared += 1;
+        }
+        if (prepared !== phases.filter((phase) => phase === 'queued').length)
+          throw new Error('Approval cannot be resumed');
+        await tx
+          .update(chatMessages)
+          .set({
+            content: { ...content, ui_message: message, approval_claim_id: null },
+          })
+          .where(eq(chatMessages.id, row.id));
+        return message;
+      });
+    },
   };
+}
+
+function withSavedApprovalOutcomes(
+  message: UIMessage,
+  previous: TurnContent,
+  steps: Record<string, ApprovalStepState>,
+): UIMessage {
+  const parts = [...message.parts];
+  for (const saved of previous.ui_message.parts) {
+    if (!isToolUIPart(saved) || !steps[saved.toolCallId]) continue;
+    const index = parts.findIndex(
+      (part) => isToolUIPart(part) && part.toolCallId === saved.toolCallId,
+    );
+    const streamed = parts[index];
+    if (
+      steps[saved.toolCallId] === 'queued' &&
+      streamed &&
+      isToolUIPart(streamed) &&
+      streamed.state === 'output-error'
+    ) {
+      // SDK validation can fail before the executable tool is called.
+      steps[saved.toolCallId] = 'failed';
+      continue;
+    }
+    // The server checkpoint is authoritative even if the stream aborts before emitting a result.
+    if (index === -1) parts.push(saved);
+    else parts[index] = saved;
+  }
+  return { ...message, parts };
 }

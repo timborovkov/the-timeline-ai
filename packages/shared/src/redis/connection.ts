@@ -6,10 +6,15 @@ export type RedisConsumerRole = 'queue' | 'request';
 const connections = new Map<RedisConsumerRole, Redis>();
 
 /**
- * Infrastructure-owned Redis connections, isolated by consumer lifecycle. `maxRetriesPerRequest: null` is
- * retained for both roles; required by BullMQ workers (blocking BRPOPLPUSH calls would otherwise
- * fail under retry). `lazyConnect` keeps test environments from opening a
- * socket on import.
+ * Infrastructure-owned Redis connections, isolated by consumer lifecycle.
+ *
+ * Queue role keeps `maxRetriesPerRequest: null` so BullMQ blocking commands can
+ * wait across reconnects. Request role uses a finite retry budget so callers
+ * that fail open (rate limits, caches) actually reject instead of hanging when
+ * Redis is unreachable. `lazyConnect` keeps test environments from opening a
+ * socket on import. Attach a no-op `error` listener so connection failures do
+ * not surface as process-level "Unhandled error event" noise before callers
+ * observe the rejected command.
  */
 export function getRedisConnection(role: RedisConsumerRole = 'request'): Redis {
   const existing = connections.get(role);
@@ -17,7 +22,7 @@ export function getRedisConnection(role: RedisConsumerRole = 'request'): Redis {
   const env = getEnv();
   if (!env.REDIS_URL) throw new Error('REDIS_URL is required for the job queue');
   const connection = new IORedis(env.REDIS_URL, {
-    maxRetriesPerRequest: null,
+    maxRetriesPerRequest: role === 'queue' ? null : 1,
     enableReadyCheck: false,
     lazyConnect: true,
     // ioredis 6 defaults to RESP3. Keep legacy reply shapes so BullMQ 5 and
@@ -25,6 +30,7 @@ export function getRedisConnection(role: RedisConsumerRole = 'request'): Redis {
     protocol: 3,
     replyMapping: 'legacy',
   });
+  connection.on('error', () => undefined);
   connections.set(role, connection);
   return connection;
 }

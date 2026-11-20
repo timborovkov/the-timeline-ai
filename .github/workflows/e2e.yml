@@ -45,6 +45,9 @@ jobs:
       - name: Run migrations
         run: bun run db:migrate
 
+      - name: Build workspace imports for Playwright
+        run: bun run test:dist-imports
+
       - name: Run Playwright E2E
         run: bun run e2e
 
@@ -79,11 +82,24 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Credentials sign-in rate-limits through Redis. Without a reachable Redis
+      # service the request-role client previously hung forever under
+      # maxRetriesPerRequest:null, so smoke stayed on /sign-in until timeout.
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       AUTH_SECRET: e2e_auth_secret_at_least_sixteen_chars
       AUTH_URL: http://localhost:3000
       NEXTAUTH_URL: http://localhost:3000
       DATABASE_URL: postgres://timeline:timeline_dev@127.0.0.1:5432/timeline
+      REDIS_URL: redis://127.0.0.1:6379
       INBOUND_EMAIL_DOMAIN: e2e.localhost
       E2E_RUN_ID: gha-prod-${{ github.run_id }}-${{ github.run_attempt }}
       LOG_LEVEL: silent

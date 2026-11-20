@@ -1,5 +1,7 @@
 /** Shared meaning for human communications; capture, attribution and permissions remain source-specific. */
-export const COMMUNICATION_POLICY_VERSION = 'communication-context-v83';
+export const COMMUNICATION_POLICY_VERSION = 'communication-context-v84';
+export const COMMUNICATION_REVIEW_FOCUS =
+  'Review each task against its latest attributable message and current workspace row. When a temporary blocker has cleared and the latest supported status already matches that row, account for the task as existing and emit no status change. Treat an informal first-person commitment as real work when the speaker and deliverable are clear. A progress update can establish who the customer is and which concrete project the team is delivering even when the speaker rules out new tasks. For a request explicitly routed to a newly proposed project, include the task-to-project attachment with the exact routing clause and put both items in the same bundle. A separate project-to-customer link does not satisfy that attachment.';
 export function isHumanCommunication(source: string): boolean {
   return source === 'email' || source === 'slack' || source === 'telegram';
 }

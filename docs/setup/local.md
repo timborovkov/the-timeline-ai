@@ -166,7 +166,7 @@ This is a command reference, not a required local checklist. Follow the [validat
     # release-gate failures for audit runs.
     bun run check:web-bundle                 # scan built Next server chunks after a web build
     bun run e2e                              # Playwright core journeys; requires compose infra + migrations + 4 GiB free disk space
-    bun run e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
+    bun run e2e:prod-smoke                   # build + standalone-server smoke; requires Postgres + Redis (+ migrations). GitHub's Production-ish web smoke job starts both as Actions services.
     bun run e2e:setup / bun run e2e:cleanup     # seed/remove deterministic e2e users and team
     bun run dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
     bun run demo:seed                        # seed, production-path index, and verify the private/local fictional demo corpus

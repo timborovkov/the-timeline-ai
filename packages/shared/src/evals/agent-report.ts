@@ -12,8 +12,12 @@ export interface AgentObservation {
   toolErrors: string[];
   retrievalCalls: number;
   evidenceIds: string[];
+  evidenceCitations?: string[];
   requestedModelId?: string;
   responseModelId?: string;
+  surface?: 'web' | 'slack' | 'telegram';
+  deliveredAnswer?: string;
+  observedProviderUsd?: number | null;
 }
 const answerSchema = z
   .object({
@@ -26,7 +30,7 @@ const answerSchema = z
           citations: z.array(
             z
               .string()
-              .regex(/^\[ev:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]$/i),
+              .regex(/^\[(?:ev:[0-9a-f-]{36}|doc:[0-9a-f-]{36}#v\d+:chunk:[0-9a-f-]{36})\]$/i),
           ),
         })
         .strict(),
@@ -45,10 +49,10 @@ export function scoreAgent(row: AgentCase, observation: AgentObservation) {
   }
   const parsed = answerSchema.safeParse(decoded);
   const claims = parsed.success ? parsed.data.claims : [];
+  const citationFor = (index: number) =>
+    observation.evidenceCitations?.[index] ?? `[ev:${observation.evidenceIds[index]}]`;
   const visible = new Set(
-    row.evidence.flatMap((item, i) =>
-      item.access === 'team' ? [`[ev:${observation.evidenceIds[i]}]`] : [],
-    ),
+    row.evidence.flatMap((item, i) => (item.access === 'team' ? [citationFor(i)] : [])),
   );
   const disclosedText = `${observation.answer} ${JSON.stringify(decoded)}`.toLowerCase();
   const disclosure =
@@ -75,17 +79,17 @@ export function scoreAgent(row: AgentCase, observation: AgentObservation) {
       matching.every((matches) => matches.length === 1),
     citations:
       parsed.success &&
+      claims.length === expected.length &&
+      matching.every((matches) => matches.length === 1) &&
       claims.every((claim) =>
         claim.citations.every((citation) => visible.has(citation.toLowerCase())),
       ) &&
       matching.every((matches, index) => {
-        const required = requireValue(expected[index]).evidence.map(
-          (i) => `[ev:${observation.evidenceIds[i]}]`,
-        );
+        const required = requireValue(expected[index]).evidence.map(citationFor);
         const actual = (matches[0]?.citations ?? []).map((citation) => citation.toLowerCase());
         const allowed = (
           requireValue(expected[index]).allowedEvidence ?? requireValue(expected[index]).evidence
-        ).map((i) => `[ev:${observation.evidenceIds[i]}]`);
+        ).map(citationFor);
         return (
           actual.length > 0 &&
           actual.every((citation) => allowed.includes(citation)) &&
@@ -115,11 +119,23 @@ export interface AgentResult extends AgentObservation {
 export function summarizeAgent(rows: AgentResult[]) {
   if (!rows.length) throw new Error('Empty agent experiment');
   const durations = rows.map((row) => row.durationMs).sort((a, b) => a - b);
+  const costs = rows.flatMap((row) =>
+    typeof row.observedProviderUsd === 'number' ? [row.observedProviderUsd] : [],
+  );
   return {
     cases: rows.length,
     passed: rows.filter((row) => row.score.passed).length,
     failures: rows.filter((row) => !row.executionSuccess).length,
     hardFailures: rows.filter((row) => row.score.hardFailure).length,
+    citationCorrectness: {
+      passed: rows.filter((row) => row.score.criteria.citations).length,
+      cases: rows.length,
+    },
+    providerCost: {
+      observedUsd: costs.length ? costs.reduce((total, cost) => total + cost, 0) : null,
+      casesWithCost: costs.length,
+      casesWithoutCost: rows.length - costs.length,
+    },
     perScenario: scenarioScores(rows, (row) => row.score.passed),
     failedCases: rows
       .filter((row) => !row.score.passed)

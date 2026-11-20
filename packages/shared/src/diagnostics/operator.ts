@@ -3,7 +3,11 @@ import { and, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { decryptJson } from '#src/crypto/secrets.js';
-import { diagnosticPage, DIAGNOSTIC_PAGE_SIZE } from '#src/diagnostics/contract.js';
+import {
+  diagnosticCategory,
+  diagnosticPage,
+  DIAGNOSTIC_PAGE_SIZE,
+} from '#src/diagnostics/contract.js';
 import {
   requirePlatformActor,
   recordPlatformAudit,
@@ -16,6 +20,7 @@ const reportContent = z
     teamId: z.uuid(),
     userId: z.uuid(),
     description: z.string(),
+    category: diagnosticCategory.optional(),
     conversation: z.string(),
   })
   .strict();
@@ -64,6 +69,7 @@ export async function readDiagnosticReport(db: Db, actor: PlatformActor, id: str
     });
     return {
       description: content.description,
+      ...(content.category && { category: content.category }),
       conversation: content.conversation,
       expiresAt: row.expiresAt.toISOString(),
     };

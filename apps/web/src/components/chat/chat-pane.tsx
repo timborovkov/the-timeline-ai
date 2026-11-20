@@ -2,6 +2,10 @@
 
 import { useChat } from '@ai-sdk/react';
 import {
+  answerEvidenceSchema,
+  answerEvidenceSourceLabel,
+} from '@timeline/shared/agent/answer-evidence';
+import {
   chatContextKey,
   mergeChatContextTrail,
   type ChatContextRef,
@@ -26,16 +30,18 @@ import {
   type RefObject,
 } from 'react';
 
-import { unpinChatSessionAction } from '@/app/actions/chat';
+import { prepareChatApprovalResumeAction, unpinChatSessionAction } from '@/app/actions/chat';
 import { saveProjectHandoff } from '@/app/actions/handoffs';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { Button } from '@/components/ui/button';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
 import type { ChatSaveResult } from '@/lib/chat-turn-save';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';
+import { formatDisplayDate } from '@/lib/display-dates';
 import { displayObjectLabel } from '@/lib/display-labels';
 import { notifyAction, notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -134,18 +140,13 @@ function ChatSurfaceContent({
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
-  const { history, messages, sendMessage, status, error, isStreaming, approveTool } = useSavedChat(
-    sessionId,
-    transport,
-    initialMessages,
-    () => {
+  const { history, messages, setMessages, sendMessage, status, error, isStreaming, approveTool } =
+    useSavedChat(sessionId, transport, initialMessages, () => {
       router.refresh();
-    },
-  );
+    });
 
   const [input, setInput] = useState(initialPrompt ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const handoffConsumedRef = useRef(false);
 
   const handoffPin = initialSessionId === null ? consumedHandoff : null;
   const visiblePinnedEntity = handoffPin?.pinnedEntityId
@@ -154,42 +155,16 @@ function ChatSurfaceContent({
       ? { id: pinnedEntityId, name: pinnedEntityName }
       : null;
 
-  // react-doctor-disable-next-line react-doctor/no-event-handler -- One-time sessionStorage handoff can only run after mount; sending a Home prompt is that hydration, not a click handler.
-  useEffect(() => {
-    if (!consumeHandoff) return;
-    // The SDK stops its chat during Strict Mode's effect cleanup. Consume and
-    // send only after that setup/cleanup cycle, otherwise it cancels the prompt
-    // before the request starts and the one-time handoff is already gone.
-    let active = true;
-    queueMicrotask(() => {
-      if (!active || handoffConsumedRef.current) return;
-      handoffConsumedRef.current = true;
-      let handoff: ChatHandoff | null = null;
-      try {
-        handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
-      } catch {
-        return;
-      }
-      if (!handoff) return;
-      chatHandoffRef.current = handoff;
-      // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
-      setConsumedHandoff(handoff);
-      // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
-      if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
-    });
-    return () => {
-      active = false;
-    };
-  }, [consumeHandoff, initialMessages.length, initialSessionId, sendMessage, teamId]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 80) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages, status]);
+  useChatHandoffHydration({
+    consumeHandoff,
+    chatHandoffRef,
+    initialMessagesLength: initialMessages.length,
+    initialSessionId,
+    sendMessage,
+    setConsumedHandoff,
+    teamId,
+  });
+  useStickTranscriptToBottom(scrollRef, messages, status);
 
   function submit(text: string) {
     const t = text.trim();
@@ -229,6 +204,120 @@ function ChatSurfaceContent({
         teamName={teamName}
       />
       <ChatError error={error} />
+      <ChatSessionControls
+        sessionId={sessionId}
+        messages={messages}
+        isStreaming={isStreaming}
+        history={history}
+        input={input}
+        setInput={setInput}
+        setMessages={setMessages}
+        onSubmit={submit}
+        pinned={Boolean(visiblePinnedEntity)}
+      />
+    </div>
+  );
+}
+
+function useChatHandoffHydration({
+  consumeHandoff,
+  chatHandoffRef,
+  initialMessagesLength,
+  initialSessionId,
+  sendMessage,
+  setConsumedHandoff,
+  teamId,
+}: {
+  consumeHandoff: boolean;
+  chatHandoffRef: RefObject<ChatHandoff | null>;
+  initialMessagesLength: number;
+  initialSessionId: string | null;
+  sendMessage: (input: { text: string }) => void | Promise<void>;
+  setConsumedHandoff: (handoff: ChatHandoff | null) => void;
+  teamId: string;
+}) {
+  const handoffConsumedRef = useRef(false);
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- One-time sessionStorage handoff can only run after mount; sending a Home prompt is that hydration, not a click handler.
+  useEffect(() => {
+    if (!consumeHandoff) return;
+    // The SDK stops its chat during Strict Mode's effect cleanup. Consume and
+    // send only after that setup/cleanup cycle, otherwise it cancels the prompt
+    // before the request starts and the one-time handoff is already gone.
+    let active = true;
+    queueMicrotask(() => {
+      if (!active || handoffConsumedRef.current) return;
+      handoffConsumedRef.current = true;
+      let handoff: ChatHandoff | null = null;
+      try {
+        handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
+      } catch {
+        return;
+      }
+      if (!handoff) return;
+      chatHandoffRef.current = handoff;
+      // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
+      setConsumedHandoff(handoff);
+      // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
+      if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    chatHandoffRef,
+    consumeHandoff,
+    initialMessagesLength,
+    initialSessionId,
+    sendMessage,
+    setConsumedHandoff,
+    teamId,
+  ]);
+}
+
+function useStickTranscriptToBottom(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  messages: UIMessage[],
+  status: string,
+) {
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 80) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, scrollRef, status]);
+}
+
+function ChatSessionControls({
+  sessionId,
+  messages,
+  isStreaming,
+  history,
+  input,
+  setInput,
+  setMessages,
+  onSubmit,
+  pinned,
+}: {
+  sessionId: string | null;
+  messages: UIMessage[];
+  isStreaming: boolean;
+  history: ReturnType<typeof useChatHistorySave>;
+  input: string;
+  setInput: (value: string) => void;
+  setMessages: (update: (messages: UIMessage[]) => UIMessage[]) => void;
+  onSubmit: (text: string) => void;
+  pinned: boolean;
+}) {
+  return (
+    <>
+      <ReviewUnstartedSteps
+        sessionId={sessionId}
+        message={messages.at(-1)}
+        isStreaming={isStreaming || history.saveBlocked}
+        setMessages={setMessages}
+      />
       <ChatSaveNotice
         save={history.activeSave}
         retrying={history.retrying}
@@ -236,7 +325,7 @@ function ChatSurfaceContent({
       />
       <ChatHandoffControl
         sessionId={sessionId}
-        pinned={Boolean(visiblePinnedEntity)}
+        pinned={pinned}
         streaming={isStreaming}
         messages={messages}
       />
@@ -253,9 +342,9 @@ function ChatSurfaceContent({
         input={input}
         isStreaming={isStreaming || history.saveBlocked}
         onChange={setInput}
-        onSubmit={submit}
+        onSubmit={onSubmit}
       />
-    </div>
+    </>
   );
 }
 
@@ -316,7 +405,7 @@ function useSavedChat(
   refresh: () => void,
 ) {
   const history = useChatHistorySave(sessionId, refresh);
-  const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
+  const { messages, setMessages, sendMessage, status, error, addToolApprovalResponse } = useChat({
     transport,
     messages: initialMessages,
     onData: history.onData,
@@ -340,6 +429,7 @@ function useSavedChat(
   return {
     history,
     messages,
+    setMessages,
     sendMessage,
     status,
     error,
@@ -348,6 +438,71 @@ function useSavedChat(
       if (!history.saveBlocked && !isStreaming) void addToolApprovalResponse(approval);
     },
   };
+}
+
+function ReviewUnstartedSteps({
+  sessionId,
+  message,
+  isStreaming,
+  setMessages,
+}: {
+  sessionId: string | null;
+  message: UIMessage | undefined;
+  isStreaming: boolean;
+  setMessages: (update: (messages: UIMessage[]) => UIMessage[]) => void;
+}) {
+  const [resuming, startResume] = useTransition();
+  if (!sessionId || !message || isStreaming || !resumableApprovalMessage(message)) return null;
+  const messageId = message.id;
+  return (
+    <Button
+      type="button"
+      className="self-start"
+      variant="outline"
+      size="sm"
+      disabled={resuming}
+      onClick={() => {
+        startResume(async () => {
+          const result = await prepareChatApprovalResumeAction({ sessionId, messageId }).catch(
+            () => ({ error: 'Could not prepare chat approval.' }),
+          );
+          if ('message' in result && result.message) {
+            const prepared = result.message;
+            setMessages((current) =>
+              current.map((entry) => (entry.id === messageId ? prepared : entry)),
+            );
+          } else {
+            notifyError('chat-approval-resume', result.error ?? 'Could not prepare chat approval.');
+          }
+        });
+      }}
+    >
+      {resuming ? 'Loading approvals…' : 'Review unstarted steps'}
+    </Button>
+  );
+}
+
+function resumableApprovalMessage(message: UIMessage | undefined): boolean {
+  if (message?.role !== 'assistant') return false;
+  const recoveryStates = message.parts.flatMap((part) =>
+    part.type === 'data-tool-history' ? [(part.data as { state?: string }).state] : [],
+  );
+  return (
+    recoveryStates.includes('approval-unstarted') &&
+    !message.parts.some(
+      (part) =>
+        isToolUIPart(part) &&
+        part.approval &&
+        (part.state === 'approval-requested' ||
+          part.state === 'output-error' ||
+          part.state === 'output-denied' ||
+          (part.state === 'output-available' &&
+            part.output !== null &&
+            typeof part.output === 'object' &&
+            'error' in part.output)),
+    ) &&
+    !recoveryStates.some((state) => state === 'approval-needs-check' || state === 'output-denied')
+  );
 }
 
 function useChatHistorySave(sessionId: string | null, refresh: () => void) {
@@ -791,9 +946,49 @@ function ChatMessage({
               onToolApprovalResponse={onToolApprovalResponse}
             />
           ))}
+          {!isUser ? <AnswerEvidence metadata={message.metadata} /> : null}
         </div>
       </div>
     </li>
+  );
+}
+
+function AnswerEvidence({ metadata }: { metadata: unknown }) {
+  const timezone = useWorkspaceTimezone();
+  const parsed = answerEvidenceSchema.safeParse(
+    (metadata as { answerEvidence?: unknown } | null | undefined)?.answerEvidence,
+  );
+  if (!parsed.success || parsed.data.length === 0) return null;
+  const incomplete = parsed.data.some((source) => source.status !== 'queried');
+  return (
+    <details className="mt-2 border-t border-border pt-2 text-xs text-fg-muted">
+      <summary className="w-fit cursor-pointer py-1 font-medium">
+        {incomplete ? 'Sources checked · partial coverage' : 'Sources checked'}
+      </summary>
+      <ul className="mt-1 grid gap-2">
+        {parsed.data.map(({ source, status, latest }) => (
+          <li key={source}>
+            <span className="font-medium text-fg">{answerEvidenceSourceLabel(source)}</span>
+            {status === 'unavailable' ? ' · Unavailable or partial' : null}
+            {status === 'indexing' ? ' · Still indexing' : null}
+            {latest && (latest.date || latest.version) ? (
+              <div className="flex flex-wrap items-baseline gap-x-1.5">
+                <span>
+                  {latest.basis === 'observed'
+                    ? 'Latest relevant observation'
+                    : latest.basis === 'uploaded'
+                      ? 'Latest relevant upload'
+                      : 'Latest relevant evidence'}
+                  {latest.date ? ` · ${formatDisplayDate(latest.date, { timezone })}` : ''}
+                  {latest.version ? ` · Document v${String(latest.version)}` : ''}
+                </span>
+                {latest.citation ? <CitationText text={latest.citation} /> : null}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

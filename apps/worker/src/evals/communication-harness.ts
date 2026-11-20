@@ -33,6 +33,7 @@ import {
   type CommunicationCase,
   type CommunicationObservation,
 } from '#src/evals/communication-types.js';
+import { observedProviderCost } from '#src/evals/suggestion-report.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 
 const WORKSPACE = '33333333-3333-4333-8333-333333333333';
@@ -125,6 +126,7 @@ export async function createCommunicationHarness() {
       const started = performance.now();
       const stages = ['seeded'];
       const inferenceTimings: NonNullable<CommunicationObservation['inferenceTimings']> = [];
+      const providerCosts: (number | null)[] = [];
       const executionErrors: string[] = [];
       const executionFailureDetails: string[] = [];
       const ids: string[] = [];
@@ -275,21 +277,25 @@ export async function createCommunicationHarness() {
                 stages.push('completeness-check');
                 const callStarted = performance.now();
                 let failed = false;
+                let cost: number | null = null;
                 const checker =
                   controls.auditModel ??
                   (await import('#src/test/communication-audit.js')).controlledCommunicationAudit;
                 try {
                   const result = await checker(input);
+                  cost = observedProviderCost(result);
                   const object = input.normalizeOutput
                     ? input.normalizeOutput(result.object)
                     : result.object;
                   input.schema.parse(object);
                   return { ...result, object } as typeof result;
                 } catch (error) {
+                  cost ??= observedProviderCost(error);
                   executionErrors.push(error instanceof Error ? error.name : 'AuditError');
                   failed = true;
                   throw error;
                 } finally {
+                  providerCosts.push(cost);
                   inferenceTimings.push({
                     stage: 'completeness-check',
                     latencyMs: performance.now() - callStarted,
@@ -328,15 +334,19 @@ export async function createCommunicationHarness() {
           stages.push(stage === 'extraction' ? 'inference' : stage);
           const callStarted = performance.now();
           let failed = false;
+          let cost: number | null = null;
           try {
             const result = await (controls.model ?? chatStructured)(input);
+            cost = observedProviderCost(result);
             input.schema.parse(result.object);
             return result;
           } catch (error) {
+            cost ??= observedProviderCost(error);
             executionErrors.push(error instanceof Error ? error.name : 'InferenceError');
             failed = true;
             throw error;
           } finally {
+            providerCosts.push(cost);
             inferenceTimings.push({ stage, latencyMs: performance.now() - callStarted, failed });
           }
         },
@@ -653,6 +663,7 @@ export async function createCommunicationHarness() {
         executionFailureDetails,
         modelCalls,
         inferenceTimings,
+        providerCosts,
         durationMs: performance.now() - started,
         unauthorizedDisclosure,
         canonicalMutation,

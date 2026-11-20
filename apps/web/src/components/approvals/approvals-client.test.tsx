@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   reviseTaskSuggestionItemAction: vi.fn(),
   searchObjectsAction: vi.fn(),
   getApprovalTargetSnapshotAction: vi.fn(),
+  inspectSuggestionEvidenceAction: vi.fn(),
   notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
@@ -48,6 +49,7 @@ await vi.mock(
   import.meta.resolve('@/app/actions/approval-preview'),
   () => ({
     getApprovalTargetSnapshotAction: fakes.getApprovalTargetSnapshotAction,
+    inspectSuggestionEvidenceAction: fakes.inspectSuggestionEvidenceAction,
   }),
   () => import('@/app/actions/approval-preview'),
 );
@@ -420,9 +422,7 @@ describe('ApprovalsClient', () => {
 
     expect(html).toContain('Why · 1 source');
     expect(html).toContain('Owner committed to send the Acme proposal.');
-    expect(html).toContain(
-      'Required source evidence changed after this proposal was created. Regenerate the proposal before accepting this change.',
-    );
+    expect(html).toContain('Source evidence changed. Acceptance is blocked.');
   });
 
   it('groups item citations by normalized evidence surface', () => {
@@ -2590,8 +2590,11 @@ describe('ApprovalsClient', () => {
 
     await user.click(screen.getByRole('checkbox', { name: 'Select all visible proposals' }));
     await user.click(screen.getByRole('button', { name: /^Reject$/ }));
+    await user.selectOptions(screen.getByLabelText('Rejection reason (optional)'), 'duplicate');
+    await user.click(screen.getByRole('button', { name: 'Reject 2 proposals' }));
 
     expect(fakes.rejectVisibleSuggestionsAction).toHaveBeenCalledWith({
+      reason: 'duplicate',
       suggestions: [
         {
           suggestionId: 'bundle-1',

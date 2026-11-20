@@ -26,6 +26,7 @@ interface PersistedAssistant {
   ui_message?: UIMessage;
   text?: string | null;
   tool_calls?: PersistedToolCall[];
+  approval_steps?: Record<string, string>;
 }
 
 export function hydrateChatSessionMessages(
@@ -41,7 +42,8 @@ export function hydrateChatSessionMessages(
       }
       if (message.role === 'assistant') {
         const content = message.content as PersistedAssistant;
-        if (content.ui_message) return historicalChatMessage(content.ui_message);
+        if (content.ui_message)
+          return historicalChatMessage(content.ui_message, content.approval_steps);
         const parts: UIMessage['parts'] = [];
         if (Array.isArray(content.tool_calls)) {
           for (const tc of content.tool_calls) {
@@ -89,7 +91,10 @@ export function hydrateChatSessionMessages(
 }
 
 /** Historical incomplete calls are display data, never executable model tool calls. */
-export function historicalChatMessage(message: UIMessage): UIMessage {
+export function historicalChatMessage(
+  message: UIMessage,
+  approvalSteps?: Record<string, string>,
+): UIMessage {
   return {
     ...message,
     parts: message.parts.map((part) => {
@@ -97,12 +102,20 @@ export function historicalChatMessage(message: UIMessage): UIMessage {
         isToolUIPart(part) &&
         ['input-streaming', 'input-available', 'approval-responded'].includes(part.state)
       ) {
+        const step = approvalSteps?.[part.toolCallId];
         return {
           type: 'data-tool-history',
           data: {
             name: part.type === 'dynamic-tool' ? part.toolName : part.type.slice(5),
             input: part.input,
-            state: 'interrupted',
+            state:
+              step === 'queued'
+                ? 'approval-unstarted'
+                : step === 'running' || step === 'needs-check'
+                  ? 'approval-needs-check'
+                  : step === 'declined'
+                    ? 'output-denied'
+                    : 'interrupted',
           },
         };
       }

@@ -25,6 +25,17 @@ export interface ApprovalPreviewActionState extends ActionState {
   }[];
 }
 
+export async function inspectSuggestionEvidenceAction(input: unknown) {
+  const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
+  if (!parsed.success) return { error: 'Invalid proposal.' } as const;
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  const changes = await r.scope.suggestions.inspectSuggestionEvidence(parsed.data.itemId);
+  return changes
+    ? { changes: changes.map((change) => ({ ...change, occurredAt: iso(change.occurredAt) })) }
+    : { error: 'Proposal evidence is unavailable.' };
+}
+
 function iso(value: Date | string | null | undefined): string | null {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
