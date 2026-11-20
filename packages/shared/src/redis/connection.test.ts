@@ -31,7 +31,7 @@ it('keeps request clients alive across queue shutdown and closes both at process
   expect(queue).not.toBe(request);
   expect(getQueue()).toBe(queue);
   expect(queue.options.maxRetriesPerRequest).toBeNull();
-  expect(request.options.maxRetriesPerRequest).toBeNull();
+  expect(request.options.maxRetriesPerRequest).toBe(1);
   expect(request.status).toBe('wait');
   await closeQueue();
   expect(queueQuit).toHaveBeenCalledTimes(1);
@@ -41,4 +41,11 @@ it('keeps request clients alive across queue shutdown and closes both at process
   expect(requestQuit).toHaveBeenCalledTimes(1);
   await closeRedisConnection();
   expect(requestQuit).toHaveBeenCalledTimes(1);
+});
+
+it('rejects request-role commands when Redis is unreachable instead of hanging', async () => {
+  process.env.REDIS_URL = 'redis://127.0.0.1:1';
+  resetEnvForTests();
+  const request = getRedisConnection();
+  await expect(request.ping()).rejects.toThrow();
 });
