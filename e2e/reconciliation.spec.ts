@@ -980,8 +980,8 @@ test.describe.serial('reconciliation dashboard', () => {
       .getByRole('checkbox', { name: `Select ${fixtures.approvalBulkPartial.calendarTitle}` })
       .check();
     await page
-      .locator('div')
-      .filter({ has: page.getByLabel(/\d+ proposals? selected/) })
+      .getByLabel(/\d+ proposals? selected/)
+      .locator('xpath=..')
       .getByRole('button', { name: 'Accept', exact: true })
       .click();
 

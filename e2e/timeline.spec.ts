@@ -33,22 +33,19 @@ async function acceptApprovalReview(page: Page, title: string) {
 }
 
 /**
- * Inbox auto-opens a Review proposal panel with its own Accept. Prefer the
- * selection-bar Accept keyed by the selected-count output label.
+ * Inbox auto-opens a Review proposal panel with its own Accept. Anchor on the
+ * selection-bar output label and click Accept in that bar only.
  */
 async function clickBulkAccept(page: Page) {
   await page
-    .locator('div')
-    .filter({ has: page.getByLabel(/\d+ proposals? selected/) })
+    .getByLabel(/\d+ proposals? selected/)
+    .locator('xpath=..')
     .getByRole('button', { name: 'Accept', exact: true })
     .click();
 }
 
-async function expectTaskVisible(page: Page, taskTitle: string) {
-  await page.goto('/app/tasks');
-  const search = page.getByRole('searchbox', { name: 'Search' });
-  await search.fill(taskTitle);
-  await expect(page.getByRole('link', { name: taskTitle, exact: true })).toBeVisible();
+async function expectTaskCreated(taskTitle: string) {
+  await expect.poll(() => countObjectsByName(taskTitle)).toBe(1);
 }
 
 /**
@@ -1988,7 +1985,7 @@ test('approvals page bulk accept leaves merge proposals for review', async ({ br
     ).toBeVisible();
     expect(await scope.objects.getMergedObjectTarget(second.id)).toBeNull();
 
-    await expectTaskVisible(ownerPage, taskTitle);
+    await expectTaskCreated(taskTitle);
   } finally {
     await scope.suggestions.rejectSuggestionItem(mergeItemId);
     await ownerPage.context().close();
@@ -2057,7 +2054,7 @@ test('approvals page bulk accept recovers failed proposal rows', async ({ browse
     await expect(failedReview.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
     await expect(failedReview.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
 
-    await expectTaskVisible(ownerPage, taskTitle);
+    await expectTaskCreated(taskTitle);
   } finally {
     await scope.suggestions.rejectSuggestionItem(calendarItemId);
     await ownerPage.context().close();
@@ -2129,7 +2126,11 @@ test.describe.serial('agentic core object update approval updates existing objec
     await expect(
       ownerPage.getByRole('button', { name: `Status for ${objectName}`, exact: true }),
     ).toHaveText('Active');
-    await expect(ownerPage.getByLabel('Stage')).toHaveValue('proposal');
+    await expect(
+      ownerPage
+        .getByRole('complementary', { name: 'Object properties' })
+        .getByRole('textbox', { name: 'Stage' }),
+    ).toHaveValue('proposal');
     await expect(ownerPage.getByText('The Timeline Bot updated status')).toBeVisible();
     await expect(ownerPage.getByText('The Timeline Bot updated stage')).toBeVisible();
     await expect(await countObjectsByName(objectName)).toBe(1);
@@ -2139,7 +2140,11 @@ test.describe.serial('agentic core object update approval updates existing objec
     await expect(
       memberPage.getByRole('button', { name: `Status for ${objectName}`, exact: true }),
     ).toHaveText('Active');
-    await expect(memberPage.getByLabel('Stage')).toHaveValue('proposal');
+    await expect(
+      memberPage
+        .getByRole('complementary', { name: 'Object properties' })
+        .getByRole('textbox', { name: 'Stage' }),
+    ).toHaveValue('proposal');
   });
 });
 
