@@ -7,9 +7,8 @@ import {
   type TaskCategory,
   type TaskCategoryFilterKey,
 } from '#src/task-categories/types.js';
-import { workspaceDueDateBoundaries } from '#src/time/index.js';
-
 import { taskStatusFilterValues } from '#src/task-statuses.js';
+import { workspaceDueDateBoundaries } from '#src/time/index.js';
 
 export const TASK_OPEN_STATUSES_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 

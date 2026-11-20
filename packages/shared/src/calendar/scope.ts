@@ -10,7 +10,6 @@ import {
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { createGoogleCalendarScope } from '#src/calendar/google.js';
-import { createCalendarReminderScope } from '#src/calendar/reminders.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
@@ -32,6 +31,7 @@ import {
   rruleUntil,
   validateRRule,
 } from '#src/calendar/recurrence.js';
+import { createCalendarReminderScope } from '#src/calendar/reminders.js';
 import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
@@ -996,7 +996,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           .limit(1);
 
         let row = existing[0];
-        if (!row || row.source !== 'internal') return null;
+        if (row?.source !== 'internal') return null;
         let current = row as CalendarEventRow;
         let targetId = id;
         let effectivePatch = patch;
@@ -1521,7 +1521,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           .limit(1);
 
         const row = existing[0];
-        if (!row || row.source !== 'internal') return false;
+        if (row?.source !== 'internal') return false;
         const current = row as CalendarEventRow;
         const requestedRecurrenceMode =
           opts.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');

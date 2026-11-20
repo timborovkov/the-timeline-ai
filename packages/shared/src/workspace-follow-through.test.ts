@@ -335,8 +335,8 @@ describe('workspace follow-through', () => {
     resetEnvForTests();
     const now = new Date();
     const eventId = 'provider-event';
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = new URL(String(input));
+    function fixtureResponse(input: Parameters<typeof fetch>[0]) {
+      const url = new URL(input instanceof Request ? input.url : input);
       if (url.hostname === 'oauth2.googleapis.com')
         return Response.json({ access_token: 'fixture' });
       if (url.pathname.endsWith('calendarList')) {
@@ -366,7 +366,10 @@ describe('workspace follow-through', () => {
               nextSyncToken: 'first',
             },
       );
-    });
+    }
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input) => Promise.resolve(fixtureResponse(input)));
     try {
       const owner = withTeam(db, TEAM, OWNER).calendar;
       const member = withTeam(db, TEAM, MEMBER).calendar;
@@ -386,7 +389,7 @@ describe('workspace follow-through', () => {
     } finally {
       fetchSpy.mockRestore();
       for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[key];
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
         else process.env[key] = value;
       }
       resetEnvForTests();

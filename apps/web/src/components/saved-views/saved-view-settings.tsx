@@ -62,7 +62,9 @@ export function SavedViewSettings({
             type="checkbox"
             checked={notifyEnabled}
             disabled={pending || (!href && !notify)}
-            onChange={(event) => manage({ type: 'notify', enabled: event.currentTarget.checked })}
+            onChange={(event) => {
+              manage({ type: 'notify', enabled: event.currentTarget.checked });
+            }}
           />
           Include new matches in my digest
         </label>
@@ -85,7 +87,9 @@ export function SavedViewSettings({
               type="button"
               variant="ghost"
               disabled={pending}
-              onClick={() => manage({ type: 'delete' })}
+              onClick={() => {
+                manage({ type: 'delete' });
+              }}
             >
               Delete view
             </Button>

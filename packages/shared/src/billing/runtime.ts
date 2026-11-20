@@ -1,4 +1,3 @@
-import { VISION_BUDGET_ESTIMATE_CENTS } from '#src/billing/vision-budget.js';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -65,6 +64,7 @@ import {
 } from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 import { shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
+import { VISION_BUDGET_ESTIMATE_CENTS } from '#src/billing/vision-budget.js';
 import { childLogger } from '#src/logger.js';
 
 const log = childLogger('billing:runtime');

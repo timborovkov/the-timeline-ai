@@ -19,9 +19,9 @@ import {
   loadIntegrationsPageModel,
   type IntegrationsPageModel,
 } from '@/app/app/team/integrations/integrations-page-model';
-import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { connectionsHref, connectionsTabFromSearch } from '@/lib/connections';

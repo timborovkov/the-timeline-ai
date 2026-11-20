@@ -37,7 +37,7 @@ export function FileExtractionAction({
       size="sm"
       type="button"
       disabled={pending}
-      onClick={() =>
+      onClick={() => {
         startTransition(async () => {
           const result = await notifyAction({
             id: `file:extract:${id}`,
@@ -52,8 +52,8 @@ export function FileExtractionAction({
                   : requestFileCorrection(id),
           });
           if (attemptId || !result.error) router.refresh();
-        })
-      }
+        });
+      }}
     >
       {pending ? 'Saving…' : label}
     </Button>

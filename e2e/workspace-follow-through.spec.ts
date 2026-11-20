@@ -6,6 +6,9 @@ import { newSignedInContext } from './helpers.js';
 import { e2eTeam, e2eUsers } from './test-data.js';
 
 async function screenshot(page: Page, testInfo: TestInfo, name: string) {
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll('main time')).every((time) => time.textContent?.trim()),
+  );
   const path = testInfo.outputPath(`${name}.png`);
   await page.screenshot({ path, animations: 'disabled' });
   await testInfo.attach(name, { path, contentType: 'image/png' });
@@ -159,12 +162,17 @@ test('saves a cited project handoff and a personal approval view', async ({
   browser,
 }, testInfo) => {
   const projectId = crypto.randomUUID();
+  const taskId = crypto.randomUUID();
   const sourceId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
   const messageId = crypto.randomUUID();
   await withE2eDataTransaction(async (sql) => {
     await sql`INSERT INTO entities (id, team_id, type, canonical_name, status)
       VALUES (${projectId}, ${teamId}, 'project', 'Northstar launch', 'open')`;
+    await sql`INSERT INTO entities (id, team_id, type, canonical_name, status, assignee_user_id)
+      VALUES (${taskId}, ${teamId}, 'task', 'Confirm legal approval', 'open', ${ownerId})`;
+    await sql`INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind)
+      VALUES (${teamId}, ${taskId}, ${projectId}, 'child')`;
     await sql`INSERT INTO raw_events (id, team_id, source, content_text)
       VALUES (${sourceId}, ${teamId}, 'web', 'Legal review is still open for the launch.')`;
     await sql`INSERT INTO chat_sessions (id, team_id, created_by, pinned_entity_id, title)
@@ -196,6 +204,12 @@ test('saves a cited project handoff and a personal approval view', async ({
       'href',
       `/app/objects/${projectId}`,
     );
+    await expect(page.getByRole('link', { name: 'Confirm legal approval' })).toHaveAttribute(
+      'href',
+      `/app/objects/${taskId}`,
+    );
+    await expect(page.getByText(e2eUsers.owner.name, { exact: true }).last()).toBeVisible();
+    await expect(page.locator('article time').first()).toHaveText(/\d{4}/);
     await screenshot(page, testInfo, 'project-handoff');
     const member = await memberContext.newPage();
     const snapshotPath = new URL(page.url()).pathname;

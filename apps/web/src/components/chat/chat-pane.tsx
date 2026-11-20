@@ -18,12 +18,12 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import { saveProjectHandoff } from '@/app/actions/handoffs';
-import { Button } from '@/components/ui/button';
 import { unpinChatSessionAction } from '@/app/actions/chat';
+import { saveProjectHandoff } from '@/app/actions/handoffs';
 import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
+import { Button } from '@/components/ui/button';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
 import { type DashboardChatContext } from '@/lib/dashboard-chat-context';

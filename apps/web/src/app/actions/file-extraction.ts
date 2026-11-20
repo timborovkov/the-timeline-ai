@@ -1,7 +1,7 @@
 'use server';
 
+import { TIMELINE_MODELS } from '@timeline/shared/llm';
 import { getQdrantClient } from '@timeline/shared/qdrant';
-import { llm } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -78,7 +78,7 @@ export async function applyFileCorrection(id: string, attemptId: string) {
             teamId: scope.teamId,
             scope: 'doc_chunk',
             sourceId: chunkId,
-            model: llm.TIMELINE_MODELS.embedding.id,
+            model: TIMELINE_MODELS.embedding.id,
           });
         }
       }),

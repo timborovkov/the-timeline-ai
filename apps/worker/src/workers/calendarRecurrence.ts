@@ -8,9 +8,9 @@ import {
 import { Worker, type Job } from 'bullmq';
 import { and, asc, gt, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
-import { processCalendarMaintenance } from '#src/workers/calendarMaintenance.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
+import { processCalendarMaintenance } from '#src/workers/calendarMaintenance.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const TEAM_PAGE_SIZE = 1000;

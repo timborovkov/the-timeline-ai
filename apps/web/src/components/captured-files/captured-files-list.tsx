@@ -1,21 +1,20 @@
 'use client';
 
 import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
-import Link from 'next/link';
 import { FileText, Image as ImageIcon, Link2, Paperclip, Upload } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 import type { ReactNode } from 'react';
 
+import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { bulkCapturedFileAction } from '@/app/actions/file-extraction';
 import { FileExtractionAction } from '@/components/captured-files/file-extraction-action';
-import { SelectionBar } from '@/components/collections/selection-bar';
-import { Input } from '@/components/ui/input';
-import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyState } from '@/components/empty-state';
@@ -33,6 +32,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatCollectionCount } from '@/lib/collection-count';
@@ -304,7 +304,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members, 
       {filters ? (
         <SelectionBar
           count={selected.length}
-          onClear={() => setSelected([])}
+          onClear={() => {
+            setSelected([]);
+          }}
           actions={(['promote', 'extract'] as const).map((action) => (
             <Button
               key={action}
@@ -323,11 +325,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members, 
                     run: () => bulkCapturedFileAction(selected, action),
                   });
                   setSelected(
-                    'failedItemIds' in result
-                      ? (result.failedItemIds ?? [])
-                      : result.error
-                        ? selected
-                        : [],
+                    'failedItemIds' in result ? result.failedItemIds : result.error ? selected : [],
                   );
                   router.refresh();
                 });
@@ -355,14 +353,15 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members, 
                 {...(filters
                   ? {
                       selected: selected.includes(file.id),
-                      onSelect: () =>
+                      onSelect: () => {
                         setSelected((current) =>
                           current.includes(file.id)
                             ? current.filter((id) => id !== file.id)
                             : current.length < 50
                               ? [...current, file.id]
                               : current,
-                        ),
+                        );
+                      },
                     }
                   : {})}
                 onPromote={() => {

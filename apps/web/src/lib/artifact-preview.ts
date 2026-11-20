@@ -712,7 +712,6 @@ async function calendarEventPreview(
         event.showAs,
         event.allDay ? 'all-day' : null,
         event.rrule ? 'recurring' : null,
-        event.redacted ? 'redacted' : null,
       ]),
       card: citationCard({
         kind: ref.kind,

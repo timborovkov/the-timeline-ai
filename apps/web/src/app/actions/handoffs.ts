@@ -27,7 +27,7 @@ export async function saveProjectHandoff(sessionId: string, messageId: string) {
   const scope = withTeam(db, active.teamId, session.user.id);
   const chat = await scope.objects.getChatSession(sessionId);
   const projectId = chat?.session.pinnedEntityId;
-  if (!projectId || !chat) return unavailable;
+  if (!projectId) return unavailable;
   const turn = chat.messages.find((row) => {
     const content = row.content as { ui_message?: { id?: string } } | null;
     return row.role === 'assistant' && content?.ui_message?.id === messageId;

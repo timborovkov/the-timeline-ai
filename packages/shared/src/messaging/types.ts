@@ -1,5 +1,4 @@
 import type { SavedWorkViewChange } from '@timeline/db';
-
 import type { dailyDigests, messageDeliveries } from '@timeline/db';
 
 export type MessageIntent =

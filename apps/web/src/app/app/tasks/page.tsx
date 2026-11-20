@@ -8,8 +8,8 @@ import { redirect } from 'next/navigation';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { EmptyState } from '@/components/empty-state';
-import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { PageHeader } from '@/components/page-header';
+import { SaveViewButton } from '@/components/saved-views/save-view-button';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { TaskViewToggle } from '@/components/tasks/task-view-toggle';

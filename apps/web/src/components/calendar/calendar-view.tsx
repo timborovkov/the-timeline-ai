@@ -37,6 +37,7 @@ import {
   calendarOverlayReducer,
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
+import { EventReminders } from '@/components/calendar/event-reminders';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
@@ -47,7 +48,6 @@ import { EmptyState } from '@/components/empty-state';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { useAppDialog } from '@/components/ui/app-dialog';
-import { EventReminders } from '@/components/calendar/event-reminders';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

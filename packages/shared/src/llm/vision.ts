@@ -2,11 +2,11 @@ import { type FilePart, type LanguageModel } from 'ai';
 
 import { digestAiBytes } from '#src/billing/ai-call.js';
 import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
+import { withAiMetering } from '#src/billing/runtime.js';
 import {
   VISION_BUDGET_PRICE_CEILING,
   VisionBudgetDeferredError,
 } from '#src/billing/vision-budget.js';
-import { withAiMetering } from '#src/billing/runtime.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';

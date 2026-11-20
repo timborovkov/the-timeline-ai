@@ -36,7 +36,6 @@ import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
-import { handoffProvenance } from '@/lib/handoff-provenance';
 import { auth } from '@/lib/auth';
 import { modelChatMessages } from '@/lib/chat-session';
 import {
@@ -48,6 +47,7 @@ import {
 } from '@/lib/chat-tool-selection';
 import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
+import { handoffProvenance } from '@/lib/handoff-provenance';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 /**

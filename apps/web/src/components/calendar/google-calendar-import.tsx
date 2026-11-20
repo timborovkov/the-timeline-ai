@@ -58,7 +58,8 @@ export function GoogleCalendarImport({
   }
 
   function selectCalendar(form: FormData) {
-    const calendarId = String(form.get('calendar') ?? '');
+    const calendarId = form.get('calendar');
+    if (typeof calendarId !== 'string' || !calendarId) return;
     startTransition(async () => {
       const result = await notifyAction({
         id: 'calendar:select',
@@ -96,7 +97,14 @@ export function GoogleCalendarImport({
             </Button>
           </form>
         ) : (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadChoices()}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              loadChoices();
+            }}
+          >
             {connection.calendarName ? 'Change calendar' : 'Choose calendar'}
           </Button>
         )}
@@ -117,7 +125,7 @@ function CalendarConnectionDetails({ connection }: { connection: GoogleCalendarI
   const reconnect = connection.syncStatus === 'reconnect';
   return (
     <>
-      {connection?.calendarName ? (
+      {connection.calendarName ? (
         <p className="text-sm">
           {connection.calendarName}
           <span className="ml-2 text-fg-muted">
@@ -134,7 +142,7 @@ function CalendarConnectionDetails({ connection }: { connection: GoogleCalendarI
       {reconnect ? (
         <p className="text-sm text-fg-muted">Reconnect Google Calendar to resume sync.</p>
       ) : null}
-      {connection?.syncStatus === 'retrying' ? (
+      {connection.syncStatus === 'retrying' ? (
         <p className="text-sm text-fg-muted">Sync is delayed. Timeline will retry.</p>
       ) : null}
     </>

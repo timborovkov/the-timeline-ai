@@ -160,7 +160,7 @@ export function normalizeGoogleCalendarEvent(
   fallbackTimezone: string,
 ) {
   if (input.status === 'cancelled') return { externalEventId: input.id, cancelled: true as const };
-  const zone = assertValidTimezone(input.start?.timeZone ?? fallbackTimezone) ?? 'UTC';
+  const zone = assertValidTimezone(input.start?.timeZone ?? fallbackTimezone);
   const allDay = Boolean(input.start?.date);
   const boundary = (value: z.infer<typeof providerDate> | undefined) =>
     value?.date
@@ -181,10 +181,11 @@ export function normalizeGoogleCalendarEvent(
   if (!startAt || !endAt || !Number.isFinite(startAt.getTime()) || endAt <= startAt) {
     return { externalEventId: input.id, cancelled: true as const };
   }
+  const summary = input.summary?.trim().slice(0, 500);
   return {
     externalEventId: input.id,
     cancelled: false as const,
-    title: input.summary?.trim().slice(0, 500) || 'Calendar event',
+    title: summary ? summary : 'Calendar event',
     description: input.description?.slice(0, 20_000) ?? null,
     location: input.location?.slice(0, 2000) ?? null,
     startAt,
@@ -299,8 +300,10 @@ export function createGoogleCalendarScope({ db, teamId, userId, ensureMember }: 
       choices.push(
         ...result.items.map((item) => ({
           id: item.id,
-          name: item.summaryOverride || item.summary || 'Google Calendar',
-          timezone: assertValidTimezone(item.timeZone ?? 'UTC') ?? 'UTC',
+          name:
+            [item.summaryOverride, item.summary].find((label) => label?.trim()) ??
+            'Google Calendar',
+          timezone: assertValidTimezone(item.timeZone ?? 'UTC'),
         })),
       );
       if (!result.nextPageToken) return choices;
@@ -390,7 +393,7 @@ export function createGoogleCalendarScope({ db, teamId, userId, ensureMember }: 
       return db.transaction(async (tx) => {
         await lockSelection(tx);
         const active = await load(tx);
-        if (!active || active.id !== connection.id) return false;
+        if (active?.id !== connection.id) return false;
         if (active.calendarId !== choice.id) await removeMirrors(tx, active, new Date());
         await tx
           .update(googleCalendarImports)

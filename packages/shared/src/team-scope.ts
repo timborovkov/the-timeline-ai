@@ -48,6 +48,7 @@ import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
+import { createHandoffScope } from '#src/handoffs.js';
 import {
   acceptIngestWebhookEvidence,
   type AcceptIngestWebhookEvidenceInput,
@@ -55,9 +56,6 @@ import {
 } from '#src/ingest-webhooks/accept.js';
 import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
-import { createHandoffScope } from '#src/handoffs.js';
-import { createSavedWorkViewScope } from '#src/saved-work-views.js';
-import { createSourceHealthScope } from '#src/source-health.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import type { chatStructured } from '#src/llm/chat.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -104,6 +102,8 @@ import {
   type RankingInput,
   type RankingMetadata,
 } from '#src/retrieval/ranking.js';
+import { createSavedWorkViewScope } from '#src/saved-work-views.js';
+import { createSourceHealthScope } from '#src/source-health.js';
 import {
   createSuggestionAcceptanceUnitOfWork,
   type SuggestionAcceptanceTransaction,

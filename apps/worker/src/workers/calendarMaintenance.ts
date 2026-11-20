@@ -9,16 +9,16 @@ import {
   type Db,
 } from '@timeline/db';
 import { childLogger, queue, withTeam } from '@timeline/shared';
-import { Worker } from 'bullmq';
-
-import { captureWorkerJobFailure } from '#src/monitoring.js';
-import { guardWorkerProcessor } from '#src/platform-worker.js';
 import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import {
   activeWorkspaceCondition,
   isInactiveWorkspaceError,
 } from '@timeline/shared/platform-admin/runtime';
+import { Worker } from 'bullmq';
 import { and, asc, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+
+import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 export async function processCalendarMaintenance(db: Db, now = new Date()) {
   const due = await db

@@ -293,7 +293,7 @@ export function createSavedWorkViewScope(input: {
       const result: { title: string; href: string; count: number }[] = [];
       for (const change of changes) {
         const view = views.find((candidate) => candidate.id === change.viewId);
-        if (!view || !view.optedInAt || view.optedInAt > asOf) continue;
+        if (!view?.optedInAt || view.optedInAt > asOf) continue;
         const current = await getMatches(view, now);
         if (!current) continue;
         const set = new Set(current);

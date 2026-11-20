@@ -46,7 +46,7 @@ export function EventReminders({ eventId }: { eventId: string }) {
     }
   }
 
-  const blocked = preferences?.eventBlocked || preferences?.seriesBlocked;
+  const blocked = preferences?.eventBlocked === true || preferences?.seriesBlocked === true;
   return (
     <details
       className="space-y-3 rounded-md border p-3"

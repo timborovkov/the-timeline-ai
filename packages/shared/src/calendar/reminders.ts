@@ -84,7 +84,7 @@ export function createCalendarReminderScope({
         );
       }
       const event = await loadEvent(tx, eventId, true);
-      if (!event || event.recurringParentId !== previous.recurringParentId) return null;
+      if (event?.recurringParentId !== previous.recurringParentId) return null;
       return run(tx, event);
     });
   }
@@ -102,7 +102,7 @@ export function createCalendarReminderScope({
         leadMinutes,
         ...blocks,
         canBlock: event.createdByUserId === userId,
-        hasSeries: Boolean(event.recurringParentId || event.rrule),
+        hasSeries: Boolean(event.recurringParentId ?? event.rrule),
         started: event.startAt <= new Date(),
       };
     },

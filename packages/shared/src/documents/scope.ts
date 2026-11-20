@@ -13,11 +13,11 @@ import {
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
-import { VISION_BUDGET_DEFERRED } from '#src/billing/vision-budget.js';
-import { chunkText } from '#src/chunk.js';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { VISION_BUDGET_DEFERRED } from '#src/billing/vision-budget.js';
+import { chunkText } from '#src/chunk.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
@@ -680,7 +680,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const conditions = documentListConditions(args);
     if (args.fileKind === 'captured') conditions.push(sql`${rawEvents.id} IS NOT NULL`);
     const sourceExpression = sql<string>`coalesce(${documents.metadata}->>'source', ${rawEvents.sourceMetadata}->>'source', ${documents.metadata}->>'integration_provider', 'manual')`;
-    const senderExpression = sql<string>`coalesce(
+    const senderExpression = sql<string | null>`coalesce(
       ${rawEvents.sourceMetadata}->>'sender_name', ${rawEvents.sourceMetadata}->>'slack_sender_name',
       ${rawEvents.sourceMetadata}->>'tg_sender_name', ${rawEvents.sourceMetadata}->>'tg_username',
       ${rawEvents.sourceMetadata}->>'from', ${rawEvents.sourceMetadata}->>'sender_email',
@@ -763,7 +763,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           : null,
         provenance: {
           source,
-          sender: row.sender ?? null,
+          sender: row.sender,
           sourceEventId: row.sourceEvent?.id ?? null,
           parentEventCandidate,
           occurredAt: row.sourceEvent?.occurredAt ?? null,

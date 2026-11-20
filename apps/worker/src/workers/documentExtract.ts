@@ -465,7 +465,7 @@ export async function processDocumentExtractJob(
         {
           body: fetched.body,
           contentType: (version.contentType ?? '').toLowerCase(),
-          name: version.objectKey.split('/').pop() || document.name,
+          name: version.objectKey.split('/').pop() ?? document.name,
         },
         io,
       );

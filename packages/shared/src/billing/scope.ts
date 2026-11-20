@@ -52,11 +52,6 @@ import {
   type PolarPlanProductIds,
   walletLockCentsFromMetadata,
 } from '#src/billing/charge.js';
-import {
-  loadVisionBudgetUsage,
-  VisionBudgetDeferredError,
-  VISION_BUDGET_ESTIMATE_CENTS,
-} from '#src/billing/vision-budget.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
 import {
@@ -96,6 +91,11 @@ import {
   spendCapUtilization,
 } from '#src/billing/status.js';
 import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
+import {
+  loadVisionBudgetUsage,
+  VisionBudgetDeferredError,
+  VISION_BUDGET_ESTIMATE_CENTS,
+} from '#src/billing/vision-budget.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 import type { TeamRole } from '#src/team-scope.js';
