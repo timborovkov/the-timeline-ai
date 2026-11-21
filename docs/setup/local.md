@@ -20,7 +20,7 @@ The full local stack runs in Docker Compose; the app and workers run on the host
 
 Open a new shell after installing Bun. For a checkout previously installed with another package manager, remove generated root and workspace `node_modules` directories before running `bun run deps --frozen-lockfile`. Preserve `.env` and Docker volumes. Stop old Node development processes before starting the Bun app and workers.
 
-    bun --version # must match .bun-version
+    bun --revision # must include canary when .bun-version is canary
     cp .env.example .env
     # Next.js dev server reads env from the app dir, so symlink:
     ln -sf ../../.env apps/web/.env
