@@ -2503,6 +2503,9 @@
   "scripts/e2e-env.test.ts": {
     "group": "script"
   },
+  "scripts/performance/bun-pin.test.ts": {
+    "group": "script"
+  },
   "scripts/testing/runner.test.ts": {
     "group": "script"
   },
