@@ -60,6 +60,27 @@ export async function unpinChatSessionAction(input: unknown): Promise<ActionStat
   });
 }
 
+export async function prepareChatApprovalResumeAction(
+  input: unknown,
+): Promise<{ message?: UIMessage; error?: string }> {
+  const parsed = z
+    .object({ sessionId: uuidSchema, messageId: z.string().min(1).max(128) })
+    .safeParse(input);
+  if (!parsed.success) return { error: 'Invalid chat action.' };
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  try {
+    return {
+      message: await r.scope.objects.prepareChatApprovalResume(
+        parsed.data.sessionId,
+        parsed.data.messageId,
+      ),
+    };
+  } catch {
+    return { error: 'This action cannot be resumed. Check the current workspace state.' };
+  }
+}
+
 export async function loadChatSessionAction(input: unknown): Promise<LoadChatSessionActionResult> {
   return runSentryServerAction('load_chat_session_messages', async () => {
     const parsed = z.object({ sessionId: uuidSchema }).safeParse(input);

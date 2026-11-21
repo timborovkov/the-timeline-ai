@@ -102,6 +102,25 @@ afterEach(async () => {
 });
 
 describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () => {
+  it('reuses a capture upload reservation if the prepare response was lost', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const input = {
+      name: 'launch.pdf',
+      filename: 'launch.pdf',
+      contentType: 'application/pdf',
+      captureId: '3e172bad-89c0-40e4-a417-171c782f2a60',
+    };
+    const first = await scope.createDocument(input);
+    const retried = await scope.createDocument(input);
+
+    expect(retried.document.id).toBe(first.document.id);
+    expect(retried.version.id).toBe(first.version.id);
+    expect(retried.version.objectKey).toBe(first.version.objectKey);
+    await expect(scope.createDocument({ ...input, visibility: 'private' })).rejects.toThrow(
+      'This upload can no longer be resumed.',
+    );
+  });
+
   it('finalize called twice for the same version writes exactly ONE raw_events row', async () => {
     // This is the P1 regression: a UI double-click or replayed server
     // action would previously write two "Uploaded foo.pdf" timeline

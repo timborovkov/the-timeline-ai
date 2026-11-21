@@ -1,4 +1,5 @@
 'use client';
+import { diagnosticCategoryLabels } from '@timeline/shared/diagnostics/contract';
 import { useState, useTransition } from 'react';
 
 import { readDiagnosticAction } from '@/app/actions/diagnostics';
@@ -30,6 +31,9 @@ export function DiagnosticReportReview({ id }: { id: string }) {
       {result?.report && (
         <section className="space-y-3">
           <h3 className="font-semibold">Reported issue</h3>
+          {result.report.category ? (
+            <p>{diagnosticCategoryLabels[result.report.category]}</p>
+          ) : null}
           <p className="whitespace-pre-wrap break-words">{result.report.description}</p>
           <h3 className="font-semibold">Submitted conversation</h3>
           <p className="whitespace-pre-wrap break-words">{result.report.conversation}</p>

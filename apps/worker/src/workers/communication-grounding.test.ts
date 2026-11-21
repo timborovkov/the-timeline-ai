@@ -854,6 +854,27 @@ test('creating a project through task approval requires affirmative membership',
   }
 });
 
+test('task titles containing their project suffix keep grounded task routing', () => {
+  const taskTitle = 'Draft import specification for Ordering Hub';
+  for (const [text, expected] of [
+    [
+      'Please draft import specification for Ordering Hub and link that project to Harbor Foods.',
+      'Ordering Hub',
+    ],
+    ['Perhaps draft import specification for Ordering Hub.', undefined],
+    ['Please draft import specification for Ordering Hub or another project.', undefined],
+  ] as const) {
+    expect(
+      run(
+        text,
+        { createProjectName: 'Ordering Hub' },
+        [support('project', text, 'Ordering Hub', taskTitle)],
+        { taskTitle },
+      )[0]?.items[0]?.proposedPayload.createProjectName,
+    ).toBe(expected);
+  }
+});
+
 test('an ended lifecycle state cannot be proposed as current', () => {
   for (const text of [
     'Review retention policy is no longer blocked.',

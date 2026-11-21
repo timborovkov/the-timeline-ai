@@ -148,6 +148,8 @@ export interface SearchOpts {
   source?: QdrantPayload['source'];
   entityIds?: string[];
   eventIds?: string[];
+  /** Restrict object-note candidates to objects already filtered in SQL. */
+  objectIds?: string[];
   /** Superseded website captures: retain promoted drive-document chunks even
    * when their provenance still points to an older website event. */
   obsoleteWebsiteEventIds?: string[];
@@ -642,6 +644,9 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       });
     if (searchOpts.eventIds && searchOpts.eventIds.length > 0) {
       extraMust.push({ key: 'event_id', match: { any: searchOpts.eventIds } });
+    }
+    if (searchOpts.objectIds && searchOpts.objectIds.length > 0) {
+      extraMust.push({ key: 'object_id', match: { any: searchOpts.objectIds } });
     }
     if (searchOpts.sourceKind) {
       const kinds = Array.isArray(searchOpts.sourceKind)

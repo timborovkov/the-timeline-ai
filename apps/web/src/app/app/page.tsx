@@ -37,6 +37,11 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import {
+  firstRunCaptureHref,
+  firstRunCaptureKey,
+  firstRunCaptureUnavailable,
+} from '@/lib/first-run-links';
 import { loadFirstRunStatus } from '@/lib/first-run-status';
 import {
   displayInboundEmail,
@@ -118,6 +123,11 @@ function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: s
   };
 }
 
+function redirectToGuidedRecord(firstRun: FirstRunState): never {
+  const captureKey = firstRunCaptureKey(firstRun);
+  redirect(captureKey ? firstRunCaptureHref(captureKey, 'record') : '/app/onboarding/record');
+}
+
 async function FirstRunHomeBanner({
   firstRun,
   teamId,
@@ -131,22 +141,52 @@ async function FirstRunHomeBanner({
   teamSlug: string;
   teamName: string;
 }) {
-  if (firstRun?.phase === 'failed') return <FirstRunHomeCapture failed />;
-  if (firstRun?.phase !== 'processing') return null;
+  if (firstRun?.startedByUserId !== userId) return null;
+
+  if (firstRun.phase === 'failed') {
+    const captureKey = firstRunCaptureKey(firstRun);
+    if (!captureKey) return null;
+    return (
+      <FirstRunHomeCapture
+        ready={false}
+        failed
+        emailWaiting={false}
+        startedAt={firstRun.starterSelectedAt}
+        completed={0}
+        total={0}
+        href={firstRunCaptureHref(captureKey)}
+      />
+    );
+  }
+
+  // Match main (#524/#603): only the processing Home path upgrades into the guided
+  // shell redirect. Capture-link progress stays here until that transition.
+  if (firstRun.phase !== 'processing') return null;
+
   const status = await loadHomePanel('home_first_run_status', () =>
     loadFirstRunStatus({ db, teamId, userId, teamSlug, teamName }),
   );
-  const phase = status?.firstRun?.phase ?? firstRun.phase;
-  if (GUIDED_SHELL_PHASES.includes(phase)) redirect('/app/onboarding/record');
+  const current = status?.firstRun ?? firstRun;
+  if (GUIDED_SHELL_PHASES.includes(current.phase)) redirectToGuidedRecord(current);
+
+  const captureKey = firstRunCaptureKey(current);
+  if (!captureKey) return null;
+  const steps = status?.record?.processingSteps ?? [];
+  const unavailable = firstRunCaptureUnavailable(current, status?.record ?? null);
   const failed =
-    phase === 'failed' ||
-    Boolean(status?.record?.processingSteps.some((step) => step.status === 'failed'));
+    unavailable || current.phase === 'failed' || steps.some((step) => step.status === 'failed');
+  const waitingPath = failed ? null : current.starterPath;
+
   return (
     <FirstRunHomeCapture
+      ready={false}
       failed={failed}
-      emailWaiting={firstRun.starterPath === 'email'}
-      connectorWaiting={isConnectorStarterPath(firstRun.starterPath) ? firstRun.starterPath : null}
-      initialStatus={status ?? { firstRun, teamId, teamName, inboundEmail: null, record: null }}
+      emailWaiting={waitingPath === 'email'}
+      connectorWaiting={isConnectorStarterPath(waitingPath) ? waitingPath : null}
+      startedAt={current.starterSelectedAt}
+      completed={steps.filter((step) => step.status === 'done').length}
+      total={steps.length}
+      href={firstRunCaptureHref(captureKey)}
     />
   );
 }
@@ -512,6 +552,7 @@ export default async function HomeDashboardPage() {
           <div className="mt-4 flex items-center gap-4">
             <CaptureDialog>
               <CaptureForm
+                key={active.teamId}
                 initialVisibility={quickCaptureVisibility}
                 currentUser={{
                   id: session.user.id,

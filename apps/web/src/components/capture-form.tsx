@@ -29,10 +29,27 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { notifyAction, type ActionResult } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
+import { isStaleServerActionError, recoverFromStaleServerAction } from '@/lib/stale-server-action';
 import type { TimelineEvent, TimelinePage } from '@/lib/timeline-types';
 import { cn } from '@/lib/utils';
 
 const attachmentKeys = new WeakMap<File, string>();
+
+type CaptureVisibility = 'private' | 'team';
+
+interface CaptureOutcome {
+  key: string;
+  label: string;
+  error?: string;
+  warning?: string;
+  file?: File;
+}
+
+interface UploadProgress {
+  prepared?: { url: string; id: string; contentType: string };
+  uploaded?: boolean;
+  needsRenewal?: boolean;
+}
 
 function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
@@ -153,6 +170,7 @@ interface CaptureUiState {
   pending: boolean;
   error: string | null;
   recorderKey: number;
+  outcomes: CaptureOutcome[];
 }
 
 type CaptureUiAction = Partial<CaptureUiState> | ((state: CaptureUiState) => CaptureUiState);
@@ -167,6 +185,7 @@ function initCaptureUiState(
     pending: false,
     error: null,
     recorderKey: 0,
+    outcomes: [],
   };
 }
 
@@ -189,59 +208,102 @@ function filterAllowsEvent(
   return true;
 }
 
+async function uploadCaptureBytes(progress: UploadProgress, blob: Blob): Promise<void> {
+  if (!progress.prepared || progress.uploaded) return;
+  const { url, contentType } = progress.prepared;
+  const put = await fetch(url, {
+    method: 'PUT',
+    headers: { 'content-type': contentType },
+    body: blob,
+  }).catch(() => null);
+  if (!put?.ok) {
+    progress.needsRenewal = true;
+    throw new Error('Upload could not finish. Try again.');
+  }
+  progress.uploaded = true;
+}
+
 async function uploadAudioBlob(input: {
   blob: Blob;
   mimeType: string;
-  visibility: 'private' | 'team';
+  visibility: CaptureVisibility;
   noteText?: string;
   durationSec?: number;
-}): Promise<string | null> {
-  const req = await requestAudioUploadAction(input.mimeType);
-  if (!req.ok || !req.url || !req.key) {
-    throw new Error(req.error ?? 'Upload request failed');
+  progress: UploadProgress;
+}): Promise<string | undefined> {
+  if (!input.progress.prepared || input.progress.needsRenewal) {
+    const req = await requestAudioUploadAction(input.mimeType);
+    if (!req.ok || !req.url || !req.key) {
+      throw new Error(req.error ?? 'Could not prepare the audio upload.');
+    }
+    input.progress.prepared = {
+      url: req.url,
+      id: req.key,
+      contentType: req.contentType ?? input.mimeType,
+    };
+    input.progress.needsRenewal = false;
   }
-  const put = await fetch(req.url, {
-    method: 'PUT',
-    headers: { 'content-type': req.contentType ?? input.mimeType },
-    body: input.blob,
-  });
-  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
+  const key = input.progress.prepared.id;
+  await uploadCaptureBytes(input.progress, input.blob);
   const create = await createAudioEventAction({
-    key: req.key,
+    key,
     mimeType: input.mimeType,
     noteText: input.noteText,
     durationSec: input.durationSec,
     visibility: input.visibility,
   });
-  if (!create.ok) throw new Error(create.error ?? 'Save failed');
-  return create.warning ?? null;
+  if (!create.ok) throw new Error(create.error ?? 'Could not save the audio.');
+  return create.warning;
 }
 
-async function uploadDocumentFile(file: File, visibility: 'private' | 'team'): Promise<void> {
+async function uploadDocumentFile(
+  file: File,
+  visibility: CaptureVisibility,
+  progress: UploadProgress,
+  captureId: string,
+): Promise<string | undefined> {
   const contentType = file.type || 'application/octet-stream';
-  const req = await requestDocumentUploadAction({
-    name: file.name,
-    filename: file.name,
-    contentType,
-    visibility,
-    visibilityUserIds: [],
-  });
-  if (!req.ok || !req.url || !req.versionId) {
-    throw new Error(req.error ?? `Upload request failed for ${file.name}`);
-  }
-  if (req.maxBytes && file.size > req.maxBytes) {
-    throw new Error(
-      `${file.name} exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`,
+  if (!progress.prepared || progress.needsRenewal) {
+    const req = await requestDocumentUploadAction(
+      progress.prepared
+        ? { resumeVersionId: progress.prepared.id }
+        : {
+            name: file.name,
+            filename: file.name,
+            contentType,
+            byteSize: file.size,
+            captureId,
+            visibility,
+            visibilityUserIds: [],
+          },
     );
+    if (!req.ok || !req.url || !req.versionId) {
+      throw new Error(req.error ?? 'Could not prepare the file upload.');
+    }
+    progress.prepared = { url: req.url, id: req.versionId, contentType };
+    progress.needsRenewal = false;
   }
-  const put = await fetch(req.url, {
-    method: 'PUT',
-    headers: { 'content-type': contentType },
-    body: file,
-  });
-  if (!put.ok) throw new Error(`Upload failed for ${file.name}: ${put.status}`);
-  const finalized = await finalizeDocumentVersionAction({ versionId: req.versionId });
-  if (!finalized.ok) throw new Error(finalized.error ?? `Finalize failed for ${file.name}`);
+  const versionId = progress.prepared.id;
+  await uploadCaptureBytes(progress, file);
+  const finalized = await finalizeDocumentVersionAction({ versionId });
+  if (!finalized.ok) {
+    // Document row survived but extract enqueue failed — keep the uploaded bytes.
+    if (finalized.documentId) return 'File saved. Processing could not be queued.';
+    // Confirmed discard (billing/capacity): S3 object is gone — force a fresh PUT.
+    // Uncertain transport errors must not reach here; they leave `uploaded` set so
+    // Retry re-calls the idempotent finalizer without resume/renewal.
+    progress.uploaded = false;
+    progress.needsRenewal = true;
+    throw new Error(finalized.error ?? 'Could not save the file.');
+  }
+}
+
+function captureFailureMessage(error: unknown, fallback: string): string {
+  if (isStaleServerActionError(error)) {
+    recoverFromStaleServerAction(error);
+    return 'This page is out of date. Reload it and try again.';
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 interface CaptureSubmissionOptions {
@@ -250,9 +312,7 @@ interface CaptureSubmissionOptions {
   isPrivate: boolean;
   clip: RecordedClip | null;
   files: File[];
-  formRef: RefObject<HTMLFormElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
-  fileInputRef: RefObject<HTMLInputElement | null>;
   setCaptureUi: Dispatch<CaptureUiAction>;
 }
 
@@ -262,21 +322,34 @@ function useCaptureSubmission({
   isPrivate,
   clip,
   files,
-  formRef,
   textareaRef,
-  fileInputRef,
   setCaptureUi,
 }: CaptureSubmissionOptions) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  // Prevent a fast double-submit before React applies the pending state.
   const inFlightRef = useRef(false);
+  const pendingText = useRef<{ text: string; visibility: CaptureVisibility; id: string } | null>(
+    null,
+  );
+  const pendingRecording = useRef<{
+    clip: RecordedClip;
+    text: string;
+    visibility: CaptureVisibility;
+    progress: UploadProgress;
+  } | null>(null);
+  const pendingFiles = useRef(
+    new WeakMap<File, { key: string; visibility: CaptureVisibility; progress: UploadProgress }>(),
+  );
   const visibility = isPrivate ? 'private' : 'team';
 
   async function submitTextOnly(text: string): Promise<CreateEventState> {
+    if (pendingText.current?.text !== text || pendingText.current.visibility !== visibility) {
+      pendingText.current = { text, visibility, id: crypto.randomUUID() };
+    }
     const fd = new FormData();
     fd.set('text', text);
     fd.set('visibility', visibility);
+    fd.set('captureId', pendingText.current.id);
     return createTextEventAction({}, fd);
   }
 
@@ -337,124 +410,213 @@ function useCaptureSubmission({
     );
   }
 
-  async function submitAudio(): Promise<string | null> {
-    if (!clip) throw new Error('No clip to upload');
-    const base = baseMimeType(clip.mimeType);
-    const noteText = (textareaRef.current?.value ?? '').trim();
-    return uploadAudioBlob({
-      blob: clip.blob,
-      mimeType: base,
-      ...(noteText ? { noteText } : {}),
-      durationSec: clip.durationSec,
-      visibility,
-    });
+  async function submitPrimary(text: string): Promise<CaptureOutcome | null> {
+    if (!clip && !text) return null;
+    const label = clip ? (text ? 'Voice note with text' : 'Voice note') : 'Note';
+    let optimisticId: string | null = null;
+    try {
+      let warning: string | undefined;
+      if (clip) {
+        if (
+          pendingRecording.current?.clip !== clip ||
+          pendingRecording.current.text !== text ||
+          pendingRecording.current.visibility !== visibility
+        ) {
+          pendingRecording.current = { clip, text, visibility, progress: {} };
+        }
+        warning = await uploadAudioBlob({
+          blob: clip.blob,
+          mimeType: baseMimeType(clip.mimeType),
+          noteText: text || undefined,
+          durationSec: clip.durationSec,
+          visibility,
+          progress: pendingRecording.current.progress,
+        });
+        pendingRecording.current = null;
+        setCaptureUi((current) => ({
+          ...current,
+          clip: null,
+          recorderKey: current.recorderKey + 1,
+        }));
+      } else {
+        optimisticId = addOptimisticTextEvent(text);
+        const posted = await submitTextOnly(text);
+        if (!posted.ok) throw new Error(posted.error ?? 'Could not save the note.');
+        warning = posted.warning;
+        pendingText.current = null;
+      }
+      if (textareaRef.current) textareaRef.current.value = '';
+      return { key: 'primary', label, warning };
+    } catch (error) {
+      if (optimisticId) removeOptimisticTextEvent(optimisticId);
+      return {
+        key: 'primary',
+        label,
+        error: captureFailureMessage(error, 'Could not save. Try posting again.'),
+      };
+    }
   }
 
-  return async function handleSubmit(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function submitFile(file: File): Promise<CaptureOutcome> {
+    const upload = pendingFiles.current.get(file) ?? {
+      key: attachmentKeys.get(file) ?? crypto.randomUUID(),
+      visibility,
+      progress: {},
+    };
+    const { key } = upload;
+    pendingFiles.current.set(file, upload);
+    try {
+      const mimeType = mimeTypeForAudioFile(file);
+      const warning = mimeType
+        ? await uploadAudioBlob({ blob: file, mimeType, ...upload })
+        : await uploadDocumentFile(file, upload.visibility, upload.progress, key);
+      pendingFiles.current.delete(file);
+      return { key, label: file.name, warning };
+    } catch (error) {
+      return {
+        key,
+        label: file.name,
+        file,
+        error: captureFailureMessage(error, 'Could not save the file. Try again.'),
+      };
+    }
+  }
+
+  async function submit(onlyFiles?: File[]): Promise<void> {
     if (inFlightRef.current) return;
     const text = (textareaRef.current?.value ?? '').trim();
-    if (!clip && files.length === 0 && text.length === 0) {
-      setCaptureUi({ error: 'Write something, record a voice note, or attach a file.' });
+    const selectedFiles = onlyFiles ?? files.filter((file) => !pendingFiles.current.has(file));
+    if (selectedFiles.length === 0 && (onlyFiles || (!clip && !text))) {
+      if (onlyFiles) return;
+      setCaptureUi({
+        error:
+          files.length > 0
+            ? 'Use Retry failed files to retry the remaining attachments.'
+            : 'Write something, record a voice note, or attach a file.',
+      });
       textareaRef.current?.focus();
       return;
     }
+
     inFlightRef.current = true;
     setCaptureUi({ pending: true, error: null });
-    const progress = {
-      optimisticTextId: null as string | null,
-      textCommitted: false,
-      serverStateChanged: false,
-    };
-    const warnings: string[] = [];
-    const outcome = { success: 'Saved to the timeline' };
+    let successMessage = 'Saved to the timeline';
     try {
-      const result = await notifyAction({
+      await notifyAction({
         id: 'capture:post',
-        loading: clip || files.length > 0 ? 'Uploading…' : 'Posting…',
+        loading: (!onlyFiles && clip) || selectedFiles.length > 0 ? 'Uploading…' : 'Posting…',
         get success() {
-          return outcome.success;
+          return successMessage;
         },
-        error: 'Couldn’t save to the timeline',
+        error: 'Check the capture result below',
         run: async (): Promise<ActionResult> => {
-          if (text.length > 0 && !clip) {
-            progress.optimisticTextId = addOptimisticTextEvent(text);
-            const posted = await submitTextOnly(text);
-            if (!posted.ok) throw new Error(posted.error ?? 'Post failed');
-            if (posted.warning) warnings.push(posted.warning);
-            progress.textCommitted = true;
-            progress.serverStateChanged = true;
-            if (textareaRef.current) textareaRef.current.value = '';
-          }
-          if (clip) {
-            const audioWarning = await submitAudio();
-            if (audioWarning) warnings.push(audioWarning);
-            progress.serverStateChanged = true;
-            if (textareaRef.current) textareaRef.current.value = '';
-            setCaptureUi((current) =>
-              current.clip === clip
-                ? {
-                    ...current,
-                    clip: null,
-                    recorderKey: current.recorderKey + 1,
-                  }
-                : current,
-            );
-          }
-          const attachmentResults = await Promise.allSettled(
-            files.map(async (file) => {
-              const audioType = mimeTypeForAudioFile(file);
-              if (audioType) {
-                return uploadAudioBlob({ blob: file, mimeType: audioType, visibility });
-              }
-              await uploadDocumentFile(file, visibility);
-              return null;
-            }),
+          const [primary, attachments] = await Promise.all([
+            onlyFiles ? null : submitPrimary(text),
+            Promise.all(selectedFiles.map(submitFile)),
+          ]);
+          const outcomes = primary ? [primary, ...attachments] : attachments;
+          const completedFiles = new Set(
+            selectedFiles.filter((_, index) => !attachments[index]?.error),
           );
-          const failedFiles: File[] = [];
-          const failureMessages: string[] = [];
-          const attachmentWarnings = attachmentResults.flatMap((attachment, index) => {
-            if (attachment.status === 'fulfilled') {
-              progress.serverStateChanged = true;
-              return attachment.value ? [attachment.value] : [];
-            }
-            const failedFile = files[index];
-            if (failedFile) failedFiles.push(failedFile);
-            failureMessages.push(
-              attachment.reason instanceof Error
-                ? attachment.reason.message
-                : `Upload failed for ${failedFile?.name ?? 'file'}`,
-            );
-            return [];
-          });
-          warnings.push(
-            ...attachmentWarnings.filter((warning): warning is string => Boolean(warning)),
-          );
-          if (failedFiles.length > 0) {
-            setCaptureUi({ files: failedFiles });
-            throw new Error(failureMessages[0] ?? 'Upload failed');
+          setCaptureUi((current) => ({
+            ...current,
+            files: current.files.filter((file) => !completedFiles.has(file)),
+            outcomes:
+              onlyFiles || current.outcomes.some((item) => item.file)
+                ? Array.from(
+                    new Map(
+                      [...current.outcomes, ...outcomes].map((item) => [item.key, item]),
+                    ).values(),
+                  )
+                : outcomes,
+          }));
+
+          if (outcomes.some((item) => !item.error)) {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
+            router.refresh();
           }
-          if (warnings.length > 0) outcome.success = warnings.join(' ');
-          formRef.current?.reset();
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          setCaptureUi({ files: [] });
-          await queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
-          router.refresh();
+          const failures = outcomes.filter((item) => item.error);
+          if (failures.length === outcomes.length) return { error: 'Couldn’t save this capture' };
+          if (failures.length > 0) successMessage = 'Some parts saved. Check the capture result.';
+          else {
+            const warnings = outcomes.flatMap((item) => (item.warning ? [item.warning] : []));
+            if (warnings.length > 0) successMessage = warnings.join(' ');
+          }
           return { ok: true };
         },
       });
-      if (result.error) {
-        if (!progress.textCommitted && progress.optimisticTextId) {
-          removeOptimisticTextEvent(progress.optimisticTextId);
-        } else if (progress.serverStateChanged) {
-          router.refresh();
-        }
-      }
     } finally {
       inFlightRef.current = false;
       setCaptureUi({ pending: false });
     }
-  };
+  }
+
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void submit();
+  }
+
+  return { handleSubmit, submit };
+}
+
+function CaptureFeedback({
+  outcomes,
+  pending,
+  onRetryFiles,
+}: {
+  outcomes: CaptureOutcome[];
+  pending: boolean;
+  onRetryFiles: (files: File[]) => void;
+}) {
+  if (!outcomes.length) return null;
+  const saved = outcomes.filter((item) => !item.error);
+  const failed = outcomes.filter((item) => item.error);
+  const failedFiles = failed.flatMap((item) => (item.file ? [item.file] : []));
+  return (
+    <div className="space-y-3 rounded-sm border border-border bg-surface p-3 text-sm">
+      {saved.length > 0 ? (
+        <div role="status">
+          <p className="font-medium">Saved</p>
+          <ul className="mt-1 space-y-1">
+            {saved.map((item) => (
+              <li key={item.key} className="break-all text-fg-muted">
+                {item.label}
+                {item.warning ? ' · ' + item.warning : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {failed.length > 0 ? (
+        <div role="alert">
+          <p className="font-medium text-danger">Couldn’t save</p>
+          <ul className="mt-1 space-y-1">
+            {failed.map((item) => (
+              <li key={item.key} className="text-fg-muted">
+                <span className="break-all">{item.label}</span> · {item.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {failedFiles.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              onRetryFiles(failedFiles);
+            }}
+          >
+            Retry failed files
+          </Button>
+          <span className="text-xs text-fg-dim">Files keep their original visibility.</span>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 interface CaptureFieldsProps {
@@ -495,6 +657,7 @@ function CaptureFields({
         name="text"
         placeholder="What happened?"
         rows={3}
+        readOnly={pending}
         autoFocus
         className="resize-none rounded-sm border-0 bg-transparent p-0 text-base leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm"
       />
@@ -537,6 +700,7 @@ function CaptureFooter({
             : 'border-border bg-transparent text-fg-muted hover:text-fg',
         )}
         aria-pressed={isPrivate}
+        disabled={pending}
       >
         {isPrivate ? <Lock className="size-3" /> : <Users className="size-3" />}
         {isPrivate ? 'Private (only me)' : 'Visible to team'}
@@ -571,33 +735,22 @@ export function CaptureForm({
   currentUser,
   filters = EMPTY_FILTERS,
 }: Props) {
-  const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [{ isPrivate, clip, files, pending, error, recorderKey }, setCaptureUi] = useReducer(
-    captureUiReducer,
-    initialVisibility,
-    initCaptureUiState,
-  );
-  const handleSubmit = useCaptureSubmission({
+  const [{ isPrivate, clip, files, pending, error, recorderKey, outcomes }, setCaptureUi] =
+    useReducer(captureUiReducer, initialVisibility, initCaptureUiState);
+  const { handleSubmit, submit } = useCaptureSubmission({
     currentUser,
     filters,
     isPrivate,
     clip,
     files,
-    formRef,
     textareaRef,
-    fileInputRef,
     setCaptureUi,
   });
 
   return (
-    <form
-      ref={formRef}
-      onSubmit={handleSubmit}
-      data-capture-ready="true"
-      className="space-y-4 sm:space-y-5"
-    >
+    <form onSubmit={handleSubmit} data-capture-ready="true" className="space-y-4 sm:space-y-5">
       <CaptureFields
         textareaRef={textareaRef}
         recorderKey={recorderKey}
@@ -615,6 +768,7 @@ export function CaptureForm({
           setCaptureUi((current) => ({
             ...current,
             files: current.files.filter((_, fileIndex) => fileIndex !== index),
+            outcomes: current.outcomes.filter((item) => item.file !== current.files[index]),
           }));
         }}
       />
@@ -625,6 +779,13 @@ export function CaptureForm({
         error={error}
         onToggleVisibility={() => {
           setCaptureUi((current) => ({ ...current, isPrivate: !current.isPrivate }));
+        }}
+      />
+      <CaptureFeedback
+        outcomes={outcomes}
+        pending={pending}
+        onRetryFiles={(failed) => {
+          void submit(failed);
         }}
       />
     </form>

@@ -3,7 +3,7 @@ import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
 const { cleanup, render, screen } = await import('@testing-library/react');
-const { ProcessingScreen } = await import('./processing-screen.js');
+const { CaptureStartedTime, ProcessingScreen } = await import('./processing-screen.js');
 const { FailedScanScreen } = await import('./failed-scan-screen.js');
 
 afterEach(() => {
@@ -16,6 +16,8 @@ describe('ProcessingScreen', () => {
       <ProcessingScreen
         title="Reading seed-deck.pdf"
         description="You can leave this screen. The record also appears on Home when it is ready."
+        startedAt={new Date('2026-03-29T19:00:00Z')}
+        captureUrl="https://example.test/onboarding?capture=fixture"
         steps={[
           { id: 'upload', label: 'Uploading', status: 'done' },
           {
@@ -35,9 +37,38 @@ describe('ProcessingScreen', () => {
 
     expect(screen.getByRole('heading', { name: 'Reading seed-deck.pdf' })).toBeTruthy();
     expect(screen.getByText('In progress')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Go to Home and wait there' })).toBeTruthy();
+    expect(screen.getByText('Done')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy capture link' })).toBeTruthy();
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-03-29T19:00:00.000Z',
+    );
+    expect(screen.getByRole('link', { name: 'Go to Home' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Choose another way' })).toBeTruthy();
     expect(screen.queryByText(/%|seconds|minutes/i)).toBeNull();
+  });
+
+  it('offers Slack setup and a resumable capture link while waiting for a message', () => {
+    render(
+      <ProcessingScreen
+        title="Waiting for Slack"
+        description=""
+        startedAt={new Date('2026-03-29T19:00:00Z')}
+        captureUrl="https://example.test/onboarding?capture=slack-fixture"
+        steps={[]}
+        inboundEmail={null}
+        emailWaiting={false}
+        connectorWaiting="slack"
+        onSwitch={() => undefined}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Install Slack' }).getAttribute('href')).toBe(
+      '/api/slack/install/start',
+    );
+    expect(screen.getByRole('link', { name: 'Bind a channel' }).getAttribute('href')).toBe(
+      '/app/team/slack',
+    );
+    expect(screen.getByRole('link', { name: 'Go to Home' }).getAttribute('href')).toBe('/app');
+    expect(screen.getByRole('button', { name: 'Copy capture link' })).toBeTruthy();
   });
 
   it('keeps the inbound address visible while waiting for email', () => {
@@ -56,6 +87,45 @@ describe('ProcessingScreen', () => {
     expect(screen.getByRole('heading', { name: 'Waiting for your email' })).toBeTruthy();
     expect(screen.getByDisplayValue('northwind-studio@inbound.test')).toBeTruthy();
     expect(screen.getByText('Nothing has arrived yet.')).toBeTruthy();
+  });
+
+  it('formats polled JSON string timestamps without crashing', () => {
+    render(
+      <ProcessingScreen
+        title="Reading Launch plan.pdf"
+        description="Waiting for indexing."
+        startedAt="2026-03-29T19:00:00.000Z"
+        steps={[{ id: 'index', label: 'Indexing', status: 'active' }]}
+        inboundEmail={null}
+        emailWaiting={false}
+        onSwitch={() => undefined}
+        onHome={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-03-29T19:00:00.000Z',
+    );
+  });
+});
+
+describe('CaptureStartedTime', () => {
+  it('accepts Date and ISO string values', () => {
+    const { rerender } = render(
+      <CaptureStartedTime value={new Date('2026-07-19T12:00:00.000Z')} />,
+    );
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-07-19T12:00:00.000Z',
+    );
+    rerender(<CaptureStartedTime value="2026-07-19T12:00:00.000Z" />);
+    expect(screen.getByText(/Started/).querySelector('time')?.dateTime).toBe(
+      '2026-07-19T12:00:00.000Z',
+    );
+  });
+
+  it('omits invalid timestamps instead of throwing', () => {
+    render(<CaptureStartedTime value="not-a-real-date" />);
+    expect(screen.queryByText(/Started/)).toBeNull();
   });
 });
 

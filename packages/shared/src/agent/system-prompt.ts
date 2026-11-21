@@ -10,7 +10,7 @@ import {
  * prompt is a different agent and should be traceable, the same way Phase 4
  * stamps model_version on every fact.
  */
-export const AGENT_PROMPT_VERSION = 'agent-v20-2026-08';
+export const AGENT_PROMPT_VERSION = 'agent-v21-2026-11';
 
 export interface SystemPromptInput {
   teamName: string;

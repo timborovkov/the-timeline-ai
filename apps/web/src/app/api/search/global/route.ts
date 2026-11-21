@@ -10,12 +10,14 @@ import {
   scoreLexical,
   scoreRecency,
   searchQuickLinks,
+  type GlobalSearchCoverage,
   type GlobalSearchKind,
   type GlobalSearchResult,
   type GlobalSearchWarning,
 } from '@timeline/shared/search';
 import { taskCategoryLabel } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
+import { assertValidTimezone, localDateFromInstant } from '@timeline/shared/time';
 import { buildTimelineMoments, timelineMomentAnchorId } from '@timeline/shared/timeline-moments';
 import { z } from 'zod';
 
@@ -23,7 +25,8 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { GLOBAL_SEARCH_SOURCE_VALUES, type GlobalSearchSource } from '@/lib/global-search-sources';
+import { resolveSearchDateBound, searchDateBound, searchDateOnly } from '@/lib/global-search-dates';
+import { GLOBAL_SEARCH_SOURCE_VALUES } from '@/lib/global-search-sources';
 import {
   payloadTooLargeResponse,
   readCappedTextBody,
@@ -43,14 +46,22 @@ const schema = z.object({
       z.array(z.enum(GLOBAL_SEARCH_SOURCE_VALUES)).max(GLOBAL_SEARCH_SOURCE_VALUES.length),
     ])
     .optional(),
-  from: z.iso.datetime().optional(),
-  to: z.iso.datetime().optional(),
+  from: searchDateBound.optional(),
+  to: searchDateBound.optional(),
   limit: z.number().int().min(1).max(80).optional(),
 });
 
 type Scope = ReturnType<typeof withTeam>;
 type ReadyObjectSummary = Awaited<ReturnType<Scope['objects']['listReadyObjectSummaries']>>[number];
-type Parsed = z.infer<typeof schema>;
+type SearchInput = Omit<z.infer<typeof schema>, 'from' | 'to'> &
+  SearchRange & {
+    calendarDates?: { from?: string; to?: string };
+  };
+interface SearchRange {
+  from?: Date;
+  to?: Date;
+}
+type TimelineRow = Awaited<ReturnType<Scope['timeline']['listEvents']>>[number];
 
 function wants(kinds: Set<GlobalSearchKind> | null, kind: GlobalSearchKind): boolean {
   return !kinds || kinds.has(kind);
@@ -60,12 +71,12 @@ function textFromMetadata(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-function sourceLimit(input: Parsed, fallback: number): number {
+function sourceLimit(input: SearchInput, fallback: number): number {
   return Math.min(input.limit ?? fallback, input.mode === 'preview' ? 8 : 30);
 }
 
 function searchObjectsAndTasks(
-  input: Parsed,
+  input: SearchInput,
   rows: Awaited<ReturnType<Scope['objects']['listObjects']>>,
   kinds: Set<GlobalSearchKind> | null,
   summaries: Map<string, ReadyObjectSummary>,
@@ -139,7 +150,7 @@ function searchObjectsAndTasks(
 }
 
 async function searchObjectNotes(
-  input: Parsed,
+  input: SearchInput,
   scope: Scope,
   existing: GlobalSearchResult[],
   kinds: Set<GlobalSearchKind> | null,
@@ -147,7 +158,20 @@ async function searchObjectNotes(
 ): Promise<GlobalSearchResult[]> {
   if (input.mode !== 'full' || input.query.trim().length < 3) return existing;
   try {
-    const notes = await scope.timeline.searchObjectNotes({ query: input.query, limit: 10 });
+    const notes = await scope.timeline.searchObjectNotes({
+      query: input.query,
+      limit: 10,
+      updatedAfter: input.from,
+      updatedBefore: input.to,
+      excludeArchived: true,
+      useObjectUpdatedAt: true,
+      onCandidateLimitReached() {
+        warnings.push({
+          source: 'object',
+          message: 'Object note search reached its candidate limit.',
+        });
+      },
+    });
     const byId = new Map(existing.map((result) => [result.href, result]));
     for (const note of notes) {
       const kind: GlobalSearchKind =
@@ -194,158 +218,244 @@ async function searchObjectNotes(
   }
 }
 
-async function searchTimeline(
-  input: Parsed,
-  scope: Scope,
-  warnings: GlobalSearchWarning[],
-): Promise<GlobalSearchResult[]> {
-  const timezone = (await scope.calendar.getCalendarSettings()).defaultTimezone;
-  async function searchTimelineSource(
-    source: GlobalSearchSource | undefined,
-  ): Promise<GlobalSearchResult[]> {
-    const args: Parameters<Scope['timeline']['searchEvents']>[0] = {
-      query: input.query,
-      limit: sourceLimit(input, 10),
-    };
-    if (input.from) args.from = new Date(input.from);
-    if (input.to) args.to = new Date(input.to);
-    if (source) args.source = source;
-    args.onRanking = (info) => {
-      if (info.candidateLimitReached)
-        warnings.push({
-          source: 'timeline_event',
-          message: 'Timeline search reached its candidate limit; results are not exhaustive.',
-        });
-    };
-    const hits = await scope.timeline.searchEvents(args);
-    const eventRows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
-    const eventsById = new Map(eventRows.map((event) => [event.id, event]));
-    return hits.map((hit) =>
-      (() => {
-        const event = eventsById.get(hit.eventId);
-        const moment = event
-          ? buildTimelineMoments([event], new Map(), { timezone })[0]
-          : undefined;
-        return finalizeGlobalSearchResult({
-          id: `timeline:${hit.eventId}`,
-          kind: 'timeline_event',
-          title: hit.snippet || `${hit.source} event`,
-          snippet: hit.snippet,
-          href: moment
-            ? `/app/timeline?moment=${encodeURIComponent(moment.id)}#${timelineMomentAnchorId(moment.id)}`
-            : `/app/timeline?event=${hit.eventId}`,
-          occurredAt: hit.occurredAt,
-          scoreParts: {
-            semantic: hit.score,
-            intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
-            evidenceFreshness: hit.ranking?.freshnessBoost ?? 0,
-          },
-          metadata: {
-            source: hit.source,
-            entities: hit.entityIds.length,
-            facts: hit.factIds.length,
-            relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
-            relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
-            relatedEvidenceStatusSources:
-              hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
-                .length ?? null,
-          },
-          ...(moment ? { pinTarget: { kind: 'timeline_moment' as const, key: moment.id } } : {}),
-        });
-      })(),
-    );
-  }
+function timelineResult(input: {
+  id: string;
+  source: TimelineRow['source'];
+  snippet: string;
+  occurredAt: string;
+  event?: TimelineRow;
+  timezone: string;
+  scoreParts: GlobalSearchResult['scoreParts'];
+  metadata?: GlobalSearchResult['metadata'];
+}): GlobalSearchResult {
+  const { id, source, snippet, occurredAt, event, timezone, scoreParts, metadata } = input;
+  const moment = event ? buildTimelineMoments([event], new Map(), { timezone })[0] : undefined;
+  return finalizeGlobalSearchResult({
+    id: `timeline:${id}`,
+    kind: 'timeline_event',
+    title: snippet || `${source} event`,
+    snippet,
+    href: moment
+      ? `/app/timeline?moment=${encodeURIComponent(moment.id)}#${timelineMomentAnchorId(moment.id)}`
+      : `/app/timeline?event=${id}`,
+    occurredAt,
+    scoreParts,
+    metadata: { source, ...metadata },
+    ...(moment ? { pinTarget: { kind: 'timeline_moment' as const, key: moment.id } } : {}),
+  });
+}
 
+type EvidenceSearchStatus = 'searched' | 'keyword' | 'unavailable';
+
+async function searchEvidence(
+  query: string,
+  runSemantic: boolean,
+  semanticSearch: () => Promise<GlobalSearchResult[]>,
+  keywordSearch: () => Promise<GlobalSearchResult[]>,
+): Promise<{ status: EvidenceSearchStatus; results: GlobalSearchResult[] }> {
+  if (runSemantic) {
+    try {
+      return { status: 'searched', results: await semanticSearch() };
+    } catch {
+      // Fall back independently so another result type can still use semantic search.
+    }
+  }
   try {
-    const sources =
-      input.source === undefined
-        ? [undefined]
-        : Array.isArray(input.source)
-          ? input.source
-          : [input.source];
-    const resultGroups =
-      sources.length === 1
-        ? [await searchTimelineSource(sources[0])]
-        : await Promise.all(
-            sources.map(async (source) => {
-              try {
-                return await searchTimelineSource(source);
-              } catch {
-                warnings.push({
-                  source: 'timeline_event',
-                  message: `Timeline search is temporarily unavailable for ${source}.`,
-                });
-                return [];
-              }
-            }),
-          );
-    const results = resultGroups.flat();
-    return rankGlobalSearchResults(
-      Array.from(new Map(results.map((result) => [result.id, result])).values()),
-    ).slice(0, sourceLimit(input, 10));
+    return { status: query ? 'keyword' : 'searched', results: await keywordSearch() };
   } catch {
-    warnings.push({
-      source: 'timeline_event',
-      message: 'Timeline search is temporarily unavailable.',
-    });
-    return [];
+    return { status: 'unavailable', results: [] };
   }
 }
 
-async function searchDocuments(
-  input: Parsed,
+async function searchTimeline(
+  input: SearchInput,
   scope: Scope,
+  timezone: string,
+  runSemantic: boolean,
   warnings: GlobalSearchWarning[],
+  coverage: GlobalSearchCoverage,
 ): Promise<GlobalSearchResult[]> {
-  try {
-    const page = await scope.documents.searchDocumentChunksPage({
-      query: input.query,
-      limit: sourceLimit(input, 10),
-      maxOffset: 80,
-      from: input.from ? new Date(input.from) : undefined,
-      to: input.to ? new Date(input.to) : undefined,
+  const limit = sourceLimit(input, 10);
+  const sourceList = input.source === undefined ? [] : [input.source].flat();
+  const sources = sourceList.length > 0 ? [...new Set(sourceList)] : [undefined];
+  const groups = await Promise.all(
+    sources.map(async (source) => {
+      const filters = { source, from: input.from, to: input.to, limit };
+      const group = await searchEvidence(
+        input.query,
+        runSemantic,
+        async () => {
+          const hits = await scope.timeline.searchEvents({
+            ...filters,
+            query: input.query,
+            onRanking(info) {
+              if (info.candidateLimitReached)
+                warnings.push({
+                  source: 'timeline_event',
+                  message:
+                    'Timeline search reached its candidate limit; results are not exhaustive.',
+                });
+            },
+          });
+          const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
+          const byId = new Map(rows.map((event) => [event.id, event]));
+          return hits.map((hit) =>
+            timelineResult({
+              id: hit.eventId,
+              source: hit.source,
+              snippet: hit.snippet,
+              occurredAt: hit.occurredAt,
+              event: byId.get(hit.eventId),
+              timezone,
+              scoreParts: {
+                semantic: hit.score,
+                intent: scoreIntent(input.query, 'timeline_event', [hit.source]),
+                evidenceFreshness: hit.ranking?.freshnessBoost ?? 0,
+              },
+              metadata: {
+                entities: hit.entityIds.length,
+                facts: hit.factIds.length,
+                relatedEvidence: hit.artifactCluster?.canonicalName ?? null,
+                relatedEvidenceSignals: hit.artifactCluster?.relatedEvidence.length ?? null,
+                relatedEvidenceStatusSources:
+                  hit.artifactCluster?.relatedEvidence.filter((evidence) => evidence.authoritative)
+                    .length ?? null,
+              },
+            }),
+          );
+        },
+        async () => {
+          const rows = await scope.timeline.listEvents({ ...filters, keyword: input.query });
+          return rows.map((event) => {
+            const metadata = event.sourceMetadata as Record<string, unknown>;
+            const snippet = (event.contentText ?? textFromMetadata(metadata.title) ?? '').slice(
+              0,
+              240,
+            );
+            return timelineResult({
+              id: event.id,
+              source: event.source,
+              snippet,
+              occurredAt: event.occurredAt.toISOString(),
+              event,
+              timezone,
+              scoreParts: {
+                ...scoreLexical({ query: input.query, title: snippet, fields: [event.id] }),
+                recency: scoreRecency(event.occurredAt),
+              },
+            });
+          });
+        },
+      );
+      if (group.status === 'unavailable') {
+        warnings.push({
+          source: 'timeline_event',
+          message: source
+            ? `Timeline search is temporarily unavailable for ${source}.`
+            : 'Timeline search is temporarily unavailable.',
+        });
+      }
+      return group;
+    }),
+  );
+  const statuses = new Set(groups.map((group) => group.status));
+  coverage.timeline_event = statuses.size > 1 ? 'partial' : (groups[0]?.status ?? 'unavailable');
+  if (statuses.has('keyword') && statuses.size > 1) {
+    warnings.push({
+      source: 'timeline_event',
+      message: 'Some Timeline sources used keyword matching.',
     });
-    if (page.retrieval?.candidateLimitReached)
-      warnings.push({
-        source: 'document_chunk',
-        message: 'Document search reached its candidate limit; results are not exhaustive.',
+  }
+  const results = groups.flatMap((group) => group.results);
+  return rankGlobalSearchResults(
+    Array.from(new Map(results.map((result) => [result.id, result])).values()),
+  ).slice(0, limit);
+}
+
+async function searchDocuments(
+  input: SearchInput,
+  scope: Scope,
+  runSemantic: boolean,
+  warnings: GlobalSearchWarning[],
+  coverage: GlobalSearchCoverage,
+): Promise<GlobalSearchResult[]> {
+  const filters = { from: input.from, to: input.to, limit: sourceLimit(input, 10) };
+  const { status, results } = await searchEvidence(
+    input.query,
+    runSemantic,
+    async () => {
+      const page = await scope.documents.searchDocumentChunksPage({
+        ...filters,
+        query: input.query,
+        maxOffset: 80,
       });
-    return page.items.map((hit) =>
-      finalizeGlobalSearchResult({
-        id: `document:${hit.documentChunkId}`,
-        kind: 'document_chunk',
-        title: hit.documentName,
-        snippet: hit.summary ?? hit.text.slice(0, 240),
-        href: `/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`,
-        updatedAt: hit.createdAt.toISOString(),
-        scoreParts: {
-          semantic: hit.score,
-          evidenceFreshness: hit.ranking?.freshnessBoost ?? 0,
-          intent: scoreIntent(input.query, 'document_chunk', [
-            hit.documentName,
-            hit.fileKind,
-            hit.representationKind,
-          ]),
-        },
-        metadata: {
-          version: hit.version,
-          fileKind: hit.fileKind,
-          page: hit.pageNumber,
-        },
-        pinTarget: { kind: 'document', key: hit.documentId },
-      }),
-    );
-  } catch {
+      if (page.retrieval?.candidateLimitReached)
+        warnings.push({
+          source: 'document_chunk',
+          message: 'Document search reached its candidate limit; results are not exhaustive.',
+        });
+      return page.items.map((hit) =>
+        finalizeGlobalSearchResult({
+          id: `document:${hit.documentChunkId}`,
+          kind: 'document_chunk',
+          title: hit.documentName,
+          snippet: hit.summary ?? hit.text.slice(0, 240),
+          href: `/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`,
+          updatedAt: hit.createdAt.toISOString(),
+          scoreParts: {
+            semantic: hit.score,
+            evidenceFreshness: hit.ranking?.freshnessBoost ?? 0,
+            intent: scoreIntent(input.query, 'document_chunk', [
+              hit.documentName,
+              hit.fileKind,
+              hit.representationKind,
+            ]),
+          },
+          metadata: {
+            version: hit.version,
+            fileKind: hit.fileKind,
+            page: hit.pageNumber,
+          },
+          pinTarget: { kind: 'document', key: hit.documentId },
+        }),
+      );
+    },
+    async () => {
+      const rows = await scope.documents.searchDocumentNames({ ...filters, query: input.query });
+      return rows.map((row) =>
+        finalizeGlobalSearchResult({
+          id: `document:${row.documentId}:name`,
+          kind: 'document_chunk',
+          title: row.name,
+          snippet: row.filename !== row.name ? row.filename : '',
+          href: `/app/documents/${row.documentId}?version=${String(row.version)}`,
+          updatedAt: row.createdAt.toISOString(),
+          scoreParts: {
+            ...scoreLexical({
+              query: input.query,
+              title: row.name,
+              fields: [row.filename, row.documentId],
+            }),
+            recency: scoreRecency(row.createdAt),
+          },
+          metadata: { version: row.version, fileKind: 'document' },
+          pinTarget: { kind: 'document', key: row.documentId },
+        }),
+      );
+    },
+  );
+  coverage.document_chunk = status;
+  if (status === 'unavailable') {
     warnings.push({
       source: 'document_chunk',
       message: 'Document search is temporarily unavailable.',
     });
-    return [];
   }
+  return results;
 }
 
 function searchBoards(
-  input: Parsed,
+  input: SearchInput,
   rows: Awaited<ReturnType<Scope['boards']['listBoards']>>,
 ): GlobalSearchResult[] {
   const results: GlobalSearchResult[] = [];
@@ -400,12 +510,17 @@ async function guardedSearch<T>(
   }
 }
 
-async function searchCalendar(input: Parsed, scope: Scope): Promise<GlobalSearchResult[]> {
+async function searchCalendar(
+  input: SearchInput,
+  scope: Scope,
+  timezone: string,
+): Promise<GlobalSearchResult[]> {
   const opts: Parameters<Scope['calendar']['listCalendarEvents']>[0] = {
     limit: input.mode === 'preview' ? 80 : 240,
   };
-  if (input.from) opts.from = new Date(input.from);
-  if (input.to) opts.to = new Date(input.to);
+  if (input.from) opts.from = input.from;
+  if (input.to) opts.to = input.to;
+  if (input.calendarDates) opts.allDayDates = input.calendarDates;
   const rows = await scope.calendar.listCalendarEvents(opts);
   const results: GlobalSearchResult[] = [];
   for (const row of rows) {
@@ -420,7 +535,8 @@ async function searchCalendar(input: Parsed, scope: Scope): Promise<GlobalSearch
     });
     const intent = scoreIntent(input.query, 'calendar_event', ['calendar', 'meeting', row.source]);
     if (input.query.trim() && !lexical.lexical && !lexical.title && intent === 0) continue;
-    const date = row.startAt.toISOString().slice(0, 10);
+    const eventTimezone = row.allDay ? assertValidTimezone(row.timezone) : timezone;
+    const date = localDateFromInstant(row.startAt.toISOString(), eventTimezone);
     results.push(
       finalizeGlobalSearchResult({
         id: `calendar:${row.id}`,
@@ -440,6 +556,7 @@ async function searchCalendar(input: Parsed, scope: Scope): Promise<GlobalSearch
         metadata: {
           source: row.source,
           allDay: row.allDay,
+          allDayDate: row.allDay ? date : null,
           redacted: row.redacted,
         },
         ...(row.redacted
@@ -492,9 +609,9 @@ async function searchResponse(req: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const input = parsed.data;
-  const query = input.query.trim();
-  const kinds = input.kinds ? new Set(input.kinds) : null;
+  const { from, to, ...request } = parsed.data;
+  const { query } = request;
+  const kinds = request.kinds ? new Set(request.kinds) : null;
 
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) {
@@ -505,14 +622,41 @@ async function searchResponse(req: Request): Promise<Response> {
   const role = await scope.requireMembership();
   const includeAdmin = role === 'owner' || role === 'admin';
   const warnings: GlobalSearchWarning[] = [];
+  const coverage: GlobalSearchCoverage = {};
+  const hasContentCriteria = [query, from, to, request.source, kinds?.size].some(Boolean);
+  const calendarDates = {
+    ...(searchDateOnly.safeParse(from).success ? { from } : {}),
+    ...(searchDateOnly.safeParse(to).success ? { to } : {}),
+  };
+  const hasDateOnly = Boolean(calendarDates.from ?? calendarDates.to);
+  const needsTimezone =
+    hasDateOnly ||
+    wants(kinds, 'calendar_event') ||
+    (hasContentCriteria && wants(kinds, 'timeline_event'));
+  const timezone = needsTimezone
+    ? (await scope.calendar.getCalendarSettings()).defaultTimezone
+    : 'UTC';
+  const range = {
+    from: resolveSearchDateBound(from, 'from', timezone),
+    to: resolveSearchDateBound(to, 'to', timezone),
+  };
+  if (range.from && range.to && range.from >= range.to) {
+    return Response.json(
+      { ok: false, error: 'End date must be on or after the start date.' },
+      { status: 400 },
+    );
+  }
+  const input: SearchInput = {
+    ...request,
+    ...range,
+    ...(hasDateOnly ? { calendarDates } : {}),
+  };
+  const objectRange = { updatedAfter: input.from, updatedBefore: input.to };
 
   const env = getEnv();
   const semanticReady = Boolean(env.OPENROUTER_API_KEY && env.QDRANT_URL);
   const runSemantic = semanticReady && query.length >= 3;
   const wantsObjectsOrTasks = wants(kinds, 'object') || wants(kinds, 'task');
-  if (!semanticReady && query.length >= 3) {
-    warnings.push({ source: 'semantic', message: 'Semantic search is not configured.' });
-  }
 
   const quickLinks = searchQuickLinks({
     query,
@@ -524,36 +668,44 @@ async function searchResponse(req: Request): Promise<Response> {
   const [objectRows, summaryObjectRows, boardRows, calendarRows, timelineRows, documentRows] =
     await Promise.all([
       wantsObjectsOrTasks
-        ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
-            query
-              ? scope.objects.searchObjects({
-                  query,
-                  archived: false,
-                  limit: sourceLimit(input, 30) * 10,
-                })
-              : scope.objects.listObjects({
-                  archived: false,
-                  limit: sourceLimit(input, 30) * 10,
-                }),
+        ? guardedSearch(
+            warnings,
+            'object',
+            'Object search is temporarily unavailable.',
+            null,
+            () =>
+              query
+                ? scope.objects.searchObjects({
+                    query,
+                    archived: false,
+                    ...objectRange,
+                    limit: sourceLimit(input, 30) * 10,
+                  })
+                : scope.objects.listObjects({
+                    archived: false,
+                    ...objectRange,
+                    limit: sourceLimit(input, 30) * 10,
+                  }),
           )
         : Promise.resolve([]),
-      wantsObjectsOrTasks
+      wantsObjectsOrTasks && query
         ? guardedSearch(
             warnings,
             'object',
             'Object summary search is temporarily unavailable.',
-            [],
+            null,
             () =>
               scope.objects.searchObjectsBySummary({
                 query,
                 archived: false,
+                ...objectRange,
                 limit: sourceLimit(input, 30) * 10,
               }),
           )
         : Promise.resolve([]),
       wants(kinds, 'board')
-        ? guardedSearch(warnings, 'board', 'Board search is temporarily unavailable.', [], () =>
-            scope.boards.listBoards(),
+        ? guardedSearch(warnings, 'board', 'Board search is temporarily unavailable.', null, () =>
+            scope.boards.listBoards(range),
           )
         : Promise.resolve([]),
       wants(kinds, 'calendar_event')
@@ -561,29 +713,34 @@ async function searchResponse(req: Request): Promise<Response> {
             warnings,
             'calendar_event',
             'Calendar search is temporarily unavailable.',
-            [],
-            () => searchCalendar({ ...input, query }, scope),
+            null,
+            () => searchCalendar(input, scope, timezone),
           )
         : Promise.resolve([]),
-      runSemantic && wants(kinds, 'timeline_event')
-        ? searchTimeline({ ...input, query }, scope, warnings)
+      hasContentCriteria && wants(kinds, 'timeline_event')
+        ? searchTimeline(input, scope, timezone, runSemantic, warnings, coverage)
         : Promise.resolve([]),
-      runSemantic && wants(kinds, 'document_chunk')
-        ? searchDocuments({ ...input, query }, scope, warnings)
+      hasContentCriteria && wants(kinds, 'document_chunk')
+        ? searchDocuments(input, scope, runSemantic, warnings, coverage)
         : Promise.resolve([]),
     ]);
   const mergedObjectRows = Array.from(
-    new Map([...objectRows, ...summaryObjectRows].map((row) => [row.id, row])).values(),
+    new Map(
+      [...(objectRows ?? []), ...(summaryObjectRows ?? [])].map((row) => [row.id, row]),
+    ).values(),
   );
 
-  const objectSummaries: Map<string, ReadyObjectSummary> =
+  const summaries =
     mergedObjectRows.length > 0
-      ? new Map<string, ReadyObjectSummary>(
-          (await scope.objects.listReadyObjectSummaries(mergedObjectRows.map((row) => row.id))).map(
-            (summary) => [summary.entityId, summary],
-          ),
+      ? await guardedSearch(
+          warnings,
+          'object',
+          'Object summaries are temporarily unavailable.',
+          [],
+          () => scope.objects.listReadyObjectSummaries(mergedObjectRows.map((row) => row.id)),
         )
-      : new Map<string, ReadyObjectSummary>();
+      : [];
+  const objectSummaries = new Map(summaries.map((summary) => [summary.entityId, summary]));
   const lexicalObjectRows = searchObjectsAndTasks(
     { ...input, query },
     mergedObjectRows,
@@ -595,13 +752,30 @@ async function searchResponse(req: Request): Promise<Response> {
     runSemantic && wantsObjectsOrTasks
       ? await searchObjectNotes({ ...input, query }, scope, lexicalObjectRows, kinds, warnings)
       : lexicalObjectRows;
-  const boardResults = searchBoards({ ...input, query }, boardRows);
+  const boardResults = searchBoards(input, boardRows ?? []);
+  if (wants(kinds, 'board')) coverage.board = boardRows ? 'searched' : 'unavailable';
+  if (wants(kinds, 'calendar_event'))
+    coverage.calendar_event = calendarRows ? 'searched' : 'unavailable';
+  if (wants(kinds, 'quick_link')) coverage.quick_link = 'searched';
+  if (wants(kinds, 'external_link')) coverage.external_link = 'searched';
+
+  if (wantsObjectsOrTasks) {
+    const objectWarnings = warnings.some((warning) => warning.source === 'object');
+    const lexicalAvailable = objectRows !== null || (Boolean(query) && summaryObjectRows !== null);
+    const status = objectWarnings
+      ? lexicalAvailable || objectResults.length > 0
+        ? 'partial'
+        : 'unavailable'
+      : 'searched';
+    if (wants(kinds, 'object')) coverage.object = status;
+    if (wants(kinds, 'task')) coverage.task = status;
+  }
   const limit = input.limit ?? (input.mode === 'preview' ? 12 : 50);
   const results = rankGlobalSearchResults([
     ...quickLinks,
     ...objectResults,
     ...boardResults,
-    ...calendarRows,
+    ...(calendarRows ?? []),
     ...timelineRows,
     ...documentRows,
   ]).slice(0, limit);
@@ -633,5 +807,6 @@ async function searchResponse(req: Request): Promise<Response> {
     mode: input.mode,
     results: normalizedResults,
     warnings,
+    coverage,
   });
 }

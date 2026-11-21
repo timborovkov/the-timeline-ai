@@ -42,6 +42,8 @@ const fakes = vi.hoisted(() => ({
   fakePersistChatTurn: vi.fn(),
   fakeChatTurnRevision: vi.fn(),
   fakeClaimChatApprovals: vi.fn(),
+  fakeStartChatApprovalStep: vi.fn(),
+  fakeFinishChatApprovalStep: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
   fakeCreateUIMessageStreamResponse: vi.fn(),
   fakeToUIMessageStream: vi.fn(),
@@ -104,6 +106,8 @@ await vi.mock(
         persistChatTurn: fakes.fakePersistChatTurn,
         chatTurnRevision: fakes.fakeChatTurnRevision,
         claimChatApprovals: fakes.fakeClaimChatApprovals,
+        startChatApprovalStep: fakes.fakeStartChatApprovalStep,
+        finishChatApprovalStep: fakes.fakeFinishChatApprovalStep,
         chatSessionExists: fakes.fakeChatSessionExists,
         chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
         createChatSession: fakes.fakeCreateChatSession,
@@ -560,11 +564,53 @@ describe('POST /api/chat', () => {
       message: decision,
       revision: 'claimed-revision',
     });
+    const calls: string[] = [];
+    const mutation = vi.fn(() => {
+      calls.push('execute');
+      return Promise.resolve({ ok: false, error: 'stale_state' });
+    });
+    fakes.fakeStartChatApprovalStep.mockImplementation(() => {
+      calls.push('start');
+      return Promise.resolve('started-revision');
+    });
+    fakes.fakeFinishChatApprovalStep.mockImplementation(() => {
+      calls.push('finish');
+      return Promise.resolve('finished-revision');
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({ execute_object_update: { execute: mutation } });
     const response = await POST(
       request(validBody({ sessionId: SESSION_ID, messages: [userMessage, decision] })),
     );
     expect(response.status).toBe(200);
-    expect(fakes.fakeClaimChatApprovals).toHaveBeenCalledWith(SESSION_ID, decision);
+    const claim = fakes.fakeClaimChatApprovals.mock.calls[0] as
+      [string, unknown, string] | undefined;
+    const [sessionId, submitted, claimId] = claim ?? [];
+    expect(sessionId).toBe(SESSION_ID);
+    expect(submitted).toEqual(decision);
+    expect(typeof claimId).toBe('string');
+    const execute = (
+      fakes.fakeStreamChat.mock.calls.at(-1)?.[0] as {
+        tools: {
+          execute_object_update: {
+            execute: (input: unknown, options: unknown) => Promise<unknown>;
+          };
+        };
+      }
+    ).tools.execute_object_update.execute;
+    const input = decision.parts[0]?.input;
+    const options = { toolCallId: 'call-1' };
+    await expect(execute(input, options)).resolves.toEqual({ ok: false, error: 'stale_state' });
+    expect(calls).toEqual(['start', 'execute', 'finish']);
+    const key = { messageId: decision.id, claimId, toolCallId: 'call-1' };
+    expect(fakes.fakeFinishChatApprovalStep).toHaveBeenCalledWith(SESSION_ID, key, 'failed', {
+      ok: false,
+      error: 'stale_state',
+    });
+    fakes.fakeStartChatApprovalStep.mockResolvedValue(null);
+    await expect(execute(input, options)).resolves.toEqual({
+      error: 'approval_no_longer_available',
+    });
+    expect(mutation).toHaveBeenCalledTimes(1);
     await finishUi(
       'Updated.',
       [{ ...decision.parts[0], state: 'output-available', output: { ok: true } }],
@@ -574,6 +620,11 @@ describe('POST /api/chat', () => {
       SESSION_ID,
       matchingObject({
         userMessage: null,
+        approvalClaimId: claimId,
+        save: matchingObject({
+          expectedRevision: 'finished-revision',
+          replace: true,
+        }),
         assistantMessage: matchingObject({
           parts: matchingArray([
             matchingObject({ state: 'output-available', output: { ok: true } }),

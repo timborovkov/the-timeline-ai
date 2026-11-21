@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import { AGENT_CASES } from '#src/evals/agent-cases.js';
-import { createAgentHarness } from '#src/evals/agent-harness.js';
+import { createAgentHarness, evidenceId } from '#src/evals/agent-harness.js';
+import { scoreAgent } from '#src/evals/agent-report.js';
 import { requireValue } from '#src/evals/benchmark.js';
 import { makeAskAgentToolRoundModel } from '#src/test/agent-eval-harness.js';
 // Real migrations and team scope must filter adversarial retrieval hits before
@@ -70,4 +71,29 @@ it('delivers visible evidence and reports controlled retrieval errors', async ()
   );
   expect(failed.toolErrors.length).toBeGreaterThan(0);
   expect(failed.retrievalCalls).toBeGreaterThan(0);
+}, 60000);
+
+it('scores the exact chunk of the current document version', async () => {
+  const row = requireValue(AGENT_CASES.find((entry) => entry.id === 'agent-document-version'));
+  const documentId = evidenceId(`${row.id}:document`, 0);
+  const chunkId = evidenceId(row.id, 1);
+  const citation = `[doc:${documentId}#v2:chunk:${chunkId}]`;
+  const answer = JSON.stringify({
+    status: 'answered',
+    claims: [{ value: 'East Staircase', state: 'approved', citations: [citation] }],
+  });
+  const prompts: string[] = [];
+  const result = await harness.run(row, {
+    model: makeAskAgentToolRoundModel({
+      toolName: 'search_documents',
+      toolInput: { query: 'Lab Safety Manual' },
+      answer,
+      capture: (options) => prompts.push(JSON.stringify(options)),
+    }),
+  });
+  expect(prompts.join('\n')).toContain('East Staircase');
+  expect(scoreAgent(row, result).criteria.citations).toBe(true);
+  expect(
+    scoreAgent(row, { ...result, answer: answer.replace('#v2:', '#v1:') }).criteria.citations,
+  ).toBe(false);
 }, 60000);

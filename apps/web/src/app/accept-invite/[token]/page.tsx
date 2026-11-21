@@ -25,32 +25,6 @@ interface Props {
 export default async function AcceptInvitePage({ params, searchParams }: Props) {
   const [{ token }, { error }, session] = await Promise.all([params, searchParams, auth()]);
 
-  if (!session?.user) {
-    // Show a choice: existing users sign in (and come back here), new users
-    // sign up with the invite. Unconditional redirect to sign-up would force
-    // existing accounts through a duplicate-email error.
-    const inviteUrl = `/accept-invite/${encodeURIComponent(token)}`;
-    const signInHref = `/sign-in?callbackUrl=${encodeURIComponent(inviteUrl)}`;
-    const signUpHref = `/sign-up?invite=${encodeURIComponent(token)}`;
-    return (
-      <AuthShell
-        title="Accept invite"
-        subtitle="Sign in if you already have an account, or sign up to create one with the invited email."
-      >
-        <div className="flex gap-3">
-          <Button asChild>
-            <Link href={signInHref}>Sign in</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href={signUpHref}>Sign up</Link>
-          </Button>
-        </div>
-      </AuthShell>
-    );
-  }
-
-  const sessionEmail = session.user.email?.toLowerCase();
-
   // Look up the invite to render the confirmation page; the actual join
   // only happens when the user POSTs the form below (via acceptInviteAction).
   // This prevents email-preview crawlers and prefetchers from burning the
@@ -76,26 +50,48 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
     .limit(1);
   const invite = invites[0];
 
-  if (!invite || invite.expiresAt < new Date() || invite.role === 'owner' || error === 'invalid') {
+  if (!invite || invite.expiresAt <= new Date() || invite.role === 'owner' || error === 'invalid') {
     return (
-      <AuthShell
-        title="Invite invalid"
-        subtitle="This invite link has expired or has already been used. Ask the team owner for a new one."
-      >
+      <AuthShell title="Invite invalid" subtitle="Ask the person who invited you for a fresh link.">
         <Button asChild>
-          <Link href="/app/timeline">Continue</Link>
+          <Link href={session?.user ? '/app' : '/sign-in'}>
+            {session?.user ? 'Go to Home' : 'Sign in'}
+          </Link>
         </Button>
       </AuthShell>
     );
   }
 
+  if (!session?.user) {
+    // Show a choice: existing users sign in (and come back here), new users
+    // sign up with the invite. Unconditional redirect to sign-up would force
+    // existing accounts through a duplicate-email error.
+    const inviteUrl = `/accept-invite/${encodeURIComponent(token)}`;
+    const signInHref = `/sign-in?callbackUrl=${encodeURIComponent(inviteUrl)}`;
+    const signUpHref = `/sign-up?invite=${encodeURIComponent(token)}`;
+    return (
+      <AuthShell
+        title="Accept invite"
+        subtitle="Sign in if you already have an account, or sign up to create one with the invited email."
+      >
+        <div className="flex gap-3">
+          <Button asChild>
+            <Link href={signInHref}>Sign in</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={signUpHref}>Sign up</Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  const sessionEmail = session.user.email?.toLowerCase();
   if (!sessionEmail || sessionEmail !== invite.email.toLowerCase() || error === 'wrong-account') {
     return (
       <AuthShell title="Wrong account">
         <p className="text-sm text-muted-foreground">
-          This invite was sent to{' '}
-          <span className="font-medium text-foreground">{invite.email}</span>. Sign in with that
-          email to accept.
+          Sign in with the email address that received the invitation.
         </p>
         <SignOutButton
           label="Switch account"

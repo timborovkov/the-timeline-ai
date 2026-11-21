@@ -21,6 +21,7 @@ const { values } = parseArgs({
     repeats: { type: 'string' },
     limit: { type: 'string' },
     out: { type: 'string' },
+    surface: { type: 'string' },
   },
   strict: true,
 });
@@ -28,6 +29,9 @@ if (process.env.NODE_ENV === 'production')
   throw new Error('Synthetic experiments cannot run in production');
 if (!process.env.LANGSMITH_API_KEY) throw new Error('LANGSMITH_API_KEY is required');
 const selection = selectBenchmark(AGENT_CASES, values);
+const surface = values.surface ?? 'web';
+if (surface !== 'web' && surface !== 'slack' && surface !== 'telegram')
+  throw new Error('--surface must be web, slack, or telegram');
 if (!values.sync) {
   if (!values.out) throw new Error('Comparison requires --out=<new report.json>');
   if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is required');
@@ -72,7 +76,7 @@ if (!values.sync) {
           const started = performance.now();
           let observation;
           try {
-            observation = await harness.run(row);
+            observation = await harness.run(row, {}, surface);
           } catch {
             observation = {
               answer: '',
@@ -89,6 +93,7 @@ if (!values.sync) {
             id: row.id,
             tags: row.tags,
             durationMs: performance.now() - started,
+            surface,
             score: scoreAgent(row, observation),
           };
           rows.push(result);
@@ -97,7 +102,7 @@ if (!values.sync) {
         {
           client,
           data: data(selection.selected),
-          experimentPrefix: `agent-${selection.split}`,
+          experimentPrefix: `agent-${surface}-${selection.split}`,
           maxConcurrency: 1,
           metadata: {
             revision,
@@ -112,6 +117,7 @@ if (!values.sync) {
             evaluatorVersion: 2,
             requestedModel: TIMELINE_MODELS.agent.id,
             synthetic: true,
+            surface,
             retrieval: 'controlled',
           },
           disableEvaluatorTracing: true,
@@ -153,7 +159,7 @@ if (!values.sync) {
       // Checkpoint completed repetitions so later infrastructure failure cannot erase evidence.
       await writeFile(
         requireValue(values.out),
-        `${JSON.stringify({ datasetName, corpusHash, revision, dirty, split: selection.split, evaluatedAt: new Date().toISOString(), reports }, null, 2)}\n`,
+        `${JSON.stringify({ datasetName, corpusHash, revision, dirty, surface, split: selection.split, evaluatedAt: new Date().toISOString(), reports }, null, 2)}\n`,
       );
     }
   } finally {

@@ -28,7 +28,7 @@ export default defineConfig({
   },
   webServer: {
     command: webServerCommand,
-    url: baseURL,
+    url: new URL('/api/health', baseURL).href,
     reuseExistingServer: process.env.E2E_REUSE_EXISTING_SERVER === '1',
     timeout: 120_000,
     stdout: 'pipe',
@@ -70,6 +70,7 @@ export default defineConfig({
       OPENROUTER_API_KEY: e2eEnv.OPENROUTER_API_KEY,
       GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID ?? 'e2e-github-client-id',
       GITHUB_APP_CLIENT_SECRET: process.env.GITHUB_APP_CLIENT_SECRET ?? 'e2e-github-client-secret',
+      GITHUB_WEBHOOK_SECRET: 'e2e-github-webhook-signing-secret',
       SLACK_CLIENT_ID: process.env.SLACK_CLIENT_ID ?? 'e2e-slack-client-id',
       SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET ?? 'e2e-slack-client-secret',
       SLACK_SIGNING_SECRET: process.env.SLACK_SIGNING_SECRET ?? 'e2e-slack-signing-secret',

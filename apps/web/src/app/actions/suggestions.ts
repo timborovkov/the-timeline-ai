@@ -1,6 +1,7 @@
 'use server';
 
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
+import { suggestionRejectionReason } from '@timeline/shared/suggestions/rejection';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { z } from 'zod';
 
@@ -86,12 +87,18 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Sugges
 
 export async function rejectSuggestionItemAction(input: unknown): Promise<SuggestionActionState> {
   return runSentryServerAction('reject_suggestion_item', async () => {
-    const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
+    const parsed = z
+      .object({ itemId: uuidSchema, reason: suggestionRejectionReason.optional() })
+      .safeParse(input);
     if (!parsed.success) return { error: 'Invalid suggestion item id' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const ok = await r.scope.suggestions.rejectSuggestionItem(parsed.data.itemId);
+      const { itemId, reason } = parsed.data;
+      const ok = await r.scope.suggestions.rejectSuggestionItem(
+        itemId,
+        ...(reason ? ([reason] as const) : []),
+      );
       if (!ok) return { error: 'Suggestion item no longer pending' };
       trackApprovalDecision(r, 'rejected', 1);
       refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
@@ -185,6 +192,7 @@ export async function rejectVisibleSuggestionsAction(
   return runSentryServerAction('reject_visible_suggestions', async () => {
     const parsed = z
       .object({
+        reason: suggestionRejectionReason.optional(),
         suggestions: z
           .array(
             z.object({
@@ -212,10 +220,15 @@ export async function rejectVisibleSuggestionsAction(
       await itemIds.reduce<Promise<void>>(
         (previousResults, itemId) =>
           previousResults.then((settledResults) =>
-            r.scope.suggestions.rejectSuggestionItem(itemId).then((result) => {
-              results.push(result);
-              return settledResults;
-            }),
+            r.scope.suggestions
+              .rejectSuggestionItem(
+                itemId,
+                ...(parsed.data.reason ? ([parsed.data.reason] as const) : []),
+              )
+              .then((result) => {
+                results.push(result);
+                return settledResults;
+              }),
           ),
         Promise.resolve(),
       );

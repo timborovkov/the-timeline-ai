@@ -82,6 +82,37 @@ test('incorrect fields and unauthorized disclosures cannot earn success', () => 
     });
   }
 });
+test('matching proposal text cannot earn credit with the wrong visible citation', () => {
+  const row = requireValue(
+    SUGGESTION_CASES.find((candidate) => candidate.id === 'github-merged-linked'),
+  );
+  const expected = requireValue(row.expected[0]);
+  const result = {
+    ...observation,
+    evidenceEventIds: ['supporting-source', 'unrelated-source'],
+    actions: [
+      {
+        operation: expected.operation,
+        targetKind: expected.targetKind,
+        targetId: expected.targetId ?? null,
+        title: 'Fix keyboard navigation',
+        proposedPayload: { status: 'done' },
+        evidenceIds: ['unrelated-source'],
+      },
+    ],
+  };
+  expect(scoreSuggestions(row, result)).toMatchObject({
+    matched: 1,
+    citationChecks: { total: 1, passed: 0 },
+    passed: false,
+  });
+  requireValue(result.actions[0]).evidenceIds = ['supporting-source'];
+  expect(scoreSuggestions(row, result)).toMatchObject({
+    matched: 1,
+    citationChecks: { total: 1, passed: 1 },
+    passed: true,
+  });
+});
 test('summary retains failures, negative cases and scenario denominators', () => {
   const rows = [positive, negative].map((row) => ({
     ...observation,

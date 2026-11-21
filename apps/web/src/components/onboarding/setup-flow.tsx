@@ -59,11 +59,13 @@ const EMPTY_CONNECTORS: readonly OnboardingSourceIntent[] = [];
 
 export function SetupFlow({
   initialStatus,
+  captureUrl = null,
   preferredSource = null,
   connectors = EMPTY_CONNECTORS,
   telegramBotUsername = null,
 }: {
   initialStatus: FirstRunStatusPayload;
+  captureUrl?: string | null;
   preferredSource?: OnboardingSourceIntent | null;
   connectors?: readonly OnboardingSourceIntent[];
   telegramBotUsername?: string | null;
@@ -104,8 +106,8 @@ export function SetupFlow({
   useEffect(() => {
     if (!shouldPoll || saving) return;
     const stop = pollFirstRun(initialStatus, {
-      update: (status) => {
-        setPolled({ baseline: initialStatus, status });
+      update: (next) => {
+        setPolled({ baseline: initialStatus, status: next });
       },
       navigate: (destination) => {
         router.replace(destination);
@@ -179,7 +181,8 @@ export function SetupFlow({
   async function pickEmail() {
     const result = await selectStarterPathAction({ path: 'email' });
     if (!result.ok) throw new Error(result.error ?? 'Could not start email capture.');
-    router.refresh();
+    if (captureUrl) router.replace('/onboarding');
+    else router.refresh();
   }
 
   async function pickSlack() {
@@ -217,6 +220,7 @@ export function SetupFlow({
       <fieldset disabled={saving} aria-busy={saving} className="min-w-0">
         <SetupFlowBody
           status={status}
+          captureUrl={captureUrl}
           phase={phase}
           firstRun={firstRun}
           preferredSource={preferredSource}

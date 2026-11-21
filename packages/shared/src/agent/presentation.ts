@@ -1,3 +1,4 @@
+import { answerEvidenceSourceLabel, type AnswerEvidence } from '#src/agent/answer-evidence.js';
 import { parseCitations } from '#src/citation.js';
 
 export type AgentPresentationProfile = 'web_rich' | 'external_chat' | 'mcp_agent';
@@ -20,7 +21,7 @@ export interface PresentedAgentAnswer {
 }
 
 const EXTERNAL_CHAT_INSTRUCTIONS = `PRESENTATION FOR EXTERNAL CHAT:
-Lead with the answer. For a normal response, use one short paragraph or 3–5 bullets and target about 120 words. Include only high-signal information, prioritizing actions, dates, blockers, and decisions. Skip introductory phrases, exhaustive evidence lists, and unnecessary headings. If the user explicitly asks for more detail or a full breakdown, you may expand within the external-chat output limit. Continue to include the required inline Timeline citations for internal grounding; the delivery layer removes them. Do not explain citation syntax or expose internal ids. Do not add a sources section or generic source link.`;
+Lead with the answer. For a normal response, use one short paragraph or 3–5 bullets and target about 120 words. Include only high-signal information, prioritizing actions, dates, blockers, and decisions. Skip introductory phrases, exhaustive evidence lists, and unnecessary headings. If the user explicitly asks for more detail or a full breakdown, you may expand within the external-chat output limit. Put a readable source name beside each conflicting claim and keep pending decisions explicit. Continue to include the required inline Timeline citations for internal grounding; the delivery layer removes them. Do not explain citation syntax or expose internal ids. Do not add a sources section or generic source link.`;
 
 const WEB_RICH_INSTRUCTIONS = `PRESENTATION FOR WEB CHAT:
 Give a complete, source-linked answer. Use clear sections, bullets, or tables when they materially improve comprehension, and do not omit important context merely to shorten the response. Keep Timeline citations inline so the web interface can render them as inspectable source links.`;
@@ -173,12 +174,45 @@ function plainTextForExternalChat(text: string): string {
   return plain;
 }
 
-function truncateExternalAnswer(text: string): { text: string; truncated: boolean } {
-  if (text.length <= EXTERNAL_CHAT_MAX_CHARACTERS) return { text, truncated: false };
-  const end = EXTERNAL_CHAT_MAX_CHARACTERS - 1;
+function truncateExternalAnswer(
+  text: string,
+  maxCharacters = EXTERNAL_CHAT_MAX_CHARACTERS,
+): { text: string; truncated: boolean } {
+  if (text.length <= maxCharacters) return { text, truncated: false };
+  const end = maxCharacters - 1;
   const lineBoundary = text.lastIndexOf('\n', end);
   const cutAt = lineBoundary >= end - EXTERNAL_CHAT_LINE_BOUNDARY_WINDOW ? lineBoundary : end;
   return { text: `${text.slice(0, cutAt).trimEnd()}…`, truncated: true };
+}
+
+export function appendExternalAnswerEvidence(
+  answer: PresentedAgentAnswer,
+  evidence: AnswerEvidence,
+): PresentedAgentAnswer {
+  if (evidence.length === 0) return answer;
+  const sources = evidence.map(({ source, status }) => {
+    const label = answerEvidenceSourceLabel(source);
+    return status === 'queried' ? label : `${label} (${status})`;
+  });
+  const newest = evidence.reduce<AnswerEvidence[number]['latest']>(
+    (current, entry) =>
+      (entry.latest?.date ?? '') > (current?.date ?? '') || (!current && entry.latest)
+        ? entry.latest
+        : current,
+    null,
+  );
+  const freshness = newest
+    ? [newest.date?.slice(0, 10), newest.version ? `document v${String(newest.version)}` : null]
+        .filter(Boolean)
+        .join(', ')
+    : '';
+  const footer = `\n\nSources checked · ${sources.join(', ')}${freshness ? `\nLatest relevant evidence · ${freshness}` : ''}`;
+  const limited = truncateExternalAnswer(answer.text, EXTERNAL_CHAT_MAX_CHARACTERS - footer.length);
+  return {
+    ...answer,
+    text: limited.text + footer,
+    truncated: answer.truncated || limited.truncated,
+  };
 }
 
 function truncateMcpAgentAnswer(text: string): { text: string; truncated: boolean } {

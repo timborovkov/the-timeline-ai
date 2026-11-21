@@ -1,6 +1,7 @@
 import { type Db } from '@timeline/db';
 import { type ModelMessage } from 'ai';
 
+import { createAnswerEvidenceCollector } from '#src/agent/answer-evidence.js';
 import {
   parseExplicitRetrievalContract,
   selectExplicitlyRequestedNativeTools,
@@ -13,6 +14,7 @@ import {
 } from '#src/agent/observability.js';
 import {
   formatAgentAnswerForPresentation,
+  appendExternalAnswerEvidence,
   presentationInstructions,
   resolveAgentPresentation,
 } from '#src/agent/presentation.js';
@@ -113,6 +115,10 @@ export interface AskAgentDeps extends ChatDeps {
   /** Redacts private request/provider details before logs or error callbacks. */
   sanitizeError?: ((err: unknown) => unknown) | undefined;
   onTurnObservability?: ((observability: AgentTurnObservability) => void) | undefined;
+  onEvaluation?: (evaluation: {
+    groundedAnswer: string;
+    observedProviderUsd: number | null;
+  }) => void;
   /** Test/eval seam for retrieval dependencies; production uses live services. */
   teamScopeDeps?: Pick<TeamScopeDeps, 'embed' | 'qdrantSearch'> | undefined;
   /** Test/eval seam for forcing custom MCP tool discovery on or off. */
@@ -194,6 +200,7 @@ export async function askAgent(
     currentDate,
   });
   const retrievalContract = parseExplicitRetrievalContract(input.question);
+  const answerEvidence = createAnswerEvidenceCollector();
   const plannedNativeTools = selectExplicitlyRequestedNativeTools(input.question, nativeTools);
   if (retrievalContract.length > 0) {
     const evidence = await Promise.all(
@@ -207,8 +214,11 @@ export async function askAgent(
           // provider data, so the requested external id would otherwise be
           // absent from the evidence packet the model uses to ground its
           // answer.
-          return { tool, input: toolInput, evidence: await execute(toolInput) };
+          const result = await execute(toolInput);
+          answerEvidence.observe(tool, toolInput, result);
+          return { tool, input: toolInput, evidence: result };
         } catch (err) {
+          answerEvidence.observe(tool, toolInput, { error: 'retrieval_failed' });
           const safeError = deps.sanitizeError?.(err) ?? err;
           log.warn(
             { err: safeError, teamId: input.teamId, tool },
@@ -242,9 +252,13 @@ export async function askAgent(
       })
     : {};
   const toolObservations: AgentToolObservation[] = [];
-  const tools = instrumentAgentTools({ ...plannedNativeTools, ...mcpTools }, (observation) => {
-    toolObservations.push(observation);
-  });
+  const tools = instrumentAgentTools(
+    { ...plannedNativeTools, ...mcpTools },
+    (observation) => {
+      toolObservations.push(observation);
+    },
+    answerEvidence.observe,
+  );
   const toolApproval = userApprovalForTools(tools);
 
   const messages: ModelMessage[] = [
@@ -308,9 +322,13 @@ export async function askAgent(
   const settleOrReleaseEmptyAnswer = async () => {
     if (openRouterUsd + streamedOpenRouterUsd > 0) {
       await settleBilling();
-      return;
+    } else {
+      await releaseBilling();
     }
-    await releaseBilling();
+    deps.onEvaluation?.({
+      groundedAnswer: '',
+      observedProviderUsd: openRouterUsd > 0 ? openRouterUsd : null,
+    });
   };
 
   try {
@@ -411,7 +429,14 @@ export async function askAgent(
       await settleOrReleaseEmptyAnswer();
       return { ok: false, error: 'failed' };
     }
+    if (presentation === 'external_chat') {
+      presented = appendExternalAnswerEvidence(presented, answerEvidence.snapshot());
+    }
     await settleBilling(modelAttribution.responseModelId ?? modelAttribution.requestedModelId);
+    deps.onEvaluation?.({
+      groundedAnswer: text,
+      observedProviderUsd: openRouterUsd > 0 ? openRouterUsd : null,
+    });
     log.info(
       {
         promptVersion: AGENT_PROMPT_VERSION,
@@ -456,6 +481,10 @@ export async function askAgent(
     const safeError = deps.sanitizeError?.(err) ?? err;
     log.error({ err: safeError, teamId: input.teamId }, 'askAgent failed');
     deps.onAgentError?.(safeError);
+    deps.onEvaluation?.({
+      groundedAnswer: '',
+      observedProviderUsd: openRouterUsd > 0 ? openRouterUsd : null,
+    });
     return { ok: false, error: 'failed' };
   }
 }

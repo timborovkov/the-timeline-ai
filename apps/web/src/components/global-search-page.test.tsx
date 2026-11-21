@@ -113,7 +113,7 @@ describe('GlobalSearchPage', () => {
     await user.click(screen.getByRole('button', { name: 'Result types' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Documents' }));
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('button', { name: 'Timeline source' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Slack' }));
     await user.keyboard('{Escape}');
     await user.type(screen.getByLabelText('From'), '2026-06-01');
@@ -136,7 +136,7 @@ describe('GlobalSearchPage', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
     await openFilters(user);
-    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('button', { name: 'Timeline source' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Slack' }));
     await user.keyboard('{Escape}');
     await user.type(screen.getByLabelText('From'), '2026-06-01');
@@ -151,8 +151,8 @@ describe('GlobalSearchPage', () => {
         to?: string;
       };
       expect(parsed.source).toEqual(['slack']);
-      expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
-      expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
+      expect(parsed.from).toBe('2026-06-01');
+      expect(parsed.to).toBe('2026-06-30');
     });
   });
 
@@ -166,7 +166,7 @@ describe('GlobalSearchPage', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
     await openFilters(user);
-    await user.click(screen.getByRole('button', { name: 'Source' }));
+    await user.click(screen.getByRole('button', { name: 'Timeline source' }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Ingest webhook' }));
 
     await waitFor(() => {
@@ -202,14 +202,38 @@ describe('GlobalSearchPage', () => {
       };
       expect(parsed.query).toBe('launch');
       expect(parsed.source).toEqual(['slack']);
-      expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
-      expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
+      expect(parsed.from).toBe('2026-06-01');
+      expect(parsed.to).toBe('2026-06-30');
     });
     await openFilters(user);
-    expect(screen.getByRole('button', { name: 'Source' }).textContent).toContain('Slack');
+    expect(screen.getByRole('button', { name: 'Timeline source' }).textContent).toContain('Slack');
     expect(inputValue(screen.getByLabelText('From'))).toBe('2026-06-01');
     expect(inputValue(screen.getByLabelText('To'))).toBe('2026-06-30');
     expect(screen.getByRole('button', { name: 'Result types' }).textContent).toContain('Documents');
+  });
+
+  it('clears an invalid URL date without losing the query or other filters', async () => {
+    const user = userEvent.setup();
+    render(
+      <GlobalSearchPage
+        initialQuery="launch"
+        initialSource="slack"
+        initialFrom="2026-02-30"
+        initialTo="2026-06-30"
+      />,
+    );
+    await openFilters(user);
+
+    expect(screen.getByRole('alert').textContent).toContain('Enter a valid start date.');
+    expect(screen.getByLabelText('From').getAttribute('aria-invalid')).toBe('true');
+    expect(fetch).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Clear start date' }));
+
+    await waitFor(() => {
+      expect(fakes.replace).toHaveBeenCalledWith('/app/search?q=launch&source=slack&to=2026-06-30');
+      expect(fetch).toHaveBeenCalled();
+    });
+    expect(inputValue(screen.getByRole('searchbox', { name: 'Search everything' }))).toBe('launch');
   });
 
   it('syncs the search query when URL props change', async () => {
@@ -283,7 +307,7 @@ describe('GlobalSearchPage', () => {
     const external = screen.getByRole('link', { name: /Public help docs/ });
     expect(external.getAttribute('href')).toBe('/help');
     expect(external.getAttribute('target')).toBe('_blank');
-    expect(screen.getAllByText('2 results · some sources unavailable').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2 results').length).toBeGreaterThan(0);
   });
 
   it('keeps lexical results visible when semantic recovery is exhausted', async () => {
@@ -333,6 +357,7 @@ describe('GlobalSearchPage', () => {
           warnings: [
             { source: 'timeline_event', message: 'Timeline search is temporarily unavailable.' },
           ],
+          coverage: { timeline_event: 'unavailable', document_chunk: 'unavailable' },
           results: [],
         }),
       ),
@@ -342,7 +367,7 @@ describe('GlobalSearchPage', () => {
 
     expect(await screen.findByText('Some sources are unavailable')).toBeTruthy();
     expect(screen.queryByText('No matches found')).toBeNull();
-    expect(screen.getAllByText('0 results · some sources unavailable').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('0 results').length).toBeGreaterThan(0);
   });
 
   it('renders due metadata for schedulable results without adding it to snippets', async () => {

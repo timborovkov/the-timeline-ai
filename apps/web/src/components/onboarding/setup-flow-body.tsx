@@ -46,12 +46,14 @@ function processingDescription(
 
 function SetupProcessingBody({
   status,
+  captureUrl,
   firstRun,
   telegramBotUsername,
   onSwitch,
   onHome,
 }: {
   status: FirstRunStatusPayload;
+  captureUrl: string | null;
   firstRun: FirstRunState | null | undefined;
   telegramBotUsername: string | null;
   onSwitch: () => void;
@@ -65,6 +67,8 @@ function SetupProcessingBody({
     <ProcessingScreen
       title={processingTitle(status)}
       description={processingDescription(firstRun?.starterPath, connectorWaiting)}
+      startedAt={firstRun?.starterSelectedAt ?? null}
+      captureUrl={captureUrl}
       steps={status.record?.processingSteps ?? []}
       inboundEmail={status.inboundEmail}
       emailWaiting={firstRun?.starterPath === 'email' && !status.record?.emailArrived}
@@ -78,6 +82,7 @@ function SetupProcessingBody({
 
 export function SetupFlowBody({
   status,
+  captureUrl,
   phase,
   firstRun,
   preferredSource,
@@ -95,6 +100,7 @@ export function SetupFlowBody({
   onPickEmail,
 }: {
   status: FirstRunStatusPayload;
+  captureUrl: string | null;
   phase: FirstRunPhase;
   firstRun: FirstRunState | null | undefined;
   preferredSource: OnboardingSourceIntent | null;
@@ -148,6 +154,7 @@ export function SetupFlowBody({
     return (
       <SetupProcessingBody
         status={status}
+        captureUrl={captureUrl}
         firstRun={firstRun}
         telegramBotUsername={telegramBotUsername}
         onSwitch={onReturnToChooser}

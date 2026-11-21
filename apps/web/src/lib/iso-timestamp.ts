@@ -11,5 +11,6 @@ export function dateInputValue(value: Date | string | null | undefined): string 
 
 export function toDateOrNull(value: Date | string | null | undefined): Date | null {
   if (value === null || value === undefined || value === '') return null;
-  return value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }

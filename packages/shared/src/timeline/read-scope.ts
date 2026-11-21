@@ -8,7 +8,7 @@ import {
   slackWorkspaces,
   telegramChatBindings,
 } from '@timeline/db';
-import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, notInArray, or, sql, type SQL } from 'drizzle-orm';
 
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import type {
@@ -22,6 +22,7 @@ import type {
 import { timelineEventMatchesGroup } from '#src/timeline-moments/index.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
+import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 
 const RECENT_SOURCE_FACET_EVENT_LIMIT = 2_000;
 
@@ -192,6 +193,25 @@ export function createTimelineReadScope({
       conditions.push(
         sql`${rawEvents.sourceMetadata} ->> 'external_object_id' = ${filters.externalObjectId}`,
       );
+    }
+    if (filters.keyword !== undefined && !filters.from && !filters.to) {
+      const obsolete = await obsoleteWebsiteEventIds(db, teamId);
+      if (obsolete.length > 0) conditions.push(notInArray(rawEvents.id, obsolete));
+    }
+    const keyword = filters.keyword?.trim().toLowerCase();
+    if (keyword) {
+      const needle = '%' + keyword.replace(/[\\%_]/g, (match) => '\\' + match) + '%';
+      conditions.push(sql`(
+        lower(concat_ws(' ', ${rawEvents.contentText}, ${rawEvents.sourceMetadata} ->> 'title',
+          ${rawEvents.sourceMetadata} ->> 'subject')) LIKE ${needle} ESCAPE '\\'
+        OR ${rawEvents.id}::text = ${keyword}
+        OR ${keyword} IN (
+          lower(${rawEvents.sourceMetadata} ->> 'external_object_id'),
+          lower(${rawEvents.sourceMetadata} ->> 'external_event_id'),
+          lower(${rawEvents.sourceMetadata} ->> 'message_id'),
+          lower(${rawEvents.sourceMetadata} ->> 'identifier')
+        )
+      )`);
     }
     const originCondition = timelineOriginFilterCondition(filters.origins);
     if (originCondition) conditions.push(originCondition);

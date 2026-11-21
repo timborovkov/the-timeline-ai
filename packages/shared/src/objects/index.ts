@@ -3765,7 +3765,10 @@ export async function listReadyObjectSummaries(
 export async function searchObjectsBySummary(
   db: Db,
   scope: TeamScopeCore,
-  input: { query: string; archived?: boolean; limit?: number },
+  input: Pick<
+    ObjectSearchFilter,
+    'query' | 'archived' | 'limit' | 'updatedAfter' | 'updatedBefore'
+  >,
 ): Promise<ObjectRow[]> {
   await scope.requireMembership();
   const tokens = objectSearchTokens(input.query);
@@ -3779,6 +3782,8 @@ export async function searchObjectsBySummary(
   ];
   if (input.archived === true) conds.push(isNotNull(entities.archivedAt));
   else if (input.archived !== undefined) conds.push(isNull(entities.archivedAt));
+  if (input.updatedAfter) conds.push(gte(entities.updatedAt, input.updatedAfter));
+  if (input.updatedBefore) conds.push(lt(entities.updatedAt, input.updatedBefore));
   for (const token of tokens) {
     const pattern = likePattern(token);
     conds.push(sql`lower(${objectSummaries.plainText}) LIKE ${pattern} ESCAPE '\\'`);
@@ -8938,8 +8943,12 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       baselineToken?: string,
     ) => getTaskCategoryFilterRefreshState(db, scope, filter, categoryKeys, baselineToken),
     searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
-    searchObjectsBySummary: (input: { query: string; archived?: boolean; limit?: number }) =>
-      searchObjectsBySummary(db, scope, input),
+    searchObjectsBySummary: (
+      input: Pick<
+        ObjectSearchFilter,
+        'query' | 'archived' | 'limit' | 'updatedAfter' | 'updatedBefore'
+      >,
+    ) => searchObjectsBySummary(db, scope, input),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
     findActiveProjectsByNameOrAlias: (name: string) =>
       findActiveProjectsByNameOrAlias(db, scope, name),
