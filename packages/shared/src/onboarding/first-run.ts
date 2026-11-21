@@ -328,6 +328,7 @@ type DocumentProcessingStatus =
 export function documentProcessingSteps(
   status: DocumentProcessingStatus | null,
   hasSuggestions: boolean,
+  uploadConfirmed = false,
 ): NamedProcessingStep[] {
   const rank: Record<DocumentProcessingStatus, number> = {
     pending: 1,
@@ -346,7 +347,11 @@ export function documentProcessingSteps(
         ? 'We could not extract text from this file.'
         : 'PDF and Office files up to 25 MB.';
   return [
-    { id: 'upload', label: 'Uploading', status: current > 1 ? 'done' : 'active' },
+    {
+      id: 'upload',
+      label: 'Uploading',
+      status: uploadConfirmed || current > 1 ? 'done' : 'active',
+    },
     {
       id: 'extract',
       label: 'Extracting text',
@@ -357,7 +362,7 @@ export function documentProcessingSteps(
           : current === 2
             ? 'active'
             : 'waiting',
-      detail: extractingDetail,
+      detail: uploadConfirmed && status === 'pending' ? 'Queued for extraction.' : extractingDetail,
     },
     {
       id: 'index',
@@ -377,6 +382,9 @@ export function websiteProcessingSteps(input: {
   failureReason: FirstRunScanFailureReason | null;
   pageCount: number;
   hasSuggestions: boolean;
+  queued?: boolean;
+  fetched?: boolean;
+  saved?: boolean;
 }): NamedProcessingStep[] {
   if (input.failureReason) {
     const checkDetail =
@@ -413,20 +421,30 @@ export function websiteProcessingSteps(input: {
     ];
   }
   const readingPages = input.pageCount > 1;
+  const hasPages = input.pageCount > 0;
   return [
-    { id: 'check', label: 'Checking the address', status: 'done', detail: 'The site responds.' },
+    {
+      id: 'check',
+      label: 'Checking the address',
+      status: hasPages || input.fetched ? 'done' : input.queued ? 'waiting' : 'active',
+      ...(input.queued ? { detail: 'Queued for a scan.' } : {}),
+    },
     {
       id: 'home',
       label: 'Reading the home page',
-      status: readingPages ? 'done' : 'active',
+      status: hasPages || input.fetched ? 'done' : input.queued ? 'waiting' : 'active',
     },
     {
       id: 'pages',
       label: 'Reading about, services and team pages',
-      status: readingPages ? 'active' : 'waiting',
+      status: input.fetched ? 'done' : readingPages ? 'active' : 'waiting',
       detail: `Up to ${String(WEBSITE_SCAN_PAGE_CAP)} public pages. Nothing behind a login.`,
     },
-    { id: 'save', label: 'Saving each page as cited evidence', status: 'waiting' },
+    {
+      id: 'save',
+      label: 'Saving each page as cited evidence',
+      status: input.saved ? 'done' : hasPages ? 'active' : 'waiting',
+    },
     {
       id: 'suggest',
       label: 'Suggesting people, companies and projects',

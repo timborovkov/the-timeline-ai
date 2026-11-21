@@ -83,7 +83,11 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/messaging'),
-  () => ({ latestDailyDigest: fakes.latestDailyDigest }),
+  () => ({
+    latestDailyDigest: fakes.latestDailyDigest,
+    presentSavedViewDigest: (_scope: unknown, payload: unknown) =>
+      Promise.resolve({ payload, hasVisibleChanges: false }),
+  }),
   () => import('@timeline/shared/messaging'),
 );
 await vi.mock(
@@ -244,8 +248,18 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/components/onboarding/first-run-home-capture'),
   () => ({
-    FirstRunHomeCapture: ({ failed }: { failed: boolean }) => (
-      <div data-testid="first-run-home-capture">{failed ? 'failed' : 'processing'}</div>
+    FirstRunHomeCapture: ({
+      failed,
+      ready,
+      href,
+    }: {
+      failed: boolean;
+      ready: boolean;
+      href: string;
+    }) => (
+      <a data-testid="first-run-home-capture" href={href}>
+        {ready ? 'record ready' : failed ? 'failed' : 'processing'}
+      </a>
     ),
   }),
   () => import('@/components/onboarding/first-run-home-capture'),
@@ -530,10 +544,18 @@ describe('HomeDashboardPage', () => {
     });
   });
 
+  const capture = {
+    phase: 'processing',
+    starterPath: 'document',
+    teamId: 'team-1',
+    startedByUserId: 'user-1',
+    starterSelectedAt: new Date('2026-03-29T11:30:00Z'),
+  };
+
   it('keeps a processing first-run capture visible after the owner leaves setup', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun: { phase: 'processing', starterPath: 'document' },
+      firstRun: capture,
     });
 
     const html = await renderHome();
@@ -546,28 +568,67 @@ describe('HomeDashboardPage', () => {
   });
 
   it('opens the cited record when capture lands after leaving setup', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun: { phase: 'record', starterPath: 'document' },
+      firstRun: {
+        ...capture,
+        phase: 'record',
+        firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
+      },
+      record: { processingSteps: [], sources: [{ href: '/app/documents/example' }] },
     });
 
-    await expect(renderHome()).rejects.toThrow('redirect:/app/onboarding/record');
+    await expect(renderHome()).rejects.toThrow(
+      'redirect:/app/onboarding/record?capture=' +
+        encodeURIComponent('team-1.document.' + String(capture.starterSelectedAt.getTime())),
+    );
   });
 
   it('shows a failed first-run capture on Home', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'failed', starterPath: 'website' });
+    fakes.getFirstRun.mockResolvedValue({ ...capture, phase: 'failed', starterPath: 'website' });
 
     const html = await renderHome();
 
     expect(html).toContain('data-testid="first-run-home-capture"');
     expect(html).toContain('failed');
+    expect(html).toContain(
+      '/onboarding?capture=team-1.website.' + String(capture.starterSelectedAt.getTime()),
+    );
     expect(fakes.loadFirstRunStatus).not.toHaveBeenCalled();
   });
 
+  it.each(['document', 'email', 'slack', 'telegram', 'website'])(
+    'sends an unavailable %s capture to the record page with the same capture link',
+    async (starterPath) => {
+      const firstRun = {
+        ...capture,
+        phase: 'processing',
+        starterPath,
+      };
+      const landed = {
+        ...firstRun,
+        phase: 'record' as const,
+        firstCaptureLandedAt: new Date('2026-03-29T11:35:00Z'),
+      };
+      fakes.getFirstRun.mockResolvedValue(firstRun);
+      fakes.loadFirstRunStatus.mockResolvedValue({
+        firstRun: landed,
+        record: { processingSteps: [], sources: [] },
+      });
+
+      await expect(renderHome()).rejects.toThrow(
+        'redirect:/app/onboarding/record?capture=' +
+          encodeURIComponent(
+            `team-1.${starterPath}.${String(capture.starterSelectedAt.getTime())}`,
+          ),
+      );
+    },
+  );
+
   it('stops waiting on Home when document extract failed', async () => {
-    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.getFirstRun.mockResolvedValue(capture);
     fakes.loadFirstRunStatus.mockResolvedValue({
-      firstRun: { phase: 'processing', starterPath: 'document' },
+      firstRun: capture,
       record: { processingSteps: [{ id: 'extract', status: 'failed' }] },
     });
 

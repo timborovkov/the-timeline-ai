@@ -1,3 +1,4 @@
+import type { GlobalSearchResponse } from '@timeline/shared/search';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 /**
@@ -13,6 +14,8 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
   fakeSearchEvents: vi.fn(),
+  fakeListEvents: vi.fn(),
+  fakeSearchDocumentNames: vi.fn(),
   fakeGetEventsByIds: vi.fn(),
   fakeSearchDocumentChunksPage: vi.fn(),
   fakeSearchObjectNotes: vi.fn(),
@@ -63,10 +66,14 @@ await vi.mock(
       requireMembership: fakes.fakeRequireMembership,
       timeline: {
         searchEvents: fakes.fakeSearchEvents,
+        listEvents: fakes.fakeListEvents,
         searchObjectNotes: fakes.fakeSearchObjectNotes,
         getEventsByIds: fakes.fakeGetEventsByIds,
       },
-      documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
+      documents: {
+        searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage,
+        searchDocumentNames: fakes.fakeSearchDocumentNames,
+      },
       objects: {
         listObjects: fakes.fakeListObjects,
         searchObjects: fakes.fakeSearchObjects,
@@ -126,6 +133,8 @@ beforeEach(() => {
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
   fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
+  fakes.fakeListEvents.mockResolvedValue([]);
+  fakes.fakeSearchDocumentNames.mockResolvedValue([]);
   fakes.fakeIsPinnedMany.mockResolvedValue({});
   fakes.fakeGetEventsByIds.mockResolvedValue([]);
   fakes.fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 });
@@ -355,26 +364,98 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeSearchDocumentChunksPage).not.toHaveBeenCalled();
   });
 
-  it('skips semantic sources when Qdrant is unconfigured but keeps lexical results', async () => {
+  it('uses scoped keyword matching when Qdrant is unconfigured', async () => {
     fakes.fakeGetEnv.mockReturnValue({ OPENROUTER_API_KEY: 'test-openrouter', QDRANT_URL: '' });
-
-    const response = await POST(request({ query: 'Otto', mode: 'full' }));
-    const data = (await response.json()) as {
-      ok: true;
-      results: { kind: string; title: string }[];
-      warnings: { source: string }[];
-    };
+    fakes.fakeSearchDocumentNames.mockResolvedValue([
+      {
+        documentId: 'document-1',
+        name: 'Otto’s handoff',
+        filename: 'handoff.pdf',
+        createdAt: new Date('2026-06-12T00:00:00Z'),
+        version: 2,
+      },
+    ]);
+    const response = await POST(request({ query: 'Otto', mode: 'full', source: 'email' }));
+    const data = (await response.json()) as GlobalSearchResponse;
 
     expect(response.status).toBe(200);
-    expect(
-      data.results.some((item) => item.kind === 'object' && item.title === 'Otto Silventola'),
-    ).toBe(true);
-    expect(data.warnings).toContainEqual({
-      source: 'semantic',
-      message: 'Semantic search is not configured.',
+    expect(data.results).toContainEqual(
+      expect.objectContaining({
+        kind: 'document_chunk',
+        href: '/app/documents/document-1?version=2',
+      }),
+    );
+    expect(data.results).toContainEqual(
+      expect.objectContaining({ kind: 'object', title: 'Otto Silventola' }),
+    );
+    expect(data.coverage).toMatchObject({
+      timeline_event: 'keyword',
+      document_chunk: 'keyword',
+      object: 'searched',
     });
+    expect(fakes.fakeListEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ keyword: 'Otto', source: 'email' }),
+    );
     expect(fakes.fakeSearchEvents).not.toHaveBeenCalled();
     expect(fakes.fakeSearchDocumentChunksPage).not.toHaveBeenCalled();
+  });
+
+  it('applies a workspace day across DST to all content paths', async () => {
+    fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'Europe/Helsinki' });
+    const from = new Date('2026-03-28T22:00:00Z');
+    const to = new Date('2026-03-29T21:00:00Z');
+    const response = await POST(
+      request({
+        query: 'standup',
+        mode: 'full',
+        from: '2026-03-29',
+        to: '2026-03-29',
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(fakes.fakeSearchEvents).toHaveBeenCalledWith(expect.objectContaining({ from, to }));
+    expect(fakes.fakeSearchDocumentChunksPage).toHaveBeenCalledWith(
+      expect.objectContaining({ from, to }),
+    );
+    expect(fakes.fakeListCalendarEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ from, to }),
+    );
+    expect(fakes.fakeListBoards).toHaveBeenCalledWith({ from, to });
+    const objectDates: unknown = expect.objectContaining({ updatedAfter: from, updatedBefore: to });
+    expect(fakes.fakeSearchObjects).toHaveBeenCalledWith(objectDates);
+    expect(fakes.fakeSearchObjectsBySummary).toHaveBeenCalledWith(objectDates);
+    expect(fakes.fakeSearchObjectNotes).toHaveBeenCalledWith(objectDates);
+  });
+
+  it('normalizes a legacy all-day calendar timezone before returning it', async () => {
+    const startAt = new Date('2026-03-29T00:00:00Z');
+    fakes.fakeListCalendarEvents.mockResolvedValue([
+      {
+        id: 'legacy-event',
+        startAt,
+        updatedAt: startAt,
+        title: 'Legacy launch',
+        source: 'internal',
+        allDay: true,
+        timezone: 'Invalid/Zone',
+      },
+    ]);
+    const response = await POST(request({ query: 'Legacy launch', kinds: ['calendar_event'] }));
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as GlobalSearchResponse;
+    const event = data.results.find((result) => result.title === 'Legacy launch');
+    expect(event?.metadata?.allDayDate).toBe('2026-03-29');
+  });
+
+  it('rejects impossible dates and reversed ranges before retrieval', async () => {
+    const invalid = await POST(request({ query: 'standup', from: '2026-02-30' }));
+    expect(invalid.status).toBe(400);
+    const reversed = await POST(
+      request({ query: 'standup', from: '2026-03-30', to: '2026-03-29' }),
+    );
+    expect(reversed.status).toBe(400);
+    expect(fakes.fakeSearchEvents).not.toHaveBeenCalled();
+    expect(fakes.fakeSearchObjects).not.toHaveBeenCalled();
   });
 
   it('honors kind filters', async () => {
@@ -761,6 +842,7 @@ describe('POST /api/search/global', () => {
   });
 
   it('keeps successful timeline hits when one selected source fails', async () => {
+    fakes.fakeListEvents.mockRejectedValue(new Error('Timeline keyword search is unavailable'));
     fakes.fakeSearchEvents.mockImplementation((input: { source?: string }) =>
       input.source === 'slack'
         ? Promise.reject(new Error('slack search unavailable'))
@@ -915,15 +997,21 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeResolveActiveTeam).not.toHaveBeenCalled();
   });
 
-  it('retains lexical results with warnings when semantic recovery is exhausted', async () => {
+  it('falls back per type when semantic recovery is exhausted', async () => {
     const { QdrantUnavailableError } = await import('@timeline/shared/qdrant');
     fakes.fakeSearchEvents.mockRejectedValue(new QdrantUnavailableError('search', 503));
     fakes.fakeSearchDocumentChunksPage.mockRejectedValue(new QdrantUnavailableError('search', 503));
+    fakes.fakeSearchDocumentNames.mockRejectedValue(
+      new Error('Document keyword search unavailable'),
+    );
     const response = await POST(request({ query: 'github', mode: 'full' }));
-    const data = (await response.json()) as { results: unknown[]; warnings: unknown[] };
+    const data = (await response.json()) as GlobalSearchResponse;
     expect(response.status).toBe(200);
     expect(data.results).toContainEqual(expect.objectContaining({ id: 'github-integration' }));
-    expect(data.warnings).toContainEqual(expect.objectContaining({ source: 'timeline_event' }));
+    expect(data.coverage).toMatchObject({
+      timeline_event: 'keyword',
+      document_chunk: 'unavailable',
+    });
     expect(data.warnings).toContainEqual(expect.objectContaining({ source: 'document_chunk' }));
   });
 });

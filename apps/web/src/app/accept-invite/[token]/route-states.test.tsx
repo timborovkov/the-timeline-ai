@@ -63,6 +63,9 @@ afterEach(() => {
 describe('AcceptInvite route states', () => {
   it('keeps a single page heading before an invited person signs in', async () => {
     fakes.auth.mockResolvedValue(null);
+    fakes.invites.mockResolvedValue([
+      { email: 'invited@example.test', role: 'member', expiresAt: new Date(Date.now() + 60_000) },
+    ]);
 
     const html = renderToStaticMarkup(
       await AcceptInvitePage({
@@ -73,6 +76,20 @@ describe('AcceptInvite route states', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Accept invite');
+  });
+
+  it('offers a fresh-link recovery path for an invalid invitation before sign-in', async () => {
+    fakes.auth.mockResolvedValue(null);
+    fakes.invites.mockResolvedValue([]);
+    render(
+      await AcceptInvitePage({
+        params: Promise.resolve({ token: 'unknown-token' }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    expect(screen.getByRole('heading', { name: 'Invite invalid' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Sign in' }).getAttribute('href')).toBe('/sign-in');
+    expect(screen.queryByRole('link', { name: 'Sign up' })).toBeNull();
   });
 
   it('announces a single-heading invitation loading state outside its busy placeholder', () => {
@@ -134,6 +151,7 @@ describe('AcceptInvite route states', () => {
       }),
     );
     expect(screen.getByRole('heading', { name: 'Wrong account' })).toBeTruthy();
+    expect(screen.queryByText('invited@example.test')).toBeNull();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Switch account' }));
     expect(fakes.signOut).toHaveBeenCalledWith(
       undefined,

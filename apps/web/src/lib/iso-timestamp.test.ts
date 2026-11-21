@@ -31,4 +31,9 @@ describe('toDateOrNull', () => {
     expect(revived?.toISOString()).toBe('2026-07-19T12:00:00.000Z');
     expect(toDateOrNull(null)).toBeNull();
   });
+
+  it('returns null for invalid date strings', () => {
+    expect(toDateOrNull('not-a-date')).toBeNull();
+    expect(toDateOrNull(new Date(Number.NaN))).toBeNull();
+  });
 });

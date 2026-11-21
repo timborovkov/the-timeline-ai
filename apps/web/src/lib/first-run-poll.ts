@@ -6,6 +6,8 @@ import {
   type NamedProcessingStep,
 } from '@timeline/shared/onboarding/first-run';
 
+import { toDateOrNull } from '@/lib/iso-timestamp';
+
 export interface FirstRunStatusPayload {
   firstRun: FirstRunState | null;
   inboundEmail: string | null;
@@ -17,6 +19,30 @@ export interface FirstRunStatusPayload {
     processingSteps: NamedProcessingStep[];
     emailArrived: boolean;
   } | null;
+}
+
+function revivePolledDate(value: unknown): Date | null {
+  if (value instanceof Date || typeof value === 'string' || value === null || value === undefined) {
+    return toDateOrNull(value);
+  }
+  return null;
+}
+
+/** Revive JSON date strings from `/api/onboarding/first-run` into Date instances. */
+export function reviveFirstRunStatus(status: FirstRunStatusPayload): FirstRunStatusPayload {
+  if (!status.firstRun) return status;
+  const firstRun = status.firstRun;
+  return {
+    ...status,
+    firstRun: {
+      ...firstRun,
+      starterSelectedAt: revivePolledDate(firstRun.starterSelectedAt),
+      guideHiddenAt: revivePolledDate(firstRun.guideHiddenAt),
+      firstCaptureLandedAt: revivePolledDate(firstRun.firstCaptureLandedAt),
+      createdAt: revivePolledDate(firstRun.createdAt) ?? firstRun.createdAt,
+      updatedAt: revivePolledDate(firstRun.updatedAt) ?? firstRun.updatedAt,
+    },
+  };
 }
 
 export function firstRunDestination(phase: FirstRunPhase): string {
@@ -114,7 +140,7 @@ export function pollFirstRun(
         return;
       }
       if (!response.ok) throw new Error('First-run status unavailable');
-      const status = (await response.json()) as FirstRunStatusPayload;
+      const status = reviveFirstRunStatus((await response.json()) as FirstRunStatusPayload);
       if (wasAborted()) return;
       if (status.teamId !== initial.teamId) {
         stop();

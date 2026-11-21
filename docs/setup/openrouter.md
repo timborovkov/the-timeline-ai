@@ -181,7 +181,9 @@ After `OPENROUTER_API_KEY`, `REDIS_URL`, and `QDRANT_URL` are set, with the dock
 
 6.  Mark a note as `private` in the capture form before posting. The embed worker stamps `embedding_skipped_reason=visibility=private` on `source_metadata` and writes nothing to Qdrant. Teammates running the same query do not see the private row in their search results — the Qdrant wrapper's filter and `withTeam`'s second-line check both drop it.
 
-Without `OPENROUTER_API_KEY` or `QDRANT_URL`, semantic timeline search returns an unavailable warning in global search. Notes still capture; embeddings are deferred until config + reembed.
+Without `OPENROUTER_API_KEY` or `QDRANT_URL`, global search uses scoped keyword
+matching for Timeline and Documents and reports that coverage. Notes still
+capture. Embeddings are deferred until configuration and re-embedding.
 
 <span id="phase-6"></span>
 

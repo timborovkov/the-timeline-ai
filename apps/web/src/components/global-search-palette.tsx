@@ -1,6 +1,6 @@
 'use client';
 
-import type { GlobalSearchResult } from '@timeline/shared/search';
+import type { GlobalSearchCoverage, GlobalSearchResult } from '@timeline/shared/search';
 import {
   CalendarDays,
   Bot,
@@ -30,6 +30,7 @@ import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ApiResponseError } from '@/lib/api-response';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { fetchGlobalSearch } from '@/lib/global-search';
+import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { cn } from '@/lib/utils';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
@@ -38,12 +39,18 @@ interface PaletteViewState {
   loading: boolean;
   results: GlobalSearchResult[];
   warnings: string[];
+  coverage: GlobalSearchCoverage;
   error: string | null;
   activeIndex: number;
 }
 type PaletteViewAction =
   | { type: 'search_start' }
-  | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
+  | {
+      type: 'search_success';
+      results: GlobalSearchResult[];
+      warnings: string[];
+      coverage: GlobalSearchCoverage;
+    }
   | { type: 'search_error'; error: string }
   | { type: 'active'; value: number }
   | { type: 'reset_active' };
@@ -51,18 +58,27 @@ type PaletteViewAction =
 const GROUP_ORDER = ['Go to', 'Work', 'Timeline', 'Documents', 'Calendar', 'Other'] as const;
 
 function paletteViewReducer(state: PaletteViewState, action: PaletteViewAction): PaletteViewState {
-  if (action.type === 'search_start') return { ...state, loading: true, error: null, warnings: [] };
+  if (action.type === 'search_start')
+    return { ...state, loading: true, error: null, warnings: [], coverage: {} };
   if (action.type === 'search_success') {
     return {
       loading: false,
       results: action.results,
       warnings: action.warnings,
+      coverage: action.coverage,
       error: null,
       activeIndex: -1,
     };
   }
   if (action.type === 'search_error') {
-    return { loading: false, results: [], warnings: [], error: action.error, activeIndex: -1 };
+    return {
+      loading: false,
+      results: [],
+      warnings: [],
+      coverage: {},
+      error: action.error,
+      activeIndex: -1,
+    };
   }
   if (action.type === 'active') return { ...state, activeIndex: action.value };
   return { ...state, activeIndex: -1 };
@@ -137,6 +153,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
     loading: false,
     results: [],
     warnings: [],
+    coverage: {},
     error: null,
     activeIndex: -1,
   });
@@ -178,9 +195,11 @@ export function GlobalSearchPalette({ hint, className }: Props) {
         signal: controller.signal,
       })
         .then((response) => {
+          if (controller.signal.aborted) return;
           dispatchView({
             type: 'search_success',
             results: response.results,
+            coverage: response.coverage ?? {},
             warnings: response.warnings.map((warning) => warning.message),
           });
         })
@@ -338,6 +357,42 @@ export function GlobalSearchPalette({ hint, className }: Props) {
   );
 }
 
+function SearchPaletteFeedback({
+  view,
+  query,
+  hasResults,
+}: {
+  view: PaletteViewState;
+  query: string;
+  hasResults: boolean;
+}) {
+  let message = '';
+  if (view.error) message = view.error;
+  else if (view.loading && !hasResults) message = 'Searching your workspace…';
+  else if (query.trim()) {
+    const coverage = globalSearchCoverageText(view.coverage);
+    const unavailable = Object.values(view.coverage).includes('unavailable');
+    const noMatches = !hasResults && view.warnings.length === 0 && !unavailable;
+    message = [coverage, ...view.warnings, noMatches ? 'No matches.' : '']
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (!message) return null;
+
+  return (
+    <div role="row">
+      <div role="gridcell">
+        <p
+          role="status"
+          className={cn('px-3 py-2 text-xs', view.error ? 'text-destructive' : 'text-fg-muted')}
+        >
+          {message}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SearchPaletteResults({
   view,
   grouped,
@@ -366,41 +421,9 @@ function SearchPaletteResults({
       aria-busy={view.loading}
       className="absolute left-0 top-12 z-50 w-[min(44rem,calc(100vw-3rem))] max-w-full max-h-[min(32rem,calc(100dvh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl"
     >
-      {view.loading && grouped.length === 0 ? (
-        <div role="row">
-          <div role="gridcell">
-            <p role="status" className="px-3 py-4 text-sm text-fg-muted">
-              Searching your workspace…
-            </p>
-          </div>
-        </div>
-      ) : view.error ? (
-        <div role="row">
-          <div role="gridcell">
-            <p role="status" className="p-3 text-sm text-destructive">
-              {view.error}
-            </p>
-          </div>
-        </div>
-      ) : grouped.length === 0 && !view.loading && view.warnings.length === 0 ? (
-        <div role="row">
-          <div role="gridcell">
-            <p role="status" className="p-3 text-sm text-fg-muted">
-              No matches.
-            </p>
-          </div>
-        </div>
-      ) : (
+      <SearchPaletteFeedback view={view} query={query} hasResults={grouped.length > 0} />
+      {!view.error ? (
         <div className="py-2">
-          {view.warnings.length > 0 ? (
-            <div role="row">
-              <div role="gridcell">
-                <p role="status" className="px-3 py-2 text-xs text-fg-muted">
-                  {view.warnings.join(' ')}
-                </p>
-              </div>
-            </div>
-          ) : null}
           {grouped.map(([group, items]) => (
             <div role="rowgroup" aria-label={group} key={group} className="py-1">
               <div role="row">
@@ -483,7 +506,7 @@ function SearchPaletteResults({
             </div>
           ))}
         </div>
-      )}
+      ) : null}
       {query.trim() ? (
         <div
           role="row"

@@ -14,7 +14,9 @@ A calendar suggestion needs a concrete timed range or an all-day date span. If t
 
 ## Workspace timezone
 
-Each team has a workspace timezone stored in `team_calendar_settings.default_timezone`. Admins configure it from Team settings, and new teams initialize it from the creator's browser timezone when available with `Europe/Helsinki` as the product fallback. Existing teams that still carried the old implicit `UTC` default were backfilled to `Europe/Helsinki`. Timeline grouping and timestamps, calendar views, event defaults, saved meeting schedules, daily digests, and workspace-relative chat dates use this timezone unless a specific calendar event supplies its own `calendar_events.timezone`.
+Each team has a workspace timezone stored in `team_calendar_settings.default_timezone`. Admins configure it from Team settings, and new teams initialize it from the creator's browser timezone when available with `Europe/Helsinki` as the product fallback. Existing teams that still carried the old implicit `UTC` default were backfilled to `Europe/Helsinki`. Timeline grouping and timestamps, calendar views, event defaults, saved meeting schedules, daily digests, and workspace-relative chat dates use this timezone unless a specific calendar event supplies its own `calendar_events.timezone`. Global search
+uses the workspace timezone for date bounds and links timed events to their workspace-local day.
+Date-only filters and links for all-day events use the day labels shown in Calendar.
 
 <span id="agent-suggestions"></span>
 

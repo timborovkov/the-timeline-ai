@@ -148,14 +148,24 @@ export async function deleteFolderAction(id: string): Promise<Result> {
 }
 
 const requestUploadSchema = z.object({
+  resumeVersionId: z.never().optional(),
   documentId: documentIdSchema.optional(),
   folderId: folderIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(400),
   filename: z.string().trim().min(1).max(400),
+  captureId: z.uuid().optional(),
   contentType: z.string().trim().min(1).max(200),
+  byteSize: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(MAX_UPLOAD_BYTES, 'Choose a file up to 25 MiB.')
+    .optional(),
   visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
+
+const resumeUploadSchema = z.object({ resumeVersionId: versionIdSchema });
 
 interface RequestUploadResult {
   ok: boolean;
@@ -168,11 +178,12 @@ interface RequestUploadResult {
 }
 
 /**
- * Two paths:
+ * Upload reservations:
  *   - new document: omit `documentId`, pass `name` + `folderId` →
  *     creates documents row + version 1, returns presigned PUT.
  *   - new version of existing document: pass `documentId` + `filename` →
  *     allocates version N+1, returns presigned PUT.
+ *   - expired pending upload: the original uploader can renew the PUT for resumeVersionId.
  *
  * The bytes are still in transit when this returns; finalize on
  * completion. If the client abandons the upload, the document/version
@@ -182,7 +193,7 @@ interface RequestUploadResult {
  * pending rows older than N days.
  */
 export async function requestDocumentUploadAction(
-  input: z.input<typeof requestUploadSchema>,
+  input: z.input<typeof requestUploadSchema> | z.input<typeof resumeUploadSchema>,
 ): Promise<RequestUploadResult> {
   return runSentryServerAction('request_document_upload', async () => {
     const got = await withScopeOrError();
@@ -205,13 +216,30 @@ export async function requestDocumentUploadAction(
         error: `Too many upload attempts. Try again in ${Math.ceil(rl.retryAfterMs / 1000)} seconds.`,
       };
     }
-    const parsed = requestUploadSchema.safeParse(input);
+    const resume = resumeUploadSchema.safeParse(input);
+    const parsed = resume.success ? resume : requestUploadSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
     try {
       let documentId: string;
       let versionId: string;
       let objectKey: string;
-      if (parsed.data.documentId) {
+      let contentType: string;
+      if (parsed.data.resumeVersionId !== undefined) {
+        const version = await got.scope.documents.getDocumentVersion(parsed.data.resumeVersionId);
+        if (
+          version?.uploadedByUserId !== got.userId ||
+          version.sourceEventId ||
+          version.byteSize !== null ||
+          !version.contentType ||
+          !(await got.scope.documents.getDocument(version.documentId))
+        ) {
+          return { ok: false, error: 'This upload can no longer be resumed.' };
+        }
+        documentId = version.documentId;
+        versionId = version.id;
+        objectKey = version.objectKey;
+        contentType = version.contentType;
+      } else if (parsed.data.documentId) {
         const v = await got.scope.documents.addDocumentVersion({
           documentId: parsed.data.documentId,
           filename: parsed.data.filename,
@@ -220,9 +248,11 @@ export async function requestDocumentUploadAction(
         documentId = parsed.data.documentId;
         versionId = v.id;
         objectKey = v.objectKey;
+        contentType = parsed.data.contentType;
       } else {
         const created = await got.scope.documents.createDocument({
           name: parsed.data.name,
+          captureId: parsed.data.captureId,
           folderId: parsed.data.folderId ?? null,
           filename: parsed.data.filename,
           contentType: parsed.data.contentType,
@@ -232,12 +262,13 @@ export async function requestDocumentUploadAction(
         documentId = created.document.id;
         versionId = created.version.id;
         objectKey = created.version.objectKey;
+        contentType = parsed.data.contentType;
       }
       const url = await getSignedPutObjectUrl(
         getS3PresignClient(),
         getDocumentsBucket(),
         objectKey,
-        parsed.data.contentType,
+        contentType,
       );
       return {
         ok: true,
@@ -284,6 +315,7 @@ export async function finalizeDocumentVersionAction(
     const parsed = finalizeSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
 
+    let savedDocumentId: string | undefined;
     try {
       // Confirm RustFS actually received the bytes before we finalize the
       // row + write the timeline event. Without this, an abandoned PUT
@@ -298,15 +330,14 @@ export async function finalizeDocumentVersionAction(
       if (head.contentLength > MAX_UPLOAD_BYTES) {
         return { ok: false, error: 'File exceeds size limit' };
       }
-      const [finalized, queue] = await Promise.all([
-        got.scope.documents.finalizeDocumentVersion({
-          versionId: parsed.data.versionId,
-          byteSize: head.contentLength,
-          sourceMetadata: { object_suggestions_enabled: parsed.data.suggestObjects },
-          contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
-        }),
-        requireRedisQueue(),
-      ]);
+      const finalized = await got.scope.documents.finalizeDocumentVersion({
+        versionId: parsed.data.versionId,
+        byteSize: head.contentLength,
+        sourceMetadata: { object_suggestions_enabled: parsed.data.suggestObjects },
+        contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
+      });
+      savedDocumentId = finalized.document.id;
+      const queue = await requireRedisQueue();
       await queue.enqueueDocumentExtractJob({
         documentVersionId: finalized.version.id,
         teamId: got.teamId,
@@ -338,8 +369,15 @@ export async function finalizeDocumentVersionAction(
       };
     } catch (err) {
       log.error({ err }, 'finalizeDocumentVersion failed');
+      if (savedDocumentId) {
+        refreshMutation(
+          { kind: 'documents-changed', id: savedDocumentId, timeline: true },
+          'revalidate_document_upload',
+        );
+      }
       return {
         ok: false,
+        ...(savedDocumentId ? { documentId: savedDocumentId } : {}),
         error: publicActionError(err, {
           operation: 'finalize_document_version',
           fallback: 'Failed to finalize document.',

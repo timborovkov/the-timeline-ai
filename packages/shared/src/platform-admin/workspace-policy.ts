@@ -111,6 +111,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'documents.getHistoricalDocumentChunk': read,
   'documents.searchDocumentChunks': read,
   'documents.searchDocumentChunksPage': read,
+  'documents.searchDocumentNames': read,
   'documents.listRecentDocumentChanges': read,
   'documents._internalLoadVersionForProcessing': write,
   'meetings.createMeeting': write,

@@ -28,6 +28,7 @@ const log = childLogger('web:actions');
 const createTextSchema = z.object({
   text: z.string().trim().min(1, 'Write something').max(20000),
   visibility: z.enum(['team', 'private']).default('team'),
+  captureId: z.uuid().optional(),
 });
 
 export interface CreateEventState {
@@ -76,6 +77,7 @@ export async function createTextEventAction(
     const parsed = createTextSchema.safeParse({
       text: formData.get('text'),
       visibility,
+      captureId: formData.get('captureId') ?? undefined,
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -96,6 +98,9 @@ export async function createTextEventAction(
           }
         : undefined;
     const event = await scope.timeline.createEvent({
+      idempotencyKey: parsed.data.captureId
+        ? 'web-text:' + session.user.id + ':' + parsed.data.captureId
+        : undefined,
       authorUserId: session.user.id,
       visibilityOwnerUserId: session.user.id,
       source: 'web',
@@ -378,6 +383,7 @@ export async function createAudioEventAction(
       sourceMetadata.audio_duration_sec = parsed.data.durationSec;
     }
     const event = await scope.timeline.createEvent({
+      idempotencyKey: 'web-audio:' + parsed.data.key,
       authorUserId: session.user.id,
       visibilityOwnerUserId: session.user.id,
       source: 'web',

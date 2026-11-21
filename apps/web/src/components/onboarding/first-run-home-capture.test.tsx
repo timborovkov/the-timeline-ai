@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
 await vi.mock(
   import.meta.resolve('next/navigation'),
   () => ({
+    redirect: vi.fn(),
     useRouter: () => ({ refresh: fakes.refresh, push: vi.fn() }),
   }),
   () => import('next/navigation'),
@@ -22,21 +23,32 @@ afterEach(() => {
 });
 
 describe('FirstRunHomeCapture', () => {
-  it('lets the owner wait on Home while capture is still reading', () => {
-    render(<FirstRunHomeCapture failed={false} />);
+  const capture = {
+    ready: false,
+    failed: false,
+    emailWaiting: false,
+    startedAt: new Date('2026-03-29T19:00:00Z'),
+    completed: 1,
+    total: 4,
+    href: '/onboarding?capture=fixture',
+  };
 
-    expect(screen.getByText('Still reading what you brought')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Back to setup' }).getAttribute('href')).toBe(
-      '/onboarding',
+  it('links to the active capture and shows progress while Home remains usable', () => {
+    render(<FirstRunHomeCapture {...capture} />);
+
+    expect(screen.getByText('Your first capture is processing')).toBeTruthy();
+    expect(screen.getByText('1 of 4 steps complete')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View capture status' }).getAttribute('href')).toBe(
+      capture.href,
     );
   });
 
-  it('offers another starter path after a failed capture', () => {
-    render(<FirstRunHomeCapture failed />);
+  it('keeps the same link after the capture is ready', () => {
+    render(<FirstRunHomeCapture {...capture} ready />);
 
-    expect(screen.getByText('We could not finish that capture')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Choose another way' }).getAttribute('href')).toBe(
-      '/onboarding',
+    expect(screen.getByText('Your first record is ready')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open your first record' }).getAttribute('href')).toBe(
+      capture.href,
     );
   });
 });

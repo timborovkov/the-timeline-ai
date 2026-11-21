@@ -1,11 +1,19 @@
 'use client';
 
-import type { FirstRunSource, FirstRunSuggestion } from '@timeline/shared/onboarding/first-run';
+import type {
+  FirstRunSource,
+  FirstRunSuggestion,
+  NamedProcessingStep,
+} from '@timeline/shared/onboarding/first-run';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { setFirstRunPhaseAction } from '@/app/actions/first-run';
+import {
+  CaptureProcessingSteps,
+  CaptureStartedTime,
+} from '@/components/onboarding/processing-screen';
 import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';
 import { SuggestionStatusPill } from '@/components/onboarding/suggestion-status-pill';
 import { Button } from '@/components/ui/button';
@@ -17,6 +25,8 @@ export function FirstRecordScreen({
   note,
   sources,
   suggestions,
+  captureStatus,
+  readOnly = false,
 }: {
   title: string;
   meta: string;
@@ -24,6 +34,8 @@ export function FirstRecordScreen({
   note: string;
   sources: FirstRunSource[];
   suggestions: FirstRunSuggestion[];
+  captureStatus?: { startedAt: Date | string | null; steps: NamedProcessingStep[] } | null;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +67,8 @@ export function FirstRecordScreen({
       <p className="text-xs text-fg-dim">Your first record</p>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
       {meta ? <p className="mt-1 font-mono text-xs text-fg-dim">{meta}</p> : null}
+      {captureStatus?.startedAt ? <CaptureStartedTime value={captureStatus.startedAt} /> : null}
+      {captureStatus ? <CaptureProcessingSteps steps={captureStatus.steps} /> : null}
       {summary ? (
         <div className="mt-4 rounded-md border border-border bg-surface p-4">
           <p className="text-sm leading-6 text-fg">{summary}</p>
@@ -132,29 +146,31 @@ export function FirstRecordScreen({
         )}
       </ul>
 
-      {suggestions.length === 0 ? <RefreshSuggestions /> : null}
+      {!readOnly && suggestions.length === 0 ? <RefreshSuggestions /> : null}
 
-      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-        <Button
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            go('/app/chat', 'ask');
-          }}
-        >
-          Ask about it
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            go('/app/approvals', 'approve');
-          }}
-        >
-          Review suggestions
-        </Button>
-      </div>
+      {!readOnly ? (
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              go('/app/chat', 'ask');
+            }}
+          >
+            Ask about it
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              go('/app/approvals', 'approve');
+            }}
+          >
+            Review suggestions
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
