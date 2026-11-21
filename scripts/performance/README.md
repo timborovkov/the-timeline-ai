@@ -8,9 +8,10 @@ baseline.
 
 Requirements: Linux `/proc`, Python 3, the pinned Bun, an explicit Node binary, compiled
 database/shared packages, and disposable local Redis on port 6379. The harness verifies the pinned
-Bun version and rejects Bun-backed `node` aliases as the Node baseline. Queue measurements use
-unique queues in database 15 and remove only those queues. Do not run other builds or tests
-concurrently with measurements.
+Bun version (exact `process.versions.bun` match for numeric pins; a canary `.bun-version` requires
+`bun --revision` to contain `canary`) and rejects Bun-backed `node` aliases as the Node baseline.
+Queue measurements use unique queues in database 15 and remove only those queues. Do not run other
+builds or tests concurrently with measurements.
 
 ```sh
 bun run --filter @timeline/db build

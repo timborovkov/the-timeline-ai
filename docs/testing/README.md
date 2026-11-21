@@ -38,13 +38,11 @@ repo-wide validation; do not routinely duplicate it locally.
   unrelated failures separately with evidence; do not automatically expand the
   task into repository-wide repairs. Required failures still block merging.
 - GitHub's required `Static checks` job is a gate over parallel CI jobs that
-  still cover Prettier, TypeScript, ESLint, Knip, React Doctor, runtime smoke,
-  E2E environment contracts, and dist imports. Local `bun run validate` keeps
-  the same sequential format → typecheck → lint → knip composition for
-  developers; CI splits those steps across jobs and persists Turbo caches.
-  CI does not restore ESLint's on-disk cache across commits (typed rules do
-  not track cross-file dependencies); local package scripts may still use
-  `--cache`. React Doctor must show `React Doctor score: 100` and
+  still cover `bun fmt --check`, `bun check`, `bun lint`, Knip, React Doctor,
+  runtime smoke, E2E environment contracts, and dist imports. Local
+  `bun run validate` keeps the same sequential format → typecheck → lint →
+  knip composition for developers; CI splits those steps across jobs and
+  persists Turbo caches. React Doctor must show `React Doctor score: 100` and
   `No issues found!`; an exit without a score is not proof of 100. Diagnose
   failures locally only as needed.
 

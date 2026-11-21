@@ -6,7 +6,7 @@ This is the repository operating contract. Explicit user instructions take prece
 
 - Follow [CONTRIBUTING.md](CONTRIBUTING.md) for human-owned branches, simple PR titles/descriptions, and the required Codex review loop.
 
-- Shared compiler options live in `tsconfig.base.json`. Preserve `erasableSyntaxOnly`: no enums, value namespaces, constructor parameter properties, or `import =` / `export =`. Keep existing target/lib versions; add `verbatimModuleSyntax` only for a demonstrated need. TypeScript 7 compilation uses `@typescript/native`; compiler-API consumers use the TypeScript 6 compatibility package.
+- Shared compiler options live in `tsconfig.base.json`. Preserve `erasableSyntaxOnly`: no enums, value namespaces, constructor parameter properties, or `import =` / `export =`. Keep existing target/lib versions; add `verbatimModuleSyntax` only for a demonstrated need. Typecheck uses `bun check` (TypeScript 7 semantics). Emit uses `tsc` from `@typescript/native` (`typescript@7.0.2`). The `typescript` package name stays on `@typescript/typescript6` for compiler-API consumers (`typescript-eslint`, test AST helpers) until those peers accept TypeScript 7.
 - Use Bun pinned by `.bun-version`; no npm, pnpm or yarn. Install with `bun run deps`.
 - Scope local checks to changed behavior. Prose-only work needs changed-file formatting, links and diff review, not application suites. Follow [testing policy](docs/testing/README.md) for change-specific tests and live evaluations.
 - GitHub owns broad validation. Required checks gate merging, not commits, pushes or PR creation. Never bypass or weaken checks; report pending and unrelated failures accurately.

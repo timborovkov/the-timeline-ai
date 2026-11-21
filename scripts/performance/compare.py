@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
+from bun_pin import matches_bun_pin
+
 parser = argparse.ArgumentParser(
     description="Three matched local Node/Bun runtime pairs on synthetic fixtures (Linux)."
 )
@@ -103,9 +105,24 @@ def versions(binary):
     )
 
 
+def revision(binary):
+    return subprocess.check_output(
+        [binary, "--revision"],
+        cwd=root,
+        env={"PATH": env["PATH"], "HOME": env["HOME"]},
+        text=True,
+    ).strip()
+
+
 bun_versions = versions(bun)
 node_versions = versions(node)
-if bun_versions.get("bun") != (root / ".bun-version").read_text().strip():
+bun_revision = revision(bun)
+bun_pin = (root / ".bun-version").read_text().strip()
+if not matches_bun_pin(
+    bun_pin,
+    version=str(bun_versions.get("bun") or ""),
+    revision=bun_revision,
+):
     parser.error("Bun executable must match the repository .bun-version pin")
 if node_versions.get("bun") or not node_versions.get("node"):
     parser.error("Node baseline must be a real Node executable, not a Bun node alias")
@@ -114,6 +131,8 @@ metadata = {
     "mode": args.mode,
     "order": ["node", "bun", "bun", "node", "node", "bun"],
     "bunVersion": bun_versions["bun"],
+    "bunRevision": bun_revision,
+    "bunPin": bun_pin,
     "nodeVersion": "v" + node_versions["node"],
     "commit": subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=root, text=True

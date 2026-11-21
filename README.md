@@ -40,7 +40,7 @@ Use the hosted app at [thetimeline.cc](https://thetimeline.cc), or follow the
 Coding-agent workflows are bundled in [`.agents/skills`](.agents/skills/README.md),
 including cloud setup requirements and the repository-specific React Doctor gate.
 
-Local development requires **Bun 1.4.4** (pinned in `.bun-version`) and **Docker**.
+Local development requires **Bun canary** (pinned in `.bun-version` for `bun lint` / `bun fmt` / `bun check`) and **Docker**.
 The setup guide covers dependencies, environment variables, infrastructure,
 database migrations and starting the app at `http://localhost:3000`.
 

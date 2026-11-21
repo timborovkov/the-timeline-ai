@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM oven/bun:1.4.4-debian AS base
+FROM oven/bun:canary-debian AS base
 WORKDIR /app
 
 FROM base AS dependencies
