@@ -39,6 +39,9 @@ export default tseslint.config(
         'error',
         { allowNumber: true, allowBoolean: true },
       ],
+      // typescript-eslint 8.73+ ships this in strictTypeChecked, but bun lint
+      // cannot run type-aware rules implemented in JavaScript yet.
+      '@typescript-eslint/no-unsafe-class-instance-assignment': 'off',
       eqeqeq: ['error', 'always'],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       // Bun loads the built-in import plugin via bunfig.toml [lint].plugins.

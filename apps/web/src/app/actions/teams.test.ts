@@ -274,7 +274,13 @@ function mutationChain(records: unknown[], returnedRows: unknown[] = [{ id: TEAM
         returning: vi.fn().mockResolvedValue([{ id: INVITE_ID }]),
       };
     }),
-    where: vi.fn(() => Promise.resolve()),
+    where: vi.fn(() => {
+      const result = Promise.resolve(returnedRows) as Promise<unknown[]> & {
+        returning: ReturnType<typeof vi.fn>;
+      };
+      result.returning = vi.fn().mockResolvedValue(returnedRows);
+      return result;
+    }),
   };
 }
 
