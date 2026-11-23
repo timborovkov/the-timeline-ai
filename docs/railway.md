@@ -17,8 +17,8 @@ Polar billing setup and required variables are documented in [Polar setup](setup
 | `document-extract-orchestrator` | App               | `apps/worker/railway.extract.json` (Dockerfile) | `env NODE_ENV=production WORKER_MODE=document-extract bun --bun --no-env-file apps/worker/dist/extract-main.js` |
 | `postgres`                      | Database template | —                                               | (customer-operated service)                                                                                     |
 | `redis`                         | Database template | —                                               | (customer-operated service)                                                                                     |
-| `qdrant`                        | Docker image      | `qdrant/qdrant:v1.20.0`                         | (configured in Railway)                                                                                         |
-| `rustfs`                        | Docker image      | `rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b`                          | (configured in Railway)                                                                                         |
+| `qdrant`                        | Docker image      | `qdrant/qdrant:v1.20.2`                         | (configured in Railway)                                                                                         |
+| `rustfs`                        | Docker image      | `rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a`                          | (configured in Railway)                                                                                         |
 
 Railway provisions PostgreSQL and Redis from database templates. They remain customer-operated services rather than managed databases. Qdrant and RustFS are deployed as custom services using their official Docker images. Portable app Dockerfiles live under `docker/` for local/container-platform builds; keep the repo root free of an app `Dockerfile`; each service selects its image through `railway.json`.
 
