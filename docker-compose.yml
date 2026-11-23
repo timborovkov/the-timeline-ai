@@ -47,7 +47,7 @@ services:
   # ---- Qdrant (vector DB) ----
   # REST on 6333, gRPC on 6334. Use 6333 from app code via the JS client.
   qdrant:
-    image: qdrant/qdrant:v1.20.0
+    image: qdrant/qdrant:v1.20.2
     restart: unless-stopped
     ports:
       - '6333:6333'
@@ -72,7 +72,7 @@ services:
   # ---- RustFS (S3-compatible object storage) ----
   # S3 API on 9000, console on 9001. Bucket creation handled by `rustfs-init`.
   rustfs:
-    image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+    image: rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
     restart: unless-stopped
     ports:
       - '9000:9000'
