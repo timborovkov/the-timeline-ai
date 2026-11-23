@@ -107,7 +107,7 @@
     }
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "3.1171.0",
+    "@aws-sdk/client-s3": "3.1173.0",
     "@happy-dom/global-registrator": "21.0.4",
     "@playwright/test": "^1.65.1",
     "@sentry/cli": "3.8.2",
@@ -116,13 +116,13 @@
     "@timeline/shared": "workspace:*",
     "@types/bun": "1.4.5",
     "@typescript/native": "npm:typescript@7.0.2",
-    "bullmq": "6.7.7",
+    "bullmq": "6.7.8",
     "drizzle-orm": "^0.45.4",
     "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",
-    "knip": "^6.45.1",
+    "knip": "^6.46.1",
     "react-doctor": "^0.9.23",
-    "turbo": "^2.11.12",
+    "turbo": "^2.11.13",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.73.0"
   },
