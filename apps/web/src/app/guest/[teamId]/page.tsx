@@ -5,6 +5,9 @@ import { notFound, redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import type { GuestSelection } from '@/app/actions/guests';
+import { SharedRecordDetails } from '@/components/guest-record-details';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+import { readAppRegion } from '@/lib/app-region';
 import { AskGuestWorkForm } from '@/components/guest-forms';
 import { SignOutButton } from '@/components/sign-out-button';
 import { Button } from '@/components/ui/button';
@@ -79,36 +82,6 @@ function SharedWorkNavigation({
         Search
       </Button>
     </form>
-  );
-}
-
-function SharedRecordDetails({
-  record,
-}: {
-  record: NonNullable<Awaited<ReturnType<typeof loadSharedWork>>>['records'][number];
-}) {
-  if (!record.live) return <p className="whitespace-pre-wrap break-words">{record.body}</p>;
-  return (
-    <dl className="space-y-2 text-sm">
-      {record.status ? (
-        <div className="flex gap-2">
-          <dt>Status</dt>
-          <dd>{record.status}</dd>
-        </div>
-      ) : null}
-      {record.dueDate ? (
-        <div className="flex gap-2">
-          <dt>Due</dt>
-          <dd>
-            <time dateTime={record.dueDate}>{record.dueDate.slice(0, 10)}</time>
-          </dd>
-        </div>
-      ) : null}
-      <div className="text-muted-foreground">
-        <dt className="sr-only">Field visibility</dt>
-        <dd>Fields may be omitted when unset or unsupported by team-visible evidence.</dd>
-      </div>
-    </dl>
   );
 }
 
@@ -221,13 +194,16 @@ export default async function SharedWorkPage({
 
   const work = await loadSharedWork(teamId, session.user.id, selection, query);
   if (!work) notFound();
+  const region = await readAppRegion();
   return (
-    <SharedWorkContent
-      teamId={teamId}
-      guestPath={guestPath}
-      selection={selection}
-      query={query}
-      work={work}
-    />
+    <WorkspaceTimezoneProvider timezone="UTC" region={region}>
+      <SharedWorkContent
+        teamId={teamId}
+        guestPath={guestPath}
+        selection={selection}
+        query={query}
+        work={work}
+      />
+    </WorkspaceTimezoneProvider>
   );
 }

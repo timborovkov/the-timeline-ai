@@ -19,6 +19,7 @@ import { afterAll, beforeAll, beforeEach, describe, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { FREE_MONTHLY_USAGE_CENTS } from '#src/billing/catalog.js';
 import { assertTeamMemberSeatCapacity } from '#src/billing/capacity.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -353,8 +354,8 @@ describe('guest access', () => {
     await owner.billing.settle({
       operationId: 'workspace-allowance-exhausted',
       meterId: 'ai',
-      nativeUnits: 200,
-      customerChargeCents: 200,
+      nativeUnits: FREE_MONTHLY_USAGE_CENTS,
+      customerChargeCents: FREE_MONTHLY_USAGE_CENTS,
     });
     await expect(recipient.ask('What does the note say?', note)).rejects.toMatchObject({
       code: 'free_allowance_reached',

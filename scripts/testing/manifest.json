@@ -2608,5 +2608,8 @@
   },
   "packages/shared/src/billing/guest-membership.test.ts": {
     "group": "integration"
+  },
+  "apps/web/src/components/guest-record-details.test.tsx": {
+    "group": "dom"
   }
 }
