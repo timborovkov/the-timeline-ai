@@ -1145,8 +1145,7 @@ export async function previewWorkspaceUpdate(
   const briefing = summarize
     ? { summary: await summarize(prompt), sections: [] }
     : await callStructuredDigest(prompt, SCHEDULED_UPDATE_SYSTEM_PROMPT, true);
-  if ('material' in briefing && briefing.material === false)
-    return blockerIds.length ? stillBlocked : null;
+  if ('material' in briefing && !briefing.material) return blockerIds.length ? stillBlocked : null;
   return {
     ...payload,
     teamName,
