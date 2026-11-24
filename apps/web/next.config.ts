@@ -1,11 +1,10 @@
 import { join } from 'node:path';
 
 import { withSentryConfig } from '@sentry/nextjs/config';
-
 import type { NextConfig } from 'next';
 
+import { e2eWebpackPlugins } from './scripts/e2e-webpack';
 import { baseContentSecurityPolicy } from './src/lib/content-security-policy';
-
 import {
   sensitiveLinkHeaders,
   sensitiveLinkHeaderSources,
@@ -79,7 +78,12 @@ const nextConfig: NextConfig = {
   // startup migrations are handled by apps/web/start.mjs outside Next's
   // instrumentation bundle.
   serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
-  webpack(config, { isServer }) {
+  webpack(config: { plugins: unknown[]; externals: Record<string, string>[] }, { isServer, dev }) {
+    config.plugins = e2eWebpackPlugins(
+      config.plugins,
+      dev,
+      process.env.E2E_DEV_COMPILE_WITHOUT_SOURCE_MAPS === '1',
+    );
     if (isServer) {
       config.externals.push({
         bullmq: 'commonjs bullmq',

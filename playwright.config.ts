@@ -8,7 +8,7 @@ for (const key of Object.keys(process.env)) {
 }
 Object.assign(process.env, e2eEnv);
 
-const { baseURL, command: webServerCommand, bunOptions } = buildE2eWebServerConfig(e2eEnv);
+const { baseURL, command: webServerCommand } = buildE2eWebServerConfig(e2eEnv);
 
 export default defineConfig({
   testDir: './e2e',
@@ -35,7 +35,7 @@ export default defineConfig({
     stderr: 'pipe',
     env: {
       HOSTNAME: '127.0.0.1',
-      BUN_OPTIONS: bunOptions ?? '',
+      E2E_DEV_COMPILE_WITHOUT_SOURCE_MAPS: process.env.E2E_PROD_SMOKE === '1' ? '0' : '1',
       NODE_OPTIONS: process.env.E2E_PROD_SMOKE === '1' ? '' : e2eEnv.NODE_OPTIONS,
       AUTH_URL: baseURL,
       NEXTAUTH_URL: baseURL,

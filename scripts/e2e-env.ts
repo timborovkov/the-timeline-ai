@@ -99,18 +99,11 @@ function normalizedWebPort(value: string | undefined): string {
 export function buildE2eWebServerConfig(input: Env = process.env): {
   baseURL: string;
   command: string;
-  bunOptions: string | undefined;
 } {
   const port = normalizedWebPort(input.E2E_WEB_PORT);
   return {
     baseURL: input.E2E_BASE_URL ?? `http://localhost:${port}`,
     command: input.E2E_WEB_SERVER_COMMAND ?? `bun run --cwd apps/web dev -H 127.0.0.1 -p ${port}`,
-    // Dev compilation can exhaust the runner before browser assertions start.
-    // Inherit Bun's smaller-heap mode through Next's server fork, not just its CLI.
-    bunOptions:
-      input.E2E_PROD_SMOKE === '1'
-        ? input.BUN_OPTIONS
-        : [input.BUN_OPTIONS, '--smol'].filter(Boolean).join(' '),
   };
 }
 
