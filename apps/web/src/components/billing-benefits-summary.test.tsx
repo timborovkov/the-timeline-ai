@@ -112,6 +112,21 @@ describe('BillingBenefitsSummary', () => {
     expect(usage).toContain(`Plan fee: ${fee}`);
     expect(usage).toContain('<span class="font-mono">€5</span>');
   });
+
+  it('shows prior USD usage on Free in both Billing and Usage', () => {
+    const summary = fixture('free');
+    if (!summary.charges.amounts) throw new Error('Expected recorded charges');
+    summary.charges.amounts.currency = 'USD';
+    const billing = renderToStaticMarkup(<BillingBenefitsSummary summary={summary} />);
+    const usage = renderToStaticMarkup(
+      <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
+    );
+
+    for (const html of [billing, usage]) {
+      expect(html).toContain('<span class="font-mono">$5</span>');
+      expect(html).not.toContain('<span class="font-mono">€5</span>');
+    }
+  });
 });
 
 it('shows contractual Enterprise limits without a false local pause, while retaining comp enforcement', () => {

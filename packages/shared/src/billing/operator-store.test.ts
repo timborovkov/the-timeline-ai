@@ -1,10 +1,17 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingOperatorAudit, teamBillingAccounts, type Db } from '@timeline/db';
+import {
+  billingOperatorAudit,
+  teamBillingAccounts,
+  teamMembers,
+  teams,
+  type Db,
+} from '@timeline/db';
 import { expect } from '@timeline/test-support';
-import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { afterEach, beforeEach, describe, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { withTeamBillingIdentity } from '#src/billing/customer-identity.js';
 import {
   BillingOperatorError,
   readOperatorBillingAccount,
@@ -17,6 +24,7 @@ import {
   startEnterpriseCheckout,
 } from '#src/billing/operator-store.js';
 import { resolveTeamCommercialTerms } from '#src/billing/operator.js';
+import * as polar from '#src/billing/polar.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { resetIncludedDiscountIfPeriodElapsed } from '#src/billing/runtime.js';
 import { createBillingScope } from '#src/billing/scope.js';
@@ -492,6 +500,73 @@ describe('billing operator store', () => {
     });
   });
 
+  it('keeps both Enterprise and comp transitions behind a payable Team quote', async () => {
+    await db.insert(teamMembers).values({ teamId: TEAM_ID, userId: OWNER_ID, role: 'owner' });
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: OWNER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await withTeamBillingIdentity(
+      { db, teamId: TEAM_ID, userId: OWNER_ID, provider },
+      (_identity, context) => context.recordCheckout('payable-team'),
+    );
+    provider.expireCheckout = () => Promise.resolve('still_open');
+    const providerMock = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
+    const actor = { userId: ADMIN_ID, email: 'ops@example.test' };
+    const comp = () =>
+      assignCompedPlan({
+        db,
+        actor,
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 0,
+        reason: 'approved internal access',
+        expiresAt: null,
+        cancelPolarSubscription: () => Promise.resolve(),
+      });
+    try {
+      await expect(
+        startEnterpriseCheckout({
+          db,
+          actor,
+          teamId: TEAM_ID,
+          platformFeeCents: 100_000,
+          productId: 'prod_enterprise',
+          successUrl: 'https://thetimeline.cc/app/team?section=billing',
+          provider,
+        }),
+      ).rejects.toThrow('still payable or awaiting confirmation');
+      expect(provider.checkouts).toEqual([]);
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+      expect((await billing.getAccount()).arrangement).toBe('standard');
+
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'payment_retry',
+          polarSubscriptionId: 'sub_unactivated',
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      provider.expireCheckout = () => Promise.resolve('already_paid');
+      provider.listReconciledCheckoutIds = ({ currentSubscriptionId }) =>
+        Promise.resolve(currentSubscriptionId === 'sub_unactivated' ? ['payable-team'] : []);
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+
+      provider.listReconciledCheckoutIds = () => Promise.resolve(['payable-team']);
+      await expect(comp()).resolves.toBeUndefined();
+      expect((await billing.getAccount()).arrangement).toBe('comped');
+      const [workspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+      expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual([]);
+    } finally {
+      providerMock.mockRestore();
+    }
+  });
+
   it('rechecks a comp applied after Enterprise preparation before creating a payable checkout', async () => {
     await pg.exec(
       `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner')`,
@@ -588,7 +663,7 @@ describe('billing operator store', () => {
     });
   });
 
-  it('does not open a second Enterprise checkout while an earlier one is still payable', async () => {
+  it('replaces a payment-started Enterprise checkout only after Polar verifies its termination', async () => {
     await pg.exec(`
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
@@ -664,6 +739,32 @@ describe('billing operator store', () => {
       byCheckoutId: {
         chk_fake_1: { platformFeeCents: 100_000, spendCapCents: 40_000 },
       },
+    });
+
+    provider.expireCheckout = () => Promise.resolve('already_paid');
+    provider.listReconciledCheckoutIds = (request) => {
+      expect(request).toEqual({
+        customerId: account?.polarCustomerId,
+        currentSubscriptionId: null,
+        checkoutIds: ['chk_fake_1'],
+      });
+      return Promise.resolve(['chk_fake_1']);
+    };
+    await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 250_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    const [replaced] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(replaced?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_fake_2: { platformFeeCents: 250_000 } },
     });
   });
 

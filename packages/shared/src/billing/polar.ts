@@ -381,6 +381,54 @@ export function createPolarBillingProvider(options?: {
       }
     },
 
+    async listReconciledCheckoutIds(input) {
+      if (!organizationId) throw new PolarIdentityError('configuration', 'checkout_organization');
+      const remaining = new Set(input.checkoutIds);
+      const reconciled: string[] = [];
+      for (let page = 1; remaining.size > 0; page++) {
+        const query = new URLSearchParams({
+          organization_id: organizationId,
+          customer_id: input.customerId,
+          limit: '100',
+          page: String(page),
+        });
+        const response = await polarFetch(`/subscriptions/?${query.toString()}`);
+        if (!response.ok)
+          throw new Error(`Polar checkout subscription read failed: ${response.status}`);
+        const result = z
+          .object({
+            items: z.array(
+              z.object({
+                id: z.string(),
+                customer_id: z.string(),
+                checkout_id: z.string().nullish(),
+                status: z.string(),
+                ended_at: z.iso.datetime({ offset: true }).nullish(),
+                ends_at: z.iso.datetime({ offset: true }).nullish(),
+              }),
+            ),
+            pagination: z.object({ max_page: z.number().int().nonnegative() }),
+          })
+          .parse(await response.json());
+        for (const subscription of result.items) {
+          if (subscription.customer_id !== input.customerId)
+            throw new PolarIdentityError('identity_conflict', 'checkout_subscription');
+          const checkoutId = subscription.checkout_id;
+          if (!checkoutId || !remaining.has(checkoutId)) continue;
+          const end = subscription.ended_at ?? subscription.ends_at;
+          const ended =
+            subscription.status === 'revoked' ||
+            (subscription.status === 'canceled' && end && Date.parse(end) <= Date.now());
+          if (subscription.id === input.currentSubscriptionId || ended) {
+            reconciled.push(checkoutId);
+            remaining.delete(checkoutId);
+          }
+        }
+        if (page >= result.pagination.max_page) break;
+      }
+      return reconciled;
+    },
+
     async expireCheckout(checkoutId) {
       const path = `/checkouts/${encodeURIComponent(checkoutId)}`;
       const current = await polarFetch(path);

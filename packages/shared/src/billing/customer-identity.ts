@@ -92,12 +92,24 @@ export function resolvePolarOwnerUserId(
 type TeamCheckoutPreparation =
   { status: 'ready' } | { status: 'blocked' } | { status: 'resume'; url: string };
 
+export function activatedPolarSubscriptionId(
+  account: Pick<typeof teamBillingAccounts.$inferSelect, 'billingState' | 'polarSubscriptionId'>,
+): string | null {
+  const { billingState, polarSubscriptionId } = account;
+  return billingState.endsWith('_active') ||
+    billingState === 'read_only' ||
+    billingState === 'balance_exhausted'
+    ? polarSubscriptionId
+    : null;
+}
+
 /** Read pending quotes while holding the workspace row lock shared by checkout and roster growth. */
 export async function readOutstandingTeamCheckouts(input: {
   provider: BillingProvider;
   customerId: string;
   productId: string | undefined;
   recordedIds: readonly string[];
+  currentSubscriptionId?: string | null;
   matchesQuote?: (checkout: PendingTeamCheckout) => boolean;
 }): Promise<{ ids: string[]; match: PendingTeamCheckout | undefined }> {
   const discovered = input.productId
@@ -113,15 +125,26 @@ export async function readOutstandingTeamCheckouts(input: {
     discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
   );
   const retained: string[] = [];
+  const paymentStarted: string[] = [];
   for (const id of ids) {
-    if (
-      id === match?.id ||
-      confirmed.has(id) ||
-      (await input.provider.expireCheckout(id)) !== 'expired'
-    )
+    if (id === match?.id) {
       retained.push(id);
+      continue;
+    }
+    const status = confirmed.has(id) ? 'already_paid' : await input.provider.expireCheckout(id);
+    if (status !== 'expired') retained.push(id);
+    if (status === 'already_paid') paymentStarted.push(id);
   }
-  return { ids: retained, match };
+  const reconciled = new Set(
+    paymentStarted.length === 0
+      ? []
+      : ((await input.provider.listReconciledCheckoutIds?.({
+          customerId: input.customerId,
+          currentSubscriptionId: input.currentSubscriptionId ?? null,
+          checkoutIds: paymentStarted,
+        })) ?? []),
+  );
+  return { ids: retained.filter((id) => !reconciled.has(id)), match };
 }
 
 /** Caller authorization and session creation share the account lock with revocation. */
@@ -139,6 +162,10 @@ export async function withTeamBillingIdentity<T>(
       db: Db;
       account: typeof teamBillingAccounts.$inferSelect;
       recordCheckout: (id: string) => Promise<void>;
+      hasPendingCheckouts: (lookup: {
+        teamProductId?: string | undefined;
+        expiredIds?: readonly string[];
+      }) => Promise<boolean>;
       prepareTeamCheckout: (quote: {
         productId: string;
         seats: number;
@@ -390,12 +417,24 @@ export async function withTeamBillingIdentity<T>(
           db,
           account,
           recordCheckout: (id) => savePendingCheckouts([...new Set([...pendingCheckoutIds, id])]),
+          hasPendingCheckouts: async ({ teamProductId, expiredIds = [] }) => {
+            const { ids } = await readOutstandingTeamCheckouts({
+              provider: input.provider,
+              customerId: identity.customerId,
+              productId: teamProductId,
+              recordedIds: pendingCheckoutIds.filter((id) => !expiredIds.includes(id)),
+              currentSubscriptionId: activatedPolarSubscriptionId(account),
+            });
+            if (ids.length || pendingCheckoutIds.length) await savePendingCheckouts(ids);
+            return ids.length > 0;
+          },
           prepareTeamCheckout: async (quote) => {
             const { ids, match } = await readOutstandingTeamCheckouts({
               provider: input.provider,
               customerId: identity.customerId,
               productId: quote.productId,
               recordedIds: pendingCheckoutIds,
+              currentSubscriptionId: activatedPolarSubscriptionId(account),
               matchesQuote: (row) =>
                 row.status === 'open' &&
                 row.seats === quote.seats &&

@@ -86,6 +86,12 @@ export interface BillingProvider {
     customerId: string;
     productId: string;
   }): Promise<PendingTeamCheckout[]>;
+  /** Payment-started checkouts already applied locally or attached to an ended subscription. */
+  listReconciledCheckoutIds?(input: {
+    customerId: string;
+    currentSubscriptionId: string | null;
+    checkoutIds: readonly string[];
+  }): Promise<string[]>;
   /**
    * Retire one checkout before another link is issued.
    * Fail closed with `still_open` when Polar leaves the session payable.

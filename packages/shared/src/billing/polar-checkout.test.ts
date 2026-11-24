@@ -72,6 +72,77 @@ describe('expireCheckout', () => {
   });
 });
 
+describe('reconciled checkout identities', () => {
+  it('retains unapplied and still-active subscriptions while recognizing exact applied or ended checkouts', async () => {
+    const provider = polarProvider();
+    if (!provider.listReconciledCheckoutIds) throw new Error('Missing checkout recovery');
+    const fetchMock = vi.fn((input: string | URL) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe('/v1/subscriptions/');
+      expect(url.searchParams.get('organization_id')).toBe('org-synthetic');
+      expect(url.searchParams.get('customer_id')).toBe('customer-a');
+      const row = (id: string, checkoutId: string, status: string) => ({
+        id,
+        customer_id: 'customer-a',
+        checkout_id: checkoutId,
+        status,
+      });
+      const items =
+        url.searchParams.get('page') === '1'
+          ? [
+              row('sub_applied', 'checkout_applied', 'active'),
+              row('sub_unapplied', 'checkout_unapplied', 'active'),
+              {
+                ...row('sub_scheduled', 'checkout_scheduled', 'canceled'),
+                ends_at: '2099-01-01T00:00:00.000Z',
+              },
+            ]
+          : [
+              {
+                ...row('sub_ended', 'checkout_ended', 'canceled'),
+                ended_at: '2020-01-01T00:00:00.000Z',
+              },
+            ];
+      return jsonResponse({ items, pagination: { max_page: 2 } });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    expect(
+      await provider.listReconciledCheckoutIds({
+        customerId: 'customer-a',
+        currentSubscriptionId: 'sub_applied',
+        checkoutIds: [
+          'checkout_applied',
+          'checkout_unapplied',
+          'checkout_scheduled',
+          'checkout_ended',
+        ],
+      }),
+    ).toEqual(['checkout_applied', 'checkout_ended']);
+
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({
+        items: [
+          {
+            id: 'sub_foreign',
+            status: 'revoked',
+            customer_id: 'another-customer',
+            checkout_id: 'checkout_foreign',
+          },
+        ],
+        pagination: { max_page: 1 },
+      }),
+    );
+    await expect(
+      provider.listReconciledCheckoutIds({
+        customerId: 'customer-a',
+        currentSubscriptionId: null,
+        checkoutIds: ['checkout_foreign'],
+      }),
+    ).rejects.toMatchObject({ code: 'identity_conflict' });
+  });
+});
+
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 
 function polarProvider() {

@@ -98,6 +98,70 @@ describe('billing runtime', () => {
     expect(legacy.chargeCents).toBeGreaterThan(0);
   });
 
+  it('settles stamped legacy member-days on the day Team seat pricing began', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = '2026-11-10';
+    const legacyMember = '21111111-2222-4333-8444-555555555555';
+    const seatMember = '31111111-2222-4333-8444-555555555555';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', spend_cap_cents = 0,
+          team_seat_terms = '{"paidSeats":3,"highWaterSeats":3,"includedUsageCents":3600}',
+          period_started_at = '${day}T12:00:00Z', period_ends_at = '2026-12-10T12:00:00Z',
+          included_discount_remaining_cents = 3600, polar_customer_id = 'cus_team'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at, team_seat_pricing)
+      VALUES ('${TEAM_ID}', 'team', '2026-10-01', false),
+             ('${TEAM_ID}', 'team', '${day}T12:00:00Z', true);
+      INSERT INTO users (id, email)
+      VALUES ('${legacyMember}', 'legacy-member@example.test'),
+             ('${seatMember}', 'new-seat@example.test');
+      INSERT INTO team_members (team_id, user_id, role, created_at)
+      VALUES ('${TEAM_ID}', '${legacyMember}', 'member', '${day}T01:00:00Z'),
+             ('${TEAM_ID}', '${seatMember}', 'member', '${day}T13:00:00Z');
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, plan_id, role, pricing_terms, created_at)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${day}', 'team', 'owner',
+              '{"includedActiveMembers":1,"additionalMemberCents":300,"meteredDiscountPercent":0}', '${day}T02:00:00Z'),
+             ('${TEAM_ID}', '${legacyMember}', '${day}', 'team', 'member',
+              '{"includedActiveMembers":1,"additionalMemberCents":300,"meteredDiscountPercent":0}', '${day}T02:00:00Z');
+    `);
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 1,
+      chargeCents: 10,
+    });
+    const stamped = await db
+      .select({ userId: billingMemberDayLedger.userId })
+      .from(billingMemberDayLedger)
+      .orderBy(billingMemberDayLedger.userId);
+    expect(stamped).toEqual([{ userId: USER_ID }, { userId: legacyMember }]);
+    const [settlement] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.meterId, 'member_days'));
+    expect(settlement).toMatchObject({
+      operationId: `member_days:${TEAM_ID}:${day}:${legacyMember}`,
+      customerChargeCents: 10,
+      metadata: {
+        presentation_currency: 'EUR',
+        invoice_cents: 10,
+        polar_ingest_status: 'pending',
+      },
+    });
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 1,
+      chargeCents: 0,
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(3600);
+  });
+
   it('no-ops AI metering without ALS and settles when context is set', async () => {
     const unmetered = await withAiMetering({ operationClass: 'embedding' }, () =>
       Promise.resolve({

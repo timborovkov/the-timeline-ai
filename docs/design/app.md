@@ -683,7 +683,8 @@ Team quote can be resumed when its quantity and terms still match.
 Usage and Billing share the same typed summary. Billing settings keep plan
 controls, recorded charges and membership visible in distinct sections. Plan
 controls wrap on narrow screens. “Charges recorded so far” comes from settled
-usage. Show the recurring subscription fee separately in its recorded currency.
+usage in its recorded currency. Mixed-currency totals are unavailable. Show
+the recurring subscription fee separately in its recorded currency.
 Seat-priced Team shows its USD per-member rate. Legacy Team shows its recorded
 monthly fee. Team additional spending is
 off by default. Show the authorized cap and recorded additional charges when

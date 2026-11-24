@@ -176,6 +176,44 @@ it('uses live storage and retains recorded paid charges in the breakdown', () =>
   expect(html).toContain('>€5</span>');
   expect(html).not.toContain('Allowance used up');
 });
+
+it('uses recorded USD amounts or omits them when the calendar totals are unavailable', () => {
+  const meters = {
+    ai: { nativeUnits: 1000, customerChargeCents: 1000, capEligibleChargeCents: 500 },
+  };
+  const recordedCharges = {
+    currency: 'USD',
+    invoiceCentsByMeter: { ai: 400 },
+    usageCents: 1000,
+    creditAppliedCents: 600,
+    usageAfterCreditCents: 400,
+    extraMemberCents: 0,
+    totalCents: 400,
+  } as const;
+  const known = renderToStaticMarkup(
+    <BillingUsageSummary
+      layout="cards"
+      planId="free"
+      meters={meters}
+      capacityUsage={[]}
+      recordedCharges={recordedCharges}
+    />,
+  );
+  expect(known).toContain('>$4</span>');
+  expect(known).not.toContain('>€5</span>');
+  const unavailable = renderToStaticMarkup(
+    <BillingUsageSummary
+      layout="cards"
+      planId="free"
+      meters={meters}
+      capacityUsage={[]}
+      recordedCharges={null}
+    />,
+  );
+  expect(unavailable).toContain('data-billing-meter="ai"');
+  expect(unavailable).not.toContain('Meter charges:');
+});
+
 it('does not invent native allowances or bill tracked comped usage in cards', () => {
   const html = renderToStaticMarkup(
     <BillingUsageSummary

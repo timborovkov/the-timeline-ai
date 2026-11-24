@@ -115,6 +115,35 @@ describe('Polar team identity and revocation', () => {
     const [cleared] = await db.select().from(teams).where(eq(teams.id, teamId));
     expect(cleared?.lifecycleWork.pendingCheckoutIds).toEqual([]);
   });
+
+  it('recovers an applied Enterprise checkout without releasing a payment still awaiting application', async () => {
+    const identity = await withTeamBillingIdentity(
+      { db, teamId, userId: owner, provider },
+      async (current, context) => {
+        await context.recordCheckout('old-enterprise');
+        await context.recordCheckout('confirming-team');
+        return current;
+      },
+    );
+    provider.expireCheckout = () => Promise.resolve('already_paid');
+    provider.listReconciledCheckoutIds = (input) => {
+      expect(input).toEqual({
+        customerId: identity.customerId,
+        currentSubscriptionId: null,
+        checkoutIds: ['old-enterprise', 'confirming-team'],
+      });
+      return Promise.resolve(['old-enterprise']);
+    };
+
+    await expect(
+      withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+        context.prepareTeamCheckout({ productId: 'team-product', seats: 3 }),
+      ),
+    ).resolves.toEqual({ status: 'blocked' });
+    const [workspace] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual(['confirming-team']);
+  });
+
   it('rediscovers and records a payable Team quote when the create response was lost', async () => {
     const url = 'https://checkout.example.test/recovered';
     provider.listPendingTeamCheckouts = (filter) => {

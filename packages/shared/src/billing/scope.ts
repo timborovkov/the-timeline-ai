@@ -402,6 +402,10 @@ function cachedCoverageForPayableSettlement(
   return { names: cached };
 }
 
+function isSeatPricedTeamAccount(account: typeof teamBillingAccounts.$inferSelect): boolean {
+  return effectiveBillingPlanId(account) === 'team' && account.teamSeatTerms !== null;
+}
+
 async function dispositionForLiveAccount(
   account: typeof teamBillingAccounts.$inferSelect,
   event: PolarUsageEvent,
@@ -419,6 +423,10 @@ async function dispositionForLiveAccount(
     invoiceCents,
   });
   if (early) return early;
+  // Member-day settlements retain the legacy EUR price even if the active
+  // USD product reports coverage for an event with the same name.
+  if (billingMeterIdForPolarEvent(event.name) === 'member_days' && isSeatPricedTeamAccount(account))
+    return 'hold';
   const pricedEventNames = await pricedEventNamesForProduct(provider, account.polarProductId);
   return polarIngestDisposition({
     eventName: event.name,
@@ -730,8 +738,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   occurredAt: billingUsageLedger.occurredAt,
                   billable: billingUsageLedger.billable,
                   metadata: billingUsageLedger.metadata,
+                  reservationMetadata: billingUsageReservations.metadata,
                 })
                 .from(billingUsageLedger)
+                .leftJoin(
+                  billingUsageReservations,
+                  and(
+                    eq(billingUsageReservations.id, billingUsageLedger.reservationId),
+                    eq(billingUsageReservations.teamId, billingUsageLedger.teamId),
+                  ),
+                )
                 .where(
                   and(
                     eq(billingUsageLedger.teamId, teamId),
@@ -1737,7 +1753,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const seatPricing = parsedSeatPricing.data;
           const admittedBundle = admittedPricing?.bundled_infrastructure_at_admission;
           const admittedCap = admittedPricing?.team_overage_cap_at_admission;
-          const liveSeatBilling = livePlanId === 'team' && account.teamSeatTerms !== null;
+          const liveSeatBilling = isSeatPricedTeamAccount(account);
+          const legacyMemberDayOnSeatPlan = input.meterId === 'member_days' && liveSeatBilling;
           // Older rows can prove seat pricing through a positive seat-only cap or
           // bundled Team infrastructure. A zero cap alone identifies neither pricing mode.
           const admittedSeatBilling = parsedSeatPricing.success
@@ -1754,11 +1771,28 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   day: startedAt.toISOString().slice(0, 10),
                 })
               : undefined;
+          // Confirmed USD seats do not accrue daily member usage. Preserve
+          // the legacy rate on replayed member-day facts.
           const seatBilling =
+            input.meterId !== 'member_days' &&
             entitlementsPlanId === 'team' &&
             (admission || failedAdmission
               ? admittedSeatBilling
               : (historicalStorageSeatPricing ?? liveSeatBilling));
+          const usesLiveEnterpriseTerms =
+            entitlementsPlanId === 'enterprise' &&
+            livePlanId === 'enterprise' &&
+            enterpriseContract &&
+            account.periodStartedAt &&
+            startedAt >= account.periodStartedAt &&
+            (!account.periodEndsAt || startedAt < account.periodEndsAt);
+          const presentationCurrency = seatBilling
+            ? 'USD'
+            : entitlementsPlanId !== 'enterprise'
+              ? 'EUR'
+              : usesLiveEnterpriseTerms
+                ? account.enterprisePlatformFeeCurrency
+                : null;
           const needsAdmissionCap =
             seatBilling ||
             (entitlementsPlanId === 'team' && !parsedSeatPricing.success && admittedCap === 0);
@@ -1824,7 +1858,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
               entitlementsPlanId,
               comped,
               enterpriseContract,
-              chargeCents: needsAdmissionCap ? 0 : actualChargeCents,
+              chargeCents:
+                needsAdmissionCap ||
+                (legacyMemberDayOnSeatPlan && segment.periodYm === periodYm(now))
+                  ? 0
+                  : actualChargeCents,
             });
             return {
               ...segment,
@@ -1992,7 +2030,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           };
           const earlyDisposition = polarIngestDispositionBeforeCoverage(coverageInput);
           const coverage =
-            earlyDisposition === null
+            earlyDisposition === null && !legacyMemberDayOnSeatPlan
               ? cachedCoverageForPayableSettlement(provider, account.polarProductId)
               : { names: null as readonly string[] | null };
           if ('productId' in coverage) {
@@ -2002,15 +2040,17 @@ export function createBillingScope(deps: BillingScopeDeps) {
             earlyDisposition ??
             polarIngestDisposition({
               ...coverageInput,
-              subscriptionCoversMeter: polarSubscriptionCoversMeter({
-                planId: effectiveBillingPlanId(account),
-                billingState: account.billingState,
-                polarSubscriptionId: account.polarSubscriptionId,
-                polarProductId: account.polarProductId,
-                eventName,
-                products: polarPlanProductsFromEnv(),
-                pricedEventNames: coverage.names,
-              }),
+              subscriptionCoversMeter:
+                !legacyMemberDayOnSeatPlan &&
+                polarSubscriptionCoversMeter({
+                  planId: effectiveBillingPlanId(account),
+                  billingState: account.billingState,
+                  polarSubscriptionId: account.polarSubscriptionId,
+                  polarProductId: account.polarProductId,
+                  eventName,
+                  products: polarPlanProductsFromEnv(),
+                  pricedEventNames: coverage.names,
+                }),
             });
           const polarIngestMetadata =
             disposition === 'not_required' || !eventName
@@ -2096,6 +2136,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
                 presentation_comped: comped,
+                presentation_currency: presentationCurrency,
                 presentation_chargeable:
                   !comped && !accountUsesShadowBilling(account) && input.billable !== false,
                 usage_at: startedAt.toISOString(),

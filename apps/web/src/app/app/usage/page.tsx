@@ -1,4 +1,8 @@
-import { exhaustedFreeAllowanceNotice, resolveTeamCommercialTerms } from '@timeline/shared/billing';
+import {
+  exhaustedFreeAllowanceNotice,
+  resolveTeamCommercialTerms,
+  type BillingPresentation,
+} from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -20,6 +24,19 @@ export const metadata: Metadata = {
   title: 'Usage',
   description: 'Metered usage for this workspace.',
 };
+
+function recordedCalendarMeterCharges(
+  planId: BillingPresentation['planId'],
+  presentation: BillingPresentation | null,
+): BillingPresentation['charges']['amounts'] | undefined {
+  if (planId !== 'free' && planId !== 'enterprise' && presentation?.paidSeats === undefined)
+    return undefined;
+  if (!presentation) return null;
+  const { charges, calendarPeriod } = presentation;
+  return charges.period?.start === calendarPeriod.start && charges.period.end === calendarPeriod.end
+    ? charges.amounts
+    : null;
+}
 
 export default async function UsagePage() {
   const { canManage, planId, dashboard, notice, state, commercial, capacityUsage } =
@@ -56,6 +73,21 @@ export default async function UsagePage() {
     );
   }
 
+  const { presentation } = dashboard;
+  const meterCards = (
+    <BillingUsageSummary
+      layout="cards"
+      usdCharges={presentation?.paidSeats !== undefined}
+      recordedCharges={recordedCalendarMeterCharges(planId, presentation)}
+      planId={planId}
+      allowanceBalances={presentation?.allowances}
+      comped={dashboard.account.arrangement === 'comped'}
+      meters={dashboard.meters}
+      capacityUsage={capacityUsage}
+      includedActiveMembers={commercial.includedActiveMembers}
+      additionalMemberCents={commercial.additionalMemberCents}
+    />
+  );
   return (
     <div className="space-y-8">
       <PageHeader
@@ -78,30 +110,10 @@ export default async function UsagePage() {
       ) : notice ? (
         <UsageBillingNotice notice={notice} state={state} />
       ) : null}
-      {dashboard.presentation ? (
-        <BillingUsageOverview summary={dashboard.presentation}>
-          <BillingUsageSummary
-            layout="cards"
-            usdCharges={dashboard.presentation.paidSeats !== undefined}
-            planId={planId}
-            allowanceBalances={dashboard.presentation.allowances}
-            comped={dashboard.account.arrangement === 'comped'}
-            meters={dashboard.meters}
-            capacityUsage={capacityUsage}
-            includedActiveMembers={commercial.includedActiveMembers}
-            additionalMemberCents={commercial.additionalMemberCents}
-          />
-        </BillingUsageOverview>
+      {presentation ? (
+        <BillingUsageOverview summary={presentation}>{meterCards}</BillingUsageOverview>
       ) : (
-        <BillingUsageSummary
-          layout="cards"
-          planId={planId}
-          comped={dashboard.account.arrangement === 'comped'}
-          meters={dashboard.meters}
-          capacityUsage={capacityUsage}
-          includedActiveMembers={commercial.includedActiveMembers}
-          additionalMemberCents={commercial.additionalMemberCents}
-        />
+        meterCards
       )}
     </div>
   );
