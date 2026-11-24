@@ -79,7 +79,18 @@ const nextConfig: NextConfig = {
   // startup migrations are handled by apps/web/start.mjs outside Next's
   // instrumentation bundle.
   serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
-  webpack(config: { externals: Record<string, string>[] }, { isServer }) {
+  webpack(
+    config: { externals: Record<string, string>[]; resolve: { alias: Record<string, string> } },
+    { dev, isServer },
+  ) {
+    if (precompiledFixtures && !dev && !isServer) {
+      // Next 16.4.6 loads the hot reloader during Flight navigation even under next start.
+      // Its late read of document.currentScript fails. A precompiled client has no pending updates.
+      config.resolve.alias['../../dev/hot-reloader/app/hot-reloader-app$'] = join(
+        __dirname,
+        'scripts/e2e-precompiled-hmr.mjs',
+      );
+    }
     if (isServer) {
       config.externals.push({
         bullmq: 'commonjs bullmq',
