@@ -288,9 +288,10 @@ form (rename for admins) plus two readonly copyable support fields — team id
 and slug — with spacing between sections and no nested cards. Renaming updates
 the display name only; slug and inbound email stay put. General also contains
 work style, messaging, digest destinations, team timezone and personal display
-preferences. Members can choose a display locale and time zone for this browser,
-or use browser defaults. On first render the app uses the browser's requested
-language and the workspace timezone where no choice is saved. It follows the
+preferences. Members can choose a display locale and time zone for their
+account in this browser, or use browser defaults. Saved choices apply on the
+first page after sign-in. Where no choice is saved, the first render uses the
+browser's requested language and the workspace timezone. It follows the
 browser language and timezone once the page is interactive. Calendar grid
 placement, due-date status and date filters still follow their workspace or
 event time contracts. Billing periods retain their UTC boundaries. Old

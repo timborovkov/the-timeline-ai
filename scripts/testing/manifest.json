@@ -605,6 +605,9 @@
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/sign-in/continue/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/sign-in/page.test.tsx": {
     "group": "unit"
   },

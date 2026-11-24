@@ -19,6 +19,7 @@ import {
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
 import {
+  credentialSignInContinuation,
   inviteTokenFromCallback,
   postSignupDestination,
   selectedPlanFromCallback,
@@ -408,22 +409,23 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
     });
     if (!parsed.success) return { error: 'Invalid email or password.' };
 
+    let destination: unknown;
     try {
-      await signIn('credentials', {
+      destination = await signIn('credentials', {
         email: parsed.data.email,
         password: parsed.data.password,
+        redirect: false,
         redirectTo: safeCallbackUrl(parsed.data.callbackUrl),
       });
     } catch (e) {
-      // Only swallow real auth failures. Re-throw framework errors (Next's
-      // NEXT_REDIRECT, etc.) so they propagate to the runtime.
       if (e instanceof AuthError) {
         reportCaughtError(e, { surface: 'server_action', operation: 'sign_in' });
         return { error: 'Invalid email or password.' };
       }
       throw e;
     }
-    return { error: 'Invalid email or password.' };
+    if (typeof destination !== 'string') return { error: 'Invalid email or password.' };
+    redirect(credentialSignInContinuation(destination));
   });
 }
 

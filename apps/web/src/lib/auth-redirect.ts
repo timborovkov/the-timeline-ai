@@ -2,7 +2,8 @@ import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { paidSignupPlan, type PaidSignupPlanId } from '@/lib/signup-plan';
 
 const APP_FALLBACK = '/app';
-const AUTH_PATHS = ['/sign-in', '/sign-up'];
+const SIGN_IN_CONTINUATION_PATH = '/sign-in/continue';
+const AUTH_PATHS = ['/sign-in', '/sign-up', SIGN_IN_CONTINUATION_PATH];
 const GUEST_INVITE_PATH = /^\/guest\/[0-9a-f-]{36}\/invite\/[A-Za-z0-9_-]{43}$/;
 
 function inviteRedirectPath(token: string): string {
@@ -37,6 +38,11 @@ export function signedInAuthRedirect(input: {
     return callbackPath;
   if (input.pendingInviteToken) return inviteRedirectPath(input.pendingInviteToken);
   return callbackPath;
+}
+
+export function credentialSignInContinuation(callbackUrl: string): string {
+  const destination = signedInAuthRedirect({ callbackUrl });
+  return `${SIGN_IN_CONTINUATION_PATH}?${new URLSearchParams({ callbackUrl: destination })}`;
 }
 
 /** Prefer `?invite=` when linking to sign-up from an invite acceptance callback. */

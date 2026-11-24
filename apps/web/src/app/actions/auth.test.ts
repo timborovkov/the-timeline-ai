@@ -195,7 +195,7 @@ await vi.mock(
 );
 
 const { PRIVACY_VERSION, TERMS_VERSION } = await import('@timeline/shared/legal-versions');
-const { signUpAction } = await import('@/app/actions/auth');
+const { signInAction, signUpAction } = await import('@/app/actions/auth');
 
 function form(includeAcceptance = true): FormData {
   const result = new FormData();
@@ -544,5 +544,30 @@ describe('signUpAction legal acceptance', () => {
       'team_created',
       expect.anything(),
     );
+  });
+});
+
+describe('credential sign-in destination', () => {
+  it.each([
+    ['/legal/accept?callbackUrl=%2Fapp%2Fteam', '/legal/accept?callbackUrl=%2Fapp%2Fteam'],
+    ['https://outside.example.test/', '/app'],
+  ])('uses the validated destination returned by Auth.js (%s)', async (returned, destination) => {
+    const submitted = '/app/team?section=billing&plan=team#change-plan';
+    const data = new FormData();
+    data.set('email', 'person@example.test');
+    data.set('password', 'fixture-password');
+    data.set('callbackUrl', submitted);
+    fakes.signIn.mockResolvedValueOnce(returned);
+
+    const query = new URLSearchParams({ callbackUrl: destination });
+    await expect(signInAction({}, data)).rejects.toThrow(
+      `NEXT_REDIRECT:/sign-in/continue?${query}`,
+    );
+    expect(fakes.signIn).toHaveBeenCalledWith('credentials', {
+      email: 'person@example.test',
+      password: 'fixture-password',
+      redirect: false,
+      redirectTo: submitted,
+    });
   });
 });

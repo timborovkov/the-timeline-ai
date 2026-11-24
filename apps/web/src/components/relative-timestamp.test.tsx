@@ -2,6 +2,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+import { Suspense, use } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 
@@ -64,6 +65,59 @@ describe('RelativeTimestamp', () => {
       act(() => {
         root.unmount();
       });
+    }
+  });
+
+  it('hydrates delayed date content before switching it to the automatic browser region', async () => {
+    const value = '2026-12-01T00:15:00Z';
+    const expected = (timezone: string) =>
+      formatDisplayDateTime(value, { locale: 'en-US', timezone });
+    const workspace = expected('Europe/Helsinki');
+    const browser = expected('America/Los_Angeles');
+    const browserOptions = new Intl.DateTimeFormat().resolvedOptions();
+    const browserZone = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ ...browserOptions, timeZone: 'America/Los_Angeles' });
+    const gate = Promise.withResolvers<undefined>();
+    let deferHydration = false;
+
+    function DeferredDate() {
+      if (deferHydration) use(gate.promise);
+      return <RegionalDate value={value} variant="datetime" />;
+    }
+
+    const element = (
+      <WorkspaceTimezoneProvider timezone="Europe/Helsinki" region={{ browserLocale: 'en-US' }}>
+        <RegionalDate value={value} variant="datetime" />
+        <Suspense fallback={null}>
+          <DeferredDate />
+        </Suspense>
+      </WorkspaceTimezoneProvider>
+    );
+    const container = document.createElement('div');
+    const dates = () => Array.from(container.querySelectorAll('time'), (node) => node.textContent);
+    container.innerHTML = renderToString(element);
+    expect(dates()).toEqual([workspace, workspace]);
+
+    deferHydration = true;
+    const errors: unknown[] = [];
+    const root = hydrateRoot(container, element, {
+      onRecoverableError: (error) => errors.push(error),
+    });
+    try {
+      await act(() => Promise.resolve());
+      expect(dates()).toEqual([browser, workspace]);
+      await act(() => {
+        gate.resolve(undefined);
+        return gate.promise;
+      });
+      expect(dates()).toEqual([browser, browser]);
+      expect(errors).toEqual([]);
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+      browserZone.mockRestore();
     }
   });
 

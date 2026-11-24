@@ -91,6 +91,10 @@
         "rules": ["react-doctor/clickjacking-redirect-risk"]
       },
       {
+        "files": ["src/app/sign-in/continue/route.ts"],
+        "rules": ["react-doctor/url-prefilled-privileged-action"]
+      },
+      {
         "files": [
           "src/app/app/boards/page.tsx",
           "src/app/app/meetings/page.tsx",
