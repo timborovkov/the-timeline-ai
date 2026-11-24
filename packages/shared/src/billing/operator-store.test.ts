@@ -25,7 +25,10 @@ import {
 } from '#src/billing/operator-store.js';
 import { resolveTeamCommercialTerms } from '#src/billing/operator.js';
 import * as polar from '#src/billing/polar.js';
-import { createFakeBillingProvider } from '#src/billing/provider.js';
+import {
+  createFakeBillingProvider,
+  type PendingEnterpriseCheckout,
+} from '#src/billing/provider.js';
 import { resetIncludedDiscountIfPeriodElapsed } from '#src/billing/runtime.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { resetEnvForTests } from '#src/env.js';
@@ -498,6 +501,94 @@ describe('billing operator store', () => {
         chk_fake_1: { platformFeeCents: 150_000 },
       },
     });
+  });
+
+  it('recovers the exact Enterprise quote after its association, terms and audit roll back', async () => {
+    await db.insert(teamMembers).values({ teamId: TEAM_ID, userId: OWNER_ID, role: 'owner' });
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const input = {
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 150_000,
+      includedActiveMembers: 23,
+      spendCapCents: 32_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    };
+    await pg.exec(`
+      ALTER TABLE billing_operator_audit ADD CONSTRAINT reject_checkout_audit
+      CHECK (action <> 'start_enterprise_checkout');
+    `);
+    await expect(startEnterpriseCheckout(input)).rejects.toThrow(/retry/i);
+
+    const [before] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const [workspaceBefore] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(before?.pendingEnterpriseTerms).toBeNull();
+    expect(workspaceBefore?.lifecycleWork.pendingCheckoutIds).toBeUndefined();
+    expect(await db.select().from(billingOperatorAudit)).toHaveLength(0);
+    expect(provider.checkouts).toHaveLength(1);
+
+    const first = provider.checkouts[0];
+    if (!first?.enterpriseQuoteKey)
+      throw new Error('The provider did not receive the quote identity.');
+    const remoteUrl = 'https://sandbox.polar.sh/checkout/recovered';
+    const remote: PendingEnterpriseCheckout = {
+      id: 'chk_fake_1',
+      url: remoteUrl,
+      status: 'open',
+      productId: first.productId,
+      amount: 150_000,
+      currency: 'usd',
+      discountId: null,
+      expiresAt: new Date('2099-01-01'),
+      quoteKey: first.enterpriseQuoteKey,
+    };
+    provider.listPendingEnterpriseCheckouts = (id) => {
+      expect(id).toBe(first.customerId);
+      return Promise.resolve([remote]);
+    };
+    provider.expireCheckout = () => Promise.resolve('still_open');
+    await pg.exec('ALTER TABLE billing_operator_audit DROP CONSTRAINT reject_checkout_audit');
+    await expect(startEnterpriseCheckout({ ...input, spendCapCents: 32_001 })).rejects.toThrow(
+      'still payable or awaiting confirmation',
+    );
+    remote.status = 'confirmed';
+    await expect(startEnterpriseCheckout(input)).rejects.toThrow(
+      'still payable or awaiting confirmation',
+    );
+    remote.status = 'open';
+    await expect(
+      withTeamBillingIdentity(
+        { db, teamId: TEAM_ID, userId: OWNER_ID, provider },
+        (_identity, context) => context.prepareTeamCheckout({ productId: 'prod_team', seats: 1 }),
+      ),
+    ).resolves.toEqual({ status: 'blocked' });
+
+    await expect(startEnterpriseCheckout(input)).resolves.toEqual({ url: remoteUrl });
+    await expect(startEnterpriseCheckout(input)).resolves.toEqual({ url: remoteUrl });
+    await expect(startEnterpriseCheckout({ ...input, spendCapCents: 32_001 })).rejects.toThrow(
+      'still open',
+    );
+    expect(provider.checkouts).toHaveLength(1);
+    const [after] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const [workspaceAfter] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(after?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_fake_1: { platformFeeCents: 150_000, includedActiveMembers: 23, spendCapCents: 32_000 },
+      },
+    });
+    expect(workspaceAfter?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_fake_1']);
+    expect(await db.select().from(billingOperatorAudit)).toMatchObject([
+      { action: 'start_enterprise_checkout', actorUserId: ADMIN_ID },
+    ]);
   });
 
   it('keeps both Enterprise and comp transitions behind a payable Team quote', async () => {

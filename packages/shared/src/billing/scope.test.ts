@@ -25,6 +25,7 @@ import {
   includedDiscountRemainingForReplay,
   recordBillingPlan,
 } from '#src/billing/plan-history.js';
+import { handlePolarWebhookEvent } from '#src/billing/polar-webhook.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import {
@@ -1186,6 +1187,115 @@ describe('billing scope', () => {
       billingState: 'team_active',
       spendCapCents: 10,
       includedDiscountRemainingCents: 1000,
+    });
+  });
+
+  it('keeps same-month member-day charges out of the newly activated USD Team cap', async () => {
+    vi.setSystemTime(new Date('2026-11-10T12:00:00.000Z'));
+    enableCoveredPolar('team');
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    const customer = { id: 'cus_team', external_id: TEAM_ID };
+    const legacyProductId = 'prod_team_eur';
+    const legacy = {
+      id: 'sub_team_eur',
+      product_id: legacyProductId,
+      customer,
+      currency: 'eur',
+      current_period_start: '2026-10-15T12:00:00.000Z',
+      current_period_end: '2026-11-15T12:00:00.000Z',
+    };
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: { ...POLAR_PRODUCT_IDS, team: legacyProductId },
+      payload: { type: 'subscription.active', data: { ...legacy, status: 'active' } },
+    });
+    const legacySettlement = await scope.settle({
+      operationId: 'member_days:before-usd-team',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 7,
+    });
+    expect(legacySettlement).toMatchObject({
+      ok: true,
+      ledger: {
+        metadata: { presentation_currency: 'EUR', invoice_cents: 7, cap_eligible_cents: 7 },
+      },
+    });
+    expect((await scope.getDashboard()).meteredSpendCents).toBe(7);
+
+    vi.setSystemTime(new Date('2026-11-15T12:00:00.000Z'));
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: { ...POLAR_PRODUCT_IDS, team: legacyProductId },
+      payload: { type: 'subscription.revoked', data: { ...legacy, status: 'canceled' } },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: POLAR_PRODUCT_IDS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_team_usd',
+          product_id: POLAR_PRODUCT_IDS.team,
+          customer,
+          currency: 'usd',
+          status: 'active',
+          seats: 1,
+          recurring_interval: 'month',
+          recurring_interval_count: 1,
+          current_period_start: '2026-11-15T12:00:00.000Z',
+          current_period_end: '2026-12-15T12:00:00.000Z',
+        },
+      },
+    });
+    expect(await scope.getAccount()).toMatchObject({
+      billingState: 'team_active',
+      polarSubscriptionId: 'sub_team_usd',
+      teamSeatTerms: { paidSeats: 1 },
+      includedDiscountRemainingCents: 1200,
+      spendCapCents: 0,
+    });
+    expect((await scope.getDashboard()).meteredSpendCents).toBe(0);
+
+    await scope.settle({
+      operationId: 'ai:spend-included-usd',
+      meterId: 'ai',
+      nativeUnits: 1104,
+      customerChargeCents: 1104,
+    });
+    await scope.setSpendCap(2);
+    const usage = { operationId: 'ai:opted-in-usd', meterId: 'ai' as const };
+    expect(
+      await scope.reserve({ ...usage, reservedNativeUnits: 1.84, reservedChargeCents: 1.84 }),
+    ).toMatchObject({ ok: true, reservation: { reservedChargeCents: 2 } });
+    expect(
+      await scope.settle({ ...usage, nativeUnits: 18.4, customerChargeCents: 18 }),
+    ).toMatchObject({
+      ok: true,
+      ledger: {
+        metadata: { presentation_currency: 'USD', invoice_cents: 2, cap_eligible_cents: 2 },
+      },
+    });
+    expect(await scope.getAccount()).toMatchObject({
+      billingState: 'team_active',
+      includedDiscountRemainingCents: 0,
+      spendCapCents: 2,
+    });
+    const dashboard = await scope.getDashboard();
+    expect(dashboard.meteredSpendCents).toBe(2);
+    expect(dashboard.meters.member_days).toMatchObject({
+      nativeUnits: 1,
+      customerChargeCents: 7,
+      capEligibleChargeCents: 7,
     });
   });
 
@@ -4503,4 +4613,57 @@ it('shares recorded billing values only with authorized admins and never resets 
     'updating',
   );
   expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(4500);
+});
+
+it('leaves an older Enterprise charge unavailable after downgrade unless its currency is recorded', async () => {
+  vi.setSystemTime(new Date('2026-11-24T12:00:00Z'));
+  const scope = createBillingScope({
+    db,
+    teamId: TEAM_ID,
+    userId: USER_ID,
+    ensureMember: () => Promise.resolve('owner'),
+  });
+  await scope.getAccount();
+  const operationId = 'presentation-older-enterprise';
+  const [admission] = await db
+    .insert(billingUsageReservations)
+    .values({
+      teamId: TEAM_ID,
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: '500',
+      reservedChargeCents: 500,
+      state: 'settled',
+      admittedPlanId: 'enterprise',
+      expiresAt: new Date(),
+    })
+    .returning({ id: billingUsageReservations.id });
+  if (!admission) throw new Error('Missing billing reservation fixture');
+  const metadata = {
+    usage_at: '2026-11-23T12:00:00Z',
+    discount_cents: 0,
+    invoice_cents: 500,
+  };
+  await db.insert(billingUsageLedger).values({
+    teamId: TEAM_ID,
+    operationId,
+    kind: 'settlement',
+    meterId: 'ai',
+    nativeUnits: '500',
+    customerChargeCents: 500,
+    reservationId: admission.id,
+    metadata,
+  });
+  expect(
+    (await scope.getDashboard({ canManageBilling: true })).presentation?.charges,
+  ).toMatchObject({ status: 'unavailable', amounts: null });
+  await db
+    .update(billingUsageLedger)
+    .set({ metadata: { ...metadata, presentation_currency: 'USD' } })
+    .where(
+      and(eq(billingUsageLedger.teamId, TEAM_ID), eq(billingUsageLedger.operationId, operationId)),
+    );
+  expect(
+    (await scope.getDashboard({ canManageBilling: true })).presentation?.charges.amounts,
+  ).toMatchObject({ currency: 'USD', totalCents: 500 });
 });

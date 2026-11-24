@@ -66,7 +66,9 @@ export interface PresentationSettlement {
   occurredAt: Date;
   billable: boolean;
   metadata: Record<string, unknown>;
+  reservationId?: string | null;
   reservationMetadata?: Record<string, unknown> | null;
+  reservationAdmittedPlanId?: BillingPlanId | null;
 }
 const LIMITS: Partial<Record<BillingMeterId, number>> = {
   ai: FREE_ALLOWANCES.aiChargeCents,
@@ -77,13 +79,24 @@ const LIMITS: Partial<Record<BillingMeterId, number>> = {
 };
 const cents = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-function settlementCurrency(row: PresentationSettlement): 'USD' | 'EUR' | null {
+export function recordedSettlementCurrency(
+  row: Pick<
+    PresentationSettlement,
+    'meterId' | 'metadata' | 'reservationId' | 'reservationMetadata' | 'reservationAdmittedPlanId'
+  >,
+): 'USD' | 'EUR' | null {
   const currency = row.metadata.presentation_currency;
   if (currency === 'USD' || currency === 'EUR') return currency;
-  if (currency === null || row.metadata.pricing_plan_id === 'enterprise') return null;
+  if (
+    currency !== undefined ||
+    row.metadata.pricing_plan_id === 'enterprise' ||
+    row.reservationAdmittedPlanId === 'enterprise'
+  )
+    return null;
   // Failed attempts link to a parent reservation that can be admitted again.
   if (typeof row.metadata.failed_attempt_for === 'string') return null;
   if (row.meterId === 'member_days') return 'EUR';
+  if (row.reservationId && !row.reservationMetadata) return null;
   const pricing = row.reservationMetadata?.team_seat_pricing_at_admission;
   const cap = row.reservationMetadata?.team_overage_cap_at_admission;
   // Earlier seat settlements stored their pricing generation on the reservation.
@@ -101,7 +114,7 @@ function addCharge(
   invoice: number,
 ): boolean {
   if (credit === 0 && invoice === 0) return true;
-  const currency = settlementCurrency(row);
+  const currency = recordedSettlementCurrency(row);
   if (!currency || (total.currency && total.currency !== currency)) return false;
   total.currency = currency;
   total.invoiceCentsByMeter[row.meterId] = (total.invoiceCentsByMeter[row.meterId] ?? 0) + invoice;

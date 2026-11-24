@@ -326,6 +326,24 @@ it('shows only verified Enterprise usage currency after a plan change', () => {
   ).toMatchObject({ currency: 'USD', totalCents: 500 });
 });
 
+it('does not infer EUR when only an older reservation records the Enterprise plan', () => {
+  const raw = row();
+  const admittedEnterprise = { ...raw, reservationAdmittedPlanId: 'enterprise' as const };
+  expect(recordedChargesForPeriod([admittedEnterprise], period)).toBeNull();
+  expect(
+    recordedChargesForPeriod(
+      [{ ...admittedEnterprise, metadata: { ...raw.metadata, presentation_currency: 'USD' } }],
+      period,
+    ),
+  ).toMatchObject({ currency: 'USD', totalCents: 500 });
+});
+
+it('leaves historical charges unavailable if their unstamped reservation is gone', () => {
+  expect(
+    recordedChargesForPeriod([row({ reservationId: 'missing-reservation' })], period),
+  ).toBeNull();
+});
+
 it('marks incomplete recorded history unavailable instead of contradicting consumed credit', () => {
   const result = summary({ settlements: [] });
   expect(result.credit.remainingCents).toBe(4500);
