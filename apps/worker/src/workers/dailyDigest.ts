@@ -43,10 +43,10 @@ export async function processDailyDigestJob(
           teamId: recipient.teamId,
           userId: recipient.userId,
         });
-        if (preference?.enabled === false) return;
+        if (!preference.enabled) return;
         const now = new Date();
         const enqueue = (window: { start: Date; end: Date }, delayMs?: number) => {
-          if (preference?.revision && window.end <= new Date(preference.revision)) return;
+          if (preference.revision && window.end <= new Date(preference.revision)) return;
           const data = {
             kind: 'recipient' as const,
             teamId: recipient.teamId,
@@ -59,7 +59,7 @@ export async function processDailyDigestJob(
             ? queue.enqueueDailyDigestRecipientJob(data, delayMs)
             : queue.enqueueDailyDigestRecipientJob(data);
         };
-        if (preference?.options) {
+        if (preference.options) {
           const { timezone, hour, options } = preference;
           const window = messaging.scheduledUpdateWindow(now, timezone, hour, options.cadence);
           const next = messaging.nextScheduledUpdateWindow(
@@ -78,7 +78,7 @@ export async function processDailyDigestJob(
         await enqueue(
           explicitWindow
             ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
-            : messaging.defaultDigestWindow(now, preference?.timezone, preference?.hour),
+            : messaging.defaultDigestWindow(now, preference.timezone, preference.hour),
         );
       }),
     );
