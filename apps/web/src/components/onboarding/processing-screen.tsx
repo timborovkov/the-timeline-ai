@@ -57,7 +57,9 @@ export function ProcessingScreen({
       <Button type="button" variant="ghost" onClick={onSwitch}>
         Choose another way
       </Button>
-      {captureUrl ? <CopyButton value={captureUrl} label="Copy capture link" /> : null}
+      {captureUrl ? (
+        <CopyButton value={captureUrl} label="Copy capture link" manualCopy={false} />
+      ) : null}
     </div>
   );
 

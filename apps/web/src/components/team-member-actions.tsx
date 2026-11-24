@@ -180,7 +180,12 @@ export function PendingInviteActions({
   return (
     <ItemActionGroup label={`Actions for invite to ${inviteEmail}`}>
       {inviteUrl && !pending ? (
-        <CopyButton appearance="icon" label="Copy fresh invite link" value={inviteUrl} />
+        <CopyButton
+          appearance="icon"
+          label="Copy fresh invite link"
+          value={inviteUrl}
+          manualCopy={false}
+        />
       ) : null}
       <form action={resend}>
         <input type="hidden" name="inviteId" value={inviteId} />

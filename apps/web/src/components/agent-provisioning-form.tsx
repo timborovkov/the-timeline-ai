@@ -2,7 +2,7 @@
 import { useActionState } from 'react';
 
 import { createAgentProvisioningAction } from '@/app/actions/agent-provisioning';
-import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -55,8 +55,11 @@ export function AgentProvisioningForm() {
             Save this credential in your agent’s secret store. It is shown only once. Do not paste
             it into chat.
           </p>
-          <code className="block break-all rounded-sm bg-muted p-3 text-xs">{state.token}</code>
-          <CopyButton value={state.token} label="Copy credential" />
+          <CopyableCodeValue
+            value={state.token}
+            copyLabel="Copy credential"
+            valueClassName="rounded-sm bg-muted p-3"
+          />
         </div>
       ) : null}
     </form>
