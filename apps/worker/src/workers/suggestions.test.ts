@@ -9206,7 +9206,7 @@ describe('processSuggestionJobForTests', () => {
     ).suggestions.listPendingSuggestions();
     expect(bundle?.evidence).toEqual([expect.objectContaining({ rawEventId: anchorId })]);
     expect(bundle?.items[0]?.evidenceStatus).toBe('current');
-    expect(bundle?.items[0]?.evidence.map((entry) => entry.rawEventId)).toEqual([anchorId]);
+    expect(bundle?.items[0]?.evidence?.map((entry) => entry.rawEventId)).toEqual([anchorId]);
     const [item] = await db
       .select({ metadata: agentSuggestionItems.metadata })
       .from(agentSuggestionItems)
