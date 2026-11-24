@@ -16,6 +16,7 @@ const copyIconTransition =
 export function CopyButton({
   value,
   label = 'Copy',
+  buttonLabel = label,
   appearance = 'button',
   publicFeedback = false,
   manualCopy = true,
@@ -23,6 +24,7 @@ export function CopyButton({
 }: {
   value: string;
   label?: string;
+  buttonLabel?: string;
   appearance?: 'button' | 'icon';
   publicFeedback?: boolean;
   manualCopy?: boolean;
@@ -104,7 +106,7 @@ export function CopyButton({
         </span>
       ) : (
         <CopyButtonContent
-          label={label}
+          label={buttonLabel}
           copied={copied}
           publicFeedback={publicFeedback}
           pointer={Boolean(feedback.pointer)}
