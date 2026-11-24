@@ -86,7 +86,9 @@ test('Documents browser reflows at 320px', async ({ browser }) => {
   await page.goto('/app/documents');
 
   await expect(page.locator('h1')).toHaveCount(1);
-  await expect(page.getByRole('searchbox', { name: 'Search document chunks' })).toBeVisible();
+  await expect(
+    page.getByRole('searchbox', { name: 'Search document content', exact: true }),
+  ).toBeVisible();
   const dimensions = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
