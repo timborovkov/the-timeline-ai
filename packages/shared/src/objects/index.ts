@@ -4713,14 +4713,13 @@ export async function updateObject(
       }
       const previousCount = changes.length;
       diff(field, candidate);
-      if (changes.length === previousCount && !asserted) return;
+      const unchanged = changes.length === previousCount;
+      if (unchanged && !asserted) return;
       fieldRevisions[field] = {
         assertedAt: (asserted?.assertedAt ?? new Date(Math.max(Date.now(), latest))).toISOString(),
-        rawEventId:
-          changes.length === previousCount && prior?.rawEventId === null
-            ? null
-            : (asserted?.rawEventId ?? null),
+        rawEventId: unchanged && prior?.rawEventId === null ? null : (asserted?.rawEventId ?? null),
         ...(prior?.changeId ? { changeId: prior.changeId } : {}),
+        ...(unchanged && prior?.writeEventId ? { writeEventId: prior.writeEventId } : {}),
       };
       revisedFields.add(field);
       next.recordFieldRevisions = fieldRevisions;

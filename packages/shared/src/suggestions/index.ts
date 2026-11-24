@@ -4160,13 +4160,77 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .for('update');
   }
 
+  function lockRelationshipEntities(ids: string[]) {
+    return db
+      .select({ id: entities.id, type: entities.type, name: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          inArray(entities.id, ids),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(
+        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
+        asc(entities.id),
+      )
+      .for('update');
+  }
+
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     if (deps.acceptance.kind !== 'transaction') return;
 
-    if (item.targetKind === 'object' || item.targetKind === 'task')
-      await lockAcceptanceProject(recordFromUnknown(item.proposedPayload).parentObjectId);
+    if (item.targetKind === 'object' || item.targetKind === 'task') {
+      const payload = recordFromUnknown(item.proposedPayload);
+      await lockAcceptanceProject(payload.parentObjectId);
+      if (
+        !deps.recordMaintenanceWorker &&
+        item.operation === 'create' &&
+        (item.targetKind === 'task' || payload.type === 'task') &&
+        typeof payload.createProjectName === 'string'
+      ) {
+        const name = payload.createProjectName.trim().toLowerCase();
+        await db
+          .select({ id: entities.id })
+          .from(entities)
+          .where(
+            and(
+              eq(entities.teamId, teamId),
+              eq(entities.type, 'project'),
+              isNull(entities.mergedIntoId),
+              or(
+                sql`lower(${entities.canonicalName}) = ${name}`,
+                sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+                  WHERE lower(alias.value) = ${name})`,
+              ),
+            ),
+          )
+          .orderBy(asc(entities.id))
+          .for('update');
+      }
+    }
+
+    if (item.targetKind === 'object_relationship' && !deps.recordMaintenanceWorker) {
+      const parsed = objectRelationshipPayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      const { fromEntityId, fromRef, fromName, toEntityId, toRef, toName } = parsed.data;
+      const existingEndpoint = async (id?: string, ref?: string, name?: string) => {
+        if (id || ref) return acceptedRelationshipEndpoint(item.suggestionId, id, ref);
+        if (!name) return undefined;
+        const rows = await findRelationshipEndpointsByName(name.trim().toLowerCase());
+        return rows.length === 1 ? rows[0]?.id : undefined;
+      };
+      const ends = [
+        await existingEndpoint(fromEntityId, fromRef, fromName),
+        await existingEndpoint(toEntityId, toRef, toName),
+      ].filter((id): id is string => Boolean(id));
+      if (ends.length) await lockRelationshipEntities(ends);
+      return;
+    }
 
     if (
       item.operation !== 'create' &&
@@ -4365,7 +4429,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             rawEventVisibilityPredicate(teamId, userId),
             rawEventIsActive(),
           ),
-        );
+        )
+        .orderBy(asc(rawEvents.id));
       const visiblePackEvidence =
         storedPackEvidenceIds.length === 0
           ? []
@@ -4412,11 +4477,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (requiredEvidenceIds.length > 0) {
       const expectedFingerprints = evidenceContentFingerprints(item.metadata);
       await lockAcceptanceMutationTarget(item);
+      await lockCalendarAcceptanceTargets(item, requiredEvidenceIds);
       const evidenceQuery = db
         .select({
           id: rawEvents.id,
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
+          authorUserId: rawEvents.authorUserId,
+          visibility: rawEvents.visibility,
+          visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+          visibilityUserIds: rawEvents.visibilityUserIds,
         })
         .from(rawEvents)
         .where(
@@ -4425,13 +4495,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             rawEventVisibilityPredicate(teamId, userId),
             rawEventIsActive(),
           ),
-        );
+        )
+        .orderBy(asc(rawEvents.id));
       const visibleEvidence =
         deps.acceptance.kind === 'transaction'
           ? await evidenceQuery.for('update')
           : await evidenceQuery;
       if (visibleEvidence.length !== requiredEvidenceIds.length) {
         return 'Required source evidence is no longer available to approve.';
+      }
+      if (
+        parentSuggestion &&
+        visibleEvidence.some((event) => !rawEventSupportsAudience(event, parentSuggestion))
+      ) {
+        return 'Required source evidence no longer supports this approval audience.';
       }
       if (
         visibleEvidence.some(
@@ -5791,14 +5868,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
   }
 
-  async function resolveRelationshipEndpointName(
-    name: string,
-    endpointLabel: 'source' | 'target',
-    item: typeof agentSuggestionItems.$inferSelect,
-  ): Promise<string> {
-    const normalized = name.trim().toLowerCase();
-    if (!normalized) throw new Error(`Relationship ${endpointLabel} endpoint object is required`);
-    const rows = await db
+  function findRelationshipEndpointsByName(normalized: string) {
+    return db
       .select({ id: entities.id })
       .from(entities)
       .where(
@@ -5817,6 +5888,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       )
       .limit(2);
+  }
+
+  async function resolveRelationshipEndpointName(
+    name: string,
+    endpointLabel: 'source' | 'target',
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string> {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) throw new Error(`Relationship ${endpointLabel} endpoint object is required`);
+    const rows = await findRelationshipEndpointsByName(normalized);
     const row = rows[0];
     if (rows.length === 1 && row) return row.id;
     if (rows.length > 1) {
@@ -6611,6 +6692,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return null;
   }
 
+  async function acceptedRelationshipEndpoint(suggestionId: string, id?: string, ref?: string) {
+    if (id) return id;
+    const localRef = normalizedLocalRef(ref);
+    if (!localRef) return undefined;
+    const siblings = await db
+      .select({ id: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestionItems.status, 'accepted'),
+          isNotNull(agentSuggestionItems.resolvedAt),
+          isNotNull(agentSuggestionItems.resultId),
+          inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+          sql`lower(${agentSuggestionItems.proposedPayload}->>'localRef') = ${localRef}`,
+        ),
+      )
+      .limit(2);
+    return siblings.length === 1 ? siblings[0]?.id : undefined;
+  }
+
   async function approvedRelationship(
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
@@ -6627,48 +6731,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     )
       return undefined;
 
-    async function acceptedEndpoint(id?: string, ref?: string) {
-      if (id) return id;
-      const localRef = normalizedLocalRef(ref);
-      if (!localRef) return undefined;
-      const siblings = await db
-        .select({ id: agentSuggestionItems.resultId })
-        .from(agentSuggestionItems)
-        .where(
-          and(
-            eq(agentSuggestionItems.teamId, teamId),
-            eq(agentSuggestionItems.suggestionId, item.suggestionId),
-            eq(agentSuggestionItems.operation, 'create'),
-            eq(agentSuggestionItems.status, 'accepted'),
-            isNotNull(agentSuggestionItems.resolvedAt),
-            isNotNull(agentSuggestionItems.resultId),
-            inArray(agentSuggestionItems.targetKind, ['object', 'task']),
-            sql`lower(${agentSuggestionItems.proposedPayload}->>'localRef') = ${localRef}`,
-          ),
-        )
-        .limit(2);
-      return siblings.length === 1 ? siblings[0]?.id : undefined;
-    }
-
-    const fromEntityId = await acceptedEndpoint(parsed.data.fromEntityId, parsed.data.fromRef);
-    const toEntityId = await acceptedEndpoint(parsed.data.toEntityId, parsed.data.toRef);
+    const fromEntityId = await acceptedRelationshipEndpoint(
+      item.suggestionId,
+      parsed.data.fromEntityId,
+      parsed.data.fromRef,
+    );
+    const toEntityId = await acceptedRelationshipEndpoint(
+      item.suggestionId,
+      parsed.data.toEntityId,
+      parsed.data.toRef,
+    );
     if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) return undefined;
-    const endpoints = await db
-      .select({ id: entities.id, type: entities.type, name: entities.canonicalName })
-      .from(entities)
-      .where(
-        and(
-          eq(entities.teamId, teamId),
-          inArray(entities.id, [fromEntityId, toEntityId]),
-          isNull(entities.archivedAt),
-          isNull(entities.mergedIntoId),
-        ),
-      )
-      .orderBy(
-        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
-        asc(entities.id),
-      )
-      .for('update');
+    const endpoints = await lockRelationshipEntities([fromEntityId, toEntityId]);
     const from = endpoints.find(({ id }) => id === fromEntityId);
     const to = endpoints.find(({ id }) => id === toEntityId);
     if (
@@ -6996,36 +7070,60 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const type = item.targetKind === 'task' ? 'task' : payload.type;
       if (typeof type !== 'string' || !maintainedRecordFields(type).length) return null;
       if (payload.metadata !== undefined) return null;
-      if (['deal', 'vendor', 'incident', 'decision', 'hiring_loop', 'follow_up'].includes(type)) {
-        const proposed = objectCreatePayload.safeParse(payload);
-        if (!proposed.success || payload.plannedDate !== undefined) return null;
-        const claims = await getTaskFieldEvidence(item, proposed.data, false);
-        const defaultStatus = type === 'follow_up' ? 'todo' : 'open';
+      const proposed = objectCreatePayload.safeParse(payload);
+      if (!proposed.success) return null;
+      const allowed = [
+        'type',
+        'canonicalName',
+        'localRef',
+        'aliases',
+        ...maintainedRecordFields(type),
+      ];
+      if (type === 'task') {
         if (
-          proposed.data.status !== undefined &&
-          proposed.data.status !== defaultStatus &&
-          !claims.status
+          proposed.data.taskCategoryMode === 'manual' ||
+          (typeof proposed.data.ownerUserId === 'string' && requiredSources.length === 0) ||
+          (proposed.data.parentObjectId &&
+            (await objectTypeForTarget(proposed.data.parentObjectId)) !== 'project')
         )
           return null;
-        const allowed = [
-          'type',
-          'canonicalName',
-          'localRef',
-          'aliases',
-          ...maintainedRecordFields(type),
-        ];
-        if (Object.keys(payload).some((field) => !allowed.includes(field))) return null;
-        if (
-          MAINTAINED_RECORD_FIELDS.some(
-            (field) =>
-              field !== 'canonicalName' &&
-              field !== 'status' &&
-              proposed.data[field] !== undefined &&
-              !claims[field],
-          )
-        )
-          return null;
+        allowed.push(
+          'plannedDate',
+          'parentObjectId',
+          'projectName',
+          'createProjectName',
+          'taskCategory',
+          'taskCategoryConfidence',
+          'taskCategoryModel',
+          'taskCategoryMode',
+          'taskCategoryInputHash',
+          'taskCategoryTaxonomyVersion',
+          'ownerUserId',
+          'priority',
+        );
+        const date = proposed.data.plannedDate;
+        if (date !== undefined && !(await getPlannedDateEvidence(item, date, false))) return null;
       }
+      if (Object.keys(payload).some((field) => !allowed.includes(field))) return null;
+      const defaultStatus =
+        type === 'task' || type === 'follow_up' ? 'todo' : type === 'project' ? 'planning' : 'open';
+      const claims = await getTaskFieldEvidence(item, proposed.data, false);
+      if (
+        type === 'task' &&
+        typeof proposed.data.priority === 'number' &&
+        !(proposed.data.priority === 2 && proposed.data.dueAt && claims.dueAt)
+      )
+        return null;
+      if (
+        MAINTAINED_RECORD_FIELDS.some(
+          (field) =>
+            field !== 'canonicalName' &&
+            proposed.data[field] !== undefined &&
+            !(field === 'status' && proposed.data.status === defaultStatus) &&
+            !claims[field],
+        )
+      )
+        return null;
     } else if (item.operation === 'update') {
       const fields = Object.keys(payload);
       if (
@@ -7265,6 +7363,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const requiresTransactionalAcceptance =
       isPackBacked ||
       deps.recordMaintenanceWorker === true ||
+      itemEvidenceRawEventIds(row.item.metadata).length > 0 ||
       Object.hasOwn(recordFromUnknown(row.item.metadata), 'planned_date_evidence') ||
       Object.hasOwn(recordFromUnknown(row.item.metadata), 'task_field_evidence') ||
       (row.item.operation === 'update' &&
@@ -7329,7 +7428,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(agentSuggestionItems.id, itemId),
           isNull(agentSuggestionItems.resolvedAt),
           inArray(agentSuggestionItems.status, ['pending', 'failed']),
-          ...(automaticRevision !== null
+          ...(deps.acceptance.kind === 'transaction'
             ? [sql`${agentSuggestionItems.updatedAt}::text = ${row.updatedAtVersion}`]
             : []),
         ),

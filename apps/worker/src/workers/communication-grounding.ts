@@ -1041,7 +1041,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       affirmativeLifecycle(taskClause(quote, support.subject), support.subject, status, sendTask),
     );
   }
-  function* assertionsFromCitation(support: Support) {
+  function* assertionsFromCitation(support: Pick<Support, 'rawEventId' | 'quote' | 'subject'>) {
     const citedClause = taskClause(support.quote, support.subject);
     let from = -1;
     let assertionStart = 0;
@@ -2025,6 +2025,38 @@ export function groundCommunicationBundles<T extends Item>(args: {
                       ),
                   ),
               );
+        const linkInstruction =
+          /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i;
+        const negativeLinkPrefix = /^(?:please )?(?:do not|don['’]t|never) /i;
+        const unlinkInstruction =
+          /^(?:please )?(?:unlink|disconnect|detach) (.+?) from (.+?)[.!]?$/i;
+        const linkWasRetracted = (citation: Pick<Support, 'rawEventId' | 'quote' | 'subject'>) => {
+          if (payload.kind !== 'related' || !from || !to) return false;
+          const matchesName = (reference: string, object: NonNullable<typeof from>) =>
+            [object.name, ...object.aliases].some((name) => {
+              const label = normalize(name);
+              return label === reference || `the ${label}` === reference;
+            });
+          let retracted = false;
+          for (const { event, sentence, visible } of assertionsFromCitation(citation)) {
+            if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
+            const command = normalize(sentence).replace(/^(?:actually|correction)[,:]? /i, '');
+            const unlink = unlinkInstruction.exec(command);
+            const match = unlink ?? linkInstruction.exec(command.replace(negativeLinkPrefix, ''));
+            const left = match?.[1];
+            const right = match?.[2];
+            if (
+              left &&
+              right &&
+              ((matchesName(left, from) && matchesName(right, to)) ||
+                (matchesName(left, to) && matchesName(right, from)))
+            ) {
+              const negative = Boolean(unlink) || negativeLinkPrefix.test(command);
+              if (negative || visible) retracted = negative;
+            }
+          }
+          return retracted;
+        };
         // The bundle quote is evidence only after the same source/packet checks.
         // Reuse explicit link clauses when endpoint supports are quoted separately.
         const linkSupports = [...supports];
@@ -2129,7 +2161,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
                   span,
                 ) &&
                 safeSourceQuote(source.text, span) &&
-                normalize(args.packet).includes(normalize(span))
+                normalize(args.packet).includes(normalize(span)) &&
+                !linkWasRetracted({ rawEventId: source.id, quote: span, subject: project.name })
               );
             });
           });
@@ -2162,7 +2195,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
               deniedOrConditional.test(linkStatement) ||
               deniedOrConditional.test(assertion) ||
               ![to.id, to.name, from.id, from.name, taskName].includes(support.value) ||
-              (!taskEndpoint && /\bseparate\b/i.test(linkStatement))
+              (!taskEndpoint && /\bseparate\b/i.test(linkStatement)) ||
+              linkWasRetracted(support)
             )
               return false;
             if (
@@ -2221,8 +2255,6 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 )
               );
             }
-            const linkInstruction =
-              /^(?:please )?(?:link|connect|relate|associate) (.+?) (?:to|with) (.+?)[.!]?$/i;
             const link = linkInstruction.exec(assertion.trim());
             const exactEndpoint = (reference: string, object: NonNullable<typeof from>) =>
               (object.scopedSourceIdentity !== undefined &&

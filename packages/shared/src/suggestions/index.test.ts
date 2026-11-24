@@ -247,6 +247,50 @@ describe('suggestion scope', () => {
     expect(await db.select().from(entities)).toHaveLength(0);
   });
 
+  it('revalidates per-item citation audience inside manual acceptance even for its owner', async () => {
+    const sourceId = crypto.randomUUID();
+    const text = 'Start the confidential Northstar rollout.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: text,
+      visibility: 'team',
+      authorUserId: USER_ID,
+      visibilityOwnerUserId: USER_ID,
+      occurredAt: new Date(),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const proposal = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Northstar rollout',
+      dedupeKey: sourceId,
+      evidence: [{ rawEventId: sourceId, quote: text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar rollout',
+          dedupeKey: `${sourceId}-project`,
+          evidenceRawEventIds: [sourceId],
+          proposedPayload: { type: 'project', canonicalName: 'Northstar rollout' },
+        },
+      ],
+    });
+    const [item] = proposal.items;
+    if (!item) throw new Error('Missing project proposal');
+    const narrowVisibility = vi.fn(async () => {
+      await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, sourceId));
+    });
+    const approval = withTeam(db as never, TEAM_ID, USER_ID, {
+      beforeSuggestionApply: narrowVisibility,
+    }).suggestions;
+    expect(await approval.acceptSuggestionItemWithOutcome(item.id)).toBe('superseded');
+    expect(narrowVisibility).toHaveBeenCalledTimes(1);
+    expect(await human.timeline.getEvent(sourceId)).toMatchObject({ visibility: 'private' });
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
   it('automatically applies a pending team report once through the worker capability', async () => {
     const sourceId = crypto.randomUUID();
     const text = 'The login page is broken.';
@@ -369,6 +413,157 @@ describe('suggestion scope', () => {
       fromEntityId: rows.find((row) => row.type === 'task')?.id,
       toEntityId: rows.find((row) => row.type === 'project')?.id,
     });
+  });
+
+  it('automatically creates hubs with defaults or grounded optional fields', async () => {
+    const sourceId = crypto.randomUUID();
+    const quote =
+      'Cedar and Birch are our customers. Northstar is underway. Southstar is our new project.';
+    const occurredAt = new Date();
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt,
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const bundle = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Customers and rollout projects',
+      dedupeKey: sourceId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote }],
+      items: [
+        { type: 'company', canonicalName: 'Cedar' },
+        { type: 'company', canonicalName: 'Birch', assigneeUserId: USER_ID },
+        { type: 'project', canonicalName: 'Northstar', status: 'active' },
+        { type: 'project', canonicalName: 'Southstar', status: 'shipped' },
+      ].map((proposedPayload) => ({
+        operation: 'create',
+        targetKind: 'object',
+        title: proposedPayload.canonicalName,
+        dedupeKey: `${sourceId}-${proposedPayload.canonicalName}`,
+        evidenceRawEventIds: [sourceId],
+        proposedPayload,
+        ...(proposedPayload.canonicalName === 'Northstar'
+          ? {
+              taskFieldEvidence: {
+                status: {
+                  rawEventId: sourceId,
+                  assertedAt: occurredAt.toISOString(),
+                  value: 'active',
+                },
+              },
+            }
+          : {}),
+      })),
+    });
+    const automation = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(2);
+    const rows = await db.select().from(entities).orderBy(asc(entities.canonicalName));
+    expect(rows.map(({ canonicalName, status }) => ({ canonicalName, status }))).toEqual([
+      { canonicalName: 'Cedar', status: 'open' },
+      { canonicalName: 'Northstar', status: 'active' },
+    ]);
+    const items = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+    expect(
+      items
+        .filter((item) => item.status === 'pending')
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(['Birch', 'Southstar']);
+  });
+
+  it('requires optional task-create fields to have persisted evidence', async () => {
+    const rawEventId = crypto.randomUUID();
+    const assertedAt = new Date().toISOString();
+    const assignedTask = 'Fix account navigation';
+    const assigneeUserId = REVIEWER_ID;
+    const plannedDate = '2026-12-01';
+    const dueAt = '2026-12-02T00:00:00.000Z';
+    const quote =
+      'Reviewer will fix account navigation on December 1, due by December 2. Publish release notes. Update onboarding illustrations. Inspect backup retention. Compare hosting quotes. Review payroll permissions.';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt: new Date(assertedAt),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const proposal = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Navigation rollout work',
+      dedupeKey: rawEventId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: assignedTask,
+          dedupeKey: `${rawEventId}-grounded`,
+          evidenceRawEventIds: [rawEventId],
+          proposedPayload: {
+            canonicalName: assignedTask,
+            assigneeUserId,
+            plannedDate,
+            dueAt,
+            priority: 2,
+          },
+          taskFieldEvidence: {
+            assigneeUserId: { rawEventId, assertedAt, value: assigneeUserId },
+            dueAt: { rawEventId, assertedAt, value: dueAt },
+          },
+          plannedDateEvidence: { rawEventId, assertedAt, value: plannedDate },
+        },
+        ...[
+          { canonicalName: 'Publish release notes', status: 'done' },
+          { canonicalName: 'Update onboarding illustrations', assigneeUserId },
+          { canonicalName: 'Inspect backup retention', dueAt },
+          { canonicalName: 'Compare hosting quotes', plannedDate },
+          { canonicalName: 'Review payroll permissions', ownerUserId: assigneeUserId, priority: 1 },
+        ].map((proposedPayload, index) => ({
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: proposedPayload.canonicalName,
+          dedupeKey: `${rawEventId}-unsupported-${index}`,
+          evidenceRawEventIds: [rawEventId],
+          proposedPayload,
+        })),
+      ],
+    });
+    const automation = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const rows = await db.select().from(entities);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      canonicalName: assignedTask,
+      status: 'todo',
+      assigneeUserId,
+      plannedDate,
+      dueAt: new Date(dueAt),
+      priority: 2,
+    });
+    const items = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, proposal.id));
+    expect(items.filter((item) => item.status === 'pending')).toHaveLength(5);
   });
 
   it('applies grounded person, company and project updates but keeps unsupported siblings pending', async () => {

@@ -102,15 +102,20 @@ export async function setRecordMaintenancePolicyAction(
     if (!r.ok) return { error: r.error };
     try {
       const policy = await r.scope.suggestions.setRecordMaintenancePolicy(parsed.data);
-      await enqueueSuggestionJob(
-        { scope: 'record_maintenance', teamId: r.teamId },
-        { jobIdSuffix: policy.revision },
-      ).catch((err: unknown) => {
-        publicActionError(err, {
-          operation: 'enqueue_record_maintenance',
-          fallback: 'Could not schedule record maintenance.',
-        });
-      });
+      try {
+        await enqueueSuggestionJob(
+          { scope: 'record_maintenance', teamId: r.teamId },
+          { jobIdSuffix: policy.revision },
+        );
+      } catch (err) {
+        return {
+          error: publicActionError(err, {
+            operation: 'enqueue_record_maintenance',
+            fallback:
+              'Settings saved. Timeline could not schedule a check for pending approvals. Save again to retry.',
+          }),
+        };
+      }
       return { ok: true };
     } catch (err) {
       return {

@@ -3162,11 +3162,34 @@ async function processObjectCleanupJob(
         ).map((row) => row.teamId)
       : [data.teamId];
   if (data.teamId === '__all__' && io.dispatchGlobalCleanup) {
-    for (const teamId of teamIds)
-      await queue.enqueueSuggestionJob(
-        { scope: 'object_cleanup', teamId, triggeredBy: 'daily' },
-        { jobIdSuffix: new Date().toISOString().slice(0, 10) },
+    const enqueue = io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob;
+    const jobIdSuffix = new Date().toISOString().slice(0, 10);
+    const pendingWorkspaces = await deps.db
+      .selectDistinct({ teamId: agentSuggestionItems.teamId })
+      .from(agentSuggestionItems)
+      .innerJoin(
+        agentSuggestions,
+        and(
+          eq(agentSuggestions.id, agentSuggestionItems.suggestionId),
+          eq(agentSuggestions.teamId, agentSuggestionItems.teamId),
+        ),
+      )
+      .where(
+        and(
+          activeWorkspaceCondition(agentSuggestionItems.teamId),
+          eq(agentSuggestions.visibility, 'team'),
+          eq(agentSuggestions.source, 'background'),
+          eq(agentSuggestionItems.status, 'pending'),
+          isNull(agentSuggestionItems.resolvedAt),
+        ),
       );
+
+    // Recover missed policy-change jobs even when there is no record to clean up
+    // or the workspace has paused billable processing.
+    for (const { teamId } of pendingWorkspaces)
+      await enqueue({ scope: 'record_maintenance', teamId }, { jobIdSuffix });
+    for (const teamId of teamIds)
+      await enqueue({ scope: 'object_cleanup', teamId, triggeredBy: 'daily' }, { jobIdSuffix });
     return;
   }
   for (const teamId of teamIds) {
@@ -3488,7 +3511,7 @@ async function createObjectCleanupSuggestionsForTeam(
             (cite) => usableRawEventIds([cite.rawEventId]).length > 0,
           )
         : [];
-      await scope.suggestions.createOrMergeSuggestionBundle({
+      const proposal = await scope.suggestions.createOrMergeSuggestionBundle({
         maintenanceLease: io.maintenanceLease,
         source: 'background',
         title: `Merge duplicate objects: ${left.canonicalName} / ${right.canonicalName}`,
@@ -3521,6 +3544,9 @@ async function createObjectCleanupSuggestionsForTeam(
           },
         ],
       });
+      for (const item of proposal.items) {
+        if (item.status === 'pending') io.recordMaintenanceCandidates?.add(item.id);
+      }
     }
   }
 
@@ -6885,15 +6911,8 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
           }),
         workerBillingJobOptions(job, token),
       );
-      if (!result && job.data.teamId !== '__all__') {
-        if (
-          'scope' in job.data &&
-          job.data.scope === 'object_cleanup' &&
-          job.data.triggeredBy === 'daily'
-        )
-          await applyWorkspaceRecordMaintenance(deps.db, job.data.teamId);
-        else if (candidates.size)
-          await applyWorkspaceRecordMaintenance(deps.db, job.data.teamId, [...candidates]);
+      if (!result && candidates.size && job.data.teamId !== '__all__') {
+        await applyWorkspaceRecordMaintenance(deps.db, job.data.teamId, [...candidates]);
       }
       await finishIngestJob(job, result, token);
     }),

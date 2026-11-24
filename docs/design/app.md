@@ -61,7 +61,8 @@ New teams start in a focused setup shell for Welcome and Start with one source
 guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
 started strip (Capture, Ask, Approve, Go live). Fresh guided Ask includes the visible
 starter capture in its context; guided Approvals scopes rows and counts to that
-capture, including pagination. First-record suggestions use the same proposal and
+capture, including pagination. It explains that eligible changes apply automatically and leaves
+pending changes available for review. First-record suggestions use the same proposal and
 supporting-evidence visibility checks as the approval queue. Empty first-record and
 guided Approvals views offer Check for suggestions so asynchronously generated
 proposals can be discovered without reloading the page. Home never shows that strip.
@@ -506,7 +507,7 @@ Priority, Assignee, Due date, Project, and Category. The fields remain editable
 when empty; task collection rows omit unset project, assignee, date, priority, and
 category placeholders. Categories use sentence case at 12px, and priority uses a
 flag rather than the failure icon. Terminal work never shows an overdue warning.
-Team settings let admins require review before evidence replaces a manual task field and separately opt in to explicit archive requests or exact provider-identity merges. Resolved approval rows identify automatically applied changes. A supported task edit offers Undo in its approval preview. The task detail has an editable Planned date alongside Due. It displays the calendar day without an overdue warning.
+Team settings let admins require review before evidence replaces a manually set record value and separately opt in to explicit archive requests or exact provider-identity merges. Resolved approval rows identify automatically applied changes. A supported task edit offers Undo in its approval preview. The task detail has an editable Planned date alongside Due. It displays the calendar day in the viewer’s preferred locale without an overdue warning.
 If accepted creation evidence exists,
 lead with that “why this exists” excerpt. Discussion (activity and comments)
 always follows as unboxed rows, including the borderless composer so a

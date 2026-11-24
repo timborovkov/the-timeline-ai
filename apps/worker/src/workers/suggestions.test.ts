@@ -467,6 +467,50 @@ describe('processSuggestionJobForTests', () => {
     resetEnvForTests();
   });
 
+  it('recovers a missed record maintenance job for a workspace without canonical records', async () => {
+    const id = crypto.randomUUID();
+    const quote = 'The login page is broken.';
+    await seedRawEvent(db as never, { id, source: 'slack', text: quote });
+    await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: quote,
+      dedupeKey: id,
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: id, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Fix broken login page',
+          dedupeKey: id,
+          proposedPayload: { canonicalName: 'Fix broken login page', status: 'todo' },
+          evidenceRawEventIds: [id],
+        },
+      ],
+    });
+    expect(await db.select({ id: entities.id }).from(entities)).toEqual([]);
+
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue({ enqueued: true, jobId: 'sweep' });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
+      { dispatchGlobalCleanup: true, enqueueSuggestionJob },
+    );
+    const recovery = { scope: 'record_maintenance', teamId: TEAM_ID } as const;
+    expect(enqueueSuggestionJob).toHaveBeenCalledOnce();
+    expect(enqueueSuggestionJob).toHaveBeenCalledWith(recovery, {
+      jobIdSuffix: new Date().toISOString().slice(0, 10),
+    });
+
+    await processSuggestionJobForTests({ db: db as never }, recovery);
+    expect(
+      await db.select({ title: entities.canonicalName, status: entities.status }).from(entities),
+    ).toEqual([{ title: 'Fix broken login page', status: 'todo' }]);
+    expect(
+      await db.select({ status: agentSuggestionItems.status }).from(agentSuggestionItems),
+    ).toEqual([{ status: 'accepted' }]);
+  });
+
   it('applies a grounded customer link after the audited project and customer are accepted', async () => {
     const id = crypto.randomUUID();
     const quote = 'Link Cedar Labs to Northstar rollout.';

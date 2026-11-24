@@ -2915,6 +2915,8 @@ const generalRelationship = (
     type?: string;
     packet?: string;
     sourceText?: string;
+    later?: string[];
+    chronologyVeto?: boolean;
     kind?: string;
     foreign?: boolean;
     ambiguous?: boolean;
@@ -2924,6 +2926,12 @@ const generalRelationship = (
   const names = options.names ?? ['Deployment checklist', 'Release checklist'];
   const first = '66666666-6666-4666-8666-666666666666';
   const second = '77777777-7777-4777-8777-777777777777';
+  const sourceText = options.sourceText ?? quote;
+  const laterSources = (options.later ?? []).map((text, index) => ({
+    id: `88888888-8888-4888-8888-88888888888${String(index)}`,
+    text,
+    occurredAt: new Date(Date.UTC(2026, 5, 1, 11 + index)),
+  }));
   return (
     groundCommunicationBundles({
       bundles: [
@@ -2958,8 +2966,14 @@ const generalRelationship = (
           ],
         },
       ],
-      packet: options.packet ?? options.sourceText ?? quote,
-      sources: [{ id: event, text: options.sourceText ?? quote }],
+      packet: options.packet ?? [sourceText, ...(options.later ?? [])].join('\n'),
+      sources: [
+        { id: event, text: sourceText, occurredAt: new Date('2026-06-01T10:00:00Z') },
+        ...laterSources,
+      ],
+      ...(options.chronologyVeto
+        ? { reviewedLaterEmailIds: new Set(laterSources.map(({ id }) => id)) }
+        : {}),
       members: [],
       hubs: [],
       source: 'slack',
@@ -3005,6 +3019,29 @@ test('explicit related links support authorized non-hub endpoints', () => {
     { kind: 'child' },
   ])
     expect(generalRelationship(quote, options)).toHaveLength(0);
+});
+
+test('a later related link retraction must be visible and name the same endpoints', () => {
+  const quote = 'Link Deployment checklist to Release checklist.';
+  const retraction = 'Do not link the Release checklist to the Deployment checklist.';
+  const reaffirmation = 'Please connect Deployment checklist with Release checklist.';
+  for (const later of [retraction, 'Unlink Deployment checklist from Release checklist.']) {
+    expect(generalRelationship(quote, { later: [later] })).toHaveLength(0);
+  }
+  expect(
+    generalRelationship(quote, {
+      later: ['Do not link Deployment checklist to the security report.'],
+    }),
+  ).toHaveLength(1);
+  expect(generalRelationship(quote, { later: [retraction], packet: quote })).toHaveLength(1);
+  expect(generalRelationship(quote, { later: [retraction, reaffirmation] })).toHaveLength(1);
+  expect(
+    generalRelationship(quote, {
+      later: [retraction, reaffirmation],
+      packet: `${quote}\n${retraction}`,
+      chronologyVeto: true,
+    }),
+  ).toHaveLength(0);
 });
 
 test('a forwarded self assignment survives a citation containing adjacent deadline context', () => {

@@ -24,7 +24,6 @@ import {
   useReducer,
   useRef,
   useState,
-  useSyncExternalStore,
   useTransition,
 } from 'react';
 
@@ -88,7 +87,7 @@ import { DetailRail } from '@/components/ui/detail-rail';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { ShowMoreList } from '@/components/ui/show-more-list';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { readJson } from '@/lib/api-response';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
@@ -1708,14 +1707,6 @@ function ObjectHeaderIdentity({
     </div>
   );
 }
-function subscribeDateLocale(listener: () => void) {
-  window.addEventListener('languagechange', listener);
-  return () => {
-    window.removeEventListener('languagechange', listener);
-  };
-}
-const getBrowserDateLocale = () => navigator.language;
-const getServerDateLocale = () => 'en-US';
 
 function TaskPlannedDateField({
   detail,
@@ -1726,11 +1717,7 @@ function TaskPlannedDateField({
   title: string;
   patch: (field: EditableField, value: EditableValue) => void;
 }) {
-  const locale = useSyncExternalStore(
-    subscribeDateLocale,
-    getBrowserDateLocale,
-    getServerDateLocale,
-  );
+  const { locale } = useRegionalFormat();
   if (detail.type !== 'task') return null;
   return (
     <ObjectRailRow label="Planned date">
@@ -2877,6 +2864,7 @@ function ObjectRecentChangeItem({
   onRejectChange: (changeId: string) => void;
 }) {
   const timezone = useWorkspaceTimezone();
+  const { locale } = useRegionalFormat();
   const isSuggested = change.status === 'suggested';
   const isRejected = change.status === 'rejected';
   return (
@@ -2892,8 +2880,8 @@ function ObjectRecentChangeItem({
         </span>
       </div>
       <div className={`mt-0.5 break-words ${DETAIL_META_CLASS}`}>
-        {formatValue(change.previousValue, timezone, change.field)} →{' '}
-        {formatValue(change.newValue, timezone, change.field)}
+        {formatValue(change.previousValue, timezone, change.field, locale)} →{' '}
+        {formatValue(change.newValue, timezone, change.field, locale)}
       </div>
       <div className={`mt-0.5 flex items-center justify-between ${DETAIL_META_CLASS}`}>
         <span>
@@ -2979,16 +2967,17 @@ function toLocalInputValue(value: unknown, timezone: string): string {
   return d ? (presentDueDate(d, { timezone }).dateKey ?? '') : '';
 }
 
-function formatValue(v: unknown, timezone: string, field = ''): string {
+function formatValue(v: unknown, timezone: string, field: string, locale: string): string {
   const category = formatTaskCategoryChangeValue(field, v);
   if (category !== null) return category;
   if (v === null || v === undefined) return '∅';
   if (typeof v === 'string') {
     return field === 'plannedDate'
-      ? formatDisplayDate(v, { timezone: 'UTC' })
+      ? formatDisplayDate(v, { timezone: 'UTC', locale })
       : displayText(v, { timezone });
   }
-  if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone, field)).join(', ');
+  if (Array.isArray(v))
+    return v.map((item) => formatValue(item, timezone, field, locale)).join(', ');
   if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);

@@ -56,7 +56,7 @@ Use this section when the user requests a note, has told you to log this work, o
 - `timeline.remember`: one self-contained note per fact cluster. Lead with the subject, then who, the decision, the next step, the owner, and the date. Rate-limited to 30 notes per minute. Needs the `capture` scope. It stores cited ingest evidence only.
 - Email (only when the user has separately authorized this channel): send, forward, CC or BCC to the team address (Home → Team email). This works only if the sending address is a team member or an allowed sender.
 - Webhook (only with separately authorized ingest access): POST plain text or JSON (1 MB or less) to this Timeline deployment's `/api/webhooks/ingest` with `Authorization: Bearer $TIMELINE_INGEST_TOKEN`. Hosted Timeline uses `https://thetimeline.cc/api/webhooks/ingest`. Self-hosted Timeline must use that deployment's own origin; posting to the hosted URL returns 401. Never print the token. Keep it in the environment.
-- Tell the user what you recorded. Everything becomes cited evidence only. Any resulting proposals still need human approval.
+- Tell the user what you recorded and cite the source. Notes and webhook captures only add evidence. Eligible proposals from captured email can apply automatically under workspace policy. Check the record before reporting an applied change.
 
 ## Report meaningful work
 

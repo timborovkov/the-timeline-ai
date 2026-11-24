@@ -203,6 +203,27 @@ describe('guest access', () => {
     expect(await reader.listRecords(taskId)).toMatchObject([
       { title: 'Broken login page', status: 'done' },
     ]);
+    const dueDate = new Date('2026-12-08T00:00:00Z');
+    const actor = { kind: 'agent', userId: null } as const;
+    for (const { day, patch, changedFields } of [
+      { day: '03', patch: { status: 'done' }, changedFields: [] },
+      { day: '04', patch: { status: 'done', dueAt: dueDate }, changedFields: ['dueAt'] },
+    ] as const) {
+      const rawEventId = crypto.randomUUID();
+      const assertedAt = new Date(`2026-12-${day}T10:00:00Z`);
+      await db.insert(rawEvents).values({
+        id: rawEventId,
+        teamId: team,
+        source: 'slack',
+        contentText: 'Broken login page is done.',
+        occurredAt: assertedAt,
+      });
+      const result = await host.objects.updateObject(taskId, patch, actor, {
+        taskFieldEvidence: { status: { rawEventId, assertedAt } },
+      });
+      expect(result.changedFields).toEqual(changedFields);
+      expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'done' }]);
+    }
     expect(await reader.listSources()).toEqual([]);
     await host.objects.updateObject(taskId, { status: 'open' }, { kind: 'user', userId: admin });
     expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'open' }]);

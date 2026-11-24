@@ -308,6 +308,42 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('No due date');
   });
 
+  it('uses the saved display locale for planned dates without shifting the day', () => {
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'America/Los_Angeles',
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles', browserLocale: 'en-US' },
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            type: 'task',
+            plannedDate: '2026-11-30',
+            recentChanges: [
+              {
+                id: 'change-planned-date',
+                field: 'plannedDate',
+                previousValue: '2026-11-29',
+                newValue: '2026-11-30',
+                actorKind: 'user',
+                actorUserId: 'user-1',
+                status: 'applied',
+                note: null,
+                changedAt: new Date('2026-11-24T10:00:00Z'),
+              },
+            ],
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Planned date for Send proposal' }).textContent).toBe(
+      '30.11.2026',
+    );
+    expect(screen.getByText('29.11.2026 → 30.11.2026')).toBeTruthy();
+  });
+
   it('labels the editable planned date separately from the due date', async () => {
     const user = userEvent.setup();
     render(
