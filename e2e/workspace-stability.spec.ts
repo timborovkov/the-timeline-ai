@@ -64,7 +64,12 @@ test('filtering to an empty task list retains the page header and toolbar positi
   const heading = page.getByRole('heading', { name: 'Tasks', exact: true });
   const before = await heading.boundingBox();
   await page.goto('/app/tasks?view=list&q=nonexistent-workspace-stability-fixture');
-  await expect(page.getByText('No tasks match this filter')).toBeVisible();
+  await expect(
+    page
+      .getByRole('main')
+      .getByText('No tasks match this filter', { exact: true })
+      .filter({ visible: true }),
+  ).toBeVisible();
   const after = await heading.boundingBox();
   expect(after?.x).toBe(before?.x);
   expect(after?.y).toBe(before?.y);

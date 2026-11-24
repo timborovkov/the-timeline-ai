@@ -189,17 +189,13 @@ test('expired and forged impersonation cookies can always be exited', async ({ p
 test('an outdated Privacy version requires acknowledgment', async ({ page }) => {
   test.setTimeout(120_000);
   const { withE2eDataTransaction } = await import('./cleanup.js');
-  const { E2E_PASSWORD } = await import('./test-data.js');
   const { PRIVACY_VERSION } = await import('@timeline/shared/legal-versions');
   await withE2eDataTransaction(async (sql) => {
     await sql`UPDATE users SET legal_privacy_version = 'older-privacy' WHERE id = ${e2eUsers.owner.id}`;
   });
   try {
     await page.goto('/sign-in');
-    await page.getByLabel('Email').fill(e2eUsers.owner.email);
-    await page.getByLabel('Password').fill(E2E_PASSWORD);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page).toHaveURL(/\/legal\/accept/);
+    await signInFromCurrentPage(page, e2eUsers.owner.email, /\/legal\/accept/, 10_000);
     await expect(
       page.getByText(`Privacy Policy ${PRIVACY_VERSION}`, { exact: false }),
     ).toBeVisible();
