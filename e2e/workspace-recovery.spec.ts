@@ -179,11 +179,14 @@ test('Inbox opens the item while the read update fails', async ({ browser }, inf
       await failedRead.promise;
       await route.fulfill({ status: 503 });
     });
+    const inboxTimeOrigin = await page.evaluate(() => performance.timeOrigin);
     await Promise.all([page.waitForRequest(updateUrl), item.click()]);
     await expect(page).toHaveURL(new RegExp('/app/objects/' + taskId + '$'));
     await expect(
       page.getByRole('heading', { name: e2eSeedTasks.mobileKanban.canonicalName }),
     ).toBeVisible();
+    // An unintended full reload cancels the pending read request.
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(inboxTimeOrigin);
     const response = page.waitForResponse(updateUrl);
     failedRead.resolve();
     expect((await response).status()).toBe(503);
