@@ -12,6 +12,7 @@ import {
   users,
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { z } from 'zod';
 
 import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
@@ -115,6 +116,15 @@ export interface BillingScopeDeps {
   ensureMember: EnsureMember;
   provider?: BillingProvider;
 }
+
+const admittedTeamSeatPricingSchema = z
+  .object({
+    includedUsageCents: z.number().int().nonnegative(),
+    periodStartedAt: z.iso.datetime().nullable(),
+    periodEndsAt: z.iso.datetime().nullable(),
+    subscriptionId: z.string().nullable(),
+  })
+  .nullable();
 
 function polarPlanProductsFromEnv(): PolarPlanProductIds {
   const env = getEnv();
@@ -1146,7 +1156,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
         }
 
-        const seatBilling = entitlementsPlanId === 'team' && locked.teamSeatTerms !== null;
+        const seatTerms = entitlementsPlanId === 'team' ? locked.teamSeatTerms : null;
+        const seatBilling = seatTerms !== null;
         const bundledInfrastructure =
           bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
           !enterpriseContract;
@@ -1211,6 +1222,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
           ...(input.metadata ?? {}),
           admitted_metered_discount_percent: commercial.meteredDiscountPercent ?? 0,
           bundled_infrastructure_at_admission: bundledInfrastructure,
+          team_seat_pricing_at_admission: seatTerms
+            ? {
+                includedUsageCents: seatTerms.includedUsageCents,
+                periodStartedAt: locked.periodStartedAt?.toISOString() ?? null,
+                periodEndsAt: locked.periodEndsAt?.toISOString() ?? null,
+                subscriptionId: locked.polarSubscriptionId,
+              }
+            : null,
           team_overage_cap_at_admission: seatBilling ? locked.spendCapCents : 0,
           list_charge_cents: input.reservedChargeCents,
           metered_charge_cents: billableChargeCents,
@@ -1518,12 +1537,43 @@ export function createBillingScope(deps: BillingScopeDeps) {
               : entitlementsPlanId !== livePlanId
                 ? (PLAN_CATALOG[entitlementsPlanId].additionalMemberCents ?? 0)
                 : (commercial.additionalMemberCents ?? 0);
-          const seatBilling = entitlementsPlanId === 'team' && account.teamSeatTerms !== null;
-          const admittedBundle =
-            reservation[0]?.meterId === input.meterId &&
-            reservation[0].admittedPlanId === entitlementsPlanId
-              ? reservation[0].metadata.bundled_infrastructure_at_admission
+          const admission = reservation[0];
+          const admittedPricing =
+            admission?.meterId === input.meterId &&
+            (admission.admittedPlanId === entitlementsPlanId ||
+              (admission.admittedPlanId === null && !input.pricingPlanId))
+              ? admission.metadata
               : undefined;
+          const parsedSeatPricing = admittedTeamSeatPricingSchema.safeParse(
+            admittedPricing?.team_seat_pricing_at_admission,
+          );
+          const seatPricing = parsedSeatPricing.data;
+          const admittedBundle = admittedPricing?.bundled_infrastructure_at_admission;
+          const admittedCap = admittedPricing?.team_overage_cap_at_admission;
+          const liveSeatBilling = livePlanId === 'team' && account.teamSeatTerms !== null;
+          // Older rows can prove seat pricing through a positive seat-only cap or
+          // bundled Team infrastructure. A zero cap alone identifies neither pricing mode.
+          const admittedSeatBilling = parsedSeatPricing.success
+            ? seatPricing !== null
+            : admittedBundle === true || (typeof admittedCap === 'number' && admittedCap > 0);
+          const seatBilling =
+            entitlementsPlanId === 'team' && (admission ? admittedSeatBilling : liveSeatBilling);
+          const needsAdmissionCap =
+            seatBilling ||
+            (entitlementsPlanId === 'team' && !parsedSeatPricing.success && admittedCap === 0);
+          const matchesLiveSubscription =
+            !seatPricing || seatPricing.subscriptionId === account.polarSubscriptionId;
+          const admittedSeatAllowance =
+            seatBilling && seatPricing?.periodStartedAt && seatPricing.periodEndsAt
+              ? {
+                  budgetCents: seatPricing.includedUsageCents,
+                  periodStartedAt: new Date(seatPricing.periodStartedAt),
+                  periodEndsAt: new Date(seatPricing.periodEndsAt),
+                  matchesLiveSubscription,
+                }
+              : needsAdmissionCap && admittedPricing
+                ? null
+                : undefined;
           const bundledInfrastructure =
             typeof admittedBundle === 'boolean'
               ? admittedBundle
@@ -1573,7 +1623,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               entitlementsPlanId,
               comped,
               enterpriseContract,
-              chargeCents: seatBilling ? 0 : actualChargeCents,
+              chargeCents: needsAdmissionCap ? 0 : actualChargeCents,
             });
             return {
               ...segment,
@@ -1628,6 +1678,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 now,
                 pricingPlanId: entitlementsPlanId,
                 livePlanId,
+                ...(admittedSeatAllowance !== undefined ? { admittedSeatAllowance } : {}),
               });
               const split = splitDiscountAndWallet({
                 chargeCents: freeAllowanceSettlement ? 0 : share.chargeCents,
@@ -1657,6 +1708,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               now,
               pricingPlanId: entitlementsPlanId,
               livePlanId,
+              ...(admittedSeatAllowance !== undefined ? { admittedSeatAllowance } : {}),
             });
             const split = splitDiscountAndWallet({
               chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
@@ -1668,17 +1720,21 @@ export function createBillingScope(deps: BillingScopeDeps) {
             invoiceCents = split.invoiceCents;
             if (historicalDiscount === undefined) currentWindowDiscountCents = discountCents;
           }
-          if (seatBilling) {
+          if (needsAdmissionCap) {
             const currentYm = periodYm();
             const spent = countersBeforeRows.reduce(
               (total, row) => total + (row.periodYm === currentYm ? row.capEligibleChargeCents : 0),
               0,
             );
-            const admittedCap = reservation[0]?.metadata.team_overage_cap_at_admission;
             let room =
-              input.billable === false || typeof admittedCap !== 'number'
-                ? 0
-                : Math.max(0, Math.min(admittedCap, account.spendCapCents) - spent);
+              seatBilling &&
+              liveSeatBilling &&
+              seatPricing &&
+              matchesLiveSubscription &&
+              input.billable !== false &&
+              typeof admittedCap === 'number'
+                ? Math.max(0, Math.min(admittedCap, account.spendCapCents) - spent)
+                : 0;
             const collect = (usageAt: Date, candidate: number) => {
               if (
                 periodYm(usageAt) !== currentYm ||
@@ -1932,7 +1988,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             ledger: ledgerRow,
             planId: effectiveBillingPlanId(account),
             spendCapCents: freezeAccount ? 0 : account.spendCapCents,
-            usd: seatBilling,
+            usd: liveSeatBilling,
           };
         });
         if (written.kind === 'lookup') {
@@ -2071,7 +2127,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
     async patchReservationMetadata(operationId: string, metadata: Record<string, unknown>) {
       await ensureMember();
       await ensureAccount();
-      const patch = JSON.stringify(metadata);
+      const patch = JSON.stringify({
+        ...metadata,
+        admitted_metered_discount_percent: undefined,
+        bundled_infrastructure_at_admission: undefined,
+        team_seat_pricing_at_admission: undefined,
+        team_overage_cap_at_admission: undefined,
+      });
       await db
         .update(billingUsageReservations)
         .set({

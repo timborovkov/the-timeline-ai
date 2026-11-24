@@ -402,8 +402,9 @@ export async function includedDiscountRemainingForReplay(input: {
   usageAt: Date;
   periodStartedAt: Date | null;
   periodEndsAt: Date | null;
+  budgetCents?: number;
 }): Promise<number> {
-  const budget = PLAN_CATALOG[input.planId].includedUsageDiscountCents;
+  const budget = input.budgetCents ?? PLAN_CATALOG[input.planId].includedUsageDiscountCents;
   if (budget <= 0) return 0;
   const window = includedDiscountWindowContaining({
     usageAt: input.usageAt,
@@ -497,6 +498,13 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
   pricingPlanId?: BillingPlanId;
   /** Live entitlements. A different pricing plan keeps its own discount pool. */
   livePlanId?: BillingPlanId;
+  /** Null marks a seat or ambiguous admission without enough data to replay its old pool. */
+  admittedSeatAllowance?: {
+    budgetCents: number;
+    periodStartedAt: Date;
+    periodEndsAt: Date;
+    matchesLiveSubscription: boolean;
+  } | null;
 }): Promise<number | undefined> {
   const current = includedDiscountWindowContaining({
     usageAt: input.now,
@@ -513,13 +521,22 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
     }));
   const livePlanId = input.livePlanId ?? input.account.planId;
   const beforeWindow = input.usageAt.getTime() < current.startedAt.getTime();
-  if (!beforeWindow && planId === livePlanId) return undefined;
+  const admitted = input.admittedSeatAllowance;
+  if (!beforeWindow && planId === livePlanId && admitted?.matchesLiveSubscription !== false)
+    return undefined;
+  if (
+    admitted === null ||
+    (admitted &&
+      (input.usageAt < admitted.periodStartedAt || input.usageAt >= admitted.periodEndsAt))
+  )
+    return 0;
   return includedDiscountRemainingForReplay({
     db: input.db,
     teamId: input.teamId,
     planId,
     usageAt: input.usageAt,
-    periodStartedAt: input.account.periodStartedAt,
-    periodEndsAt: input.account.periodEndsAt,
+    periodStartedAt: admitted?.periodStartedAt ?? input.account.periodStartedAt,
+    periodEndsAt: admitted?.periodEndsAt ?? input.account.periodEndsAt,
+    ...(admitted ? { budgetCents: admitted.budgetCents } : {}),
   });
 }

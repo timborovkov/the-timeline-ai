@@ -2014,6 +2014,163 @@ describe('billing scope', () => {
     expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
   });
 
+  it('recovers a seat-priced Team AI overrun after downgrade using its admitted USD terms', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active',
+        shadow_billing = false, spend_cap_cents = 0,
+        team_seat_terms = '{"paidSeats":1,"highWaterSeats":1,"includedUsageCents":1200}',
+        included_discount_remaining_cents = 1200,
+        period_started_at = '2026-10-01', period_ends_at = '2026-11-01',
+        polar_customer_id = 'cus_team', polar_subscription_id = 'sub_team',
+        polar_product_id = '${POLAR_PRODUCT_IDS.team}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await scope.settle({
+      operationId: 'ai:previous-team-use',
+      meterId: 'ai',
+      nativeUnits: 1058,
+      customerChargeCents: 1058,
+    });
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(50);
+
+    const operation = { operationId: 'ai:seat-priced-before-downgrade', meterId: 'ai' as const };
+    const attemptedOverride = {
+      team_seat_pricing_at_admission: null,
+      team_overage_cap_at_admission: 5000,
+    };
+    expect(
+      await scope.reserve({
+        ...operation,
+        reservedNativeUnits: 9.2,
+        reservedChargeCents: 9.2,
+        metadata: attemptedOverride,
+      }),
+    ).toMatchObject({ ok: true, reservation: { reservedChargeCents: 0 } });
+    await scope.patchReservationMetadata(operation.operationId, attemptedOverride);
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(
+        and(
+          eq(billingUsageReservations.teamId, TEAM_ID),
+          eq(billingUsageReservations.operationId, operation.operationId),
+        ),
+      );
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'free',
+        billingState: 'free',
+        teamSeatTerms: null,
+        includedDiscountRemainingCents: 0,
+        polarSubscriptionId: null,
+        polarProductId: null,
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+
+    const usage = { ...operation, nativeUnits: 92, customerChargeCents: 92 };
+    const settlement = await scope.settle(usage);
+    expect(settlement).toMatchObject({
+      ok: true,
+      duplicate: false,
+      ledger: {
+        actorUserId: USER_ID,
+        customerChargeCents: 100,
+        metadata: {
+          pricing_plan_id: 'team',
+          list_charge_cents: 92,
+          discount_cents: 50,
+          invoice_cents: 0,
+          cap_eligible_cents: 0,
+          polar_ingest_status: 'not_required',
+        },
+      },
+    });
+    expect(reservation?.metadata).toMatchObject({
+      team_seat_pricing_at_admission: { includedUsageCents: 1200 },
+      team_overage_cap_at_admission: 0,
+    });
+    expect(await scope.settle(usage)).toEqual({ ok: true, duplicate: true });
+    expect((await scope.getDashboard()).meters.ai).toMatchObject({
+      nativeUnits: 1150,
+      customerChargeCents: 1250,
+    });
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
+    expect(provider.events).toEqual([]);
+  });
+
+  it('does not infer a missing admission price or spending cap from current seat terms', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active',
+        shadow_billing = false, spend_cap_cents = 1000,
+        team_seat_terms = '{"paidSeats":1,"highWaterSeats":1,"includedUsageCents":1200}',
+        included_discount_remaining_cents = 0,
+        period_started_at = '2026-10-01', period_ends_at = '2026-11-01',
+        polar_customer_id = 'cus_team', polar_subscription_id = 'sub_team',
+        polar_product_id = '${POLAR_PRODUCT_IDS.team}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    for (const [admittedCap, chargeCents] of [
+      [0, 92],
+      [100, 100],
+    ] as const) {
+      const operationId = `ai:old-team-admission:${admittedCap}`;
+      await db.insert(billingUsageReservations).values({
+        teamId: TEAM_ID,
+        operationId,
+        meterId: 'ai',
+        admittedPlanId: 'team',
+        reservedNativeUnits: '1',
+        reservedChargeCents: 0,
+        metadata: { team_overage_cap_at_admission: admittedCap },
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      expect(
+        await scope.settle({
+          operationId,
+          meterId: 'ai',
+          nativeUnits: 92,
+          customerChargeCents: 92,
+        }),
+      ).toMatchObject({
+        ok: true,
+        duplicate: false,
+        ledger: {
+          customerChargeCents: chargeCents,
+          metadata: {
+            invoice_cents: 0,
+            cap_eligible_cents: 0,
+            polar_ingest_status: 'not_required',
+          },
+        },
+      });
+    }
+    expect(provider.events).toEqual([]);
+  });
+
   it('does not let a previous-window reservation consume the refilled allowance', async () => {
     const scope = createBillingScope({
       db,
