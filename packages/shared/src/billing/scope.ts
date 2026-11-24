@@ -446,6 +446,7 @@ function countedSpendCents(
 }
 
 async function dispositionForLiveAccount(
+  db: Db,
   account: typeof teamBillingAccounts.$inferSelect,
   event: PolarUsageEvent,
   provider: BillingProvider | undefined,
@@ -475,10 +476,28 @@ async function dispositionForLiveAccount(
         (metadata.pricing_plan_id === 'enterprise' && account.planId !== 'enterprise')
   )
     return 'hold';
-  // Member-day settlements retain the legacy EUR price even if the active
-  // USD product reports coverage for an event with the same name.
-  if (billingMeterIdForPolarEvent(event.name) === 'member_days' && isSeatPricedTeamAccount(account))
-    return 'hold';
+  if (isSeatPricedTeamAccount(account)) {
+    // A replacement USD product can share meter names with a prior contract.
+    if (
+      billingMeterIdForPolarEvent(event.name) === 'member_days' ||
+      metadata.presentation_currency === 'EUR'
+    )
+      return 'hold';
+    if (metadata.pricing_plan_id === undefined) {
+      const usageAt = recallTimestamp.safeParse(metadata.usage_at).data;
+      if (
+        usageAt &&
+        (await billingPlanIdForSettlement({
+          db,
+          teamId: account.teamId,
+          usageAt,
+          livePlanId: 'team',
+          account,
+        })) === 'enterprise'
+      )
+        return 'hold';
+    }
+  }
   const pricedEventNames = await pricedEventNamesForProduct(provider, account.polarProductId);
   return polarIngestDisposition({
     eventName: event.name,
@@ -515,7 +534,7 @@ async function ingestPolarUsageIfPending(input: {
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
   const disposition = account
-    ? await dispositionForLiveAccount(account, event, input.provider, input.metadata)
+    ? await dispositionForLiveAccount(input.db, account, event, input.provider, input.metadata)
     : 'hold';
   // Shadow and comps are not billed. Leave the row pending so a later live
   // period can still invoice a charge that was payable when it was recorded.
@@ -1378,7 +1397,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
             entitlementsPlanId,
             comped,
             enterpriseContract,
-            chargeCents: seatBilling ? invoiceCents : billableChargeCents,
+            chargeCents: enterpriseUsageTarget
+              ? 0
+              : seatBilling
+                ? invoiceCents
+                : billableChargeCents,
           }),
         };
 
@@ -1948,6 +1971,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               chargeCents:
                 needsAdmissionCap ||
                 retiredEnterpriseCharge ||
+                enterpriseUsageTarget !== null ||
                 (legacyMemberDayOnSeatPlan && segment.periodYm === periodYm(now))
                   ? 0
                   : actualChargeCents,
@@ -2231,7 +2255,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   : {}),
                 ...(input.pricingPlanId ||
                 entitlementsPlanId !== livePlanId ||
-                entitlementsPlanId === 'enterprise'
+                entitlementsPlanId === 'enterprise' ||
+                seatBilling
                   ? { pricing_plan_id: entitlementsPlanId }
                   : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),

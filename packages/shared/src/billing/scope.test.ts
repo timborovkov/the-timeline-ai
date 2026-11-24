@@ -1399,6 +1399,7 @@ describe('billing scope', () => {
       { name: 'timeline_recall_minutes', units: 2 },
     ]);
     expect(await db.select().from(billingUnbilledAlerts)).toHaveLength(0);
+    expect((await scope.getDashboard()).meteredSpendCents).toBe(0);
   });
 
   it('keeps the USD Enterprise storage bundle after renewal and after downgrade', async () => {
@@ -1483,9 +1484,13 @@ describe('billing scope', () => {
     expect(provider.events).toEqual([]);
   });
 
-  it.each(['USD', 'EUR'] as const)(
-    'keeps a %s Enterprise reservation off a replacement Team invoice and cap',
-    async (currency) => {
+  it.each([
+    ['USD', 'team'],
+    ['EUR', 'team'],
+    ['USD', 'enterprise'],
+  ] as const)(
+    'keeps a %s Enterprise reservation out of replacement %s spending',
+    async (currency, replacementPlan) => {
       enableCoveredPolar('enterprise');
       const provider = createFakeBillingProvider();
       const scope = createBillingScope({
@@ -1519,11 +1524,14 @@ describe('billing scope', () => {
       await db
         .update(teamBillingAccounts)
         .set({
-          planId: 'team',
-          billingState: 'team_active',
+          planId: replacementPlan,
+          billingState: replacementPlan === 'team' ? 'team_active' : 'enterprise_active',
+          ...(replacementPlan === 'enterprise'
+            ? { arrangement: 'comped' as const, compReason: 'test' }
+            : {}),
           enterprisePlatformFeeCurrency: null,
-          polarSubscriptionId: 'sub_team',
-          polarProductId: POLAR_PRODUCT_IDS.team,
+          polarSubscriptionId: 'sub_replacement',
+          polarProductId: POLAR_PRODUCT_IDS[replacementPlan],
           spendCapCents: 95,
         })
         .where(eq(teamBillingAccounts.teamId, TEAM_ID));
@@ -1542,8 +1550,7 @@ describe('billing scope', () => {
           metadata: {
             invoice_cents: amount,
             cap_eligible_cents: 0,
-            polar_ingest_status: 'pending',
-            polar_ingest_block: 'missing_subscription_price',
+            polar_ingest_status: replacementPlan === 'team' ? 'pending' : 'not_required',
           },
         },
       });
@@ -1551,12 +1558,76 @@ describe('billing scope', () => {
       await flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID });
       expect(provider.events).toEqual([]);
       expect(await scope.getAccount()).toMatchObject({
-        billingState: 'team_active',
+        billingState: replacementPlan === 'team' ? 'team_active' : 'enterprise_active',
         spendCapCents: 95,
       });
       expect((await scope.getDashboard()).meteredSpendCents).toBe(0);
     },
   );
+
+  it('holds an untagged older Enterprise invoice after activation of a USD Team subscription', async () => {
+    vi.setSystemTime(new Date('2026-11-24T12:00:00.000Z'));
+    enableCoveredPolar('team');
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    await recordBillingPlan(db, TEAM_ID, 'enterprise', new Date('2026-11-01T00:00:00.000Z'));
+    await recordBillingPlan(
+      db,
+      TEAM_ID,
+      'team',
+      new Date('2026-11-20T00:00:00.000Z'),
+      undefined,
+      true,
+    );
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        shadowBilling: false,
+        polarCustomerId: 'cus_team',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: POLAR_PRODUCT_IDS.team,
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const usageAt = new Date('2026-11-10T12:00:00.000Z');
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:old-untagged-enterprise',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '92',
+      customerChargeCents: 92,
+      occurredAt: usageAt,
+      billable: true,
+      metadata: {
+        usage_at: usageAt.toISOString(),
+        invoice_cents: 92,
+        polar_ingest_status: 'pending',
+        polar_ingest_name: 'timeline_ai_eur_cents',
+        polar_ingest_units: 92,
+        polar_ingest_charge_cents: 92,
+        polar_ingest_customer_id: TEAM_ID,
+        polar_ingest_operation_id: 'ai:old-untagged-enterprise',
+        polar_ingest_period_ym: '2026-11',
+      },
+    });
+    await flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID });
+    expect(provider.events).toEqual([]);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, 'ai:old-untagged-enterprise'));
+    expect(ledger?.metadata.polar_ingest_status).toBe('pending');
+  });
 
   it('stamps the verified Enterprise contract currency only when that contract priced the usage', async () => {
     vi.setSystemTime(new Date('2026-11-20T12:00:00.000Z'));
