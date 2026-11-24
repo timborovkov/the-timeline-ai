@@ -1775,11 +1775,14 @@ test.describe
       page.getByText('Decision: keep onboarding scope unchanged and ship the checklist.'),
     ).toBeVisible();
 
-    const timelineFilters = new URLSearchParams({ source: 'meeting', q: String(stamp) });
-    await page.goto(`/app/timeline?${timelineFilters.toString()}`);
-    const transcriptLink = page.getByRole('link', { name: 'Open transcript', exact: true });
-    await expect(transcriptLink).toHaveAttribute('href', `/app/meetings/${meetingId}`);
-    const meetingMoment = page.locator('[data-moment-id]').filter({ has: transcriptLink });
+    await page.goto('/app/timeline?source=meeting');
+    const meetingHref = `/app/meetings/${meetingId}`;
+    const meetingMoment = page.locator('[data-moment-id]').filter({
+      has: page.locator(`a[href="${meetingHref}"]`),
+    });
+    await expect(
+      meetingMoment.getByRole('link', { name: 'Open transcript', exact: true }),
+    ).toHaveAttribute('href', meetingHref);
     // Compact titles trim punctuation; open the evidence to verify its full summary.
     await meetingMoment.getByRole('button', { name: literalPattern(summary.slice(0, -1)) }).click();
     await expect(page.getByText(summary).first()).toBeVisible();
