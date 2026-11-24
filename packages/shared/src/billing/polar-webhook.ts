@@ -1194,8 +1194,9 @@ export async function applyElapsedScheduledCancellations(
         )
           continue;
         const scheduledEnd = subscription.cancelEffectiveAt;
+        const actualEnd = subscription.endedAt;
         const ended =
-          (subscription.endedAt && subscription.endedAt <= now) ||
+          (actualEnd instanceof Date && actualEnd <= now) ||
           subscription.status === 'revoked' ||
           (subscription.status === 'canceled' && (!scheduledEnd || scheduledEnd <= now));
         // A scheduled timestamp can pass before Polar applies a reversible cancellation.
