@@ -2295,10 +2295,20 @@ describe('object scope — notes and suggestions', () => {
         teamId: TEAM_A,
         createdByUserId: USER_OWNER,
         title: 'Meeting with DFK Finland Oy',
-        startAt: new Date('2026-06-17T12:00:00.000Z'),
-        endAt: new Date('2026-06-17T13:00:00.000Z'),
+        startAt: new Date('2026-06-16T21:00:00.000Z'),
+        endAt: new Date('2026-06-17T21:00:00.000Z'),
         timezone: 'Europe/Helsinki',
+        allDay: true,
         visibility: 'team',
+      },
+      {
+        teamId: TEAM_A,
+        createdByUserId: USER_MEMBER,
+        title: 'Private planning for DFK',
+        startAt: new Date('2026-06-17T15:00:00.000Z'),
+        endAt: new Date('2026-06-17T16:00:00.000Z'),
+        timezone: 'America/Los_Angeles',
+        visibility: 'private',
       },
       {
         teamId: TEAM_A,
@@ -2572,7 +2582,11 @@ describe('object scope — notes and suggestions', () => {
       expect.objectContaining({ id: doneTask.id }),
     ]);
     expect(detail?.connectedWork.calendarEvents).toEqual([
-      expect.objectContaining({ title: 'Meeting with DFK Finland Oy' }),
+      expect.objectContaining({
+        title: 'Meeting with DFK Finland Oy',
+        allDay: true,
+        timezone: 'Europe/Helsinki',
+      }),
     ]);
     expect(detail?.connectedWork.calendarEvents).not.toContainEqual(
       expect.objectContaining({ title: 'ADFK parser planning' }),
