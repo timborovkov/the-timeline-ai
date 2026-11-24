@@ -58,15 +58,18 @@ describe('llm LangSmith tracing', () => {
     const controller = new AbortController();
     const onAbort = vi.fn();
     const model = new MockLanguageModelV3({
-      doStream: async () => ({
-        stream: new ReadableStream({
-          start(stream) {
-            stream.enqueue({ type: 'text-start', id: 'text' });
-            stream.enqueue({ type: 'text-delta', id: 'text', delta: 'Partial' });
-            setTimeout(() => controller.abort(), 0);
-          },
+      doStream: () =>
+        Promise.resolve({
+          stream: new ReadableStream({
+            start(stream) {
+              stream.enqueue({ type: 'text-start', id: 'text' });
+              stream.enqueue({ type: 'text-delta', id: 'text', delta: 'Partial' });
+              setTimeout(() => {
+                controller.abort();
+              }, 0);
+            },
+          }),
         }),
-      }),
     });
 
     await streamText({

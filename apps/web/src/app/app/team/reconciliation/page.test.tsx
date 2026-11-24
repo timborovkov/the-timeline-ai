@@ -42,7 +42,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/app-region'),
-  () => ({ readAppRegion: async () => ({ locale: 'en-US', timezone: 'UTC' }) }),
+  () => ({ readAppRegion: () => Promise.resolve({ locale: 'en-US', timezone: 'UTC' }) }),
   () => import('@/lib/app-region'),
 );
 await vi.mock(
