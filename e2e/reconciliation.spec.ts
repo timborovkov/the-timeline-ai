@@ -992,9 +992,14 @@ test.describe.serial('reconciliation dashboard', () => {
     await expect(page.getByRole('link', { name: 'failed 1' })).toBeVisible();
 
     await page.goto('/app/approvals?status=failed');
-    const failedApproval = page
-      .locator('article')
-      .filter({ hasText: fixtures.approvalBulkPartial.calendarTitle });
+    const failedFilter = page
+      .getByRole('navigation', { name: 'Approval status filters', exact: true })
+      .getByRole('link', { name: 'failed 1', exact: true });
+    await expect(failedFilter).toHaveAttribute('aria-current', 'page');
+    const failedApproval = page.getByRole('article').getByRole('button', {
+      name: `Preview ${fixtures.approvalBulkPartial.calendarTitle}`,
+      exact: true,
+    });
     await expect(
       failedApproval.getByText(fixtures.approvalBulkPartial.calendarTitle, { exact: true }),
     ).toBeVisible();
