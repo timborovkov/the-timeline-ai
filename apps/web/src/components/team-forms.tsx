@@ -25,6 +25,7 @@ import {
 import { AllowedSendersEditor } from '@/components/allowed-senders-editor';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { FormActionToast } from '@/components/form-action-toast';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
@@ -478,10 +479,12 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
       />
       {state.inviteUrl ? (
         <div className="space-y-2 border-t border-border pt-3 text-xs">
-          <p className="font-medium">Invite link (copy and share):</p>
-          <code className="block break-all font-mono text-[12px] text-fg-muted">
-            {state.inviteUrl}
-          </code>
+          <p className="font-medium">Invite link</p>
+          <CopyableCodeValue
+            value={state.inviteUrl}
+            copyLabel="Copy invite link"
+            valueClassName="text-fg-muted"
+          />
           {state.sendStatus === 'sent' ? (
             <p className="mt-2 text-muted-foreground">Invite email sent.</p>
           ) : null}

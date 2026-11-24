@@ -275,9 +275,10 @@ describe('InviteMemberForm', () => {
     expect(
       [...screen.getByLabelText<HTMLSelectElement>('Role').options].map((o) => o.value),
     ).toEqual(['member', 'admin']);
-    expect(screen.getByText('Invite link (copy and share):')).toBeTruthy();
+    expect(screen.getByText('Invite link')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeTruthy();
     expect(screen.getByText('https://timeline.test/invite/token-1')).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toBe(
+    expect(screen.getAllByRole('status').map((status) => status.textContent)).toContain(
       'Invite created and email sent. The invite link is ready to share.',
     );
 

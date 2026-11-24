@@ -6,6 +6,7 @@ import { useActionState, useState } from 'react';
 import { updateInboundEmailWhitelistAction } from '@/app/actions/teams';
 import { AllowedSendersEditor } from '@/components/allowed-senders-editor';
 import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { Button } from '@/components/ui/button';
 import { normalizeAllowedSender } from '@/lib/allowed-senders';
@@ -134,12 +135,11 @@ export function ConnectAgentMemory({
                 <p className="text-sm text-fg-muted">
                   Webhook URL — copy it now. It is shown once.
                 </p>
-                <pre
-                  translate="no"
-                  className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
-                >
-                  <code>{createdUrl}</code>
-                </pre>
+                <CopyableCodeValue
+                  value={createdUrl}
+                  copyLabel="Copy webhook URL"
+                  valueClassName="rounded-sm border border-border bg-surface-2 p-3 leading-5 text-fg"
+                />
                 <pre
                   translate="no"
                   className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
@@ -147,7 +147,6 @@ export function ConnectAgentMemory({
                   <code>{ingestWebhookCurlExample(createdUrl)}</code>
                 </pre>
                 <div className="flex flex-wrap gap-2">
-                  <CopyButton value={createdUrl} label="Copy webhook URL" />
                   <CopyButton value={ingestWebhookCurlExample(createdUrl)} label="Copy curl" />
                   <Button
                     type="button"

@@ -87,7 +87,7 @@ describe('CalendarSubscriptionPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Create URL' }));
 
     await screen.findByText('https://timeline.test/api/calendar/feed/tlcal_plaintext.ics');
-    expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy calendar subscription URL' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy webcal' })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith('/api/team/calendar-subscription', { method: 'POST' });
     expect(fakes.notifyAction).toHaveBeenCalledWith(

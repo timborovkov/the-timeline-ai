@@ -3,7 +3,7 @@ import { directoryPage, listPlatformTeams } from '@timeline/shared/platform-admi
 import type { DirectoryOptions } from '@timeline/shared/platform-admin';
 import Link from 'next/link';
 
-import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { PageHeader } from '@/components/page-header';
 import { AdminSearch, AdminPagination } from '@/components/platform-admin-directory';
 import { db } from '@/lib/db';
@@ -58,10 +58,7 @@ export default async function AdminTeamsPage({
                     {team.name}
                   </Link>
                   <p className="text-fg-muted">{team.slug}</p>
-                  <div className="flex items-center gap-2 text-xs">
-                    <code>{team.id}</code>
-                    <CopyButton value={team.id} label="Copy ID" />
-                  </div>
+                  <CopyableCodeValue value={team.id} copyLabel="Copy team ID" />
                 </td>
                 <td className="p-3">{team.memberCount}</td>
                 <td className="p-3">

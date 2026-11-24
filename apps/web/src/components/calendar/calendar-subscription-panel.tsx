@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useReducer } from 'react';
 
 import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import {
@@ -182,15 +183,16 @@ export function CalendarSubscriptionPanel({
       </div>
 
       {revealedUrl ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-          <p className="w-full text-sm text-fg-muted">
+        <div className="mt-3 space-y-2 border-t border-border pt-3">
+          <p className="text-sm text-fg-muted">
             This private URL is shown once. Copy it before you leave this page.
           </p>
-          <code className="min-w-0 flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-            {revealedUrl}
-          </code>
-          <CopyButton value={revealedUrl} />
-          <CopyButton value={webcalUrl(revealedUrl)} label="Copy webcal" />
+          <CopyableCodeValue
+            value={revealedUrl}
+            copyLabel="Copy calendar subscription URL"
+            valueClassName="rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5"
+          />
+          <CopyButton value={webcalUrl(revealedUrl)} label="Copy webcal" manualCopy={false} />
         </div>
       ) : subscription ? (
         <p className="mt-3 text-sm text-fg-muted">
