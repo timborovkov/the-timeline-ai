@@ -50,7 +50,7 @@ jobs:
 
       - name: Run Playwright E2E
         run: |
-          # Keep resource/exit evidence even if development warmup is interrupted.
+          # Keep resource/exit evidence even if fixture build or warmup is interrupted.
           # Print process names only: command arguments can contain fixture secrets.
           snapshot_resources() {
             date -u || true
@@ -66,7 +66,7 @@ jobs:
           while true; do snapshot_resources; sleep 30; done &
           monitor_pid=$!
           trap 'status=$?; kill "$monitor_pid" 2>/dev/null || true; snapshot_resources; exit "$status"' EXIT
-          bun run e2e
+          bun run e2e:precompiled
 
       - name: Upload Playwright report
         if: always()

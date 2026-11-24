@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs/config';
 import type { NextConfig } from 'next';
 
-import { e2eServerSplitChunks } from './scripts/e2e-webpack';
 import { baseContentSecurityPolicy } from './src/lib/content-security-policy';
 import {
   sensitiveLinkHeaders,
@@ -12,9 +11,10 @@ import {
 } from './src/lib/sensitive-links';
 
 const workspaceRoot = join(__dirname, '../..');
+const precompiledFixtures = process.env.E2E_PRECOMPILED === '1';
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  ...(precompiledFixtures ? { distDir: '.next-e2e' } : { output: 'standalone' }),
   redirects() {
     return Promise.resolve([
       { source: '/use-cases/work-record', destination: '/how-it-works', permanent: true },
@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
   // This trades cold-route latency for a lower idle footprint on Railway.
   experimental: {
     preloadEntriesOnStart: false,
+    ...(precompiledFixtures ? { allowDevelopmentBuild: true } : {}),
   },
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
@@ -78,19 +79,7 @@ const nextConfig: NextConfig = {
   // startup migrations are handled by apps/web/start.mjs outside Next's
   // instrumentation bundle.
   serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
-  webpack(
-    config: {
-      externals: Record<string, string>[];
-      optimization: { splitChunks?: Parameters<typeof e2eServerSplitChunks>[0] };
-    },
-    { isServer, dev, nextRuntime },
-  ) {
-    if (dev && nextRuntime === 'nodejs' && process.env.E2E_DEV_SHARED_SERVER_CHUNKS === '1') {
-      config.optimization.splitChunks = e2eServerSplitChunks(
-        config.optimization.splitChunks,
-        workspaceRoot,
-      );
-    }
+  webpack(config: { externals: Record<string, string>[] }, { isServer }) {
     if (isServer) {
       config.externals.push({
         bullmq: 'commonjs bullmq',
