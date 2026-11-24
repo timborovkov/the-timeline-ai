@@ -530,8 +530,12 @@ also keep overflow Add task. The main column uses separated sections with readab
 A generated Summary leads when available; its current-state claims remain in a
 closed disclosure with citations intact. Origin and source context is folded
 below a generated summary to avoid competing lead paragraphs, and stays visible
-when no summary exists. Connected work, evidence, facts, and discussion follow. Connected work omits empty child-task groups on leaf tasks, but keeps a Tasks group on generic objects even
-when empty, with `Open N · Done M` totals (not the truncated preview lengths),
+when no summary exists. Connected work, evidence, facts, and discussion follow.
+Connected calendar rows display timed events in the viewer’s region and preserve
+the calendar day of all-day events. Calendar links open the event’s day in the
+grid. Connected work omits empty child-task groups on leaf tasks, but keeps a
+Tasks group on generic objects even when empty, with `Open N · Done M` totals
+(not the truncated preview lengths),
 always-visible Recent history (quiet
 `No completed tasks yet` when Done is 0), assignee
 chips (including mobile), inline status, and an add-task field pre-linked to

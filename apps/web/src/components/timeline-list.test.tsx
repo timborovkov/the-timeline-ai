@@ -3,6 +3,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import type { ComponentProps, ReactNode } from 'react';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { buildTimelineMoments } from '@/lib/timeline-moments';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 // Test environment: happy-dom
@@ -1017,7 +1018,16 @@ describe('TimelineList inspector source caps', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Meeting note 8/i }));
-    renderLastInspectorContent();
+    const lastCall = fakes.showInspector.mock.lastCall as [InspectorContentForTest] | undefined;
+    if (!lastCall) throw new Error('Expected inspector content to be shown.');
+    render(
+      <WorkspaceTimezoneProvider
+        timezone="Europe/Helsinki"
+        region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+      >
+        {lastCall[0].render()}
+      </WorkspaceTimezoneProvider>,
+    );
     expect(screen.getAllByText('Meeting note 8').length).toBeGreaterThan(0);
     expect(screen.queryByText('Meeting note 0')).toBeNull();
     expect(screen.getByRole('button', { name: 'Show 6 older evidence items' })).toBeTruthy();
@@ -1029,7 +1039,9 @@ describe('TimelineList inspector source caps', () => {
 
     expect(screen.getByText('Meeting note 0')).toBeTruthy();
     expect(
-      screen.getByLabelText(/Audio for Meeting evidence.*Meeting note 0/i).getAttribute('src'),
+      screen
+        .getByLabelText(/Audio for Meeting evidence.*Meeting note 0.*03[.]06[.]2026.*06:00/i)
+        .getAttribute('src'),
     ).toBe('/audio/older-audio.m4a');
     expect(screen.queryByRole('button', { name: /Show .* older evidence/ })).toBeNull();
   });

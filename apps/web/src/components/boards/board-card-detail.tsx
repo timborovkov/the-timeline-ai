@@ -33,11 +33,12 @@ import {
 import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import type { BoardLayout } from '@/lib/board-links';
 import { boardViewHref } from '@/lib/board-links';
-import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
+import type { RegionalFormat } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
@@ -591,7 +592,10 @@ function BoardEvidence({
               <li key={change.id} className="rounded-sm border border-border bg-surface p-3">
                 <p className="text-xs font-medium text-fg">
                   {fieldLabel(change.field)} ·{' '}
-                  {formatProvenanceChangeValue(change, lanes, members, timezone)}
+                  {formatProvenanceChangeValue(change, lanes, members, {
+                    timezone,
+                    locale: region.locale,
+                  })}
                 </p>
                 {change.note ? (
                   <p className="mt-1 line-clamp-2 text-xs text-fg-muted">
@@ -646,9 +650,15 @@ function BoardActivity({
                 </span>
               </div>
               <p className="mt-1 text-fg-muted">
-                {formatChangeValue(change.field, change.previousValue, lanes, members, timezone)}
+                {formatChangeValue(change.field, change.previousValue, lanes, members, {
+                  timezone,
+                  locale: region.locale,
+                })}
                 <span className="px-1 text-fg-dim">→</span>
-                {formatChangeValue(change.field, change.newValue, lanes, members, timezone)}
+                {formatChangeValue(change.field, change.newValue, lanes, members, {
+                  timezone,
+                  locale: region.locale,
+                })}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
                 <span>{formatDisplayDateTime(change.changedAt, region)}</span>
@@ -916,7 +926,7 @@ function formatChangeValue(
   value: unknown,
   lanes: boards.BoardLaneRow[],
   members: BoardMemberOption[],
-  timezone: string,
+  dueRegion: RegionalFormat,
 ): string {
   if (field === '__add__' || field === '__remove__') {
     if (value === null || value === undefined || value === '') return 'Not on board';
@@ -935,7 +945,7 @@ function formatChangeValue(
     return displayText(members.find((member) => member.id === value)?.label ?? 'Assigned');
   }
   if (field === 'dueAt' && typeof value === 'string') {
-    return formatDisplayDate(value, { timezone });
+    return presentDueDate(value, dueRegion).dateLabel ?? value;
   }
   if (field === 'priority' && typeof value === 'number') return `P${value}`;
   if (typeof value === 'string') return displayText(value);
@@ -960,7 +970,7 @@ function formatProvenanceChangeValue(
   change: boards.BoardItemChangeRow,
   lanes: boards.BoardLaneRow[],
   members: BoardMemberOption[],
-  timezone: string,
+  dueRegion: RegionalFormat,
 ): string {
   if (change.field === '__add__' || change.field === '__remove__') {
     const value = change.field === '__remove__' ? change.previousValue : change.newValue;
@@ -975,5 +985,5 @@ function formatProvenanceChangeValue(
       ? displayText(lanes.find((lane) => lane.id === laneId)?.name ?? 'Board membership')
       : 'Board membership';
   }
-  return formatChangeValue(change.field, change.newValue, lanes, members, timezone);
+  return formatChangeValue(change.field, change.newValue, lanes, members, dueRegion);
 }

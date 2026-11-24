@@ -1615,6 +1615,8 @@ export interface ObjectDetail extends ObjectRow {
       title: string;
       startAt: Date;
       endAt: Date;
+      allDay?: boolean;
+      timezone?: string;
       showAs: string;
     }[];
     timelineEvents: {
@@ -3086,6 +3088,8 @@ async function getConnectedWork(
             description: calendarEvents.description,
             startAt: calendarEvents.startAt,
             endAt: calendarEvents.endAt,
+            allDay: calendarEvents.allDay,
+            timezone: calendarEvents.timezone,
             showAs: calendarEvents.showAs,
           })
           .from(calendarEvents)
