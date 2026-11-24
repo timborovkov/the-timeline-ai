@@ -54,7 +54,7 @@ The October 2026 sandbox accepted `email: null` while retaining a legacy custome
 
 ## Recovery and support
 
-- A delayed checkout return is pending until a verified subscription webhook updates the stored plan. Retrying an unchanged Team quote can recover its original payable link. If the roster or discount changed, wait for Polar to mark the previous checkout expired or failed. Polar has no merchant checkout-expiration operation.
+- A delayed checkout return is pending until a verified subscription webhook updates the stored plan. Retrying an unchanged Team or Enterprise quote can recover its original payable link. If the roster, discount or negotiated terms changed, wait for Polar to mark the previous checkout expired or failed. Polar has no merchant checkout-expiration operation.
 - Maintenance checks the recorded subscription for missed seat updates. It can reconcile confirmed quantities and schedule reductions. A roster larger than the confirmed quantity requires a billing administrator to review the subscription before adding members.
 - Inspect missing-price/unbilled alerts in `/app/admin/billing`; reconcile catalog configuration and retry delivery without deleting the ledger.
 - Resume pending membership revocation or conversion through the original operation; never clear pending intent to unblock access.

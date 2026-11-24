@@ -406,6 +406,26 @@ function isSeatPricedTeamAccount(account: typeof teamBillingAccounts.$inferSelec
   return effectiveBillingPlanId(account) === 'team' && account.teamSeatTerms !== null;
 }
 
+function countsTowardSpendCap(meterId: BillingMeterId, seatPricedTeam: boolean): boolean {
+  // Legacy member-days stay in the monthly history, in EUR. Paid seats
+  // replace that meter and the USD cap must not inherit those charges.
+  return !seatPricedTeam || meterId !== 'member_days';
+}
+
+function countedSpendCents(
+  counters: readonly Pick<
+    typeof billingUsageCounters.$inferSelect,
+    'meterId' | 'capEligibleChargeCents'
+  >[],
+  seatPricedTeam: boolean,
+): number {
+  return counters.reduce(
+    (sum, row) =>
+      sum + (countsTowardSpendCap(row.meterId, seatPricedTeam) ? row.capEligibleChargeCents : 0),
+    0,
+  );
+}
+
 async function dispositionForLiveAccount(
   account: typeof teamBillingAccounts.$inferSelect,
   event: PolarUsageEvent,
@@ -616,10 +636,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               capEligibleChargeCents: storageMeter?.capEligibleChargeCents ?? 0,
             },
           };
-          const meteredSpendCents = counters.reduce(
-            (sum, row) => sum + row.capEligibleChargeCents,
-            0,
-          );
+          const meteredSpendCents = countedSpendCents(counters, isSeatPricedTeamAccount(account));
           const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
           const freeRemaining = {
             ...freeAllowanceRemaining(displayMeters),
@@ -738,7 +755,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   occurredAt: billingUsageLedger.occurredAt,
                   billable: billingUsageLedger.billable,
                   metadata: billingUsageLedger.metadata,
+                  reservationId: billingUsageLedger.reservationId,
                   reservationMetadata: billingUsageReservations.metadata,
+                  reservationAdmittedPlanId: billingUsageReservations.admittedPlanId,
                 })
                 .from(billingUsageLedger)
                 .leftJoin(
@@ -746,6 +765,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   and(
                     eq(billingUsageReservations.id, billingUsageLedger.reservationId),
                     eq(billingUsageReservations.teamId, billingUsageLedger.teamId),
+                    eq(billingUsageReservations.meterId, billingUsageLedger.meterId),
                   ),
                 )
                 .where(
@@ -1193,8 +1213,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
           locked.includedDiscountRemainingCents - pendingDiscount,
         );
         const spendBeforeAdmission =
-          countersTx.reduce((sum, row) => sum + row.capEligibleChargeCents, 0) +
-          pending.reduce((sum, row) => sum + pendingCapEligibleChargeCentsInPeriod(row, ym), 0);
+          countedSpendCents(countersTx, seatBilling) +
+          pending.reduce(
+            (sum, row) =>
+              sum +
+              (countsTowardSpendCap(row.meterId, seatBilling)
+                ? pendingCapEligibleChargeCentsInPeriod(row, ym)
+                : 0),
+            0,
+          );
         const inFreeNativeAllowance = entitlementsPlanId === 'free' && !enterpriseContract;
         let requestedUnits: number;
         let listChargeCents: number;
@@ -1975,9 +2002,12 @@ export function createBillingScope(deps: BillingScopeDeps) {
             invoiceCents = split.invoiceCents;
             if (historicalDiscount === undefined) currentWindowDiscountCents = discountCents;
           }
+          const capCountersBefore = countersBeforeRows.filter((row) =>
+            countsTowardSpendCap(row.meterId, liveSeatBilling),
+          );
           const invoicePeriodYm = needsAdmissionCap ? periodYm(now) : primaryYm;
           if (needsAdmissionCap) {
-            const spent = countersBeforeRows.reduce(
+            const spent = capCountersBefore.reduce(
               (total, row) =>
                 total + (row.periodYm === invoicePeriodYm ? row.capEligibleChargeCents : 0),
               0,
@@ -2089,7 +2119,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 periodYm: row.periodYm,
                 chargeCents: row.capEligibleChargeCents,
               })),
-              counterChargeCents: countersBeforeRows.map((row) => ({
+              counterChargeCents: capCountersBefore.map((row) => ({
                 periodYm: row.periodYm,
                 chargeCents: row.capEligibleChargeCents,
               })),
@@ -2321,10 +2351,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             },
           ]),
         );
-        const meteredSpendCents = countersAfter.reduce(
-          (sum, row) => sum + row.capEligibleChargeCents,
-          0,
-        );
+        const meteredSpendCents = countedSpendCents(countersAfter, settled.usd ?? false);
         await notifyBillingUsageAlerts({
           db,
           teamId,

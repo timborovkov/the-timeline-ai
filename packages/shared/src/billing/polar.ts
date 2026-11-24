@@ -11,6 +11,7 @@ import {
 import type {
   BillingProvider,
   CreateCheckoutInput,
+  PendingEnterpriseCheckout,
   PendingTeamCheckout,
   PolarUsageEvent,
   UpdateSubscriptionInput,
@@ -97,6 +98,20 @@ export function polarCustomerIdForExternalId(
 
 const TEAM_CHECKOUT_METADATA_KEY = 'timeline_team_checkout';
 const TEAM_CHECKOUT_WITHOUT_ASSIGNED_DISCOUNT = 'standard';
+const ENTERPRISE_CHECKOUT_METADATA_KEY = 'timeline_enterprise_checkout';
+
+const enterpriseCheckoutSchema = z.object({
+  id: z.string().min(1),
+  url: z.url({ protocol: /^https$/ }),
+  customer_id: z.string(),
+  product: z.object({ id: z.string() }),
+  status: z.enum(['open', 'confirmed', 'succeeded']),
+  currency: z.string(),
+  amount: z.number().int(),
+  expires_at: z.iso.datetime({ offset: true }),
+  discount_id: z.string().nullable(),
+  metadata: z.object({ [ENTERPRISE_CHECKOUT_METADATA_KEY]: z.string() }),
+});
 
 const teamCheckoutSchema = z.object({
   id: z.string().min(1),
@@ -141,6 +156,7 @@ const seatSubscriptionSchema = z
     current_period_end: z.iso.datetime({ offset: true }),
     cancel_at_period_end: z.boolean().optional(),
     ends_at: z.iso.datetime({ offset: true }).nullish(),
+    ended_at: z.iso.datetime({ offset: true }).nullish(),
     modified_at: z.iso.datetime({ offset: true }).nullish(),
     created_at: z.iso.datetime({ offset: true }),
     pending_update: z
@@ -165,6 +181,9 @@ const seatSubscriptionSchema = z
       periodStart: new Date(row.current_period_start),
       periodEnd,
       modifiedAt: new Date(row.modified_at ?? row.created_at),
+      ...(row.ended_at !== undefined
+        ? { endedAt: row.ended_at === null ? null : new Date(row.ended_at) }
+        : {}),
       ...cancellation,
     };
   });
@@ -308,6 +327,12 @@ export function createPolarBillingProvider(options?: {
                 },
               }
             : {}),
+          ...(input.enterpriseQuoteKey
+            ? {
+                currency: 'usd',
+                metadata: { [ENTERPRISE_CHECKOUT_METADATA_KEY]: input.enterpriseQuoteKey },
+              }
+            : {}),
           allow_discount_codes: !input.discountId,
           ...(input.discountId ? { discount_id: input.discountId } : {}),
           ...(typeof input.amount === 'number' ? { amount: input.amount } : {}),
@@ -326,6 +351,21 @@ export function createPolarBillingProvider(options?: {
           fixedTeamCheckoutSeats(row) !== input.seats
         )
           throw new Error('Polar did not confirm the Team checkout quote.');
+      }
+      if (input.enterpriseQuoteKey) {
+        const row = enterpriseCheckoutSchema.parse(body);
+        if (
+          row.customer_id !== input.customerId ||
+          row.product.id !== input.productId ||
+          row.status !== 'open' ||
+          Date.parse(row.expires_at) <= Date.now() ||
+          row.currency !== 'usd' ||
+          row.amount !== input.amount ||
+          row.discount_id !== (input.discountId ?? null) ||
+          row.metadata[ENTERPRISE_CHECKOUT_METADATA_KEY] !== input.enterpriseQuoteKey
+        ) {
+          throw new Error('Polar did not confirm the Enterprise checkout quote.');
+        }
       }
       const row = z
         .object({
@@ -375,6 +415,46 @@ export function createPolarBillingProvider(options?: {
             seats:
               discountId && discountId !== row.discount_id ? null : fixedTeamCheckoutSeats(row),
             discountId,
+          });
+        }
+        if (page >= result.pagination.max_page) return pending;
+      }
+    },
+
+    async listPendingEnterpriseCheckouts(customerId) {
+      if (!organizationId) throw new PolarIdentityError('configuration', 'checkout_organization');
+      const pending: PendingEnterpriseCheckout[] = [];
+      for (let page = 1; ; page++) {
+        const query = new URLSearchParams({
+          organization_id: organizationId,
+          customer_id: customerId,
+          limit: '100',
+          page: String(page),
+        });
+        for (const status of ['open', 'confirmed', 'succeeded']) query.append('status', status);
+        const response = await polarFetch(`/checkouts/?${query.toString()}`);
+        if (!response.ok) throw new Error(`Polar checkout recovery failed: ${response.status}`);
+        const result = z
+          .object({
+            items: z.array(z.object({ metadata: z.record(z.string(), z.unknown()) }).loose()),
+            pagination: z.object({ max_page: z.number().int().nonnegative() }),
+          })
+          .parse(await response.json());
+        for (const item of result.items) {
+          if (!(ENTERPRISE_CHECKOUT_METADATA_KEY in item.metadata)) continue;
+          const row = enterpriseCheckoutSchema.parse(item);
+          if (row.customer_id !== customerId)
+            throw new PolarIdentityError('identity_conflict', 'checkout_customer');
+          pending.push({
+            id: row.id,
+            url: row.url,
+            status: row.status,
+            productId: row.product.id,
+            amount: row.amount,
+            currency: row.currency,
+            discountId: row.discount_id,
+            expiresAt: new Date(row.expires_at),
+            quoteKey: row.metadata[ENTERPRISE_CHECKOUT_METADATA_KEY],
           });
         }
         if (page >= result.pagination.max_page) return pending;

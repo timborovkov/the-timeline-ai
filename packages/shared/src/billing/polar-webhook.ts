@@ -1193,12 +1193,13 @@ export async function applyElapsedScheduledCancellations(
           (row.periodStartedAt && subscription.periodStart < row.periodStartedAt)
         )
           continue;
-        const end = subscription.cancelEffectiveAt;
+        const scheduledEnd = subscription.cancelEffectiveAt;
         const ended =
+          (subscription.endedAt && subscription.endedAt <= now) ||
           subscription.status === 'revoked' ||
-          (end ? end <= now : end === null && subscription.status === 'canceled');
-        // A missed uncancel must not discard a still-paid subscription. The regular
-        // seat reconciliation applies any confirmed renewal and clears its schedule.
+          (subscription.status === 'canceled' && (!scheduledEnd || scheduledEnd <= now));
+        // A scheduled timestamp can pass before Polar applies a reversible cancellation.
+        // Active state is safe to downgrade only when Polar reports the actual end.
         if (!ended) continue;
         incomingModifiedAt = subscription.modifiedAt;
       } catch {

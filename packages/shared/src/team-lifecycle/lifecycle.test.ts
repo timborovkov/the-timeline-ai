@@ -438,6 +438,25 @@ describe('team lifecycle', () => {
     await verifyTeamRows(db, TEAM);
   });
   it('retains financial reconciliation evidence while removing content metadata', async () => {
+    const reservationMetadata = {
+      team_seat_pricing_at_admission: { includedUsageCents: 1200, subscriptionId: 'seat-fixture' },
+      raw_payload: 'Erase reservation metadata',
+    };
+    const [reservation] = await db
+      .insert(schema.billingUsageReservations)
+      .values({
+        teamId: TEAM,
+        operationId: 'financial-fixture',
+        meterId: 'recall_minutes',
+        reservedNativeUnits: '1',
+        reservedChargeCents: 3,
+        state: 'settled',
+        admittedPlanId: 'team',
+        expiresAt: new Date(),
+        metadata: reservationMetadata,
+      })
+      .returning({ id: schema.billingUsageReservations.id });
+    if (!reservation) throw new Error('Missing billing reservation fixture');
     await db.insert(schema.billingUsageLedger).values({
       teamId: TEAM,
       operationId: 'financial-fixture',
@@ -445,13 +464,13 @@ describe('team lifecycle', () => {
       meterId: 'recall_minutes',
       nativeUnits: '1',
       customerChargeCents: 3,
+      reservationId: reservation.id,
       metadata: {
         invoice_cents: 2,
         discount_cents: 1,
         usage_at: '2026-10-31T23:59:30Z',
         usage_ended_at: '2026-10-31T23:59:50Z',
         pricing_plan_id: 'team',
-        presentation_currency: 'USD',
         polar_ingest_status: 'sent',
         private_content: 'Erase this content',
         credentials: 'Erase this secret',
@@ -459,20 +478,30 @@ describe('team lifecycle', () => {
     });
     const before = await db.select().from(schema.billingUsageLedger);
     const period = { start: '2026-10-01T00:00:00Z', end: '2026-11-01T00:00:00Z' };
-    const expected = recordedChargesForPeriod(before, period);
+    const expected = recordedChargesForPeriod(
+      before.map((row) => ({ ...row, reservationMetadata })),
+      period,
+    );
     expect(expected).toMatchObject({ totalCents: 2, currency: 'USD' });
     await beginTeamDeletion(db, actor, {
       teamId: TEAM,
       confirmation: 'First',
       reason: 'Financial retention fixture',
     });
-    await withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+    const cleanup = withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
       skipMembershipCheck: true,
-    }).lifecycle.purgeIndirect({});
+    }).lifecycle;
+    let done = false;
+    for (let tick = 0; tick < 8 && !done; tick++) done = await cleanup.purgeRows();
+    expect(done).toBe(true);
+    expect(await db.select().from(schema.billingUsageReservations)).toHaveLength(0);
+    await cleanup.purgeIndirect({});
     const after = await db.select().from(schema.billingUsageLedger);
     expect(recordedChargesForPeriod(after, period)).toEqual(expected);
     expect(after[0]?.metadata).not.toHaveProperty('private_content');
     expect(after[0]?.metadata).not.toHaveProperty('credentials');
+    expect(after[0]?.metadata).not.toHaveProperty('raw_payload');
+    expect(after[0]?.metadata.presentation_currency).toBe('USD');
     expect(after[0]?.metadata.polar_ingest_status).toBe('sent');
   });
   it('records inaccessible provider cleanup and continues local erasure', async () => {

@@ -13,7 +13,11 @@ import {
   type PolarIdentityApi,
   type PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
-import type { BillingProvider, PendingTeamCheckout } from '#src/billing/provider.js';
+import type {
+  BillingProvider,
+  PendingEnterpriseCheckout,
+  PendingTeamCheckout,
+} from '#src/billing/provider.js';
 import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/index.js';
 
 export interface TeamBillingIdentity {
@@ -111,6 +115,8 @@ export async function readOutstandingTeamCheckouts(input: {
   recordedIds: readonly string[];
   currentSubscriptionId?: string | null;
   matchesQuote?: (checkout: PendingTeamCheckout) => boolean;
+  enterpriseCheckouts?: readonly PendingEnterpriseCheckout[];
+  excludedIds?: readonly string[];
 }): Promise<{ ids: string[]; match: PendingTeamCheckout | undefined }> {
   const discovered = input.productId
     ? ((await input.provider.listPendingTeamCheckouts?.({
@@ -118,20 +124,36 @@ export async function readOutstandingTeamCheckouts(input: {
         productId: input.productId,
       })) ?? [])
     : [];
+  const enterprise =
+    input.enterpriseCheckouts ??
+    (await input.provider.listPendingEnterpriseCheckouts?.(input.customerId)) ??
+    [];
   const matches = input.matchesQuote ? discovered.filter(input.matchesQuote) : [];
   const match = matches.length === 1 ? matches[0] : undefined;
-  const ids = new Set([...input.recordedIds, ...discovered.map(({ id }) => id)]);
-  const confirmed = new Set(
-    discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
+  const ids = new Set([
+    ...input.recordedIds,
+    ...discovered.map(({ id }) => id),
+    ...enterprise.map(({ id }) => id),
+  ]);
+  const confirmationStarted = new Set([
+    ...discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
+    ...enterprise.filter((row) => row.status !== 'open').map(({ id }) => id),
+  ]);
+  const openEnterprise = new Set(
+    enterprise.filter((row) => row.status === 'open').map((row) => row.id),
   );
+  const excluded = new Set(input.excludedIds);
   const retained: string[] = [];
   const paymentStarted: string[] = [];
   for (const id of ids) {
-    if (id === match?.id) {
+    if (excluded.has(id)) continue;
+    if (id === match?.id || openEnterprise.has(id)) {
       retained.push(id);
       continue;
     }
-    const status = confirmed.has(id) ? 'already_paid' : await input.provider.expireCheckout(id);
+    const status = confirmationStarted.has(id)
+      ? 'already_paid'
+      : await input.provider.expireCheckout(id);
     if (status !== 'expired') retained.push(id);
     if (status === 'already_paid') paymentStarted.push(id);
   }
@@ -164,7 +186,8 @@ export async function withTeamBillingIdentity<T>(
       recordCheckout: (id: string) => Promise<void>;
       hasPendingCheckouts: (lookup: {
         teamProductId?: string | undefined;
-        expiredIds?: readonly string[];
+        excludedIds?: readonly string[];
+        enterpriseCheckouts?: readonly PendingEnterpriseCheckout[];
       }) => Promise<boolean>;
       prepareTeamCheckout: (quote: {
         productId: string;
@@ -417,13 +440,15 @@ export async function withTeamBillingIdentity<T>(
           db,
           account,
           recordCheckout: (id) => savePendingCheckouts([...new Set([...pendingCheckoutIds, id])]),
-          hasPendingCheckouts: async ({ teamProductId, expiredIds = [] }) => {
+          hasPendingCheckouts: async ({ teamProductId, excludedIds = [], enterpriseCheckouts }) => {
             const { ids } = await readOutstandingTeamCheckouts({
               provider: input.provider,
               customerId: identity.customerId,
               productId: teamProductId,
-              recordedIds: pendingCheckoutIds.filter((id) => !expiredIds.includes(id)),
+              recordedIds: pendingCheckoutIds,
               currentSubscriptionId: activatedPolarSubscriptionId(account),
+              excludedIds,
+              ...(enterpriseCheckouts ? { enterpriseCheckouts } : {}),
             });
             if (ids.length || pendingCheckoutIds.length) await savePendingCheckouts(ids);
             return ids.length > 0;

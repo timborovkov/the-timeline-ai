@@ -1768,7 +1768,7 @@ describe('handlePolarWebhookEvent', () => {
     expect(kept.cancelEffectiveAt).toBeNull();
   });
 
-  it.each(['renewed', 'unverified', 'ended'] as const)(
+  it.each(['renewed', 'unverified', 'scheduled', 'ended', 'ended_at'] as const)(
     'checks a due seat cancellation against the verified provider state (%s)',
     async (status) => {
       const provider = createFakeBillingProvider({ teamIdentity: true });
@@ -1807,11 +1807,12 @@ describe('handlePolarWebhookEvent', () => {
           customerId: customer.id,
           seats: 2,
           pendingSeats: null,
-          status: renewing ? 'active' : 'canceled',
+          status: status === 'ended' ? 'canceled' : 'active',
           periodStart: renewing ? periodEnd : periodStart,
           periodEnd: renewing ? nextPeriodEnd : periodEnd,
           modifiedAt: providerClock,
-          cancelEffectiveAt: renewing ? null : periodEnd,
+          cancelEffectiveAt: renewing || status === 'ended_at' ? null : periodEnd,
+          endedAt: status === 'ended_at' ? periodEnd : null,
         });
       };
       provider.updateTeamSeatSubscription = () => {
@@ -1820,7 +1821,7 @@ describe('handlePolarWebhookEvent', () => {
       // Match ordinary maintenance: the cancellation pass verifies safety, then
       // the active subscription reconciliation applies the renewed allowance.
       expect(await applyElapsedScheduledCancellations(db, now, { provider })).toBe(
-        status === 'ended' ? 1 : 0,
+        status === 'ended' || status === 'ended_at' ? 1 : 0,
       );
       if (status === 'renewed') {
         await pg.exec(`
@@ -1843,7 +1844,7 @@ describe('handlePolarWebhookEvent', () => {
           periodEndsAt: nextPeriodEnd,
           includedDiscountRemainingCents: 2400,
         });
-      } else if (status === 'unverified') {
+      } else if (status === 'unverified' || status === 'scheduled') {
         expect(account).toMatchObject({
           planId: 'team',
           cancelEffectiveAt: periodEnd,
