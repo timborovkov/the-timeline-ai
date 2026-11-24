@@ -6,46 +6,71 @@ import { withE2eDataTransaction } from './cleanup.js';
 import { signIn } from './helpers.js';
 import { E2E_PASSWORD, E2E_PREFIX, e2eTeam, e2eUsers } from './test-data.js';
 
-test('sensitive pages preserve native form origins without leaking URL tokens', async ({
-  browser,
-}, testInfo) => {
-  const context = await browser.newContext({
-    baseURL: testInfo.project.use.baseURL,
-    javaScriptEnabled: false,
-  });
-  const page = await context.newPage();
-  const path = '/sign-in?callbackUrl=%2Fapp&token=synthetic-link-token';
-  try {
-    await page.goto(path);
-    const origin = new URL(page.url()).origin;
-    // Intercept the external navigation: no external service receives the probe.
-    await context.route('https://referrer-probe.example.test/**', (route) =>
-      route.fulfill({ status: 200, contentType: 'text/html', body: 'Referrer probe' }),
-    );
-    await page.evaluate(() => {
-      const link = document.createElement('a');
-      link.href = 'https://referrer-probe.example.test/';
-      link.textContent = 'Referrer probe';
-      document.body.append(link);
-    });
-    const externalRequest = page.waitForRequest('https://referrer-probe.example.test/');
-    await page.getByRole('link', { name: 'Referrer probe' }).click();
-    expect((await (await externalRequest).allHeaders()).referer).toBe(`${origin}/`);
+test('sensitive sign-in page keeps native POST origins in intercepted header probes', async ({
+  page,
+  context,
+}) => {
+  const response = await page.goto('/sign-in?callbackUrl=%2Fapp&token=synthetic-link-token');
+  expect(response?.headers()['referrer-policy']).toBe('strict-origin');
+  await expect(page.getByLabel('Email')).toBeVisible();
+  const origin = new URL(page.url()).origin;
+  const nativeProbeUrl = `${origin}/__e2e__/native-form-origin-probe`;
+  // These requests never reach a backend or external service. The browser supplies
+  // the headers; the native form has no credentials, tokens or other fields.
+  await context.route(nativeProbeUrl, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: 'Native header probe' }),
+  );
+  const nativeSubmission = page.waitForRequest(
+    (request) => request.url() === nativeProbeUrl && request.method() === 'POST',
+  );
+  await page.evaluate((action) => {
+    const frame = document.createElement('iframe');
+    frame.name = 'native-header-probe';
+    frame.hidden = true;
+    document.body.append(frame);
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = action;
+    form.target = frame.name;
+    document.body.append(form);
+    HTMLFormElement.prototype.submit.call(form);
+  }, nativeProbeUrl);
+  const nativeRequest = await nativeSubmission;
+  const nativeHeaders = await nativeRequest.allHeaders();
+  expect(nativeHeaders.origin).toBe(origin);
+  expect(nativeHeaders.referer).toBe(`${origin}/`);
+  expect(nativeRequest.postData() ?? '').toBe('');
 
-    await page.goto(path);
-    await page.getByLabel('Email').fill(e2eUsers.owner.email);
-    await page.getByLabel('Password', { exact: true }).fill(E2E_PASSWORD);
-    const submission = page.waitForRequest(
-      (request) => request.method() === 'POST' && new URL(request.url()).pathname === '/sign-in',
-    );
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    const headers = await (await submission).allHeaders();
-    expect(headers.origin).toBe(origin);
-    expect(headers.referer).toBe(`${origin}/`);
-    await expect(page).toHaveURL(/\/app(?:\/|\?|$)/);
-  } finally {
-    await context.close();
-  }
+  await context.route('https://referrer-probe.example.test/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: 'External header probe' }),
+  );
+  await page.evaluate(() => {
+    const link = document.createElement('a');
+    link.href = 'https://referrer-probe.example.test/';
+    link.textContent = 'Referrer probe';
+    document.body.append(link);
+  });
+  const externalRequest = page.waitForRequest('https://referrer-probe.example.test/');
+  await page.getByRole('link', { name: 'Referrer probe' }).click();
+  expect((await (await externalRequest).allHeaders()).referer).toBe(`${origin}/`);
+});
+
+test('real sign-in form submits with the document origin and opens the workspace', async ({
+  page,
+}) => {
+  const response = await page.goto('/sign-in?callbackUrl=%2Fapp');
+  expect(response?.headers()['referrer-policy']).toBe('strict-origin');
+  const origin = new URL(page.url()).origin;
+  await page.getByLabel('Email').fill(e2eUsers.owner.email);
+  await page.getByLabel('Password', { exact: true }).fill(E2E_PASSWORD);
+  const submission = page.waitForRequest(
+    (request) => request.method() === 'POST' && new URL(request.url()).pathname === '/sign-in',
+  );
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  const headers = await (await submission).allHeaders();
+  expect(headers.origin).toBe(origin);
+  expect(headers.referer).toBe(`${origin}/`);
+  await expect(page).toHaveURL(/\/app(?:\/|\?|$)/);
 });
 
 // Real browsers and PostgreSQL must agree that GET/HEAD never confirm a link.
