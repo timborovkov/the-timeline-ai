@@ -1784,7 +1784,8 @@ test.describe
       meetingMoment.getByRole('link', { name: 'Open transcript', exact: true }),
     ).toHaveAttribute('href', meetingHref);
     // Compact titles trim punctuation; open the evidence to verify its full summary.
-    await meetingMoment.getByRole('button', { name: literalPattern(summary.slice(0, -1)) }).click();
+    const momentTitle = new RegExp(`^${literalPattern(summary.slice(0, -1)).source}`);
+    await meetingMoment.getByRole('button', { name: momentTitle }).click();
     await expect(page.getByText(summary).first()).toBeVisible();
   });
 });
