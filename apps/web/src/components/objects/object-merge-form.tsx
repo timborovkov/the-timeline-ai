@@ -8,8 +8,10 @@ import { useMemo, useState, useTransition } from 'react';
 
 import { mergeObjectsAction } from '@/app/actions/objects';
 import { Button } from '@/components/ui/button';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber, formatDisplayPercent } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
@@ -74,6 +76,7 @@ export function ObjectMergeForm({
   onMerged,
 }: Props) {
   const router = useRouter();
+  const { locale } = useRegionalFormat();
   const [survivorId, setSurvivorId] = useState(initialSurvivorId);
   const [isPending, startTransition] = useTransition();
   const aliases = useMemo(() => aliasAdditions(objects, survivorId), [objects, survivorId]);
@@ -146,7 +149,7 @@ export function ObjectMergeForm({
               </label>
               <details className="border-t border-border/70 px-3 py-2 text-sm">
                 <summary className="cursor-pointer select-none text-xs text-fg-muted hover:text-fg">
-                  Related facts ({factSamples.length})
+                  Related facts ({formatDisplayNumber(factSamples.length, locale)})
                 </summary>
                 {factSamples.length > 0 ? (
                   <ul className="mt-2 space-y-2 text-fg-muted">
@@ -154,7 +157,7 @@ export function ObjectMergeForm({
                       <li key={fact.id} className="border-l border-border pl-3">
                         <p>{displayText(fact.statement)}</p>
                         <div className="mt-1 text-[11px] text-fg-dim">
-                          Confidence {Math.round(fact.confidence * 100)}%
+                          Confidence {formatDisplayPercent(fact.confidence, locale)}
                         </div>
                       </li>
                     ))}
@@ -173,15 +176,19 @@ export function ObjectMergeForm({
       <section className="space-y-3 py-4">
         <h2 className="text-xs text-fg">Merge Preview</h2>
         <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-4">
-          {[
-            ['Facts', counts.facts],
-            ['Notes', counts.notes],
-            ['Links', counts.relationships],
-            ['Open tasks', counts.openTasks],
-          ].map(([label, value]) => (
+          {(
+            [
+              ['Facts', counts.facts],
+              ['Notes', counts.notes],
+              ['Links', counts.relationships],
+              ['Open tasks', counts.openTasks],
+            ] as const
+          ).map(([label, value]) => (
             <div key={label} className="bg-bg px-3 py-2">
               <div className="text-xs text-fg-dim">{label}</div>
-              <div className="text-lg font-semibold text-fg">{value}</div>
+              <div className="text-lg font-semibold text-fg">
+                {formatDisplayNumber(value, locale)}
+              </div>
             </div>
           ))}
         </div>
