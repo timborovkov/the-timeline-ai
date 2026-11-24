@@ -92,16 +92,16 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     statusLabel: 'MCP lookup',
     title: 'Notion context, when you need it.',
     summary:
-      'Notion stays the wiki. Enabled Notion MCP can search pages, databases and comments live when you ask Timeline. Native page ingest is planned.',
+      'Notion stays the wiki. Enable Notion MCP to look up pages, databases and comments live when you ask Timeline.',
     seoTitle: 'Notion lookup in The Timeline',
     seoDescription:
-      'Connect Notion MCP so Ask and agents can search pages, databases and comments. Native Notion ingest is planned; Timeline does not sync Notion history today.',
+      'Connect Notion MCP so the Timeline Agent can look up pages, databases and comments live. Timeline does not sync Notion history.',
     howItPlugsIn:
       'Connect Notion MCP from Timeline agent tools. When you ask a question, enabled live tools can search pages, databases and comments. Conversation evidence still comes from Slack, Telegram, email and calls. Notion remains the source of pages and databases.',
     today:
-      'Hosted Notion MCP lookup is available. Timeline does not ingest Notion history into the work record by default. Answers that use Notion do so through a live lookup, not a stored Notion chronology.',
+      'Hosted Notion MCP lookup is available. The Timeline Agent can use a connected Notion tool when you ask. Connecting it does not import Notion history.',
     later:
-      'Native Notion page, database, comment and revision ingestion is planned. Until then, Notion is queryable through MCP rather than captured as durable Timeline events.',
+      'Native Notion capture is unavailable. If you need it, request the connection and tell us what should enter your work record.',
     gettingStarted:
       'You may not need Notion in Timeline yet. Start with the conversation record. Add Notion MCP later if Ask should search a wiki that already lives in Notion.',
     whenAloneBetter:

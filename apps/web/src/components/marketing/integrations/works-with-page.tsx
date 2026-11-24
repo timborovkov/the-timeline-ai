@@ -63,7 +63,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                       <p>{tool.today}</p>
                     </div>
                     <div>
-                      <h2>What is planned</h2>
+                      <h2>Native capture</h2>
                       <p>{tool.later}</p>
                     </div>
                   </div>
