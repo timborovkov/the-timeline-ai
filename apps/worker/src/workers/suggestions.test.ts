@@ -1166,7 +1166,24 @@ describe('processSuggestionJobForTests', () => {
     expect(suggestionMetadata?.cross_source_evidence_mode).toBe('shadow');
     expect(suggestionMetadata?.shadow_evidence_pack_fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(suggestion?.metadata).not.toHaveProperty('evidence_pack_fingerprint');
-    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const planned = await pg.query<{
+      target_kind: string;
+      proposed_payload: Record<string, unknown>;
+    }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
+      TEAM_ID,
+    ]);
+    expect(planned.rows).toEqual([
+      {
+        target_kind: 'task',
+        proposed_payload: expect.objectContaining({
+          canonicalName: 'Send the Acme proposal',
+          plannedDate: '2026-06-02',
+          ownerUserId: OWNER_ID,
+        }),
+      },
+    ]);
+    expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
   it('records a shadow pack failure and preserves legacy proposal extraction', async () => {
@@ -1204,7 +1221,24 @@ describe('processSuggestionJobForTests', () => {
       },
     });
     expect(JSON.stringify(event?.sourceMetadata)).not.toContain('private query failure');
-    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const planned = await pg.query<{
+      target_kind: string;
+      proposed_payload: Record<string, unknown>;
+    }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
+      TEAM_ID,
+    ]);
+    expect(planned.rows).toEqual([
+      {
+        target_kind: 'task',
+        proposed_payload: expect.objectContaining({
+          canonicalName: 'Send the Acme proposal',
+          plannedDate: '2026-06-02',
+          ownerUserId: OWNER_ID,
+        }),
+      },
+    ]);
+    expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
   it('requires and persists exact per-item evidence ids in enforced mode', async () => {
@@ -1549,7 +1583,24 @@ describe('processSuggestionJobForTests', () => {
         ],
       }).bundles[0]?.items[0],
     ).not.toHaveProperty('evidenceRawEventIds');
-    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 2 });
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const planned = await pg.query<{
+      target_kind: string;
+      proposed_payload: Record<string, unknown>;
+    }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
+      TEAM_ID,
+    ]);
+    expect(planned.rows).toEqual([
+      {
+        target_kind: 'task',
+        proposed_payload: expect.objectContaining({
+          canonicalName: 'Send the Acme proposal',
+          plannedDate: '2026-06-02',
+          ownerUserId: OWNER_ID,
+        }),
+      },
+    ]);
+    expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
   it('rejects an enforced bundle that cites an id outside the selected pack', async () => {
