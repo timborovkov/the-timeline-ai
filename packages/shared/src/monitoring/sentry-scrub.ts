@@ -1,7 +1,7 @@
 const TOKEN_PATH =
-  /(\/(?:accept-invite|verify-email|api\/calendar\/feed|api\/webhooks\/ingest)\/)[^/?#]+/gi;
+  /(\/(?:accept-invite|guest\/[^/?#]+\/invite|verify-email|api\/calendar\/feed|api\/webhooks\/ingest)\/)[^/?#]+/gi;
 const SENSITIVE_LINK_IN_TEXT =
-  /(?:https?:\/\/[^/\s"'<>]+)?\/(?:accept-invite|verify-email|reset-password|forgot-password|sign-in|sign-up|legal\/accept|oauth|api\/(?:auth|calendar\/feed|webhooks\/(?:ingest|monday)|mcp\/oauth|slack\/(?:install|user-link)|integrations\/[^/\s]+\/callback))(?=[/?#]|$)[^\s"'<>]*/gi;
+  /(?:https?:\/\/[^/\s"'<>]+)?\/(?:accept-invite|guest|verify-email|reset-password|forgot-password|sign-in|sign-up|legal\/accept|oauth|api\/(?:auth|calendar\/feed|webhooks\/(?:ingest|monday)|mcp\/oauth|slack\/(?:install|user-link)|integrations\/[^/\s]+\/callback))(?=[/?#]|$)[^\s"'<>]*/gi;
 const BREADCRUMB_URL_FIELD = /^(?:from|href|request_?url|to|uri|url)$/i;
 /**
  * Telegram Bot API embeds the bot token in URL paths:

@@ -1,4 +1,7 @@
 {
+  "packages/shared/src/guest-access/scope.test.ts": {
+    "group": "integration"
+  },
   "apps/web/scripts/check-public-origin.test.ts": {
     "group": "unit"
   },

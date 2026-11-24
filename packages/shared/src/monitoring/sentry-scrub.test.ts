@@ -47,6 +47,14 @@ describe('Sentry scrubber', () => {
     );
   });
 
+  it('redacts guest invite credentials from request URLs and diagnostic text', () => {
+    const url = 'https://app.timeline.test/guest/host-workspace/invite/synthetic-token?next=/app';
+    const sanitized = 'https://app.timeline.test/guest/host-workspace/invite/[redacted]';
+    const event = scrubSentryRequestEvent({ request: { url }, message: `Invite failed at ${url}` });
+    expect(event.request.url).toBe(sanitized);
+    expect(event.message).toBe(`Invite failed at ${sanitized}`);
+  });
+
   it('redacts calendar and webhook credentials from request and diagnostic fields', () => {
     const url = 'https://app.timeline.test/api/calendar/feed/calendar-test.ics?key=query-test';
     const message = 'Callback failed at /api/webhooks/ingest/ingest-test?token=query-test';

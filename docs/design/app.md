@@ -864,3 +864,9 @@ Approvals, Tasks, Objects, and individual Boards offer Save view for their
 current filters. Work links to personal saved views, where each member can
 opt in to new-match updates through their daily digest. Project handoffs use
 a dated snapshot header and a separate link to the current project.
+
+### Guest access
+
+Team owners and admins create an invitation link for a verified email address and select workspace text notes to share. They can also publish a title and text for an active task or project. Published snapshots show the title and text entered for the guest and carry a Published snapshot label in Shared work. Updating the original task or project does not update the snapshot. Supporting notes are shared individually. Settings let admins search for work to share and show existing publications and note grants beside the invited guest, with controls to remove either or revoke the invitation.
+
+Shared work gives a guest a list and search over their shares. They can ask a question about an open item or recent shared work from the list. Answers link to the excerpts they cite. The guest view has no workspace navigation.

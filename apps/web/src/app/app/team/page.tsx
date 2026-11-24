@@ -130,6 +130,11 @@ export default async function TeamSettingsPage({
           { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
+      {isAdmin && section === 'members' ? (
+        <Link href="/app/team/guests" className="text-sm underline">
+          Guest access
+        </Link>
+      ) : null}
       {
         <TeamSettingsSections
           section={section}

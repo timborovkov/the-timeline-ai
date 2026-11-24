@@ -169,6 +169,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   uses `Bot`. Its page pairs a compact grant form with a grants/activity column
   on wide screens, stacking on mobile. Empty collections use `EmptyState`;
   grants use `CollectionRow` with readable expiry dates and explicit status.
+- Guest access lives under Team members for workspace owners and admins. Guests open a separate Shared work view with explicitly shared notes and task or project snapshots. Guests can search or ask about shared work. See [guest access](docs/design/app.md#guest-access).
 - The shell owns consistent page gutters: 16px on mobile and 32px on desktop,
   with a centered `max-w-6xl` content container. Collection indexes (Work tabs, Timeline, Documents, Meetings) mark their frame with
   `data-app-width="collection"`. Their section bands and row separators extend

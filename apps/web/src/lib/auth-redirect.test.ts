@@ -32,6 +32,17 @@ describe('signedInAuthRedirect', () => {
     ).toBe('/accept-invite/callback-token');
   });
 
+  it('continues a guest invitation without converting it into a full-member invite', () => {
+    const callbackUrl = `/guest/11111111-1111-4111-8111-111111111111/invite/${'a'.repeat(43)}`;
+    expect(signedInAuthRedirect({ callbackUrl, pendingInviteToken: 'other-invite' })).toBe(
+      callbackUrl,
+    );
+    expect(signUpHrefFromAuthCallback(callbackUrl)).toBe(
+      `/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`,
+    );
+    expect(postSignupDestination({ event: 'account_created', callbackUrl })).toBe(callbackUrl);
+  });
+
   it('uses a pending invite cookie before generic app callbacks', () => {
     process.env.AUTH_URL = 'https://timeline.example.com';
 

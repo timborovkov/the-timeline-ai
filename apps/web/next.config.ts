@@ -31,7 +31,12 @@ const nextConfig: NextConfig = {
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
     serverFunctions: false,
-    incomingRequests: { ignore: [sensitiveLinkRequestLogPattern] },
+    incomingRequests: {
+      ignore: [
+        sensitiveLinkRequestLogPattern,
+        /^(?:https?:\/\/[^/]+)?\/app\/team\/guests(?:[/?]|$)/i,
+      ],
+    },
   },
   outputFileTracingRoot: workspaceRoot,
   outputFileTracingIncludes: {

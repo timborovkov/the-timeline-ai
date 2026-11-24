@@ -77,6 +77,7 @@ import {
   operatorDatabase,
   recordScopedReadAudit,
 } from '#src/platform-admin/runtime.js';
+import { createGuestAccessScope } from '#src/guest-access/scope.js';
 import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import {
   getQdrantClient,
@@ -2126,6 +2127,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
   const guardedScope = {
     ...core,
+    guests: createGuestAccessScope(db, teamId, userId, () => ensureMember('admin')),
     timeline: {
       /** Internal recovery metadata, never a user-visible event read. */
       async getEmailIngestRecoveryState(id: string) {

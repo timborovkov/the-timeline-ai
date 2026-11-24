@@ -198,7 +198,7 @@ Current Terms/Privacy versions and renewed-acceptance requirements are owned by 
 
 Every data path must enforce both boundaries:
 
-1. the authenticated actor is an active member of the requested team; and
+1. the authenticated actor is an active member of the requested team or has an active, explicit guest grant for the requested item; and
 2. the actor may see the item's `team`, `private`, or `specific_users`
    visibility.
 
@@ -220,6 +220,8 @@ Current repository hard rules include:
   team-visible proposals but cannot approve them or use personal pins. Enabled
   third-party tools can still cause external side effects and must be disclosed
   before connection.
+
+Guest invitations are bound to a verified email and are separate from full membership. The guest surface reads explicitly granted, team-visible text notes and admin-authored snapshots of active tasks and projects. A snapshot carries only the published title and text. Record properties, derived summaries, and linked evidence do not flow into the guest snapshot. A linked note requires its own grant. Guest search runs over the same authorized text. Questions send a bounded selection of granted excerpts and the current question to shared, workspace-metered inference. Permission is checked at read, before provider dispatch, and before answer delivery. Guest conversations are not stored.
 
 New roles, admin endpoints, exports, caches, agents, background jobs, and search
 indices must demonstrate both boundaries with negative cross-team and

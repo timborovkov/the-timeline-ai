@@ -101,6 +101,7 @@ describe('credential URL privacy', () => {
   for (const path of [
     '/verify-email/synthetic?email=fixture@example.test',
     '/sign-up?invite=synthetic',
+    '/guest/synthetic-workspace/invite/synthetic-token',
     '/api/calendar/feed/synthetic.ics',
     '/api/webhooks/ingest/synthetic',
     '/api/integrations/github/callback?code=synthetic',

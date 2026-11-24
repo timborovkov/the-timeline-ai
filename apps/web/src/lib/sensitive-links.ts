@@ -3,6 +3,7 @@ const sensitiveRoutePatterns = [
   '/reset-password',
   '/verify-email',
   '/accept-invite',
+  '/guest',
   '/sign-in',
   '/sign-up',
   '/legal/accept',
