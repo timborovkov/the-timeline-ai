@@ -464,6 +464,85 @@ describe('processSuggestionJobForTests', () => {
     resetEnvForTests();
   });
 
+  it('applies a grounded customer link after the audited project and customer are accepted', async () => {
+    const id = crypto.randomUUID();
+    const quote = 'Link Cedar Labs to Northstar rollout.';
+    await seedRawEvent(db as never, {
+      id,
+      source: 'meeting',
+      text: '[15s] Alex: Cedar Labs is our customer. Northstar rollout is our project. ' + quote,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: id, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Cedar Labs rollout',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Cedar Labs',
+                    proposedPayload: {
+                      type: 'company',
+                      canonicalName: 'Cedar Labs',
+                      localRef: 'cedar',
+                    },
+                    grounding: [],
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Northstar rollout',
+                    proposedPayload: {
+                      type: 'project',
+                      canonicalName: 'Northstar rollout',
+                      localRef: 'northstar',
+                    },
+                    grounding: [],
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object_relationship',
+                    title: 'Link Cedar Labs to Northstar rollout',
+                    proposedPayload: { kind: 'related', fromRef: 'cedar', toRef: 'northstar' },
+                    grounding: [
+                      {
+                        field: 'relationship',
+                        rawEventId: id,
+                        quote,
+                        subject: 'Cedar Labs',
+                        value: 'northstar',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    const pending = await db.select().from(agentSuggestionItems);
+    expect(pending).toHaveLength(3);
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [edge] = await db.select().from(entityRelationships);
+    expect(edge?.kind).toBe('related');
+    const accepted = await db.select().from(agentSuggestionItems);
+    const link = accepted.find((item) => item.targetKind === 'object_relationship');
+    expect(link).toMatchObject({ status: 'accepted', resultId: edge?.id, resolvedByUserId: null });
+    expect(link?.metadata).toMatchObject({ approval_decision: 'automatic' });
+  });
+
   it('advances an existing deal from audited offer delivery through automatic approval', async () => {
     const [deal] = await db
       .insert(entities)

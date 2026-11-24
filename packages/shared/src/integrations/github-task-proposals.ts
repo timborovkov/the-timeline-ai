@@ -26,6 +26,7 @@ import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { qualifyWorkspaceHubs } from '#src/suggestions/hub-context.js';
 import { withTeam } from '#src/team-scope.js';
+import { rawEventIsActive } from '#src/visibility.js';
 
 const log = childLogger('integrations:github-task-proposals');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
@@ -95,6 +96,7 @@ interface OpenTaskRow {
   status: string;
   ownerUserId: string | null;
   assigneeUserId: string | null;
+  archivedAt?: Date | null;
 }
 
 interface GithubProposalSource {
@@ -317,6 +319,101 @@ export function planGithubTaskProposal(input: {
   };
 }
 
+function isNativeTrackerCompletion(work: CapturedWorkItem): boolean {
+  return (
+    work.status === 'done' &&
+    ((work.provider === 'linear' && work.eventType === 'issue.completed') ||
+      (work.provider === 'github' &&
+        work.github?.kind === 'issue' &&
+        work.eventType === 'issue.closed'))
+  );
+}
+
+export async function verifyNativeTrackerCompletion(
+  db: Db,
+  teamId: string,
+  taskId: string,
+  source: { id: string; occurredAt: Date; metadata: unknown; text: string | null },
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  const work = capturedWorkItemFromRawMetadata(source.metadata, source.text);
+  if (
+    !work ||
+    !isNativeTrackerCompletion(work) ||
+    payload.status !== 'done' ||
+    Object.keys(payload).some((key) => key !== 'status' && key !== 'aliases')
+  )
+    return false;
+  const candidates = await loadOpenTaskCandidates(
+    db,
+    teamId,
+    [{ workItem: work, rawEventId: source.id, contentText: source.text ?? '' }],
+    null,
+    true,
+  );
+  if (candidates.length >= TASK_CANDIDATE_LIMIT) return false;
+  const matches = matchOpenTasksToCapturedWorkItem(
+    work,
+    candidates.filter((task) => task.archivedAt === null),
+  );
+  const match = matches.length === 1 ? matches[0] : undefined;
+  if (match?.task.id !== taskId || match.match === 'title') return false;
+  const taskMetadata = recordFromUnknown(match.task.metadata);
+  if (
+    taskMetadata.integration_external_id &&
+    (taskMetadata.integration_external_id !== work.externalId ||
+      taskMetadata.integration_provider !== work.provider)
+  )
+    return false;
+  if (
+    payload.aliases !== undefined &&
+    JSON.stringify(payload.aliases) !==
+      JSON.stringify(mergeAliases(stringArray(match.task.aliases), work.aliases))
+  )
+    return false;
+
+  if (match.match === 'alias' && work.provider === 'linear') {
+    const aliases = work.aliases.map((alias) => alias.toLowerCase());
+    const [conflict] = await db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(
+        and(
+          eq(rawEvents.teamId, teamId),
+          eq(rawEvents.source, 'integration'),
+          rawEventIsActive(),
+          sql`${rawEvents.sourceMetadata}->>'provider' = ${work.provider}`,
+          sql`${rawEvents.sourceMetadata}->'object_map'->>'externalId' <> ${work.externalId}`,
+          sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+        COALESCE(${rawEvents.sourceMetadata}->'object_map'->'aliases', '[]'::jsonb)
+      ) AS alias(value) WHERE ${inArray(sql`lower(alias.value)`, aliases)})`,
+        ),
+      )
+      .limit(1);
+    if (conflict) return false;
+  }
+
+  const [later] = await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.source, 'integration'),
+        rawEventIsActive(),
+        sql`${rawEvents.sourceMetadata}->>'provider' = ${work.provider}`,
+        sql`COALESCE(${rawEvents.sourceMetadata}->'object_map'->>'externalId',
+                    ${rawEvents.sourceMetadata}->>'external_object_id',
+                    ${rawEvents.sourceMetadata}->>'externalObjectId') = ${work.externalId}`,
+        sql`${rawEvents.id} <> ${source.id}`,
+        sql`${rawEvents.occurredAt} >= ${source.occurredAt.toISOString()}::timestamptz`,
+        sql`coalesce(${rawEvents.sourceMetadata}->>'signal_class', '') <> 'pulse'`,
+      ),
+    )
+    .limit(1);
+  return !later;
+}
+
 export async function proposeGithubTaskUpdatesFromRawEvent(input: {
   db: Db;
   teamId: string;
@@ -500,7 +597,9 @@ async function proposeGithubTaskUpdates(input: {
     ).filter((match) =>
       input.restrictToObjectId ? match.task.id === input.restrictToObjectId : true,
     );
-    const assigneeUserId = resolveWorkItemAssignee(source.workItem, members, githubLoginsByUserId);
+    const assigneeUserId = isNativeTrackerCompletion(source.workItem)
+      ? null
+      : resolveWorkItemAssignee(source.workItem, members, githubLoginsByUserId);
     for (const match of entityMatches) {
       const plan = planGithubTaskProposal({
         workItem: source.workItem,
@@ -1265,6 +1364,7 @@ async function loadOpenTaskCandidates(
       status: entities.status,
       ownerUserId: entities.ownerUserId,
       assigneeUserId: entities.assigneeUserId,
+      archivedAt: entities.archivedAt,
     })
     .from(entities)
     .where(

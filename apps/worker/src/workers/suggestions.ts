@@ -72,6 +72,7 @@ import {
   communicationGroundingSchema,
   emailChronologyStatements,
   groundCommunicationBundles,
+  type GroundedRelationship,
   normalizeKnownRelationshipReferences,
 } from '#src/workers/communication-grounding.js';
 import {
@@ -1263,6 +1264,7 @@ export async function processSuggestionJobForTests(
       teamId: data.teamId,
       externalObjectId: data.externalObjectId,
     });
+    await applyWorkspaceRecordMaintenance(deps.db, data.teamId, undefined, data.externalObjectId);
     return;
   }
 
@@ -1318,6 +1320,11 @@ export async function processSuggestionJobForTests(
         teamId,
         rawEvent: row,
       });
+      const work = integrations.capturedWorkItemFromRawMetadata(
+        row.sourceMetadata,
+        row.contentText,
+      );
+      if (work) await applyWorkspaceRecordMaintenance(deps.db, teamId, undefined, work.externalId);
     } catch (err) {
       log.warn({ err, rawEventId, teamId }, 'captured-work task proposal generation failed');
     }
@@ -5097,6 +5104,7 @@ async function runSuggestionExtraction(
     string,
     NonNullable<suggestions.SuggestionItemInput['plannedDateEvidence']>
   >();
+  const verifiedRelationships = new Map<string, GroundedRelationship>();
   const verifiedTaskClaims = new Map<
     string,
     NonNullable<suggestions.SuggestionItemInput['taskFieldEvidence']>
@@ -5105,6 +5113,7 @@ async function runSuggestionExtraction(
     ? groundCommunicationBundles({
         verifiedLifecycleAuditIds,
         verifiedPlannedDates,
+        verifiedRelationships,
         verifiedTaskClaims,
         reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
         emailChronologyLookahead: args.conversation?.emailChronologyLookahead,
@@ -5424,6 +5433,7 @@ async function runSuggestionExtraction(
         const fields = Object.values(verifiedTaskClaims.get(item.auditId) ?? {});
         return [
           ...(item.evidenceRawEventIds ?? []),
+          ...(verifiedRelationships.get(item.auditId)?.rawEventIds ?? []),
           ...[...fields, ...(plan ? [plan] : [])].flatMap((claim) => [
             claim.rawEventId,
             ...(claim.contextRawEventId ? [claim.contextRawEventId] : []),
@@ -5498,6 +5508,9 @@ async function runSuggestionExtraction(
             ? (objectTypeById.get(item.targetId ?? '') ?? null)
             : null,
         );
+        const relationshipEvidence = item.auditId
+          ? verifiedRelationships.get(item.auditId)
+          : undefined;
         const taskFieldEvidence = item.auditId ? verifiedTaskClaims.get(item.auditId) : undefined;
         const plannedDateEvidence = item.auditId
           ? verifiedPlannedDates.get(item.auditId)
@@ -5520,9 +5533,21 @@ async function runSuggestionExtraction(
             proposedPayload,
           }),
           proposedPayload,
+          ...(relationshipEvidence ? { relationshipEvidence } : {}),
           ...(taskFieldEvidence ? { taskFieldEvidence } : {}),
           ...(plannedDateEvidence ? { plannedDateEvidence } : {}),
-          ...(item.evidenceRawEventIds ? { evidenceRawEventIds: item.evidenceRawEventIds } : {}),
+          ...(relationshipEvidence
+            ? {
+                evidenceRawEventIds: [
+                  ...new Set([
+                    ...(item.evidenceRawEventIds ?? []),
+                    ...relationshipEvidence.rawEventIds,
+                  ]),
+                ],
+              }
+            : item.evidenceRawEventIds
+              ? { evidenceRawEventIds: item.evidenceRawEventIds }
+              : {}),
         };
       }),
     });
@@ -6824,12 +6849,13 @@ async function applyWorkspaceRecordMaintenance(
   db: Db,
   teamId: string,
   itemIds?: readonly string[],
+  trackerExternalId?: string,
 ): Promise<void> {
   const maintenance = withTeam(db, teamId, PSEUDO_USER, {
     skipMembershipCheck: true,
     recordMaintenanceWorker: true,
   });
-  await maintenance.suggestions.applyPendingRecordMaintenance(itemIds);
+  await maintenance.suggestions.applyPendingRecordMaintenance(itemIds, trackerExternalId);
 }
 
 export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.SuggestionJobData> {

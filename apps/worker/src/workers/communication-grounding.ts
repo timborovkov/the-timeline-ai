@@ -111,6 +111,13 @@ function recordState(text: string, name: string, type: string, field: 'status' |
   )?.[0];
   return status ? { value: status, denied: Boolean(denial) } : undefined;
 }
+export interface GroundedRelationship {
+  rawEventIds: string[];
+  fromName: string;
+  toName: string;
+  payload: Record<string, unknown>;
+}
+
 interface Item {
   auditId?: string | undefined;
   operation: string;
@@ -900,6 +907,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
   calendarTargets?: { id: string; title: string }[];
   verifiedLifecycleAuditIds?: Set<string>;
   verifiedPlannedDates?: Map<string, VerifiedClaim>;
+  verifiedRelationships?: Map<string, GroundedRelationship>;
   verifiedTaskClaims?: Map<string, Partial<Record<MaintainedRecordField, VerifiedClaim>>>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
@@ -2236,6 +2244,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
             );
           });
         if (!grounded && !adjacentEngagement()) return [];
+        if (from && to && item.auditId) {
+          args.verifiedRelationships?.set(item.auditId, {
+            rawEventIds: [...new Set(supports.map((entry) => entry.rawEventId))],
+            fromName: from.name,
+            toName: to.name,
+            payload: { ...payload },
+          });
+        }
       }
       const has = (field: Support['field'], value: unknown) =>
         supports.find(
@@ -2698,13 +2714,25 @@ export function groundCommunicationBundles<T extends Item>(args: {
           const ref =
             typeof payload.localRef === 'string' ? payload.localRef : `grounded-task-${index}`;
           payload.localRef = ref;
+          const auditId = item.auditId ? `${item.auditId}-customer-link` : undefined;
+          const customer = args.hubs.find((hub) => hub.id === ids[0]);
+          const relationshipPayload = { kind: 'related', fromRef: ref, toEntityId: ids[0] };
+          if (auditId && customer) {
+            args.verifiedRelationships?.set(auditId, {
+              rawEventIds: [...new Set(links.map((entry) => entry.rawEventId))],
+              fromName:
+                typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title,
+              toName: customer.name,
+              payload: relationshipPayload,
+            });
+          }
           extra.push({
             ...item,
-            auditId: undefined,
+            auditId,
             operation: 'create',
             targetKind: 'object_relationship',
             title: `${item.title}: customer`,
-            proposedPayload: { kind: 'related', fromRef: ref, toEntityId: ids[0] },
+            proposedPayload: relationshipPayload,
           });
         }
       }

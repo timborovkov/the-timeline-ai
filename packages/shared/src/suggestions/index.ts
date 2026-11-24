@@ -70,6 +70,7 @@ import {
   type CalendarRecurrenceEditMode,
 } from '#src/calendar/locking.js';
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
+import { verifyNativeTrackerCompletion } from '#src/integrations/github-task-proposals.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { isObjectNotFoundError, StaleWorkspaceStateError } from '#src/mutation-errors.js';
@@ -452,6 +453,16 @@ interface VerifiedTaskClaim {
   value: string | null;
 }
 
+interface AutomaticApproval {
+  revision: string;
+  nativeStatus?: { rawEventId: string; assertedAt: Date };
+  relationship?: {
+    fromEntityId: string;
+    toEntityId: string;
+    kind: 'related' | 'child';
+  };
+}
+
 export interface SuggestionItemInput {
   operation: Operation;
   targetKind: TargetKind;
@@ -461,6 +472,7 @@ export interface SuggestionItemInput {
   dedupeKey: string;
   proposedPayload: Record<string, unknown>;
   evidenceRawEventIds?: string[];
+  relationshipEvidence?: z.infer<typeof groundedRelationshipSchema>;
   plannedDateEvidence?: VerifiedTaskClaim;
   taskFieldEvidence?: Partial<Record<MaintainedRecordField, VerifiedTaskClaim>>;
 }
@@ -719,6 +731,13 @@ const objectNotePayload = z.object({
   noteId: uuid.optional(),
   body: z.string().trim().min(1).max(5000),
   metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const groundedRelationshipSchema = z.object({
+  rawEventIds: z.array(uuid).min(1),
+  fromName: z.string().min(1),
+  toName: z.string().min(1),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 const objectRelationshipPayload = z
@@ -5917,7 +5936,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return events;
   }
 
-  async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
+  async function applyItem(
+    item: typeof agentSuggestionItems.$inferSelect,
+    automatic: AutomaticApproval | null = null,
+  ): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.targetKind === 'object_merge') {
       if (!deps.recordMaintenanceWorker)
@@ -5990,8 +6012,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             requireActive: true,
             approvalProof: recordApprovalProof(item),
             ...mutationOptions,
-            taskFieldEvidence: await getTaskFieldEvidence(item, parsed),
-            ...(deps.recordMaintenanceWorker && (await objectTypeForTarget(targetId)) === 'task'
+            taskFieldEvidence: automatic?.nativeStatus
+              ? { status: automatic.nativeStatus }
+              : await getTaskFieldEvidence(item, parsed),
+            ...(!automatic?.nativeStatus &&
+            deps.recordMaintenanceWorker &&
+            (await objectTypeForTarget(targetId)) === 'task'
               ? { taskFieldApprovalItemId: item.id }
               : {}),
             ...(parsed.plannedDate !== undefined
@@ -6108,7 +6134,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.targetKind === 'object_relationship') {
       if (item.operation !== 'create') throw new Error('Object relationships only support create');
-      const parsed = await resolveRelationshipPayload(item, payload);
+      const parsed = automatic?.relationship ?? (await resolveRelationshipPayload(item, payload));
       const endpoints = await db
         .select({ id: entities.id, type: entities.type })
         .from(entities)
@@ -6532,11 +6558,125 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return null;
   }
 
+  async function approvedRelationship(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: Record<string, unknown>,
+  ): Promise<AutomaticApproval['relationship']> {
+    const proof = groundedRelationshipSchema.safeParse(
+      recordFromUnknown(item.metadata).relationship_evidence,
+    );
+    const parsed = objectRelationshipPayload.safeParse(payload);
+    if (
+      !proof.success ||
+      !parsed.success ||
+      stableStringify(proof.data.payload) !== stableStringify(payload) ||
+      (parsed.data.kind !== 'related' && parsed.data.kind !== 'child')
+    )
+      return undefined;
+
+    async function acceptedEndpoint(id?: string, ref?: string) {
+      if (id) return id;
+      const localRef = normalizedLocalRef(ref);
+      if (!localRef) return undefined;
+      const siblings = await db
+        .select({ id: agentSuggestionItems.resultId })
+        .from(agentSuggestionItems)
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.suggestionId, item.suggestionId),
+            eq(agentSuggestionItems.operation, 'create'),
+            eq(agentSuggestionItems.status, 'accepted'),
+            isNotNull(agentSuggestionItems.resolvedAt),
+            isNotNull(agentSuggestionItems.resultId),
+            inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+            sql`lower(${agentSuggestionItems.proposedPayload}->>'localRef') = ${localRef}`,
+          ),
+        )
+        .limit(2);
+      return siblings.length === 1 ? siblings[0]?.id : undefined;
+    }
+
+    const fromEntityId = await acceptedEndpoint(parsed.data.fromEntityId, parsed.data.fromRef);
+    const toEntityId = await acceptedEndpoint(parsed.data.toEntityId, parsed.data.toRef);
+    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) return undefined;
+    const endpoints = await db
+      .select({ id: entities.id, type: entities.type, name: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          inArray(entities.id, [fromEntityId, toEntityId]),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(
+        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
+        asc(entities.id),
+      )
+      .for('update');
+    const from = endpoints.find(({ id }) => id === fromEntityId);
+    const to = endpoints.find(({ id }) => id === toEntityId);
+    if (
+      !from ||
+      !to ||
+      from.name.toLowerCase() !== proof.data.fromName.toLowerCase() ||
+      to.name.toLowerCase() !== proof.data.toName.toLowerCase() ||
+      (await uniqueActiveObjectByName(from.name))?.id !== from.id ||
+      (await uniqueActiveObjectByName(to.name))?.id !== to.id
+    )
+      return undefined;
+
+    const replacesMembership =
+      (from.type === 'person' && to.type === 'company') ||
+      (from.type === 'company' && to.type === 'person') ||
+      (parsed.data.kind === 'child' && from.type === 'task' && to.type === 'project');
+    if (replacesMembership) {
+      // These setters replace an existing exclusive relationship. Leave replacements for review.
+      const member = from.type === 'company' ? to : from;
+      const destination = member === from ? to : from;
+      const prior = await db
+        .select({ id: entityRelationships.id })
+        .from(entityRelationships)
+        .innerJoin(
+          entities,
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.type, destination.type),
+            isNull(entities.mergedIntoId),
+            sql`${entities.id} = CASE WHEN ${entityRelationships.fromEntityId} = ${member.id}::uuid
+            THEN ${entityRelationships.toEntityId} ELSE ${entityRelationships.fromEntityId} END`,
+          ),
+        )
+        .where(
+          and(
+            eq(entityRelationships.teamId, teamId),
+            eq(entityRelationships.kind, parsed.data.kind),
+            or(
+              eq(entityRelationships.fromEntityId, member.id),
+              eq(entityRelationships.toEntityId, member.id),
+            ),
+            ne(entities.id, destination.id),
+          ),
+        )
+        .limit(1);
+      if (prior.length) return undefined;
+    }
+    return { fromEntityId, toEntityId, kind: parsed.data.kind };
+  }
+
   async function automaticApprovalRevision(
     item: typeof agentSuggestionItems.$inferSelect,
     suggestion: typeof agentSuggestions.$inferSelect,
-  ): Promise<string | null> {
+  ): Promise<AutomaticApproval | null> {
     const metadata = recordFromUnknown(suggestion.metadata);
+    const native =
+      metadata.kind === 'github_task_proposal' &&
+      item.targetKind === 'task' &&
+      item.operation === 'update' &&
+      item.targetId !== null;
+    const relationship = item.targetKind === 'object_relationship' && item.operation === 'create';
     const merge = item.targetKind === 'object_merge' && item.operation === 'merge';
     const auditedConversation = String(metadata.suggestion_model_version).includes(
       '-communication-completeness-v',
@@ -6548,7 +6688,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       Object.hasOwn(recordFromUnknown(item.metadata), 'proposal_edited_by_user_id') ||
       (merge
         ? metadata.cleanup_kind !== 'merge' && !auditedConversation
-        : !auditedConversation || (item.targetKind !== 'task' && item.targetKind !== 'object'))
+        : !native &&
+          (!auditedConversation ||
+            (!relationship && item.targetKind !== 'task' && item.targetKind !== 'object')))
     )
       return null;
     const [workspace] = await db
@@ -6569,6 +6711,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         !(await acceptedProjectSibling(item.suggestionId, payload.createProjectName)))
     )
       return null;
+    const resolvedRelationship = relationship
+      ? await approvedRelationship(item, payload)
+      : undefined;
+    if (relationship && !resolvedRelationship) return null;
     await lockAcceptanceMutationTarget(item);
     const sources = await db
       .select({
@@ -6609,7 +6755,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       sources.some(
         (source) =>
           source.visibility !== 'team' ||
-          !['slack', 'telegram', 'email', 'meeting'].includes(source.source) ||
+          !(native
+            ? source.source === 'integration'
+            : ['slack', 'telegram', 'email', 'meeting'].includes(source.source)) ||
           recordFromUnknown(source.metadata).signal_class === 'pulse',
       )
     )
@@ -6628,6 +6776,83 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         )
         .limit(2);
       if (siblings.length !== 1 || sources.length !== 1) return null;
+    }
+
+    const revision = workspace.policy.revision;
+    if (resolvedRelationship) {
+      const proof = groundedRelationshipSchema.parse(
+        recordFromUnknown(item.metadata).relationship_evidence,
+      );
+      if (proof.rawEventIds.some((id) => !requiredSources.includes(id))) return null;
+      const proofSources = sources.filter((source) => proof.rawEventIds.includes(source.id));
+      const assertedAt = new Date(
+        Math.min(...proofSources.map((source) => source.occurredAt.getTime())),
+      );
+      const { fromEntityId, toEntityId, kind } = resolvedRelationship;
+      const [laterRemoval] = await db
+        .select({ id: objectChanges.id })
+        .from(objectChanges)
+        .where(
+          and(
+            eq(objectChanges.teamId, teamId),
+            eq(objectChanges.status, 'applied'),
+            gt(objectChanges.changedAt, assertedAt),
+            or(
+              and(
+                eq(objectChanges.field, '__relationship_delete__'),
+                sql`${objectChanges.previousValue}->>'kind' = ${kind}`,
+                or(
+                  and(
+                    eq(objectChanges.entityId, fromEntityId),
+                    sql`COALESCE(${objectChanges.previousValue}->>'to', ${objectChanges.previousValue}->>'from') = ${toEntityId}`,
+                  ),
+                  and(
+                    eq(objectChanges.entityId, toEntityId),
+                    sql`COALESCE(${objectChanges.previousValue}->>'to', ${objectChanges.previousValue}->>'from') = ${fromEntityId}`,
+                  ),
+                ),
+              ),
+              and(
+                inArray(objectChanges.entityId, [fromEntityId, toEntityId]),
+                inArray(objectChanges.field, ['primaryProjectId', 'primaryCompanyId']),
+                sql`COALESCE(${objectChanges.newValue}, 'null'::jsonb) = 'null'::jsonb`,
+              ),
+            ),
+          ),
+        )
+        .limit(1);
+      if (laterRemoval) return null;
+      return { revision, relationship: resolvedRelationship };
+    }
+    if (native) {
+      const cited = sources.filter((source) => requiredSources.includes(source.id));
+      const source = cited.length === 1 ? cited[0] : undefined;
+      if (
+        !source ||
+        !item.targetId ||
+        !(await verifyNativeTrackerCompletion(db, teamId, item.targetId, source, payload))
+      )
+        return null;
+      const [task] = await db
+        .select({ status: entities.status, revisions: entities.recordFieldRevisions })
+        .from(entities)
+        .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
+        .limit(1);
+      const latest = task?.revisions.status;
+      if (
+        !task ||
+        (latest &&
+          (latest.rawEventId === source.id ||
+            Date.parse(latest.assertedAt) >= source.occurredAt.getTime()))
+      )
+        return null;
+      if (
+        workspace.policy.reviewManualValues &&
+        latest?.rawEventId === null &&
+        task.status !== payload.status
+      )
+        return null;
+      return { revision, nativeStatus: { rawEventId: source.id, assertedAt: source.occurredAt } };
     }
 
     async function hasActiveSlackAuthor(since: Date, matches: (text: string) => boolean) {
@@ -6712,7 +6937,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         }))
       )
         return null;
-      return workspace.policy.revision;
+      return { revision };
     }
     if (item.operation === 'create') {
       const type = item.targetKind === 'task' ? 'task' : payload.type;
@@ -6872,16 +7097,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return null;
       if ((await uniqueActiveObjectByName(target.name))?.id !== item.targetId) return null;
     }
-    return workspace.policy.revision;
+    return { revision };
   }
 
-  async function applyPendingRecordMaintenance(itemIds?: readonly string[]): Promise<number> {
+  async function applyPendingRecordMaintenance(
+    itemIds?: readonly string[],
+    trackerExternalId?: string,
+  ): Promise<number> {
     if (!deps.recordMaintenanceWorker || deps.acceptance.kind !== 'root')
       throw new Error('Record maintenance requires the scoped worker capability');
     await ensureMember();
     if (itemIds?.length === 0) return 0;
     let count = 0;
     const dependentTaskIds: string[] = [];
+    const relationshipIds: string[] = [];
     async function apply(id: string) {
       try {
         if ((await acceptSuggestionItemWithOutcome(id)) === 'accepted') count++;
@@ -6894,6 +7123,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const pending = await db
         .select({
           id: agentSuggestionItems.id,
+          targetKind: agentSuggestionItems.targetKind,
           dependsOnProject: sql<boolean>`${agentSuggestionItems.operation} = 'create' AND ${agentSuggestionItems.proposedPayload} ? 'createProjectName'`,
         })
         .from(agentSuggestionItems)
@@ -6909,7 +7139,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             eq(agentSuggestions.source, 'background'),
             eq(agentSuggestionItems.status, 'pending'),
             isNull(agentSuggestionItems.resolvedAt),
-            inArray(agentSuggestionItems.targetKind, ['task', 'object', 'object_merge']),
+            inArray(agentSuggestionItems.targetKind, [
+              'task',
+              'object',
+              'object_merge',
+              'object_relationship',
+            ]),
             inArray(agentSuggestionItems.operation, [
               'create',
               'update',
@@ -6919,7 +7154,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             or(
               sql`${agentSuggestions.metadata} ->> 'suggestion_model_version' LIKE '%-communication-completeness-v%'`,
               sql`${agentSuggestions.metadata} ->> 'cleanup_kind' = 'merge'`,
+              sql`${agentSuggestions.metadata} ->> 'kind' = 'github_task_proposal'`,
             ),
+            trackerExternalId
+              ? sql`${agentSuggestions.metadata} ->> 'github_external_id' = ${trackerExternalId}`
+              : undefined,
           ),
         )
         .orderBy(asc(agentSuggestionItems.id))
@@ -6927,11 +7166,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (pending.length === 0) break;
       cursor = pending.at(-1)?.id;
       for (const item of pending) {
-        if (item.dependsOnProject) dependentTaskIds.push(item.id);
+        if (item.targetKind === 'object_relationship') relationshipIds.push(item.id);
+        else if (item.dependsOnProject) dependentTaskIds.push(item.id);
         else await apply(item.id);
       }
     }
     for (const id of dependentTaskIds) await apply(id);
+    for (const id of relationshipIds) await apply(id);
     return count;
   }
 
@@ -6988,9 +7229,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         throw error.applyError;
       }
     }
-    const automaticRevision = deps.recordMaintenanceWorker
+    const automatic = deps.recordMaintenanceWorker
       ? await automaticApprovalRevision(row.item, row.suggestion)
       : null;
+    const automaticRevision = automatic?.revision ?? null;
     if (deps.recordMaintenanceWorker && automaticRevision === null) return null;
     const resolutionActor = automaticRevision === null ? userId : null;
     const staleReason = await staleActionableItemReason(row.item);
@@ -7038,7 +7280,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const stopHeartbeat = startAcceptanceHeartbeat(itemId, acceptanceAttemptId);
     try {
       await deps.beforeApplyItem?.(itemId);
-      resultId = await applyItem(claimed);
+      resultId = await applyItem(claimed, automatic);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
       if (deps.acceptance.kind === 'transaction') {
@@ -8842,6 +9084,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                           ),
                         ),
                       }
+                    : {}),
+                  ...(item.relationshipEvidence
+                    ? { relationship_evidence: item.relationshipEvidence }
                     : {}),
                   ...(item.taskFieldEvidence
                     ? { task_field_evidence: item.taskFieldEvidence }

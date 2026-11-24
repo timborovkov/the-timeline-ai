@@ -573,6 +573,74 @@ describe('suggestion scope', () => {
     expect(await automation.applyPendingRecordMaintenance()).toBe(0);
   });
 
+  it('does not auto-add a grounded relationship that would remove a primary project', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const prior = await human.objects.createObject({
+      type: 'project',
+      canonicalName: 'Old rollout',
+      actor,
+    });
+    const next = await human.objects.createObject({
+      type: 'project',
+      canonicalName: 'New rollout',
+      actor,
+    });
+    const task = await human.objects.createObject({
+      type: 'task',
+      canonicalName: 'Fix checkout',
+      parentObjectId: prior.id,
+      actor,
+    });
+    const id = crypto.randomUUID();
+    const quote = 'Fix checkout belongs to New rollout.';
+    await db.insert(rawEvents).values({
+      id,
+      teamId: TEAM_ID,
+      source: 'slack',
+      visibility: 'team',
+      contentText: quote,
+      occurredAt: new Date(Date.now() + 1000),
+    });
+    const payload = { fromEntityId: task.id, toEntityId: next.id, kind: 'child' };
+    await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: quote,
+      dedupeKey: id,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: id, quote }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: quote,
+          dedupeKey: id,
+          proposedPayload: payload,
+          evidenceRawEventIds: [id],
+          relationshipEvidence: {
+            rawEventIds: [id],
+            fromName: task.canonicalName,
+            toName: next.canonicalName,
+            payload,
+          },
+        },
+      ],
+    });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [unchanged] = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.fromEntityId, task.id));
+    expect(unchanged).toMatchObject({ toEntityId: prior.id });
+    const [pending] = await db.select().from(agentSuggestionItems);
+    expect(pending?.status).toBe('pending');
+  });
+
   it('leaves a proposal pending when its evidence becomes private before automation', async () => {
     const sourceId = crypto.randomUUID();
     const text = 'The checkout page is broken.';
