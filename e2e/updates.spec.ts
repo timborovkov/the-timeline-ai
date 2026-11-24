@@ -1,18 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   billingFreeGrants,
-  billingUsageCounters,
   billingUsageReservations,
   closeDb,
   dailyDigests,
   getDb,
   rawEvents,
 } from '@timeline/db';
-import { FREE_ALLOWANCES } from '@timeline/shared/billing';
+import { BILLING_EUR_PER_USD, FREE_MONTHLY_USAGE_CENTS } from '@timeline/shared/billing';
 import { getDigestPreference, scheduledUpdateWindow } from '@timeline/shared/messaging';
-import { eq } from 'drizzle-orm';
 import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { withTeam } from '@timeline/shared/team-scope';
+import { eq } from 'drizzle-orm';
 
 import { newSignedInPage } from './helpers.js';
 import { e2eOtherTeam, e2eTeam, e2eUsers } from './test-data.js';
@@ -195,12 +194,28 @@ test('explains exhausted workspace previews while preserving update history', as
     .insert(billingFreeGrants)
     .values({ userId, assignedTeamId: teamId })
     .onConflictDoNothing();
-  await db.insert(billingUsageCounters).values({
-    teamId,
-    periodYm: new Date().toISOString().slice(0, 7),
+  const billing = withTeam(db, teamId, userId).billing;
+  const initial = await billing.getDashboard();
+  expect(initial.account.planId).toBe('free');
+  expect(initial.restrictionReason).toBeNull();
+  expect(initial.freeRemaining.includedUsageCents).toBe(FREE_MONTHLY_USAGE_CENTS);
+
+  const nativeAiCents = FREE_MONTHLY_USAGE_CENTS * BILLING_EUR_PER_USD;
+  await billing.settle({
+    operationId: `e2e:updates-preview:${archiveId}`,
     meterId: 'ai',
-    nativeUnits: String(FREE_ALLOWANCES.aiChargeCents),
+    nativeUnits: nativeAiCents,
+    customerChargeCents: Math.round(nativeAiCents),
   });
+  expect((await billing.getDashboard()).freeRemaining.includedUsageCents).toBe(0);
+  expect(
+    await billing.reserve({
+      operationId: `e2e:updates-preview:${archiveId}:probe`,
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+    }),
+  ).toEqual({ ok: false, code: 'free_allowance_reached' });
   await db.insert(rawEvents).values({
     teamId,
     authorUserId: userId,
