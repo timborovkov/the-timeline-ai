@@ -1,4 +1,5 @@
 import {
+  agentSuggestionItems,
   billingFreeGrants,
   billingUsageLedger,
   chatSessions,
@@ -127,6 +128,89 @@ beforeEach(async () => {
 });
 
 describe('guest access', () => {
+  it('shares automatically maintained task fields using the same current revision and rejects unaudited reversion', async () => {
+    const host = withTeam(db, team, admin);
+    const worker = withTeam(db, team, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    async function propose(
+      operation: 'create' | 'update',
+      payload: Record<string, unknown>,
+      targetId?: string,
+    ) {
+      const rawEventId = crypto.randomUUID();
+      const quote =
+        operation === 'create' ? 'The login page is broken.' : 'Broken login page is done.';
+      const occurredAt = new Date(
+        operation === 'create' ? '2026-12-01T10:00:00Z' : '2026-12-02T10:00:00Z',
+      );
+      await db.insert(rawEvents).values({
+        id: rawEventId,
+        teamId: team,
+        source: 'slack',
+        visibility: 'team',
+        contentText: quote,
+        occurredAt,
+      });
+      const bundle = await host.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: quote,
+        dedupeKey: rawEventId,
+        metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+        evidence: [{ rawEventId, quote }],
+        items: [
+          {
+            operation,
+            targetKind: 'task',
+            ...(targetId ? { targetId } : {}),
+            title: quote,
+            dedupeKey: rawEventId,
+            proposedPayload: payload,
+            evidenceRawEventIds: [rawEventId],
+            ...(operation === 'update'
+              ? {
+                  taskFieldEvidence: {
+                    status: { rawEventId, assertedAt: occurredAt.toISOString(), value: 'done' },
+                  },
+                }
+              : {}),
+          },
+        ],
+      });
+      const [item] = bundle.items;
+      if (!item) throw new Error('Expected task proposal');
+      expect(await worker.applyPendingRecordMaintenance()).toBe(1);
+      const [applied] = await db
+        .select()
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.id, item.id));
+      expect(applied).toMatchObject({ status: 'accepted', resolvedByUserId: null });
+      expect(applied?.metadata).toMatchObject({ approval_decision: 'automatic' });
+      if (!applied?.resultId) throw new Error('Expected applied task');
+      return applied.resultId;
+    }
+    const taskId = await propose('create', { canonicalName: 'Broken login page', status: 'todo' });
+    const invitation = await host.guests.invite('guest@example.test');
+    if (!invitation) throw new Error('Expected guest invitation');
+    await host.guests.shareRecord(invitation.id, taskId);
+    const reader = withTeam(db, team, guest).guests;
+    expect(await reader.accept(invitation.token)).toBe(true);
+    expect(await reader.listRecords(taskId)).toMatchObject([
+      { title: 'Broken login page', status: 'todo' },
+    ]);
+    await propose('update', { status: 'done' }, taskId);
+    expect(await reader.listRecords(taskId)).toMatchObject([
+      { title: 'Broken login page', status: 'done' },
+    ]);
+    expect(await reader.listSources()).toEqual([]);
+    await host.objects.updateObject(taskId, { status: 'open' }, { kind: 'user', userId: admin });
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'open' }]);
+    // A later unproven write must not reuse the previous public proof for the same value.
+    await db.update(entities).set({ status: 'done' }).where(eq(entities.id, taskId));
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: null }]);
+  });
+
   it('accepts only the verified recipient for the invited workspace and never confers membership', async () => {
     const manager = withTeam(db, team, admin).guests;
     const invite = await manager.invite(' Guest@Example.test ');
