@@ -1,4 +1,4 @@
-import type { ChatContextRef } from '@timeline/shared/chat-context';
+import { CHAT_CONTEXT_TRAIL_MAX, type ChatContextRef } from '@timeline/shared/chat-context';
 import type { DailyDigestPayload } from '@timeline/shared/messaging';
 import { savedWorkViewHref } from '@timeline/shared/saved-work-views';
 import { expect, vi } from '@timeline/test-support';
@@ -243,6 +243,31 @@ describe('Update follow-up context', () => {
       payload.savedViewChanges,
       new Date(payload.windowEnd),
       expect.any(Date),
+    );
+  });
+
+  it('preserves full saved-view filters in a mixed briefing with a full set of source links', async () => {
+    const links = Array.from({ length: CHAT_CONTEXT_TRAIL_MAX }, (_, index) => ({
+      label: `Source ${String(index + 1)}`,
+      href: `/app/timeline?event=88888888-8888-4888-8888-88888888888${String(index)}`,
+    }));
+    const href = savedWorkViewHref({
+      collection: 'tasks',
+      targetId: null,
+      filters: { q: 'Helsinki '.repeat(32).trim(), status: 'blocked', due: 'today' },
+    });
+    fakes.listDailyDigests.mockResolvedValue([
+      { payload: { ...payload, savedViewsOnly: false, links } },
+    ]);
+    fakes.visibleDigestChanges.mockResolvedValue([
+      { title: 'Blocked launch work', href, count: 1 },
+    ]);
+
+    const { contextTrail } = await paneProps(undefined, updateId);
+    expect(contextTrail).toHaveLength(CHAT_CONTEXT_TRAIL_MAX);
+    expect(contextTrail[0]).toEqual({ kind: 'page', href, label: 'Blocked launch work' });
+    expect(contextTrail.filter(({ kind }) => kind === 'timeline-event')).toHaveLength(
+      CHAT_CONTEXT_TRAIL_MAX - 1,
     );
   });
 

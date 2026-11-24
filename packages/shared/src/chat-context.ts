@@ -1,6 +1,7 @@
 export const CHAT_CONTEXT_TRAIL_MAX = 8;
 export const CHAT_CONTEXT_LABEL_MAX = 80;
 export const CHAT_CONTEXT_HREF_MAX = 240;
+const SAVED_WORK_VIEW_CONTEXT_HREF_MAX = 8192;
 
 export const CHAT_CONTEXT_KINDS = [
   'object',
@@ -34,6 +35,8 @@ export interface ChatContextRef {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MOMENT_ID_RE = /^moment:[a-z0-9:._/-]{1,180}$/i;
+const SAVED_WORK_VIEW_HREF =
+  /^\/app\/(?:tasks|objects|approvals|boards\/([0-9a-fA-F-]+))(?:\?[^#\s]*)?$/;
 
 function isUuid(value: string | undefined): value is string {
   return typeof value === 'string' && UUID_RE.test(value);
@@ -49,6 +52,11 @@ function optionalMomentId(value: unknown): string | undefined {
 
 function clip(value: string, max: number): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+export function isSavedWorkViewContextHref(href: string): boolean {
+  const match = SAVED_WORK_VIEW_HREF.exec(href);
+  return match !== null && (match[1] === undefined || isUuid(match[1]));
 }
 
 export function isChatContextKind(value: unknown): value is ChatContextKind {
@@ -75,7 +83,11 @@ export function parseChatContextRef(value: unknown): ChatContextRef | null {
   const raw = value as Record<string, unknown>;
   if (!isChatContextKind(raw.kind)) return null;
   if (typeof raw.href !== 'string' || typeof raw.label !== 'string') return null;
-  const href = clip(raw.href, CHAT_CONTEXT_HREF_MAX);
+  const rawHref = raw.href.trim();
+  const isSavedView = raw.kind === 'page' && isSavedWorkViewContextHref(rawHref);
+  // Filtered view URLs are atomic. Clipping can change a filter or split its encoding.
+  if (isSavedView && rawHref.length > SAVED_WORK_VIEW_CONTEXT_HREF_MAX) return null;
+  const href = isSavedView ? rawHref : clip(rawHref, CHAT_CONTEXT_HREF_MAX);
   const label = clip(raw.label, CHAT_CONTEXT_LABEL_MAX);
   if (!href.startsWith('/app') || !label) return null;
 
