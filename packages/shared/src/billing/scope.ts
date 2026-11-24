@@ -1147,6 +1147,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
         }
 
         const seatBilling = entitlementsPlanId === 'team' && locked.teamSeatTerms !== null;
+        const bundledInfrastructure =
+          bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
+          !enterpriseContract;
         if (
           seatBilling &&
           (input.meterId === 'ai' || input.meterId === 'recall_minutes') &&
@@ -1155,11 +1158,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
         }
         const priceAdmission = (nativeUnits: number, listChargeCents: number) => {
-          if (
-            bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
-            !enterpriseContract
-          )
-            return 0;
+          if (bundledInfrastructure) return 0;
           if (input.meterId === 'ai') {
             // Keep fractional allowance units, but round payable holds up only
             // after discounts so small calls cannot bypass a paid spend cap.
@@ -1211,6 +1210,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const reservationMetadata = {
           ...(input.metadata ?? {}),
           admitted_metered_discount_percent: commercial.meteredDiscountPercent ?? 0,
+          bundled_infrastructure_at_admission: bundledInfrastructure,
           team_overage_cap_at_admission: seatBilling ? locked.spendCapCents : 0,
           list_charge_cents: input.reservedChargeCents,
           metered_charge_cents: billableChargeCents,
@@ -1519,6 +1519,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 ? (PLAN_CATALOG[entitlementsPlanId].additionalMemberCents ?? 0)
                 : (commercial.additionalMemberCents ?? 0);
           const seatBilling = entitlementsPlanId === 'team' && account.teamSeatTerms !== null;
+          const admittedBundle =
+            reservation[0]?.meterId === input.meterId &&
+            reservation[0].admittedPlanId === entitlementsPlanId
+              ? reservation[0].metadata.bundled_infrastructure_at_admission
+              : undefined;
+          const bundledInfrastructure =
+            typeof admittedBundle === 'boolean'
+              ? admittedBundle
+              : bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
+                !enterpriseContract;
           const segmentCharges = segments.map((segment) => {
             const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
             const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
@@ -1552,10 +1562,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               });
             const previousBillableCents = billableAt(previousNative);
             const nextBillableCents = billableAt(nextNative);
-            const bundled =
-              bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
-              !enterpriseContract;
-            const actualChargeCents = bundled
+            const actualChargeCents = bundledInfrastructure
               ? 0
               : Math.max(
                   0,

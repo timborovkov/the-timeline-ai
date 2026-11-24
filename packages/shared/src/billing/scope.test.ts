@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { FREE_ALLOWANCES } from '#src/billing/catalog.js';
 import {
   daysInPeriodYm,
   memberDayChargeDelta,
@@ -2233,24 +2234,106 @@ describe('billing scope', () => {
     expect(dash.meters.ai?.customerChargeCents).toBe(1);
   });
 
-  it('accumulates sub-cent accepted-source charges from locked counters', async () => {
+  it('meters bundled Free sources and enforces their capacity independently of Included usage', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    const before = await scope.getDashboard();
     for (let i = 0; i < 20; i += 1) {
-      await scope.settle({
+      const settled = await scope.settle({
         operationId: `op-src-${String(i)}`,
         meterId: 'accepted_sources',
         nativeUnits: 1,
         customerChargeCents: 0,
       });
+      expect(settled).toMatchObject({ ok: true, duplicate: false });
     }
     const dash = await scope.getDashboard();
-    expect(dash.meters.accepted_sources?.nativeUnits).toBe(20);
-    expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
+    expect(dash.meters.accepted_sources).toMatchObject({
+      nativeUnits: 20,
+      customerChargeCents: 0,
+    });
+    expect(dash.freeRemaining.includedUsageCents).toBe(before.freeRemaining.includedUsageCents);
+    expect(dash.freeRemaining.acceptedSources).toBe(FREE_ALLOWANCES.acceptedSources - 20);
+    expect(
+      await scope.reserve({
+        operationId: 'source:remaining-capacity',
+        meterId: 'accepted_sources',
+        reservedNativeUnits: dash.freeRemaining.acceptedSources,
+        reservedChargeCents: 49,
+      }),
+    ).toMatchObject({ ok: true, reservation: { reservedChargeCents: 0 } });
+    expect(
+      await scope.reserve({
+        operationId: 'source:above-capacity',
+        meterId: 'accepted_sources',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 0,
+      }),
+    ).toMatchObject({ ok: false, code: 'usage_limit_reached' });
+  });
+
+  it('keeps admitted Team ingestion bundled when settlement follows a Free downgrade', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        shadowBilling: false,
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 1200,
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const operation = {
+      operationId: 'source:admitted-before-downgrade',
+      meterId: 'accepted_sources' as const,
+    };
+    expect(
+      await scope.reserve({ ...operation, reservedNativeUnits: 20, reservedChargeCents: 1 }),
+    ).toMatchObject({ ok: true, reservation: { reservedChargeCents: 0 } });
+
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'free',
+        billingState: 'free',
+        teamSeatTerms: null,
+        includedDiscountRemainingCents: 0,
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const settled = await scope.settle({ ...operation, nativeUnits: 20, customerChargeCents: 1 });
+    expect(settled).toMatchObject({
+      ok: true,
+      duplicate: false,
+      ledger: {
+        actorUserId: USER_ID,
+        customerChargeCents: 0,
+        metadata: {
+          list_charge_cents: 1,
+          invoice_cents: 0,
+          polar_ingest_status: 'not_required',
+          pricing_plan_id: 'team',
+        },
+      },
+    });
+    expect((await scope.getDashboard()).meters.accepted_sources).toMatchObject({
+      nativeUnits: 20,
+      customerChargeCents: 0,
+    });
+    expect(provider.events).toEqual([]);
   });
 
   it('ingests the cumulative Team email cent and skips the sub-cent settles', async () => {

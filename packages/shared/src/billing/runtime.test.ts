@@ -215,27 +215,68 @@ describe('billing runtime', () => {
     expect(dash.meters.email_units?.nativeUnits).toBe(2);
   });
 
-  it('settles accepted sources on the cumulative cent boundary', async () => {
-    const ids = Array.from(
-      { length: 10 },
-      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
-    );
-    const result = await meterAcceptedSources({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      rawEventIds: ids,
-    });
-    expect(result.ok).toBe(true);
+  it('records bundled Team ingestion with the real actor and no additional charge on replay', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const now = Date.now();
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        shadowBilling: false,
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 1200,
+        spendCapCents: 0,
+        periodStartedAt: new Date(now - 60_000),
+        periodEndsAt: new Date(now + 60 * 60 * 1000),
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const rawEventIds = Array.from(
+      { length: 10 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const input = { db, teamId: TEAM_ID, userId: USER_ID, rawEventIds };
+    expect(await meterAcceptedSources(input)).toEqual({ ok: true, duplicate: false });
+    expect(await meterAcceptedSources(input)).toEqual({ ok: true, duplicate: true });
+
     const dash = await billing.getDashboard();
-    expect(dash.meters.accepted_sources?.nativeUnits).toBe(10);
-    expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
+    expect(dash.meters.accepted_sources).toMatchObject({
+      nativeUnits: 10,
+      customerChargeCents: 0,
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(1200);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, TEAM_ID),
+          eq(billingUsageLedger.meterId, 'accepted_sources'),
+          eq(billingUsageLedger.kind, 'settlement'),
+        ),
+      );
+    expect(ledger.map((row) => row.operationId).sort()).toEqual(
+      rawEventIds.map((id) => `accepted_source:${id}`),
+    );
+    for (const row of ledger) {
+      expect(Number(row.nativeUnits)).toBe(1);
+      expect(row).toMatchObject({
+        actorUserId: USER_ID,
+        operationClass: 'ingest',
+        source: 'event_writer',
+        customerChargeCents: 0,
+        metadata: { invoice_cents: 0, polar_ingest_status: 'not_required' },
+      });
+    }
+    expect(ledger.reduce((sum, row) => sum + Number(row.metadata.list_charge_cents), 0)).toBe(1);
   });
 
   it('does not accrue daily usage during disable or backfill the disabled interval after restoration', async () => {
