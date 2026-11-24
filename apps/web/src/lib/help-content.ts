@@ -161,7 +161,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Open Work to find tasks assigned to you and work that needs attention.',
           'Open a task or object to inspect its source evidence before changing status, owner or due date.',
           'Pin frequently used objects, boards or documents so you can return to them from Home.',
-          'Review proposed changes in Approvals. Accept the changes you agree with; reject unsupported suggestions.',
+          'Open Approvals for changes that need a decision. Accept supported changes or reject unsupported suggestions.',
           'Work → Digests lists every daily update as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
           'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
@@ -172,10 +172,10 @@ export const HELP_PAGES: HelpPage[] = [
         resourceLinks: [
           { href: '/help/capture', label: 'How answers handle newer and conflicting evidence' },
         ],
-        body: 'Timeline extracts proposed state from conversations, email, meetings, documents, and integrations, then keeps receipts attached so changes can be reviewed.',
+        body: 'Timeline uses captured evidence to propose changes. Eligible routine changes apply automatically by default and appear in the record history. Workspace policy determines which changes need review.',
         items: [
           'Raw events stay intact; summaries can change without rewriting source evidence.',
-          'Important state can go through human review before it becomes canonical.',
+          'Newer explicit evidence can update an earlier manually set default when policy and field rules allow. Replaying older activity does not roll the record back.',
           'Use manual edits for judgment, not for retyping what already happened.',
         ],
       },

@@ -100,8 +100,8 @@ export default function WebsiteIntegrationPage() {
                 </summary>
                 <p className="mt-3 max-w-2xl leading-6 text-fg-muted">
                   Up to five public pages on the same site, with permission to submit them.
-                  Login-protected pages aren’t supported. Captures are visible to your team;
-                  suggested record changes still need approval.
+                  Login-protected pages aren’t supported. Captures are visible to your team. Any
+                  resulting record changes follow your workspace policy.
                 </p>
               </details>
               <details className="py-5">

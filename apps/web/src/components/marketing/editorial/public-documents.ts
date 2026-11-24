@@ -17,7 +17,7 @@ const howItWorksDocument = {
   kind: 'guide-index',
   title: 'How it works: from activity to a shared work record',
   description:
-    'Connect selected sources and see how The Timeline captures activity, answers questions with evidence, and keeps accepted records and pending changes separate.',
+    'See how The Timeline captures selected activity, answers with evidence, and records automatic changes and review exceptions under your workspace policy.',
   indexability: 'index',
   dates: { modified: HOW_IT_WORKS_REVIEW_DATE, reviewed: HOW_IT_WORKS_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -38,7 +38,7 @@ const howItWorksDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'Connect selected sources and see how The Timeline captures activity, answers questions with evidence, and keeps accepted records and pending changes separate.',
+      'See how The Timeline captures selected activity, answers with evidence, and records automatic changes and review exceptions under your workspace policy.',
     sections: [
       ...EVIDENCE_FRESHNESS_FAQS.map((faq) => ({ title: faq.question, body: faq.answer })),
       {
@@ -48,7 +48,7 @@ const howItWorksDocument = {
       },
       {
         title: 'Method',
-        body: 'Connect selected sources, capture supported activity, and follow its chronology. Ask a question or open a view, then use the evidence to review a proposal or correct a record.',
+        body: 'Connect selected sources, capture supported activity, and follow its chronology. Eligible routine changes apply automatically by default and appear in history. Workspace policy can require review, and changes that need a decision remain pending.',
       },
     ],
   },

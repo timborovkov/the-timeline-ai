@@ -69,11 +69,9 @@ function CurrentBrowserStorage() {
               lasting up to 7 days. It is Secure in production.
             </td>
             <td>
-              Remember a self-serve plan chosen on Pricing or sign-up (Pay as you go, Team, or
-              Business) so we can remind you after setup and highlight it in Team settings →
-              Billing. It stores only the plan id, never payment details, and never changes your
-              plan, limits, or entitlements — those stay Free until Polar confirms a paid
-              subscription.
+              Remember a self-serve paid plan chosen on Pricing or sign-up so we can remind you
+              after setup and highlight it in Team settings → Billing. The cookie stores only the
+              plan ID. Your workspace stays on Free until Polar confirms a paid subscription.
             </td>
           </tr>
           <tr>

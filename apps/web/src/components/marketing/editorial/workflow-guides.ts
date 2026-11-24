@@ -319,7 +319,7 @@ export const WORKFLOW_GUIDES = [
       ],
       answerTitle: 'Friday is agreed; completion is not recorded.',
       answerBody:
-        'The email changes the commitment, while the Slack reply supports work in progress. The task record still needs a reviewed update.',
+        'The email changes the commitment, while the Slack reply supports work in progress. Check the task history for an applied update or Approvals if it needs review.',
       citations: ['01', '02', '03'],
     },
     interpretation: {
@@ -348,7 +348,7 @@ export const WORKFLOW_GUIDES = [
       {
         question: 'Does extracting action items update an external task tracker?',
         answer:
-          'A retrieved answer is a draft. Timeline proposals require review, and external tools have their own permissions and effects. This guide does not assume automatic write-back to another tracker.',
+          'A retrieved answer does not write to a task tracker. Eligible Timeline updates can apply under workspace policy. Any external action uses that tool’s own permissions.',
       },
     ],
     relatedRoutes: [

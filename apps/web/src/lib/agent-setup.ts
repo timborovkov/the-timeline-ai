@@ -61,7 +61,7 @@ You are connecting an agent to The Timeline, a shared work record for teams and 
 
 Never ask for, accept or paste any key or token in chat. Sign-in is OAuth in the human's browser. Static \`tla_\` keys belong only under Advanced in Timeline, never in chat.
 
-The hosted MCP server advertises seven tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, \`timeline.remember\`, \`timeline.crawl\`, and \`timeline.crawl_status\`. Website scanning requires explicit permission and the separate \`websites:scan\` scope; it costs 20 source units per captured page. Default OAuth is \`read\` plus \`capture\` (the capture checkbox is on by default). \`timeline.remember\` needs the \`capture\` scope; uncheck it for a read-only grant. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
+The hosted MCP server advertises seven tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, \`timeline.remember\`, \`timeline.crawl\`, and \`timeline.crawl_status\`. Website scanning requires explicit permission and the separate \`websites:scan\` scope. Default OAuth is \`read\` plus \`capture\` (the capture checkbox is on by default). \`timeline.remember\` needs the \`capture\` scope; uncheck it for a read-only grant. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
 
 ## 1. Resume or establish access
 
@@ -142,7 +142,7 @@ Use these only when the human asks you to record something.
 - **Team email:** send, forward, CC or BCC to the team address shown on The Timeline Home → Team email. The sending address must be a team member or an allowed sender.
 - **Webhook:** POST text or JSON (1 MB or less) to this Timeline deployment's \`/api/webhooks/ingest\` with \`Authorization: Bearer $TIMELINE_INGEST_TOKEN\`. Hosted Timeline uses ${TIMELINE_INGEST_WEBHOOK_URL}. Self-hosted Timeline must use that deployment's own origin; posting to the hosted URL returns 401. Keep the token in the environment. Never print the token.
 
-Recorded items become cited evidence only. Any proposals still need human approval. Tell the human what was recorded.
+Recorded items add cited evidence. Workspace policy determines which resulting record changes apply automatically and which wait for review. Tell the human what was recorded.
 
 ## 5. Complete the handoff
 

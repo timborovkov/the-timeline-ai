@@ -58,7 +58,7 @@ export default function HowItWorksPage() {
               ],
               [
                 'Maintain',
-                'Source evidence keeps its author, time and visibility. Related tasks, people and projects bring the activity together.',
+                'Source evidence keeps its author, time and visibility. Eligible routine record changes can apply automatically under workspace policy and appear in history.',
               ],
               [
                 'Ask or explore',
@@ -66,7 +66,7 @@ export default function HowItWorksPage() {
               ],
               [
                 'Review or correct',
-                'Review proposed changes and their sources, or edit a record to correct it. The original captured evidence stays intact.',
+                'Changes that need a decision go to Approvals. You can check their sources or correct the record while preserving the original captured evidence.',
               ],
             ].map(([title, body]) => (
               <li key={title}>

@@ -16,9 +16,7 @@ export function ConnectorPreview({ connector }: { connector: ConnectorContent })
         <h2>The context comes together.</h2>
         <p>{connector.diagram.answer}</p>
       </div>
-      <figcaption>
-        Illustrative example · Sources attached. Inferred record changes require approval.
-      </figcaption>
+      <figcaption>Illustrative example · Sources stay attached to the record.</figcaption>
     </figure>
   );
 }

@@ -527,7 +527,7 @@ function AudienceScene() {
       <SceneHeading
         id="trust-title"
         title={<>See what changed and why.</>}
-        copy="Proposed changes include the evidence behind them. Review the changes that need your attention in the approval queue."
+        copy="Eligible routine changes can apply automatically under your workspace policy. See what changed and why in the record history. Changes that need a decision appear in Approvals."
       />
       <div
         className={styles.trustFlowPanel}

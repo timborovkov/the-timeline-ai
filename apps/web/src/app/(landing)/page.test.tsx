@@ -148,7 +148,7 @@ describe('LandingPage', () => {
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
     );
     expect(application?.featureList).toContain(
-      'An approval queue with sources for proposed record changes',
+      'Source-linked history for applied changes and a review queue for exceptions',
     );
     expect(metadata).toMatchObject({
       title: 'A shared work record for teams and their AI agents',

@@ -507,7 +507,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
 
       <div className={styles.flowExplainerFooter}>
         <span>Sources stay attached.</span>
-        <span>Proposed changes have a review queue.</span>
+        <span>History records applied changes. Exceptions go to review.</span>
         <span>Enabled external tools have their own permissions.</span>
       </div>
     </section>

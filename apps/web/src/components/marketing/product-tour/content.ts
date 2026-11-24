@@ -66,7 +66,7 @@ export const PRODUCT_TOUR = {
       index: '06',
       headline: 'Review proposed record changes.',
       caption:
-        'Proposed tasks, dates and record changes wait in a queue, each with why it was suggested and its source. Captured evidence still lands on the timeline automatically.',
+        'By default, eligible routine changes apply automatically and appear in the record history with their sources. Workspace policy controls which changes need review. The screenshot shows the review queue.',
       file: '29-approvals-dark.png',
       alt: 'Approvals queue of proposed tasks, dates and record changes.',
       reshoot: undefined,

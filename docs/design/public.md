@@ -15,7 +15,8 @@ issue from its Slack report through an optional meeting and linked GitHub
 change. Distinguish the merge from release and customer verification. Show
 cited questions about personal and team activity, a daily update, and views for
 boards, customer context, calendar, and files. The agent handoff attributes the
-progress note to the agent. The approval explanation links to Security & privacy.
+progress note to the agent. Describe applied record history and review exceptions together. Link to
+Security & privacy.
 Use-case links follow the walkthrough and precede the closing action.
 
 The nine-source animation sits beside the hero copy, with the plain-language product

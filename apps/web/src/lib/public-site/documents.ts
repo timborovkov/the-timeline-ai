@@ -211,7 +211,7 @@ const coreDocuments = definePublicDocuments('public-core', [
           'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
           'Source, time, and visibility preserved with captured evidence',
-          'An approval queue with sources for proposed record changes',
+          'Source-linked history for applied changes and a review queue for exceptions',
         ],
       },
     ],

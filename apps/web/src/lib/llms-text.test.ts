@@ -183,7 +183,9 @@ describe('llms text files', () => {
       expect(text).toContain('within each configured source’s scope');
       expect(text).toContain('read a daily update');
       expect(text).toMatch(/citation|cite the source/iu);
-      expect(text).toContain('Proposed record changes have a review queue');
+      expect(text).toContain(
+        'Eligible routine changes can apply automatically and appear in history',
+      );
       expect(text).not.toContain('operations log your team can talk to');
       expect(text).not.toContain('captures messy real-world work');
     }

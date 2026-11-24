@@ -483,7 +483,7 @@ Review: Project owner to confirm before distribution.`,
       {
         index: '06',
         title: 'Close with verification',
-        body: 'End the chronology with the mitigation or fix, the delivery event, and the evidence used to confirm recovery. Keep follow-up work separate from the resolved incident state. Add response notes to the work record as evidence; proposed task or record changes still need human approval before they take effect.',
+        body: 'End the chronology with the mitigation or fix, the delivery event, and the evidence used to confirm recovery. Keep follow-up work separate from the resolved incident state. Add response notes as evidence. Check the history for applied changes and Approvals for exceptions that need a decision.',
         output: 'A cited handoff or post-incident dossier.',
       },
     ],
@@ -609,6 +609,11 @@ export const EVIDENCE_FRESHNESS_FAQS = [
     question: 'Does the newest message always win?',
     answer:
       'No. Search balances relevance and freshness across conversations, email, meetings, integrations and documents. A recent Telegram correction can help explain an older email, but dates alone do not establish truth. Undated uploads and website observations receive a smaller freshness boost.',
+  },
+  {
+    question: 'Can new evidence change an existing record?',
+    answer:
+      'Yes. Newer explicit evidence can update an earlier manually set default when the workspace policy and field rules allow it. Replaying older activity does not roll back the current record. Applied changes remain visible in history.',
   },
   {
     question: 'Do pending changes affect the accepted record?',

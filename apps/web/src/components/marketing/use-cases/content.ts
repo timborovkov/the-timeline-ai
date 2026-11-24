@@ -188,7 +188,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     cardBody: 'People, companies, deals and follow-ups, filled in from the conversation.',
     seoTitle: 'Keep customer context together',
     seoDescription:
-      'The Timeline fills in people, company, deal and follow-up records from Slack, Telegram, email and calls, with links to supporting sources and your approval before anything changes.',
+      'Connect people, companies, deals and follow-ups to the Slack messages, Telegram conversations, emails and calls behind them.',
     eyebrow: 'Use case · Customer context',
     title: 'Keep customer context together.',
     summary:
@@ -196,7 +196,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     problemLine:
       'Before a customer call, check what was promised and what still needs following up.',
     howItWorks: [
-      'Review suggested changes beside the conversation that prompted them.',
+      'Open the source behind a record change. Changes that need a decision appear in Approvals.',
       'Keep people, companies, deals and follow-ups together in the work record.',
     ],
     blocks: [
@@ -265,7 +265,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     summary:
       'A first report can suggest a task. Later evidence can suggest an owner, planned date or status change.',
     howItWorks: [
-      'Review suggested changes, then approve, edit or reject them.',
+      'Eligible routine task changes can apply automatically under workspace policy and appear in history. Review exceptions with their supporting sources.',
       'Kanban and list views use the same records. GitHub, Linear and Monday.com activity can sync in alongside them.',
     ],
     example: {
