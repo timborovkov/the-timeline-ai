@@ -32,23 +32,33 @@ describe('public integration routes', () => {
     resetPublicSessionCache();
   });
 
-  it('puts the same answers in the rendered capability table and both LLM files', () => {
+  it('groups connection modes separately from their limits and keeps both LLM files aligned', () => {
     const html = renderToStaticMarkup(<IntegrationsPage />);
     const document = new DOMParser().parseFromString(html, 'text/html');
-    const rows = [...document.querySelectorAll('table[aria-labelledby="capabilities"] tbody tr')];
-    expect(rows.map((row) => row.querySelector('th')?.textContent)).toEqual([
+    const section = document.querySelector('section[aria-labelledby="capabilities"]');
+    if (!section) throw new Error('Missing integration capabilities');
+    const modes = [...section.querySelectorAll('h3')];
+    const details = [...section.querySelectorAll('dl dt')];
+    expect(modes.map((heading) => heading.textContent)).toEqual([
       'Native sync',
-      'Deliberate capture',
+      'Activity capture',
       'Live lookup',
+    ]);
+    expect(details.map((heading) => heading.textContent)).toEqual([
       'Historical coverage',
       'Permissions',
     ]);
+    expect(section.querySelector('a[href="/integrations/mcp"]')?.textContent).toBe(
+      'Connect MCP tools',
+    );
+    expect(section.querySelector('a[href="/integrations/github#limitations"]')).not.toBeNull();
+    expect(section.querySelector('a[href="/integrations/linear#limitations"]')).not.toBeNull();
 
     const compact = buildLlmsTxt();
     const full = buildLlmsFullTxt();
-    for (const row of rows) {
-      const title = row.querySelector('th')?.textContent ?? '';
-      const body = row.querySelector('td')?.textContent ?? '';
+    for (const heading of [...modes, ...details]) {
+      const title = heading.textContent;
+      const body = heading.parentElement?.querySelector('p')?.textContent ?? '';
       expect(body.length).toBeGreaterThan(30);
       expect(compact).toContain(`- ${title}: ${body}`);
       expect(full).toContain(`#### ${title}\n${body}`);

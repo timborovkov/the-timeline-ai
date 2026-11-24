@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { GitHubSourceLink } from '@/components/github-source-link';
+import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
   CTA_MICROCOPY_LEAD,
   SEE_IT_FIRST_HREF,
@@ -108,6 +109,10 @@ function getHomeDocument() {
 }
 
 const LOGIN_EVENTS = PUBLIC_DEMO_STORY.landing.events;
+
+function loginSourceId(id: (typeof LOGIN_EVENTS)[number]['id']) {
+  return `login-source-${id}`;
+}
 
 export default function LandingPage() {
   return (
@@ -241,7 +246,7 @@ function ClaimScene() {
                   }
                   signedIn={null}
                 />
-                <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+                <GitHubSourceLink appearance="inline-icon" className={styles.heroGithubLink} />
               </div>
             </div>
           </div>
@@ -361,7 +366,7 @@ function TimelineScene() {
         </div>
         <ol className={styles.timelineList}>
           {LOGIN_EVENTS.map((event) => (
-            <li key={event.id} id={`login-source-${event.id}`}>
+            <li key={event.id} id={loginSourceId(event.id)}>
               <time dateTime={event.dateTime}>
                 <span>{event.day.slice(0, 3)}</span>
                 {event.time}
@@ -409,29 +414,52 @@ function AnswerScene() {
 function AgentScene() {
   return (
     <section className={styles.scene} aria-labelledby="agent-title">
-      <SceneHeading
-        id="agent-title"
-        title={<>Your agents work from the same record.</>}
-        copy="An agent can find why the login change was made and leave the next person a place to continue."
-      />
-      <div className={styles.audienceRail}>
-        <article className={styles.recordCard}>
-          <h3>Agent progress note</h3>
+      <div className={styles.agentLayout}>
+        <div className={styles.agentIntro}>
+          <h2 id="agent-title">Your agents work from the same record.</h2>
           <p>
-            “I checked the staging login flow. The customer’s environment still needs verification.”
+            An agent can read the decisions behind a task and leave a progress note for whoever
+            picks up the work next.
           </p>
-        </article>
-        <article className={styles.recordCard}>
-          <h3>Later answer</h3>
-          <p>
-            The agent reported checking the staging login flow. Follow up after release to confirm
-            the customer can log in.
-          </p>
-        </article>
+        </div>
+        <figure className={styles.agentHandoff}>
+          <figcaption>Login issue · Illustrative handoff</figcaption>
+          <ol>
+            <li>
+              <h3>Read the context</h3>
+              <p>
+                Priya took the investigation in the{' '}
+                <a href={`#${loginSourceId('02')}`}>rollout review</a>. The linked{' '}
+                <a href={`#${loginSourceId('03')}`}>GitHub PR #482</a> later merged.
+              </p>
+            </li>
+            <li id="login-agent-note">
+              <h3>Report progress</h3>
+              <blockquote>
+                “I signed in with a test account on staging. I left customer verification open.”
+              </blockquote>
+            </li>
+            <li>
+              <h3>Pick up the next check</h3>
+              <p className={styles.agentQuestion}>
+                “What should I check before telling the customer?”
+              </p>
+              <p>
+                Verify that <a href={`#${loginSourceId('03')}`}>PR #482</a> reached the customer’s
+                environment, then ask them to retry the login from the{' '}
+                <a href={`#${loginSourceId('01')}`}>Slack report</a>. The{' '}
+                <a href="#login-agent-note">agent’s note</a> only covers staging.
+              </p>
+            </li>
+          </ol>
+        </figure>
+        <div className={styles.agentSetup}>
+          <AgentSetupCard compact />
+          <Link href="/agents" className={styles.textLink}>
+            Explore agent access and setup
+          </Link>
+        </div>
       </div>
-      <Link href="/agents" className={styles.textLink}>
-        For AI agents
-      </Link>
     </section>
   );
 }

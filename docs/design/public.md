@@ -37,9 +37,13 @@ only quiet static routes for reduced motion. Avoid continuous canvas rendering,
 blur filters and unrelated particles. Mobile stacks
 the diagram after the primary action without removing its source labels.
 
-The compact AgentSetupCard lives on the agents page below the workflow
-explanation. Keep the official client marks and the selectable setup command.
+The homepage pairs one compact agent setup card with the illustrative login
+handoff. Link to the original context, attribute the progress note to its agent,
+and give the next person or agent a concrete check with evidence. Keep the
+official client marks and the selectable setup command. The example sits beside
+the introduction and setup at wide widths, then stacks before setup on phones.
 On narrow screens the command takes a full row and Copy stays at least 44px tall.
+The agents page gives the same command with permissions and setup guidance.
 
 The login example keeps its source details visible alongside the answer on
 desktop and stacked on mobile. Numbered references match the visible source
@@ -190,6 +194,11 @@ disclosures. Six native provider connectors have descriptive rows with visible
 Native sync labels. Live lookup and planned integrations have distinct groups;
 Local-desktop and complete provider lists use disclosures. Provider detail pages
 supply the specific evidence examples; the directory prioritizes finding a source.
+The capability overview gives native sync, activity capture, and live lookup
+one short column each on wider screens, with coverage and permission details
+grouped below. On phones both groups stack in reading order. Keep the provider
+limits one link away and explain that connected Slack channels and Telegram
+groups capture new activity automatically.
 
 Slack conversation capture and selected-channel history sync remain separate
 contracts. Generic ingest webhooks are evidence-only; meeting capture stores
@@ -217,15 +226,16 @@ account actions rather than guessing the visitor's session state.
 The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The agent setup card and evidence ledger are labelled sections within the landing main content.
-Below the hamburger breakpoint the top bar keeps the wordmark, primary
-account action, and a far-right native disclosure with the accessible name
+Below the hamburger breakpoint the top bar keeps the wordmark, GitHub icon,
+primary account action, and a far-right native disclosure with the accessible name
 `Menu`. Keep the focus ring. Sign in and the theme control move into the
 disclosure at phone widths.
 Native connector labels on the landing page link to their integration detail
 pages, while native source badges in public walkthroughs link back to the same
-provider truth. The landing hero and public navigation also link directly to
-the project's source on GitHub; the
-public help shell and developer docs repeat that path. Legal pages use the
+provider truth. The hero’s GitHub icon, link label, and external arrow sit in
+one compact row aligned with the primary actions. In the shared header the
+GitHub icon sits next to the theme and account controls. The public help shell
+and developer docs also link to the source repository. Legal pages use the
 shared public shell at reading width (65–70ch).
 Public pricing copy explains plans, usage costs, and billing terms in customer language. Keep sandbox rollout status, implementation terminology, and internal launch assumptions in setup documentation rather than the pricing page.
 

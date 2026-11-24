@@ -2,7 +2,8 @@ import { ArrowRight, Globe, Mail, Video, Webhook } from 'lucide-react';
 import Link from 'next/link';
 
 import {
-  INTEGRATION_CAPABILITY_ANSWERS,
+  INTEGRATION_CONNECTION_DETAILS,
+  INTEGRATION_CONNECTION_MODES,
   MEETING_CAPTURE_FAQ,
 } from '@/components/marketing/integrations/capability-answers';
 import {
@@ -92,25 +93,7 @@ export function IntegrationDirectory() {
             </nav>
           </header>
 
-          <section className={styles.section} aria-labelledby="capabilities">
-            <h2 id="capabilities">What each connection can do</h2>
-            <table className={styles.capabilities} aria-labelledby="capabilities">
-              <thead className="sr-only">
-                <tr>
-                  <th scope="col">Capability</th>
-                  <th scope="col">Coverage and limits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {INTEGRATION_CAPABILITY_ANSWERS.map(({ title, body }) => (
-                  <tr key={title}>
-                    <th scope="row">{title}</th>
-                    <td>{body}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+          <ConnectionCapabilities />
           <section className={styles.section} aria-labelledby="native">
             <h2 id="native">Bring selected tool history into Timeline.</h2>
             <p>
@@ -207,6 +190,46 @@ export function IntegrationDirectory() {
         </MarketingContainer>
       </main>
     </PublicShell>
+  );
+}
+
+function ConnectionCapabilities() {
+  return (
+    <section className={styles.capabilitySection} aria-labelledby="capabilities">
+      <h2 id="capabilities">What each connection can do</h2>
+      <ul className={styles.connectionModes}>
+        {INTEGRATION_CONNECTION_MODES.map(({ title, body, links }) => (
+          <li key={title}>
+            <h3>{title}</h3>
+            <p>{body}</p>
+            <CapabilityLinks links={links} />
+          </li>
+        ))}
+      </ul>
+      <dl className={styles.connectionDetails}>
+        {INTEGRATION_CONNECTION_DETAILS.map(({ title, body, links }) => (
+          <div key={title}>
+            <dt>{title}</dt>
+            <dd>
+              <p>{body}</p>
+              <CapabilityLinks links={links} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function CapabilityLinks({ links }: { links: readonly { label: string; href: string }[] }) {
+  return (
+    <ul className={styles.capabilityLinks}>
+      {links.map(({ href, label }) => (
+        <li key={href}>
+          <Link href={href}>{label}</Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
