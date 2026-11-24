@@ -19,8 +19,8 @@ import { afterAll, beforeAll, beforeEach, describe, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { FREE_MONTHLY_USAGE_CENTS } from '#src/billing/catalog.js';
 import { assertTeamMemberSeatCapacity } from '#src/billing/capacity.js';
+import { FREE_MONTHLY_USAGE_CENTS } from '#src/billing/catalog.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { withTeam } from '#src/team-scope.js';

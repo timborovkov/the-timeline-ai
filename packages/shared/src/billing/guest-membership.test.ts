@@ -31,7 +31,9 @@ beforeAll(async () => {
   db = drizzle(fixture.pg) as unknown as Db;
 });
 afterAll(async () => fixture.close());
-afterEach(() => providerSpy.mockRestore());
+afterEach(() => {
+  providerSpy.mockRestore();
+});
 beforeEach(async () => {
   await fixture.reset();
   await db.insert(teams).values({ id: teamId, slug: 'paid-guests', name: 'Paid guests' });

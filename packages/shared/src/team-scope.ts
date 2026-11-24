@@ -48,6 +48,7 @@ import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
+import { createGuestAccessScope } from '#src/guest-access/scope.js';
 import { createHandoffScope } from '#src/handoffs.js';
 import {
   acceptIngestWebhookEvidence,
@@ -67,6 +68,7 @@ import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
 import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
+import { createUpdatePreferencesScope } from '#src/messaging/update-preferences.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
@@ -77,7 +79,6 @@ import {
   operatorDatabase,
   recordScopedReadAudit,
 } from '#src/platform-admin/runtime.js';
-import { createGuestAccessScope } from '#src/guest-access/scope.js';
 import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import {
   getQdrantClient,
@@ -103,7 +104,6 @@ import {
   type RankingInput,
   type RankingMetadata,
 } from '#src/retrieval/ranking.js';
-import { createUpdatePreferencesScope } from '#src/messaging/update-preferences.js';
 import { createSavedWorkViewScope } from '#src/saved-work-views.js';
 import { createSourceHealthScope } from '#src/source-health.js';
 import {
