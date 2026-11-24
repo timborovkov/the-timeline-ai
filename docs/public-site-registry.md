@@ -64,7 +64,7 @@ omitted, so adding the first document is what makes its section appear.
 
 Use-case documents live beside their shared page content under
 [`components/marketing/use-cases`](../apps/web/src/components/marketing/use-cases)
-and appear in the public Use cases menu. Compare documents live beside
+and appear in the footer Use cases column. Compare documents live beside
 their shared page content under
 [`components/marketing/compare`](../apps/web/src/components/marketing/compare)
 and appear in the footer Compare column as head-to-head pages versus Day AI,
@@ -75,17 +75,11 @@ Each comparison owns its page review date and its baseline claim check date.
 Set a claim's `reviewedOn` when checking that claim independently. The
 comparison page and expanded LLM entry show the same check date.
 Notion remains integrations-only.
-The Integrations
-header dropdown and matching footer column list the hub plus live destinations:
-Slack (native sync), Telegram (capture), Google Drive, GitHub, Linear,
-Monday.com, Sentry, and Connect MCP tools (`/integrations/mcp`). Slack and
-Telegram keep those status labels and their dedicated connector/capture pages;
-they are not added to works-with filters. Jira and Notion remain truthful
-works-with pages and hub cards, not native dropdown entries. Works-with pages
-for Linear, Jira, Notion, HubSpot, Attio, and Pipedrive still live under
-[`/integrations`](../apps/web/src/app/integrations); coming-soon CRM pages stay
-on the hub cards and follow the planned-page discovery policy below. The
-directory's capability table and both LLM files share the same answers for
+The Integrations header link opens the directory. The footer retains native and
+capture destinations. Slack and Telegram retain dedicated pages. Jira and Notion
+are live-lookup examples where supported, and planned CRM pages follow the
+planned-page discovery policy below. The Features hub is registered with the
+public product pages. The integration directory's capability table and both LLM files share the same answers for
 native sync, deliberate capture, live lookup, historical coverage, and
 permissions. The agents hub and product-tour documents
 are registered with the core public pages. Outcome-led solution documents remain under

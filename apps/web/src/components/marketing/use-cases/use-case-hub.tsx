@@ -7,6 +7,7 @@ import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-fr
 import {
   findUseCase,
   findUseCaseByRoute,
+  USE_CASE_ROUTES,
   USE_CASE_HUB,
 } from '@/components/marketing/use-cases/content';
 import { USE_CASE_PUBLIC_DOCUMENTS } from '@/components/marketing/use-cases/public-documents';
@@ -24,19 +25,18 @@ function getHubDocument() {
 }
 
 const hubDocument = getHubDocument();
-const record = findUseCaseByRoute('/use-cases/work-record');
+const record = findUseCaseByRoute(USE_CASE_ROUTES.communicationTrail);
 const JOB_OUTCOMES: Record<string, string> = {
-  'work-record': 'Catch up without retracing every source.',
   'communication-trail': 'Find the promise. See where it was made.',
-  crm: 'Keep the customer context together.',
+  'customer-context': 'Keep the customer context together.',
   'task-board': 'Turn a commitment into a proposed task.',
   'team-daily-log': 'See what moved, and what needs attention.',
   'onboarding-and-repeat-questions': 'Give the next person a running start.',
 };
 const JOB_GROUPS = [
-  { title: 'Understand what happened', slugs: ['work-record', 'communication-trail'] },
-  { title: 'Keep work moving', slugs: ['crm', 'task-board'] },
-  { title: 'Share the context', slugs: ['team-daily-log', 'onboarding-and-repeat-questions'] },
+  { title: 'Understand what happened', slugs: ['team-daily-log', 'communication-trail'] },
+  { title: 'Keep work moving', slugs: ['customer-context', 'task-board'] },
+  { title: 'Share the context', slugs: ['onboarding-and-repeat-questions'] },
 ] as const;
 
 export function UseCaseHubPage() {
@@ -84,14 +84,13 @@ export function UseCaseHubPage() {
           </section>
         ))}
         <p className={styles.sharedRecord}>
-          One work record, with source, time and visibility attached. Lasting changes wait for your
-          approval.
+          One work record, with source, time and visibility attached.
         </p>
       </MarketingContainer>
 
       <MarketingCtaBand
         title="Start with the work you want to keep."
-        body="Bring in a source, build the shared context, and review the changes that turn it into lasting work records."
+        body="Connect a source and ask about the work happening there."
       />
     </main>
   );

@@ -134,7 +134,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline can hold people, company and deal records that come from the conversation record, with human approval before inferred durable changes. Native HubSpot, Attio and Pipedrive ingest is coming soon. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
+      'The Timeline can hold people, company and deal records that come from the conversation record, with an evidence-linked review queue for proposals. Native HubSpot, Attio and Pipedrive ingest is coming soon. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
     whenCompetitorBetter:
       "Choose Folk when you want an AI CRM for the sales motion: prospecting, enrichment, multi-channel outreach and calls recorded on Folk's own number. That is the product Folk publishes on folk.app.",
   },
@@ -217,7 +217,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
     navLabel: 'The Timeline vs Suda',
     title: 'The Timeline vs Suda',
     summary:
-      'Suda publishes a company brain: a permissioned context graph from tools such as Notion, Slack and Linear that people and AI agents query over MCP. The Timeline is a Suda alternative only as a cited work record from Slack, Telegram, email and calls, with Ask receipts and human approval before lasting changes, not as a 700-source context graph.',
+      'Suda publishes a company brain: a permissioned context graph from tools such as Notion, Slack and Linear that people and AI agents query over MCP. The Timeline is a Suda alternative only as a cited work record from Slack, Telegram, email and calls, with cited answers and a review queue, not as a 700-source context graph.',
     seoTitle: 'Suda alternatives: The Timeline vs Suda',
     seoDescription:
       'Looking for Suda alternatives? Compare The Timeline vs Suda. Suda publishes a permissioned company-brain context graph for people and AI agents. The Timeline is a cited work record. Facts from suda.so.',
@@ -263,7 +263,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
     navLabel: 'The Timeline vs MemoryCrow',
     title: 'The Timeline vs MemoryCrow',
     summary:
-      'MemoryCrow is a permission-safe memory layer: Claude, ChatGPT, Cursor and MCP clients recall current, cited answers only from sources the asker can see. The Timeline is a MemoryCrow alternative only as a dated work record of decisions, promises and handoffs from chat-led work, with a daily update and human approval before lasting changes, not as a memory layer whose main job is recall inside those AI clients.',
+      'MemoryCrow is a permission-safe memory layer: Claude, ChatGPT, Cursor and MCP clients recall current, cited answers only from sources the asker can see. The Timeline is a MemoryCrow alternative only as a dated work record of decisions, promises and handoffs from chat-led work, with a daily update and a review queue, not as a memory layer whose main job is recall inside those AI clients.',
     seoTitle: 'MemoryCrow alternatives: The Timeline vs MemoryCrow',
     seoDescription:
       'Looking for MemoryCrow alternatives? Compare The Timeline vs MemoryCrow. MemoryCrow publishes a permission-safe memory layer for Claude, ChatGPT, Cursor and MCP. The Timeline is a cited work record. Facts from memorycrow.com.',

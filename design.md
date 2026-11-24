@@ -8,7 +8,7 @@ Read these core rules, then the reference sections relevant to your change:
 
 - [Component contracts](docs/design/components.md): shared controls, collections, feedback, citations, and toasts.
 - [App screens](docs/design/app.md): workspace screens, installed-app behavior, and administrative controls.
-- [Public pages](docs/design/public.md): marketing and public-site patterns.
+- [Public pages](docs/design/public.md): public navigation, feature discovery, and walkthrough patterns.
 - [Decision history](docs/design/decisions.md): archived rationale, including superseded choices; not required reading for routine UI work.
 
 Keep universal rules here and specialized requirements in their owning reference.

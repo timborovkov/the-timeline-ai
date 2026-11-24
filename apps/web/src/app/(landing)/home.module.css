@@ -162,6 +162,13 @@
   line-height: 1.6;
 }
 
+.heroMechanism {
+  max-width: 38rem;
+  margin: 0.65rem 0 0;
+  color: var(--home-muted);
+  line-height: 1.6;
+}
+
 .heroActions {
   display: flex;
   flex-wrap: wrap;

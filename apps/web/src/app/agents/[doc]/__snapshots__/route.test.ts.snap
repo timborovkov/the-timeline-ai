@@ -3,7 +3,7 @@
 exports[`agent markdown routes serves setup.md as text/markdown with a stable snapshot 1`] = `
 "# Set up The Timeline
 
-You are connecting your human's agent to The Timeline, their team's auto-updating work record. It is a cited history of decisions, owners and next steps from their chat, email, calls and docs. You will be able to recall it with citations and add new notes to it.
+You are connecting an agent to The Timeline, a shared work record for teams and their AI agents. Use it to recover decisions, owners and next steps from permitted evidence. Leave attributed progress notes so the next person or agent can continue.
 
 Never ask for, accept or paste any key or token in chat. Sign-in is OAuth in the human's browser. Static \`tla_\` keys belong only under Advanced in Timeline, never in chat.
 

@@ -18,10 +18,9 @@ import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
 const processHeadings: Record<UseCaseContent['slug'], string> = {
-  'work-record': 'The history and the current state.',
   'team-daily-log': 'Keep the team in the loop.',
   'communication-trail': 'Follow the agreement back to its source.',
-  crm: 'Keep the relationship in context.',
+  'customer-context': 'Keep the relationship in context.',
   'task-board': 'From commitment to next step.',
   'onboarding-and-repeat-questions': 'Give the next person a head start.',
 };
@@ -76,12 +75,6 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
               <div className={styles.heroCopy}>
                 <h1 className={styles.title}>{useCase.title}</h1>
                 <p className={styles.summary}>{useCase.summary}</p>
-                {useCase.slug === 'crm' ? (
-                  <p className={styles.problem}>
-                    Timeline keeps its own customer records. External CRM sync is planned, not
-                    available today.
-                  </p>
-                ) : null}
                 {useCase.problemLine ? (
                   <p className={styles.problem}>{useCase.problemLine}</p>
                 ) : null}
@@ -154,9 +147,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
         <section className="border-t border-border">
           <MarketingContainer className={styles.walkthrough}>
             <div>
-              <h2 className="text-2xl font-medium tracking-[-0.025em]">
-                {useCase.slug === 'work-record' ? 'The Acme rollout, in order.' : 'Put it to work.'}
-              </h2>
+              <h2 className="text-2xl font-medium tracking-[-0.025em]">Put it to work.</h2>
               {afterHowItWorks.length > 0 ? (
                 <div className={styles.exampleBelow}>{exampleCard}</div>
               ) : null}
@@ -186,17 +177,6 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
               ) : null}
             </div>
             <div className={styles.exampleColumn}>
-              {useCase.slug === 'work-record' ? (
-                <div>
-                  <h3 className="text-xl font-medium tracking-[-0.025em]">
-                    Inside a project record
-                  </h3>
-                  <p className="mt-2 text-sm leading-7 text-fg-muted">
-                    The Northstar project below shows the record view. The Acme example alongside it
-                    shows how work arrives over time.
-                  </p>
-                </div>
-              ) : null}
               {afterHowItWorks.map((shot) => (
                 <MarketingProductScreenshot
                   key={shot.file}

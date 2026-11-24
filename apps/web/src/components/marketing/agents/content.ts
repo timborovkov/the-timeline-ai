@@ -3,18 +3,19 @@ import { TIMELINE_HOSTED_MCP_TOOLS_LIST } from '@/lib/agent-install-content';
 export const AGENTS_HUB = {
   route: '/agents',
   kicker: 'Agents',
-  title: 'Agents are teammates.',
-  summary: 'Give agents the team’s cited context and a way to contribute their own notes.',
-  seoTitle: 'Agents are teammates',
+  title: 'Give agents the context to continue the work.',
+  summary:
+    'Agents can recover why a decision was made, do their part, and leave an attributed progress note for the next person or agent.',
+  seoTitle: 'AI agents and the shared work record',
   seoDescription:
-    'Agents read cited team context and write updates back into The Timeline. They get decisions, owners and history without a standup or a re-brief, and they add notes through remember, email or a webhook.',
+    'Agents read cited team context and write updates back into The Timeline. They get decisions, owners and history from the shared work record, and they add notes through remember, email or a webhook.',
   llmsSummary:
-    'Agents are teammates who read the cited work record and write updates into it. They get decisions, owners and history with citations, without a standup or a re-brief, and they read what people and other agents did. Write paths: timeline.remember, ingest email, authenticated ingest webhooks. Read path: hosted MCP tools timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember. One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes.',
+    'External agents read the same permitted, cited work record as the team and contribute attributed progress notes. Write paths: timeline.remember, ingest email, authenticated ingest webhooks. Read path: hosted MCP tools timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember. One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes.',
   reportIn: {
     index: '01',
     label: 'Read and write',
     title: 'Agents read the context, and they write updates.',
-    body: 'An agent’s note becomes cited evidence. It does not change canonical records. Notes count toward the accepted-sources meter.',
+    body: 'An agent’s note becomes attributed evidence. It does not change canonical records directly. A later answer can cite what the agent reported.',
     paths: [
       {
         name: 'timeline.remember',
@@ -32,10 +33,10 @@ export const AGENTS_HUB = {
   },
   example: {
     label: 'Example',
-    title: 'A progress note from Grok Bot.',
-    body: 'Send a progress note through one of the write paths above. It joins the work record as cited evidence.',
+    title: 'An agent leaves the next step open.',
+    body: 'After checking the staging login flow, the agent records what it tried and leaves customer verification open. A later answer cites the note as the agent’s report.',
     boundary:
-      'This illustrates those write paths. It is not a dedicated Grok Bot product or a separate Timeline feature.',
+      'The staging result comes from the agent’s note. The customer outcome still needs verification.',
   },
   readOut: {
     index: '02',

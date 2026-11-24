@@ -76,15 +76,15 @@ export const SOLUTIONS: readonly SolutionContent[] = [
   {
     slug: 'client-project-handoffs',
     route: SOLUTION_ROUTES.clientProjectHandoffs,
-    seoTitle: 'Client Project Handoffs With Evidence',
+    seoTitle: 'Work handoffs with source evidence',
     seoDescription:
       'Turn selected chats, meetings, emails, documents, tasks, and code into a current handoff with cited decisions, blockers, owners, and commitments.',
     shortTitle: 'Client project handoffs',
     audienceLabel: 'Consulting and client delivery',
     eyebrow: 'Use case · Client handoffs',
-    title: 'Hand off the whole project, not a reconstruction.',
+    title: 'Hand work over with its context.',
     summary:
-      'The Timeline keeps the project’s work record current from its Slack or Telegram threads, email and calls, so the next owner can see what changed, why, and the source for every line.',
+      'The next owner can see what changed, why it changed and what is still open, with links into the captured Slack or Telegram conversations, email and calls.',
     answer: {
       title: 'Build the handoff from the evidence the project already produced.',
       body: 'Choose the conversations, meetings, email, documents, tasks, and code records that belong to the engagement. Timeline preserves them as separate, time-addressable evidence and can answer a bounded handoff question with citations. A person still reviews the result before it is shared or used to change the workspace.',
@@ -200,7 +200,7 @@ export const SOLUTIONS: readonly SolutionContent[] = [
       {
         href: '/use-cases/onboarding-and-repeat-questions',
         eyebrow: 'Use case · Onboarding',
-        title: 'Onboarding and repeat questions',
+        title: 'Pick up work with its context',
         description: 'Answer it once, and new people find it with its source.',
       },
       {

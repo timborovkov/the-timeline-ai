@@ -16,6 +16,12 @@ const workspaceRoot = join(__dirname, '../..');
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  redirects() {
+    return Promise.resolve([
+      { source: '/use-cases/work-record', destination: '/how-it-works', permanent: true },
+      { source: '/use-cases/crm', destination: '/use-cases/customer-context', permanent: true },
+    ]);
+  },
   images: {
     localPatterns: [
       // Public screenshot revisions keep the optimized cache coherent after recaptures.

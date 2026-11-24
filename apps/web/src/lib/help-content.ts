@@ -106,9 +106,9 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Text notes and audio uploads from the web app.',
           'Slack and Telegram messages, files, and voice memos from linked spaces.',
-          'A linked Slack channel or Telegram group keeps the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.',
+          'Configured Slack channels and linked Telegram groups capture subsequent activity within their scope. Plain-text questions in a direct chat ask the agent. Use explicit capture to add a note.',
           'Forwarded, CCed, or BCCed email sent to your team address.',
-          'Meeting transcripts from consent-gated bots that join calls.',
+          'Optional meeting transcripts from bots that join supported calls. You can also upload existing notes or text transcripts as documents.',
           'Document uploads that become searchable chunks after extraction.',
         ],
         appLink: { href: '/app/timeline', label: 'Open timeline capture' },

@@ -20,7 +20,7 @@ describe('agents public documents', () => {
     expect(AGENTS_HUB_DOCUMENT).toMatchObject({
       title: AGENTS_HUB.seoTitle,
       description: AGENTS_HUB.seoDescription,
-      dates: { modified: '2026-11-13', reviewed: '2026-11-13' },
+      dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
       capability: { kind: 'current-product' },
     });
     expect(AGENTS_HUB_DOCUMENT.llms).toMatchObject({
@@ -45,6 +45,6 @@ describe('agents public documents', () => {
     expect(compact).toContain(`[Agents](${SITE_URL}/agents): ${AGENTS_HUB.llmsSummary}`);
     expect(compact).toContain('Agents can contribute progress notes as cited evidence');
     expect(full).toContain(AGENT_SETUP_CARD.title);
-    expect(full).toContain('not a dedicated Grok Bot product');
+    expect(full).toContain('The customer outcome still needs verification.');
   });
 });

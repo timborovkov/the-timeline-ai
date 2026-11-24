@@ -1,7 +1,10 @@
 import { ArrowRight, Globe, Mail, Video, Webhook } from 'lucide-react';
 import Link from 'next/link';
 
-import { INTEGRATION_CAPABILITY_ANSWERS } from '@/components/marketing/integrations/capability-answers';
+import {
+  INTEGRATION_CAPABILITY_ANSWERS,
+  MEETING_CAPTURE_FAQ,
+} from '@/components/marketing/integrations/capability-answers';
 import {
   CAPTURE_SURFACES,
   type CaptureSurfaceContent,
@@ -44,8 +47,9 @@ export function IntegrationDirectory() {
             <div>
               <h1 className={styles.title}>Your tools. One work record.</h1>
               <p>
-                Bring selected sources into a shared work record. Connect the tools you use, send
-                work in, or give Timeline access to live tools when you need them.
+                Connect the channels and tools you want included. Supported activity arrives
+                automatically within each connection’s scope. Add a note or document whenever it
+                helps.
               </p>
               <PublicSessionBranch
                 signedOut={
@@ -82,9 +86,9 @@ export function IntegrationDirectory() {
                 <span>Current information through MCP, without importing history.</span>
                 <ArrowRight aria-hidden="true" size={20} />
               </a>
-              <a href="#planned" className={styles.plannedLink}>
-                See what’s planned <ArrowRight aria-hidden="true" size={16} />
-              </a>
+              <Link href="/help/contact" className={styles.plannedLink}>
+                Request an integration <ArrowRight aria-hidden="true" size={16} />
+              </Link>
             </nav>
           </header>
 
@@ -106,15 +110,6 @@ export function IntegrationDirectory() {
                 ))}
               </tbody>
             </table>
-          </section>
-          <section className={styles.section} aria-labelledby="capture-surfaces">
-            <h2 id="capture-surfaces">Send work in. Keep the context.</h2>
-            <p>Send work in deliberately. Each route explains what is saved and who can see it.</p>
-            <div className={styles.rows}>
-              {surfaces.map((surface) => (
-                <CaptureSurfaceRow key={surface.id} surface={surface} />
-              ))}
-            </div>
           </section>
           <section className={styles.section} aria-labelledby="native">
             <h2 id="native">Bring selected tool history into Timeline.</h2>
@@ -141,11 +136,31 @@ export function IntegrationDirectory() {
               ))}
             </div>
           </section>
+          <section className={styles.section} aria-labelledby="capture-surfaces">
+            <h2 id="capture-surfaces">Capture work from conversations and files.</h2>
+            <p>
+              Linked Telegram groups and configured Slack channels capture subsequent activity
+              within their scope. Direct-chat notes, uploaded files and meeting capture are
+              optional.
+            </p>
+            <div className={styles.rows}>
+              {surfaces.map((surface) => (
+                <CaptureSurfaceRow key={surface.id} surface={surface} />
+              ))}
+            </div>
+          </section>
           <section className={styles.section} aria-labelledby="live-lookup">
             <h2 id="live-lookup">Look up live tools</h2>
             <p>
               Enabled MCP tools answer questions from the source. They do not import or sync tool
               history into Timeline.
+            </p>
+            <p>
+              To let an external AI agent read or contribute to your workspace, see{' '}
+              <Link href="/agents" className={styles.textLink}>
+                For AI agents
+              </Link>
+              .
             </p>
             <Link href="/integrations/mcp" className={styles.textLink}>
               Connect MCP tools
@@ -165,6 +180,13 @@ export function IntegrationDirectory() {
                 machine; not connectable from hosted Timeline.
               </p>
             </details>
+          </section>
+          <section className={styles.section} aria-labelledby="meeting-capture">
+            <h2 id="meeting-capture">{MEETING_CAPTURE_FAQ.question}</h2>
+            <p>{MEETING_CAPTURE_FAQ.answer}</p>
+            <Link href="/help/contact" className={styles.textLink}>
+              Request an integration
+            </Link>
           </section>
           <section className={styles.section} aria-labelledby="planned">
             <h2 id="planned">Coming later</h2>

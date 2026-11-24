@@ -10,14 +10,14 @@ import { definePublicDocuments } from '@/lib/public-site/registry';
 import type { PublicDocument } from '@/lib/public-site/types';
 
 const GUIDE_REVIEW_DATE = '2026-11-14' as const;
-const HOW_IT_WORKS_REVIEW_DATE = '2026-11-11' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-11-24' as const;
 
 const howItWorksDocument = {
   canonicalPath: HOW_IT_WORKS_ROUTE,
   kind: 'guide-index',
-  title: 'How it works: from conversation to current record',
+  title: 'How it works: from activity to a shared work record',
   description:
-    'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.',
+    'Connect selected sources and see how The Timeline captures activity, answers questions with evidence, and keeps accepted records and pending changes separate.',
   indexability: 'index',
   dates: { modified: HOW_IT_WORKS_REVIEW_DATE, reviewed: HOW_IT_WORKS_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -38,7 +38,7 @@ const howItWorksDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.',
+      'Connect selected sources and see how The Timeline captures activity, answers questions with evidence, and keeps accepted records and pending changes separate.',
     sections: [
       ...EVIDENCE_FRESHNESS_FAQS.map((faq) => ({ title: faq.question, body: faq.answer })),
       {
@@ -48,7 +48,7 @@ const howItWorksDocument = {
       },
       {
         title: 'Method',
-        body: 'Choose what enters, preserve source, time, and visibility, ask a bounded question, inspect the cited evidence, and require human approval for suggested durable workspace changes.',
+        body: 'Connect selected sources, capture supported activity, and follow its chronology. Ask a question or open a view, then use the evidence to review a proposal or correct a record.',
       },
     ],
   },

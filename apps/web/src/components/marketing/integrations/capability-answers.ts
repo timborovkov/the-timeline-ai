@@ -1,13 +1,19 @@
 import { CONNECTORS } from '@/components/marketing/integrations/connector-content';
 
+export const MEETING_CAPTURE_FAQ = {
+  question: 'Do we have to invite a bot to meetings?',
+  answer:
+    'No. You can invite Timeline to a supported call to capture a transcript, or upload existing notes or a text transcript as a document. Uploads follow the document workflow. Support for a bot joining a call is separate from importing transcripts from another meeting tool.',
+} as const;
+
 export const INTEGRATION_CAPABILITY_ANSWERS = [
   {
     title: 'Native sync',
-    body: `Sync supported records from selected and activated sources into a cited work history. Native sync is available for ${CONNECTORS.map(({ name }) => name).join(', ')}.`,
+    body: `Bring supported records from selected, activated sources into a cited work history. Each provider page describes what is copied and which actions are supported. Native sync is available for ${CONNECTORS.map(({ name }) => name).join(', ')}.`,
   },
   {
     title: 'Deliberate capture',
-    body: 'Send selected work through Slack conversation capture, Telegram, forwarded email, recorded meetings, webhooks, or website scans. The work record contains the evidence you route or select.',
+    body: 'Configured Slack channels and linked Telegram groups capture supported new activity automatically. You can also add explicit notes, forward email, upload documents, capture a supported call, send a webhook or scan a public website.',
   },
   {
     title: 'Live lookup',

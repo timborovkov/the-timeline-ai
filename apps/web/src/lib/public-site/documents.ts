@@ -3,6 +3,7 @@ import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions'
 import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-documents';
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
+import { FEATURES_PUBLIC_DOCUMENTS } from '@/components/marketing/features-content';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
 import { MCP_GUIDE_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/mcp-guide-public-documents';
 import { WORKS_WITH_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/works-with-public-documents';
@@ -77,15 +78,15 @@ const AGENT_INSTALL_LLM_SECTIONS = [
 const LANDING_SECTIONS = [
   {
     title: 'What The Timeline does',
-    body: PRODUCT_POSITIONING.hero,
+    body: `${PRODUCT_POSITIONING.promise} ${PRODUCT_POSITIONING.hero}`,
   },
   {
-    title: 'Best-fit teams',
-    body: 'The product is built for teams that run their day in Slack or Telegram, then spread the rest of the work across email, calls and documents. That includes consultancies, agencies, client delivery, product and operations teams, at any size.',
+    title: 'Who uses the work record',
+    body: 'Teams whose work spans conversations, tools and AI agents. Before a customer call, a founder or product lead can check what engineering merged, what changed and what still needs verification.',
   },
   {
     title: 'Core differentiator',
-    body: 'Capture is unstructured, but output is structured. Teams keep working in their existing tools while The Timeline preserves source, time, and visibility. Cited answers remain inspectable, and suggested durable workspace changes require human approval.',
+    body: 'Keep working in your existing tools. The Timeline preserves source, time and visibility and connects that evidence to questions, daily updates and workspace records. Ask what you worked on this week, what changed for the team or what needs following up. Answers draw on captured activity you can see.',
   },
   {
     title: 'Trust model',
@@ -97,7 +98,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Main capture surfaces',
-    body: 'Native surfaces include the web app, Telegram, Slack, inbound email, calendar, document uploads, meeting transcripts for Google Meet, Microsoft Teams, and Zoom, and first-party integrations for GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry. Native integrations create durable cited events; custom MCP servers cover long-tail live tool access without passive timeline ingestion by default.',
+    body: 'Native surfaces include the web app, Telegram, Slack, inbound email, calendar, document uploads, optional meeting bot capture on supported Google Meet, Microsoft Teams and Zoom calls, and first-party integrations for GitHub, Linear, Google Drive, Monday.com, Slack workspace history, and Sentry. Native integrations create durable cited events; custom MCP servers cover long-tail live tool access without passive timeline ingestion by default.',
   },
 ] as const;
 
@@ -194,7 +195,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     title: PRODUCT_POSITIONING.title,
     description: PRODUCT_POSITIONING.description,
     indexability: 'index',
-    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -206,11 +207,11 @@ const coreDocuments = definePublicDocuments('public-core', [
         operatingSystem: 'Web',
         features: [
           'Connected clients, projects, tasks and decisions from selected tools and sources',
-          'Deliberate Telegram, Slack, email, meeting transcript, and webhook capture',
+          'Automatic capture in activated Slack channels and linked Telegram groups, plus optional notes, documents and meeting capture',
           'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
           'Source, time, and visibility preserved with captured evidence',
-          'Human approval before inferred durable workspace changes',
+          'An approval queue with sources for proposed record changes',
         ],
       },
     ],
@@ -220,7 +221,7 @@ const coreDocuments = definePublicDocuments('public-core', [
       label: 'Landing page',
       summary: PRODUCT_POSITIONING.description,
       fullSummary:
-        'A living work record with connected objects, attached sources and approval-backed changes.',
+        'A running record for teams and their AI agents, with cited answers, daily updates and views.',
       sections: LANDING_SECTIONS,
     },
   },
@@ -507,6 +508,7 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   EDITORIAL_PUBLIC_DOCUMENTS,
   SOLUTION_PUBLIC_DOCUMENTS,
   USE_CASE_PUBLIC_DOCUMENTS,
+  FEATURES_PUBLIC_DOCUMENTS,
   COMPARE_PUBLIC_DOCUMENTS,
   AGENTS_PUBLIC_DOCUMENTS,
   productTourDocuments,

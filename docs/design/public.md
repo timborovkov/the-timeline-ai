@@ -1,41 +1,27 @@
 # Public-site design patterns
 
-The public site helps chat-run client delivery, product and operations teams
-understand the work record, choose a useful starting point, and inspect its
-boundaries. Preserve the official Timeline mark, Switzer typography, one lime
-signal, and source-backed explanations. Start free is the primary acquisition
-action; See it first links to the product tour. Warm paper and near-black are
-plain, theme-matched surfaces, without a grain overlay.
+The public site explains the shared work record for teams and their AI agents.
+Preserve the official Timeline mark, Switzer typography, one lime signal, and
+source-backed explanations. Start free is the primary action. Take the tour
+opens the product walkthrough. Warm paper and near-black are plain,
+theme-matched surfaces.
 
 ## Landing narrative
 
-The homepage leads with “Know where the work stands” and the animated source
-flow. Explain the shared work record in plain language before presenting use
-cases and capture options. Introduce the illustrative Acme rollout only in the
-chronology walkthrough, after visitors understand the product. The cited answer
-then demonstrates how that history helps answer a question. Do not place a
-standalone Acme answer panel directly after the hero; it assumes context a new
-visitor has not yet acquired.
+“Know where the work stands” leads the animated source flow. Support it with
+the approved promise and a plain explanation of how selected activity becomes
+a work record. Start with connected sources, then follow an illustrative login
+issue from its Slack report through an optional meeting and linked GitHub
+change. Distinguish the merge from release and customer verification. Show
+cited questions about personal and team activity, a daily update, and views for
+boards, customer context, calendar, and files. The agent handoff attributes the
+progress note to the agent. The approval explanation links to Security & privacy.
+Use-case links follow the walkthrough and precede the closing action.
 
-The opening claim describes a living record built from selected tools and sources,
-with connected clients, projects, tasks and decisions. Keep sources attached and
-approval boundaries explicit; asking questions is one use of the record, not its
-only outcome. Work continues through intake, the use-case chooser,
-chronology, cited answer, connected records, audience fit with trust, and Start
-free. Section headings carry the narrative without decorative numbered rails or
-repeated eyebrows. Source timestamps, citation numbers and actual process order
-remain meaningful metadata.
-
-The six-use-case overview appears once, immediately after intake. It presents
-linked job rows before the detailed walkthrough. The intake section brings
-supported capture surfaces, document uploads and native connectors together as
-compact links. Frame the voice-note example around capturing updates, decisions
-and commitments for later retrieval and cited answers, rather than transcription
-as the primary benefit. Live MCP lookup and coming-soon connectors are not ingest options.
 The nine-source animation sits beside the hero copy, with the plain-language product
 introduction directly below. Use quiet curved paths and a slowly rotating wireframe record mesh;
 source logos and selected-source boundaries carry the meaning. The output is a
-compact record summary (“Decisions, promises & next steps” with “Sources attached”),
+compact record summary (“What changed & what’s next” with “Sources attached”),
 not a pair of button-like feature labels.
 Keep one diagram instance, a keyboard-accessible pause control, offscreen and
 hidden-tab suspension, and a static reduced-motion alternative. Extend source
@@ -50,45 +36,20 @@ only quiet static routes for reduced motion. Avoid continuous canvas rendering,
 blur filters and unrelated particles. Mobile stacks
 the diagram after the primary action without removing its source labels.
 
-AgentSetupCard is always visible beneath the hero actions in its compact variant.
-Use a short setup instruction, small official marks and the copyable command; do
-not put this signup/setup path behind a disclosure.
-The card explains agents reading the cited work record and writing notes back,
-shows official Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes marks, and keeps
-the copyable `Set up The Timeline - https://thetimeline.cc/llms.txt` command.
-It uses the landing tokens in both themes. At narrow widths the command takes a
-full row and the Copy control is at least 44px tall. Clipboard errors occupy
-their own line so the command remains selectable and readable.
+The compact AgentSetupCard lives on the agents page below the workflow
+explanation. Keep the official client marks and the selectable setup command.
+On narrow screens the command takes a full row and Copy stays at least 44px tall.
 
-The Acme chronology retains five cited work sources, beginning with the linked
-Telegram group. Captured work stays inspectable by source and time. The complete
-cited answer keeps its source list visible alongside it on desktop and stacked
-on mobile; each source has its details in place. Numbered references are static
-labels matching those sources, not controls that require a modal or expansion.
-The Chat and Agent comparison uses the same question, concise answer and local
-source legend in two provider-neutral panels. Raw MCP tool calls and
-provider-specific setup belong on their dedicated pages.
-
-Connected records give Tasks, People, Projects, Companies and Deals equal
-prominence, explaining purpose and relationships before the company-record
-screenshot. The conversation → suggestion → approval → record sequence keeps
-durable changes explicitly approval-backed. This is a product explanation, not
-customer proof. Audience copy describes work spread across Slack or Telegram,
-email, calls and documents. Updates are daily, without weekly framing.
-
-Homepage screenshot captions own their supporting copy: search guidance belongs
-with the timeline capture, approval guidance with the client record. Alternate
-copy and screenshots on desktop and stack them on phones. Keep one specific
-heading and short explanation per capture. The daily-update screenshot and trust
-summary have a clear gap. The trust summary presents capture, immutability,
-visibility and approval as flat evidence steps, with a direct Trust & Security
-link; it does not imply certification.
+The login example keeps its source details visible alongside the answer on
+desktop and stacked on mobile. Numbered references match the visible source
+list. Genuine screenshots from other sample records are framed as separate
+product views. Alternate copy and screenshots on desktop, and stack them on
+phones. Put review guidance beside the relevant evidence and approval visuals.
 
 Secondary-page closing CTAs are open, compact copy-and-action rows, side by side on desktop and
 stacked on phones. Keep the action near the headline without repeated nested
 panels, decorative labels or first-run walkthroughs. The product tour and pricing signup disclosure own the first-run path: create a team, connect one capture source,
-then inspect a source-linked record or ask a question. Pricing leads with Start
-free and no card; its estimator is optional planning.
+then inspect a source-linked record or ask a question. Pricing leads with Start free and no card.
 The homepage closing action follows its heading and supporting paragraph in one
 left-aligned column. Keep the signed-in “Open your Timeline” button and the
 signed-out “Start free” button in the same position, with account and pricing
@@ -96,8 +57,9 @@ notes below. Do not float the action in a separate right-hand column.
 
 ## Evidence and motion
 
-Acme rollout is the canonical fictional public story across landing, connector
-and guide examples. Keep people, identifiers, records and outcomes coherent.
+The login issue is the shared illustrative example on the homepage and tour.
+The Acme rollout supplies fictional context across connector and guide examples.
+Keep people, identifiers, records and outcomes coherent.
 Real captures may show a different named project; distinguish that screen from
 an adjacent story rather than implying a matching before/after result. Do not
 recast examples as customer testimonials or measured proof, and avoid repeating
@@ -109,48 +71,34 @@ explains provenance or hierarchy; backgrounds remain still. Evidence flows run
 only in view and pause offscreen. Reduced motion keeps the complete static
 explanation and hides decorative packets. Every moving packet follows the exact
 visible path; static paths and nodes do not compete with extra pulse animation.
-There are no playback controls in public diagrams. Scroll progress updates its
-own indicator, never an inherited property on the landing root.
+The homepage provides a pause control for its repeating motion. Scroll progress
+updates its own indicator.
 
 The complete four-stage loop lives on `/how-it-works`. Its inputs group
-conversations, meetings and documents, and delivery and incidents; five
-representative events lead to useful records and a compact assistant exchange
-across Web, Slack, Telegram and an own MCP agent. Permitted live CRM context,
-approval-backed changes and enabled MCP tool effects stay explicit. Wide layouts
+conversations, meetings and documents, and delivery and incidents. Three
+representative events lead to a record and a compact assistant exchange across
+web, Slack, Telegram, and a connected AI agent. Proposal review and separate
+permissions for external tools remain visible. Wide layouts
 use one row, medium layouts a 2 × 2 grid without decorative connectors, and
 narrow layouts stack stages. One-shot source-to-answer, external-agent and
 inbound-MCP diagrams retain their complete static paths without JavaScript.
 
 ## Navigation and destinations
 
-The public header stays uncluttered: Product, Use cases, Integrations, Agents,
-and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
-in the mobile menu. Expandable rows show a down chevron when collapsed and an up
-chevron when expanded; the mobile Menu overlay must not invert those icons.
-Escape closes the focused dropdown and returns focus to its own summary. In the
-mobile menu, dismiss a nested dropdown before dismissing the outer menu. Both
-levels dismiss on outside pointer interaction, focus departure, and navigation,
-including selecting the current route. Only one sibling group opens at a time.
-Dropdown destinations use two columns, with an emphasized overview and a named
-Agent tools group. Active child links identify the exact current page. The
-homepage scroll progress bar remains above the sticky header.
-Second-level nav popups use a hairline border, compact padding, and a short
-black-based shadow in light and dark mode rather than a large foreground glow.
-The Integrations dropdown is the hub, then Slack · Native sync and Telegram ·
-Capture, then Google Drive, GitHub, Linear, Monday.com, Sentry, then Connect
-MCP tools. Slack and Telegram keep those status labels so channel-history sync
-is not confused with deliberate capture. Other live destinations stay as plain
-product names. The menu does not list Jira or Notion as if they were native
-integrations. Coming-soon tools stay on the integrations directory and their
-pages, not in the header dropdown or footer Integrations column. How it works,
-Help, Trust, and head-to-head Compare pages remain in the footer. The footer is
-shared by the homepage and public shell: an official wordmark and short brand
-statement, followed by Product, Use cases, Integrations, and Resources columns.
-Resources contains help, contact, trust, the comparison hub, and a disclosure
-for individual comparisons. Product tour lives under Product. GitHub and the
-session-aware account action sit in the brand row; copyright, Terms, Privacy,
-Cookies, and Cookie settings have their own bottom rail. Auth-neutral shells
-omit account actions. The footer uses sentence-case Switzer labels and two
+The public header has Product, Integrations, Pricing, and Resources. Product
+opens How it works, Product tour, Features, and For AI agents. Resources opens
+Documentation, Guides, and Security & privacy. Integrations and Pricing link
+directly to their hubs. Desktop and mobile share this hierarchy. Escape closes
+the focused disclosure and returns focus to its summary. The mobile disclosure
+dismisses nested groups before the outer menu. Dropdowns and the outer menu close
+on outside pointer interaction, focus departure, or navigation. Exact child links
+mark the current page.
+
+The shared footer keeps the Product, Use cases, Integrations, and Resources
+columns. It links to feature details, handoffs, connector setup, comparisons,
+enterprise contact, support, and self-hosting. GitHub and the session-aware
+account action sit in the brand row. Legal and cookie controls use the bottom row.
+The footer uses sentence-case Switzer labels and two
 columns on phones, with 44px-tall link and cookie-setting targets. Mobile homepage scenes keep 48px vertical padding;
 the hero starts at 40px and stacks its evidence example below the opening copy.
 `/compare` is a
@@ -167,18 +115,15 @@ guide for connecting third-party MCP servers to The Timeline Agent, distinct
 from `/agents`. Retired `/compare/{hubspot,jira,linear,notion}` URLs
 permanent-redirect to the matching integrations page.
 
-Use-case pages extend this story for six jobs from one record: work record,
-team daily log, communication trail, CRM, task board, and onboarding and repeat
-questions. They live under `/use-cases`, appear in the public Use cases menu,
-and are registered for sitemap and LLM discovery. `/compare` remains an
-indexable vs-only hub reachable from the footer. `/agents` leads with agents as
-teammates who read the team’s cited context and write updates back, plus the
-copyable AgentSetupCard. Retired solution URLs
-`/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
-permanent-redirect to the matching use-case pages. Client project handoffs remain
-at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
-is a screenshot walkthrough linked from the home hero as See it first and from
-pricing; `/integrations/telegram` is the public Telegram capture page. Product
+The Features hub links to timeline, cited questions, daily updates, boards,
+customer context, calendar, files, agent access, and optional meeting capture.
+Use cases stay discoverable from Features and the footer. The old work-record
+route redirects to How it works and the old CRM routes redirect directly to
+Customer context. Client project handoffs retain their existing route.
+The homepage and tour share an illustrative login issue. The tour uses a
+separately labeled set of existing product screenshots. The homepage hero’s
+secondary action opens the tour and provides a placement for a founder
+recording when one is available. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
 referenced by the public screenshot inventory. Each public slot has matching `<stem>-light.png`
 and `<stem>-dark.png` twins from the same fictional seed and framing. The
@@ -201,11 +146,8 @@ frames retain the same 16×10 aspect ratio. `/agents` pairs the current Agent
 tools screen with a read-out / write-in diagram for external agents.
 `/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party
-MCP tools. `/use-cases` puts the six linked jobs first, grouped into Understand what
-happened (work record and communication trail), Keep work moving (CRM and task
-board), and Share the context (team daily log and onboarding). Each group has
-an aligned heading and two descriptive link rows, followed by one shared-record
-explanation. Do not repeat the chooser as a second diagram. Referenced screenshot files are
+MCP tools. The use-case hub groups catch-up and decisions, follow-through, and
+picking up work. Referenced screenshot files are
 inventory-tested so a missing asset fails CI instead of shipping as a silent
 placeholder. Public screenshot URLs carry a hash of the committed PNG bytes so recaptures invalidate optimized variants. Ask
 captures are stored examples; captions explain the pictured workflow without

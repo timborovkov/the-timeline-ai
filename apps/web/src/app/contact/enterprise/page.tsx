@@ -19,8 +19,7 @@ import {
 
 export const metadata: Metadata = publicMetadata({
   title: 'Enterprise enquiry',
-  description:
-    'Talk with Timeline about procurement, security review, SSO, SLA, data residency, on-premise deployment, or a custom Enterprise plan.',
+  description: 'Discuss custom pricing, volume, deployment and support needs with The Timeline.',
   path: '/contact/enterprise',
 });
 
@@ -51,15 +50,15 @@ export default async function EnterpriseContactPage({
               Enterprise enquiry
             </h1>
             <p className="text-lg text-fg-muted">
-              For procurement, security review, SSO, SLA, data residency, committed volume, or a
-              managed on-premise / private-cloud deployment. Not for routine product support — use{' '}
+              Discuss custom pricing, volume, support and deployment needs. For routine product
+              support, use{' '}
               <Link
                 href="/help/support"
                 className="text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
               >
                 Help and support
-              </Link>{' '}
-              for that.
+              </Link>
+              .
             </p>
             <p className="text-sm text-fg-muted">{ENTERPRISE_RESPONSE_EXPECTATION}</p>
           </header>

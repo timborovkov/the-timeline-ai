@@ -10,7 +10,9 @@ const LEGACY_REDIRECTS = {
   '/security': '/trust',
   '/record': HOW_IT_WORKS_ROUTE,
   '/solutions/weekly-project-updates': USE_CASE_ROUTES.teamDailyLog,
-  '/solutions/crm-context-from-team-activity': USE_CASE_ROUTES.crm,
+  '/use-cases/work-record': '/how-it-works',
+  '/use-cases/crm': USE_CASE_ROUTES.customerContext,
+  '/solutions/crm-context-from-team-activity': USE_CASE_ROUTES.customerContext,
   ...Object.fromEntries(
     Object.entries(LEGACY_COMPARE_REDIRECTS).map(([slug, target]) => [`/compare/${slug}`, target]),
   ),

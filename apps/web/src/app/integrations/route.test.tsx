@@ -61,7 +61,7 @@ describe('public integration routes', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(text).toContain('Your tools. One work record.');
-    expect(html).toContain('Send work in. Keep the context.');
+    expect(html).toContain('Capture work from conversations and files.');
     expect(text).toContain('Bring selected tool history into Timeline');
     expect(text).toContain('Send work in');
     expect(text).toContain('Connect your tools');
@@ -104,7 +104,10 @@ describe('public integration routes', () => {
     expect(html).toContain('bg-white');
     expect(html).not.toContain('7.5vw');
     expect(text).toContain('Send work in');
-    for (const id of ['capture-surfaces', 'native', 'live-lookup', 'planned']) {
+    expect(html).toContain('href="/help/contact"');
+    expect(text).toContain('Do we have to invite a bot to meetings?');
+    expect(text).toContain('upload existing notes or a text transcript as a document');
+    for (const id of ['capture-surfaces', 'native', 'live-lookup']) {
       expect(html).toContain(`href="#${id}"`);
       expect(html).toContain(`id="${id}"`);
     }

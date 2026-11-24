@@ -15,7 +15,7 @@ import { buildPublicSitemap } from '@/lib/public-site/sitemap';
 const SITE_URL = 'https://thetimeline.cc';
 
 describe('use-case and product-tour public documents', () => {
-  it('registers the hub, six use cases, and product tour for sitemap and LLM discovery', () => {
+  it('registers the hub, five use cases, and product tour for sitemap and LLM discovery', () => {
     expect(USE_CASE_PUBLIC_DOCUMENTS.documents.map((document) => document.canonicalPath)).toEqual([
       USE_CASE_HUB.route,
       ...USE_CASES.map((useCase) => useCase.route),
@@ -42,7 +42,12 @@ describe('use-case and product-tour public documents', () => {
     expect(compact).toContain('## Use cases');
     expect(compact).toContain(`[Use cases](${SITE_URL}/use-cases)`);
     expect(compact).toContain(`[Product tour](${SITE_URL}/product-tour)`);
-    expect(compact).toContain('See it first');
-    expect(full).toContain(`URL: ${SITE_URL}/use-cases/work-record`);
+    expect(compact).toContain(`[Features](${SITE_URL}/features)`);
+    expect(full).toContain(`URL: ${SITE_URL}/features`);
+    expect(full).toContain(`URL: ${SITE_URL}/use-cases/customer-context`);
+    for (const retiredPath of ['/use-cases/work-record', '/use-cases/crm']) {
+      expect(compact).not.toContain(`${SITE_URL}${retiredPath}`);
+      expect(full).not.toContain(`${SITE_URL}${retiredPath}`);
+    }
   });
 });

@@ -53,7 +53,7 @@ describe('how-it-works and guide routes', () => {
     const html = renderToStaticMarkup(<HowItWorksPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('From conversation to current record.');
+    expect(html).toContain('From activity to a shared work record.');
     expect(html).toContain('data-how-it-works-hero="true"');
     expect(html).toContain('data-how-it-works-flow="true"');
     expect(html).toContain('data-how-it-works-evidence="true"');
@@ -70,7 +70,7 @@ describe('how-it-works and guide routes', () => {
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
     expect(html).not.toContain('product overview');
-    expect(html).toContain('You don’t have to replace the tools your team already uses.');
+    expect(html).toContain('What did I work on this week?');
     expect(html).toContain('How scattered work becomes useful context.');
     expect(html).toContain('Trace one answer to its evidence.');
     expect(html).toContain('What Timeline preserves');

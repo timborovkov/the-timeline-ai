@@ -21,10 +21,10 @@ export const PUBLIC_SOCIAL_CARDS: readonly PublicSocialCard[] = [
   {
     id: 'product-tour',
     path: '/product-tour',
-    title: 'See your work become a record',
-    alt: 'The Timeline product tour preview showing capture, cited answers, and approvals.',
+    title: 'Follow work from source to answer',
+    alt: 'The Timeline product tour preview showing how to follow a login issue from its first report to a cited answer.',
     label: 'Product tour',
-    steps: ['Capture selected work', 'Ask with citations', 'Approve record changes'],
+    steps: ['Login issue reported', 'Linked change merged', 'Check what’s still open'],
     markers: ['08:40', '10:15', '11:04'],
   },
   {

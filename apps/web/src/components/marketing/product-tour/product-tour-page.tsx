@@ -3,6 +3,7 @@ import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PRODUCT_TOUR } from '@/components/marketing/product-tour/content';
+import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { PRODUCT_TOUR_DOCUMENT } from '@/components/marketing/use-cases/public-documents';
 import { buildPublicStructuredData } from '@/lib/public-site';
@@ -22,6 +23,29 @@ export function ProductTourPage() {
           </p>
         </MarketingContainer>
       </header>
+
+      <section id="demo" className="border-b border-border" aria-labelledby="tour-example">
+        <MarketingContainer className="py-12 sm:py-16">
+          <h2 id="tour-example" className="text-2xl font-semibold tracking-tight">
+            A login issue, from report to follow-up
+          </h2>
+          <p className="mt-3 text-fg-muted">Illustrative example</p>
+          <ol className="mt-6 grid gap-6 sm:grid-cols-3">
+            {PUBLIC_DEMO_STORY.landing.events.map((event) => (
+              <li key={event.id}>
+                <p className="text-sm text-fg-muted">{event.source}</p>
+                <h3 className="mt-2 font-semibold">{event.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-fg-muted">{event.detail}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-6 max-w-2xl text-fg-muted">
+            Ask what changed before the customer call. The answer connects the report, investigation
+            and merge and shows what remains to verify. You can also ask “What did I work on this
+            week?” to review the captured activity you can see.
+          </p>
+        </MarketingContainer>
+      </section>
 
       <ol className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         {PRODUCT_TOUR.steps.map((step, index) => (

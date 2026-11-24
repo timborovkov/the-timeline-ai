@@ -33,12 +33,12 @@ export default function HowItWorksPage() {
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
           <div className="grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
-              From conversation to current record.
+              From activity to a shared work record.
             </h1>
             <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              Connect the chats, email and calls where work happens. The Timeline captures them in
-              order, proposes updates to your records, and you approve what changes. You don’t have
-              to replace the tools your team already uses.
+              Choose the channels and tools you want included. Supported activity arrives
+              automatically in connected sources. The Timeline keeps it in order so you can ask what
+              changed, check the evidence or open the related work.
             </p>
           </div>
         </MarketingContainer>
@@ -46,6 +46,35 @@ export default function HowItWorksPage() {
 
       <div data-how-it-works-flow className="border-b border-border">
         <MarketingContainer className="py-12 sm:py-16">
+          <ol className="mb-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              [
+                'Connect',
+                'Select the channels or resources you want to include. History depends on the connector and your permissions.',
+              ],
+              [
+                'Capture',
+                'New activity from configured Slack channels and linked Telegram groups arrives automatically. Use direct chats to ask, or add a note explicitly.',
+              ],
+              [
+                'Maintain',
+                'Source evidence keeps its author, time and visibility. Related tasks, people and projects bring the activity together.',
+              ],
+              [
+                'Ask or explore',
+                'Ask “What did I work on this week?” or “What still needs following up?” Answers draw on captured activity you have permission to see. Read a daily update or open a board when you need it.',
+              ],
+              [
+                'Review or correct',
+                'Review proposed changes and their sources, or edit a record to correct it. The original captured evidence stays intact.',
+              ],
+            ].map(([title, body]) => (
+              <li key={title}>
+                <strong>{title}</strong>
+                <p className="mt-2 text-sm leading-relaxed text-fg-muted">{body}</p>
+              </li>
+            ))}
+          </ol>
           <TimelineFlowDiagram variant="expanded" id="how-it-works-platform-flow" />
           <div className="mt-12">
             <MarketingProductScreenshot
@@ -140,8 +169,8 @@ export default function HowItWorksPage() {
               Start with one channel.
             </h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-fg-muted sm:text-lg">
-              Use one project, the smallest useful source set, and a question whose answer you can
-              check against the original work.
+              Use one piece of ongoing work, a relevant source, and a question whose answer you can
+              check.
             </p>
           </div>
           <div className="flex flex-col items-start gap-4 lg:items-end">
