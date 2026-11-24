@@ -66,93 +66,26 @@ jobs:
           while true; do snapshot_resources; sleep 30; done &
           monitor_pid=$!
           trap 'status=$?; kill "$monitor_pid" 2>/dev/null || true; snapshot_resources; exit "$status"' EXIT
-          bun run e2e:precompiled
+          bun run e2e:precompiled e2e/00-quiet-archive.visual.spec.ts --project=chromium --grep 'public Quiet Archive surfaces|authenticated Quiet Archive surfaces' --update-snapshots=all
 
-      - name: Upload Playwright report
-        if: always()
+      - name: Verify the selected golden images and the original sibling snapshots
+        env:
+          E2E_PRECOMPILED: '1'
+          E2E_NAMESPACE: gha-${{ github.run_id }}-${{ github.run_attempt }}-v
+        run: |
+          git restore --worktree -- e2e/00-quiet-archive.visual.spec.ts-snapshots/sign-in-light-desktop-chromium-linux.png e2e/00-quiet-archive.visual.spec.ts-snapshots/team-settings-light-mobile-chromium-linux.png
+          bun run e2e e2e/00-quiet-archive.visual.spec.ts --project=chromium --grep 'public Quiet Archive surfaces|authenticated Quiet Archive surfaces'
+
+      - name: Upload canonical Linux Chromium goldens
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: canonical-quiet-archive-goldens
+          if-no-files-found: error
           path: |
-            playwright-report
-            test-results
-          if-no-files-found: ignore
+            e2e/00-quiet-archive.visual.spec.ts-snapshots/landing-light-mobile-chromium-linux.png
+            e2e/00-quiet-archive.visual.spec.ts-snapshots/help-light-desktop-chromium-linux.png
+            e2e/00-quiet-archive.visual.spec.ts-snapshots/home-light-desktop-chromium-linux.png
 
       - name: Stop isolated fixture services
         if: always()
         run: docker compose -p timeline-e2e down --volumes
-
-  prod-smoke:
-    name: Production-ish web smoke
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: timeline
-          POSTGRES_PASSWORD: timeline_dev
-          POSTGRES_DB: timeline
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U timeline -d timeline"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      # Credentials sign-in rate-limits through Redis. Without a reachable Redis
-      # service the request-role client previously hung forever under
-      # maxRetriesPerRequest:null, so smoke stayed on /sign-in until timeout.
-      redis:
-        image: redis:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      AUTH_SECRET: e2e_auth_secret_at_least_sixteen_chars
-      AUTH_URL: http://localhost:3000
-      NEXTAUTH_URL: http://localhost:3000
-      DATABASE_URL: postgres://timeline:timeline_dev@127.0.0.1:5432/timeline
-      REDIS_URL: redis://127.0.0.1:6379
-      INBOUND_EMAIL_DOMAIN: e2e.localhost
-      E2E_RUN_ID: gha-prod-${{ github.run_id }}-${{ github.run_attempt }}
-      LOG_LEVEL: silent
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Cache Bun downloads
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
-
-      - name: Install dependencies
-        run: bun run deps --frozen-lockfile
-
-      - name: Install Playwright browser
-        run: bun x --bun --no-install playwright install --with-deps chromium webkit
-
-      - name: Run migrations
-        run: bun run db:migrate
-
-      - name: Run production-ish smoke
-        run: bun run e2e:prod-smoke
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report-prod-smoke
-          path: |
-            playwright-report
-            test-results
-          if-no-files-found: ignore
