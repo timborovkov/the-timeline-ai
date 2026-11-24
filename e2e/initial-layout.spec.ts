@@ -138,10 +138,9 @@ test('hero stays complete when hydration enables motion', async ({ page }) => {
     requestAnimationFrame(sample);
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() =>
-    document
-      .querySelector<HTMLElement>('[data-home-root]')
-      ?.style.getPropertyValue('--home-progress'),
+  await expect(page.locator('[data-scene="01-claim"] [data-home-diagram]')).toHaveAttribute(
+    'data-home-entered',
+    '',
   );
   await page.waitForTimeout(1800);
   const samples = await page.evaluate(
