@@ -109,7 +109,8 @@ target “[competitor] alternatives” on the existing URLs rather than extra
 doorway routes; every competitor fact cites and links that competitor's own
 site. Notion stays under Integrations, never as a vs page.
 Works-with pages live under `/integrations` (Linear, Jira, Notion, HubSpot,
-Attio, Pipedrive). Linear has native capture. Notion explains hosted MCP lookup.
+Attio, Pipedrive). Linear has native capture. Notion explains hosted MCP lookup
+and how to request native capture.
 Jira and Confluence presets use an endpoint Atlassian retired. Identify the
 affected presets as unavailable until a replacement is verified. Native
 capture for Jira, HubSpot, Attio, and Pipedrive remains planned. `/integrations/mcp` is the general

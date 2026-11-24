@@ -76,7 +76,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     summary:
       'Read highlights and follow-ups from captured activity, then ask about a project, customer or time window.',
     howItWorks: [
-      'Send the workspace update by email, Slack or Telegram.',
+      'Preview a daily brief or weekly overview in Customize updates on Home. Choose workspace activity or new matches from saved views you follow.',
       'Ask “What did I work on this week?” for a personal recap, or ask what changed for a specific customer or project. Both draw on captured activity you have permission to see.',
     ],
     example: {
@@ -91,11 +91,11 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         question: 'Where does the daily update go?',
         answer:
-          'By email to every member by default. You can add a Slack channel, Slack DMs, a Telegram chat or Telegram DMs.',
+          'Read your update on Home. You can also use the email or direct-message destinations available in your workspace. A workspace admin manages delivery to shared Slack channels and Telegram chats separately.',
       },
       {
         question: 'Can I see past days?',
-        answer: 'Yes. Open Work → Digests for recent daily updates.',
+        answer: 'Yes. Open Work → Digests for recent updates and their sources.',
       },
     ],
     screenshots: [

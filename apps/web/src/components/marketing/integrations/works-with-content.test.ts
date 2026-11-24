@@ -38,6 +38,8 @@ describe('works-with content', () => {
     expect(jira.today).toMatch(/Atlassian retired the endpoint/);
     expect(notion.status).toBe('mcp-lookup');
     expect(notion.today).toMatch(/Notion MCP/i);
+    expect(notion.later).toContain('Native Notion capture is unavailable');
+    expect(JSON.stringify(notion)).not.toMatch(/planned|coming soon/iu);
     expect(hubspot.status).toBe('coming-soon');
     expect(attio.status).toBe('coming-soon');
     expect(pipedrive.status).toBe('coming-soon');
