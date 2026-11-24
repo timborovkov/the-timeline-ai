@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
@@ -213,14 +213,17 @@ test('Inbox opens the item while the read update fails', async ({ browser }, inf
 test('expired and revoked invitations offer the same recovery to signed-out visitors', async ({
   page,
 }, info) => {
-  const [expired, revoked] = [randomUUID(), randomUUID()];
+  const expired = randomBytes(24).toString('base64url');
+  const revoked = randomBytes(24).toString('base64url');
+  const expiredDigest = createHash('sha256').update(expired).digest('hex');
+  const revokedDigest = createHash('sha256').update(revoked).digest('hex');
   const email = 'invitation-recipient@example.test';
   await withE2eDataTransaction(async (sql) => {
     await sql`
       INSERT INTO team_invites (team_id, email, token, invited_by_user_id, expires_at, revoked_at)
       VALUES
-        (${e2eTeam.id}, ${email}, ${expired}, ${e2eUsers.owner.id}, NOW() - INTERVAL '1 day', NULL),
-        (${e2eTeam.id}, ${email}, ${revoked}, ${e2eUsers.owner.id}, NOW() + INTERVAL '1 day', NOW())
+        (${e2eTeam.id}, ${email}, ${expiredDigest}, ${e2eUsers.owner.id}, NOW() - INTERVAL '1 day', NULL),
+        (${e2eTeam.id}, ${email}, ${revokedDigest}, ${e2eUsers.owner.id}, NOW() + INTERVAL '1 day', NOW())
     `;
   });
   try {
@@ -236,7 +239,7 @@ test('expired and revoked invitations offer the same recovery to signed-out visi
     await screenshot(page, info, 'invite-recovery');
   } finally {
     await withE2eDataTransaction(async (sql) => {
-      await sql`DELETE FROM team_invites WHERE token IN (${expired}, ${revoked})`;
+      await sql`DELETE FROM team_invites WHERE token IN (${expiredDigest}, ${revokedDigest})`;
     });
   }
 });
