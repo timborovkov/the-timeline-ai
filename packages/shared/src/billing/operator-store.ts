@@ -265,7 +265,10 @@ export async function assignCompedPlan(input: {
           customerId,
           productId: teamProductId,
           recordedIds,
-          currentSubscriptionId: activatedPolarSubscriptionId(existing),
+          currentSubscriptionId: activatedPolarSubscriptionId(
+            existing,
+            workspace.lifecycleWork.appliedPolarSubscriptionId,
+          ),
           excludedIds: outstandingCheckoutIds,
         });
       } catch {

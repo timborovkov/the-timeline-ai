@@ -97,12 +97,15 @@ type TeamCheckoutPreparation =
   { status: 'ready' } | { status: 'blocked' } | { status: 'resume'; url: string };
 
 export function activatedPolarSubscriptionId(
-  account: Pick<typeof teamBillingAccounts.$inferSelect, 'billingState' | 'polarSubscriptionId'>,
+  account: Pick<
+    typeof teamBillingAccounts.$inferSelect,
+    'arrangement' | 'billingState' | 'polarSubscriptionId'
+  >,
+  appliedSubscriptionId?: string,
 ): string | null {
-  const { billingState, polarSubscriptionId } = account;
-  return billingState.endsWith('_active') ||
-    billingState === 'read_only' ||
-    billingState === 'balance_exhausted'
+  const { arrangement, billingState, polarSubscriptionId } = account;
+  return polarSubscriptionId === appliedSubscriptionId ||
+    (arrangement === 'standard' && billingState.endsWith('_active'))
     ? polarSubscriptionId
     : null;
 }
@@ -446,7 +449,10 @@ export async function withTeamBillingIdentity<T>(
               customerId: identity.customerId,
               productId: teamProductId,
               recordedIds: pendingCheckoutIds,
-              currentSubscriptionId: activatedPolarSubscriptionId(account),
+              currentSubscriptionId: activatedPolarSubscriptionId(
+                account,
+                lifecycle.lifecycleWork.appliedPolarSubscriptionId,
+              ),
               excludedIds,
               ...(enterpriseCheckouts ? { enterpriseCheckouts } : {}),
             });
@@ -459,7 +465,10 @@ export async function withTeamBillingIdentity<T>(
               customerId: identity.customerId,
               productId: quote.productId,
               recordedIds: pendingCheckoutIds,
-              currentSubscriptionId: activatedPolarSubscriptionId(account),
+              currentSubscriptionId: activatedPolarSubscriptionId(
+                account,
+                lifecycle.lifecycleWork.appliedPolarSubscriptionId,
+              ),
               matchesQuote: (row) =>
                 row.status === 'open' &&
                 row.seats === quote.seats &&

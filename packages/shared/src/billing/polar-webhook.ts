@@ -12,7 +12,10 @@ import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
-import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
+import {
+  activatedPolarSubscriptionId,
+  assertStoredPolarIdentity,
+} from '#src/billing/customer-identity.js';
 import { confirmTeamSeatEntitlement } from '#src/billing/membership.js';
 import {
   assertPriceOverride,
@@ -800,23 +803,28 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
-    if (
-      activatesCheckout &&
-      (input.plan === 'team' || input.plan === 'enterprise') &&
-      checkoutId &&
-      workspace?.lifecycleWork.pendingCheckoutIds?.includes(checkoutId)
-    ) {
-      await tx
-        .update(teams)
-        .set({
-          lifecycleWork: {
-            ...workspace.lifecycleWork,
-            pendingCheckoutIds: workspace.lifecycleWork.pendingCheckoutIds.filter(
-              (id) => id !== checkoutId,
-            ),
-          },
-        })
-        .where(eq(teams.id, input.teamId));
+    if (workspace) {
+      const lifecycleWork = { ...workspace.lifecycleWork };
+      // The current provider state may be delinquent even though its checkout was applied.
+      const appliedId = activatesCheckout
+        ? polarSubscriptionId
+        : existing?.polarSubscriptionId === polarSubscriptionId
+          ? activatedPolarSubscriptionId(existing, lifecycleWork.appliedPolarSubscriptionId)
+          : null;
+      const removesCheckout =
+        activatesCheckout &&
+        (input.plan === 'team' || input.plan === 'enterprise') &&
+        checkoutId &&
+        lifecycleWork.pendingCheckoutIds?.includes(checkoutId);
+      if (appliedId !== (lifecycleWork.appliedPolarSubscriptionId ?? null) || removesCheckout) {
+        if (appliedId) lifecycleWork.appliedPolarSubscriptionId = appliedId;
+        else delete lifecycleWork.appliedPolarSubscriptionId;
+        if (removesCheckout) {
+          lifecycleWork.pendingCheckoutIds =
+            lifecycleWork.pendingCheckoutIds?.filter((id) => id !== checkoutId) ?? [];
+        }
+        await tx.update(teams).set({ lifecycleWork }).where(eq(teams.id, input.teamId));
+      }
     }
     await recordBillingPlan(
       tx as unknown as Db,
