@@ -41,6 +41,11 @@ await vi.mock(
   () => import('@/app/actions/reconciliation'),
 );
 await vi.mock(
+  import.meta.resolve('@/lib/app-region'),
+  () => ({ readAppRegion: async () => ({ locale: 'en-US', timezone: 'UTC' }) }),
+  () => import('@/lib/app-region'),
+);
+await vi.mock(
   import.meta.resolve('@/lib/auth'),
   () => ({ auth: fakes.auth }),
   () => import('@/lib/auth'),
