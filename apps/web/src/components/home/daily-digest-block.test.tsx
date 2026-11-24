@@ -3,7 +3,7 @@ import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import { DailyDigestBlock } from '@/components/home/daily-digest-block';
+import { DailyDigestBlock, DailyDigestContent } from '@/components/home/daily-digest-block';
 // Test environment: happy-dom
 
 const DIGEST: DailyDigestPayload = {
@@ -92,14 +92,18 @@ describe('DailyDigestBlock', () => {
   });
 
   it('keeps the complete digest payload inside the closed disclosure', () => {
-    render(<DailyDigestBlock digest={DIGEST} />);
+    render(
+      <DailyDigestBlock>
+        <DailyDigestContent digest={DIGEST} />
+      </DailyDigestBlock>,
+    );
 
-    expect(screen.getByText('Latest digest')).toBeTruthy();
+    expect(screen.getByText('Updates')).toBeTruthy();
     expect(screen.getByText('Jul 16, 2026')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'All digests' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Update history' }).getAttribute('href')).toBe(
       '/app/digests',
     );
-    const details = screen.getByText('Open digest').closest('details');
+    const details = screen.getByText('Open update').closest('details');
     expect(details).toBeTruthy();
     expect(details?.hasAttribute('open')).toBe(false);
     expect(details?.textContent).toContain(
@@ -146,9 +150,13 @@ describe('DailyDigestBlock', () => {
 
   it('falls back to event counts for legacy digests without activity', () => {
     const { activity: _activity, momentCount: _momentCount, ...legacyDigest } = DIGEST;
-    render(<DailyDigestBlock digest={legacyDigest} />);
+    render(
+      <DailyDigestBlock>
+        <DailyDigestContent digest={legacyDigest} />
+      </DailyDigestBlock>,
+    );
 
-    const details = screen.getByText('Open digest').closest('details');
+    const details = screen.getByText('Open update').closest('details');
     expect(details?.textContent).toContain('12 new moments');
     expect(details?.textContent).toContain('2 pending approvals');
     expect(details?.textContent).not.toContain('2 new proposals');

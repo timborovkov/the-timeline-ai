@@ -420,7 +420,7 @@ export function formatDigestChatText(input: {
   const calendar = payload.upcomingCalendar.slice(0, 3);
   const activity = formatDigestActivityLines(digestActivityStats(payload));
   const lines = [
-    `Daily digest · ${payload.teamName}`,
+    payload.updateRevision ? 'Timeline update' : `Daily digest · ${payload.teamName}`,
     date,
     '',
     ...summaryParagraphs,

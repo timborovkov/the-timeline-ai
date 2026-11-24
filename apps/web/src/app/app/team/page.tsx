@@ -41,7 +41,6 @@ import { TeamDeletionForm } from '@/components/team-deletion-form';
 import {
   InboundEmailPlaceholderNotice,
   InboundEmailWhitelistForm,
-  DigestPreferenceForm,
   RenameTeamForm,
   TeamTimezoneForm,
   TeamExportPanel,
@@ -483,7 +482,12 @@ function TeamBillingSettings({
 function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
   return (
     <SettingsSection title="Messaging">
-      <DigestPreferenceForm enabled={enabled} />
+      <Link href="/app/updates" className="underline underline-offset-4">
+        Customize updates
+      </Link>
+      <p className="mt-2 text-sm text-fg-muted">
+        {enabled ? 'Personal updates are on.' : 'Personal updates are paused.'}
+      </p>
     </SettingsSection>
   );
 }

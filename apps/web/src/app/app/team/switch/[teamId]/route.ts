@@ -1,6 +1,7 @@
 import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import {
   ACTIVE_TEAM_COOKIE,
@@ -16,7 +17,7 @@ function appRedirect(path: '/app' | '/sign-in'): NextResponse {
 }
 
 export async function POST(
-  _req: Request,
+  request: Request,
   { params }: { params: Promise<{ teamId: string }> },
 ): Promise<NextResponse> {
   const session = await auth();
@@ -39,5 +40,9 @@ export async function POST(
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TEAM_COOKIE, serializeActiveTeamCookie(teamId), activeTeamCookieOptions());
-  return appRedirect('/app');
+  const digest = z.uuid().safeParse(new URL(request.url).searchParams.get('digest'));
+  if (!digest.success) return appRedirect('/app');
+  const target = new URL('/app/digests', getSiteUrl());
+  target.searchParams.set('digest', digest.data);
+  return NextResponse.redirect(target, 303);
 }

@@ -2,6 +2,43 @@ import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#sr
 
 export const DEFAULT_DIGEST_HOUR = 12;
 
+export function scheduledUpdateWindow(
+  now: Date,
+  timezone: string,
+  hour: number,
+  cadence: 'daily' | 'weekly',
+): { start: Date; end: Date } {
+  const tz = assertValidTimezone(timezone);
+  const current = zonedDateTimeFromDate(now, tz);
+  const plainTime = {
+    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR,
+  };
+  let date = current.toPlainDate();
+  if (cadence === 'weekly') date = date.subtract({ days: date.dayOfWeek - 1 });
+  const days = cadence === 'weekly' ? 7 : 1;
+  const boundary = (day: typeof date) =>
+    dateFromInstant(day.toZonedDateTime({ timeZone: tz, plainTime }).toInstant());
+  if (boundary(date) > now) date = date.subtract({ days });
+  return { start: boundary(date.subtract({ days })), end: boundary(date) };
+}
+
+export function nextScheduledUpdateWindow(
+  windowEnd: Date,
+  timezone: string,
+  hour: number,
+  cadence: 'daily' | 'weekly',
+): { start: Date; end: Date } {
+  const tz = assertValidTimezone(timezone);
+  const plainTime = {
+    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR,
+  };
+  const next = zonedDateTimeFromDate(windowEnd, tz)
+    .toPlainDate()
+    .add({ days: cadence === 'weekly' ? 7 : 1 })
+    .toZonedDateTime({ timeZone: tz, plainTime });
+  return { start: windowEnd, end: dateFromInstant(next.toInstant()) };
+}
+
 export function freshDigestCutoff(windowEnd: Date, timezone: string, hour: number): Date {
   const tz = assertValidTimezone(timezone);
   const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;

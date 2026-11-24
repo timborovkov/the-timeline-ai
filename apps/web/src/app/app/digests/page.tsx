@@ -6,8 +6,10 @@ import {
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -15,7 +17,7 @@ import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Digests',
-  description: 'Browse every daily digest and open a specific day.',
+  description: 'Browse previous scheduled updates.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -23,15 +25,35 @@ export const dynamic = 'force-dynamic';
 export default async function DigestsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ digest?: string | string[] }>;
+  searchParams: Promise<{ digest?: string | string[]; team?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
+  const { active, memberships } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
 
   const query = await searchParams;
-  const selectedId = Array.isArray(query.digest) ? query.digest[0] : query.digest;
+  const selectedId = z
+    .uuid()
+    .safeParse(Array.isArray(query.digest) ? query.digest[0] : query.digest).data;
+  const requestedTeam =
+    selectedId && memberships.find((membership) => membership.teamId === query.team);
+  if (requestedTeam && requestedTeam.teamId !== active.teamId) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Open update"
+          subtitle={`Switch to ${requestedTeam.teamName} to read this update.`}
+        />
+        <form
+          method="post"
+          action={`/app/team/switch/${requestedTeam.teamId}?digest=${selectedId}`}
+        >
+          <Button type="submit">Switch workspace and open update</Button>
+        </form>
+      </div>
+    );
+  }
   const rows = await listDailyDigests({
     db,
     teamId: active.teamId,
@@ -40,6 +62,17 @@ export default async function DigestsPage({
   });
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  if (selectedId && !rows.some((row) => row.id === selectedId)) {
+    rows.unshift(
+      ...(await listDailyDigests({
+        db,
+        teamId: active.teamId,
+        userId: session.user.id,
+        id: selectedId,
+        limit: 1,
+      })),
+    );
+  }
   // One `now` + request-scoped match cache so history rows reuse each view scan.
   const now = new Date();
   const presented = await Promise.all(
@@ -64,7 +97,7 @@ export default async function DigestsPage({
       <PageHeader
         variant="collection"
         title="Digests"
-        subtitle="Every generated daily digest, one day at a time."
+        subtitle="Open a previous update and its supporting sources."
         metadata={[{ label: 'days', value: rows.length, mono: true }]}
         srLabel={`Digests · ${String(rows.length)} days`}
       />

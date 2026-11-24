@@ -65,6 +65,8 @@ beforeAll(async () => {
     payload: {
       teamName: 'Team',
       userName: 'User',
+      windowStart: '2026-06-13T12:00:00Z',
+      windowEnd: '2026-06-14T12:00:00Z',
       summary: 'Summary',
       pendingApprovals: 0,
       eventCount: 0,
@@ -159,5 +161,176 @@ it('leaves an inactive workspace digest untouched even after the recipient leave
   } finally {
     await db.update(teams).set({ disabledAt: null }).where(eq(teams.id, teamId));
     await db.update(teamMembers).set({ removedAt: null }).where(eq(teamMembers.teamId, teamId));
+  }
+});
+
+it('sends configured updates as link-only notices and preserves the archive if paused', async () => {
+  const revision = new Date('2026-06-12T09:00:00.000Z');
+  const [digest] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  if (!digest) throw new Error('Missing test digest');
+  await db
+    .update(messagePreferences)
+    .set({
+      dailyDigestEnabled: false,
+      updateOptions: {
+        cadence: 'daily',
+        scope: 'workspace',
+        focus: 'balanced',
+        destination: 'personal',
+      },
+      updatedAt: revision,
+    })
+    .where(eq(messagePreferences.teamId, teamId));
+  await db
+    .update(dailyDigests)
+    .set({
+      payload: {
+        ...(digest.payload as Record<string, unknown>),
+        updateRevision: revision.toISOString(),
+        windowStart: digest.windowStart.toISOString(),
+        windowEnd: digest.windowEnd.toISOString(),
+        summary: 'Private project details',
+        links: [{ label: 'Sensitive source title', href: '/app/timeline' }],
+      },
+    })
+    .where(eq(dailyDigests.id, digestId));
+  try {
+    expect(await deliver()).toMatchObject({ ok: true, skipped: true });
+    expect(send).not.toHaveBeenCalled();
+    const [archived] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+    expect(archived?.status).toBe('generated');
+
+    await db
+      .update(messagePreferences)
+      .set({ dailyDigestEnabled: true })
+      .where(eq(messagePreferences.teamId, teamId));
+    expect(await deliver()).toMatchObject({ ok: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    const sent = JSON.stringify(send.mock.calls);
+    expect(sent).toContain('example.test/digest');
+    expect(sent).not.toContain('Private project details');
+    expect(sent).not.toContain('Sensitive source title');
+
+    expect(await deliver()).toMatchObject({ ok: true, skipped: true });
+    expect(send).toHaveBeenCalledTimes(1);
+  } finally {
+    await db
+      .update(messagePreferences)
+      .set({ dailyDigestEnabled: true, updateOptions: null })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({ payload: digest.payload })
+      .where(eq(dailyDigests.id, digestId));
+  }
+});
+
+it('keeps configured updates in the archive when every workspace destination is disabled', async () => {
+  const revision = new Date('2026-06-12T09:00:00.000Z');
+  const [digest] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  if (!digest) throw new Error('Missing test digest');
+  await db
+    .update(messagePreferences)
+    .set({
+      updateOptions: {
+        cadence: 'daily',
+        scope: 'workspace',
+        focus: 'balanced',
+        destination: 'personal',
+      },
+      updatedAt: revision,
+    })
+    .where(eq(messagePreferences.teamId, teamId));
+  await db
+    .update(dailyDigests)
+    .set({
+      payload: {
+        ...(digest.payload as Record<string, unknown>),
+        updateRevision: revision.toISOString(),
+      },
+    })
+    .where(eq(dailyDigests.id, digestId));
+  await db
+    .update(teamDigestDestinations)
+    .set({ enabled: false })
+    .where(eq(teamDigestDestinations.teamId, teamId));
+  const interceptedEmail = vi.fn(() => Promise.resolve(Response.json({ id: 'fixture-email' })));
+  const previousKey = process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = 're_updates_fixture';
+  resetEnvForTests();
+  try {
+    expect(
+      await sendDailyDigest({
+        db,
+        digestId,
+        to: 'digest@example.test',
+        digestUrl: 'https://example.test/digest',
+        now,
+        fetch: interceptedEmail,
+      }),
+    ).toMatchObject({ ok: true, skipped: true });
+    expect(interceptedEmail).toHaveBeenCalledTimes(0);
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(await db.select().from(messageDeliveries)).toHaveLength(0);
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    resetEnvForTests();
+    await db
+      .update(messagePreferences)
+      .set({ updateOptions: null })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({ payload: digest.payload })
+      .where(eq(dailyDigests.id, digestId));
+    await db
+      .update(teamDigestDestinations)
+      .set({ enabled: true })
+      .where(eq(teamDigestDestinations.teamId, teamId));
+  }
+});
+
+it('keeps a transient destination retryable when another destination fails permanently', async () => {
+  const [email] = await db
+    .insert(teamDigestDestinations)
+    .values({
+      teamId,
+      kind: 'email_members',
+      createdAt: new Date('2099-01-01T00:00:00Z'),
+    })
+    .returning({ id: teamDigestDestinations.id });
+  if (!email) throw new Error('Missing test destination');
+  const previousKey = process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = 're_updates_fixture';
+  resetEnvForTests();
+  const interceptedEmail = vi.fn(() =>
+    Promise.resolve(Response.json({ name: 'validation_error' }, { status: 422 })),
+  );
+  send.mockRejectedValueOnce(new Error('Temporary Telegram provider outage'));
+  try {
+    expect(
+      await sendDailyDigest({
+        db,
+        digestId,
+        to: 'digest@example.test',
+        digestUrl: 'https://example.test/digest',
+        now,
+        fetch: interceptedEmail,
+      }),
+    ).toMatchObject({ ok: false, retryable: true });
+    expect(send).toHaveBeenCalledOnce();
+    const rows = await db.select().from(messageDeliveries);
+    expect(
+      rows
+        .filter((row) => row.status === 'failed')
+        .map((row) => row.channel)
+        .sort(),
+    ).toEqual(['email', 'telegram']);
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    resetEnvForTests();
+    await db.delete(teamDigestDestinations).where(eq(teamDigestDestinations.id, email.id));
   }
 });

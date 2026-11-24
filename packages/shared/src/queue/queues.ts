@@ -1253,8 +1253,10 @@ export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Prom
 
 export async function enqueueDailyDigestRecipientJob(
   data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
+  delayMs?: number,
 ): Promise<void> {
   await getDailyDigestQueue().add('recipient', data, {
+    ...(delayMs ? { delay: delayMs } : {}),
     jobId: bullmqCustomJobId([
       'daily-digest',
       data.teamId,

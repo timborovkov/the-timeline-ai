@@ -103,6 +103,7 @@ import {
   type RankingInput,
   type RankingMetadata,
 } from '#src/retrieval/ranking.js';
+import { createUpdatePreferencesScope } from '#src/messaging/update-preferences.js';
 import { createSavedWorkViewScope } from '#src/saved-work-views.js';
 import { createSourceHealthScope } from '#src/source-health.js';
 import {
@@ -3648,6 +3649,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     handoffs: createHandoffScope(db, teamId, userId, ensureMember),
+    updatePreferences: createUpdatePreferencesScope(db, teamId, userId, ensureMember),
     savedViews: createSavedWorkViewScope({
       db,
       teamId,

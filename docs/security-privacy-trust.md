@@ -777,7 +777,9 @@ Live Google Cloud configuration and scope verification remain open. See
 
 Handoff snapshots and saved views follow workspace deletion. Handoff reads
 recheck the project, sources and commitments. Saved-view digests reevaluate
-matches for the recipient and use personal destinations. Source-health counts
-apply source visibility before aggregation. OCR correction history retains
+matches for the recipient and use personal destinations. Configurable briefings
+recheck their sources in the archive and send only a link externally. Preview
+and generation use the host workspace’s existing inference budget. Source-health
+counts apply source visibility before aggregation. OCR correction history retains
 earlier derived text subject to the source document's access and deletion
 policy.

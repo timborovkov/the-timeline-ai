@@ -132,6 +132,12 @@ export const messagePreferences = pgTable(
     teamId: uuid('team_id').references(() => teams.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
     dailyDigestEnabled: boolean('daily_digest_enabled').notNull().default(true),
+    updateOptions: jsonb('update_options').$type<{
+      cadence: 'daily' | 'weekly';
+      scope: 'workspace' | 'saved_views';
+      focus: 'balanced' | 'progress' | 'decisions' | 'blockers';
+      destination: 'app' | 'personal';
+    }>(),
     dailyDigestHour: integer('daily_digest_hour').notNull().default(12),
     timezone: text('timezone').notNull().default('Europe/Helsinki'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

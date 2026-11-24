@@ -2239,6 +2239,9 @@
   "packages/shared/src/messaging/digest.generate.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/messaging/digest-window.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/messaging/digest.integration.test.ts": {
     "group": "integration"
   },

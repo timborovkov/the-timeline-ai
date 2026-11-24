@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { EmptyState } from '@/components/empty-state';
 import { DigestBody } from '@/components/home/digest-body';
+import { UpdateFollowUp } from '@/components/home/update-follow-up';
 import { cn } from '@/lib/utils';
 
 export interface DigestHistoryRow {
@@ -93,6 +94,7 @@ export function DigestHistoryTable({
             </summary>
             <div id={`digest-panel-${digest.id}`} className="px-1 pb-5 pt-1">
               <DigestBody digest={digest.payload} />
+              <UpdateFollowUp digestId={digest.id} />
             </div>
           </details>
         );

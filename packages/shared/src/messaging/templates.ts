@@ -395,7 +395,9 @@ function renderPasswordReset(input: PasswordResetMessageInput): RenderedMessage 
 
 function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const p = input.payload;
-  const subject = `Daily digest for ${p.teamName}`;
+  const subject = p.updateRevision
+    ? 'Your Timeline update is ready'
+    : `Daily digest for ${p.teamName}`;
   const timezone = p.timezone;
   const windowRange = formatDigestWindowRange(p.windowStart, p.windowEnd, timezone);
   const digestDate = formatDigestDate(p.windowEnd, timezone);
@@ -442,7 +444,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     label: link.label,
   }));
   const textBody = [
-    `Daily digest for ${p.teamName}`,
+    subject,
     digestDate,
     '',
     ...summaryParagraphs.flatMap((paragraph) => [paragraph, '']),
@@ -473,7 +475,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   ].join('\n');
   const htmlBody = htmlLayout({
     preview: p.summary,
-    title: `Daily digest for ${p.teamName}`,
+    title: subject,
     body: renderBody(
       'daily-digest',
       {},

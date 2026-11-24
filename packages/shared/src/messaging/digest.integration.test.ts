@@ -5,6 +5,8 @@ import {
   agentSuggestions,
   dailyDigests,
   entities,
+  messagePreferences,
+  rawEvents,
   objectChanges,
   teamBillingAccounts,
   teams,
@@ -16,6 +18,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { BillingAdmissionError } from '#src/billing/errors.js';
 import {
   addTeamDigestDestination,
   insertDefaultDigestDestination,
@@ -23,7 +26,15 @@ import {
   listWorkspaceDigestTeamIds,
   removeTeamDigestDestination,
 } from '#src/messaging/destinations.js';
-import { generateDailyDigest, listDailyDigestRecipients } from '#src/messaging/digest.js';
+import {
+  generateDailyDigest,
+  getDigestPreference,
+  hasScheduledUpdateBillingHold,
+  listDailyDigests,
+  listDailyDigestRecipients,
+} from '#src/messaging/digest.js';
+import { presentSavedViewDigest } from '#src/messaging/saved-view-digest.js';
+import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -337,5 +348,130 @@ describe('workspace digest destinations', () => {
     });
     const rows = await db.select({ id: dailyDigests.id }).from(dailyDigests);
     expect(rows).toEqual([]);
+  });
+});
+
+describe('configured scheduled updates', () => {
+  const otherUser = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const otherTeam = '22222222-2222-2222-2222-222222222222';
+  const evidenceId = '33333333-3333-3333-3333-333333333333';
+  const window = {
+    windowStart: new Date('2026-07-20T12:00:00Z'),
+    windowEnd: new Date('2026-07-27T12:00:00Z'),
+    now: new Date('2026-07-28T12:00:00Z'),
+  };
+
+  it('builds a weekly briefing from visible fresh sources, then hides it upon revocation', async () => {
+    await testDb.pg.exec(`
+      INSERT INTO teams (id, slug, name) VALUES ('${otherTeam}', 'team-b', 'Team B');
+      INSERT INTO users (id, email) VALUES ('${otherUser}', 'other@test.local');
+      INSERT INTO team_members (team_id, user_id) VALUES ('${TEAM_ID}', '${otherUser}');
+    `);
+    await db.update(messagePreferences).set({
+      updateOptions: {
+        cadence: 'weekly',
+        scope: 'workspace',
+        focus: 'decisions',
+        destination: 'app',
+      },
+      updatedAt: new Date('2026-07-18T00:00:00Z'),
+    });
+    const time = new Date('2026-07-24T09:00:00Z');
+    await db.insert(rawEvents).values([
+      {
+        id: evidenceId,
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: 'The pilot moves to Friday.',
+        visibility: 'specific_users',
+        visibilityOwnerUserId: otherUser,
+        visibilityUserIds: [USER_ID],
+        occurredAt: time,
+        createdAt: time,
+      },
+      {
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: 'Unrelated private work',
+        visibility: 'private',
+        visibilityOwnerUserId: otherUser,
+        occurredAt: time,
+        createdAt: time,
+      },
+      {
+        teamId: otherTeam,
+        source: 'web',
+        contentText: 'Another workspace',
+        occurredAt: time,
+        createdAt: time,
+      },
+      {
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: 'Old backfilled work',
+        occurredAt: new Date('2026-07-01T09:00:00Z'),
+        createdAt: time,
+      },
+    ]);
+    const blockedSummary = vi
+      .fn()
+      .mockRejectedValue(new BillingAdmissionError('spend_cap_reached'));
+    await expect(
+      generateDailyDigest({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ...window,
+        summarize: blockedSummary,
+      }),
+    ).rejects.toMatchObject({ code: 'spend_cap_reached' });
+    const identity = { db, teamId: TEAM_ID, userId: USER_ID };
+    const preference = await getDigestPreference(identity);
+    expect(await listDailyDigests(identity)).toHaveLength(0);
+    expect(await hasScheduledUpdateBillingHold({ ...identity, preference, now: window.now })).toBe(
+      true,
+    );
+    const summarize = vi.fn().mockResolvedValue('The pilot moves to Friday.');
+    const input = { db, teamId: TEAM_ID, userId: USER_ID, ...window, summarize };
+    const generated = await generateDailyDigest(input);
+    expect(generated.skipped).toBe(false);
+    expect(await hasScheduledUpdateBillingHold({ ...identity, preference, now: window.now })).toBe(
+      false,
+    );
+    expect(generated.payload.evidenceIds).toEqual([evidenceId]);
+    expect(summarize.mock.calls[0]?.[0]).toContain('Lead with supported decisions');
+    expect(summarize.mock.calls[0]?.[0]).not.toContain('Old backfilled work');
+    expect((await generateDailyDigest(input)).digestId).toBe(generated.digestId);
+    expect(summarize).toHaveBeenCalledOnce();
+
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    expect((await presentSavedViewDigest(scope, generated.payload)).hasVisibleChanges).toBe(true);
+    await db.update(rawEvents).set({ visibilityUserIds: [] }).where(eq(rawEvents.id, evidenceId));
+    const revoked = await presentSavedViewDigest(scope, generated.payload);
+    expect(revoked.hasVisibleChanges).toBe(false);
+    expect(revoked.payload.links).toEqual([]);
+    expect(revoked.payload.summary).not.toContain('pilot');
+  });
+
+  it('skips queued work while paused and keeps a completed quiet window suppressed on retry', async () => {
+    await db.update(messagePreferences).set({
+      dailyDigestEnabled: false,
+      updateOptions: {
+        cadence: 'weekly',
+        scope: 'workspace',
+        focus: 'balanced',
+        destination: 'app',
+      },
+      updatedAt: new Date('2026-07-18T00:00:00Z'),
+    });
+    const summarize = vi.fn();
+    const input = { db, teamId: TEAM_ID, userId: USER_ID, ...window, summarize };
+    expect((await generateDailyDigest(input)).digestId).toBe('');
+    await db.update(messagePreferences).set({ dailyDigestEnabled: true });
+    const quiet = await generateDailyDigest(input);
+    expect(quiet.skipped).toBe(true);
+    expect(quiet.digestId).not.toBe('');
+    expect((await generateDailyDigest(input)).digestId).toBe(quiet.digestId);
+    expect(summarize).not.toHaveBeenCalled();
   });
 });

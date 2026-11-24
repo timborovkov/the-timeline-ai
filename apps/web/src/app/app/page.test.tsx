@@ -85,6 +85,8 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/messaging'),
   () => ({
     latestDailyDigest: fakes.latestDailyDigest,
+    getDigestPreference: async () => ({ enabled: true }),
+    hasScheduledUpdateBillingHold: async () => false,
     presentSavedViewDigest: (_scope: unknown, payload: unknown) =>
       Promise.resolve({ payload, hasVisibleChanges: false }),
   }),
@@ -136,7 +138,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/components/home/daily-digest-block'),
-  () => ({ DailyDigestBlock: () => null }),
+  () => ({ DailyDigestBlock: () => null, DailyDigestContent: () => null }),
   () => import('@/components/home/daily-digest-block'),
 );
 await vi.mock(

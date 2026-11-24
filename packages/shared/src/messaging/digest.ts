@@ -16,8 +16,8 @@ import { and, desc, eq, gte, inArray, isNull, lt, notExists, or, sql } from 'dri
 import { z } from 'zod';
 
 import { CAPACITY_BY_PLAN } from '#src/billing/catalog.js';
-import { getBillingContext } from '#src/billing/context.js';
-import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
+import { isBillingAdmissionError, isExpectedBillingAdmissionFailure } from '#src/billing/errors.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
@@ -32,6 +32,7 @@ import {
   DEFAULT_DIGEST_HOUR,
   freshDigestCutoff,
   isDigestWindowExpired,
+  scheduledUpdateWindow,
 } from '#src/messaging/digest-window.js';
 import type {
   DailyDigestActivity,
@@ -49,13 +50,19 @@ import {
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
 
-export { defaultDigestWindow, isDigestWindowExpired } from '#src/messaging/digest-window.js';
+export {
+  defaultDigestWindow,
+  isDigestWindowExpired,
+  nextScheduledUpdateWindow,
+  scheduledUpdateWindow,
+} from '#src/messaging/digest-window.js';
 
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 const WORKSPACE_DIGEST_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 const QUIET_DIGEST_SUMMARY = 'No useful activity for this digest window.';
 const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
+const UPDATE_BILLING_HOLD = 'Scheduled Update summary billing limit reached.';
 
 const digestSectionTitleSchema = z.enum([
   'Highlights',
@@ -79,7 +86,16 @@ const digestSummarySchema = z.object({
     .max(7),
 });
 
+const scheduledDigestSummarySchema = digestSummarySchema.extend({
+  material: z
+    .boolean()
+    .describe(
+      'True only for useful evidenced changes or a substantive blocker that still needs action.',
+    ),
+});
+
 interface DigestText {
+  material?: boolean;
   summary: string;
   sections: NonNullable<DailyDigestPayload['sections']>;
 }
@@ -95,9 +111,20 @@ interface MomentBrief {
   actorLabels: string[];
   contextLabels: string[];
   rawEventCount: number;
+  capturedLate?: boolean;
 }
 
+type UpdateOptions = NonNullable<typeof messagePreferences.$inferSelect.updateOptions>;
+
+const updateFocus: Record<UpdateOptions['focus'], string> = {
+  balanced: 'Lead with material changes and anything requiring attention.',
+  progress: 'Lead with concrete progress, completed work, and changed status.',
+  decisions: 'Lead with supported decisions and distinguish them from proposals.',
+  blockers: 'Lead with evidenced blockers, unresolved risks, and actionable follow-ups.',
+};
+
 interface DigestPromptContext {
+  focus?: UpdateOptions['focus'];
   team: string;
   recipient: string;
   window: { start: string; end: string };
@@ -176,6 +203,7 @@ function buildDigestPrompt(
       recipient: ctx.recipient,
       window: ctx.window,
       instructions: {
+        ...(ctx.focus ? { priority: updateFocus[ctx.focus] } : {}),
         purpose:
           'Write a readable briefing of what happened since the previous digest for a busy teammate catching up.',
         include:
@@ -210,6 +238,7 @@ function buildReducePrompt(ctx: DigestPromptContext, batchSummaries: DigestText[
       recipient: ctx.recipient,
       window: ctx.window,
       instructions: {
+        ...(ctx.focus ? { priority: updateFocus[ctx.focus] } : {}),
         purpose:
           'Synthesize partial batch summaries into one coherent daily briefing a busy teammate can read.',
         style:
@@ -241,13 +270,20 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-async function requestStructuredDigest(prompt: string, systemPrompt: string): Promise<DigestText> {
+async function requestStructuredDigest(
+  prompt: string,
+  systemPrompt: string,
+  scheduled = false,
+): Promise<DigestText> {
   const result = await chatStructured({
-    schema: digestSummarySchema,
+    schema: scheduled ? scheduledDigestSummarySchema : digestSummarySchema,
     instructions: systemPrompt,
     prompt,
   });
   return {
+    ...('material' in result.object && typeof result.object.material === 'boolean'
+      ? { material: result.object.material }
+      : {}),
     summary: result.object.summary,
     sections: result.object.sections.map((section) => ({
       title: section.title,
@@ -347,13 +383,18 @@ async function summarizeDigestBatches(
   });
 }
 
-async function callStructuredDigest(prompt: string, systemPrompt: string): Promise<DigestText> {
-  const first = await requestStructuredDigest(prompt, systemPrompt);
+async function callStructuredDigest(
+  prompt: string,
+  systemPrompt: string,
+  scheduled = false,
+): Promise<DigestText> {
+  const first = await requestStructuredDigest(prompt, systemPrompt, scheduled);
   if (!digestTextHasBannedInventory(first)) return first;
   log.warn('digest summarizer returned banned artifact inventory; retrying');
   const retry = await requestStructuredDigest(
     `${prompt}\n\n${BANNED_INVENTORY_RETRY}`,
     systemPrompt,
+    scheduled,
   );
   if (!digestTextHasBannedInventory(retry)) return retry;
   throw new Error('digest summarizer returned banned artifact inventory');
@@ -479,7 +520,7 @@ function emptyActivity(): DailyDigestActivity {
 }
 
 function disabledDigestPayload(
-  input: GenerateDailyDigestInput,
+  input: Pick<GenerateDailyDigestInput, 'windowStart' | 'windowEnd'>,
   timezone: string,
 ): DailyDigestPayload {
   return {
@@ -773,7 +814,13 @@ export async function getDigestPreference(input: {
   db: Db;
   teamId: string;
   userId: string;
-}): Promise<{ enabled: boolean; hour: number; timezone: string }> {
+}): Promise<{
+  enabled: boolean;
+  hour: number;
+  timezone: string;
+  options?: UpdateOptions;
+  revision?: string;
+}> {
   const rows = await input.db
     .select()
     .from(messagePreferences)
@@ -787,6 +834,9 @@ export async function getDigestPreference(input: {
     enabled: row?.dailyDigestEnabled ?? true,
     hour: row?.dailyDigestHour ?? 12,
     timezone,
+    ...(row?.updateOptions
+      ? { options: row.updateOptions, revision: row.updatedAt.toISOString() }
+      : {}),
   };
 }
 
@@ -815,6 +865,7 @@ export async function listDailyDigestRecipients(db: Db): Promise<DigestRecipient
       and(
         activeWorkspaceCondition(teamMembers.teamId),
         isNull(teamMembers.removedAt),
+        inArray(teamMembers.role, ['owner', 'admin', 'member']),
         isNull(users.suspendedAt),
         notExists(
           db
@@ -856,6 +907,7 @@ export async function listDailyDigests(input: {
   teamId: string;
   userId: string;
   limit?: number;
+  id?: string;
 }): Promise<(typeof dailyDigests.$inferSelect)[]> {
   const limit = Math.min(Math.max(input.limit ?? 90, 1), 180);
   return input.db
@@ -865,11 +917,71 @@ export async function listDailyDigests(input: {
       and(
         eq(dailyDigests.teamId, input.teamId),
         eq(dailyDigests.userId, input.userId),
+        input.id ? eq(dailyDigests.id, input.id) : undefined,
         inArray(dailyDigests.status, ['generated', 'sent']),
       ),
     )
     .orderBy(desc(dailyDigests.windowEnd), desc(dailyDigests.generatedAt))
     .limit(limit);
+}
+
+export async function hasScheduledUpdateBillingHold(input: {
+  db: Db;
+  teamId: string;
+  userId: string;
+  preference: Awaited<ReturnType<typeof getDigestPreference>>;
+  now?: Date;
+}): Promise<boolean> {
+  const { preference } = input;
+  if (!preference.enabled || !preference.revision || preference.options?.scope !== 'workspace')
+    return false;
+  const window = scheduledUpdateWindow(
+    input.now ?? new Date(),
+    preference.timezone,
+    preference.hour,
+    preference.options.cadence,
+  );
+  const [hold] = await input.db
+    .select({ id: dailyDigests.id })
+    .from(dailyDigests)
+    .where(
+      and(
+        eq(dailyDigests.teamId, input.teamId),
+        eq(dailyDigests.userId, input.userId),
+        eq(dailyDigests.windowStart, window.start),
+        eq(dailyDigests.windowEnd, window.end),
+        eq(dailyDigests.status, 'failed'),
+        eq(dailyDigests.error, UPDATE_BILLING_HOLD),
+        sql`${dailyDigests.payload} ->> 'updateRevision' = ${preference.revision}`,
+      ),
+    )
+    .limit(1);
+  return Boolean(hold);
+}
+
+async function persistUpdateBillingHold(input: GenerateDailyDigestInput, revision: string) {
+  await input.db
+    .insert(dailyDigests)
+    .values({
+      teamId: input.teamId,
+      userId: input.userId,
+      windowStart: input.windowStart,
+      windowEnd: input.windowEnd,
+      status: 'failed',
+      summary: UPDATE_BILLING_HOLD,
+      error: UPDATE_BILLING_HOLD,
+      payload: { updateRevision: revision },
+    })
+    .onConflictDoUpdate({
+      target: [
+        dailyDigests.teamId,
+        dailyDigests.userId,
+        dailyDigests.windowStart,
+        dailyDigests.windowEnd,
+      ],
+      set: { status: 'failed', error: UPDATE_BILLING_HOLD, payload: { updateRevision: revision } },
+      setWhere: inArray(dailyDigests.status, ['failed', 'skipped']),
+    });
 }
 
 async function persistQuietDailyDigest(input: {
@@ -961,6 +1073,108 @@ async function persistQuietDailyDigest(input: {
   };
 }
 
+export async function previewWorkspaceUpdate(
+  scope: TeamScope,
+  window: Pick<GenerateDailyDigestInput, 'windowStart' | 'windowEnd'>,
+  timezone: string,
+  options: Pick<UpdateOptions, 'cadence' | 'focus'>,
+  summarize?: GenerateDailyDigestInput['summarize'],
+): Promise<DailyDigestPayload | null> {
+  const blockers =
+    options.cadence === 'weekly'
+      ? await scope.objects.listObjects({
+          type: ['task', 'follow_up'],
+          status: 'blocked',
+          archived: false,
+          limit: 12,
+        })
+      : [];
+  const blockerIds = blockers
+    .filter((object) => object.createdAt < window.windowEnd)
+    .map((object) => object.id);
+  const lateCutoff = new Date(window.windowStart.getTime() - 72 * 60 * 60 * 1000);
+  const events = (
+    await scope.timeline.listAllEventsInWindow({
+      from: window.windowStart,
+      to: window.windowEnd,
+      limit: 350,
+    })
+  ).filter(
+    (event) =>
+      event.occurredAt >= lateCutoff &&
+      event.occurredAt < window.windowEnd &&
+      event.createdAt < window.windowEnd,
+  );
+  const grouped = (rows: typeof events) =>
+    buildTimelineMoments(rows, new Map(), { timezone, groupingMode: 'moments' });
+  const recent = grouped(events.filter((event) => event.occurredAt >= window.windowStart));
+  const late = grouped(events.filter((event) => event.occurredAt < window.windowStart));
+  const moments = [...recent.slice(0, 20), ...late.slice(0, 4)];
+  const evidenceIds = [
+    ...new Set(moments.flatMap((moment) => moment.rawEvents.map((event) => event.id))),
+  ];
+  const team = await scope.timeline.team();
+  const teamName = team?.name ?? 'Your workspace';
+  const payload = disabledDigestPayload(window, timezone);
+  const stillBlocked = {
+    ...payload,
+    teamName,
+    summary: 'Blocked work still needs attention.',
+    blockerIds,
+  };
+  if (moments.length === 0) return blockerIds.length ? stillBlocked : null;
+  const prompt = buildDigestPrompt(
+    {
+      team: teamName,
+      recipient: 'Workspace member',
+      focus: options.focus,
+      window: { start: payload.windowStart, end: payload.windowEnd },
+      metrics: {
+        eventCount: evidenceIds.length,
+        momentCount: moments.length,
+        newProposals: 0,
+        pendingApprovals: 0,
+        sourceDistribution: {},
+        objectChangesByType: {},
+        newObjectsByType: {},
+      },
+      taskChanges: { created: [], completed: [] },
+      newObjects: [],
+      windowCalendar: [],
+      upcomingCalendar: [],
+      newTeamMembers: [],
+    },
+    moments.map((moment, index) => ({
+      ...momentBrief(moment),
+      ...(index >= Math.min(recent.length, 20) ? { capturedLate: true } : {}),
+    })),
+  );
+  const briefing = summarize
+    ? { summary: await summarize(prompt), sections: [] }
+    : await callStructuredDigest(
+        prompt,
+        `${SUMMARIZE_SYSTEM_PROMPT} Mark material false for routine chatter, repeated information, or activity without a concrete work change. Include any evidenced current blocker that still needs action. Evidence marked capturedLate became available during the window but occurred beforehand. State its original date and describe it as late-arriving evidence, never as new progress. If material is false, give a short neutral summary and no sections.`,
+        true,
+      );
+  if ('material' in briefing && briefing.material === false)
+    return blockerIds.length ? stillBlocked : null;
+  return {
+    ...payload,
+    teamName,
+    summary: briefing.summary,
+    sections: digestContentSections(briefing),
+    eventCount: evidenceIds.length,
+    momentCount: moments.length,
+    activity: { ...emptyActivity(), newMoments: moments.length },
+    evidenceIds,
+    ...(blockerIds.length ? { blockerIds } : {}),
+    links: evidenceIds.slice(0, 8).map((id, index) => ({
+      label: `Source ${index + 1}`,
+      href: `/app/timeline?event=${encodeURIComponent(id)}#ev-${encodeURIComponent(id)}`,
+    })),
+  };
+}
+
 export async function generateDailyDigest(
   input: GenerateDailyDigestInput,
 ): Promise<GenerateDailyDigestResult> {
@@ -971,6 +1185,28 @@ export async function generateDailyDigest(
       ? { enabled: true, ...(await getWorkspaceDigestSchedule(input.db, input.teamId)) }
       : await getDigestPreference(input);
   const now = input.now ?? new Date();
+  const options = 'options' in preference ? preference.options : undefined;
+  const revision = 'revision' in preference ? preference.revision : undefined;
+  if (options) {
+    const window = scheduledUpdateWindow(
+      now,
+      preference.timezone,
+      preference.hour,
+      options.cadence,
+    );
+    if (
+      !preference.enabled ||
+      window.start.getTime() !== input.windowStart.getTime() ||
+      window.end.getTime() !== input.windowEnd.getTime() ||
+      (revision && input.windowEnd <= new Date(revision))
+    ) {
+      return {
+        digestId: '',
+        payload: disabledDigestPayload(input, preference.timezone),
+        skipped: true,
+      };
+    }
+  }
   if (!preference.enabled) {
     const payload = disabledDigestPayload(input, preference.timezone);
     const [row] = await input.db
@@ -1012,7 +1248,10 @@ export async function generateDailyDigest(
     };
   }
 
-  if (isDigestWindowExpired(input.windowEnd, now, preference.timezone, preference.hour)) {
+  if (
+    !options &&
+    isDigestWindowExpired(input.windowEnd, now, preference.timezone, preference.hour)
+  ) {
     const payload = expiredDigestPayload(input, preference.timezone);
     if (!persist) return { digestId: '', payload, skipped: true };
     const [row] = await input.db
@@ -1068,7 +1307,16 @@ export async function generateDailyDigest(
     actorUserId,
     audience === 'workspace' ? { skipMembershipCheck: true } : {},
   );
-  if (persist) await scope.requireMembership();
+  if (persist) {
+    const role = await scope.requireMembership();
+    if (options && !['owner', 'admin', 'member'].includes(role)) {
+      return {
+        digestId: '',
+        payload: disabledDigestPayload(input, preference.timezone),
+        skipped: true,
+      };
+    }
+  }
   const existingRows = persist
     ? await input.db
         .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
@@ -1090,6 +1338,89 @@ export async function generateDailyDigest(
       payload: existingDigest.payload as DailyDigestPayload,
       skipped: false,
     };
+  }
+  if (options) {
+    if (
+      existingDigest?.status === 'skipped' &&
+      (existingDigest.payload as DailyDigestPayload).updateRevision === revision
+    ) {
+      return {
+        digestId: existingDigest.id,
+        payload: existingDigest.payload as DailyDigestPayload,
+        skipped: true,
+      };
+    }
+    const savedViewChanges = await scope.savedViews.evaluate(input.windowEnd, now);
+    const billing = getBillingContext();
+    const draft = async () => {
+      const prior = revision ? await latestEvaluatedUpdateEnd(input, revision) : null;
+      const previousBoundary = scheduledUpdateWindow(
+        new Date(input.windowStart.getTime() - 1),
+        preference.timezone,
+        preference.hour,
+        options.cadence,
+      );
+      // Look back through at most one missed cycle and stop at the active schedule revision.
+      const start = Math.max(
+        previousBoundary.end.getTime(),
+        prior?.getTime() ?? 0,
+        revision ? new Date(revision).getTime() : input.windowStart.getTime(),
+      );
+      return previewWorkspaceUpdate(
+        scope,
+        {
+          windowStart: new Date(start),
+          windowEnd: input.windowEnd,
+        },
+        preference.timezone,
+        options,
+        input.summarize,
+      );
+    };
+    let payload: DailyDigestPayload | null = null;
+    if (options.scope === 'workspace') {
+      try {
+        payload = await (billing
+          ? runWithBillingContext({ ...billing, userId: input.userId }, draft)
+          : draft());
+      } catch (error) {
+        if (!isExpectedBillingAdmissionFailure(error)) throw error;
+        // Saved-view matches can still be published without any inference.
+        if (!savedViewChanges.length) {
+          if (revision) await persistUpdateBillingHold(input, revision);
+          throw error;
+        }
+      }
+    }
+    if (!payload && savedViewChanges.length) {
+      payload = {
+        ...disabledDigestPayload(input, preference.timezone),
+        summary: 'Your saved views have new matches.',
+        savedViewsOnly: true,
+      };
+    }
+    if (!payload) {
+      return persistQuietDailyDigest({
+        request: input,
+        existingDigest,
+        payload: {
+          ...disabledDigestPayload(input, preference.timezone),
+          summary: QUIET_DIGEST_SUMMARY,
+          ...(revision ? { updateRevision: revision } : {}),
+        },
+      });
+    }
+    return persistGeneratedDigest(
+      input,
+      {
+        ...payload,
+        ...(savedViewChanges.length
+          ? { savedViewChanges, savedViewObservedAt: now.toISOString() }
+          : {}),
+        ...(revision ? { updateRevision: revision } : {}),
+      },
+      existingDigest,
+    );
   }
   const savedViewChanges = persist ? await scope.savedViews.evaluate(input.windowEnd, now) : [];
   const freshCutoff = freshDigestCutoff(input.windowEnd, preference.timezone, preference.hour);
@@ -1147,9 +1478,7 @@ export async function generateDailyDigest(
         ),
       ),
   ]);
-  const events = eventsInEvidenceWindow.filter(
-    (event) => event.createdAt.getTime() < input.windowEnd.getTime(),
-  );
+  const events = eventsInEvidenceWindow.filter((event) => event.createdAt < input.windowEnd);
 
   const sourceDistribution: Record<string, number> = {};
   for (const event of events) {
@@ -1427,7 +1756,35 @@ export async function generateDailyDigest(
   };
 
   if (!persist) return { digestId: '', payload, skipped: false };
+  return persistGeneratedDigest(input, payload, existingDigest);
+}
 
+async function latestEvaluatedUpdateEnd(
+  input: GenerateDailyDigestInput,
+  revision: string,
+): Promise<Date | null> {
+  const [prior] = await input.db
+    .select({ windowEnd: dailyDigests.windowEnd })
+    .from(dailyDigests)
+    .where(
+      and(
+        eq(dailyDigests.teamId, input.teamId),
+        eq(dailyDigests.userId, input.userId),
+        lt(dailyDigests.windowEnd, input.windowEnd),
+        inArray(dailyDigests.status, ['generated', 'sent', 'skipped']),
+        sql`${dailyDigests.payload} ->> 'updateRevision' = ${revision}`,
+      ),
+    )
+    .orderBy(desc(dailyDigests.windowEnd))
+    .limit(1);
+  return prior?.windowEnd ?? null;
+}
+
+async function persistGeneratedDigest(
+  input: GenerateDailyDigestInput,
+  payload: DailyDigestPayload,
+  existingDigest: Pick<typeof dailyDigests.$inferSelect, 'id' | 'payload' | 'status'> | undefined,
+): Promise<GenerateDailyDigestResult> {
   const [inserted] = await input.db
     .insert(dailyDigests)
     .values({
@@ -1435,7 +1792,7 @@ export async function generateDailyDigest(
       userId: input.userId,
       windowStart: input.windowStart,
       windowEnd: input.windowEnd,
-      summary: digestText.summary,
+      summary: payload.summary,
       payload,
       status: 'generated',
     })
@@ -1462,7 +1819,7 @@ export async function generateDailyDigest(
     const [updated] = await input.db
       .update(dailyDigests)
       .set({
-        summary: digestText.summary,
+        summary: payload.summary,
         payload,
         status: 'generated',
         error: null,

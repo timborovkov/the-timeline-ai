@@ -68,6 +68,21 @@ describe('team switch route', () => {
     expect(response.headers.get('location')).toBe('https://thetimeline.cc/app');
   });
 
+  it('opens the requested update after an authorized workspace switch', async () => {
+    const digestId = '33333333-3333-4333-8333-333333333333';
+    const url = new URL(internalRequest().url);
+    url.searchParams.set('digest', digestId);
+    const response = await POST(new Request(url, { method: 'POST' }), {
+      params: Promise.resolve({ teamId: TEAM_ID }),
+    });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(
+      `https://thetimeline.cc/app/digests?digest=${digestId}`,
+    );
+    expect(fakes.cookieSet).toHaveBeenCalledOnce();
+  });
+
   it('does not inherit the internal request origin for auth redirects', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
 

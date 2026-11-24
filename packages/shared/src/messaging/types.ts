@@ -86,6 +86,7 @@ export type DailyDigestSectionTitle =
   | 'Risks'
   | 'Follow-ups'
   | 'Saved views'
+  | 'Still blocked'
   /** @deprecated Stored on older payloads; renderers remap this to Status. */
   | 'Product status';
 
@@ -142,6 +143,10 @@ export interface DailyDigestPayload {
   sections?: DailyDigestSection[];
   savedViewChanges?: SavedWorkViewChange[];
   savedViewsOnly?: boolean;
+  savedViewObservedAt?: string;
+  updateRevision?: string;
+  evidenceIds?: string[];
+  blockerIds?: string[];
   pendingApprovals: number;
   eventCount: number;
   momentCount?: number;

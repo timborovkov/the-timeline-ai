@@ -20,8 +20,7 @@ utilities support them in the secondary column. Email capture stays visible with
 stacked notice with explicit review actions; job counts remain admin-only. Healthy
 processing adds no notice. Capture and Ask can be used while secondary panels and source guidance load.
 Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
-four moments; the full timeline remains one click away. The latest digest follows
-activity with a bounded summary preview and an expandable full body.
+four moments; the full timeline remains one click away.
 
 The team setup checklist is Home onboarding. For a member who
 has not hidden it, the list sits open directly under Ask with the same small
@@ -86,13 +85,21 @@ Free teams see the specific verification or grant issue with its resolution acti
 Home’s **Your work** section shows non-zero pending approvals, overdue work,
 open tasks, and open objects, using singular labels for one item. Overdue work
 links to the work queue; tasks and objects link to their respective indexes.
-“You’re caught up” replaces an empty work summary. Recent activity and the digest follow in the primary column. A supporting column
+“You’re caught up” replaces an empty work summary. Updates leads the primary column, followed by work and recent activity. A supporting column
 holds three personal pins, team inbound email (`#team-email`), agent connection onboarding, and
 **Connections & processing** issues. Actual billing restrictions remain prominent;
 upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
 smaller screens. No synthetic records or empty metric cards fill spare space.
 
-The latest digest shows a short summary preview; its full body stays folded until opened.
+Updates shows a short summary with its full body folded until opened. Customize
+updates sits beside it, including before the first briefing. Members can preview
+a daily brief or Monday overview, choose workspace activity or followed saved
+views, and pause without losing history. Workspace briefing emphasis applies to
+the summary. Monday overviews can surface work that remains blocked. Personal delivery of a configured briefing opens the authenticated
+archive, where source access is checked again. The follow-up opens Ask with
+the update’s date range and visible source references, ready for review before
+sending. Home shows when the current briefing is held by the workspace’s AI
+budget, and prior updates stay in history.
 Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
 pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
@@ -866,7 +873,7 @@ the OCR budget from Captured files.
 
 Approvals, Tasks, Objects, and individual Boards offer Save view for their
 current filters. Work links to personal saved views, where each member can
-opt in to new-match updates through their daily digest. Project handoffs use
+opt in to new-match updates through their scheduled briefing. Project handoffs use
 a dated snapshot header and a separate link to the current project.
 
 ### Guest access

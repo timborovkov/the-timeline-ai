@@ -4,6 +4,8 @@ import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   defaultDigestWindow: vi.fn(),
+  scheduledUpdateWindow: vi.fn(),
+  nextScheduledUpdateWindow: vi.fn(),
   getDigestPreference: vi.fn(),
   getWorkspaceDigestSchedule: vi.fn(),
   listDailyDigestRecipients: vi.fn(),
@@ -26,6 +28,8 @@ await vi.mock(
     childLogger: () => fakes.log,
     messaging: {
       defaultDigestWindow: fakes.defaultDigestWindow,
+      scheduledUpdateWindow: fakes.scheduledUpdateWindow,
+      nextScheduledUpdateWindow: fakes.nextScheduledUpdateWindow,
       getDigestPreference: fakes.getDigestPreference,
       listDailyDigestRecipients: fakes.listDailyDigestRecipients,
       generateDailyDigest: fakes.generateDailyDigest,
@@ -89,6 +93,34 @@ describe('daily digest worker', () => {
     });
     fakes.guardWorkerProcessor.mockImplementation((_db: unknown, processor: unknown) => processor);
     fakes.Worker.mockImplementation((..._args: unknown[]) => ({ on: vi.fn() }));
+  });
+
+  it('queues a configured update for the upcoming local boundary without a new tick', async () => {
+    const upcoming = new Date(Date.now() + 60 * 60 * 1000);
+    const current = new Date(upcoming.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const previous = new Date(current.getTime() - 7 * 24 * 60 * 60 * 1000);
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      { teamId: 'team-1', userId: 'user-1', email: 'member@example.test' },
+    ]);
+    fakes.getDigestPreference.mockResolvedValue({
+      enabled: true,
+      hour: 12,
+      timezone: 'America/New_York',
+      options: { cadence: 'weekly' },
+      revision: new Date(current.getTime() + 1).toISOString(),
+    });
+    fakes.scheduledUpdateWindow.mockReturnValue({ start: previous, end: current });
+    fakes.nextScheduledUpdateWindow.mockReturnValue({ start: current, end: upcoming });
+    await processDailyDigestJob({ db: {} as never }, { kind: 'tick', reason: 'scheduled' });
+    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledOnce();
+    expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowStart: current.toISOString(),
+        windowEnd: upcoming.toISOString(),
+      }),
+      expect.any(Number),
+    );
+    expect(fakes.enqueueDailyDigestRecipientJob.mock.calls[0]?.[1]).toBeGreaterThan(0);
   });
 
   it('fans out one recipient job per active member using their digest timezone', async () => {
@@ -166,7 +198,7 @@ describe('daily digest worker', () => {
     ).resolves.toEqual({ recipients: 1 });
 
     expect(fakes.defaultDigestWindow).not.toHaveBeenCalled();
-    expect(fakes.getDigestPreference).not.toHaveBeenCalled();
+    expect(fakes.getDigestPreference).toHaveBeenCalledOnce();
     expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
       expect.objectContaining({
         windowStart: '2026-06-15T12:00:00.000Z',

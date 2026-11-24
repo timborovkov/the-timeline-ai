@@ -257,6 +257,26 @@ export function createSavedWorkViewScope(input: {
         return true;
       });
     },
+    async preview(now: Date) {
+      await ensureMember();
+      const eligible = await db
+        .select()
+        .from(savedWorkViews)
+        .where(and(ownerCondition, eq(savedWorkViews.notify, true)))
+        .orderBy(asc(savedWorkViews.createdAt));
+      const results: { id: string; title: string; href: string; count: number | null }[] = [];
+      for (const view of eligible) {
+        const matches = await getMatches(view, now);
+        const baseline = new Set(view.baseline);
+        results.push({
+          id: view.id,
+          title: view.title,
+          href: savedWorkViewHref(view),
+          count: matches?.filter((id) => !baseline.has(id)).length ?? null,
+        });
+      }
+      return results;
+    },
     async evaluate(windowEnd: Date, now: Date) {
       await ensureMember();
       const eligible = await db
