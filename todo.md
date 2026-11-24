@@ -14,7 +14,6 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | R6 | Complete billing production acceptance before enabling charges. | [Polar release checks](docs/setup/polar.md#verification-and-release): paid confirmation, invoice and tax verification, registered webhook delivery, and the shadow reconciliation and member-access checks. Resolve or explicitly retain the provider's legacy customer-email limitation. |
 | R7 | Establish backup automation and recovery evidence. | [Operations](docs/operations.md): secondary object-storage copies, vector snapshots, Postgres retention, isolated restore drill, named operator and recurring schedule; cross-reference security gap G-06. |
 | R8 | Complete operational monitoring. | Queue/failure/retrieval freshness and provider-spend dashboards with actionable alerts, documented ownership and a tested response path. |
-
 | R9 | Verify the Drive project-field noise safeguard in production. | Deploy and capture a fresh Doc edit; the missed 9 November Doc event will not reappear on redeploy because its noise verdict advanced the comparison snapshot. See [Drive lifecycle](docs/architecture/drive.md). |
 
 ## Product gaps
@@ -30,7 +29,6 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P10 | Add the targeted file inspection tool. | Let Ask inspect a known original for a narrow question and optionally persist reusable evidence under the [captured-file contract](docs/captured-files.md). |
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
-
 | P13 | Verify pre-launch engine against restricted representative Railway events. | Confirm deployed scheduler/worker health and measure labeled identity/relationship precision and recall on real events; synthetic evidence does not close this operational gate. See [engine evaluation](docs/relational-memory.md#evaluation-and-operational-diagnosis). |
 
 ## Conditional work

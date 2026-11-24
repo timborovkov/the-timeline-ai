@@ -370,50 +370,93 @@ function deadlineReferenceDate(
   }
   return undefined;
 }
-function deadlineInstant(day: string, tail: string, timezone: string): number | undefined {
-  try {
-    const start = dateOnlyEventRange(day, timezone).startAt;
-    const time =
-      /^(?:T|\s+(?:at\s+)?)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:\s*(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(
-        tail,
-      );
-    if (!time) return /^(?:T|\s+(?:at\b|\d))/i.test(tail) ? undefined : start.getTime();
-    const hour = Number(time[1]);
-    const minute = Number(time[2]);
-    const second = Number(time[3] ?? 0);
-    const millisecond = Number((time[4] ?? '').padEnd(3, '0'));
-    if (hour > 23 || minute > 59 || second > 59) return undefined;
-    // A time marker must end at a boundary; ordinary following prose is not a zone.
-    const suffix = tail.slice(time[0].length);
-    if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return undefined;
-    if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return undefined;
-    const token = /^\s+([A-Za-z][A-Za-z_/-]*)/.exec(suffix)?.[1];
-    if (token && !/^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) {
-      if (
-        /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
-        /^[A-Z]{2,6}$/.test(token) ||
-        token.includes('/')
-      )
-        return undefined;
-      try {
-        new Intl.DateTimeFormat('en-US', { timeZone: token });
-        return undefined;
-      } catch {
-        // Ordinary words are not timezone identifiers.
-      }
+interface DeadlineTiming {
+  timezone: string;
+  time?: { hour: number; minute: number; second: number; millisecond: number };
+}
+
+/** A missing suffix allows fallback. An unsupported explicit zone does not. */
+function deadlineSuffixTimezone(
+  suffix: string,
+  position: 'first' | 'following' = 'first',
+): { timezone: string; remainder: string } | null | undefined {
+  const cue = /^\s+(?:(time\s+zone)|in)(?=[\s.,:;!?()]|$)/i.exec(suffix);
+  const tail = suffix.slice(cue?.[0].length ?? 0).trimStart();
+  const parenthesized = tail.startsWith('(');
+  const zoneText = parenthesized ? tail.slice(1).trimStart() : tail;
+  const candidate = /^[^\s.,;!?()]+/.exec(zoneText)?.[0];
+  if (candidate) {
+    const utc = /^(?:UTC|GMT)$/i.test(candidate);
+    if (utc || /^[+-]\d{2}:\d{2}$/.test(candidate) || candidate.includes('/')) {
+      const remainder = zoneText.slice(candidate.length);
+      const closing = parenthesized ? /^\s*\)(?=[\s.,;!?)]|$)/.exec(remainder) : null;
+      if (parenthesized && !closing) return null;
+      return {
+        timezone: utc ? 'UTC' : candidate,
+        remainder: remainder.slice(closing?.[0].length ?? 0),
+      };
     }
-    const zone = time[5];
-    const instant = zone
-      ? Date.parse(
-          `${day}T${String(hour).padStart(2, '0')}:${time[2]}:${String(second).padStart(2, '0')}.${String(millisecond).padStart(3, '0')}${/^(UTC|GMT|Z)$/i.test(zone) ? 'Z' : zone}`,
-        )
-      : zonedDateTimeFromDate(start, timezone).with({ hour, minute, second, millisecond })
-          .epochMilliseconds;
-    return Number.isFinite(instant) ? instant : undefined;
+    if (/^[+-]\d/.test(candidate)) return null;
+  }
+  if (cue?.[1]) return null;
+
+  const token = /^[A-Za-z][A-Za-z_/-]*/.exec(zoneText)?.[0];
+  if (!token || /^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) return undefined;
+  const remainder = zoneText.slice(token.length);
+  // A wrapper can introduce prose. Reserve the broad abbreviation check for isolated tokens.
+  const isolated = parenthesized ? /^\s*\)/.test(remainder) : /^[\s.,;!?]*$/.test(remainder);
+  if (
+    /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
+    (position === 'first' && ((!cue && !parenthesized) || isolated) && /^[A-Z]{2,6}$/.test(token))
+  )
+    return null;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: token });
+    return null;
   } catch {
+    // Ordinary words are not timezone identifiers.
     return undefined;
   }
 }
+
+function deadlineTiming(tail: string, fallbackTimezone: string): DeadlineTiming | undefined {
+  const time =
+    /^(?:T|\s+(?:at\s+)?)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:\s*(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(
+      tail,
+    );
+  if (!time) {
+    return /^(?:T|\s+(?:at\b|\d))/i.test(tail) ? undefined : { timezone: fallbackTimezone };
+  }
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  const second = Number(time[3] ?? 0);
+  const millisecond = Number((time[4] ?? '').padEnd(3, '0'));
+  if (hour > 23 || minute > 59 || second > 59) return undefined;
+  // A time marker must end at a boundary; ordinary following prose is not a zone.
+  const suffix = tail.slice(time[0].length);
+  if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return undefined;
+  if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return undefined;
+  const suffixZone = deadlineSuffixTimezone(suffix);
+  const inlineTimezone = time[5];
+  if (
+    suffixZone === null ||
+    (suffixZone &&
+      (inlineTimezone || deadlineSuffixTimezone(suffixZone.remainder, 'following') !== undefined))
+  )
+    return undefined;
+  const timezone =
+    suffixZone?.timezone ??
+    (inlineTimezone && /^(UTC|GMT|Z)$/i.test(inlineTimezone) ? 'UTC' : inlineTimezone);
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    } catch {
+      return undefined;
+    }
+  }
+  return { timezone: timezone ?? fallbackTimezone, time: { hour, minute, second, millisecond } };
+}
+
 function taskDateAssertions(
   quote: string,
   subject: string,
@@ -422,12 +465,17 @@ function taskDateAssertions(
   field: 'dueAt' | 'plannedDate',
 ): { affirmed: Set<number | null>; denied: Set<number> } {
   const dates = { affirmed: new Set<number | null>(), denied: new Set<number>() };
-  const add = (kind: 'affirmed' | 'denied', day: string, tail: string) => {
-    const instant =
-      field === 'plannedDate'
-        ? deadlineInstant(day, '', 'UTC')
-        : deadlineInstant(day, tail, timezone);
-    if (instant !== undefined) dates[kind].add(instant);
+  const add = (kind: 'affirmed' | 'denied', day: string, timing: DeadlineTiming) => {
+    try {
+      const zone = field === 'plannedDate' ? 'UTC' : timing.timezone;
+      const start = dateOnlyEventRange(day, zone).startAt;
+      const instant = timing.time
+        ? zonedDateTimeFromDate(start, zone).with(timing.time).epochMilliseconds
+        : start.getTime();
+      dates[kind].add(instant);
+    } catch {
+      // Malformed dates do not establish a claim.
+    }
   };
   const deadlineAt = (index: number, length: number) => {
     const prefix =
@@ -465,13 +513,17 @@ function taskDateAssertions(
       )
     )
       return undefined;
-    return negation.test(normalize(prefix).replaceAll(normalize(subject), '[task]'))
+    const kind: 'affirmed' | 'denied' = negation.test(
+      normalize(prefix).replaceAll(normalize(subject), '[task]'),
+    )
       ? 'denied'
       : 'affirmed';
+    const timing = field === 'plannedDate' ? { timezone } : deadlineTiming(suffix, timezone);
+    return timing ? { kind, timing } : undefined;
   };
   for (const match of quote.matchAll(/\b\d{4}-\d{2}-\d{2}/g)) {
-    const kind = deadlineAt(match.index, match[0].length);
-    if (kind) add(kind, match[0], quote.slice(match.index + match[0].length));
+    const assertion = deadlineAt(match.index, match[0].length);
+    if (assertion) add(assertion.kind, match[0], assertion.timing);
   }
   const absoluteDates = [
     ...quote.matchAll(
@@ -480,9 +532,12 @@ function taskDateAssertions(
   ];
   for (const match of absoluteDates) {
     const [, weekday, month, day, statedYear] = match;
-    const kind = deadlineAt(match.index, match[0].length);
-    if (!kind) continue;
-    const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
+    const assertion = deadlineAt(match.index, match[0].length);
+    if (!assertion) continue;
+    const { kind, timing } = assertion;
+    const reference = referenceDate
+      ? zonedDateTimeFromDate(referenceDate, timing.timezone)
+      : undefined;
     let year = statedYear ? Number(statedYear) : reference?.year;
     if (year === undefined) continue;
     let date = new Date(`${month} ${day}, ${year} 00:00:00 UTC`);
@@ -498,15 +553,16 @@ function taskDateAssertions(
     }
     const weekdayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' });
     if (weekday && normalize(weekdayLabel.format(date)) !== normalize(weekday)) continue;
-    add(kind, date.toISOString().slice(0, 10), quote.slice(match.index + match[0].length));
+    add(kind, date.toISOString().slice(0, 10), timing);
   }
   if (referenceDate) {
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
       if (absoluteDates.some((date) => date.index === match.index)) continue;
-      const kind = deadlineAt(match.index, match[0].length);
-      if (!kind) continue;
+      const assertion = deadlineAt(match.index, match[0].length);
+      if (!assertion) continue;
+      const { kind, timing } = assertion;
       const phrase = match[0].toLowerCase();
       const weekdays = [
         'monday',
@@ -519,17 +575,12 @@ function taskDateAssertions(
       ];
       const weekday = weekdays.indexOf(phrase) + 1;
       const relative = weekday
-        ? zonedDateTimeFromDate(referenceDate, timezone).dayOfWeek === weekday
+        ? zonedDateTimeFromDate(referenceDate, timing.timezone).dayOfWeek === weekday
           ? 'today'
           : `next ${phrase}`
         : phrase;
-      const resolved = resolveTimePhrase(relative, { timezone, referenceDate });
-      if (resolved)
-        add(
-          kind,
-          zonedDateTimeFromDate(resolved.from, timezone).toPlainDate().toString(),
-          quote.slice(match.index + match[0].length),
-        );
+      const resolved = resolveTimePhrase(relative, { timezone: timing.timezone, referenceDate });
+      if (resolved) add(kind, resolved.localStartDate, timing);
     }
   }
   return dates;

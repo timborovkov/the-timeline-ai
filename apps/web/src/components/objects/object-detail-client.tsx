@@ -49,7 +49,10 @@ import { CitationMarker } from '@/components/chat/citation-marker';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import {
+  MetadataDateEditor,
+  MetadataDueDateEditor,
+} from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectBoardContextSection } from '@/components/objects/object-board-context-section';
@@ -1841,7 +1844,9 @@ function ObjectEditableFields({
                 onApply={(value) => {
                   focusedDraftsRef.current.dueAt = false;
                   dispatchObjectUi({ dueDraft: value });
-                  patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+                  if (value !== dueDraft) {
+                    patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+                  }
                 }}
               />
             </EditableMetadata.Editor>
@@ -2327,10 +2332,11 @@ function ConnectedTaskRow({
               />
             </EditableMetadata.Value>
             <EditableMetadata.Editor>
-              <MetadataDateEditor
-                defaultValue={toLocalInputValue(dueAt, timezone)}
+              <MetadataDueDateEditor
+                value={dueAt}
+                timezone={timezone}
                 onApply={(value) => {
-                  save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
+                  save('dueAt', value);
                 }}
               />
             </EditableMetadata.Editor>

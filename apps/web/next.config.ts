@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs/config';
 import type { NextConfig } from 'next';
 
-import { e2eServerSplitChunks } from './scripts/e2e-webpack';
 import { baseContentSecurityPolicy } from './src/lib/content-security-policy';
 import {
   sensitiveLinkHeaders,
@@ -12,9 +11,10 @@ import {
 } from './src/lib/sensitive-links';
 
 const workspaceRoot = join(__dirname, '../..');
+const precompiledFixtures = process.env.E2E_PRECOMPILED === '1';
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  ...(precompiledFixtures ? { distDir: '.next-e2e' } : { output: 'standalone' }),
   redirects() {
     return Promise.resolve([
       { source: '/use-cases/work-record', destination: '/how-it-works', permanent: true },
@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
   // This trades cold-route latency for a lower idle footprint on Railway.
   experimental: {
     preloadEntriesOnStart: false,
+    ...(precompiledFixtures ? { allowDevelopmentBuild: true } : {}),
   },
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
@@ -79,16 +80,15 @@ const nextConfig: NextConfig = {
   // instrumentation bundle.
   serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
   webpack(
-    config: {
-      externals: Record<string, string>[];
-      optimization: { splitChunks?: Parameters<typeof e2eServerSplitChunks>[0] };
-    },
-    { isServer, dev, nextRuntime },
+    config: { externals: Record<string, string>[]; resolve: { alias: Record<string, string> } },
+    { dev, isServer },
   ) {
-    if (dev && nextRuntime === 'nodejs' && process.env.E2E_DEV_SHARED_SERVER_CHUNKS === '1') {
-      config.optimization.splitChunks = e2eServerSplitChunks(
-        config.optimization.splitChunks,
-        workspaceRoot,
+    if (precompiledFixtures && !dev && !isServer) {
+      // Next 16.4.6 loads the hot reloader during Flight navigation even under next start.
+      // Its late read of document.currentScript fails. A precompiled client has no pending updates.
+      config.resolve.alias['../../dev/hot-reloader/app/hot-reloader-app$'] = join(
+        __dirname,
+        'scripts/e2e-precompiled-hmr.mjs',
       );
     }
     if (isServer) {

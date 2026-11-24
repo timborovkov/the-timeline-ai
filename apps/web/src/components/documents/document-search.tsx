@@ -7,6 +7,7 @@ import { useId, useRef, useState } from 'react';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { InlineError } from '@/components/inline-error';
+import { ApiResponseError } from '@/lib/api-response';
 import { useDocumentSearchQuery } from '@/lib/use-paginated-queries';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
@@ -19,7 +20,6 @@ export function DocumentSearch() {
   const hits = search.data?.pages.flatMap((page) => page.items) ?? [];
   const hasInitialSearchError = query.length > 0 && search.isError && hits.length === 0;
   const hasNoMatches = query.length > 0 && search.isSuccess && hits.length === 0;
-  const errorCode = search.error instanceof Error ? search.error.message : undefined;
   const searchAnnouncement = documentSearchAnnouncement(
     query,
     search,
@@ -77,7 +77,6 @@ export function DocumentSearch() {
       {query && (
         <DocumentSearchResults
           hasInitialSearchError={hasInitialSearchError}
-          errorCode={errorCode}
           search={search}
           hasNoMatches={hasNoMatches}
           query={query}
@@ -109,7 +108,6 @@ function documentSearchAnnouncement(
 
 function DocumentSearchResults({
   hasInitialSearchError,
-  errorCode,
   search,
   hasNoMatches,
   query,
@@ -117,19 +115,21 @@ function DocumentSearchResults({
   hits,
 }: {
   hasInitialSearchError: boolean;
-  errorCode: string | undefined;
   search: ReturnType<typeof useDocumentSearchQuery>;
   hasNoMatches: boolean;
   query: string;
   clearSearch: () => void;
   hits: NonNullable<ReturnType<typeof useDocumentSearchQuery>['data']>['pages'][number]['items'];
 }) {
+  const error = search.error;
+  const errorDetails = error instanceof Error ? error.message : undefined;
+  const errorCode = (error instanceof ApiResponseError ? error.code : null) ?? errorDetails;
   return (
     <div className="space-y-2">
       {hasInitialSearchError ? (
         <InlineError
           message={searchErrorMessage(errorCode)}
-          details={errorCode}
+          details={errorDetails}
           onRetry={() => {
             void search.refetch();
           }}
