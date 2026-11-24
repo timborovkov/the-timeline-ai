@@ -32,18 +32,31 @@ for (const width of [320, 1440]) {
       expect(copyBox!.width).toBeGreaterThanOrEqual(targetSize);
       expect(copyBox!.height).toBeGreaterThanOrEqual(targetSize);
 
+      // The streamed field can be visible before its focus and pointer handlers hydrate.
+      await expect
+        .poll(
+          () =>
+            field.evaluate((input: HTMLInputElement) => {
+              input.blur();
+              input.setSelectionRange(0, 0);
+              input.focus();
+              return input.selectionEnd;
+            }),
+          { timeout: 30_000 },
+        )
+        .toBe(e2eTeam.inboundEmail.length);
+      await field.blur();
+      await field.hover();
       await copy.hover();
-      await expect(page.getByRole('tooltip', { name: 'Copy team email' })).toBeVisible();
+      const tooltip = page.getByRole('tooltip', { name: 'Copy team email', exact: true });
+      await expect(tooltip).toBeVisible();
       await page.keyboard.press('Escape');
-      await expect(page.getByRole('tooltip', { name: 'Copy team email' })).toBeHidden();
+      await expect(tooltip).toBeHidden();
       await field.focus();
-      expect(await field.evaluate((input: HTMLInputElement) => input.selectionEnd)).toBe(
-        e2eTeam.inboundEmail.length,
-      );
       await page.keyboard.press('Tab');
       await expect(copy).toBeFocused();
       await expect(copy).not.toHaveCSS('box-shadow', 'none');
-      await expect(page.getByRole('tooltip', { name: 'Copy team email' })).toBeVisible();
+      await expect(tooltip).toBeVisible();
 
       await page.keyboard.press('Enter');
       await expect(section.getByRole('status')).toHaveText('Copied team email.');
