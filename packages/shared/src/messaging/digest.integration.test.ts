@@ -591,8 +591,9 @@ describe('configured scheduled updates', () => {
     expect(await hasScheduledUpdateBillingHold({ ...identity, preference, now })).toBe(false);
   });
 
-  it('persists an all-day calendar event with its source timezone in the archive', async () => {
+  it('preserves the source date and timezone of an archived all-day calendar event', async () => {
     await db.insert(calendarEvents).values({
+      id: evidenceId,
       teamId: TEAM_ID,
       createdByUserId: USER_ID,
       title: 'Helsinki workshop',
@@ -612,12 +613,14 @@ describe('configured scheduled updates', () => {
     expect(digest.skipped).toBe(false);
     const [stored] = await listDailyDigests({ ...identity, id: digest.digestId });
     expect(stored?.payload).toMatchObject({
+      timezone: 'UTC',
       windowCalendar: [
         {
           title: 'Helsinki workshop',
           startAt: '2026-07-26T21:00:00.000Z',
           allDay: true,
           eventTimezone: 'Europe/Helsinki',
+          href: `/app/calendar?view=day&date=2026-07-27&event=${evidenceId}`,
         },
       ],
     });

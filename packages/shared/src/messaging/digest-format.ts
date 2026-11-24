@@ -236,13 +236,14 @@ export function formatDigestObjectType(type: string): string {
 }
 
 export function digestCalendarHref(
-  event: Pick<DailyDigestCalendarEvent, 'id' | 'startAt'>,
+  event: Pick<DailyDigestCalendarEvent, 'id' | 'startAt' | 'allDay' | 'eventTimezone'>,
   timezone?: string,
 ): string {
   const params = new URLSearchParams();
   params.set('view', 'day');
+  const calendarTimezone = event.allDay === true ? (event.eventTimezone ?? timezone) : timezone;
   try {
-    params.set('date', localDateFromInstant(event.startAt, timezone ?? 'UTC'));
+    params.set('date', localDateFromInstant(event.startAt, calendarTimezone ?? 'UTC'));
   } catch {
     const fallback = event.startAt.slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(fallback)) params.set('date', fallback);

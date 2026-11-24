@@ -373,4 +373,18 @@ describe('digestCalendarHref', () => {
       '/app/calendar?view=day&date=2026-07-17&event=cal-1',
     );
   });
+
+  it('keeps timed events on the workspace-local day', () => {
+    expect(
+      digestCalendarHref(
+        {
+          id: 'cal-1',
+          startAt: '2026-07-26T21:00:00.000Z',
+          allDay: false,
+          eventTimezone: 'Europe/Helsinki',
+        },
+        'America/Los_Angeles',
+      ),
+    ).toBe('/app/calendar?view=day&date=2026-07-26&event=cal-1');
+  });
 });
