@@ -244,7 +244,13 @@ function updateContextTrail(links: DailyDigestPayload['links']): ChatContextRef[
       if (timelineEventId) return [{ kind: 'timeline-event', timelineEventId, href, label }];
       const objectId = /^\/app\/objects\/([^/?#]+)$/.exec(href)?.[1];
       if (objectId) return [{ kind: 'object', objectId, href, label }];
-      return href.startsWith('/app/work/') ? [{ kind: 'page', href, label }] : [];
+      const collectionView = /^\/app\/(?:tasks|objects|approvals)(?:\?[^#]*)?$/.test(href);
+      const boardId = /^\/app\/boards\/([^/?#]+)(?:\?[^#]*)?$/.exec(href)?.[1];
+      // Keep the complete filtered view as context, not just its underlying board.
+      // presentSavedViewDigest has already rechecked the viewer's current access.
+      return collectionView || z.uuid().safeParse(boardId).success || href.startsWith('/app/work/')
+        ? [{ kind: 'page', href, label }]
+        : [];
     }),
   );
 }

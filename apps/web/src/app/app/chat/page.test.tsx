@@ -1,4 +1,6 @@
 import type { ChatContextRef } from '@timeline/shared/chat-context';
+import type { DailyDigestPayload } from '@timeline/shared/messaging';
+import { savedWorkViewHref } from '@timeline/shared/saved-work-views';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
@@ -9,6 +11,8 @@ const fakes = vi.hoisted(() => ({
   getChatSession: vi.fn(),
   setFirstRunPhase: vi.fn(),
   chatPane: vi.fn(),
+  listDailyDigests: vi.fn(),
+  visibleDigestChanges: vi.fn(),
 }));
 
 await vi.mock(
@@ -26,9 +30,18 @@ await vi.mock(
         getFirstRunRecord: fakes.getFirstRunRecord,
         setFirstRunPhase: fakes.setFirstRunPhase,
       },
+      savedViews: { visibleDigestChanges: fakes.visibleDigestChanges },
     }),
   }),
   () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  async () => ({
+    ...(await import('@timeline/shared/messaging')),
+    listDailyDigests: fakes.listDailyDigests,
+  }),
+  () => import('@timeline/shared/messaging'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
@@ -77,6 +90,8 @@ const EVENT_ID = '55555555-5555-4555-8555-555555555555';
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.chatPane.mockImplementation(() => null);
+  fakes.listDailyDigests.mockResolvedValue([]);
+  fakes.visibleDigestChanges.mockResolvedValue([]);
   fakes.getChatSession.mockResolvedValue(null);
   fakes.getFirstRun.mockResolvedValue({
     phase: 'record',
@@ -89,8 +104,8 @@ beforeEach(() => {
   });
 });
 
-async function paneProps(session?: string) {
-  renderToStaticMarkup(await ChatPage({ searchParams: Promise.resolve({ session }) }));
+async function paneProps(session?: string, update?: string) {
+  renderToStaticMarkup(await ChatPage({ searchParams: Promise.resolve({ session, update }) }));
   return fakes.chatPane.mock.calls[0]?.[0] as {
     contextTrail: ChatContextRef[];
     initialPrompt: string | null;
@@ -174,5 +189,99 @@ describe('guided Ask starter context', () => {
     expect(props.contextTrail).toEqual(contextTrail);
     expect(props.initialPrompt).toBeNull();
     expect(fakes.setFirstRunPhase).not.toHaveBeenCalled();
+  });
+});
+
+describe('Update follow-up context', () => {
+  const updateId = '66666666-6666-4666-8666-666666666666';
+  const boardId = '77777777-7777-4777-8777-777777777777';
+  const payload: DailyDigestPayload = {
+    teamName: 'Starter team',
+    userName: null,
+    windowStart: '2026-11-23T00:00:00Z',
+    windowEnd: '2026-11-24T00:00:00Z',
+    summary: 'Saved work changed.',
+    savedViewsOnly: true,
+    savedViewChanges: [{ viewId: updateId, itemIds: [DOCUMENT_ID] }],
+    pendingApprovals: 0,
+    eventCount: 0,
+    sourceDistribution: {},
+    objectChangesByType: {},
+    newTeamMembers: [],
+    tasks: [],
+    upcomingCalendar: [],
+    links: [],
+  };
+
+  it('keeps all saved-view routes and filters after checking current visibility', async () => {
+    const views = [
+      { collection: 'tasks', targetId: null, filters: { status: 'blocked', due: 'today' } },
+      { collection: 'objects', targetId: null, filters: { type: 'person', q: 'Customer' } },
+      {
+        collection: 'approvals',
+        targetId: null,
+        filters: { status: 'pending', decision: 'automatic' },
+      },
+      { collection: 'boards', targetId: boardId, filters: { owner: 'me', view: 'list' } },
+    ] as const;
+    const visible = views.map((view) => ({
+      title: `Saved ${view.collection}`,
+      href: savedWorkViewHref(view),
+      count: 1,
+    }));
+    fakes.listDailyDigests.mockResolvedValue([{ payload }]);
+    fakes.visibleDigestChanges.mockResolvedValue(visible);
+    const props = await paneProps(undefined, updateId);
+    expect(props.contextTrail).toEqual(
+      visible.map(({ href, title }) => ({ kind: 'page', href, label: title })),
+    );
+    expect(props.initialPrompt).toContain(payload.windowStart);
+    expect(fakes.listDailyDigests).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: 'team-1', userId: 'user-1', id: updateId }),
+    );
+    expect(fakes.visibleDigestChanges).toHaveBeenCalledWith(
+      payload.savedViewChanges,
+      new Date(payload.windowEnd),
+      expect.any(Date),
+    );
+  });
+
+  it('does not restore saved-view context after current access is lost', async () => {
+    fakes.listDailyDigests.mockResolvedValue([{ payload }]);
+    fakes.visibleDigestChanges.mockResolvedValue([]);
+    expect((await paneProps(undefined, updateId)).contextTrail).toEqual([]);
+  });
+
+  it('rejects external and lookalike routes while retaining typed source context', async () => {
+    fakes.listDailyDigests.mockResolvedValue([
+      {
+        payload: {
+          ...payload,
+          savedViewChanges: [],
+          links: [
+            { label: 'External', href: 'https://example.test/app/tasks?status=blocked' },
+            { label: 'Protocol relative', href: '//example.test/app/tasks' },
+            { label: 'Lookalike', href: '/app/tasks-private?status=blocked' },
+            { label: 'Invalid board', href: '/app/boards/not-an-id?view=list' },
+            { label: 'Object', href: `/app/objects/${DOCUMENT_ID}` },
+            { label: 'Event', href: `/app/timeline?event=${EVENT_ID}` },
+          ],
+        },
+      },
+    ]);
+    expect((await paneProps(undefined, updateId)).contextTrail).toEqual([
+      {
+        kind: 'object',
+        objectId: DOCUMENT_ID,
+        href: `/app/objects/${DOCUMENT_ID}`,
+        label: 'Object',
+      },
+      {
+        kind: 'timeline-event',
+        timelineEventId: EVENT_ID,
+        href: `/app/timeline?event=${EVENT_ID}`,
+        label: 'Event',
+      },
+    ]);
   });
 });
