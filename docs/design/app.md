@@ -95,7 +95,7 @@ smaller screens. No synthetic records or empty metric cards fill spare space.
 Updates shows a short summary with its full body folded until opened. Customize
 updates sits beside it, including before the first briefing. Members can preview
 a daily brief or Monday overview, choose workspace activity or followed saved
-views, and pause without losing history. Workspace briefing emphasis applies to
+views, and pause without losing history. If the next occurrence could not be queued, the form confirms the save and offers Retry scheduling. Workspace briefing emphasis applies to
 the summary. Monday overviews can surface work that remains blocked. The settings
 show available personal destinations. Delivery uses verified email or linked chat
 and opens the authenticated archive, where source access is checked again. The follow-up opens Ask with
