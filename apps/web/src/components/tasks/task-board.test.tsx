@@ -190,7 +190,6 @@ const {
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
 const { useTaskCategoryPolling } = await import('@/components/tasks/task-category-polling');
-const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 
 const { TaskBoard } = await import('./task-board.js');
 
@@ -291,9 +290,8 @@ function renderBoard(
   view: 'kanban' | 'list' = 'kanban',
   filterParams: Record<string, string> = {},
   selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null,
-  displayRegion?: { timezone: string; locale: string },
 ) {
-  const board = (
+  return render(
     <TaskBoard
       rows={rows}
       columns={['backlog', 'open', 'doing', 'blocked', 'done', 'cancelled']}
@@ -307,16 +305,7 @@ function renderBoard(
       totalCount={rows.length}
       nextCursor={null}
       filterParams={filterParams}
-    />
-  );
-  return render(
-    displayRegion ? (
-      <WorkspaceTimezoneProvider timezone="Europe/Helsinki" region={displayRegion}>
-        {board}
-      </WorkspaceTimezoneProvider>
-    ) : (
-      board
-    ),
+    />,
   );
 }
 
@@ -1005,30 +994,6 @@ describe('TaskBoard', () => {
       });
     });
   });
-
-  it.each([
-    ['peek', 'task-1', 'kanban', 'Task due date'],
-    ['list', null, 'list', 'Due date for Send proposal'],
-    ['kanban', null, 'kanban', 'Due date for Send proposal'],
-  ] as const)(
-    'keeps the workspace day and original deadline in the %s editor',
-    async (_surface, selected, view, label) => {
-      const user = userEvent.setup();
-      const dueAt = new Date('2026-11-30T22:15:00.000Z');
-      renderBoard(selected, [task({ dueAt })], view, {}, undefined, {
-        locale: 'de-DE',
-        timezone: 'America/Los_Angeles',
-      });
-
-      await user.click(screen.getByRole('button', { name: label }));
-      expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
-      await user.click(screen.getByRole('button', { name: 'Apply' }));
-      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
-        id: 'task-1',
-        dueAt: dueAt.toISOString(),
-      });
-    },
-  );
 
   it('switches to list view and preserves list mode when opening a task', () => {
     renderBoard(null, [task()], 'list');

@@ -17,7 +17,6 @@ import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
-import { MetadataDueDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -35,7 +34,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
-import { toDateOrNull } from '@/lib/iso-timestamp';
+import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
 import { notifyAction } from '@/lib/notify';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusOptionsForType } from '@/lib/object-status-options';
@@ -645,10 +644,9 @@ function ObjectCollectionItem({
                   />
                 </EditableMetadata.Value>
                 <EditableMetadata.Editor>
-                  <MetadataDueDateEditor
+                  <ObjectDueDateEditor
                     value={dueAt}
-                    timezone={timezone}
-                    onApply={(value) => {
+                    onSave={(value) => {
                       save('dueAt', value);
                     }}
                   />
@@ -668,5 +666,39 @@ function ObjectCollectionItem({
         </CollectionRow.Actions>
       </CollectionRow>
     </div>
+  );
+}
+
+function ObjectDueDateEditor({
+  value,
+  onSave,
+}: {
+  value: Date | string | null;
+  onSave: (value: Date | null) => void;
+}) {
+  const [draft, setDraft] = useState(() => dateInputValue(value));
+  return (
+    <form
+      className="flex items-center gap-2"
+      action={() => {
+        onSave(draft ? new Date(`${draft}T00:00:00.000Z`) : null);
+      }}
+    >
+      <input
+        aria-label="Due date"
+        type="date"
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.currentTarget.value);
+        }}
+        className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
+      />
+      <button
+        type="submit"
+        className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
+      >
+        Apply
+      </button>
+    </form>
   );
 }

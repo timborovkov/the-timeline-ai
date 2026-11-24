@@ -503,9 +503,8 @@ instruction to unarchive the task first.
 
 Task list selection opens a right-hand peek on the same route (`?task=`); Objects
 rows use `?object=` and preserve list filters. All task, object, and board previews use the same fixed modal Sheet at every viewport, with focus containment, Escape dismissal, scroll preservation, and focus restoration. They never shrink the underlying list. Both task and object previews retain
-discussion and type-appropriate editable properties. Due-date editors use the
-workspace calendar day. Applying the same day preserves a timed deadline. The
-quiet Open task / Open object link goes to `/app/objects/[id]` with `returnTo`
+discussion and type-appropriate editable properties. The quiet Open task / Open object
+link at the top goes to `/app/objects/[id]` with `returnTo`
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 

@@ -28,7 +28,7 @@ import type {
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { MetadataDueDateEditor } from '@/components/collections/metadata-date-editor';
+import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
@@ -518,10 +518,12 @@ function KanbanCardMetadata({
           <DueDateDisplay workStatus={item.object.status} value={item.dueAt} variant="compact" />
         </EditableMetadata.Value>
         <EditableMetadata.Editor>
-          <MetadataDueDateEditor
-            value={item.dueAt}
-            onApply={(dueAt) => {
-              onUpdateItem(item.id, { dueAt });
+          <MetadataDateEditor
+            defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
+            onApply={(value) => {
+              onUpdateItem(item.id, {
+                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+              });
             }}
           />
         </EditableMetadata.Editor>

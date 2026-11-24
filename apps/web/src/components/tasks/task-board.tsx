@@ -15,6 +15,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import type * as objects from '@timeline/shared/objects/types';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
+import { presentDueDate } from '@timeline/shared/time';
 import { GripVertical, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -45,7 +46,7 @@ import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { CollectionBound, InfiniteScroll } from '@/components/collections/infinite-scroll';
-import { MetadataDueDateEditor } from '@/components/collections/metadata-date-editor';
+import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -61,6 +62,7 @@ import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
@@ -1518,6 +1520,7 @@ function TaskListRow({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(row);
 
   function save(field: string, patch: TaskPatch): void {
@@ -1668,10 +1671,12 @@ function TaskListRow({
                   <DueDateDisplay workStatus={row.status} value={row.dueAt} variant="field-hint" />
                 </EditableMetadata.Value>
                 <EditableMetadata.Editor>
-                  <MetadataDueDateEditor
-                    value={row.dueAt}
-                    onApply={(dueAt) => {
-                      save('due date', { dueAt });
+                  <MetadataDateEditor
+                    defaultValue={dateInputValue(row.dueAt, timezone)}
+                    onApply={(value) => {
+                      save('due date', {
+                        dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                      });
                     }}
                   />
                 </EditableMetadata.Editor>
@@ -2216,10 +2221,12 @@ function TaskCard({
             <DueDateDisplay workStatus={row.status} value={row.dueAt} variant="compact" />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>
-            <MetadataDueDateEditor
-              value={row.dueAt}
-              onApply={(dueAt) => {
-                saveMetadata({ dueAt });
+            <MetadataDateEditor
+              defaultValue={row.dueAt ? row.dueAt.toISOString().slice(0, 10) : ''}
+              onApply={(value) => {
+                saveMetadata({
+                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                });
               }}
             />
           </EditableMetadata.Editor>
@@ -2264,4 +2271,8 @@ function TaskCard({
 function memberLabel(userId: string | null, members: TaskMemberOption[]): string {
   if (!userId) return 'Unassigned';
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';
+}
+
+function dateInputValue(value: Date, timezone: string): string {
+  return presentDueDate(value, { timezone }).dateKey ?? '';
 }

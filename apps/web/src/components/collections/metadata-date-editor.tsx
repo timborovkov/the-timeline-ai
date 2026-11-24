@@ -1,11 +1,5 @@
 'use client';
 
-import { presentDueDate } from '@timeline/shared/time';
-
-import { useEditableMetadataOpen } from '@/components/collections/editable-metadata';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { toDateOrNull } from '@/lib/iso-timestamp';
-
 export function MetadataDateEditor({
   defaultValue,
   onApply,
@@ -17,14 +11,12 @@ export function MetadataDateEditor({
   disabled?: boolean;
   label?: string;
 }) {
-  const setEditorOpen = useEditableMetadataOpen();
   return (
     <form
       className="flex items-center gap-2"
       action={(formData) => {
         const rawDate = formData.get('date');
         onApply(typeof rawDate === 'string' ? rawDate : '');
-        setEditorOpen?.(false);
       }}
     >
       <input
@@ -43,29 +35,5 @@ export function MetadataDateEditor({
         Apply
       </button>
     </form>
-  );
-}
-
-export function MetadataDueDateEditor({
-  value,
-  timezone,
-  onApply,
-}: {
-  value: Date | string | null;
-  timezone?: string;
-  onApply: (value: Date | null) => void;
-}) {
-  const workspaceTimezone = useWorkspaceTimezone();
-  const deadline = toDateOrNull(value);
-  const date = presentDueDate(deadline, { timezone: timezone ?? workspaceTimezone }).dateKey ?? '';
-  return (
-    <MetadataDateEditor
-      defaultValue={date}
-      onApply={(selected) => {
-        const next =
-          selected === date ? deadline : selected ? new Date(`${selected}T00:00:00.000Z`) : null;
-        onApply(next);
-      }}
-    />
   );
 }

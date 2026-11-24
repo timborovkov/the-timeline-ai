@@ -51,7 +51,6 @@ await vi.mock(
 const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
-const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 
 const { CuratedBoardList } = await import('./curated-board-views.js');
 
@@ -285,32 +284,6 @@ describe('CuratedBoardList', () => {
       screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
     ).toBeTruthy();
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
-  });
-
-  it('prefills the board due date in the workspace zone and retains the original instant', async () => {
-    const user = userEvent.setup();
-    const dueAt = new Date('2026-11-30T22:15:00.000Z');
-    render(
-      <WorkspaceTimezoneProvider
-        timezone="Europe/Helsinki"
-        region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
-      >
-        <CuratedBoardList
-          boardId="board-1"
-          view="list"
-          lanes={LANES}
-          items={[boardItem({}, { dueAt })]}
-          onUpdateItem={fakes.updateItem}
-        />
-      </WorkspaceTimezoneProvider>,
-    );
-
-    const trigger = screen.getByRole('button', { name: 'Due date for Launch review' });
-    expect(trigger.textContent).toContain('01.12.2026');
-    await user.click(trigger);
-    expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-    expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { dueAt });
   });
 
   it('uses the same date-only due timestamp as the detail panel', async () => {

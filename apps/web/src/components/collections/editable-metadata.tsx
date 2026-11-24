@@ -1,15 +1,7 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 import {
   createCollectionSlot,
@@ -17,12 +9,6 @@ import {
 } from '@/components/collections/collection-slot';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-
-const EditableMetadataOpenContext = createContext<((open: boolean) => void) | null>(null);
-
-export function useEditableMetadataOpen() {
-  return useContext(EditableMetadataOpenContext);
-}
 
 const EditableMetadataValue = createCollectionSlot('value');
 const EditableMetadataEditor = createCollectionSlot('editor');
@@ -126,9 +112,7 @@ export function EditableMetadata({
           </button>
         </PopoverTrigger>
         <PopoverContent role="dialog" aria-label={label} className="min-w-52 p-2">
-          <EditableMetadataOpenContext.Provider value={setOpen}>
-            {slots.editor}
-          </EditableMetadataOpenContext.Provider>
+          {slots.editor}
         </PopoverContent>
       </Popover>
       {error ? (
