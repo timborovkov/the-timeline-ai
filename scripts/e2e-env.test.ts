@@ -207,7 +207,7 @@ function lookupPort(container: string, port: number): string | null {
   assert.equal(env.POLAR_ACCESS_TOKEN, undefined);
   assert.equal(
     buildE2eWebServerConfig(env).command,
-    'bun x --bun --no-install next start apps/web -H 127.0.0.1 -p 13000',
+    'bun --cwd apps/web x --bun --no-install next start -H 127.0.0.1 -p 13000',
   );
   assert.throws(
     () => buildE2eEnv({ ...input, DATABASE_URL: 'postgres://example.org/prod' }, options),

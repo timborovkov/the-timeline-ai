@@ -7,8 +7,8 @@ env.AUTH_URL = baseURL;
 env.NEXTAUTH_URL = baseURL;
 
 const build = Bun.spawn(
-  [process.execPath, 'x', '--bun', '--no-install', 'next', 'build', 'apps/web', '--webpack'],
-  { env, stdout: 'inherit', stderr: 'inherit' },
+  [process.execPath, 'x', '--bun', '--no-install', 'next', 'build', '--webpack'],
+  { cwd: 'apps/web', env, stdout: 'inherit', stderr: 'inherit' },
 );
 const buildStatus = await build.exited;
 if (buildStatus !== 0) process.exit(buildStatus);
