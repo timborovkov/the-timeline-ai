@@ -375,6 +375,40 @@ interface DeadlineTiming {
   time?: { hour: number; minute: number; second: number; millisecond: number };
 }
 
+/** A missing suffix allows fallback. An unsupported explicit zone does not. */
+function deadlineSuffixTimezone(suffix: string): string | null | undefined {
+  const cue = /^\s+(?:(time\s+zone)|in)(?=[\s.,:;!?()]|$)/i.exec(suffix);
+  const tail = suffix.slice(cue?.[0].length ?? 0).trimStart();
+  const parenthesized = tail.startsWith('(');
+  const zoneText = parenthesized ? tail.slice(1).trimStart() : tail;
+  const candidate = /^[^\s.,;!?()]+/.exec(zoneText)?.[0];
+  if (candidate) {
+    const utc = /^(?:UTC|GMT)$/i.test(candidate);
+    if (utc || /^[+-]\d{2}:\d{2}$/.test(candidate) || candidate.includes('/')) {
+      if (parenthesized && !/^\s*\)(?=[\s.,;!?)]|$)/.test(zoneText.slice(candidate.length)))
+        return null;
+      return utc ? 'UTC' : candidate;
+    }
+    if (/^[+-]\d/.test(candidate)) return null;
+  }
+  if (cue?.[1]) return null;
+
+  const token = /^[A-Za-z][A-Za-z_/-]*/.exec(zoneText)?.[0];
+  if (!token || /^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) return undefined;
+  if (
+    /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
+    /^[A-Z]{2,6}$/.test(token)
+  )
+    return null;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: token });
+    return null;
+  } catch {
+    // Ordinary words are not timezone identifiers.
+    return undefined;
+  }
+}
+
 function deadlineTiming(tail: string, fallbackTimezone: string): DeadlineTiming | undefined {
   const time =
     /^(?:T|\s+(?:at\s+)?)(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:\s*(UTC|GMT|Z|[+-]\d{2}:\d{2}))?/i.exec(
@@ -392,31 +426,17 @@ function deadlineTiming(tail: string, fallbackTimezone: string): DeadlineTiming 
   const suffix = tail.slice(time[0].length);
   if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return undefined;
   if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return undefined;
-  const candidate = /^\s+(?:(?:in|time zone)\s+)?([^\s.,;!?()]+)/i.exec(suffix)?.[1];
-  const namedZone = candidate?.includes('/') ? candidate : undefined;
-  const offset = time[5];
-  if (namedZone && offset) return undefined;
-  const timezone = namedZone ?? (offset && /^(UTC|GMT|Z)$/i.test(offset) ? 'UTC' : offset);
+  const suffixTimezone = deadlineSuffixTimezone(suffix);
+  const inlineTimezone = time[5];
+  if (suffixTimezone === null || (suffixTimezone && inlineTimezone)) return undefined;
+  const timezone =
+    suffixTimezone ??
+    (inlineTimezone && /^(UTC|GMT|Z)$/i.test(inlineTimezone) ? 'UTC' : inlineTimezone);
   if (timezone) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: timezone });
     } catch {
       return undefined;
-    }
-  }
-  const token = /^\s+([A-Za-z][A-Za-z_/-]*)/.exec(suffix)?.[1];
-  if (!namedZone && token && !/^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) {
-    if (
-      /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
-      /^[A-Z]{2,6}$/.test(token) ||
-      token.includes('/')
-    )
-      return undefined;
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: token });
-      return undefined;
-    } catch {
-      // Ordinary words are not timezone identifiers.
     }
   }
   return { timezone: timezone ?? fallbackTimezone, time: { hour, minute, second, millisecond } };
