@@ -198,6 +198,28 @@ function lookupPort(container: string, port: number): string | null {
 }
 
 {
+  const input = { E2E_PRECOMPILED: '1', E2E_WEB_PORT: '13000' };
+  const options = { publishedPort: lookupPort };
+  const env = buildE2eEnv({ ...input, POLAR_ACCESS_TOKEN: 'exported-provider-sentinel' }, options);
+  assert.equal(env.NODE_ENV, 'development');
+  assert.equal(env.E2E_DETERMINISTIC_CHAT, '1');
+  assert.equal(env.__NEXT_PROCESSED_ENV, 'true');
+  assert.equal(env.POLAR_ACCESS_TOKEN, undefined);
+  assert.equal(
+    buildE2eWebServerConfig(env).command,
+    'bun x --bun --no-install next start apps/web -H 127.0.0.1 -p 13000',
+  );
+  assert.throws(
+    () => buildE2eEnv({ ...input, DATABASE_URL: 'postgres://example.org/prod' }, options),
+    /points outside local test services/,
+  );
+  assert.throws(
+    () => buildE2eEnv({ ...input, E2E_PROD_SMOKE: '1' }, options),
+    /require separate builds/,
+  );
+}
+
+{
   const compose = readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8');
   assert.match(compose, /<AllowedOrigin>http:\/\/localhost:\*<\/AllowedOrigin>/);
   assert.match(compose, /<AllowedOrigin>http:\/\/127\.0\.0\.1:\*<\/AllowedOrigin>/);

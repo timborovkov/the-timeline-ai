@@ -12,8 +12,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   if (process.env.E2E_PROD_SMOKE === '1') return;
 
-  // Compile development routes before timed journeys. Cold compilation also
-  // exceeds navigation budgets on Node; production smoke uses built output.
+  // Keep the route health checks and saved sign-ins in both full browser modes.
+  // The precompiled fixture build performs route compilation before Playwright.
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ baseURL: config.projects[0]?.use.baseURL });
