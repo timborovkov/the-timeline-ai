@@ -394,6 +394,45 @@ describe('guest access', () => {
     expect(await recipient.listSources(shared)).toEqual([]);
   });
 
+  it.each([
+    { method: 'listSources', table: 'raw_events' },
+    { method: 'listRecords', table: 'guest_record_shares' },
+  ] as const)(
+    'denies $method if access changes between authorization and the evidence read',
+    async ({ method, table }) => {
+      const manager = withTeam(db, team, admin).guests;
+      const invite = await manager.invite('guest@example.test');
+      if (!invite) throw new Error('Expected an invitation');
+      const reader = withTeam(db, team, guest).guests;
+      expect(await reader.accept(invite.token)).toBe(true);
+      expect(await manager.shareSource(invite.id, shared)).toBe(true);
+      expect(
+        await manager.publishRecord(invite.id, recordId, 'Guest snapshot', 'Snapshot text'),
+      ).toBe(true);
+      expect(await reader[method]()).toHaveLength(1);
+
+      const runQuery = fixture.pg.query.bind(fixture.pg);
+      let accessChanged = false;
+      const queries = spyOn(fixture.pg, 'query').mockImplementation(async (...args) => {
+        if (!accessChanged && args[0].includes(` from "${table}"`)) {
+          accessChanged = true;
+          if (method === 'listSources') {
+            await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, team));
+          } else {
+            await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, guest));
+          }
+        }
+        return runQuery(...args);
+      });
+      try {
+        expect(await reader[method]()).toEqual([]);
+        expect(accessChanged).toBe(true);
+      } finally {
+        queries.mockRestore();
+      }
+    },
+  );
+
   it('withholds text from web rows that are derived or lack raw note provenance', async () => {
     const owner = withTeam(db, team, admin);
     const invite = await owner.guests.invite('guest@example.test');
