@@ -147,7 +147,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'work',
-    updatedAt: '2026-11-11',
+    updatedAt: '2026-11-24',
     title: 'Work surface',
     description:
       'Use tasks, boards, objects, the daily update, on-demand updates and handoffs that stay current from evidence.',
@@ -162,10 +162,15 @@ export const HELP_PAGES: HelpPage[] = [
           'Open a task or object to inspect its source evidence before changing status, owner or due date.',
           'Pin frequently used objects, boards or documents so you can return to them from Home.',
           'Open Approvals for changes that need a decision. Accept supported changes or reject unsupported suggestions.',
-          'Work → Digests lists recent daily updates as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
+          'Work → Digests lists recent updates and their sources. Use Customize updates on Home to preview a daily brief or weekly overview and choose from the delivery options available to you.',
           'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },
+      },
+      {
+        title: 'See scheduled work in Calendar',
+        body: 'Calendar brings together scheduled events and accepted task or follow-up deadlines. A task can also have a planned work day. That date stays on the task and does not put an event on the calendar.',
+        appLink: { href: '/app/calendar', label: 'Open Calendar' },
       },
       {
         title: 'How it stays current',

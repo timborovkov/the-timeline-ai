@@ -36,7 +36,6 @@ describe('use-case routes', () => {
       expect(html).toContain('Start free');
       expect(html).toContain('data-use-case-route');
       expect(html).not.toMatch(/WhatsApp|Slack Connect|Teams chat/iu);
-      expect(html).not.toMatch(/\bweekly\b/iu);
       for (const shot of useCase.screenshots) {
         expect(html).toContain(`data-screenshot-file="${shot.file}"`);
         expect(html).toContain(`data-screenshot-present="true"`);
@@ -56,6 +55,8 @@ describe('use-case routes', () => {
     expect(html).toContain('What changed');
     expect(html).toContain('Open linked work');
     expect(html).toContain('Tasks and calendar items open from the digest.');
+    expect(html).toContain('daily brief or weekly overview');
+    expect(html).toContain('A workspace admin manages delivery');
     expect(html).not.toContain('Who owns the next step');
     expect(html).not.toContain('find captured sources in Timeline');
   });

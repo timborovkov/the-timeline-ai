@@ -100,6 +100,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .compact .command {
-    flex-basis: 0;
+    flex-basis: min(100%, 15rem);
   }
 }

@@ -157,10 +157,6 @@
     gap: 0.125rem;
   }
 
-  .githubLink {
-    display: none !important;
-  }
-
   .navCta {
     padding-inline: 0.65rem;
   }

@@ -11,7 +11,7 @@ import {
 } from '@/components/marketing/use-cases/content';
 
 describe('use-case content', () => {
-  it('publishes five distinct jobs plus a hub without inventing customers or weekly framing', () => {
+  it('publishes five distinct jobs plus a hub without inventing customers', () => {
     expect(USE_CASES).toHaveLength(5);
     expect(USE_CASE_CANONICAL_ROUTES).toEqual(USE_CASES.map((useCase) => useCase.route));
     expect(new Set(USE_CASES.map((useCase) => useCase.seoTitle)).size).toBe(5);
@@ -19,7 +19,9 @@ describe('use-case content', () => {
 
     const copy = JSON.stringify({ hub: USE_CASE_HUB, useCases: USE_CASES });
     expect(copy).not.toMatch(/WhatsApp|Slack Connect|Teams chat/iu);
-    expect(copy).not.toMatch(/\bweekly\b/iu);
+    const dailyLog = findUseCase('team-daily-log');
+    expect(dailyLog?.howItWorks?.join(' ')).toContain('daily brief or weekly overview');
+    expect(dailyLog?.faqs[0]?.answer).toContain('A workspace admin manages delivery');
     expect(copy).not.toMatch(/testimonial|customer data|Northline/iu);
 
     for (const useCase of USE_CASES) {
