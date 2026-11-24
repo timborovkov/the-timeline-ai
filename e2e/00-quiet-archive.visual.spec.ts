@@ -122,7 +122,11 @@ test('authenticated Quiet Archive surfaces', async ({ browser }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await page.goto('/app/team?section=members');
   // The single page heading is also present while the member list streams in.
-  await expect(page.getByText(e2eUsers.member.email, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Members', exact: true }).getByText(e2eUsers.member.email, {
+      exact: true,
+    }),
+  ).toBeVisible();
   await capture(page, 'team-settings-light-mobile.png');
 
   await context.close();
