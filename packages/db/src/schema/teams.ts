@@ -40,6 +40,8 @@ export const teamInviteSendStatus = pgEnum('team_invite_send_status', [
 export interface TeamLifecycleWork {
   disabledDateUnknown?: boolean;
   pendingCheckoutIds?: string[];
+  /** Exact paid subscription previously applied by a verified Polar event. */
+  appliedPolarSubscriptionId?: string;
   deletionActorUserId?: string;
   billingPending?: boolean;
   botsPending?: boolean;

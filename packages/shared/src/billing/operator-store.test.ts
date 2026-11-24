@@ -24,6 +24,7 @@ import {
   startEnterpriseCheckout,
 } from '#src/billing/operator-store.js';
 import { resolveTeamCommercialTerms } from '#src/billing/operator.js';
+import { handlePolarWebhookEvent } from '#src/billing/polar-webhook.js';
 import * as polar from '#src/billing/polar.js';
 import {
   createFakeBillingProvider,
@@ -655,6 +656,112 @@ describe('billing operator store', () => {
       expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual([]);
     } finally {
       providerMock.mockRestore();
+    }
+  });
+
+  it('allows a comp after Enterprise activation and dunning while holding first payments open', async () => {
+    await db.insert(teamMembers).values({ teamId: TEAM_ID, userId: OWNER_ID, role: 'owner' });
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: OWNER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const { customerId } = await withTeamBillingIdentity(
+      { db, teamId: TEAM_ID, userId: OWNER_ID, provider },
+      (identity) => Promise.resolve(identity),
+    );
+    const productId = 'product-enterprise';
+    const checkoutId = 'checkout-for-enterprise';
+    const subscriptionId = 'subscription-for-enterprise';
+    provider.listPendingEnterpriseCheckouts = () =>
+      Promise.resolve([
+        {
+          id: checkoutId,
+          url: 'https://sandbox.polar.sh/checkout/enterprise',
+          status: 'succeeded',
+          productId,
+          amount: 100_000,
+          currency: 'usd',
+          discountId: null,
+          expiresAt: new Date('2099-01-01'),
+          quoteKey: 'enterprise-quote',
+        },
+      ]);
+    const knownAppliedIds: (string | null)[] = [];
+    provider.listReconciledCheckoutIds = ({ currentSubscriptionId, checkoutIds }) => {
+      knownAppliedIds.push(currentSubscriptionId);
+      return Promise.resolve(
+        currentSubscriptionId === subscriptionId && checkoutIds.includes(checkoutId)
+          ? [checkoutId]
+          : [],
+      );
+    };
+    const send = (status: string, hour: string, eventCheckoutId?: string) =>
+      handlePolarWebhookEvent({
+        db,
+        provider,
+        chargesEnabled: true,
+        products: { enterprise: productId },
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: subscriptionId,
+            status,
+            product_id: productId,
+            customer: { id: customerId, external_id: TEAM_ID },
+            modified_at: `2026-02-01T${hour}:00:00Z`,
+            ...(eventCheckoutId ? { checkout_id: eventCheckoutId } : {}),
+          },
+        },
+      });
+    const comp = () =>
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'enterprise',
+        spendCapCents: 0,
+        reason: 'approved comp',
+        expiresAt: null,
+        cancelPolarSubscription: (id) => provider.revokeSubscription(id, customerId),
+      });
+    const savedProduct = process.env.POLAR_PRODUCT_ID_ENTERPRISE;
+    process.env.POLAR_PRODUCT_ID_ENTERPRISE = productId;
+    resetEnvForTests();
+    const providerMock = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
+    try {
+      await send('incomplete', '00', checkoutId);
+      expect((await billing.getAccount()).billingState).toBe('payment_retry');
+      await db
+        .update(teams)
+        .set({ lifecycleWork: { appliedPolarSubscriptionId: 'older-subscription' } })
+        .where(eq(teams.id, TEAM_ID));
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+
+      await send('past_due', '01', checkoutId);
+      expect((await billing.getAccount()).billingState).toBe('past_due');
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+
+      await send('active', '02', checkoutId);
+      const [activeWorkspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+      expect(activeWorkspace?.lifecycleWork.appliedPolarSubscriptionId).toBe(subscriptionId);
+      // Simulate an existing active workspace whose activation predates the proof marker.
+      await db.update(teams).set({ lifecycleWork: {} }).where(eq(teams.id, TEAM_ID));
+      await send('past_due', '03');
+      expect((await billing.getAccount()).billingState).toBe('past_due');
+
+      await expect(comp()).resolves.toBeUndefined();
+      expect(knownAppliedIds).toEqual([null, null, subscriptionId]);
+      expect(provider.revokedSubscriptionIds).toEqual([subscriptionId]);
+      expect((await billing.getAccount()).arrangement).toBe('comped');
+    } finally {
+      providerMock.mockRestore();
+      if (savedProduct === undefined) delete process.env.POLAR_PRODUCT_ID_ENTERPRISE;
+      else process.env.POLAR_PRODUCT_ID_ENTERPRISE = savedProduct;
+      resetEnvForTests();
     }
   });
 
