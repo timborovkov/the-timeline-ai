@@ -3075,6 +3075,53 @@ test('month-name deadlines preserve explicit time and timezone', () => {
   }
 });
 
+test('named-zone deadlines use the stated zone without accepting the workspace instant', () => {
+  const timezone = 'Europe/Helsinki';
+  const base = 'Review retention policy is due June 12, 2026 at 09:00';
+  const local = '2026-06-12T06:00:00.000Z';
+  const pacific = '2026-06-12T16:00:00.000Z';
+  for (const zone of [
+    'in America/Los_Angeles',
+    'America/Los_Angeles',
+    'time zone America/Los_Angeles',
+  ]) {
+    const quote = `${base} ${zone} for legal approval.`;
+    expect(
+      run(quote, { dueAt: pacific }, [support('dueAt', quote, pacific)], { timezone })[0]?.items[0]
+        ?.proposedPayload.dueAt,
+    ).toBe(pacific);
+    for (const citation of [quote, base]) {
+      expect(
+        run(quote, { dueAt: local }, [support('dueAt', citation, local)], { timezone })[0]?.items[0]
+          ?.proposedPayload.dueAt,
+      ).toBeUndefined();
+    }
+  }
+  const invalid = `${base} in America/Atlantis for legal approval.`;
+  expect(
+    run(invalid, { dueAt: local }, [support('dueAt', invalid, local)], { timezone })[0]?.items[0]
+      ?.proposedPayload.dueAt,
+  ).toBeUndefined();
+  const prose = `${base} in the next sprint.`;
+  expect(
+    run(prose, { dueAt: local }, [support('dueAt', prose, local)], { timezone })[0]?.items[0]
+      ?.proposedPayload.dueAt,
+  ).toBe(local);
+});
+
+test('relative and yearless deadlines select the source day in the stated zone', () => {
+  const options = { timezone: 'Europe/Helsinki', occurredAt: new Date('2026-06-12T01:00:00Z') };
+  const dueAt = '2026-06-11T16:00:00.000Z';
+  for (const date of ['today', 'Thursday', 'June 11']) {
+    const quote = `Review retention policy is due ${date} at 09:00 in America/Los_Angeles.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], options)[0]?.items[0]?.proposedPayload
+        .dueAt,
+      date,
+    ).toBe(dueAt);
+  }
+});
+
 test('invalid or unsupported explicit month-name times cannot justify midnight', () => {
   for (const suffix of ['at 25:00 UTC', 'at 09:99 UTC', 'at 9am', 'at 09:00 PST']) {
     const text = `Review retention policy is due June 12, 2026 ${suffix}.`;
