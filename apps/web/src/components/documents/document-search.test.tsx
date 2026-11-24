@@ -44,6 +44,7 @@ const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-l
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
 
+const { ApiResponseError } = await import('@/lib/api-response');
 const { DocumentSearch } = await import('./document-search.js');
 
 function documentHit(overrides: Record<string, unknown> = {}) {
@@ -197,9 +198,10 @@ describe('DocumentSearch', () => {
     'announces a failed initial search for %s and retries the submitted query',
     async (errorCode, expectedMessage) => {
       const user = userEvent.setup();
+      const error = new ApiResponseError(503, errorCode, null, null, 'Request failed (503)');
       fakes.useDocumentSearchQuery.mockImplementation((query: string) => ({
         data: undefined,
-        error: query === 'Acme security' ? new Error(errorCode) : null,
+        error: query === 'Acme security' ? error : null,
         isError: query === 'Acme security',
         isFetching: false,
         hasNextPage: false,
