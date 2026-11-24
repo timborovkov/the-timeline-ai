@@ -26,6 +26,8 @@ The document-extract orchestrator remains credential-thin: it needs the applicab
 
 ## Provisioning products and meters
 
+Configure USD as the selected Polar organization's default presentment currency before provisioning. Polar requires every product to include a price in the organization's default currency, and Timeline provisions a USD-only catalog. Setup checks this through the organization read API before planning or writing any changes.
+
 Run `bun run billing:polar-setup` with the selected environment configured. Sandbox requires an explicit `--webhook-url` on an isolated host. Review its output before applying printed identifiers to services. It reconciles the monthly USD Team seat price, custom Enterprise offer, usage prices and selected webhook; it must not mutate unrelated products/endpoints. Do not manually create provider meters for product capacity gates.
 
 The shared catalog owns current prices, commitments, member rates and allowances. Reconcile the setup output with that catalog rather than copying a dated price list. The Team product uses one seat price starting at one seat and two metered prices for AI and native capture. The application applies Included usage and the approved cap before recording invoice usage. Local storage/free allowances must not also be credited by Polar. If historical provider credits differ, review the account and schedule an explicit correction; do not change production pricing as an incidental setup task.

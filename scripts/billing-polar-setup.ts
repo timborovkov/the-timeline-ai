@@ -237,6 +237,20 @@ function createClient(base: string, token: string, organizationId: string): Pola
     return response.body;
   }
   return {
+    async getDefaultPresentmentCurrency() {
+      const organization = asRecord(await send(`/organizations/${encodedOrg}`, 'GET'));
+      const currency = organization?.default_presentment_currency;
+      if (
+        organization?.id !== organizationId ||
+        typeof currency !== 'string' ||
+        !/^[a-z]{3}$/u.test(currency)
+      ) {
+        throw new Error(
+          'Polar did not confirm the selected organization and its default presentment currency',
+        );
+      }
+      return currency;
+    },
     async listMeters() {
       const rows = await listAll(base, token, `/meters/?organization_id=${encodedOrg}`);
       return rows.flatMap((row) => meterOf(row) ?? []);

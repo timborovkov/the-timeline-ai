@@ -317,6 +317,7 @@ export interface PolarSetupPlan {
 }
 
 export interface PolarSetupClient {
+  getDefaultPresentmentCurrency(): Promise<string>;
   listMeters(): Promise<readonly PolarSetupMeter[]>;
   listProducts(): Promise<readonly PolarSetupProduct[]>;
   listWebhooks(): Promise<readonly PolarSetupWebhook[]>;
@@ -455,14 +456,13 @@ export function isMonthlyUsdTeamCheckoutProduct(raw: unknown): boolean {
     !Array.isArray(row.prices)
   )
     return false;
-  const staticPrices = (row.prices as (Record<string, unknown> | null)[]).filter(
-    (price) => price?.is_archived === false && !price.meter_id,
+  const usdStaticPrices = (row.prices as (Record<string, unknown> | null)[]).filter(
+    (price) => price?.is_archived === false && price.price_currency === 'usd' && !price.meter_id,
   );
-  const price = staticPrices[0];
+  const price = usdStaticPrices[0];
   return (
-    staticPrices.length === 1 &&
+    usdStaticPrices.length === 1 &&
     price?.amount_type === 'seat_based' &&
-    price.price_currency === 'usd' &&
     price.tax_behavior === 'exclusive' &&
     correctSeatTiers(price.seat_tiers)
   );
@@ -1034,6 +1034,12 @@ export async function runPolarSetup(input: {
   request: PolarSetupRequest;
   dryRun: boolean;
 }): Promise<PolarSetupRunResult> {
+  const currency = await input.client.getDefaultPresentmentCurrency();
+  if (currency !== 'usd') {
+    throw new Error(
+      `Polar organization default presentment currency is ${currency.toUpperCase()}. Timeline provisions a USD-only catalog. Configure USD as the default presentment currency in the selected Polar organization before running setup.`,
+    );
+  }
   const snapshot = {
     meters: await input.client.listMeters(),
     products: await input.client.listProducts(),

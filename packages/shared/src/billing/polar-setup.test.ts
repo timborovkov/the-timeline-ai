@@ -212,6 +212,12 @@ describe('planPolarSetup', () => {
       prices: [price],
     };
     expect(isMonthlyUsdTeamCheckoutProduct(product)).toBe(true);
+    expect(
+      isMonthlyUsdTeamCheckoutProduct({
+        ...product,
+        prices: [{ ...price, price_currency: 'eur' }, price],
+      }),
+    ).toBe(true);
     expect(isMonthlyUsdTeamCheckoutProduct({ ...product, recurring_interval: 'year' })).toBe(false);
     expect(
       isMonthlyUsdTeamCheckoutProduct({
@@ -515,6 +521,20 @@ describe('planPolarSetup', () => {
 });
 
 describe('runPolarSetup', () => {
+  it('blocks a non-USD organization before reading or changing its catalog', async () => {
+    const client = memoryClient(memoryState());
+    client.getDefaultPresentmentCurrency = () => Promise.resolve('eur');
+    client.listMeters = () => {
+      throw new Error('read catalog before currency preflight');
+    };
+    for (const dryRun of [true, false]) {
+      await expect(runPolarSetup({ client, request, dryRun })).rejects.toThrow(
+        /default presentment currency is EUR.*Configure USD/u,
+      );
+    }
+    expect(client.mutations).toEqual([]);
+  });
+
   it('applies an empty org once and leaves the second run unchanged', async () => {
     const state = memoryState();
     state.products.push({
@@ -731,6 +751,9 @@ function memoryClient(state: MemoryState): PolarSetupClient & { mutations: strin
   };
   return {
     mutations,
+    getDefaultPresentmentCurrency() {
+      return Promise.resolve('usd');
+    },
     listMeters() {
       return Promise.resolve(state.meters);
     },
