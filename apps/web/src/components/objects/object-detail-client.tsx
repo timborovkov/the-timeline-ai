@@ -1745,6 +1745,7 @@ function TaskPlannedDateField({
         </EditableMetadata.Value>
         <EditableMetadata.Editor>
           <MetadataDateEditor
+            label="Planned date"
             defaultValue={detail.plannedDate ?? ''}
             onApply={(value) => {
               patch('plannedDate', value || null);

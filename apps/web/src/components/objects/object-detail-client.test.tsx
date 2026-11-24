@@ -308,6 +308,21 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('No due date');
   });
 
+  it('labels the editable planned date separately from the due date', async () => {
+    const user = userEvent.setup();
+    render(
+      objectDetailElement({
+        detail: { ...detail, type: 'task', plannedDate: '2026-11-30', dueAt: null },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Planned date for Send proposal' }));
+    expect(screen.getByLabelText('Planned date')).toHaveProperty('value', '2026-11-30');
+    expect(screen.queryByLabelText('Due date')).toBeNull();
+  });
+
   it('formats string-backed due-date changes in the workspace timezone', () => {
     render(
       objectDetailElement({
