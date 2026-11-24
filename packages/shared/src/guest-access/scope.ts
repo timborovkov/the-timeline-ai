@@ -6,8 +6,10 @@ import {
   guestInvitations,
   guestRecordShares,
   guestSourceGrants,
+  objectChanges,
   rawEvents,
   reconciliationOutputs,
+  reconciliationProjectionOutbox,
   teamMembers,
   users,
 } from '@timeline/db';
@@ -56,59 +58,52 @@ function shareableRecord() {
   );
 }
 
-// A grant opens the record, not its source graph. Exact current values need
-// matching, still team-visible provenance from a direct edit or accepted proposal.
-function humanRecordField(field: string, createKey: string, value: SQL) {
-  const metadata = rawEvents.sourceMetadata;
-  const snapshot = sql`${metadata} -> 'source_snapshot'`;
-  return sql`EXISTS (
-    SELECT 1 FROM ${rawEvents}
-    WHERE ${rawEvents.teamId} = ${entities.teamId}
-      AND ${metadata} ->> 'entity_id' = ${entities.id}::text
-      AND ${metadata} ->> 'source_snapshot_kind' = 'system_direct_write_event'
-      AND ${rawEvents.source} = 'system'
-      AND ${rawEvents.visibility} = 'team'
-      AND ${rawEventIsActive()}
-      AND ${snapshot} ->> 'entity_id' = ${entities.id}::text
-      AND ${snapshot} ->> 'raw_event_id' = ${rawEvents.id}::text
-      AND ${snapshot} ->> 'actor_kind' = 'user'
-      AND ${snapshot} ->> 'actor_user_id' = ${rawEvents.authorUserId}::text
-      AND (
-        (${snapshot} ->> 'event_kind' = 'object_create' AND ${snapshot} -> ${createKey} = to_jsonb(${value}))
-        OR (${snapshot} ->> 'event_kind' = 'object_update'
-          AND ${snapshot} -> 'changes' @> jsonb_build_array(jsonb_build_object('field', ${field}::text, 'newValue', to_jsonb(${value}))))
-      )
-  )`;
+function jsonUuid(textValue: SQL) {
+  return sql`CASE WHEN ${textValue} ~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+    THEN (${textValue})::uuid END`;
 }
 
-function appliedRecordField(field: string, value: SQL) {
+function teamVisibleApproval(field: string, value: SQL, snapshot: SQL) {
   const output = reconciliationOutputs;
-  const refs = sql`CASE WHEN jsonb_typeof(${output.sourceRefs}) = 'array' THEN ${output.sourceRefs} ELSE '[]'::jsonb END`;
+  const outbox = reconciliationProjectionOutbox;
+  const approval = sql`${snapshot} -> 'approval_proof'`;
+  const outputIds = sql`CASE WHEN jsonb_typeof(${approval} -> 'outputIds') = 'array'
+    THEN ${approval} -> 'outputIds' ELSE '[]'::jsonb END`;
+  const refs = sql`CASE WHEN jsonb_typeof(${output.sourceRefs}) = 'array'
+    THEN ${output.sourceRefs} ELSE '[]'::jsonb END`;
   const proposed = sql`${output.payload} -> 'proposed_payload' -> ${field}`;
   const dateOnly =
     field === 'dueAt'
       ? sql`OR (right(${value}, 14) = 'T00:00:00.000Z' AND ${proposed} = to_jsonb(left(${value}, 10)))`
       : sql.empty();
-  return sql`EXISTS (
-    SELECT 1 FROM ${output}
-    WHERE ${output.teamId} = ${entities.teamId}
-      AND COALESCE(${output.payload} ->> 'projection_result_id', ${output.targetId}::text) = ${entities.id}::text
+
+  // Every output attached to the actual write must still have team-readable
+  // sources. A different proposal with the same value cannot justify it.
+  return sql`(
+    SELECT count(DISTINCT ${output.id}) = jsonb_array_length(${outputIds})
+      AND bool_or(${proposed} = to_jsonb(${value}) ${dateOnly})
+    FROM ${outbox}
+    INNER JOIN ${output}
+      ON ${output.teamId} = ${outbox.teamId} AND ${output.id} = ${outbox.outputId}
+    WHERE ${outbox.teamId} = ${entities.teamId}
+      AND ${outbox.suggestionItemId} = ${jsonUuid(sql`${approval} ->> 'itemId'`)}
+      AND ${outbox.action} = 'mark_applied'
+      AND ${outbox.status} = 'processed'
+      AND ${outputIds} ? ${output.id}::text
+      AND ${outbox.payload} ->> 'projection_result_id' = ${entities.id}::text
       AND ${output.outputKind} = 'approval_bundle'
       AND ${output.operation} IN ('create', 'update')
       AND ${output.targetKind} IN ('task', 'object')
       AND ${output.status} = 'applied'
       AND ${output.visibility} = 'team'
       AND ${output.visibilityFloor} = 'team'
-      AND (${proposed} = to_jsonb(${value}) ${dateOnly})
       AND jsonb_array_length(${refs}) > 0
       AND NOT EXISTS (
         SELECT 1 FROM jsonb_array_elements(${refs}) AS source_ref
         WHERE NOT EXISTS (
           SELECT 1 FROM ${rawEvents}
           WHERE ${rawEvents.teamId} = ${output.teamId}
-            AND ${rawEvents.id} = CASE
-              WHEN (source_ref ->> 'rawEventId') ~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
-              THEN (source_ref ->> 'rawEventId')::uuid END
+            AND ${rawEvents.id} = ${jsonUuid(sql`source_ref ->> 'rawEventId'`)}
             AND ${rawEvents.visibility} = 'team'
             AND ${rawEventIsActive()}
         )
@@ -117,8 +112,41 @@ function appliedRecordField(field: string, value: SQL) {
 }
 
 function visibleRecordField(field: string, createKey: string, value: SQL) {
-  return sql`CASE WHEN (${humanRecordField(field, createKey, value)}
-    OR ${appliedRecordField(field, value)}) THEN ${value} END`;
+  const metadata = rawEvents.sourceMetadata;
+  const snapshot = sql`${metadata} -> 'source_snapshot'`;
+  const revision = sql`${entities.recordFieldRevisions} -> ${field}::text`;
+  return sql`CASE WHEN EXISTS (
+    SELECT 1 FROM ${rawEvents}
+    INNER JOIN ${objectChanges}
+      ON ${objectChanges.teamId} = ${rawEvents.teamId}
+      AND ${objectChanges.id} = ${jsonUuid(sql`${revision} ->> 'changeId'`)}
+    WHERE ${rawEvents.teamId} = ${entities.teamId}
+      AND ${rawEvents.id} = ${jsonUuid(sql`${revision} ->> 'writeEventId'`)}
+      AND ${objectChanges.entityId} = ${entities.id}
+      AND ${objectChanges.status} = 'applied'
+      AND ${metadata} ->> 'source_snapshot_kind' = 'system_direct_write_event'
+      AND ${rawEvents.source} = 'system'
+      AND ${rawEvents.visibility} = 'team'
+      AND ${rawEventIsActive()}
+      AND ${snapshot} ->> 'entity_id' = ${entities.id}::text
+      AND ${snapshot} ->> 'raw_event_id' = ${rawEvents.id}::text
+      AND ${snapshot} ->> 'actor_kind' = ${objectChanges.actorKind}::text
+      AND (
+        (${objectChanges.field} = '__create__'
+          AND ${snapshot} ->> 'event_kind' = 'object_create'
+          AND ${snapshot} -> ${createKey} = to_jsonb(${value}))
+        OR (${objectChanges.field} = ${field}
+          AND ${objectChanges.newValue} = to_jsonb(${value})
+          AND ${snapshot} ->> 'event_kind' = 'object_update'
+          AND ${snapshot} -> 'changes' @> jsonb_build_array(jsonb_build_object('field', ${field}::text, 'newValue', to_jsonb(${value}))))
+      )
+      AND (
+        (${objectChanges.actorKind} = 'user'
+          AND ${snapshot} ->> 'actor_user_id' = ${rawEvents.authorUserId}::text
+          AND ${rawEvents.authorUserId} = ${objectChanges.actorUserId})
+        OR (${objectChanges.actorKind} = 'agent' AND ${teamVisibleApproval(field, value, snapshot)})
+      )
+  ) THEN ${value} END`;
 }
 
 const EVIDENCE_LIMIT = 12;

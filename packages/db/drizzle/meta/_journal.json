@@ -904,6 +904,13 @@
       "when": 1795659600000,
       "tag": "0121_record_field_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1795659700000,
+      "tag": "0122_guest_live_record_revisions",
+      "breakpoints": true
     }
   ]
 }

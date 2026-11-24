@@ -243,6 +243,44 @@ const OBJECT_DIRECT_WRITE_PLANNER_VERSION = 'object-direct-write-planner-2026-06
 const SYSTEM_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION = 'system-direct-write-source-snapshot-2026-06';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+const SHAREABLE_RECORD_FIELDS = ['canonicalName', 'status', 'dueAt'];
+
+function hasGuestRecordProjection(type: ObjectType) {
+  return type === 'task' || type === 'project';
+}
+
+// Keep write proof on the canonical field revision. The storage trigger drops
+// it when any writer changes the field, so a repeat value needs fresh proof.
+async function attachRecordWriteProof(
+  tx: DbTx,
+  record: Pick<EntityRow, 'id' | 'teamId' | 'type'>,
+  writeEventId: string | null,
+  changes: { field: string; id: string }[],
+) {
+  if (!writeEventId || !hasGuestRecordProjection(record.type)) return;
+  const fields = changes.filter(({ field }) => SHAREABLE_RECORD_FIELDS.includes(field));
+  if (!fields.length) return;
+
+  let revisions = sql`${entities.recordFieldRevisions}`;
+  for (const { field, id } of fields) {
+    const stamp = JSON.stringify({ changeId: id, writeEventId });
+    revisions = sql`jsonb_set(${revisions}, ARRAY[${field}::text],
+      jsonb_build_object('assertedAt', clock_timestamp(), 'rawEventId', NULL)
+      || COALESCE(${entities.recordFieldRevisions} -> ${field}::text, '{}'::jsonb)
+      || ${stamp}::jsonb)`;
+  }
+
+  await tx
+    .update(entities)
+    .set({ recordFieldRevisions: revisions })
+    .where(and(eq(entities.teamId, record.teamId), eq(entities.id, record.id)));
+}
+
+interface RecordApprovalProof {
+  itemId: string;
+  outputIds: string[];
+}
+
 function systemDirectWriteSourceMetadata(input: {
   rawEventId: string;
   kind: string;
@@ -4053,6 +4091,7 @@ export interface CreateObjectInput {
     inputHash: string;
     taxonomyVersion: string;
   };
+  approvalProof?: RecordApprovalProof;
   /** A teammate-selected category applied atomically with task creation. */
   initialManualTaskCategory?: {
     category: TaskCategory;
@@ -4246,6 +4285,9 @@ export async function createObject(
             owner_user_id: row.ownerUserId,
             assignee_user_id: row.assigneeUserId,
             due_at: row.dueAt?.toISOString() ?? null,
+            ...(input.approvalProof && hasGuestRecordProjection(input.type)
+              ? { approval_proof: input.approvalProof }
+              : {}),
             aliases: row.aliases,
             metadata: row.metadata,
             actor_kind: input.actor.kind,
@@ -4266,17 +4308,28 @@ export async function createObject(
       text: eventText,
     });
 
-    await tx.insert(objectChanges).values({
-      teamId: scope.teamId,
-      entityId: row.id,
-      actorUserId: input.actor.userId ?? null,
-      actorKind: input.actor.kind,
-      status: 'applied',
-      field: '__create__',
-      previousValue: null,
-      newValue: { type: input.type, canonicalName: name, status: row.status },
-      sourceEventId: null,
-    });
+    const [creation] = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        actorUserId: input.actor.userId ?? null,
+        actorKind: input.actor.kind,
+        status: 'applied',
+        field: '__create__',
+        previousValue: null,
+        newValue: { type: input.type, canonicalName: name, status: row.status },
+        sourceEventId: null,
+      })
+      .returning({ id: objectChanges.id });
+    if (creation) {
+      await attachRecordWriteProof(
+        tx,
+        row,
+        sourceEventId,
+        SHAREABLE_RECORD_FIELDS.map((field) => ({ field, id: creation.id })),
+      );
+    }
     if (initialManualTaskCategory) {
       await tx.insert(taskCategoryAssignments).values({
         teamId: scope.teamId,
@@ -4487,6 +4540,7 @@ interface ObjectMutationOptions {
   taskFieldEvidence?: Partial<Record<MaintainedTaskField, TaskFieldEvidence>>;
   taskFieldApprovalItemId?: string;
   undoTaskFieldChanges?: Partial<Record<MaintainedTaskField | 'plannedDate', string>>;
+  approvalProof?: RecordApprovalProof;
   transactionClient?: DbOrTx;
   postCommitEffects?: PostCommitEffect[];
   requireActive?: boolean;
@@ -4903,6 +4957,9 @@ export async function updateObject(
             canonical_name: updated.canonicalName,
             actor_kind: actor.kind,
             actor_user_id: actor.userId ?? null,
+            ...(options?.approvalProof && hasGuestRecordProjection(updated.type)
+              ? { approval_proof: options.approvalProof }
+              : {}),
             changes,
           },
         }),
@@ -4956,6 +5013,7 @@ export async function updateObject(
         .set({ plannedDateChangeId: plannedDateChange.id })
         .where(eq(entities.id, entityId));
     }
+    await attachRecordWriteProof(tx, updated, sourceEventId, changeRows);
     const reconciliationOperation =
       changes.length === 1 && changes[0]?.field === 'archivedAt' && updated.archivedAt !== null
         ? 'archive_or_cancel'

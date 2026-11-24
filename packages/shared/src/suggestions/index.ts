@@ -325,6 +325,10 @@ function reconciliationOutputIdsFromItem(item: typeof agentSuggestionItems.$infe
   return normalizedStringSet(ids.filter((value): value is string => typeof value === 'string'));
 }
 
+function recordApprovalProof(item: typeof agentSuggestionItems.$inferSelect) {
+  return { itemId: item.id, outputIds: reconciliationOutputIdsFromItem(item) };
+}
+
 function normalizedStringSet(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
@@ -5180,6 +5184,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       type,
       canonicalName,
       actor: { kind: 'agent', userId: null },
+      approvalProof: recordApprovalProof(item),
     };
     if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
     if (parsed.status !== undefined) input.status = parsed.status;
@@ -5284,6 +5289,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         patch,
         { kind: 'agent', userId: null },
         {
+          approvalProof: recordApprovalProof(item),
           ...(plannedDateEvidence ? { plannedDateEvidence } : {}),
           taskFieldEvidence: await getTaskFieldEvidence(item, {
             canonicalName: patch.canonicalName,
@@ -5982,6 +5988,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           { kind: 'agent', userId: null },
           {
             requireActive: true,
+            approvalProof: recordApprovalProof(item),
             ...mutationOptions,
             taskFieldEvidence: await getTaskFieldEvidence(item, parsed),
             ...(deps.recordMaintenanceWorker && (await objectTypeForTarget(targetId)) === 'task'

@@ -422,41 +422,23 @@ describe('guest access', () => {
       { title: 'Shared project', status: null, body: null, live: true },
     ]);
 
-    const auditId = crypto.randomUUID();
     const dueDate = new Date('2026-12-03T12:30:00.000Z');
-    await db
-      .update(entities)
-      .set({
+    await withTeam(db, team, admin).objects.updateObject(
+      recordId,
+      {
         canonicalName: 'Revised launch plan',
         status: 'active',
         dueAt: dueDate,
         ownerUserId: admin,
-      })
-      .where(eq(entities.id, recordId));
-    await db.insert(rawEvents).values({
-      id: auditId,
-      teamId: team,
-      source: 'system',
-      authorUserId: admin,
-      contentText: 'Internal audit text',
-      sourceMetadata: {
-        entity_id: recordId,
-        source_snapshot_kind: 'system_direct_write_event',
-        source_snapshot: {
-          entity_id: recordId,
-          raw_event_id: auditId,
-          event_kind: 'object_update',
-          actor_kind: 'user',
-          actor_user_id: admin,
-          changes: [
-            { field: 'canonicalName', newValue: 'Revised launch plan' },
-            { field: 'status', newValue: 'active' },
-            { field: 'dueAt', newValue: dueDate.toISOString() },
-            { field: 'ownerUserId', newValue: admin },
-          ],
-        },
       },
-    });
+      { kind: 'user', userId: admin },
+    );
+    const [current] = await db
+      .select({ revisions: entities.recordFieldRevisions })
+      .from(entities)
+      .where(eq(entities.id, recordId));
+    const auditId = current?.revisions.canonicalName?.writeEventId;
+    if (!auditId) throw new Error('Expected current audited revision');
     expect(await reader.listRecords(undefined, 'Revised launch')).toMatchObject([
       {
         id: recordId,
@@ -487,7 +469,7 @@ describe('guest access', () => {
       expect(payload).toContain(dueDate.toISOString());
       expect(payload).not.toContain(admin);
       expect(payload).not.toContain(secretText);
-      expect(payload).not.toContain('Internal audit text');
+      expect(payload).not.toContain('Updated project:');
       if (revokeNote) {
         expect(payload).toContain('Synthetic note');
         await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, shared));
@@ -541,6 +523,37 @@ describe('guest access', () => {
     }
   });
 
+  it('does not reuse a human audit after an unaudited field returns to the same value', async () => {
+    const host = withTeam(db, team, admin);
+    const project = await host.objects.createObject({
+      type: 'project',
+      canonicalName: 'Public milestone',
+      status: 'active',
+      actor: { kind: 'user', userId: admin },
+    });
+    const link = await host.guests.invite('guest@example.test');
+    if (!link) throw new Error('Expected an invitation');
+    await host.guests.shareRecord(link.id, project.id);
+    const reader = withTeam(db, team, guest).guests;
+    expect(await reader.accept(link.token)).toBe(true);
+    expect(await reader.listRecords(project.id)).toMatchObject([
+      { title: 'Public milestone', status: 'active' },
+    ]);
+
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Private milestone' })
+      .where(eq(entities.id, project.id));
+    await db
+      .update(entities)
+      .set({ canonicalName: 'Public milestone' })
+      .where(eq(entities.id, project.id));
+    expect(await reader.listRecords(project.id)).toMatchObject([
+      { title: 'Shared project', status: 'active' },
+    ]);
+    expect(await reader.listRecords(undefined, 'Public milestone')).toEqual([]);
+  });
+
   it('shows applied task updates with current team evidence and withholds mixed or restricted fields', async () => {
     const host = withTeam(db, team, admin);
     const taskId = crypto.randomUUID();
@@ -586,13 +599,14 @@ describe('guest access', () => {
 
     const due = '2026-12-03T00:00:00.000Z';
     await applyUpdate([shared], 'Apply team task change', {
+      canonicalName: 'Public task milestone',
       status: 'done',
       dueAt: due,
       ownerUserId: admin,
     });
     const [publicTask] = await reader.listRecords(taskId);
     expect(publicTask).toMatchObject({
-      title: 'Shared task',
+      title: 'Public task milestone',
       status: 'done',
       dueDate: due,
       body: null,
@@ -601,15 +615,89 @@ describe('guest access', () => {
     expect(JSON.stringify(publicTask)).not.toContain(shared);
     expect(await reader.listSources(shared)).toEqual([]);
 
+    const laterDue = new Date('2026-12-06T12:00:00.000Z');
+    await host.objects.updateObject(
+      taskId,
+      { canonicalName: 'Current task milestone', status: 'todo', dueAt: laterDue },
+      { kind: 'user', userId: admin },
+    );
+    expect(await reader.listRecords(taskId)).toMatchObject([
+      { title: 'Current task milestone', status: 'todo', dueDate: laterDue.toISOString() },
+    ]);
+
     await applyUpdate([shared, privateSource], 'Apply mixed task change', {
-      dueAt: '2026-12-05T00:00:00.000Z',
+      canonicalName: 'Public task milestone',
+      status: 'done',
+      dueAt: due,
     });
     const [canonical] = await db
-      .select({ dueAt: entities.dueAt })
+      .select({ title: entities.canonicalName, status: entities.status, dueAt: entities.dueAt })
       .from(entities)
       .where(eq(entities.id, taskId));
-    expect(canonical?.dueAt?.toISOString()).toBe('2026-12-05T00:00:00.000Z');
-    expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'done', dueDate: null }]);
+    expect(canonical).toEqual({
+      title: 'Public task milestone',
+      status: 'done',
+      dueAt: new Date(due),
+    });
+    expect(await reader.listRecords(taskId)).toMatchObject([
+      { title: 'Shared task', status: null, dueDate: null },
+    ]);
+    expect(await reader.listRecords(undefined, 'Public task milestone')).toEqual([]);
+
+    const env = process.env;
+    process.env = {
+      ...env,
+      AUTH_SECRET: 'a'.repeat(32),
+      DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+      OPENROUTER_API_KEY: 'synthetic-provider-key',
+      OPENROUTER_BASE_URL: 'https://example.test/v1',
+    };
+    resetEnvForTests();
+    const provider = spyOn(globalThis, 'fetch').mockImplementation(
+      Object.assign(
+        async (_url: Parameters<typeof fetch>[0], input?: Parameters<typeof fetch>[1]) => {
+          const payload = typeof input?.body === 'string' ? input.body : '';
+          expect(payload).toContain('Shared task');
+          expect(payload).not.toContain('Public task milestone');
+          expect(payload).not.toContain('done');
+          expect(payload).not.toContain(due);
+          return Response.json({
+            id: 'synthetic-withheld-field-answer',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.extraction.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: JSON.stringify({
+                    answer: 'The current status is unavailable.',
+                    citations: [1],
+                  }),
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60, cost: 0.001 },
+          });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    try {
+      const record = { kind: 'record', id: taskId } as const;
+      expect(await reader.ask('What is the current status?', record)).toEqual({
+        answer: 'The current status is unavailable.',
+        citations: [{ ...record, reference: 1 }],
+      });
+      expect(provider).toHaveBeenCalledTimes(1);
+    } finally {
+      provider.mockRestore();
+      process.env = env;
+      resetEnvForTests();
+    }
+
     await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, shared));
     expect(await reader.listRecords(taskId)).toMatchObject([{ status: null, dueDate: null }]);
   });

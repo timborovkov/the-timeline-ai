@@ -66,11 +66,6 @@ export const rawEvents = pgTable(
     sourceMetadata: jsonb('source_metadata').notNull().default({}),
   },
   (table) => [
-    index('raw_events_guest_object_audit_idx')
-      .on(table.teamId, sql`(${table.sourceMetadata} ->> 'entity_id')`)
-      .where(
-        sql`${table.source} = 'system' AND ${table.sourceMetadata} ->> 'source_snapshot_kind' = 'system_direct_write_event'`,
-      ),
     index('raw_events_team_idx').on(table.teamId),
     index('raw_events_team_occurred_idx').on(table.teamId, table.occurredAt),
     index('raw_events_team_occurred_id_idx').on(table.teamId, table.occurredAt, table.id),

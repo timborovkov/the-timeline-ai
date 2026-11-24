@@ -86,6 +86,7 @@ export const entities = pgTable(
             assertedAt: string;
             rawEventId: string | null;
             changeId?: string;
+            writeEventId?: string;
           }
         >
       >()
