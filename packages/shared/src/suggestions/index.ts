@@ -4251,19 +4251,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
     const payload = recordFromUnknown(item.proposedPayload);
     const fields = Object.keys(payload);
-    if (
-      !fields.length ||
-      fields.some(
-        (field) =>
-          !Object.hasOwn(claims, field) ||
-          !recordFromUnknown(claims[field]).assertedAt ||
-          recordFromUnknown(claims[field]).value !== payload[field],
-      )
-    )
-      return false;
+    if (!fields.some((field) => recordFromUnknown(claims[field]).assertedAt)) return false;
     await lockAcceptanceMutationTarget(item);
     const [target] = await db
       .select({
+        canonicalName: entities.canonicalName,
         plannedDateRevisionAt: entities.plannedDateRevisionAt,
         plannedDateEvidenceId: entities.plannedDateEvidenceId,
         revisions: entities.recordFieldRevisions,
@@ -4272,22 +4264,32 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
       .limit(1);
     if (!target) return false;
-    return fields.every((field) => {
-      const claim = recordFromUnknown(claims[field]);
-      const targetRevision =
-        field === 'plannedDate'
-          ? {
-              assertedAt: target.plannedDateRevisionAt?.toISOString(),
-              rawEventId: target.plannedDateEvidenceId,
-            }
-          : target.revisions[field];
-      return (
-        targetRevision?.assertedAt &&
-        typeof claim.assertedAt === 'string' &&
-        (Date.parse(claim.assertedAt) <= Date.parse(targetRevision.assertedAt) ||
-          claim.rawEventId === targetRevision.rawEventId)
-      );
-    });
+    const evidenceFields = fields.filter(
+      (field) =>
+        field !== 'canonicalName' ||
+        Object.hasOwn(claims, field) ||
+        payload.canonicalName !== target.canonicalName,
+    );
+    return (
+      evidenceFields.length > 0 &&
+      evidenceFields.every((field) => {
+        const claim = recordFromUnknown(claims[field]);
+        const targetRevision =
+          field === 'plannedDate'
+            ? {
+                assertedAt: target.plannedDateRevisionAt?.toISOString(),
+                rawEventId: target.plannedDateEvidenceId,
+              }
+            : target.revisions[field];
+        return (
+          targetRevision?.assertedAt &&
+          typeof claim.assertedAt === 'string' &&
+          claim.value === payload[field] &&
+          (Date.parse(claim.assertedAt) <= Date.parse(targetRevision.assertedAt) ||
+            claim.rawEventId === targetRevision.rawEventId)
+        );
+      })
+    );
   }
 
   async function staleActionableItemReason(
@@ -6362,11 +6364,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       db
         .select({ taskId: entities.id, rawEventId: rawEvents.id })
         .from(entities)
-        .innerJoin(
-          rawEvents,
-          sql`${entities.recordFieldRevisions} -> 'plannedDate' ->> 'rawEventId' = ${rawEvents.id}::text`,
-        )
-        .where(and(activeTasks, visibleSources)),
+        .innerJoin(rawEvents, eq(entities.plannedDateEvidenceId, rawEvents.id))
+        .where(and(activeTasks, visibleSources, isNotNull(entities.plannedDate))),
     ]);
     return { reports, plans };
   }
@@ -7040,8 +7039,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const date = parsed.data.plannedDate;
       if (date !== undefined && !(await getPlannedDateEvidence(item, date, false))) return null;
       const claims = await getTaskFieldEvidence(item, parsed.data, false);
-      if (MAINTAINED_RECORD_FIELDS.some((field) => fields.includes(field) && !claims[field]))
-        return null;
       const [target] = await db
         .select({
           type: entities.type,
@@ -7067,6 +7064,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1)
         .for('update');
       if (!target) return null;
+      if (
+        MAINTAINED_RECORD_FIELDS.some(
+          (field) =>
+            fields.includes(field) &&
+            !claims[field] &&
+            !(field === 'canonicalName' && parsed.data.canonicalName === target.canonicalName),
+        )
+      )
+        return null;
       if (
         payload.status === 'cancelled' &&
         sources.some(

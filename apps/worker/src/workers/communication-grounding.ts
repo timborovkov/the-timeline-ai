@@ -1630,6 +1630,43 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
     };
+    const hasAcceptedPriorPlan = (item: Pick<Item, 'targetId'>, rawEventId: string) => {
+      const plans = args.conversationTaskEvidence?.plans.filter(
+        (entry) => entry.rawEventId === rawEventId,
+      );
+      return plans?.length === 1 && plans[0]?.taskId === item.targetId;
+    };
+    const precedingSource = (rawEventId: string) => {
+      const priorId = conversationSourceIds[conversationSourceIds.indexOf(rawEventId) - 1];
+      return args.sources.find((row) => row.id === priorId);
+    };
+    const withPlanCorrectionContext = (item: T, support: Support): Support => {
+      if (support.field !== 'plannedDate') return support;
+      const source = args.sources.find((row) => row.id === support.rawEventId);
+      const enclosing = enclosingAssertion(support);
+      if (
+        !source ||
+        !enclosing ||
+        !CONVERSATIONAL_PLAN_CORRECTION.test(enclosing) ||
+        !safeSourceQuote(source.text, support.quote) ||
+        !safeSourceQuote(source.text, enclosing) ||
+        !packet.includes(normalize(enclosing))
+      )
+        return support;
+      if (support.context) return { ...support, quote: enclosing };
+      const prior = precedingSource(support.rawEventId);
+      const quote = prior?.text.trim();
+      if (
+        !prior ||
+        !quote ||
+        quote.length > 800 ||
+        !hasAcceptedPriorPlan(item, prior.id) ||
+        !safeSourceQuote(prior.text, quote) ||
+        !packet.includes(normalize(quote))
+      )
+        return support;
+      return { ...support, quote: enclosing, context: { rawEventId: prior.id, quote } };
+    };
     const verified = (item: T) => {
       if (
         args.conversationTaskEvidence &&
@@ -1639,6 +1676,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       )
         return [];
       return (item.grounding ?? [])
+        .map((support) => withPlanCorrectionContext(item, support))
         .map((support) => {
           const names = taskIdentityNames(item);
           if (names.some((name) => normalize(name) === normalize(support.subject))) {
@@ -1652,11 +1690,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 ((context.rawEventId === reference.rawEventId &&
                   literalWorkReference(context.quote, name)) ||
                   (support.field === 'plannedDate' &&
-                    CONTEXTUAL_TASK_PLAN.test(context.quote.trim()) &&
-                    args.conversationTaskEvidence?.plans.some(
-                      (entry) =>
-                        entry.taskId === item.targetId && entry.rawEventId === context.rawEventId,
-                    )))
+                    hasAcceptedPriorPlan(item, context.rawEventId) &&
+                    (literalWorkReference(context.quote, name) ||
+                      CONTEXTUAL_TASK_PLAN.test(context.quote.trim()))))
               );
             });
             if (citedName ?? nearbyReference) {
@@ -1803,24 +1839,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
         })
         .filter((support) => {
           const source = args.sources.find((row) => row.id === support.rawEventId);
-          const priorId =
-            conversationSourceIds[conversationSourceIds.indexOf(support.rawEventId) - 1];
-          const prior = args.sources.find((row) => row.id === priorId);
+          const prior = precedingSource(support.rawEventId);
           const context = support.context;
           const report = reportReference(item, support.subject);
           const contextIdentifiesTask = (quote: string, id: string) => {
             if (report) {
-              if (report.rawEventId === id || support.field === 'plannedDate') {
-                if (literalWorkReference(quote, report.label)) return true;
-              }
-              const plans = args.conversationTaskEvidence?.plans.filter(
-                (entry) => entry.rawEventId === id,
-              );
+              const namesReport = literalWorkReference(quote, report.label);
+              if (report.rawEventId === id) return namesReport;
               return (
                 support.field === 'plannedDate' &&
-                CONTEXTUAL_TASK_PLAN.test(quote.trim()) &&
-                plans?.length === 1 &&
-                plans[0]?.taskId === item.targetId
+                hasAcceptedPriorPlan(item, id) &&
+                (namesReport || CONTEXTUAL_TASK_PLAN.test(quote.trim()))
               );
             }
             return (

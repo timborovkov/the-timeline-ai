@@ -706,6 +706,7 @@ describe('suggestion scope', () => {
       afterMs: number,
       includeAssignee = false,
       replaySourceId?: string,
+      echoedName = task.canonicalName,
     ) {
       const sourceId = replaySourceId ?? crypto.randomUUID();
       const dedupe = replaySourceId ? `replay:${sourceId}` : sourceId;
@@ -742,6 +743,7 @@ describe('suggestion scope', () => {
             dedupeKey: dedupe,
             proposedPayload: {
               plannedDate: value,
+              canonicalName: echoedName,
               ...(includeAssignee ? { assigneeUserId: USER_ID } : {}),
             },
             ...(includeAssignee
@@ -791,6 +793,16 @@ describe('suggestion scope', () => {
       approval_policy_revision: policy.revision,
       task_update_undo_available: true,
     });
+    if (!applied) throw new Error('Missing accepted approval');
+    const [originalEvidence] = await db
+      .select({ rawEventId: agentSuggestionEvidence.rawEventId })
+      .from(agentSuggestionEvidence)
+      .where(eq(agentSuggestionEvidence.suggestionId, applied.suggestionId));
+    if (!originalEvidence) throw new Error('Missing accepted evidence');
+    expect(
+      (await human.suggestions.acceptedConversationTaskEvidence([originalEvidence.rawEventId]))
+        .plans,
+    ).toEqual([{ taskId: task.id, rawEventId: originalEvidence.rawEventId }]);
     await human.objects.updateObject(task.id, { priority: 2 }, actor);
     expect(await human.suggestions.undoAutomaticTaskUpdate(first)).toBe(true);
     expect(await human.suggestions.undoAutomaticTaskUpdate(first)).toBe(true);
@@ -799,12 +811,10 @@ describe('suggestion scope', () => {
       priority: 2,
     });
     expect(await automation.applyPendingRecordMaintenance([first])).toBe(0);
-    if (!applied) throw new Error('Missing accepted approval');
-    const [originalEvidence] = await db
-      .select({ rawEventId: agentSuggestionEvidence.rawEventId })
-      .from(agentSuggestionEvidence)
-      .where(eq(agentSuggestionEvidence.suggestionId, applied.suggestionId));
-    if (!originalEvidence) throw new Error('Missing accepted evidence');
+    expect(
+      (await human.suggestions.acceptedConversationTaskEvidence([originalEvidence.rawEventId]))
+        .plans,
+    ).toEqual([]);
     const replay = await propose('2026-06-08', 0, false, originalEvidence.rawEventId);
     expect(await automation.applyPendingRecordMaintenance([replay])).toBe(0);
     const [replayedItem] = await db
@@ -831,6 +841,12 @@ describe('suggestion scope', () => {
     expect(await human.objects.getObject(task.id)).toMatchObject({
       plannedDate: '2026-06-10',
       assigneeUserId: null,
+    });
+    const rename = await propose('2026-06-16', 240_000, false, undefined, 'Unverified rename');
+    expect(await automation.applyPendingRecordMaintenance([rename])).toBe(0);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      canonicalName: 'Investigate checkout error',
+      plannedDate: '2026-06-10',
     });
   });
 

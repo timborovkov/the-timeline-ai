@@ -3760,9 +3760,12 @@ const shortFridayCommitment = "I'll investigate it on Friday.";
 function groundLoginPlan(input: {
   friday?: string;
   correction?: string;
+  correctionQuote?: string;
+  omitContext?: boolean;
   date?: string;
   otherTask?: { id: string; type: string; name: string };
   reportTaskId?: string;
+  priorPlanTaskIds?: string[];
   targetId?: string;
 }) {
   const friday = input.friday ?? fridayCommitment;
@@ -3784,12 +3787,14 @@ function groundLoginPlan(input: {
         ]
       : []),
   ];
-  const context = alternate
-    ? { rawEventId: event, quote: friday }
-    : input.friday
-      ? { rawEventId: problemReportId, quote: problemReport }
-      : undefined;
-  const quote = alternate ?? friday;
+  const context = input.omitContext
+    ? undefined
+    : alternate
+      ? { rawEventId: event, quote: friday }
+      : input.friday
+        ? { rawEventId: problemReportId, quote: problemReport }
+        : undefined;
+  const quote = input.correctionQuote ?? alternate ?? friday;
   const currentId = alternate ? rescheduleId : event;
   const plans: NonNullable<
     Parameters<typeof groundCommunicationBundles>[0]['verifiedPlannedDates']
@@ -3840,7 +3845,10 @@ function groundLoginPlan(input: {
     conversationEventIds: sources.map(({ id }) => id),
     conversationTaskEvidence: {
       reports: [{ taskId: reportTaskId, rawEventId: problemReportId }],
-      plans: alternate ? [{ taskId: loginTaskId, rawEventId: event }] : [],
+      plans: (input.priorPlanTaskIds ?? (alternate ? [loginTaskId] : [])).map((taskId) => ({
+        taskId,
+        rawEventId: event,
+      })),
     },
     verifiedPlannedDates: plans,
   });
@@ -3856,16 +3864,42 @@ test('grounds short and contextual work plans against the uniquely accepted prob
     });
     expect(proof).toMatchObject({ rawEventId: event, identityRawEventId: problemReportId });
   }
-  const correction = groundLoginPlan({
-    friday: shortFridayCommitment,
-    correction: 'Actually, Monday.',
-  });
-  expect(correction.items?.[0]?.proposedPayload).toEqual({ plannedDate: '2026-11-30' });
-  expect(correction.proof).toMatchObject({
-    rawEventId: rescheduleId,
-    contextRawEventId: event,
-    identityRawEventId: problemReportId,
-  });
+  for (const friday of [fridayCommitment, shortFridayCommitment]) {
+    const correction = groundLoginPlan({ friday, correction: 'Actually, Monday.' });
+    expect(correction.items?.[0]?.proposedPayload).toEqual({ plannedDate: '2026-11-30' });
+    expect(correction.proof).toMatchObject({
+      rawEventId: rescheduleId,
+      contextRawEventId: event,
+      identityRawEventId: problemReportId,
+    });
+  }
+});
+
+test('recovers omitted correction context from the immediately preceding accepted plan', () => {
+  for (const friday of [fridayCommitment, shortFridayCommitment]) {
+    const correction = groundLoginPlan({
+      friday,
+      correction: 'Actually, Monday.',
+      correctionQuote: 'Monday',
+      omitContext: true,
+    });
+    expect(correction.items?.[0]?.proposedPayload).toEqual({ plannedDate: '2026-11-30' });
+    expect(correction.proof).toMatchObject({
+      rawEventId: rescheduleId,
+      contextRawEventId: event,
+      identityRawEventId: problemReportId,
+    });
+  }
+});
+
+test('rejects an elliptical correction without a uniquely accepted prior plan for that task', () => {
+  for (const priorPlanTaskIds of [[], [otherTaskId], [loginTaskId, otherTaskId]]) {
+    for (const omitContext of [true, false]) {
+      expect(
+        groundLoginPlan({ correction: 'Actually, Monday.', priorPlanTaskIds, omitContext }),
+      ).toEqual({ items: [], proof: undefined });
+    }
+  }
 });
 
 test('keeps a short report reference unresolved when two task identities are plausible', () => {
