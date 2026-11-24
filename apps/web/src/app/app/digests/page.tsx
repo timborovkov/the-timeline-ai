@@ -87,7 +87,6 @@ export default async function DigestsPage({
         status: row.status,
         summary: payload.summary,
         windowEnd: row.windowEnd.toISOString(),
-        timezone: payload.timezone,
         payload,
       };
     }),

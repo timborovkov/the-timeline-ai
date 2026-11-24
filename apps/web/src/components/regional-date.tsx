@@ -12,16 +12,19 @@ export function RegionalDate({
   variant = 'date',
   className,
   timezone,
+  parts,
 }: {
   value: Date | string;
   className?: string;
   timezone?: string;
+  parts?: Intl.DateTimeFormatOptions;
   variant?: 'date' | 'datetime' | 'month';
 }) {
   const region = useRegionalFormat();
   const options = { ...region, timezone: timezone ?? region.timezone };
-  const formatted =
-    variant === 'datetime'
+  const formatted = parts
+    ? formatDisplayDateParts(value, options, parts)
+    : variant === 'datetime'
       ? formatDisplayDateTime(value, options)
       : variant === 'month'
         ? formatDisplayDateParts(value, options, { month: 'long', year: 'numeric' })

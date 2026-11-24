@@ -5,17 +5,26 @@ import {
   digestSectionBody,
   digestSummaryParagraphs,
   formatDigestActivityItems,
-  formatDigestCalendarEventDetail,
-  formatDigestDate,
   formatDigestObjectType,
   formatDigestTaskDetail,
-  formatDigestWindowRange,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
+import { RegionalDate } from '@/components/regional-date';
+import { RegionalNumber } from '@/components/regional-number';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { cn } from '@/lib/utils';
+
+const rangeStartParts = {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+} as const;
+
+const rangeEndParts = { ...rangeStartParts, year: 'numeric', timeZoneName: 'short' } as const;
 
 export function DigestBody({
   digest,
@@ -32,21 +41,18 @@ export function DigestBody({
   const windowCalendar = digest.windowCalendar ?? [];
   const memberItems = digest.newTeamMembers.map((member) => ({
     key: member.userId,
-    label: `${displayMemberLabel({ name: member.label })} · Joined ${formatDigestDate(
-      member.createdAt,
-      digest.timezone,
-    )}`,
+    label: (
+      <>
+        {displayMemberLabel({ name: member.label })} · Joined{' '}
+        <RegionalDate value={member.createdAt} />
+      </>
+    ),
   }));
   const dashboardLinks: { label: string; href: string }[] = [];
   for (const link of digest.links) {
     const href = digestAppHref(link.href);
     if (href) dashboardLinks.push({ label: link.label, href });
   }
-  const windowRange = formatDigestWindowRange(
-    digest.windowStart,
-    digest.windowEnd,
-    digest.timezone,
-  );
 
   return (
     <div className={cn('@container space-y-6 text-sm', className)}>
@@ -77,7 +83,10 @@ export function DigestBody({
           <p className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-fg-muted">
             {activityItems.map((item) => (
               <span key={item.label}>
-                <span className="text-signal">{item.count}</span> {item.label}
+                <span className="text-signal">
+                  <RegionalNumber value={item.count} />
+                </span>{' '}
+                {item.label}
               </span>
             ))}
           </p>
@@ -112,23 +121,10 @@ export function DigestBody({
             detail: `(${formatDigestObjectType(object.type)})`,
           }))}
         />
-        <DigestList
-          label="Calendar this window"
-          items={windowCalendar.map((event) => ({
-            key: event.id,
-            href: digestAppHref(event.href) ?? undefined,
-            label: event.title,
-            detail: formatDigestCalendarEventDetail(event, digest.timezone),
-          }))}
-        />
+        <DigestList label="Calendar this window" items={digestCalendarItems(windowCalendar)} />
         <DigestList
           label="Upcoming calendar"
-          items={digest.upcomingCalendar.map((event) => ({
-            key: event.id,
-            href: digestAppHref(event.href) ?? undefined,
-            label: event.title,
-            detail: formatDigestCalendarEventDetail(event, digest.timezone),
-          }))}
+          items={digestCalendarItems(digest.upcomingCalendar)}
         />
         <DigestList label="New team members" items={memberItems} />
       </div>
@@ -146,9 +142,27 @@ export function DigestBody({
         </p>
       ) : null}
 
-      <p className="font-mono text-xs text-fg-dim">Covering {windowRange}</p>
+      <p className="font-mono text-xs text-fg-dim">
+        Covering <RegionalDate value={digest.windowStart} parts={rangeStartParts} />
+        {' – '}
+        <RegionalDate value={digest.windowEnd} parts={rangeEndParts} />
+      </p>
     </div>
   );
+}
+
+function digestCalendarItems(events: DailyDigestPayload['upcomingCalendar']) {
+  return events.map((event) => ({
+    key: event.id,
+    href: digestAppHref(event.href) ?? undefined,
+    label: event.title,
+    detail: (
+      <>
+        ({event.repeating ? 'repeating · next ' : null}
+        <RegionalDate value={event.startAt} parts={rangeEndParts} />)
+      </>
+    ),
+  }));
 }
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Digest linked lists share the briefing payload renderer.
@@ -157,7 +171,7 @@ function DigestList({
   items,
 }: {
   label: string;
-  items: { key: string; label: string; href?: string; detail?: string }[];
+  items: { key: string; label: ReactNode; href?: string; detail?: ReactNode }[];
 }) {
   if (items.length === 0) return null;
   return (
@@ -176,7 +190,7 @@ function DigestList({
             ) : (
               item.label
             )}
-            {item.detail ? ` ${item.detail}` : null}
+            {item.detail ? <> {item.detail}</> : null}
           </li>
         ))}
       </ul>

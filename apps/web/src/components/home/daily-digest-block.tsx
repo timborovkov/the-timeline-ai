@@ -1,6 +1,5 @@
 import {
   digestSummaryParagraphs,
-  formatDigestDate,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
 import Link from 'next/link';
@@ -8,6 +7,7 @@ import type { ReactNode } from 'react';
 
 import { DigestBody } from '@/components/home/digest-body';
 import { UpdateFollowUp } from '@/components/home/update-follow-up';
+import { RegionalDate } from '@/components/regional-date';
 import { SectionHeading } from '@/components/section-heading';
 
 export function DailyDigestBlock({ children }: { children: ReactNode }) {
@@ -49,7 +49,7 @@ export function DailyDigestContent({
     <>
       {digest ? (
         <p className="font-mono text-xs text-fg-dim">
-          {formatDigestDate(digest.windowEnd, digest.timezone)}
+          <RegionalDate value={digest.windowEnd} />
         </p>
       ) : null}
       {paused ? <p className="text-sm text-fg-muted">Scheduled updates are paused.</p> : null}

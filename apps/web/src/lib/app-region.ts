@@ -6,21 +6,25 @@ import { cache } from 'react';
 import { getRequestIdentity } from '@/lib/auth';
 import { validDisplayLocale, validDisplayTimezone } from '@/lib/regional-format';
 
-export function displayRegionCookieNames(userId: string) {
+export type DisplayRegionSurface = 'app' | 'guest';
+
+export function displayRegionCookieNames(userId: string, surface: DisplayRegionSurface = 'app') {
   const suffix = createHash('sha256').update(userId).digest('hex').slice(0, 24);
+  // Next keys response cookies by name when writing both paths.
+  const prefix = surface === 'guest' ? 'timeline-display-guest' : 'timeline-display';
   return {
-    locale: `timeline-display-locale-${suffix}`,
-    timezone: `timeline-display-timezone-${suffix}`,
+    locale: `${prefix}-locale-${suffix}`,
+    timezone: `${prefix}-timezone-${suffix}`,
   };
 }
 
-export const readAppRegion = cache(async () => {
+export const readAppRegion = cache(async (surface: DisplayRegionSurface = 'app') => {
   const [cookieStore, requestHeaders, { session }] = await Promise.all([
     cookies(),
     headers(),
     getRequestIdentity(),
   ]);
-  const names = session?.user.id ? displayRegionCookieNames(session.user.id) : undefined;
+  const names = session?.user.id ? displayRegionCookieNames(session.user.id, surface) : undefined;
   const browserLocale = requestHeaders
     .get('accept-language')
     ?.slice(0, 1024)

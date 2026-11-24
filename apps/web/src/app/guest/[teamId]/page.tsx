@@ -199,7 +199,7 @@ export default async function SharedWorkPage({
 
   const work = await loadSharedWork(teamId, session.user.id, selection, query);
   if (!work) notFound();
-  const region = await readAppRegion();
+  const region = await readAppRegion('guest');
   return (
     <WorkspaceTimezoneProvider timezone="UTC" region={region}>
       <SharedWorkContent

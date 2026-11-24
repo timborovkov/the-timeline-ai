@@ -25,18 +25,23 @@ export async function saveDisplayRegion(
   }
 
   const cookieStore = await cookies();
-  const names = displayRegionCookieNames(session.user.id);
   const options = {
-    path: '/app',
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
   } as const;
-  for (const [name, value] of [
-    [names.locale, locale],
-    [names.timezone, timezone],
-  ] as const) {
-    cookieStore.set(name, value ?? '', { ...options, maxAge: value ? 60 * 60 * 24 * 365 : 0 });
+  for (const surface of ['app', 'guest'] as const) {
+    const names = displayRegionCookieNames(session.user.id, surface);
+    for (const [name, value] of [
+      [names.locale, locale],
+      [names.timezone, timezone],
+    ] as const) {
+      cookieStore.set(name, value ?? '', {
+        ...options,
+        path: `/${surface}`,
+        maxAge: value ? 60 * 60 * 24 * 365 : 0,
+      });
+    }
   }
   return { saved: true };
 }

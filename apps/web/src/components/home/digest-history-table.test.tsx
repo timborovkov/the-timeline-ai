@@ -5,6 +5,7 @@ import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 // Test environment: happy-dom
 
 const PAYLOAD: DailyDigestPayload = {
@@ -47,7 +48,6 @@ describe('DigestHistoryTable', () => {
             status: 'sent',
             summary: 'Earlier quiet day.',
             windowEnd: '2026-07-15T00:00:00.000Z',
-            timezone: 'UTC',
             payload: { ...PAYLOAD, summary: 'Earlier quiet day.' },
           },
           {
@@ -55,7 +55,6 @@ describe('DigestHistoryTable', () => {
             status: 'generated',
             summary: 'The launch moved forward.',
             windowEnd: '2026-07-16T00:00:00.000Z',
-            timezone: 'UTC',
             payload: PAYLOAD,
           },
         ]}
@@ -73,6 +72,35 @@ describe('DigestHistoryTable', () => {
     expect(screen.getByText('Jul 16, 2026')).toBeTruthy();
   });
 
+  it('shows archive timestamps in the viewer region while retaining the original window', () => {
+    const region = { locale: 'de-DE', timezone: 'America/Los_Angeles' };
+    const { container } = render(
+      <WorkspaceTimezoneProvider timezone="Europe/Helsinki" region={region}>
+        <DigestHistoryTable
+          selectedId="digest"
+          digests={[
+            {
+              id: 'digest',
+              status: 'generated',
+              summary: PAYLOAD.summary,
+              windowEnd: PAYLOAD.windowEnd,
+              payload: PAYLOAD,
+            },
+          ]}
+        />
+      </WorkspaceTimezoneProvider>,
+    );
+    const day = container.querySelector('summary time');
+    expect(day?.getAttribute('datetime')).toBe(PAYLOAD.windowEnd);
+    expect(day?.textContent).toBe('15.07.2026');
+    const times = Array.from(container.querySelectorAll('time')).slice(1);
+    expect(times.map((time) => time.getAttribute('datetime'))).toEqual([
+      PAYLOAD.windowStart,
+      PAYLOAD.windowEnd,
+    ]);
+    expect(times.every((time) => time.textContent.includes('17:00'))).toBe(true);
+  });
+
   it('lets a teammate open another day without a selected query', async () => {
     const user = userEvent.setup();
     const { container } = render(
@@ -83,7 +111,6 @@ describe('DigestHistoryTable', () => {
             status: 'sent',
             summary: 'Earlier quiet day.',
             windowEnd: '2026-07-15T00:00:00.000Z',
-            timezone: 'UTC',
             payload: { ...PAYLOAD, summary: 'Earlier quiet day.' },
           },
           {
@@ -91,7 +118,6 @@ describe('DigestHistoryTable', () => {
             status: 'generated',
             summary: 'The launch moved forward.',
             windowEnd: '2026-07-16T00:00:00.000Z',
-            timezone: 'UTC',
             payload: PAYLOAD,
           },
         ]}
