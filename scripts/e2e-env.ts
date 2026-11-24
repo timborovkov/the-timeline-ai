@@ -103,7 +103,7 @@ export function buildE2eWebServerConfig(input: Env = process.env): {
   const port = normalizedWebPort(input.E2E_WEB_PORT);
   const server =
     input.E2E_PRECOMPILED === '1'
-      ? 'bun --cwd apps/web x --bun --no-install next start'
+      ? 'cd apps/web && bun x --bun --no-install next start'
       : 'bun run --cwd apps/web dev';
   return {
     baseURL: input.E2E_BASE_URL ?? `http://localhost:${port}`,
