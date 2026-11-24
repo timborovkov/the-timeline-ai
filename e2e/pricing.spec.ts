@@ -36,6 +36,9 @@ test('mobile pricing explains limits and links billing help', async ({ page }) =
   await expect(
     page.locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]'),
   ).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile.png', fullPage: true });
+  await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile-viewport.png' });
 });
 
 test('public and authentication responses protect framing and publish security contact', async ({
@@ -104,5 +107,8 @@ test('pricing text and primary-action tokens meet normal-text contrast in both t
       ];
     }, dark);
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
+    await page.screenshot({
+      path: `/workspace/audit-evidence/pricing-desktop-${dark ? 'dark' : 'light'}.png`,
+    });
   }
 });
