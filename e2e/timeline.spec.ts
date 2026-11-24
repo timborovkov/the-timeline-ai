@@ -2256,8 +2256,15 @@ test('chat answers timeline questions with citations and reloadable tool history
 
   await ownerPage.goto('/app/chat');
   const question = `What does the timeline say about ${chatFact}?`;
-  await ownerPage.getByPlaceholder('Ask the timeline…').fill(question);
-  await ownerPage.getByRole('button', { name: 'Send', exact: true }).click();
+  const composer = ownerPage.getByPlaceholder('Ask the timeline…');
+  const send = ownerPage.getByRole('button', { name: 'Send', exact: true });
+  // The server-rendered composer can appear before it handles input events.
+  await expect(async () => {
+    await composer.fill('');
+    await composer.fill(question);
+    await expect(send).toBeEnabled({ timeout: 750 });
+  }).toPass({ timeout: 15_000 });
+  await send.click();
   await expect(
     ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
   ).toBeVisible();
