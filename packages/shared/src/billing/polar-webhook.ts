@@ -677,9 +677,16 @@ async function upsertPaidSubscription(input: {
     });
     const isTeamSeatSubscription =
       input.plan === 'team' &&
-      (typeof input.data?.currency === 'string' ||
-        typeof input.data?.seats === 'number' ||
+      ((input.data?.seats !== undefined && input.data.seats !== null) ||
         Boolean(existing?.teamSeatTerms));
+    // Legacy flat Team subscriptions report EUR too; currency presence is not a seat contract.
+    // A new USD quote must still carry explicit quantity before it can grant access.
+    if (
+      input.plan === 'team' &&
+      input.data?.currency?.toLowerCase() === 'usd' &&
+      !isTeamSeatSubscription
+    )
+      return { applied: false };
     const seats = input.data?.seats;
     if (
       isTeamSeatSubscription &&

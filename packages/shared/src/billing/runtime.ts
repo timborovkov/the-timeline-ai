@@ -56,7 +56,11 @@ import {
   resolveTeamCommercialTerms,
   type BillingOperatorAccount,
 } from '#src/billing/operator.js';
-import { billingPlanIdOnDay, rollIncludedDiscountIfElapsed } from '#src/billing/plan-history.js';
+import {
+  billingPlanIdOnDay,
+  historicalTeamSeatPricingOnDay,
+  rollIncludedDiscountIfElapsed,
+} from '#src/billing/plan-history.js';
 import { applyElapsedScheduledCancellations } from '#src/billing/polar-webhook.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
@@ -1228,7 +1232,10 @@ async function accrueMemberDays(
         additionalMemberCents: terms.additionalMemberCents,
         meteredDiscountPercent: terms.meteredDiscountPercent,
       };
-      if (terms.planId === 'team' && account?.teamSeatTerms) return null;
+      if (terms.planId === 'team') {
+        const seatPricing = await historicalTeamSeatPricingOnDay({ db, teamId: input.teamId, day });
+        if (seatPricing ?? Boolean(account?.teamSeatTerms)) return null;
+      }
       for (const member of members) {
         await db
           .insert(billingMemberDayLedger)

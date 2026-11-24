@@ -238,6 +238,75 @@ describe('Polar webhook helpers', () => {
 });
 
 describe('handlePolarWebhookEvent', () => {
+  it('does not grant legacy access for malformed USD quotes or EUR seat subscriptions', async () => {
+    for (const terms of [{ currency: 'usd' }, { currency: 'eur', seats: 2 }]) {
+      await handlePolarWebhookEvent({
+        db,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_invalid_seat',
+            product_id: PRODUCTS.team,
+            status: 'active',
+            customer: { id: 'cus_invalid_seat', external_id: TEAM_ID },
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            current_period_start: '2026-11-01',
+            current_period_end: '2026-12-01',
+            ...terms,
+          },
+        },
+      });
+      expect(
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID)),
+      ).toHaveLength(0);
+    }
+  });
+
+  it('applies legacy EUR Team renewal, past-due and recovery without granting seats', async () => {
+    const update = (status: string, start: string, end: string) =>
+      handlePolarWebhookEvent({
+        db,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_legacy_eur',
+            product_id: PRODUCTS.team,
+            customer: { id: 'cus_legacy_eur', external_id: TEAM_ID },
+            currency: 'eur',
+            status,
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            current_period_start: start,
+            current_period_end: end,
+          },
+        },
+      });
+    const read = async () =>
+      (
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID))
+      )[0];
+    await update('active', '2026-10-01', '2026-11-01');
+    expect(await read()).toMatchObject({ billingState: 'team_active', teamSeatTerms: null });
+    await db
+      .update(teamBillingAccounts)
+      .set({ includedDiscountRemainingCents: 17 })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await update('active', '2026-11-01', '2026-12-01');
+    expect(await read()).toMatchObject({
+      includedDiscountRemainingCents: 6000,
+      teamSeatTerms: null,
+    });
+    await update('past_due', '2026-11-01', '2026-12-01');
+    expect((await read())?.billingState).toBe('past_due');
+    await update('active', '2026-11-01', '2026-12-01');
+    expect((await read())?.billingState).toBe('team_active');
+  });
+
   it('grants confirmed USD Team seat allowance once, prorates increases, and replaces balances at renewal', async () => {
     const update = (seats: number, at: string, start: string, end: string) =>
       handlePolarWebhookEvent({

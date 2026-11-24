@@ -18,6 +18,8 @@ import {
 } from '#src/billing/operator-store.js';
 import { resolveTeamCommercialTerms } from '#src/billing/operator.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { resetIncludedDiscountIfPeriodElapsed } from '#src/billing/runtime.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -51,6 +53,50 @@ afterEach(async () => {
 });
 
 describe('billing operator store', () => {
+  it('keeps a Team comp usable after revoking its old paid-seat subscription and renewal window', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: OWNER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(
+      `UPDATE team_billing_accounts SET plan_id='team', billing_state='team_active', polar_subscription_id='sub_old_seats', included_discount_remaining_cents=0, period_started_at='2020-01-01', period_ends_at='2020-02-01', team_seat_terms='{"paidSeats":2,"highWaterSeats":2,"includedUsageCents":2400}' WHERE team_id='${TEAM_ID}'`,
+    );
+    const revoked: string[] = [];
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 10000,
+      reason: 'approved internal access',
+      expiresAt: null,
+      cancelPolarSubscription: (id) => {
+        revoked.push(id);
+        return Promise.resolve();
+      },
+    });
+    expect(revoked).toEqual(['sub_old_seats']);
+    expect(await resetIncludedDiscountIfPeriodElapsed({ db, teamId: TEAM_ID })).toBe(true);
+    expect(await billing.getAccount()).toMatchObject({
+      arrangement: 'comped',
+      polarSubscriptionId: null,
+      teamSeatTerms: null,
+      includedDiscountRemainingCents: 6000,
+    });
+    for (const meterId of ['ai', 'recall_minutes'] as const) {
+      const result = await billing.reserve({
+        operationId: `comp-${meterId}`,
+        meterId,
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+
   it('rejects an allowlisted platform admin until their email is verified', async () => {
     await pg.exec(`UPDATE users SET "emailVerified" = NULL WHERE id = '${ADMIN_ID}'`);
     await expect(

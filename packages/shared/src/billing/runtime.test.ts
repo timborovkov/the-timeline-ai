@@ -73,6 +73,31 @@ afterEach(async () => {
 });
 
 describe('billing runtime', () => {
+  it('does not backfill legacy member charges for historical paid-seat Team days after downgrade', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      INSERT INTO users (id, email) SELECT ('22222222-2222-4222-8222-' || lpad(i::text, 12, '0'))::uuid, 'seat-' || i || '@example.test' FROM generate_series(1, 26) AS i;
+      INSERT INTO team_members (team_id,user_id,role) SELECT '${TEAM_ID}',id,'member' FROM users WHERE email LIKE 'seat-%';
+      INSERT INTO billing_plan_history (team_id,plan_id,effective_at,team_seat_pricing) VALUES
+      ('${TEAM_ID}','team','2026-10-01',false), ('${TEAM_ID}','team','2026-11-01',true), ('${TEAM_ID}','free','2026-12-01',null);
+      UPDATE team_billing_accounts SET plan_id='free', billing_state='free', team_seat_terms=NULL WHERE team_id='${TEAM_ID}';
+    `);
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-11-15' })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    expect(await db.select().from(billingMemberDayLedger)).toHaveLength(0);
+    const legacy = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-15' });
+    expect(legacy.extraMembers).toBe(2);
+    expect(legacy.chargeCents).toBeGreaterThan(0);
+  });
+
   it('no-ops AI metering without ALS and settles when context is set', async () => {
     const unmetered = await withAiMetering({ operationClass: 'embedding' }, () =>
       Promise.resolve({

@@ -35,7 +35,7 @@ Team checkout verifies the monthly USD seat product and fixes the quantity at th
 
 Verify webhook signature, bounded body and replay window before processing. Lock the account and compare provider event clocks/periods; local `updated_at` is not a provider clock. Stale subscription events cannot reactivate old state or cancel a different subscription. Refill included credit only on the corresponding new period/plan transition; UI reads must not silently reset it. Past-due/payment-retry states pause applicable new spending and recover through verified provider events.
 
-Comp assignment must revoke an existing subscription and expire payable Enterprise checkout state before saving the comp. Failed provider cancellation leaves durable recovery state; a late subscription event must not replace an existing comp. Apply operator overrides through the audited billing service, not direct ledger edits.
+Comp assignment clears the subscription-managed seat grant so the operator-managed allowance can renew after the former paid period. Payable Enterprise checkouts must expire before saving the comp. Existing subscription revocation retains durable recovery state on provider failure; a late subscription event must not replace an existing comp. Apply operator overrides through the audited billing service, not direct ledger edits.
 
 ## Team customer and member authority
 

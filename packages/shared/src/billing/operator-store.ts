@@ -243,6 +243,8 @@ export async function assignCompedPlan(input: {
       .update(teamBillingAccounts)
       .set({
         arrangement: 'comped',
+        // A comp has operator-managed renewal, not the revoked subscription's seat grant.
+        teamSeatTerms: null,
         planId: input.entitlementsPlanId,
         billingState,
         spendCapCents: input.spendCapCents,
@@ -254,10 +256,18 @@ export async function assignCompedPlan(input: {
       .where(eq(teamBillingAccounts.teamId, input.teamId))
       .returning();
     if (!updated) throw new BillingOperatorError('Failed to assign the comp.');
-    await recordBillingPlan(db, input.teamId, input.entitlementsPlanId, now, {
-      planId: existing.planId,
-      effectiveAt: existing.createdAt,
-    });
+    await recordBillingPlan(
+      db,
+      input.teamId,
+      input.entitlementsPlanId,
+      now,
+      {
+        planId: existing.planId,
+        effectiveAt: existing.createdAt,
+        ...(existing.planId === 'team' ? { teamSeatPricing: existing.teamSeatTerms !== null } : {}),
+      },
+      input.entitlementsPlanId === 'team' ? false : undefined,
+    );
     await writeAudit({
       tx: db,
       teamId: input.teamId,
