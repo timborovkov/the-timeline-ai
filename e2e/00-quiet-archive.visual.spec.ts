@@ -89,14 +89,19 @@ async function capture(page: Page, name: string, fullPage = true) {
   });
 }
 
-test('public Quiet Archive surfaces', async ({ page }) => {
+test('public sign-in Quiet Archive surface', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/sign-in');
   await capture(page, 'sign-in-light-desktop.png');
+});
 
+test('public help Quiet Archive surface', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/help');
   await capture(page, 'help-light-desktop.png');
+});
 
+test('public landing Quiet Archive surface', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 });
   await page.goto('/');
   // Full-page capture also covers product screenshots that only load near the viewport.
