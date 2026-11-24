@@ -1,20 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { expect } from '@timeline/test-support';
 import { it } from 'bun:test';
-import { base } from 'next/dist/build/webpack/config/blocks/base';
-import type { ConfigurationContext } from 'next/dist/build/webpack/config/utils';
 import { webpack } from 'next/dist/compiled/webpack/webpack';
 
-import { e2eWebpackPlugins } from './e2e-webpack';
-
-interface ProbeConfig {
-  plugins?: unknown[];
-  [key: string]: unknown;
-}
+import { e2eServerSplitChunks } from './e2e-webpack';
 
 interface ProbeCompiler {
   run(
@@ -23,54 +16,39 @@ interface ProbeCompiler {
   close(done: (error?: Error | null) => void): void;
 }
 
-const compile = webpack as (config: ProbeConfig) => ProbeCompiler;
-// This base block reads only compiler identity and source-map fields, not the
-// full CSS/loader context used by Next's other configuration blocks.
-const configureBase = base as (
-  context: Partial<ConfigurationContext>,
-) => (config: ProbeConfig) => ProbeConfig;
+const createCompiler = webpack as (config: Record<string, unknown>) => ProbeCompiler;
 
-it('omits only Next development source maps for E2E while retaining plugin execution', async () => {
-  expect(() => e2eWebpackPlugins([], true, true)).toThrow('source-map plugin changed');
+it('shares workspace modules between development server routes within the same layer', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'timeline-e2e-webpack-'));
   try {
-    const entry = join(directory, 'entry.cjs');
-    writeFileSync(entry, 'module.exports = { answer: 42 };');
-    const require = createRequire(import.meta.url);
-    for (const enabled of [false, true]) {
-      let instrumentationRuns = 0;
-      const sentinel = {
-        apply() {
-          instrumentationRuns++;
-        },
-      };
-      const config = configureBase({
-        isDevelopment: true,
-        isProduction: false,
-        isServer: true,
-        isClient: false,
-        isEdgeRuntime: false,
-        targetWeb: false,
-        productionBrowserSourceMaps: false,
-        serverSourceMaps: false,
-      })({
-        entry,
-        cache: false,
-        plugins: [sentinel],
-        output: {
-          path: join(directory, enabled ? 'e2e' : 'ordinary'),
-          filename: 'bundle.cjs',
-          library: { type: 'commonjs2' },
-        },
-      });
-      const original = config.plugins ?? [];
-      expect(original).toHaveLength(2);
-      expect(e2eWebpackPlugins(original, false, true)).toBe(original);
-      expect(e2eWebpackPlugins(original, true, false)).toBe(original);
-      config.plugins = e2eWebpackPlugins(original, true, enabled);
-      expect(config.plugins).toContain(sentinel);
-      expect(config.plugins).toHaveLength(enabled ? 1 : 2);
-      const compiler = compile(config);
+    const shared = join(directory, 'packages/shared/src/fixture.cjs');
+    mkdirSync(dirname(shared), { recursive: true });
+    writeFileSync(shared, 'module.exports = "compiled workspace fixture";');
+    const entry = Object.fromEntries(
+      ['one', 'two', 'handler'].map((name) => {
+        const source = join(directory, `${name}.cjs`);
+        writeFileSync(source, 'module.exports = require("./packages/shared/src/fixture.cjs");');
+        return [name, { import: source, layer: name === 'handler' ? 'api-node' : 'rsc' }];
+      }),
+    );
+    const vendor = { test: /node_modules/, name: 'vendor' };
+    expect(() => e2eServerSplitChunks(false, directory)).toThrow('chunk groups changed');
+    const splitChunks = e2eServerSplitChunks(
+      { cacheGroups: { vendor, default: false } },
+      directory,
+    );
+    expect(splitChunks).toMatchObject({ cacheGroups: { vendor, default: false } });
+    const output = join(directory, 'output');
+    const compiler = createCompiler({
+      mode: 'development',
+      target: 'node',
+      entry,
+      cache: false,
+      experiments: { layers: true },
+      optimization: { splitChunks },
+      output: { path: output, filename: '[name].cjs', library: { type: 'commonjs2' } },
+    });
+    try {
       await new Promise<void>((resolve, reject) => {
         compiler.run((error, stats) => {
           if (error) reject(error);
@@ -78,16 +56,26 @@ it('omits only Next development source maps for E2E while retaining plugin execu
           else resolve();
         });
       });
+    } finally {
       await new Promise<void>((resolve, reject) => {
         compiler.close((error) => {
           if (error) reject(error);
           else resolve();
         });
       });
-      const output = join(directory, enabled ? 'e2e' : 'ordinary', 'bundle.cjs');
-      expect(readFileSync(output, 'utf8').includes('sourceMappingURL=data:')).toBe(!enabled);
-      expect(require(output)).toEqual({ answer: 42 });
-      expect(instrumentationRuns).toBe(1);
+    }
+    const workspaceChunks = join(output, 'workspace-chunks');
+    expect(readdirSync(workspaceChunks).sort()).toEqual(['api-node.cjs', 'rsc.cjs']);
+    for (const name of ['api-node', 'rsc']) {
+      expect(readFileSync(join(workspaceChunks, `${name}.cjs`), 'utf8')).toContain(
+        'compiled workspace fixture',
+      );
+    }
+    const require = createRequire(import.meta.url);
+    for (const name of Object.keys(entry)) {
+      const bundle = join(output, `${name}.cjs`);
+      expect(readFileSync(bundle, 'utf8')).not.toContain('compiled workspace fixture');
+      expect(require(bundle)).toBe('compiled workspace fixture');
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });

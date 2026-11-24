@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs/config';
 import type { NextConfig } from 'next';
 
-import { e2eWebpackPlugins } from './scripts/e2e-webpack';
+import { e2eServerSplitChunks } from './scripts/e2e-webpack';
 import { baseContentSecurityPolicy } from './src/lib/content-security-policy';
 import {
   sensitiveLinkHeaders,
@@ -78,12 +78,19 @@ const nextConfig: NextConfig = {
   // startup migrations are handled by apps/web/start.mjs outside Next's
   // instrumentation bundle.
   serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
-  webpack(config: { plugins: unknown[]; externals: Record<string, string>[] }, { isServer, dev }) {
-    config.plugins = e2eWebpackPlugins(
-      config.plugins,
-      dev,
-      process.env.E2E_DEV_COMPILE_WITHOUT_SOURCE_MAPS === '1',
-    );
+  webpack(
+    config: {
+      externals: Record<string, string>[];
+      optimization: { splitChunks?: Parameters<typeof e2eServerSplitChunks>[0] };
+    },
+    { isServer, dev, nextRuntime },
+  ) {
+    if (dev && nextRuntime === 'nodejs' && process.env.E2E_DEV_SHARED_SERVER_CHUNKS === '1') {
+      config.optimization.splitChunks = e2eServerSplitChunks(
+        config.optimization.splitChunks,
+        workspaceRoot,
+      );
+    }
     if (isServer) {
       config.externals.push({
         bullmq: 'commonjs bullmq',

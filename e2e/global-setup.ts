@@ -18,6 +18,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   try {
     const page = await browser.newPage({ baseURL: config.projects[0]?.use.baseURL });
     page.setDefaultTimeout(120_000);
+    console.log('[e2e] Signing in the warmup owner');
     await signInAndSaveState(page, 'owner', 120_000);
     const taskId = e2eSeedTasks.mobileKanban.id;
     const routes = [
@@ -68,6 +69,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       `/api/objects/${taskId}/sections?section=events`,
     ];
     for (const route of routes) {
+      console.log(`[e2e] Warming ${route}`);
       const response = await page.request.get(route, { timeout: 120_000 });
       if (response.status() >= 500) {
         throw new Error(`E2E route warmup failed: ${route} (${response.status()})`);
@@ -75,6 +77,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       await response.dispose();
     }
     for (const user of ['admin', 'member', 'nonMember'] as const) {
+      console.log(`[e2e] Saving the ${user} sign-in state`);
       const context = await browser.newContext({ baseURL: config.projects[0]?.use.baseURL });
       try {
         const authPage = await context.newPage();
