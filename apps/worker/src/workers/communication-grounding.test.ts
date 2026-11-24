@@ -3109,16 +3109,93 @@ test('named-zone deadlines use the stated zone without accepting the workspace i
   ).toBe(local);
 });
 
+for (const [suffix, dueAt] of [
+  ['in UTC', '2026-06-12T09:00:00.000Z'],
+  ['in GMT', '2026-06-12T09:00:00.000Z'],
+  ['time zone UTC', '2026-06-12T09:00:00.000Z'],
+  ['(America/Los_Angeles)', '2026-06-12T16:00:00.000Z'],
+  ['in +02:00', '2026-06-12T07:00:00.000Z'],
+  ['time zone +02:00', '2026-06-12T07:00:00.000Z'],
+  ['(+02:00)', '2026-06-12T07:00:00.000Z'],
+] as const) {
+  test(`deadline retains the explicit zone in "${suffix}"`, () => {
+    const timezone = 'Europe/Helsinki';
+    const local = '2026-06-12T06:00:00.000Z';
+    const base = 'Review retention policy is due June 12, 2026 at 09:00';
+    const quote = `${base} ${suffix} for legal approval.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone })[0]?.items[0]
+        ?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+    for (const citation of [quote, base]) {
+      expect(
+        run(quote, { dueAt: local }, [support('dueAt', citation, local)], { timezone })[0]?.items[0]
+          ?.proposedPayload.dueAt,
+      ).toBeUndefined();
+    }
+    expect(
+      run(quote, { dueAt }, [support('dueAt', base, dueAt)], { timezone, packet: base })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBeUndefined();
+  });
+}
+
+for (const [suffix, dueAt] of [
+  ...[
+    'time zone Atlantis',
+    'time zone: Atlantis',
+    'time zone',
+    'in PST',
+    'in pst',
+    '(America/Atlantis)',
+    '(America/Los_Angeles',
+    'in +2:00',
+    'in +25:00',
+    '(+02:00',
+  ].map((suffix) => [suffix, '2026-06-12T06:00:00.000Z'] as const),
+  ['+02:00 in UTC', '2026-06-12T07:00:00.000Z'],
+  ['UTC (+02:00)', '2026-06-12T09:00:00.000Z'],
+] as const) {
+  test(`deadline rejects the unsupported zone in "${suffix}"`, () => {
+    const quote = `Review retention policy is due June 12, 2026 at 09:00 ${suffix}.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBeUndefined();
+  });
+}
+
 test('relative and yearless deadlines select the source day in the stated zone', () => {
   const options = { timezone: 'Europe/Helsinki', occurredAt: new Date('2026-06-12T01:00:00Z') };
   const dueAt = '2026-06-11T16:00:00.000Z';
   for (const date of ['today', 'Thursday', 'June 11']) {
-    const quote = `Review retention policy is due ${date} at 09:00 in America/Los_Angeles.`;
+    for (const zone of ['in America/Los_Angeles', '(America/Los_Angeles)']) {
+      const quote = `Review retention policy is due ${date} at 09:00 ${zone}.`;
+      expect(
+        run(quote, { dueAt }, [support('dueAt', quote, dueAt)], options)[0]?.items[0]
+          ?.proposedPayload.dueAt,
+        quote,
+      ).toBe(dueAt);
+    }
+  }
+});
+
+test('a zoned work plan remains a calendar date while a zoned deadline retains its instant', () => {
+  const plannedDate = '2026-06-12';
+  const dueAt = '2026-06-13T06:00:00.000Z';
+  const timing = 'June 12, 2026 at 23:00 (America/Los_Angeles).';
+  for (const [quote, expected] of [
+    [`I'll Review retention policy on ${timing}`, { plannedDate }],
+    [`Review retention policy is due ${timing}`, { dueAt }],
+  ] as const) {
     expect(
-      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], options)[0]?.items[0]?.proposedPayload
-        .dueAt,
-      date,
-    ).toBe(dueAt);
+      run(
+        quote,
+        { plannedDate, dueAt },
+        [support('plannedDate', quote, plannedDate), support('dueAt', quote, dueAt)],
+        { timezone: 'Europe/Helsinki' },
+      )[0]?.items[0]?.proposedPayload,
+    ).toEqual(expected);
   }
 });
 
