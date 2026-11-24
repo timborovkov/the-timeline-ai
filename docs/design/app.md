@@ -657,9 +657,10 @@ Foundations: [design system](../../design.md). Shared behavior: [component contr
 ### Billing benefits and recorded charges
 
 Free and Team use one Included usage bar for AI processing and meeting capture.
-Show the reset date and additional-spending status with the bar. Free resets by
-calendar month in UTC. Team resets on the subscription's renewal date. Keep the
-internal calculation and infrastructure counters in disclosures. The Team
+Show the reset date and additional-spending status with the bar. The sidebar
+shows the reset instant in the viewer’s display locale and time zone. Free
+resets by calendar month in UTC. Team resets on the subscription's renewal
+date. Keep the internal calculation and infrastructure counters in disclosures. The Team
 membership row distinguishes active full members from paid seats available to
 reuse. If the full-member roster exceeds the confirmed quantity, ask the billing
 administrator to review the subscription before adding members. An older payable

@@ -204,6 +204,7 @@ describe('billing presentation', () => {
     expect(sidebar.detailLabel).toBe('€45 credit remaining');
     expect(sidebar.secondaryLabel).toBe('€21 of €100 monthly cap');
     expect(sidebar.progressPercent).toBe(25);
+    expect(sidebar.reset).toEqual({ label: 'Credit renews', at: period.end });
   });
 });
 
@@ -238,11 +239,34 @@ it('labels Free remaining allowances and keeps cap warnings separate from credit
   applyBillingPresentationToSidebar(base, free);
   expect(base.detailLabel).toBe('0% of Included usage');
   expect(base.href).toBe('/app/usage');
+  expect(base.reset).toEqual({ label: 'Month resets', at: free.calendarPeriod.end });
   const capped = summary({ account: { ...account, spendCapCents: 0 } });
   applyBillingPresentationToSidebar(base, capped);
   expect(base.detailLabel).toBe('€45 credit remaining');
   expect(base.warningLabel).toBe('Spend cap reached');
   expect(base.resetLabel).toContain('Credit renews 15 Nov');
+});
+
+it('supplies the confirmed seat renewal instant to the sidebar', () => {
+  const seat = summary({
+    account: {
+      ...account,
+      teamSeatTerms: { paidSeats: 3, highWaterSeats: 3, includedUsageCents: 3000 },
+    },
+  });
+  const sidebar = deriveSidebarBillingSummary({
+    planId: 'team',
+    canManageBilling: true,
+    meteredSpendCents: 0,
+    spendCapCents: 0,
+    includedDiscountRemainingCents: 0,
+    freeRemaining: freeAllowanceRemaining({}),
+  });
+
+  applyBillingPresentationToSidebar(sidebar, seat);
+
+  expect(sidebar.reset).toEqual({ label: 'Usage resets', at: period.end });
+  expect(sidebar.resetLabel).toBe('Usage resets Nov 15 (UTC)');
 });
 
 it('uses existing cap exemptions for contracts and shadow billing, but enforces comped Enterprise caps', () => {

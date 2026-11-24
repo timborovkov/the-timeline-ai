@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { use } from 'react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayDateParts } from '@/lib/display-dates';
+import type { RegionalFormat } from '@/lib/regional-format';
 import { cn } from '@/lib/utils';
 
 function UsageBar({
@@ -58,6 +61,7 @@ function SidebarBillingSummaryView({
   expanded: boolean;
   className?: string;
 }) {
+  const region = useRegionalFormat();
   if (!summary.canManageBilling) {
     if (!summary.atLimit) return null;
     const label = memberLimitLabel(summary.planId);
@@ -79,11 +83,12 @@ function SidebarBillingSummaryView({
     );
   }
 
+  const reset = getSidebarReset(summary, region);
   const tooltip = [
     summary.planName,
     summary.detailLabel,
     summary.secondaryLabel,
-    summary.resetLabel,
+    reset.label,
     summary.warningLabel,
   ]
     .filter(Boolean)
@@ -138,8 +143,8 @@ function SidebarBillingSummaryView({
       <p className="truncate text-xs font-medium text-fg">{summary.planName}</p>
       <UsageBar percent={summary.progressPercent} atLimit={summary.atLimit} className="mt-2" />
       <p className="mt-1.5 truncate text-[0.7rem] leading-4 text-fg-muted">{summary.detailLabel}</p>
-      {summary.resetLabel ? (
-        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.resetLabel}</p>
+      {reset.content ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{reset.content}</p>
       ) : null}
       {summary.warningLabel ? (
         <p className="mt-1 text-xs text-danger">{summary.warningLabel}</p>
@@ -149,4 +154,25 @@ function SidebarBillingSummaryView({
       ) : null}
     </Link>
   );
+}
+
+function getSidebarReset(summary: SidebarBillingSummary, region: RegionalFormat) {
+  const { reset, resetLabel } = summary;
+  if (!reset) return { label: resetLabel, content: resetLabel };
+
+  const date = formatDisplayDateParts(reset.at, region, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  return {
+    label: `${reset.label} ${date}`,
+    content: (
+      <>
+        {reset.label} <time dateTime={reset.at}>{date}</time>
+      </>
+    ),
+  };
 }

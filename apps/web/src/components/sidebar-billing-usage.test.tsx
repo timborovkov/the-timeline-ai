@@ -3,6 +3,8 @@ import { describe, it } from 'bun:test';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+
 await vi.mock(
   import.meta.resolve('@/components/ui/tooltip'),
   () => ({
@@ -46,6 +48,40 @@ describe('SidebarBillingUsage', () => {
       />,
     );
     expect(html).toBe('');
+  });
+
+  it('localizes the same UTC reset in the viewer and fallback time zones', () => {
+    const resetAt = '2026-12-01T00:00:00.000Z';
+    const resetSummary = {
+      ...summary,
+      planId: 'team' as const,
+      planName: 'Team',
+      detailLabel: '$1,234.56 cap',
+      reset: { label: 'Usage resets', at: resetAt },
+      resetLabel: 'Usage resets Dec 1 (UTC)',
+    };
+    const saved = renderToStaticMarkup(
+      <WorkspaceTimezoneProvider
+        timezone="America/Los_Angeles"
+        region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
+      >
+        <SidebarBillingUsage summary={resetSummary} expanded />
+        <SidebarBillingUsage summary={resetSummary} expanded={false} />
+      </WorkspaceTimezoneProvider>,
+    );
+    const automatic = renderToStaticMarkup(
+      <WorkspaceTimezoneProvider timezone="America/Los_Angeles" region={{ browserLocale: 'en-US' }}>
+        <SidebarBillingUsage summary={resetSummary} expanded />
+      </WorkspaceTimezoneProvider>,
+    );
+
+    expect(saved).toContain(`<time dateTime="${resetAt}">1. Dez., 09:00 GMT+9</time>`);
+    expect(saved).toContain('Usage resets 1. Dez., 09:00 GMT+9');
+    expect(saved).toContain('$1,234.56 cap');
+    expect(automatic).toMatch(
+      /<time dateTime="2026-12-01T00:00:00\.000Z">Nov 30(?:,| at) 4:00 PM PST<\/time>/,
+    );
+    expect(automatic).toMatch(/Usage resets Nov 30(?:,| at) 4:00 PM PST/);
   });
 
   it('shows only a cap notice for members at the cap', () => {

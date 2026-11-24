@@ -199,6 +199,7 @@ export function deriveBillingNudge(input: {
 export interface SidebarBillingSummary {
   presentation?: BillingPresentation;
   secondaryLabel?: string | null;
+  reset?: { label: string; at: string };
   resetLabel?: string;
   warningLabel?: string;
   planId: BillingPlanId;
@@ -326,8 +327,11 @@ export function applyBillingPresentationToSidebar(
     presentation.credit.status === 'available'
       ? presentation.credit.period?.end
       : presentation.calendarPeriod.end;
-  if (reset)
-    summary.resetLabel = `${presentation.credit.status === 'available' ? 'Credit renews' : 'Month resets'} ${new Date(reset).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })} (UTC)`;
+  if (reset) {
+    const label = presentation.credit.status === 'available' ? 'Credit renews' : 'Month resets';
+    summary.reset = { label, at: reset };
+    summary.resetLabel = `${label} ${new Date(reset).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })} (UTC)`;
+  }
   if (presentation.planId !== 'free' && presentation.cap.reached)
     summary.warningLabel = 'Spend cap reached';
 
@@ -346,8 +350,10 @@ export function applyBillingPresentationToSidebar(
         : `${summary.progressPercent}% of Included usage`;
     summary.secondaryLabel =
       presentation.cap.limitCents > 0 ? 'Capped additional spending' : 'Additional spending off';
-    if (resetAt)
+    if (resetAt) {
+      summary.reset = { label: 'Usage resets', at: resetAt };
       summary.resetLabel = `Usage resets ${new Date(resetAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`;
+    }
   } else if (presentation.planId === 'free') {
     summary.detailLabel = summary.atLimit
       ? 'Included usage used up'
