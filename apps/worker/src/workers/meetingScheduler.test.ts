@@ -190,6 +190,7 @@ describe('processMeetingSchedulerTick', () => {
         teamId: TEAM_ID,
         meetingUrl: 'https://meet.google.com/due-now-test',
         botName: "Team A's thetimeline.cc bot",
+        maxRecordingDurationSeconds: 7_200,
       }),
     );
     const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
@@ -199,7 +200,7 @@ describe('processMeetingSchedulerTick', () => {
       source: 'test',
       scheduler_claimed: true,
       billing_operation_id: `recall:${meeting.id}`,
-      reserved_recall_minutes: 60,
+      reserved_recall_minutes: 120,
     });
     const startedAt = (row?.metadata as { reserved_recall_started_at?: unknown } | null)
       ?.reserved_recall_started_at;

@@ -155,16 +155,19 @@ describe('VerifyEmail route states', () => {
 it('preserves an allowlisted plan through a verified email and fresh sign-in', async () => {
   vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
   await expect(
-    confirmEmailVerification({ token: TOKEN, email: 'user@example.test', plan: 'payg' }, null),
+    confirmEmailVerification({ token: TOKEN, email: 'user@example.test', plan: 'team' }, null),
   ).resolves.toMatchObject({
     next: 'billing',
-    href: '/sign-in?callbackUrl=%2Fapp%2Fteam%3Fsection%3Dbilling%26plan%3Dpayg%23change-plan',
+    href: '/sign-in?callbackUrl=%2Fapp%2Fteam%3Fsection%3Dbilling%26plan%3Dteam%23change-plan',
   });
-  vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
-  await expect(
-    confirmEmailVerification(
-      { token: TOKEN, email: 'user@example.test', plan: '//evil.test' },
-      null,
-    ),
-  ).resolves.toMatchObject({ next: 'dashboard', href: '/app' });
 });
+
+it.each(['payg', 'business', '//evil.test'])(
+  'does not preserve retired or unsafe plan intent %s after verification',
+  async (plan) => {
+    vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
+    await expect(
+      confirmEmailVerification({ token: TOKEN, email: 'user@example.test', plan }, null),
+    ).resolves.toMatchObject({ next: 'dashboard', href: '/app' });
+  },
+);
