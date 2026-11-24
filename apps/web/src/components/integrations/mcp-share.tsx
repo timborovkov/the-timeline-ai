@@ -15,6 +15,7 @@ import {
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { EmptyState } from '@/components/empty-state';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
@@ -131,12 +132,17 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         on by default so a key can store cited notes with timeline.remember. You can separately
         allow a key to ask the Timeline agent and create proposals for human review.
       </p>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
-          {mcpUrl || 'Loading…'}
-        </code>
-        {mcpUrl ? <CopyButton value={mcpUrl} /> : null}
-      </div>
+      {mcpUrl ? (
+        <CopyableCodeValue
+          value={mcpUrl}
+          copyLabel="Copy MCP endpoint URL"
+          valueClassName="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
+        />
+      ) : (
+        <p className="rounded-sm border border-border bg-surface-2 px-2 py-1.5 text-xs text-fg-muted">
+          Loading…
+        </p>
+      )}
       <p className="text-xs text-fg-dim">
         The Timeline MCP SDK negotiates the current protocol revision and supported legacy revisions
         during <code className="font-mono">initialize</code>. The endpoint also exposes OAuth
@@ -479,12 +485,11 @@ function McpMintedKeyBanner({
           client&apos;s protected credential field. Dismiss it only after that client is connected.
         </p>
       </div>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-          {mintedKey.plaintext}
-        </code>
-        <CopyButton value={mintedKey.plaintext} />
-      </div>
+      <CopyableCodeValue
+        value={mintedKey.plaintext}
+        copyLabel="Copy MCP key"
+        valueClassName="rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5"
+      />
       <Button size="sm" variant="ghost" onClick={onDismiss}>
         Connected — dismiss key
       </Button>

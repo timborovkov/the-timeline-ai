@@ -2,7 +2,7 @@ import { directoryPage, listPlatformUsers } from '@timeline/shared/platform-admi
 import type { DirectoryOptions } from '@timeline/shared/platform-admin';
 import Link from 'next/link';
 
-import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { PageHeader } from '@/components/page-header';
 import { AdminSearch, AdminPagination } from '@/components/platform-admin-directory';
 import { db } from '@/lib/db';
@@ -46,10 +46,7 @@ export default async function AdminUsersPage({
                     {user.name ?? user.email}
                   </Link>
                   <p className="text-fg-muted">{user.email}</p>
-                  <div className="flex items-center gap-2 text-xs">
-                    <code>{user.id}</code>
-                    <CopyButton value={user.id} label="Copy ID" />
-                  </div>
+                  <CopyableCodeValue value={user.id} copyLabel="Copy user ID" />
                 </td>
                 <td className="p-3">
                   {user.suspendedAt ? 'Suspended' : user.emailVerified ? 'Verified' : 'Unverified'}
