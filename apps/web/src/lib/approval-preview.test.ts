@@ -80,4 +80,25 @@ describe('buildApprovalPreviewFields', () => {
       changed: false,
     });
   });
+
+  it('formats all-day schedule boundaries as inclusive event-local dates', () => {
+    const { fields } = buildApprovalPreviewFields({
+      operation: 'create',
+      targetKind: 'calendar_event',
+      title: 'Full-day planning',
+      proposedPayload: {
+        allDay: true,
+        startAt: '2026-06-30T22:00:00.000Z',
+        endAt: '2026-07-02',
+        timezone: 'Europe/Berlin',
+      },
+      snapshot: { kind: 'none' },
+      members: {},
+      timezone: 'America/Los_Angeles',
+      locale: 'de-DE',
+    });
+
+    expect(fields.find((field) => field.key === 'startAt')?.proposed).toBe('01.07.2026');
+    expect(fields.find((field) => field.key === 'endAt')?.proposed).toBe('01.07.2026');
+  });
 });

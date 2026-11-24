@@ -3,8 +3,8 @@
 import { useSyncExternalStore, type ReactNode } from 'react';
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayDateTime, formatRelativeAge, parseDisplayDate } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 function unsubscribeClientRender(): void {
@@ -34,7 +34,7 @@ export function RelativeTimestamp({
   empty?: ReactNode;
   className?: string;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const isClient = useSyncExternalStore(
     subscribeClientRender,
     clientRenderSnapshot,
@@ -45,8 +45,8 @@ export function RelativeTimestamp({
     return empty ? <span className={cn('text-xs text-fg-dim', className)}>{empty}</span> : null;
   }
 
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseDisplayDate(value);
+  if (!date) {
     return empty ? (
       <span className={cn('text-xs text-fg-dim', className)}>{empty}</span>
     ) : (
@@ -57,8 +57,8 @@ export function RelativeTimestamp({
   }
 
   const iso = date.toISOString();
-  const absolute = formatDisplayDateTime(date, { timezone });
-  const relative = formatRelativeAge(date);
+  const absolute = formatDisplayDateTime(value, region);
+  const relative = formatRelativeAge(date, region);
   const visible = prefix ? `${prefix} ${relative}` : relative;
 
   return (

@@ -20,7 +20,7 @@ import { ObjectRelatedContext } from '@/components/objects/object-related-contex
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { DetailField, DetailRail } from '@/components/ui/detail-rail';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
@@ -124,7 +124,8 @@ export function ObjectPeekPanel({
   });
   const { saving, error, noteBody, editingNoteId, editingBody } = panelUi;
   const [notePending, startNoteTransition] = useTransition();
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
+  const { timezone } = region;
   const router = useRouter();
   const title = displayObjectTitle(task);
   const assignee = members.find((member) => member.id === task.assigneeUserId);

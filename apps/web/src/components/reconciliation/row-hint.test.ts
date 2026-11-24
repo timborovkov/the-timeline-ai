@@ -13,11 +13,8 @@ describe('reconciliation row hints', () => {
       artifactType: 'monday_board',
       clusterId: 'cluster-1',
       status: 'active',
-      timeZone: 'UTC',
-      updatedAt: new Date('2026-06-30T10:00:00.000Z'),
     });
 
-    expect(hint).toContain('Jun 30, 2026');
     expect(hint).toContain('Cluster ID: cluster-1');
     expect(hint).toContain('customer_project · monday_board · active');
   });
@@ -26,7 +23,6 @@ describe('reconciliation row hints', () => {
     const hint = reconciliationOutputRowHint({
       clusterId: 'cluster-1',
       confidence: 'high',
-      createdAt: new Date('2026-06-30T10:00:00.000Z'),
       outputId: 'output-1',
       outputKind: 'agent_suggestion_projection',
       sourcePayloadRefs: ['inline://monday/pulse-123'],
@@ -40,7 +36,6 @@ describe('reconciliation row hints', () => {
       status: 'approval_created',
       targetId: 'object-1',
       targetKind: 'object',
-      timeZone: 'UTC',
     });
 
     expect(hint).toContain('Output ID: output-1');

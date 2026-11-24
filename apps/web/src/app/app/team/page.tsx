@@ -28,6 +28,7 @@ import { redirect } from 'next/navigation';
 import type { ComponentProps } from 'react';
 
 import { BillingSettingsPanel } from '@/components/billing-settings-panel';
+import { DisplayRegionForm } from '@/components/display-region-form';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import {
   DigestDestinationsForm,
@@ -54,6 +55,7 @@ import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
 import { paidSignupPlan } from '@/lib/signup-plan';
+import { timezoneOptions } from '@/lib/timezones';
 import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
 
 export const metadata: Metadata = {
@@ -221,6 +223,9 @@ function TeamSettingsSections({
           <>
             <TeamIdentitySettings isAdmin={isAdmin} active={active} />
             <TeamQualitySettings />
+            <SettingsSection title="Your display preferences">
+              <DisplayRegionForm timezones={timezoneOptions('')} />
+            </SettingsSection>
             <TeamPreferencesSettings
               digestPreference={digestPreference}
               isAdmin={isAdmin}

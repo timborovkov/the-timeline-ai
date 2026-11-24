@@ -8,6 +8,7 @@ import {
   mentionInsertToken,
   type MentionMember,
 } from '@timeline/shared/objects/mentions';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { humanizeMetadataKey } from '@timeline/shared/objects/metadata-schemas';
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 import Link from 'next/link';
@@ -30,9 +31,6 @@ import {
   OBJECT_ROW_TITLE_CLASS,
   OBJECT_SECTION_CLASS,
 } from '@/components/objects/object-detail-type';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 export interface DiscussionMember {
@@ -113,7 +111,6 @@ export function ObjectDiscussionPanel({
   onSaveNote,
   onDeleteNote,
 }: Props) {
-  const timezone = useWorkspaceTimezone();
   const mentionMembers = useMemo(() => toMentionMembers(members), [members]);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [suggestQuery, setSuggestQuery] = useState('');
@@ -261,7 +258,7 @@ export function ObjectDiscussionPanel({
           if (item.kind === 'activity') {
             return (
               <li key={item.id} className={OBJECT_ROW_META_CLASS}>
-                <RelativeTime at={new Date(item.at)} timezone={timezone} />
+                <RelativeTimestamp value={new Date(item.at)} className={OBJECT_MONO_META_CLASS} />
                 <span className="ml-1.5">{activitySummary(item.change)}</span>
               </li>
             );
@@ -284,7 +281,7 @@ export function ObjectDiscussionPanel({
                 className={cn('flex items-baseline justify-between gap-2', OBJECT_ROW_META_CLASS)}
               >
                 <span className={OBJECT_ROW_TITLE_CLASS}>{author}</span>
-                <RelativeTime at={new Date(note.createdAt)} timezone={timezone} />
+                <RelativeTimestamp value={note.createdAt} className={OBJECT_MONO_META_CLASS} />
               </div>
               {isEditing ? (
                 <div className="mt-1 space-y-1.5">
@@ -495,20 +492,4 @@ function RichCommentBody({ body, members }: { body: string; members: DiscussionM
   });
   if (cursor < body.length) nodes.push(body.slice(cursor));
   return nodes;
-}
-
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Absolute timestamps live in a tooltip next to relative age.
-function RelativeTime({ at, timezone }: { at: Date; timezone: string }) {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <time dateTime={at.toISOString()} className={OBJECT_MONO_META_CLASS}>
-            {formatRelativeAge(at)}
-          </time>
-        </TooltipTrigger>
-        <TooltipContent>{formatDisplayDateTime(at, { timezone })}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
 }

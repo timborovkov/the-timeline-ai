@@ -14,7 +14,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { db } from '@/lib/db';
-import { formatDisplayDate } from '@/lib/display-dates';
+import { RegionalDate } from '@/components/regional-date';
 
 export const metadata: Metadata = {
   title: 'Boards',
@@ -31,10 +31,7 @@ export default async function BoardsIndexPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [boards, calendarSettings] = await Promise.all([
-    scope.boards.listBoards(),
-    scope.calendar.getCalendarSettings(),
-  ]);
+  const boards = await scope.boards.listBoards();
 
   return (
     <div data-app-width="collection" className="space-y-6">
@@ -80,15 +77,9 @@ export default async function BoardsIndexPage() {
                           {board.templateKind.replaceAll('_', ' ')}
                         </span>
                       ) : null}
-                      <time
-                        className="text-xs text-fg-dim"
-                        dateTime={board.updatedAt.toISOString()}
-                      >
-                        Updated{' '}
-                        {formatDisplayDate(board.updatedAt, {
-                          timezone: calendarSettings.defaultTimezone,
-                        })}
-                      </time>
+                      <span className="text-xs text-fg-dim">
+                        Updated <RegionalDate value={board.updatedAt} />
+                      </span>
                       <span className="text-xs tabular-nums text-fg-dim">
                         {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
                       </span>

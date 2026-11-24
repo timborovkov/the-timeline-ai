@@ -52,7 +52,9 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
+import { formatDisplayDate } from '@/lib/display-dates';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import type { DocumentListPage } from '@/lib/document-list';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
@@ -912,7 +914,7 @@ function FolderList({
   folders: FolderItem[];
   onDeleteFolder: (id: string) => Promise<void>;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   if (folders.length === 0) return null;
   return (
     <CollectionGroup title="Folders" count={folders.length}>
@@ -937,7 +939,7 @@ function FolderList({
               </CollectionRow.Title>
               <CollectionRow.Context>{f.visibility}</CollectionRow.Context>
               <CollectionRow.Metadata>
-                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt, timezone)}</time>
+                <time dateTime={f.updatedAt}>{formatDisplayDate(f.updatedAt, region)}</time>
               </CollectionRow.Metadata>
               <CollectionRow.Actions>
                 <ItemActionGroup label={`Actions for ${f.name}`}>
@@ -996,7 +998,7 @@ function DocumentList({
 }
 
 function DocumentListItem({ document }: { document: DocumentItem }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const {
     fileKind,
     title,
@@ -1007,7 +1009,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
     status,
     updatedAt,
     sourceEventId,
-  } = documentListPresentation(document, timezone);
+  } = documentListPresentation(document, region);
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
@@ -1082,7 +1084,7 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
   );
 }
 
-function documentListPresentation(document: DocumentItem, timezone: string) {
+function documentListPresentation(document: DocumentItem, region: RegionalFormat) {
   const version = document.currentVersion;
   const sourceEventId = document.provenance.parentEventId ?? document.provenance.sourceEventId;
   const source = sourceDetails(document.provenance.source);
@@ -1090,11 +1092,11 @@ function documentListPresentation(document: DocumentItem, timezone: string) {
   const presentation = document.presentation;
   const title = presentation.displayTitle;
   const usingFriendlyTitle = presentation.isGeneratedName && title !== document.name;
-  const updatedAt = formatDate(document.updatedAt, timezone);
+  const updatedAt = formatDisplayDate(document.updatedAt, region);
   const capturedAt = document.provenance.occurredAt
-    ? formatDate(document.provenance.occurredAt, timezone)
+    ? formatDisplayDate(document.provenance.occurredAt, region)
     : null;
-  const size = formatBytes(version?.byteSize ?? null);
+  const size = formatBytes(version?.byteSize ?? null, region.locale);
   const status = version?.processingStatus ?? (document.optimistic ? 'uploading' : null);
   const metaItems = document.optimistic
     ? [
@@ -1282,15 +1284,7 @@ function normalizeDocumentSummary(
   return trimmed.replace(storedName, title);
 }
 
-function formatDate(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: timezone,
-  }).format(new Date(value));
-}
-
-function formatBytes(bytes: number | null): string | null {
+function formatBytes(bytes: number | null, locale: string): string | null {
   if (bytes === null) return null;
   if (bytes < 1024) return `${String(bytes)} B`;
   const units = ['KB', 'MB', 'GB'];
@@ -1301,5 +1295,5 @@ function formatBytes(bytes: number | null): string | null {
     if (value < 1024 || i === units.length - 1) break;
     value /= 1024;
   }
-  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
+  return `${formatDisplayNumber(value, locale, { maximumFractionDigits: value >= 10 ? 0 : 1 })} ${unit}`;
 }

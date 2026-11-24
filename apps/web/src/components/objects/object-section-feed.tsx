@@ -16,7 +16,7 @@ import {
   OBJECT_SECTION_CLASS,
 } from '@/components/objects/object-detail-type';
 import { ShowMoreList } from '@/components/ui/show-more-list';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { statusLabel } from '@/lib/status-labels';
@@ -99,7 +99,8 @@ function ObjectSectionItems({
   );
 }
 function ObjectSectionItem({ section, item }: { section: Props['section']; item: unknown }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
+  const { timezone } = region;
   const row = item as Record<string, unknown>;
   if (section === 'tasks') {
     return (
@@ -135,9 +136,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const sharedObjects = factSharedObjects(row.sharedObjects);
     const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
-    const observedAt = occurredAt
-      ? formatDisplayDateTime(occurredAt, { timezone })
-      : 'unknown time';
+    const observedAt = occurredAt ? formatDisplayDateTime(occurredAt, region) : 'unknown time';
     const sourceLabel = source ? ` · ${source}` : '';
     return (
       <div className="space-y-1">
@@ -189,7 +188,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         </div>
         <p className={OBJECT_ROW_META_CLASS}>
           <span className={OBJECT_MONO_META_CLASS}>
-            {formatDisplayDateTime(occurredAt, { timezone })}
+            {formatDisplayDateTime(occurredAt, region)}
           </span>{' '}
           · {statusLabel(source || 'unknown')}
         </p>

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime } from '@/lib/display-dates';
+import { RegionalDate } from '@/components/regional-date';
 import { handoffBodySchema, resolveHandoffSources } from '@/lib/handoff-snapshot';
 
 export default async function HandoffPage({ params }: { params: Promise<{ id: string }> }) {
@@ -24,11 +24,10 @@ export default async function HandoffPage({ params }: { params: Promise<{ id: st
   if (!row) notFound();
   const body = handoffBodySchema.safeParse(row.body);
   if (!body.success) notFound();
-  const [project, sources, commitments, calendar] = await Promise.all([
+  const [project, sources, commitments] = await Promise.all([
     scope.objects.getObject(row.projectId),
     resolveHandoffSources(scope, body.data.sources),
     scope.objects.listObjects({ id: body.data.commitments.map((item) => item.id), limit: 100 }),
-    scope.calendar.getCalendarSettings(),
   ]);
   const visibleCommitments = new Set(commitments.map((item) => item.id));
   if (
@@ -45,11 +44,7 @@ export default async function HandoffPage({ params }: { params: Promise<{ id: st
         metadata={[
           {
             label: 'Saved',
-            value: (
-              <time dateTime={row.createdAt.toISOString()}>
-                {formatDisplayDateTime(row.createdAt, { timezone: calendar.defaultTimezone })}
-              </time>
-            ),
+            value: <RegionalDate value={row.createdAt} variant="datetime" />,
           },
         ]}
         trailing={

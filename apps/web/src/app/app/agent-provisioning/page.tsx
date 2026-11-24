@@ -1,3 +1,4 @@
+import { RegionalDate } from '@/components/regional-date';
 import { listProvisioningGrants, listProvisioningAudit } from '@timeline/shared/agent-provisioning';
 import { Activity, Bot, KeyRound } from 'lucide-react';
 import { redirect } from 'next/navigation';
@@ -83,18 +84,7 @@ export default async function AgentProvisioningPage() {
                             ? 'Expired'
                             : 'Active'}
                         {' · '}
-                        <time
-                          dateTime={grant.expiresAt.toISOString()}
-                          title={grant.expiresAt.toISOString()}
-                        >
-                          Expires{' '}
-                          {grant.expiresAt.toLocaleDateString('en-GB', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric',
-                            timeZone: 'UTC',
-                          })}
-                        </time>
+                        Expires <RegionalDate value={grant.expiresAt} />
                       </span>
                     </span>
                   </CollectionRow.Subtitle>
@@ -146,20 +136,11 @@ export default async function AgentProvisioningPage() {
                         } as Record<string, string>
                       )[event.action] ?? event.action}
                     </span>
-                    <time
+                    <RegionalDate
+                      value={event.createdAt}
+                      variant="datetime"
                       className="text-xs text-muted-foreground"
-                      dateTime={event.createdAt.toISOString()}
-                      title={event.createdAt.toISOString()}
-                    >
-                      {event.createdAt.toLocaleString('en-GB', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        timeZone: 'UTC',
-                      })}{' '}
-                      UTC
-                    </time>
+                    />
                   </li>
                 ))}
               </ul>

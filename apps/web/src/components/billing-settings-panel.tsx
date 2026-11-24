@@ -5,8 +5,6 @@ import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
   TEAM_MONTHLY_SEAT_CENTS,
-  formatEuroFromCents,
-  formatUsdFromCents,
   parseEuroAmountToCents,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
@@ -22,6 +20,8 @@ import {
   startBillingPortal,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayCurrency, formatDisplayPercent } from '@/lib/regional-format';
 import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
 import { BillingCheckoutStatus } from '@/components/billing-checkout-status';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
@@ -89,14 +89,19 @@ function billingFormReducer(
   return { ...state, ...patch };
 }
 
-function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null): string {
+function planPriceLabel(
+  planId: BillingPlanId,
+  locale: string,
+  platformFeeCents?: number | null,
+): string {
   if (planId === 'enterprise' && (platformFeeCents === null || platformFeeCents === undefined)) {
     return 'Custom';
   }
-  if (planId === 'team') return `$${TEAM_MONTHLY_SEAT_CENTS / 100} per member / month`;
-  if (planId === 'free') return '$0 / month';
+  if (planId === 'team')
+    return `${formatDisplayCurrency(TEAM_MONTHLY_SEAT_CENTS, 'USD', locale, true)} per member / month`;
+  if (planId === 'free') return `${formatDisplayCurrency(0, 'USD', locale, true)} / month`;
   const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
-  return `${(planId === 'enterprise' ? formatUsdFromCents : formatEuroFromCents)(cents)} / month`;
+  return `${formatDisplayCurrency(cents, planId === 'enterprise' ? 'USD' : 'EUR', locale, true)} / month`;
 }
 
 function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
@@ -123,13 +128,15 @@ function SpendBar({ percent, danger }: { percent: number; danger: boolean }) {
 }
 
 function ThisMonth(props: BillingSettingsPanelProps) {
+  const { locale } = useRegionalFormat();
+  const currency = props.presentation?.paidSeats !== undefined ? 'USD' : 'EUR';
   if (props.planId === 'free') {
     const percent = freeAllowancePercent(props.freeRemaining);
     return (
       <div data-billing-spend>
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="text-fg-muted">Allowance</span>
-          <span className="font-mono text-fg">{percent}%</span>
+          <span className="font-mono text-fg">{formatDisplayPercent(percent / 100, locale)}</span>
         </div>
         <SpendBar percent={percent} danger={percent >= 100} />
       </div>
@@ -139,7 +146,9 @@ function ThisMonth(props: BillingSettingsPanelProps) {
     return (
       <div className="flex items-baseline justify-between gap-3 text-sm" data-billing-spend>
         <span className="text-fg-muted">Metered spend this month</span>
-        <span className="font-mono text-fg">{formatEuroFromCents(props.meteredSpendCents)}</span>
+        <span className="font-mono text-fg">
+          {formatDisplayCurrency(props.meteredSpendCents, currency, locale, true)}
+        </span>
       </div>
     );
   }
@@ -149,8 +158,8 @@ function ThisMonth(props: BillingSettingsPanelProps) {
       <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="text-fg-muted">Metered spend this month</span>
         <span className="font-mono text-fg">
-          {formatEuroFromCents(props.meteredSpendCents)} of{' '}
-          {formatEuroFromCents(props.spendCapCents)} spend cap
+          {formatDisplayCurrency(props.meteredSpendCents, currency, locale, true)} of{' '}
+          {formatDisplayCurrency(props.spendCapCents, currency, locale, true)} spend cap
         </span>
       </div>
       <SpendBar percent={percent} danger={percent >= 90} />
@@ -451,13 +460,14 @@ function BillingPlanControls({
   checkoutPending: boolean;
   runCheckout: (plan: 'payg' | 'team' | 'business') => void;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <div className="flex flex-wrap items-start justify-between gap-6 rounded-lg bg-surface p-5">
       <div>
         <p className="text-sm text-fg-muted">Current plan</p>
         <p className="mt-2 text-2xl font-semibold text-fg">{props.planName}</p>
         <p className="mt-1 font-mono text-sm text-fg" data-billing-price>
-          {planPriceLabel(props.planId, props.platformFeeCents)}
+          {planPriceLabel(props.planId, locale, props.platformFeeCents)}
         </p>
         {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
           <p className="mt-2 text-sm text-fg-muted" data-enterprise-subscription="pending">

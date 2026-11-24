@@ -1,8 +1,11 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 
+import { RegionalDate } from '@/components/regional-date';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
@@ -30,6 +33,36 @@ describe('RelativeTimestamp', () => {
     expect(time.getAttribute('dateTime')).toBe(value.toISOString());
     expect(time.getAttribute('title')).toBe(formatDisplayDateTime(value, { timezone: 'UTC' }));
     expect(formatRelativeAge(value, { now })).toBe('7 hours ago');
+  });
+
+  it('hydrates the same absolute date from saved regional preferences', async () => {
+    const value = '2026-07-01T00:15:00Z';
+    const element = (
+      <WorkspaceTimezoneProvider
+        timezone="Asia/Tokyo"
+        region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+      >
+        <RegionalDate value={value} variant="datetime" />
+      </WorkspaceTimezoneProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(element);
+    const expected = formatDisplayDateTime(value, {
+      locale: 'de-DE',
+      timezone: 'America/Los_Angeles',
+    });
+    expect(container.querySelector('time')?.textContent).toBe(expected);
+    const errors: unknown[] = [];
+    const root = hydrateRoot(container, element, {
+      onRecoverableError: (error) => errors.push(error),
+    });
+    try {
+      await act(async () => {});
+      expect(container.querySelector('time')?.textContent).toBe(expected);
+      expect(errors).toEqual([]);
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it('renders the empty fallback when no instant is available', () => {

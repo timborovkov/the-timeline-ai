@@ -1,3 +1,5 @@
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayNumber } from '@/lib/regional-format';
 import { eventSource } from '@timeline/db';
 import type {
   ReconciliationDashboardCount,
@@ -344,6 +346,7 @@ function RecentRuns({
   statusOptions: string[];
   triggerOptions: string[];
 }) {
+  const { locale } = useRegionalFormat();
   const statusValues = uniqueOptions(statusOptions, history.status);
   const triggerValues = uniqueOptions(triggerOptions, history.trigger);
   return (
@@ -352,8 +355,9 @@ function RecentRuns({
         <div>
           <SectionHeading>Run history</SectionHeading>
           <p className="mt-1 text-xs text-fg-dim">
-            Showing page {history.page.toLocaleString()} of {history.totalPages.toLocaleString()} ·{' '}
-            {history.total.toLocaleString()} run{history.total === 1 ? '' : 's'}
+            Showing page {formatDisplayNumber(history.page, locale)} of{' '}
+            {formatDisplayNumber(history.totalPages, locale)} ·{' '}
+            {formatDisplayNumber(history.total, locale)} run{history.total === 1 ? '' : 's'}
           </p>
         </div>
         <DebouncedFilterForm
@@ -402,7 +406,7 @@ function RecentRuns({
       ) : (
         <ul>
           {rows.map((row) => {
-            const metrics = runMetricHint(row.metrics);
+            const metrics = runMetricHint(row.metrics, locale);
             const hint = [
               `${runTriggerLabel(row.trigger)} · ${row.trigger}`,
               row.engineVersion,

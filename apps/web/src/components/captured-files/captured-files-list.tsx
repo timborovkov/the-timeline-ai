@@ -34,7 +34,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { formatDisplayDate } from '@/lib/display-dates';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
@@ -625,7 +626,7 @@ function CapturedFileRow({
   selected?: boolean;
   onSelect?: () => void;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const contentType = file.currentVersion?.contentType ?? '';
   const Icon = contentType.startsWith('image/') ? ImageIcon : FileText;
   const presentation = file.presentation;
@@ -698,7 +699,7 @@ function CapturedFileRow({
               {visibilityLabel(file.visibility)}
             </Badge>
             <span className="text-xs tabular-nums text-fg-dim">
-              Updated {formatDate(file.updatedAt, timezone)}
+              Updated {formatDisplayDate(file.updatedAt, region)}
             </span>
           </>
         </CollectionRow.Metadata>
@@ -981,14 +982,6 @@ function matchesDateFilter(value: string, filter: string): boolean {
   if (filter === ALL) return true;
   const days = filter === '7d' ? 7 : 30;
   return Date.now() - new Date(value).getTime() <= days * 24 * 60 * 60 * 1000;
-}
-
-function formatDate(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: timezone,
-  }).format(new Date(value));
 }
 
 function fileTypeLabel(contentType: string): string {

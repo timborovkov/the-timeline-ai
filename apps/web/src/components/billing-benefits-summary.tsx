@@ -1,32 +1,35 @@
+'use client';
+
 import type { BillingPresentation, BillingPeriod, RecordedCharges } from '@timeline/shared/billing';
-import {
-  formatEuroFromCents,
-  formatUsdFromCents,
-  PLAN_CATALOG,
-  TEAM_MONTHLY_USAGE_PER_SEAT_CENTS,
-} from '@timeline/shared/billing/catalog';
+import { PLAN_CATALOG, TEAM_MONTHLY_USAGE_PER_SEAT_CENTS } from '@timeline/shared/billing/catalog';
 import type { ReactNode } from 'react';
 
-function billingDate(value: string): string {
-  return new Date(value).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import {
+  formatDisplayCurrency,
+  formatDisplayNumber,
+  formatDisplayPercent,
+} from '@/lib/regional-format';
+
+import { RegionalDate } from '@/components/regional-date';
+import { RegionalNumber } from '@/components/regional-number';
+
 function Period({ value }: { value: BillingPeriod }) {
   return (
     <p className="text-xs text-fg-muted">
-      {billingDate(value.start)} to{' '}
-      {billingDate(new Date(new Date(value.end).getTime() - 1).toISOString())} (UTC)
+      <RegionalDate value={value.start} timezone="UTC" /> to{' '}
+      <RegionalDate value={new Date(new Date(value.end).getTime() - 1)} timezone="UTC" /> (UTC)
     </p>
   );
 }
 function Money({ value, usd = false }: { value: number | null; usd?: boolean }) {
   return (
     <span className="font-mono">
-      {value === null ? 'Custom' : usd ? formatUsdFromCents(value) : formatEuroFromCents(value)}
+      {value === null ? (
+        'Custom'
+      ) : (
+        <RegionalNumber value={value} currency={usd ? 'USD' : 'EUR'} compactCurrency />
+      )}
     </span>
   );
 }
@@ -37,13 +40,8 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
       {summary.includedUsage ? <IncludedUsageSummary summary={summary} /> : null}
       {summary.allowances.length > 0 ? (
         <p className="text-sm text-fg-muted">
-          Monthly allowances reset {billingDate(summary.calendarPeriod.end)} (UTC). Each meter has
-          its own allowance.
-        </p>
-      ) : null}
-      {summary.allowances.length > 0 ? (
-        <p className="text-sm text-fg-muted">
-          Monthly allowances reset {billingDate(summary.calendarPeriod.end)} (UTC). Each meter has
+          Monthly allowances reset{' '}
+          <RegionalDate value={summary.calendarPeriod.end} timezone="UTC" /> (UTC). Each meter has
           its own allowance.
         </p>
       ) : null}
@@ -68,13 +66,14 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
 
 function BillingMembersSummary({ summary }: { summary: BillingPresentation }) {
   const { members, paidSeats } = summary;
+  const { locale } = useRegionalFormat();
   return (
     <section className="space-y-2 rounded-lg bg-surface p-5 text-sm" aria-label="Included members">
       <h3 className="text-sm font-medium">Members</h3>
       <p>
         {paidSeats === undefined
-          ? `Members: ${members.current} current · ${members.included ?? 'Custom'} included`
-          : `${members.current} full members · ${paidSeats} paid seats`}
+          ? `Members: ${formatDisplayNumber(members.current, locale)} current · ${members.included === null ? 'Custom' : formatDisplayNumber(members.included, locale)} included`
+          : `${formatDisplayNumber(members.current, locale)} full members · ${formatDisplayNumber(paidSeats, locale)} paid seats`}
       </p>
       {summary.planId === 'free' ? (
         <p className="text-fg-muted">Upgrade to add members above the Free plan limit.</p>
@@ -89,6 +88,7 @@ function BillingMembersSummary({ summary }: { summary: BillingPresentation }) {
 }
 
 export function IncludedUsageSummary({ summary }: { summary: BillingPresentation }) {
+  const { locale } = useRegionalFormat();
   const usage = summary.includedUsage;
   if (!usage) return null;
   const isTeam = summary.paidSeats !== undefined;
@@ -114,13 +114,19 @@ export function IncludedUsageSummary({ summary }: { summary: BillingPresentation
             <div className="h-full bg-fg-muted" style={{ width: `${percent}%` }} />
           </div>
           <p>
-            {percent}% used{usage.resetAt ? ` · Resets ${billingDate(usage.resetAt)} (UTC)` : ''}
+            {formatDisplayPercent(percent / 100, locale)} used
+            {usage.resetAt ? (
+              <>
+                {' '}
+                · Resets <RegionalDate value={usage.resetAt} timezone="UTC" /> (UTC)
+              </>
+            ) : null}
           </p>
         </>
       )}
       <p className="text-fg-muted">
         {summary.cap.limitCents > 0 && isTeam
-          ? `Additional usage this month: ${formatUsdFromCents(summary.cap.usedCents)} of ${formatUsdFromCents(summary.cap.limitCents)} cap.`
+          ? `Additional usage this month: ${formatDisplayCurrency(summary.cap.usedCents, 'USD', locale, true)} of ${formatDisplayCurrency(summary.cap.limitCents, 'USD', locale, true)} cap.`
           : 'Additional spending is off.'}
       </p>
       {paused ? (
@@ -132,8 +138,8 @@ export function IncludedUsageSummary({ summary }: { summary: BillingPresentation
         <summary className="cursor-pointer">How usage is calculated</summary>
         <p className="mt-2 text-fg-muted">
           {isTeam
-            ? `Each paid seat contributes ${formatUsdFromCents(TEAM_MONTHLY_USAGE_PER_SEAT_CENTS)} in monthly usage at internal rates.`
-            : `Free includes ${formatUsdFromCents(usage.totalCents)} in monthly usage at internal rates.`}{' '}
+            ? `Each paid seat contributes ${formatDisplayCurrency(TEAM_MONTHLY_USAGE_PER_SEAT_CENTS, 'USD', locale, true)} in monthly usage at internal rates.`
+            : `Free includes ${formatDisplayCurrency(usage.totalCents, 'USD', locale, true)} in monthly usage at internal rates.`}{' '}
           AI uses four times reported model cost. Native meeting capture uses three cents per
           minute. Background analysis uses the same allowance.
         </p>
@@ -168,7 +174,12 @@ function BillingSpendCapSummary({
           : 'Counts metered usage before included credit, plus extra members.'}{' '}
         Excludes the plan fee and tax. This is a limit, not credit or an upfront charge.
       </p>
-      {cap.limitCents === 0 ? <p>New chargeable usage is paused at a €0 cap.</p> : null}
+      {cap.limitCents === 0 ? (
+        <p>
+          New chargeable usage is paused at a{' '}
+          <RegionalNumber value={0} currency="EUR" compactCurrency /> cap.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -190,7 +201,7 @@ function IncludedUsageCredit({
         <>
           <Period value={credit.period} />
           <p className="text-xs text-fg-muted">
-            Credit renews {billingDate(credit.period.end)} (UTC).
+            Credit renews <RegionalDate value={credit.period.end} timezone="UTC" /> (UTC).
           </p>
         </>
       ) : null}
@@ -263,7 +274,7 @@ function BillingRecordedCharges({
       <p className="text-sm">
         Recurring plan fee:{' '}
         {summary.paidSeats !== undefined && summary.recurringFeeCents !== null ? (
-          formatUsdFromCents(summary.recurringFeeCents)
+          <Money usd value={summary.recurringFeeCents} />
         ) : (
           <Money value={summary.recurringFeeCents} />
         )}
@@ -349,7 +360,7 @@ export function BillingUsageOverview({
           </h2>
           {summary.allowances.length > 0 ? (
             <p className="text-xs text-fg-muted">
-              Resets {billingDate(summary.calendarPeriod.end)} (UTC)
+              Resets <RegionalDate value={summary.calendarPeriod.end} timezone="UTC" /> (UTC)
             </p>
           ) : null}
         </div>

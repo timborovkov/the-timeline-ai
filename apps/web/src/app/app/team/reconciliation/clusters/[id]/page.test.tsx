@@ -1,3 +1,4 @@
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -7,7 +8,6 @@ const CLUSTER_ID = '33333333-3333-4333-8333-333333333333';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
-  getCalendarSettings: vi.fn(),
   resolveActiveTeam: vi.fn(),
   getClusterDetail: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -34,7 +34,6 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: fakes.requireMembership,
-      calendar: { getCalendarSettings: fakes.getCalendarSettings },
       reconciliation: { getClusterDetail: fakes.getClusterDetail },
     }),
   }),
@@ -76,7 +75,6 @@ beforeEach(() => {
     active: { teamId: 'team-1', teamName: 'Acme Labs' },
   });
   fakes.requireMembership.mockResolvedValue('admin');
-  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
   fakes.getClusterDetail.mockResolvedValue(sampleDetail());
 });
 
@@ -87,7 +85,12 @@ afterEach(() => {
 describe('ReconciliationClusterPage', () => {
   it('renders visible evidence, outputs, and scoped reconcile controls for one cluster', async () => {
     const html = renderToStaticMarkup(
-      await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
+      <WorkspaceTimezoneProvider
+        timezone="America/Los_Angeles"
+        region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
+      >
+        {await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) })}
+      </WorkspaceTimezoneProvider>,
     );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
@@ -116,12 +119,16 @@ describe('ReconciliationClusterPage', () => {
     expect(html).not.toContain('Private founder note');
   });
 
-  it('leads with human labels and team-local times while keeping ids in hover titles', async () => {
+  it('leads with human labels and viewer-local times while keeping ids in hover titles', async () => {
     const html = renderToStaticMarkup(
-      await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) }),
+      <WorkspaceTimezoneProvider
+        timezone="America/Los_Angeles"
+        region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
+      >
+        {await ReconciliationClusterPage({ params: Promise.resolve({ id: CLUSTER_ID }) })}
+      </WorkspaceTimezoneProvider>,
     );
 
-    expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
     expect(html).toContain('Monday board');
     expect(html).toContain('Customer project');
     expect(html).toContain('Authoritative source');
@@ -131,14 +138,13 @@ describe('ReconciliationClusterPage', () => {
     expect(html).toContain('High confidence');
     expect(html).toContain('Needs approval');
     expect(html).toContain(
-      new Intl.DateTimeFormat('en-US', {
+      new Intl.DateTimeFormat('de-DE', {
         dateStyle: 'medium',
         timeStyle: 'short',
-        timeZone: 'UTC',
-      }).format(new Date('2026-06-30T03:00:00.000Z')),
+        timeZone: 'Asia/Tokyo',
+      }).format(new Date('2026-06-30T10:00:00.000Z')),
     );
-    expect(html).toContain('America/Los_Angeles');
-    expect(html).toContain('Times in America/Los_Angeles');
+    expect(html).toContain('Asia/Tokyo');
     expect(html).toContain('dateTime="2026-06-30T10:00:00.000Z"');
     expect(html).toContain('Cluster ID:');
     expect(html).toContain(CLUSTER_ID);

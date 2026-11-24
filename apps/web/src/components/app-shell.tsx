@@ -1,3 +1,4 @@
+import { RegionalDate } from '@/components/regional-date';
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import { Search } from 'lucide-react';
@@ -30,6 +31,7 @@ import { WorkNavigation } from '@/components/work-subnav';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import type { TeamMembership } from '@/lib/active-team';
 import { APP_MAIN_SCROLL_ID } from '@/lib/app-scroll';
+import type { RegionalFormat } from '@/lib/regional-format';
 import type { PaidSignupPlanId } from '@/lib/signup-plan';
 
 interface ShellInbox {
@@ -46,6 +48,7 @@ interface Props {
   inbox?: ShellInbox | Promise<ShellInbox>;
   sidebarInitiallyExpanded: boolean;
   workspaceTimezone: string;
+  region?: Partial<RegionalFormat> & { browserLocale?: string };
   billingSummary?: SidebarBillingSummary | null | Promise<SidebarBillingSummary | null>;
   platformAdmin?: boolean;
   impersonation?: { email: string; teamName: string; readOnly: boolean; expiresAt: string } | null;
@@ -82,6 +85,7 @@ export function AppShell({
   inbox = EMPTY_INBOX,
   sidebarInitiallyExpanded,
   workspaceTimezone,
+  region,
   billingSummary = null,
   platformAdmin = false,
   impersonation = null,
@@ -92,7 +96,7 @@ export function AppShell({
   children,
 }: Props) {
   return (
-    <WorkspaceTimezoneProvider timezone={workspaceTimezone}>
+    <WorkspaceTimezoneProvider timezone={workspaceTimezone} region={region}>
       <ChatViewProvider>
         <InspectorProvider>
           <AppDocumentScrollLock />
@@ -121,7 +125,7 @@ export function AppShell({
                   <p>
                     Viewing as <strong>{impersonation.email}</strong> · {impersonation.teamName}
                     {impersonation.readOnly ? ' · Read-only' : ''} · Ends{' '}
-                    {new Date(impersonation.expiresAt).toISOString().slice(11, 16)} UTC
+                    <RegionalDate value={impersonation.expiresAt} variant="datetime" />
                   </p>
                   <form action="/api/platform-admin/exit" method="post">
                     <button type="submit" className="min-h-11 rounded-sm border border-border px-3">

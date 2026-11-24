@@ -1,3 +1,5 @@
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayDate } from '@/lib/display-dates';
 import { revokeMcpOAuthGrantAction } from '@/app/oauth/actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,11 +21,6 @@ interface McpOAuthGrant {
   lastUsedAt: Date | null;
 }
 
-const dateFormatter = new Intl.DateTimeFormat('en', {
-  dateStyle: 'medium',
-  timeZone: 'UTC',
-});
-
 function clientHostname(clientId: string): string | null {
   if (!clientId.startsWith('https://')) return null;
   try {
@@ -40,11 +37,8 @@ function scopeLabel(scope: string): string {
   return scope;
 }
 
-function dateLabel(date: Date): string {
-  return dateFormatter.format(date);
-}
-
 export function McpOAuthGrants({ grants, teamId }: { grants: McpOAuthGrant[]; teamId: string }) {
+  const region = useRegionalFormat();
   if (grants.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border p-6">
@@ -88,12 +82,14 @@ export function McpOAuthGrants({ grants, teamId }: { grants: McpOAuthGrant[]; te
               </div>
               <p className="text-xs leading-5 text-fg-muted">
                 Authorized{' '}
-                <time dateTime={grant.createdAt.toISOString()}>{dateLabel(grant.createdAt)}</time>
+                <time dateTime={grant.createdAt.toISOString()}>
+                  {formatDisplayDate(grant.createdAt, region)}
+                </time>
                 {grant.lastUsedAt ? (
                   <>
                     {' · Last used '}
                     <time dateTime={grant.lastUsedAt.toISOString()}>
-                      {dateLabel(grant.lastUsedAt)}
+                      {formatDisplayDate(grant.lastUsedAt, region)}
                     </time>
                   </>
                 ) : (

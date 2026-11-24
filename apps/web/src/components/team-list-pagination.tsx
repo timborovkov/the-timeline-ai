@@ -1,24 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayNumber } from '@/lib/regional-format';
 import { Button } from '@/components/ui/button';
 
 const PAGE_SIZE = 50;
-
-function subscribeLocale(onChange: () => void) {
-  window.addEventListener('languagechange', onChange);
-  return () => {
-    window.removeEventListener('languagechange', onChange);
-  };
-}
-
-function browserLocale() {
-  return navigator.language;
-}
-function serverLocale() {
-  return 'en-US';
-}
 
 export function useTeamListPage<T>(items: T[]) {
   const [page, setPage] = useState(0);
@@ -61,14 +49,14 @@ export function TeamListPagination({
   label: string;
   noun: string;
 }) {
-  const locale = useSyncExternalStore(subscribeLocale, browserLocale, serverLocale);
-  const format = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const { locale } = useRegionalFormat();
+  const format = (value: number) => formatDisplayNumber(value, locale);
   if (total <= PAGE_SIZE) return null;
   return (
     <nav aria-label={label} className="flex flex-wrap items-center gap-3 pt-3">
       <p aria-live="polite" className="text-sm text-fg-muted tabular-nums">
-        {format.format(page * PAGE_SIZE + 1)}–
-        {format.format(Math.min((page + 1) * PAGE_SIZE, total))} of {format.format(total)} {noun}
+        {format(page * PAGE_SIZE + 1)}–{format(Math.min((page + 1) * PAGE_SIZE, total))} of{' '}
+        {format(total)} {noun}
       </p>
       <Button
         variant="outline"

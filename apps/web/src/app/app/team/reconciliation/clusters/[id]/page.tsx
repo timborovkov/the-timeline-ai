@@ -38,7 +38,7 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatRelativeAge } from '@/lib/display-dates';
+import { RegionalTimezone } from '@/components/regional-timezone';
 import { displayArtifactLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
@@ -67,16 +67,12 @@ export default async function ReconciliationClusterPage({
 
   const detail = await scope.reconciliation.getClusterDetail({ clusterId: id });
   if (!detail) notFound();
-  const calendarSettings = await scope.calendar.getCalendarSettings();
-  const timezone = calendarSettings.defaultTimezone;
   const { cluster } = detail;
   const clusterHint = reconciliationClusterRowHint({
     artifactClusterKind: cluster.artifactClusterKind,
     artifactType: cluster.artifactType,
     clusterId: cluster.id,
     status: cluster.status,
-    timeZone: timezone,
-    updatedAt: cluster.updatedAt,
   });
 
   return (
@@ -105,7 +101,7 @@ export default async function ReconciliationClusterPage({
           { label: 'Category', value: artifactClusterKindLabel(cluster.artifactClusterKind) },
           { label: 'Evidence', value: detail.evidence.length, mono: true },
           { label: 'Outputs', value: detail.outputs.length, mono: true },
-          { label: 'Time zone', value: timezone },
+          { label: 'Time zone', value: <RegionalTimezone /> },
         ]}
         trailing={
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -125,12 +121,12 @@ export default async function ReconciliationClusterPage({
             </form>
           </div>
         }
-        srLabel={`Reconciliation cluster ${displayArtifactLabel(cluster)}. ${clusterStatusLabel(cluster.status)}. ${String(detail.evidence.length)} evidence items and ${String(detail.outputs.length)} outputs. Times in ${timezone}.`}
+        srLabel={`Reconciliation cluster ${displayArtifactLabel(cluster)}. ${clusterStatusLabel(cluster.status)}. ${String(detail.evidence.length)} evidence items and ${String(detail.outputs.length)} outputs.`}
       />
 
       <section className="grid gap-4 xl:grid-cols-2">
         <EvidenceList rows={detail.evidence} />
-        <OutputList rows={detail.outputs} timezone={timezone} />
+        <OutputList rows={detail.outputs} />
       </section>
     </div>
   );
@@ -192,13 +188,7 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
   );
 }
 
-function OutputList({
-  rows,
-  timezone,
-}: {
-  rows: ReconciliationClusterDetailOutput[];
-  timezone: string;
-}) {
+function OutputList({ rows }: { rows: ReconciliationClusterDetailOutput[] }) {
   return (
     <section className="space-y-3">
       <SectionHeading>Outputs</SectionHeading>
@@ -216,7 +206,6 @@ function OutputList({
             const hint = reconciliationOutputRowHint({
               clusterId: row.clusterId,
               confidence: row.confidence,
-              createdAt: row.createdAt,
               outputId: row.id,
               outputKind: row.outputKind,
               sourcePayloadRefs: row.sourcePayloadRefs,
@@ -224,7 +213,6 @@ function OutputList({
               status: row.status,
               targetId: row.targetId,
               targetKind: row.targetKind,
-              timeZone: timezone,
             });
             const contextParts = [
               outputKindLabel(row.outputKind),
@@ -237,7 +225,6 @@ function OutputList({
                   context={contextParts.join(' · ')}
                   createdAtIso={row.createdAt.toISOString()}
                   payloadJson={JSON.stringify(row.payload ?? {})}
-                  relativeAge={formatRelativeAge(row.createdAt)}
                   status={row.status}
                   title={title}
                   titleHint={hint}

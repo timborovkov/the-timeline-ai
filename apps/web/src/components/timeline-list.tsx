@@ -1,5 +1,6 @@
 'use client';
 
+import type { RegionalFormat } from '@/lib/regional-format';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { isMachineIdentityLabel } from '@timeline/shared/event-class';
 import {
@@ -45,10 +46,15 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { chatViewLabel } from '@/lib/chat-view';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import {
+  displayText,
+  formatDisplayDateParts,
+  formatDisplayDateTime,
+  formatDisplayTime,
+} from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
@@ -603,11 +609,23 @@ function subscribeToDayChanges(checkLabel: () => void): () => void {
 }
 
 function TimelineDayLabel({ moment, timezone }: { moment: TimelineMoment; timezone: string }) {
+  const { locale } = useRegionalFormat();
   const occurredAt = moment.rawEvents[0]?.occurredAt;
-  return useSyncExternalStore(
+  const label = useSyncExternalStore(
     subscribeToDayChanges,
     () => (occurredAt ? formatDateSection(occurredAt, new Date(), timezone) : moment.dateLabel),
     () => moment.dateLabel,
+  );
+  if (locale === 'en-US' || label === 'Today' || label === 'Yesterday') return label;
+  return formatDisplayDateParts(
+    moment.dateKey,
+    { timezone, locale },
+    {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: /\b\d{4}\b/.test(label) ? 'numeric' : undefined,
+    },
   );
 }
 
@@ -771,6 +789,7 @@ function InspectorAttachments({
   hiddenRawEventCount: number;
   setVisibleRawEventCount: Dispatch<SetStateAction<number>>;
 }) {
+  const region = useRegionalFormat();
   return (
     <section>
       <h3 className="mb-2 text-sm font-semibold text-fg">
@@ -785,7 +804,7 @@ function InspectorAttachments({
                   dateTime={event.occurredAt}
                   className="shrink-0 font-mono text-xs text-fg-dim"
                 >
-                  {formatTimestamp(event.occurredAt, timezone)}
+                  {formatDisplayDateTime(event.occurredAt, region)}
                 </time>
                 <span className="min-w-0 truncate text-fg-muted">
                   {rawEventBody(event, timezone)}
@@ -864,6 +883,7 @@ function ArtifactEvidenceBundle({
   cluster: TimelineArtifactCluster;
   timezone: string;
 }) {
+  const region = useRegionalFormat();
   const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
   return (
     <div className="space-y-3 py-2">
@@ -915,7 +935,7 @@ function ArtifactEvidenceBundle({
                   <span>{evidenceStrengthLabel(evidence)}</span>
                   {evidence.occurredAt ? (
                     <time data-visual-dynamic="timeline-timestamp" dateTime={evidence.occurredAt}>
-                      {formatTimestamp(evidence.occurredAt, timezone)}
+                      {formatDisplayDateTime(evidence.occurredAt, region)}
                     </time>
                   ) : null}
                 </div>
@@ -952,6 +972,7 @@ function SourceEvidenceCard({
   capturedFiles: TimelineCapturedFile[];
   timezone: string;
 }) {
+  const region = useRegionalFormat();
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const [savedVisibility, setSavedVisibility] = useState<SavedEventVisibility>({
     visibility: event.visibility,
@@ -967,7 +988,7 @@ function SourceEvidenceCard({
     actorLabel,
     formatSourceLabel(event.source),
     context,
-    formatTimestamp(event.occurredAt, timezone),
+    formatDisplayDateTime(event.occurredAt, region),
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
@@ -985,7 +1006,7 @@ function SourceEvidenceCard({
             dateTime={event.occurredAt}
             className="font-mono text-[11px]"
           >
-            {formatTimestamp(event.occurredAt, timezone)}
+            {formatDisplayDateTime(event.occurredAt, region)}
           </time>
           {event.visibility === 'private' ? <span>Private</span> : null}
         </div>
@@ -1327,6 +1348,33 @@ function compactTimelineMomentHref(moment: TimelineMoment): string {
   return `/app/timeline?${params.toString()}#${moment.anchorId}`;
 }
 
+function timelineMomentTimeLabel(moment: TimelineMoment, region: RegionalFormat): string {
+  const firstTime = moment.rawEvents.at(-1)?.occurredAt;
+  const lastTime = moment.rawEvents[0]?.occurredAt;
+  const formatTime = (value: string) => {
+    const localDay = formatDisplayDateParts(
+      value,
+      { ...region, locale: 'sv-SE' },
+      {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      },
+    );
+    return localDay === moment.dateKey
+      ? formatDisplayTime(value, region)
+      : formatDisplayDateParts(value, region, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+  };
+  const startTime = firstTime ? formatTime(firstTime) : '';
+  const endTime = lastTime === firstTime ? startTime : lastTime ? formatTime(lastTime) : startTime;
+  return startTime === endTime ? startTime : `${startTime}–${endTime}`;
+}
+
 function TimelineMomentRow({
   moment,
   audioUrlMap,
@@ -1350,6 +1398,9 @@ function TimelineMomentRow({
   pinned: boolean;
   timezone: string;
 }) {
+  const region = useRegionalFormat();
+  const regionalTimeLabel = timelineMomentTimeLabel(moment, region);
+
   const inspector = useInspector();
   const {
     selected,
@@ -1381,9 +1432,9 @@ function TimelineMomentRow({
         >
           <span
             data-visual-dynamic="timeline-time"
-            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:w-[4.75rem] sm:text-[11px]"
+            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:min-w-[4.75rem] sm:text-[11px]"
           >
-            {moment.timeLabel}
+            {regionalTimeLabel}
           </span>
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
@@ -1436,7 +1487,7 @@ function TimelineMomentRow({
           data-visual-dynamic="timeline-time"
           className="pt-0.5 font-mono text-[11px] tabular-nums leading-5 text-fg-dim"
         >
-          {moment.timeLabel}
+          {regionalTimeLabel}
         </time>
         <KindIcon
           aria-hidden="true"
@@ -1445,7 +1496,7 @@ function TimelineMomentRow({
         <div className="min-w-0 pr-8">
           <button
             type="button"
-            aria-label={[title, previewText, moment.timeLabel, cue].filter(Boolean).join(' · ')}
+            aria-label={[title, previewText, regionalTimeLabel, cue].filter(Boolean).join(' · ')}
             onClick={() => {
               inspector.show(
                 momentInspectorContent({

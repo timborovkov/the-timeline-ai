@@ -1,5 +1,6 @@
 'use client';
 
+import { RegionalDate } from '@/components/regional-date';
 import { useQuery } from '@tanstack/react-query';
 import type * as boards from '@timeline/shared/boards';
 import {
@@ -1296,7 +1297,6 @@ function ObjectSourceContext({ detail }: { detail: ObjectDetail }) {
 }
 
 function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
-  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const summary = detail.summary ?? null;
@@ -1334,7 +1334,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
         <ObjectSummaryActions
           generated={generated}
           summary={summary}
-          timezone={timezone}
           canRequest={canRequest}
           pending={pending}
           requestSummary={requestSummary}
@@ -1348,7 +1347,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
 function ObjectSummaryActions({
   generated,
   summary,
-  timezone,
   canRequest,
   pending,
   requestSummary,
@@ -1362,7 +1360,6 @@ function ObjectSummaryActions({
     conflicts: objects.ObjectSummaryClaim[];
   } | null;
   summary: objects.ObjectSummaryView;
-  timezone: string;
   canRequest: boolean;
   pending: boolean;
   requestSummary: () => void;
@@ -1372,7 +1369,7 @@ function ObjectSummaryActions({
     <div className="mt-1 flex flex-wrap items-center gap-2">
       {generated && summary.generatedAt ? (
         <p className={DETAIL_META_CLASS}>
-          Updated {formatDisplayDateTime(summary.generatedAt, { timezone })} ·{' '}
+          Updated <RegionalDate value={summary.generatedAt} variant="datetime" /> ·{' '}
           {summary.sourceRefs.length} {summary.sourceRefs.length === 1 ? 'source' : 'sources'}
         </p>
       ) : summary.status === 'pending' ? (
@@ -2532,7 +2529,6 @@ function ConnectedDocumentList({
 }: {
   documents: ObjectDetail['connectedWork']['documents'];
 }) {
-  const timezone = useWorkspaceTimezone();
   if (documents.length === 0) return null;
   return (
     <ConnectedWorkSection title="Documents" count={documents.length}>
@@ -2551,7 +2547,7 @@ function ConnectedDocumentList({
             </a>
             <span className={DETAIL_META_CLASS}>
               {statusLabel(document.fileKind)} · updated{' '}
-              {formatDisplayDateTime(document.updatedAt, { timezone })}
+              <RegionalDate value={document.updatedAt} variant="datetime" />
             </span>
           </div>
         )}
@@ -2561,7 +2557,6 @@ function ConnectedDocumentList({
 }
 
 function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['links'] }) {
-  const timezone = useWorkspaceTimezone();
   if (links.length === 0) return null;
   return (
     <ConnectedWorkSection title="Links" count={links.length}>
@@ -2585,7 +2580,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
             )}
             <span className={DETAIL_META_CLASS}>
               {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
-              {formatDisplayDateTime(link.updatedAt, { timezone })}
+              <RegionalDate value={link.updatedAt} variant="datetime" />
             </span>
           </div>
         )}
@@ -2599,7 +2594,6 @@ function ConnectedCapturedFileList({
 }: {
   files: ObjectDetail['connectedWork']['capturedFiles'];
 }) {
-  const timezone = useWorkspaceTimezone();
   if (files.length === 0) return null;
   return (
     <ConnectedWorkSection title="Files" count={files.length}>
@@ -2614,7 +2608,7 @@ function ConnectedCapturedFileList({
             </Link>
             <span className={DETAIL_META_CLASS}>
               {file.contentType ?? 'captured file'} · updated{' '}
-              {formatDisplayDateTime(file.updatedAt, { timezone })}
+              <RegionalDate value={file.updatedAt} variant="datetime" />
             </span>
           </div>
         )}
@@ -2832,7 +2826,9 @@ function ObjectRecentChangeItem({
         {formatValue(change.newValue, timezone, change.field)}
       </div>
       <div className={`mt-0.5 flex items-center justify-between ${DETAIL_META_CLASS}`}>
-        <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
+        <span>
+          <RegionalDate value={change.changedAt} variant="datetime" />
+        </span>
         {isSuggested ? (
           <div className="flex gap-2">
             <button

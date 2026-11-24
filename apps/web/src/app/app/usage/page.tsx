@@ -9,6 +9,7 @@ import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
+import { RegionalDate } from '@/components/regional-date';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -62,11 +63,7 @@ export default async function UsagePage() {
         title="Usage"
         metadata={[
           {
-            value: new Date(`${dashboard.periodYm}-01T00:00:00Z`).toLocaleDateString('en-GB', {
-              month: 'long',
-              year: 'numeric',
-              timeZone: 'UTC',
-            }),
+            value: <RegionalDate value={`${dashboard.periodYm}-01`} variant="month" />,
           },
         ]}
       >

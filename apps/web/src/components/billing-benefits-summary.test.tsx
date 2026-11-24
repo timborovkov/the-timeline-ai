@@ -2,6 +2,8 @@ import { buildBillingPresentation } from '@timeline/shared/billing';
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+
 import {
   BillingBenefitsSummary,
   BillingUsageOverview,
@@ -45,16 +47,16 @@ describe('BillingBenefitsSummary', () => {
       'Included usage credit',
       '€60',
       '€45',
-      '15 Oct 2026',
-      '14 Nov 2026',
+      'Oct 15, 2026',
+      'Nov 14, 2026',
       'Charges recorded so far',
       '€5',
       'Recurring plan fee',
       '€49',
       'Members: 12 current',
       'before included credit',
-      '1 Oct 2026',
-      '31 Oct 2026',
+      'Oct 1, 2026',
+      'Oct 31, 2026',
     ])
       expect(html).toContain(text);
     expect(html).not.toContain('Next invoice');
@@ -71,7 +73,8 @@ describe('BillingBenefitsSummary', () => {
   });
   it('explains PAYG resets and keeps comp and Enterprise fees honest', () => {
     const payg = renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('payg')} />);
-    expect(payg).toContain('Monthly allowances reset 1 Nov 2026');
+    expect(payg).toContain('Monthly allowances reset');
+    expect(payg).toContain('>Nov 1, 2026</time> (UTC)');
     expect(payg).toContain('Usage above Free allowances');
     expect(payg).toContain('not credit or an upfront charge');
     const comp = renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('team', true)} />);
@@ -105,7 +108,7 @@ it('keeps credit and cap visible while charge details are collapsed on Usage', (
   );
   const beforeDetails = html.split('<details')[0];
   expect(beforeDetails).toContain('Included usage credit');
-  expect(beforeDetails).toContain('15 Oct 2026');
+  expect(beforeDetails).toContain('Oct 15, 2026');
   expect(beforeDetails).toContain('€5');
   expect(html).toContain('Billing details');
   expect(html).not.toMatch(/<details[^>]*\sopen/);
@@ -118,4 +121,16 @@ it('does not turn unavailable recorded charges into zero in the Usage overview',
     <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
   );
   expect(html.split('<details')[0]).toContain('Unavailable');
+});
+
+it('localizes UTC billing dates without moving reset boundaries into the viewer time zone', () => {
+  const html = renderToStaticMarkup(
+    <WorkspaceTimezoneProvider
+      timezone="Asia/Tokyo"
+      region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+    >
+      <BillingBenefitsSummary summary={fixture('payg')} />
+    </WorkspaceTimezoneProvider>,
+  );
+  expect(html).toContain('<time dateTime="2026-11-01T00:00:00.000Z">01.11.2026</time> (UTC)');
 });

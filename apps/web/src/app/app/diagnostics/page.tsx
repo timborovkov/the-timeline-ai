@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DiagnosticReportForm, DeleteDiagnosticReport } from '@/components/diagnostic-report-form';
+import { RegionalDate } from '@/components/regional-date';
 import { PageHeader } from '@/components/page-header';
 import { resolveScope } from '@/lib/action-scope';
 
@@ -74,8 +75,8 @@ export default async function DiagnosticReportsPage({
           {reports.slice(0, DIAGNOSTIC_PAGE_SIZE).map((report) => (
             <li key={report.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
               <p className="text-sm">
-                Shared {report.createdAt.toISOString().replace('T', ' ').replace('Z', ' UTC')} ·
-                expires {report.expiresAt.toLocaleDateString('en-GB', { timeZone: 'UTC' })}
+                Shared <RegionalDate value={report.createdAt} variant="datetime" /> · expires{' '}
+                <RegionalDate value={report.expiresAt} />
               </p>
               <DeleteDiagnosticReport teamId={r.teamId} reportId={report.id} />
             </li>

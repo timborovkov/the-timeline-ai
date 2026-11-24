@@ -35,6 +35,7 @@ import {
   type ApprovalPreviewField,
   type ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
@@ -129,6 +130,7 @@ export function ApprovalPreviewDialog({
   const members = loaded?.key === requestKey ? loaded.members : {};
   const loadingSnapshot = open && loaded?.key !== requestKey;
 
+  const region = useRegionalFormat();
   const { fields, timestamps } = buildApprovalPreviewFields({
     operation: item.operation,
     targetKind: item.targetKind,
@@ -137,6 +139,7 @@ export function ApprovalPreviewDialog({
     snapshot,
     members,
     timezone,
+    locale: region.locale,
   });
   const evidence = item.evidence ?? [];
 
@@ -155,9 +158,7 @@ export function ApprovalPreviewDialog({
   const content = (
     <>
       <div className="space-y-3">
-        {acceptDisabled ? (
-          <StaleEvidence key={item.id} itemId={item.id} timezone={timezone} />
-        ) : null}
+        {acceptDisabled ? <StaleEvidence key={item.id} itemId={item.id} /> : null}
         <RejectionReason
           metadata={item.metadata}
           status={item.status}
@@ -166,9 +167,7 @@ export function ApprovalPreviewDialog({
         {reason ? (
           <section>
             <h3 className="text-sm font-semibold">Why this change</h3>
-            <p className="mt-2 text-sm leading-6 text-fg-muted">
-              {displayText(reason, { timezone })}
-            </p>
+            <p className="mt-2 text-sm leading-6 text-fg-muted">{displayText(reason, region)}</p>
           </section>
         ) : null}
         <ApprovalPreviewContent
@@ -199,9 +198,7 @@ export function ApprovalPreviewDialog({
       >
         <header className="border-b border-border p-5">
           <p className="mb-2 text-xs text-fg-muted">{description}</p>
-          <h2 className="text-xl font-semibold leading-7">
-            {displayText(item.title, { timezone })}
-          </h2>
+          <h2 className="text-xl font-semibold leading-7">{displayText(item.title, region)}</h2>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">{content}</div>
         <footer className="border-t border-border bg-surface p-4">{actions}</footer>
@@ -212,7 +209,7 @@ export function ApprovalPreviewDialog({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent onCloseAutoFocus={restoreFocus} className="max-w-xl">
           <SheetHeader>
-            <SheetTitle className="pr-8">{displayText(item.title, { timezone })}</SheetTitle>
+            <SheetTitle className="pr-8">{displayText(item.title, region)}</SheetTitle>
             <SheetDescription>{description}</SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-5">{content}</div>
@@ -224,7 +221,7 @@ export function ApprovalPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-bg sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
         <DialogHeader>
-          <DialogTitle className="pr-8">{displayText(item.title, { timezone })}</DialogTitle>
+          <DialogTitle className="pr-8">{displayText(item.title, region)}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {content}
@@ -320,6 +317,7 @@ function ApprovalPreviewContent({
   evidence: PreviewEvidence[];
   currentEvidence: PreviewEvidence[];
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <div
       className={bounded ? 'max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1' : 'space-y-4'}
@@ -332,7 +330,9 @@ function ApprovalPreviewContent({
       </dl>
       <PreviewTimestamps timestamps={timestamps} />
       {item.description ? (
-        <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
+        <p className="text-sm text-fg-muted">
+          {displayText(item.description, { timezone, locale })}
+        </p>
       ) : null}
       {currentEvidence.length > 0 ? (
         <section className="space-y-2 border-t border-border pt-3">
@@ -393,7 +393,7 @@ function ApprovalPreviewContent({
               </span>
               {entry.quote ? (
                 <span className="line-clamp-3 text-fg-muted">
-                  {displayText(entry.quote, { timezone })}
+                  {displayText(entry.quote, { timezone, locale })}
                 </span>
               ) : null}
             </EvidenceLink>

@@ -1257,6 +1257,9 @@
   "apps/web/src/lib/app-metadata.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/app-region.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/app-scroll.test.ts": {
     "group": "unit"
   },

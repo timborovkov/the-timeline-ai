@@ -20,7 +20,7 @@ import { WorkQueueRow } from '@/components/work/work-queue-row';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDate } from '@/lib/display-dates';
+import { RegionalDate } from '@/components/regional-date';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { getWorkAttentionSummary } from '@/lib/hub-status';
 import { notificationHref } from '@/lib/notification-href';
@@ -222,7 +222,9 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                         {board.name}
                       </Link>
                     </CollectionRow.Title>
-                    <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
+                    <CollectionRow.Context>
+                      Updated <RegionalDate value={board.updatedAt} />
+                    </CollectionRow.Context>
                     <CollectionRow.Metadata>
                       <span className="px-2 text-xs tabular-nums text-fg-dim">
                         {board.itemCount} items
@@ -246,8 +248,4 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       </div>
     </div>
   );
-}
-
-function dateLabel(value: Date, timezone: string): string {
-  return formatDisplayDate(value, { timezone });
 }

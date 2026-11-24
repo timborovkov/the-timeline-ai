@@ -30,7 +30,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import type { BoardLayout } from '@/lib/board-links';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
@@ -483,7 +483,7 @@ function BoardNotesSection({
   onEdit: () => void;
   onSave: () => void;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   return (
     <section className="border-b border-border p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -515,7 +515,7 @@ function BoardNotesSection({
             item.notes ? 'text-fg-muted' : 'text-fg-dim',
           )}
         >
-          {item.notes ? displayText(item.notes, { timezone }) : 'No notes yet.'}
+          {item.notes ? displayText(item.notes, region) : 'No notes yet.'}
         </p>
       )}
     </section>
@@ -577,6 +577,7 @@ function BoardEvidence({
   lanes: boards.BoardLaneRow[];
   members: BoardMemberOption[];
 }) {
+  const region = useRegionalFormat();
   const timezone = useWorkspaceTimezone();
   return (
     <section className="p-4">
@@ -594,7 +595,7 @@ function BoardEvidence({
                 </p>
                 {change.note ? (
                   <p className="mt-1 line-clamp-2 text-xs text-fg-muted">
-                    {displayText(change.note, { timezone })}
+                    {displayText(change.note, region)}
                   </p>
                 ) : null}
                 <div className="mt-2 space-y-1">
@@ -604,8 +605,8 @@ function BoardEvidence({
                       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
                       className="block text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                     >
-                      {displayText(source.source, { timezone })} ·{' '}
-                      {formatDisplayDateTime(source.occurredAt, { timezone })}
+                      {displayText(source.source, region)} ·{' '}
+                      {formatDisplayDateTime(source.occurredAt, region)}
                     </Link>
                   ))}
                 </div>
@@ -627,6 +628,7 @@ function BoardActivity({
   lanes: boards.BoardLaneRow[];
   members: BoardMemberOption[];
 }) {
+  const region = useRegionalFormat();
   const timezone = useWorkspaceTimezone();
   return (
     <section className="border-t border-border p-4">
@@ -649,10 +651,10 @@ function BoardActivity({
                 {formatChangeValue(change.field, change.newValue, lanes, members, timezone)}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
-                <span>{formatDisplayDateTime(change.changedAt, { timezone })}</span>
+                <span>{formatDisplayDateTime(change.changedAt, region)}</span>
               </div>
               {change.note ? (
-                <p className="mt-2 text-fg">{displayText(change.note, { timezone })}</p>
+                <p className="mt-2 text-fg">{displayText(change.note, region)}</p>
               ) : null}
               {change.field === 'customFields' ||
               change.field === '__add__' ||
@@ -884,10 +886,6 @@ function dateInputValue(value: Date, timezone: string): string {
   return presentDueDate(value, { timezone }).dateKey ?? '';
 }
 
-function dateLabel(value: Date, timezone: string): string {
-  return formatDisplayDate(value, { timezone });
-}
-
 function fieldLabel(field: boards.BoardItemField): string {
   switch (field) {
     case '__add__':
@@ -937,8 +935,7 @@ function formatChangeValue(
     return displayText(members.find((member) => member.id === value)?.label ?? 'Assigned');
   }
   if (field === 'dueAt' && typeof value === 'string') {
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? dateLabel(date, timezone) : displayText(value);
+    return formatDisplayDate(value, { timezone });
   }
   if (field === 'priority' && typeof value === 'number') return `P${value}`;
   if (typeof value === 'string') return displayText(value);

@@ -10,7 +10,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
-const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+import { RegionalNumber } from '@/components/regional-number';
 
 export default async function OcrBudgetPage() {
   const session = await auth();
@@ -26,15 +26,21 @@ export default async function OcrBudgetPage() {
       <dl className="grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
         <div>
           <dt className="text-sm text-fg-muted">Spent this month</dt>
-          <dd className="text-lg">{dollars.format(budget.spentCents / 100)}</dd>
+          <dd className="text-lg">
+            <RegionalNumber value={budget.spentCents} currency="USD" />
+          </dd>
         </div>
         <div>
           <dt className="text-sm text-fg-muted">Reserved</dt>
-          <dd className="text-lg">{dollars.format(budget.reservedCents / 100)}</dd>
+          <dd className="text-lg">
+            <RegionalNumber value={budget.reservedCents} currency="USD" />
+          </dd>
         </div>
         <div>
           <dt className="text-sm text-fg-muted">Maximum reserved per request</dt>
-          <dd className="text-lg">{dollars.format(budget.estimateCents / 100)}</dd>
+          <dd className="text-lg">
+            <RegionalNumber value={budget.estimateCents} currency="USD" />
+          </dd>
         </div>
       </dl>
       <form action={updateOcrBudget} className="max-w-md space-y-3">

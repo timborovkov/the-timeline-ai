@@ -167,8 +167,9 @@ workspace consequences, structured facts, a matching `[ev:…]` citation chip pe
 source evidence item, and a collapsed Original source
 disclosure. Attached files link to Documents. A date band separates each
 workspace day in Moments and All events. Today and Yesterday use the current
-date in the workspace timezone. Date bands and row boundaries extend to the
-main-pane edges while their content stays bounded. Each date band sticks below
+date in the workspace timezone. Row times use the display timezone and include
+the local date when it differs from the date band. Date bands and row boundaries
+extend to the main-pane edges while their content stays bounded. Each date band sticks below
 the measured toolbar until the next day reaches it, including when controls
 wrap or filters expand. Clearing the active filter chip updates the timeline
 in place. Infinite scroll retains virtualized rows. The default view ends at
@@ -286,8 +287,14 @@ Team → General is the default Team settings section and keeps identity as a
 form (rename for admins) plus two readonly copyable support fields — team id
 and slug — with spacing between sections and no nested cards. Renaming updates
 the display name only; slug and inbound email stay put. General also contains
-work style, messaging, digest destinations and timezone; there is no separate
-Preferences tab. Old Preferences links resolve to General. Evaluation tracing
+work style, messaging, digest destinations, team timezone and personal display
+preferences. Members can choose a display locale and time zone for this browser,
+or use browser defaults. On first render the app uses the browser's requested
+language and the workspace timezone where no choice is saved. It follows the
+browser language and timezone once the page is interactive. Calendar grid
+placement, due-date status and date filters still follow their workspace or
+event time contracts. Billing periods retain their UTC boundaries. Old
+Preferences links resolve to General. Evaluation tracing
 and conversation report sharing appear as descriptive navigation rows under
 Quality and support within General, never above the page header. Solo signup
 defers workspace creation until first-run Welcome: the chosen name mints the
@@ -303,10 +310,8 @@ identity in containers narrower than 32rem, preserving readable text at 200% siz
 An email used as a member or removed-member title is not repeated as secondary
 context. Inviter labels use the trimmed name, then email, then an unknown-member
 fallback. Member, invitation, and removed-member lists independently render 50
-rows per page with Previous/Next controls and a formatted range. Ranges use a
-stable English server/hydration format, then adopt the browser language and follow
-language changes; these controls
-disappear for 50 or fewer rows. Deliberate Previous/Next navigation scrolls the
+rows per page with Previous/Next controls and a formatted range. Ranges use the
+app display locale. These controls disappear for 50 or fewer rows. Deliberate Previous/Next navigation scrolls the
 new page into view below the shell header and focuses its named list, so the
 next Tab reaches the new rows. Automatic membership updates do not move focus. The Team accessible summary uses singular
 “member” for a single-member workspace. Role changes save on
@@ -627,7 +632,8 @@ follows the shared [due-date vocabulary](components.md#due-dates).
 ### Administrator dashboards
 
 Jobs and Reconciliation list rows show status, a human label, and relative time.
-IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
+Timestamp tooltips use the viewer’s display locale and time zone. IDs, raw
+enum keys, and provider errors stay in the row hover title. Copy access
 for reconciliation JSON payloads lives in the row overflow menu. Audit and
 Integration Audit still keep UUIDs, refs, and JSON closed inside
 `TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
@@ -770,7 +776,7 @@ Platform directories expose copyable identifiers, lifecycle status, disabled tim
 
 Website source management follows [the application patterns](../../docs/design/app.md); its internal measurement follows the [website capture contract](../websites.md).
 
-Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Trust audit redaction remains in force on every page.
+Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Their time-zone label and timestamp tooltips use the viewer’s display zone. Trust audit redaction remains in force on every page.
 
 ### Dashboard clarity and responsive controls
 
@@ -792,7 +798,9 @@ User-facing counts say passages, with indexing identifiers retained in technical
 details. Meeting transcripts precede technical identifiers.
 
 Approval actions use plain record/contact-detail/note labels and a visible Accept
-action. Mobile item icon controls have 44px targets. Planned agent tools start
+action. Approval evidence times use the viewer’s display region. Due dates keep
+the workspace day, and calendar proposal schedules keep the event time zone
+and show inclusive dates for all-day events. Mobile item icon controls have 44px targets. Planned agent tools start
 collapsed and open when searching, keeping available connections first.
 
 Team visibility controls have visible column labels as well as accessible names.

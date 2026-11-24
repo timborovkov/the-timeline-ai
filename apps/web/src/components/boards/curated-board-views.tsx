@@ -19,7 +19,7 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
@@ -287,7 +287,8 @@ export function CuratedBoardList({
     patch: BoardItemOptimisticPatch,
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
+  const { timezone } = region;
   const [, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
