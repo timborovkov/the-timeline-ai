@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-import { assertE2eDiskCapacity, buildE2eEnv } from './e2e-env.js';
+import { assertE2eDiskCapacity, buildE2eEnv, buildE2eWebServerConfig } from './e2e-env.js';
 
 const forbiddenPatterns = [
   { name: 'missing module', pattern: /MODULE_NOT_FOUND/ },
@@ -35,30 +35,59 @@ if (fixture !== undefined) {
   process.exit(0);
 }
 
-assertE2eDiskCapacity();
+async function runChecked(
+  label: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  cwd?: string,
+): Promise<number> {
+  const child = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => {
+    const text = chunk.toString();
+    output += text;
+    process.stdout.write(text);
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    const text = chunk.toString();
+    output += text;
+    process.stderr.write(text);
+  });
 
-const env = buildE2eEnv();
-
-const args = ['x', '--bun', '--no-install', 'playwright', 'test', ...process.argv.slice(2)];
-const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-
-let output = '';
-child.stdout.on('data', (chunk: Buffer) => {
-  const text = chunk.toString();
-  output += text;
-  process.stdout.write(text);
-});
-child.stderr.on('data', (chunk: Buffer) => {
-  const text = chunk.toString();
-  output += text;
-  process.stderr.write(text);
-});
-
-child.on('close', (code) => {
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once('close', resolve);
+    child.once('error', reject);
+  });
   const matches = scanOutput(output);
   if (matches.length) {
-    console.error(`Strict E2E log check failed: ${matches.join(', ')}`);
-    process.exit(1);
+    console.error(`Strict E2E log check failed during ${label}: ${matches.join(', ')}`);
+    return 1;
   }
-  process.exit(code ?? 1);
-});
+  return code ?? 1;
+}
+
+assertE2eDiskCapacity();
+
+const args = process.argv.slice(2);
+const precompiled = args[0] === '--precompile-fixtures';
+const env = buildE2eEnv(precompiled ? { ...process.env, E2E_PRECOMPILED: '1' } : process.env);
+if (precompiled) {
+  const { baseURL } = buildE2eWebServerConfig(env);
+  env.AUTH_URL = baseURL;
+  env.NEXTAUTH_URL = baseURL;
+  const buildStatus = await runChecked(
+    'fixture compilation',
+    ['x', '--bun', '--no-install', 'next', 'build', '--webpack'],
+    env,
+    'apps/web',
+  );
+  if (buildStatus !== 0) process.exit(buildStatus);
+}
+
+process.exit(
+  await runChecked(
+    'Playwright',
+    ['x', '--bun', '--no-install', 'playwright', 'test', ...(precompiled ? args.slice(1) : args)],
+    env,
+  ),
+);

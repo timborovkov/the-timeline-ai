@@ -186,6 +186,8 @@ Local E2E commands auto-detect published ports from a running `timeline-e2e-*` i
 
 Web development and production builds explicitly use Next.js's supported Webpack bundler. With the pinned Bun/Next.js/Sentry combination, Turbopack's generated Sentry external-module aliases fail to resolve during instrumentation startup, including in standalone output. Keep instrumentation enabled; the E2E and production smoke commands exercise these same web scripts. The standalone preparation also traces Sentry with Bun export conditions: Next’s default Node trace does not include the Bun runtime entry and its dependencies. The isolated-artifact test verifies that instrumentation loads without falling back to the repository’s dependencies.
 
+Full browser CI uses a separate precompiled development fixture build so the browser server does not retain a live compiler. It uses the same disposable fixture services and deterministic integrations as development E2E. Production smoke continues to exercise the standalone build.
+
 `bun run validate` is the local static gate:
 
 1. `bun fmt --check`

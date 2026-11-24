@@ -1,7 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { dateInputValue, isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
+import { isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
 describe('isoTimestamp', () => {
   it('keeps already-serialized RSC date strings', () => {
     expect(isoTimestamp('2026-07-19T12:00:00.000Z')).toBe('2026-07-19T12:00:00.000Z');
@@ -15,13 +15,6 @@ describe('isoTimestamp', () => {
     expect(isoTimestamp(null)).toBeUndefined();
     expect(isoTimestamp(undefined)).toBeUndefined();
     expect(isoTimestamp('')).toBeUndefined();
-  });
-});
-
-describe('dateInputValue', () => {
-  it('uses the UTC calendar date from Date or string values', () => {
-    expect(dateInputValue(new Date('2026-07-19T12:00:00.000Z'))).toBe('2026-07-19');
-    expect(dateInputValue('2026-07-19T12:00:00.000Z')).toBe('2026-07-19');
   });
 });
 

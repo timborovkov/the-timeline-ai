@@ -101,9 +101,13 @@ export function buildE2eWebServerConfig(input: Env = process.env): {
   command: string;
 } {
   const port = normalizedWebPort(input.E2E_WEB_PORT);
+  const server =
+    input.E2E_PRECOMPILED === '1'
+      ? 'cd apps/web && bun x --bun --no-install next start'
+      : 'bun run --cwd apps/web dev';
   return {
     baseURL: input.E2E_BASE_URL ?? `http://localhost:${port}`,
-    command: input.E2E_WEB_SERVER_COMMAND ?? `bun run --cwd apps/web dev -H 127.0.0.1 -p ${port}`,
+    command: input.E2E_WEB_SERVER_COMMAND ?? `${server} -H 127.0.0.1 -p ${port}`,
   };
 }
 
@@ -145,10 +149,16 @@ export function assertE2eFixtureServices(env: Env): void {
 export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOptions = {}): Env {
   const env = { ...input };
   delete env.NO_COLOR;
+  if (env.E2E_PRECOMPILED === '1') {
+    if (env.E2E_PROD_SMOKE === '1') {
+      throw new Error('Precompiled fixtures and production smoke require separate builds.');
+    }
+    env.NODE_ENV = 'development';
+  }
   // Fixture service URLs/credentials stay configurable, but ordinary E2E runs
   // must never inherit exported provider or telemetry credentials from a shell.
   const providerVariable =
-    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|AUTH_GITHUB_|SLACK_|TELEGRAM_|RESEND_|DAYTONA_|RECALL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
+    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|AUTH_GITHUB_|SLACK_|TELEGRAM_|RESEND_|DAYTONA_|RECALL_|POLAR_|FIRECRAWL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
   for (const key of Object.keys(env)) {
     if (providerVariable.test(key)) delete env[key];
   }
