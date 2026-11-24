@@ -1,5 +1,10 @@
 import { entities, type Db } from '@timeline/db';
-import { parseChatContextTrail, type ChatContextRef } from '@timeline/shared/chat-context';
+import {
+  CHAT_CONTEXT_TRAIL_MAX,
+  isSavedWorkViewContextHref,
+  parseChatContextTrail,
+  type ChatContextRef,
+} from '@timeline/shared/chat-context';
 import {
   listDailyDigests,
   presentSavedViewDigest,
@@ -238,21 +243,28 @@ async function loadChatPage({
 }
 
 function updateContextTrail(links: DailyDigestPayload['links']): ChatContextRef[] {
-  return parseChatContextTrail(
-    links.flatMap<ChatContextRef>(({ href, label }) => {
-      const timelineEventId = /^\/app\/timeline\?event=([^&#]+)/.exec(href)?.[1];
-      if (timelineEventId) return [{ kind: 'timeline-event', timelineEventId, href, label }];
-      const objectId = /^\/app\/objects\/([^/?#]+)$/.exec(href)?.[1];
-      if (objectId) return [{ kind: 'object', objectId, href, label }];
-      const collectionView = /^\/app\/(?:tasks|objects|approvals)(?:\?[^#]*)?$/.test(href);
-      const boardId = /^\/app\/boards\/([^/?#]+)(?:\?[^#]*)?$/.exec(href)?.[1];
-      // Keep the complete filtered view as context, not just its underlying board.
-      // presentSavedViewDigest has already rechecked the viewer's current access.
-      return collectionView || z.uuid().safeParse(boardId).success || href.startsWith('/app/work/')
-        ? [{ kind: 'page', href, label }]
-        : [];
-    }),
-  );
+  const savedViews: ChatContextRef[] = [];
+  const sources: ChatContextRef[] = [];
+  for (const { href, label } of links) {
+    if (isSavedWorkViewContextHref(href)) {
+      savedViews.push({ kind: 'page', href, label });
+      continue;
+    }
+    const timelineEventId = /^\/app\/timeline\?event=([^&#]+)/.exec(href)?.[1];
+    const objectId = /^\/app\/objects\/([^/?#]+)$/.exec(href)?.[1];
+    if (timelineEventId) sources.push({ kind: 'timeline-event', timelineEventId, href, label });
+    else if (objectId) sources.push({ kind: 'object', objectId, href, label });
+    else if (href.startsWith('/app/work/')) sources.push({ kind: 'page', href, label });
+  }
+
+  // A full set of timeline links should leave room for filtered saved views.
+  const views = parseChatContextTrail(savedViews);
+  const viewSlots = Math.floor(CHAT_CONTEXT_TRAIL_MAX / 2);
+  return parseChatContextTrail([
+    ...views.slice(0, viewSlots),
+    ...sources,
+    ...views.slice(viewSlots),
+  ]);
 }
 
 function starterContextTrail(sources: FirstRunSource[]): ChatContextRef[] {

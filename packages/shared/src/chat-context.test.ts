@@ -69,6 +69,21 @@ describe('chat context trail', () => {
     expect(merged.some((ref) => ref.href === '/app/inbox')).toBe(false);
   });
 
+  it('carries bounded work-view URLs intact through repeated parsing and into the prompt', () => {
+    const filters = new URLSearchParams({ q: 'Helsinki '.repeat(32).trim(), status: 'blocked' });
+    const ref = {
+      kind: 'page' as const,
+      href: `/app/tasks?${filters.toString()}`,
+      label: 'Saved tasks',
+    };
+    const trail = parseChatContextTrail(parseChatContextTrail([ref]));
+    expect(trail).toEqual([ref]);
+    expect(chatContextPrompt(trail)).toContain(ref.href);
+
+    const oversized = { ...ref, href: `/app/tasks?q=${'x'.repeat(9000)}` };
+    expect(parseChatContextRef(oversized)).toBeNull();
+  });
+
   it('parses a stored trail and ignores junk', () => {
     expect(parseChatContextTrail([objectA, { kind: 'object' }, documentA])).toEqual([
       objectA,
