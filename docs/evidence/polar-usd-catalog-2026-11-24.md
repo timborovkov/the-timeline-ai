@@ -9,4 +9,8 @@ The rollout operator verified the sandbox and live organizations after updating 
 
 Readback showed monthly USD pricing with $10 per Team seat, a custom Enterprise fee, and two prices on the reused organization-local meters. AI costs one cent per metered unit and native meeting capture costs three cents per minute. Prices use exclusive tax behavior. Polar accepted the custom Enterprise price with its maximum omitted and rejected a maximum of 100,000,000 minor units because the allowed maximum is 99,999,999.
 
-The operator checked the visible provider catalog and created unpaid quotes. Paid confirmation, collected tax, invoices, seat proration, and delivery from a registered webhook endpoint remain unverified. See the [release checks](../setup/polar.md#verification-and-release).
+The operator saw US$10 per seat per month in both hosted checkout browsers. Changing the sandbox seat selector to two seats displayed US$20. No payment was made.
+
+The operator read back `POLAR_SERVER=production`, the new live product IDs, and the existing enabled billing gate on Railway web and worker. Web redeploy `c01f2136-f2fc-40c8-8729-42d1e4589387` and worker redeploy `289bbc53-3ad4-408d-a896-e2ce6fab754d` reached `SUCCESS`.
+
+Paid confirmation, collected tax, invoices, seat proration, and delivery from a registered webhook endpoint remain unverified. See the [release checks](../setup/polar.md#verification-and-release).
