@@ -24,7 +24,7 @@ test('Team intent survives navigation to signup without starting a purchase', as
   );
 });
 
-test('mobile pricing explains limits and links billing help', async ({ page }) => {
+test('mobile pricing explains limits and links billing help', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/pricing');
   await expect(
@@ -37,8 +37,8 @@ test('mobile pricing explains limits and links billing help', async ({ page }) =
     page.locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]'),
   ).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile.png', fullPage: true });
-  await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile-viewport.png' });
+  await page.screenshot({ path: testInfo.outputPath('pricing-mobile.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('pricing-mobile-viewport.png') });
 });
 
 test('public and authentication responses protect framing and publish security contact', async ({
@@ -71,7 +71,7 @@ test('public and authentication responses protect framing and publish security c
 
 test('pricing text and primary-action tokens meet normal-text contrast in both themes', async ({
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/pricing');
   await expect(
@@ -108,7 +108,7 @@ test('pricing text and primary-action tokens meet normal-text contrast in both t
     }, dark);
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
     await page.screenshot({
-      path: `/workspace/audit-evidence/pricing-desktop-${dark ? 'dark' : 'light'}.png`,
+      path: testInfo.outputPath(`pricing-desktop-${dark ? 'dark' : 'light'}.png`),
     });
   }
 });

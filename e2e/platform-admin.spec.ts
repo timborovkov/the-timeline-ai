@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { signIn } from './helpers.js';
+
+import { signIn, signInFromCurrentPage } from './helpers.js';
 import { e2eTeam, e2eUsers, e2eSeedEvents } from './test-data.js';
 
 test('ordinary owners cannot discover or open the platform panel', async ({ page }) => {
@@ -104,8 +105,8 @@ test('platform administrators can reach the panel without a team membership', as
     await sql`UPDATE team_members SET removed_at = now() WHERE user_id = ${e2eUsers.nonMember.id}`;
   });
   try {
-    await signIn(page, e2eUsers.nonMember.email);
-    // Teamless /app routes to Welcome; platform admin is a separate layout.
+    await page.goto('/sign-in');
+    await signInFromCurrentPage(page, e2eUsers.nonMember.email, /\/onboarding(?:\?|$)/);
     await page.goto('/app/admin');
     await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
   } finally {

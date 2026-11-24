@@ -174,7 +174,9 @@ test('source health, captured-file triage, and OCR deferral expose recovery cont
     await expect(page.getByRole('button', { name: 'Queue reindex' }).first()).toBeVisible();
     await screenshot(page, testInfo, 'source-health');
     await page.goto('/app/documents/captured?source=slack&sender=Jordan');
-    await expect(page.getByText('Launch checklist scan.pdf', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Launch checklist scan.pdf', { exact: true }).filter({ visible: true }),
+    ).toBeVisible();
     await expect(page.getByText('Deferred by OCR budget', { exact: true })).toBeVisible();
     await page.getByRole('checkbox', { name: 'Select Launch checklist scan.pdf' }).check();
     await expect(page.getByRole('button', { name: 'Re-extract selected' })).toBeVisible();

@@ -32,6 +32,7 @@ import { MEETINGS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayMeetingLabel, displayMemberLabel, displaySourceLabel } from '@/lib/display-labels';
 import { CAPTURE_FILTERS, type CaptureFilter } from '@/lib/meeting-capture-filters';
+import { timezoneOptions } from '@/lib/timezones';
 
 export const metadata: Metadata = {
   title: 'Meetings',
@@ -136,6 +137,8 @@ export default async function MeetingsPage({
   const hasCaptureFilters = tab === 'captures' && (Boolean(query) || filter !== 'all');
   const hasSavedSearch = Boolean(query);
   const clearCurrentViewHref = meetingHref({ tab });
+  // Server and browser ICU data can use different names for the same zone.
+  const timezones = timezoneOptions(calendarSettings.defaultTimezone);
 
   return (
     <div data-app-width="collection" className="space-y-4">
@@ -155,6 +158,7 @@ export default async function MeetingsPage({
             defaultVisibility={defaultRow.visibility}
             defaultVisibilityUserIds={defaultRow.visibilityUserIds}
             defaultTimezone={calendarSettings.defaultTimezone}
+            timezones={timezones}
             members={memberOptions}
           />
         </PageHeader.Trailing>
@@ -179,6 +183,7 @@ export default async function MeetingsPage({
           members={memberOptions}
           pinState={pinState}
           timezone={calendarSettings.defaultTimezone}
+          timezones={timezones}
           totalCount={savedMeetings.length}
         />
       ) : (
@@ -333,6 +338,7 @@ function SavedMeetingsSection({
   members,
   pinState,
   timezone,
+  timezones,
   totalCount,
 }: {
   clearHref: string;
@@ -341,6 +347,7 @@ function SavedMeetingsSection({
   members: MemberOption[];
   pinState: Record<string, boolean>;
   timezone: string;
+  timezones: readonly string[];
   totalCount: number;
 }) {
   return (
@@ -416,6 +423,7 @@ function SavedMeetingsSection({
                   <EditSavedMeetingForm
                     saved={saved}
                     defaultTimezone={timezone}
+                    timezones={timezones}
                     members={members}
                   />
                 </div>

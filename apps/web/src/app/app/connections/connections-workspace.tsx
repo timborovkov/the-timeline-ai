@@ -40,8 +40,9 @@ function writeConnectionsUrl(
   const next = connectionsTabHref(tab, hash);
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (current === next) return;
-  if (mode === 'replace') window.history.replaceState(window.history.state, '', next);
-  else window.history.pushState(window.history.state, '', next);
+  // Next copies its router state and uses the new URL for subsequent refreshes.
+  if (mode === 'replace') window.history.replaceState(null, '', next);
+  else window.history.pushState(null, '', next);
 }
 
 function readConnectionsLocation(

@@ -96,9 +96,11 @@ async function createMemberInvite(page: Page, email: string): Promise<string> {
   await page.getByPlaceholder('teammate@example.com').fill(email);
   await page.getByLabel('Role', { exact: true }).selectOption('member');
   await page.getByRole('button', { name: 'Create invite' }).click();
-  const inviteRow = page.locator('li').filter({ hasText: email }).last();
-  await expect(inviteRow).toBeVisible();
-  const inviteCode = inviteRow.getByText(/^https?:\/\/.*\/accept-invite\/[^/]+$/);
+  await expect(teamMemberRow(page, email)).toBeVisible();
+  const inviteForm = page.locator('form').filter({
+    has: page.getByRole('button', { name: 'Create invite', exact: true }),
+  });
+  const inviteCode = inviteForm.getByText(/^https?:\/\/.*\/accept-invite\/[^/]+$/);
   await expect(inviteCode).toBeVisible();
   return (await inviteCode.innerText()).trim();
 }
@@ -1002,7 +1004,7 @@ test('seeded owner can sign in, switch teams, and sign out', async ({ page }) =>
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app');
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: e2eTeam.name, exact: true })).toBeVisible();
   await expect(page.getByLabel('Question for Ask')).toBeVisible();
 
   await page.getByRole('button', { name: new RegExp(`Switch team.*${e2eTeam.name}`) }).click();
@@ -1174,7 +1176,15 @@ test.describe
       sql`SELECT 1 FROM entity_relationships WHERE from_entity_id = ${taskId}`,
     ).resolves.toHaveLength(0);
 
-    await ownerPage.getByLabel('Task category').selectOption('__automatic__');
+    await waitForPost(ownerPage, `/app/objects/${taskId}`, async () => {
+      await ownerPage.getByLabel('Task category').selectOption('__automatic__');
+    });
+    const categoryToast = ownerPage.getByRole('listitem').filter({
+      has: ownerPage.getByText('Category updated', { exact: true }),
+    });
+    // The persistent Undo toast can cover the project choices at this viewport.
+    await categoryToast.getByRole('button', { name: 'Close toast', exact: true }).click();
+    await expect(categoryToast).toBeHidden();
     const firstPendingHash = await expect
       .poll(async () => {
         const [row] = await sql<{ requestedHash: string | null }[]>`
@@ -1227,8 +1237,12 @@ test('onboarding checklist supports manual completion, dismissal, and reopening'
   const ownerPage = await newSignedInPage(browser, 'owner');
 
   await ownerPage.goto('/app');
-  await expect(ownerPage.getByRole('heading', { name: 'Team setup checklist' })).toBeVisible();
-  const markNextStep = ownerPage.getByRole('button', { name: /^Mark .+ complete$/ });
+  const checklist = ownerPage.getByRole('region', { name: 'Team setup checklist' });
+  await expect(checklist).toBeVisible();
+  await checklist
+    .getByText('Optional setup: sources, teammates and billing', { exact: true })
+    .click();
+  const markNextStep = checklist.getByRole('button', { name: /^Mark .+ complete$/ });
   await expect(markNextStep).toBeVisible();
   const completedStepLabel = await markNextStep.getAttribute('aria-label');
   if (!completedStepLabel) throw new Error('next setup step is missing an accessible label');
@@ -1433,7 +1447,9 @@ test('timeline inspector edits visibility and removes conversational events', as
     await ownerPage.goto(`/app/timeline?mode=events&event=${rawEvent.id}`);
     const inspector = ownerPage.locator('#inspector-pane');
     await expect(inspector).toBeVisible();
-    await expect(ownerPage.getByText(eventText).first()).toBeVisible();
+    await expect(
+      inspector.getByText(eventText, { exact: true }).filter({ visible: true }).first(),
+    ).toBeVisible();
 
     await inspector
       .locator('summary')
@@ -1537,8 +1553,15 @@ test('Resend inbound email lands as a cited team timeline event', async ({ page 
   });
 
   await signIn(page, e2eUsers.owner.email);
-  await page.goto('/app/timeline');
-  await expect(page.getByText(emailText).first()).toBeVisible();
+  await page.goto('/app/timeline?mode=events');
+  const capturedEmail = page.getByRole('button', { name: literalPattern(emailText) });
+  await expect(capturedEmail).toBeVisible();
+  await capturedEmail.click();
+  const inspector = page.locator('#inspector-pane');
+  await expect(
+    inspector.getByText(emailText, { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(inspector.getByRole('button', { name: /^Copy citation/ }).first()).toBeVisible();
 });
 
 test('inbound email sender whitelist blocks and allows Resend capture from the browser', async ({
@@ -1594,9 +1617,9 @@ test('inbound email sender whitelist blocks and allows Resend capture from the b
       subject: `E2E allowed sender ${stamp}`,
     });
 
-    await page.goto('/app/timeline');
-    await expect(page.getByText(allowedText).first()).toBeVisible();
-    await expect(page.getByText(blockedText)).toHaveCount(0);
+    await page.goto('/app/timeline?mode=events');
+    await expect(page.getByRole('button', { name: literalPattern(allowedText) })).toBeVisible();
+    await expect(page.getByRole('button', { name: literalPattern(blockedText) })).toHaveCount(0);
   } finally {
     await resetInboundEmailWhitelist();
     await page.context().close();
@@ -1678,37 +1701,44 @@ test.describe
     await page.goto('/app/meetings?tab=saved');
     await expect(page.getByRole('heading', { name: 'Meetings', exact: true })).toBeVisible();
 
-    await page
-      .locator('summary')
-      .filter({ hasText: /^Save a meeting$/ })
-      .click();
-    await page.getByLabel('Title').fill(title);
-    await page.getByLabel('Meeting URL').fill('https://meet.google.com/e2e-meet-final');
-    await page.getByLabel('Description').fill('Customer launch readiness sync');
-    await page.getByLabel('Aliases').fill(alias);
-    await page.getByRole('checkbox', { name: 'Add a recurring schedule' }).check();
-    await page.getByLabel('Start times').fill('09:30');
-    await page.getByRole('checkbox', { name: 'Auto-join scheduled occurrences' }).check();
-    await page.getByRole('checkbox', { name: /I confirm this team has permission/ }).check();
-    await page.getByRole('button', { name: 'Save meeting' }).click();
+    await page.getByRole('button', { name: 'Save a meeting', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Save a meeting' });
+    await dialog.getByLabel('Title').fill(title);
+    await dialog.getByLabel('Meeting URL').fill('https://meet.google.com/e2e-meet-final');
+    await dialog.getByLabel('Description').fill('Customer launch readiness sync');
+    await dialog.getByLabel('Aliases').fill(alias);
+    await dialog.getByRole('checkbox', { name: 'Add a recurring schedule' }).check();
+    await dialog.getByLabel('Start times').fill('09:30');
+    await dialog.getByRole('checkbox', { name: 'Auto-join scheduled occurrences' }).check();
+    await dialog.getByRole('checkbox', { name: /I confirm this team has permission/ }).check();
+    await dialog.getByRole('button', { name: 'Save meeting' }).click();
+    await expect(dialog).toBeHidden();
 
-    const savedMeeting = page
-      .locator('section')
-      .filter({ hasText: 'Saved meetings' })
-      .locator('li')
-      .filter({ hasText: title });
-    await expect(savedMeeting.getByText('Auto-join', { exact: true })).toBeVisible();
-    await savedMeeting
-      .locator('summary')
-      .filter({ hasText: /^Edit details$/ })
-      .click();
-    await expect(savedMeeting.getByLabel('Aliases')).toHaveValue(alias);
+    const clientErrors: string[] = [];
+    const recordClientError = (error: Error) => clientErrors.push(error.message);
+    page.on('pageerror', recordClientError);
+    try {
+      await page.reload();
+      const savedMeeting = page
+        .getByRole('list', { name: 'Saved meetings' })
+        .getByRole('listitem')
+        .filter({ hasText: title });
+      await expect(savedMeeting.getByText('Auto-join', { exact: true })).toBeVisible();
+      await savedMeeting
+        .locator('summary')
+        .filter({ hasText: /^Edit details$/ })
+        .click();
+      await expect(savedMeeting.getByLabel('Aliases')).toHaveValue(alias);
+      await expect(savedMeeting.getByRole('combobox', { name: 'Timezone' })).toBeVisible();
+      expect(clientErrors).toEqual([]);
+    } finally {
+      page.off('pageerror', recordClientError);
+    }
   });
   test('saved recurring meeting appears in scheduled captures', async () => {
     await page.goto('/app/meetings');
     const scheduledCapture = page
-      .locator('section')
-      .filter({ hasText: 'Recent captures' })
+      .getByRole('region', { name: 'Scheduled and captured' })
       .locator('[class~="group/collection-row"]')
       .filter({ hasText: title })
       .filter({ hasText: 'Scheduled' })
@@ -1724,18 +1754,15 @@ test.describe
       title,
     });
 
-    await page.goto('/app/meetings');
+    const filters = new URLSearchParams({ status: 'completed', q: title });
+    await page.goto(`/app/meetings?${filters.toString()}`);
     const completedCapture = page
+      .getByRole('region', { name: 'Scheduled and captured' })
       .locator('[class~="group/collection-row"]')
-      .filter({ hasText: title })
-      .filter({
-        hasText: 'Completed',
-      });
-    await expect(completedCapture.first()).toBeVisible();
-    await completedCapture
-      .first()
-      .getByRole('link', { name: literalPattern(title) })
-      .click();
+      .filter({ hasText: 'Completed' });
+    const captureLink = completedCapture.getByRole('link', { name: title, exact: true });
+    await expect(captureLink).toHaveAttribute('href', `/app/meetings/${meetingId}`);
+    await captureLink.click();
     await expect(page).toHaveURL(new RegExp(`/app/meetings/${meetingId}`));
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
     await expect(page.getByText(summary)).toBeVisible();
@@ -1748,16 +1775,17 @@ test.describe
       page.getByText('Decision: keep onboarding scope unchanged and ship the checklist.'),
     ).toBeVisible();
 
-    await page.goto('/app/timeline');
-    await expect(page.getByRole('link', { name: 'Open transcript' })).toHaveAttribute(
-      'href',
-      `/app/meetings/${meetingId}`,
-    );
+    await page.goto('/app/timeline?source=meeting');
+    const meetingHref = `/app/meetings/${meetingId}`;
+    const meetingMoment = page.locator('[data-moment-id]').filter({
+      has: page.locator(`a[href="${meetingHref}"]`),
+    });
+    await expect(
+      meetingMoment.getByRole('link', { name: 'Open transcript', exact: true }),
+    ).toHaveAttribute('href', meetingHref);
     // Compact titles trim punctuation; open the evidence to verify its full summary.
-    await page
-      .getByRole('button', { name: literalPattern(summary.slice(0, -1)) })
-      .first()
-      .click();
+    const momentTitle = new RegExp(`^${literalPattern(summary.slice(0, -1)).source}`);
+    await meetingMoment.getByRole('button', { name: momentTitle }).click();
     await expect(page.getByText(summary).first()).toBeVisible();
   });
 });
@@ -2713,7 +2741,9 @@ test('team export can be queued and ready archives redirect to signed downloads'
   expect(['queued', 'failed']).toContain(createdExport.status);
   if (createdExport.status === 'queued') {
     await ownerPage.reload();
-    await expect(ownerPage.locator('li').filter({ hasText: 'queued' }).first()).toBeVisible();
+    await expect(
+      ownerPage.getByRole('listitem').filter({ hasText: 'Queued' }).first(),
+    ).toBeVisible();
   } else {
     await expect(ownerPage.getByText('Export was created but could not be queued')).toBeVisible();
     expect(createdExport.error).toBeTruthy();
@@ -2726,7 +2756,7 @@ test('team export can be queued and ready archives redirect to signed downloads'
     teamId: e2eTeam.id,
   });
   await ownerPage.reload();
-  const readyRow = ownerPage.locator('li').filter({
+  const readyRow = ownerPage.getByRole('listitem').filter({
     has: ownerPage.locator(`input[value="${readyExportId}"]`),
   });
   await expect(readyRow.getByText('Ready', { exact: true })).toBeVisible();
@@ -2760,10 +2790,26 @@ test('owner can create an object, update it, add a note, and archive it', async 
   await expect(page).toHaveURL(/\/app\/objects\/[0-9a-f-]+/);
   await expect(page.getByRole('heading', { name: objectName })).toBeVisible();
 
-  await page.getByLabel('Stage').fill('discovery');
-  await page.getByLabel('Stage').blur();
+  const stage = page.getByRole('textbox', { name: 'Stage', exact: true });
+  await stage.fill('discovery');
+  const stageSaved = page.waitForResponse(
+    (response) =>
+      response.url() === page.url() &&
+      response.request().method() === 'POST' &&
+      response.request().postData()?.includes('discovery') &&
+      response.ok(),
+  );
+  await stage.blur();
+  expect(await (await stageSaved).finished()).toBeNull();
+  await page.reload();
+  await expect(stage).toHaveValue('discovery');
+  await page.getByText('Change history', { exact: true }).click();
   await expect(
-    page.locator('li').filter({ hasText: 'stage' }).filter({ hasText: 'discovery' }),
+    page
+      .getByRole('region', { name: 'Recent changes', exact: true })
+      .getByRole('listitem')
+      .filter({ hasText: 'stage' })
+      .filter({ hasText: 'discovery' }),
   ).toBeVisible();
 
   await page.getByRole('textbox', { name: 'New comment' }).fill(note);
@@ -2789,7 +2835,8 @@ test('owner can create a board and see matching objects on the board', async ({ 
   await page.getByRole('button', { name: 'Create board' }).click();
   const boardDialog = page.getByRole('dialog', { name: 'New board' });
   await expect(boardDialog).toBeVisible();
-  await boardDialog.getByRole('button', { name: /Task preset/ }).click();
+  await boardDialog.getByText('Task preset', { exact: true }).click();
+  await expect(boardDialog.getByRole('radio', { name: /Task preset/ })).toBeChecked();
   await boardDialog.getByRole('textbox', { name: 'Name', exact: true }).fill(boardName);
   await waitForPost(page, '/app/boards', () =>
     boardDialog.getByRole('button', { name: 'Create board' }).click(),
@@ -2852,16 +2899,22 @@ test.describe
     );
     // The link is optimistic; wait for the committed action before navigating.
     await expect(page.getByText('Relationship added', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: secondaryName })).toBeVisible();
-    await expect(page.getByText('Related · Task')).toBeVisible();
+    const related = page.getByRole('region', { name: 'Related', exact: true });
+    await expect(related.getByRole('link', { name: secondaryName, exact: true })).toBeVisible();
+    await expect(related.getByText('Related · Task', { exact: true })).toBeVisible();
+    await expect(related.getByRole('button', { name: 'Unlink', exact: true })).toBeEnabled();
   });
   test('the reciprocal link appears and owner can unlink it', async () => {
-    await page.goto(`/app/objects/${secondaryId}`);
+    const related = page.getByRole('region', { name: 'Related', exact: true });
+    await related.getByRole('link', { name: secondaryName, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/app/objects/${secondaryId}$`));
     await expect(page.getByRole('heading', { name: secondaryName })).toBeVisible();
-    await expect(page.getByRole('link', { name: primaryName })).toBeVisible();
-    await expect(page.getByText('Related · Task')).toBeVisible();
+    const reciprocal = related.getByRole('link', { name: primaryName, exact: true });
+    await expect(reciprocal).toBeVisible();
+    await expect(related.getByText('Related · Task', { exact: true })).toBeVisible();
 
-    await page.goto(`/app/objects/${primaryId}`);
+    await reciprocal.click();
+    await expect(page).toHaveURL(new RegExp(`/app/objects/${primaryId}$`));
     await waitForPost(
       page,
       `/app/objects/${primaryId}`,
@@ -2901,6 +2954,15 @@ test.describe
   const editedTitle = `E2E calendar edited ${stamp}`;
   const privateTitle = `E2E calendar private ${stamp}`;
   const scopedTimedTitle = `E2E calendar scoped timed ${stamp}`;
+  const recurrenceDay = (daysFromNow: number) =>
+    new Date(stamp + daysFromNow * 86_400_000).toISOString().slice(0, 10);
+  const seriesStartDay = recurrenceDay(7);
+  const seriesSplitDay = recurrenceDay(14);
+  const splitOccurrenceDay = recurrenceDay(21);
+  const calendarDayUrl = (day: string) => `/app/calendar?view=day&date=${day}`;
+  const calendarGrid = (page: Page) => page.getByRole('region', { name: /^Calendar for / });
+  const recurringEvent = (page: Page) =>
+    calendarGrid(page).getByRole('button', { name: literalPattern(scopedTimedTitle) });
 
   test.beforeAll(async ({ browser }) => {
     ownerPage = await newSignedInPage(browser, 'owner');
@@ -2923,10 +2985,17 @@ test.describe
     await expect(ownerPage).toHaveURL(/view=week&date=2026-06-02/);
     await ownerPage.getByRole('button', { name: 'Month', exact: true }).click();
     await expect(ownerPage).toHaveURL(/view=month&date=2026-06-02/);
-    const calendarTimezone = (await ownerPage.getByText(/ · ISO weeks$/).textContent())?.split(
-      ' · ',
-    )[0];
-    expect(calendarTimezone).toBeTruthy();
+    const { defaultTimezone: calendarTimezone } = await withTeam(
+      getDb(),
+      e2eTeam.id,
+      e2eUsers.owner.id,
+    ).calendar.getCalendarSettings();
+    await expect(
+      ownerPage
+        .getByRole('region')
+        .filter({ has: ownerPage.getByRole('group', { name: 'Calendar navigation' }) })
+        .getByText(calendarTimezone, { exact: true }),
+    ).toBeVisible();
     await ownerPage.getByRole('button', { name: 'Today', exact: true }).click();
     const workspaceToday = await ownerPage.evaluate((timezone) => {
       const parts = new Intl.DateTimeFormat('en-US', {
@@ -2938,7 +3007,7 @@ test.describe
       const part = (type: Intl.DateTimeFormatPartTypes) =>
         parts.find((value) => value.type === type)?.value;
       return `${part('year')}-${part('month')}-${part('day')}`;
-    }, calendarTimezone!);
+    }, calendarTimezone);
     await expect(ownerPage).toHaveURL(new RegExp(`view=month&date=${workspaceToday}`));
     await ownerPage.goto('/app/calendar?view=day&date=2026-06-02');
   });
@@ -2947,7 +3016,8 @@ test.describe
     await expect(ownerPage.getByRole('dialog', { name: 'New event' })).toBeVisible();
     await ownerPage.getByLabel('Title').fill(teamTitle);
     await ownerPage.getByLabel('Start date').fill('2026-06-02');
-    await ownerPage.getByLabel('End date (exclusive)').fill('2026-06-03');
+    await ownerPage.getByLabel('Last day (included)').fill('2026-06-02');
+    await ownerPage.getByText('Location and description', { exact: true }).click();
     await ownerPage.getByLabel('Location').fill('E2E room');
     await waitForPost(ownerPage, '/app/calendar', async () => {
       await ownerPage.getByRole('button', { name: 'Save' }).click();
@@ -2957,6 +3027,7 @@ test.describe
     await ownerPage.getByRole('button', { name: new RegExp(teamTitle) }).click();
     await expect(ownerPage.getByRole('dialog', { name: 'Edit event' })).toBeVisible();
     await ownerPage.getByLabel('Title').fill(editedTitle);
+    await ownerPage.getByText('Location and description', { exact: true }).click();
     await ownerPage.getByLabel('Location').fill('E2E edited room');
     await waitForPost(ownerPage, '/app/calendar', async () => {
       await ownerPage.getByRole('button', { name: 'Save' }).click();
@@ -2974,7 +3045,8 @@ test.describe
     await ownerPage.getByRole('button', { name: 'New' }).click();
     await ownerPage.getByLabel('Title').fill(privateTitle);
     await ownerPage.getByLabel('Start date').fill('2026-06-02');
-    await ownerPage.getByLabel('End date (exclusive)').fill('2026-06-03');
+    await ownerPage.getByLabel('Last day (included)').fill('2026-06-02');
+    await ownerPage.getByText('Event settings', { exact: true }).click();
     await ownerPage.getByLabel('Visibility').selectOption('private');
     await waitForPost(ownerPage, '/app/calendar', async () => {
       await ownerPage.getByRole('button', { name: 'Save' }).click();
@@ -2985,67 +3057,83 @@ test.describe
     await expect(memberPage.getByText(privateTitle)).toHaveCount(0);
   });
   test('recurring timed events respect specifically shared visibility', async () => {
-    await ownerPage.getByRole('button', { name: 'New' }).click();
+    await ownerPage.goto(calendarDayUrl(seriesStartDay));
+    await ownerPage.getByRole('button', { name: 'New event', exact: true }).click();
     await ownerPage.getByLabel('Title').fill(scopedTimedTitle);
     await ownerPage.getByLabel('All day').uncheck();
-    await ownerPage.getByLabel('Start', { exact: true }).fill('2026-06-02T14:00');
-    await ownerPage.getByLabel('End', { exact: true }).fill('2026-06-02T15:00');
+    await ownerPage.getByLabel('Start', { exact: true }).fill(`${seriesStartDay}T14:00`);
+    await ownerPage.getByLabel('End', { exact: true }).fill(`${seriesStartDay}T15:00`);
+    await ownerPage.getByText('Event settings', { exact: true }).click();
     await ownerPage.getByLabel('Visibility').selectOption('specific_users');
     await ownerPage.getByLabel(e2eUsers.member.name).check();
     await ownerPage.getByLabel('Show as').selectOption('tentative');
     await ownerPage.getByLabel('Repeats').selectOption('weekly');
-    await expect(ownerPage.getByLabel('RRULE')).toHaveValue('FREQ=WEEKLY');
+    await expect(ownerPage.getByLabel('Repeats')).toHaveValue('weekly');
+    await ownerPage.getByLabel('Repeats').selectOption('custom');
+    await expect(ownerPage.getByLabel('Recurrence rule (RRULE)')).toHaveValue('FREQ=WEEKLY');
     await waitForPost(ownerPage, '/app/calendar', async () => {
       await ownerPage.getByRole('button', { name: 'Save' }).click();
     });
-    const scopedTimedOwnerEvent = ownerPage
-      .getByRole('button', { name: new RegExp(scopedTimedTitle) })
-      .first();
-    await expect(scopedTimedOwnerEvent).toBeVisible();
-    await expect(scopedTimedOwnerEvent).toHaveAccessibleName(/^Tentative recurring /);
+    await expect(recurringEvent(ownerPage)).toHaveAccessibleName(/^Tentative recurring /);
+    await recurringEvent(ownerPage).click();
+    await expect(ownerPage.getByLabel('Repeats')).toHaveValue('weekly');
+    await ownerPage.getByLabel('Repeats').selectOption('custom');
+    await expect(ownerPage.getByLabel('Recurrence rule (RRULE)')).toHaveValue('RRULE:FREQ=WEEKLY');
+    await ownerPage.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    await memberPage.reload();
-    await expect(
-      memberPage.getByRole('button', { name: new RegExp(scopedTimedTitle) }).first(),
-    ).toBeVisible();
+    await memberPage.goto(calendarDayUrl(seriesStartDay));
+    await expect(recurringEvent(memberPage)).toBeVisible();
   });
   test('recurring edit scopes and deletion persist for both viewers', async () => {
-    const scopedTimedOwnerEvent = ownerPage
-      .getByRole('button', { name: new RegExp(scopedTimedTitle) })
-      .first();
-    await scopedTimedOwnerEvent.click();
+    await ownerPage.goto(calendarDayUrl(seriesSplitDay));
+    await recurringEvent(ownerPage).click();
     await expect(ownerPage.getByRole('dialog', { name: 'Edit event' })).toBeVisible();
     await expect(ownerPage.getByLabel('All day')).not.toBeChecked();
+    await ownerPage.getByText('Event settings', { exact: true }).click();
     await expect(ownerPage.getByLabel('Show as')).toHaveValue('tentative');
-    await expect(ownerPage.getByLabel('Repeats')).toHaveValue('weekly');
-    await expect(ownerPage.getByLabel('RRULE')).toHaveValue('RRULE:FREQ=WEEKLY');
     await ownerPage.getByLabel('Show as').selectOption('free');
+    await expect(ownerPage.getByLabel('Edit scope')).toHaveValue('single');
     await ownerPage.getByLabel('Edit scope').selectOption('this_and_future');
     await waitForPost(ownerPage, '/app/calendar', async () => {
       await ownerPage.getByRole('button', { name: 'Save' }).click();
     });
-    await ownerPage
-      .getByRole('button', { name: new RegExp(scopedTimedTitle) })
-      .first()
-      .click();
-    await expect(ownerPage.getByLabel('Show as')).toHaveValue('free');
-    await ownerPage.getByLabel('Edit scope').selectOption('series');
-    await waitForPost(ownerPage, '/app/calendar', async () => {
-      await ownerPage.getByRole('button', { name: 'Delete' }).click();
-    });
-    await expect(ownerPage.getByRole('button', { name: new RegExp(scopedTimedTitle) })).toHaveCount(
-      0,
-    );
-    await memberPage.reload();
     await expect(
-      memberPage.getByRole('button', { name: new RegExp(scopedTimedTitle) }),
-    ).toHaveCount(0);
+      ownerPage
+        .getByRole('region', { name: 'Notifications alt+T' })
+        .getByText('Event updated', { exact: true }),
+    ).toBeVisible();
 
+    await ownerPage.goto(calendarDayUrl(splitOccurrenceDay));
+    await recurringEvent(ownerPage).click();
+    await ownerPage.getByText('Event settings', { exact: true }).click();
+    await expect(ownerPage.getByLabel('Show as')).toHaveValue('free');
+    await memberPage.goto(calendarDayUrl(splitOccurrenceDay));
+    await expect(recurringEvent(memberPage)).toBeVisible();
+
+    await ownerPage.getByLabel('Edit scope').selectOption('series');
+    await ownerPage.getByRole('button', { name: 'Delete', exact: true }).click();
+    const deleteSeries = ownerPage.getByRole('dialog', { name: `Delete ${scopedTimedTitle}?` });
+    await waitForPost(ownerPage, '/app/calendar', () =>
+      deleteSeries.getByRole('button', { name: 'Delete event', exact: true }).click(),
+    );
+    await expect(recurringEvent(ownerPage)).toHaveCount(0);
+    await memberPage.reload();
+    await expect(calendarGrid(memberPage)).toBeVisible();
+    await expect(recurringEvent(memberPage)).toHaveCount(0);
+
+    await ownerPage.goto(calendarDayUrl(seriesStartDay));
+    await expect(recurringEvent(ownerPage)).toHaveAccessibleName(/^Tentative recurring /);
+    await memberPage.goto(calendarDayUrl(seriesStartDay));
+    await expect(recurringEvent(memberPage)).toBeVisible();
+
+    await ownerPage.goto(calendarDayUrl('2026-06-02'));
     await ownerPage.getByRole('button', { name: new RegExp(editedTitle) }).click();
     await expect(ownerPage.getByRole('dialog', { name: 'Edit event' })).toBeVisible();
-    await waitForPost(ownerPage, '/app/calendar', async () => {
-      await ownerPage.getByRole('button', { name: 'Delete' }).click();
-    });
+    await ownerPage.getByRole('button', { name: 'Delete', exact: true }).click();
+    const deleteEvent = ownerPage.getByRole('dialog', { name: `Delete ${editedTitle}?` });
+    await waitForPost(ownerPage, '/app/calendar', () =>
+      deleteEvent.getByRole('button', { name: 'Delete event', exact: true }).click(),
+    );
     await expect(ownerPage.getByRole('button', { name: new RegExp(editedTitle) })).toHaveCount(0);
   });
 });
@@ -3062,52 +3150,48 @@ test('calendar event list search, scope, and infinite scroll use real page data'
   const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 9));
   const month = nextMonth.toISOString().slice(0, 7);
 
-  for (let index = 1; index <= 13; index += 1) {
-    const day = String(index).padStart(2, '0');
-    const label = String(index).padStart(2, '0');
-    await scope.calendar.createCalendarEvent({
-      title: `${E2E_PREFIX} calendar list future ${label} ${stamp}`,
-      startAt: new Date(`${month}-${day}T09:00:00.000Z`),
-      endAt: new Date(`${month}-${day}T09:30:00.000Z`),
+  const futureTitle = (index: number) =>
+    `${E2E_PREFIX} calendar list future ${String(index).padStart(2, '0')} ${stamp}`;
+  const futureDays = Array.from({ length: 13 }, (_, index) => index + 1);
+  await Promise.all([
+    ...futureDays.map((index) => {
+      const day = String(index).padStart(2, '0');
+      return scope.calendar.createCalendarEvent({
+        title: futureTitle(index),
+        startAt: new Date(`${month}-${day}T09:00:00.000Z`),
+        endAt: new Date(`${month}-${day}T09:30:00.000Z`),
+        timezone: 'UTC',
+        allDay: false,
+        visibility: 'team',
+        metadata,
+      });
+    }),
+    scope.calendar.createCalendarEvent({
+      title: `${E2E_PREFIX} calendar list past ${stamp}`,
+      startAt: new Date(now.getTime() - 86_400_000),
+      endAt: new Date(now.getTime() - 86_400_000 + 1_800_000),
       timezone: 'UTC',
       allDay: false,
       visibility: 'team',
       metadata,
-    });
-  }
-  await scope.calendar.createCalendarEvent({
-    title: `${E2E_PREFIX} calendar list past ${stamp}`,
-    startAt: new Date(now.getTime() - 86_400_000),
-    endAt: new Date(now.getTime() - 86_400_000 + 1_800_000),
-    timezone: 'UTC',
-    allDay: false,
-    visibility: 'team',
-    metadata,
-  });
+    }),
+  ]);
 
   try {
     await ownerPage.goto(`/app/calendar?view=month&date=${month}-01&eventQ=${stamp}`);
-    const eventList = ownerPage.locator('section').filter({ hasText: 'Calendar events' });
+    const eventList = ownerPage.getByRole('region', { name: 'Calendar events', exact: true });
 
-    await expect(eventList.getByText('13', { exact: true })).toBeVisible();
+    await expect(eventList.getByRole('status', { name: '13', exact: true })).toBeVisible();
     await expect(eventList.getByRole('button', { name: 'Next events' })).toHaveCount(0);
     await expect(
-      eventList.getByRole('button', {
-        name: `${E2E_PREFIX} calendar list future 01 ${stamp}`,
-        exact: true,
-      }),
+      eventList.getByRole('button', { name: futureTitle(1), exact: true }),
     ).toBeVisible();
 
-    const oldest = `${E2E_PREFIX} calendar list future 13 ${stamp}`;
-    const main = ownerPage.locator('#main');
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      if ((await eventList.getByRole('button', { name: oldest, exact: true }).count()) > 0) break;
-      await main.evaluate((node) => {
-        node.scrollTo({ top: node.scrollHeight });
-      });
-      await ownerPage.waitForTimeout(400);
-    }
-    await expect(eventList.getByRole('button', { name: oldest, exact: true })).toBeVisible();
+    const lastEvent = eventList.getByRole('button', { name: futureTitle(13), exact: true });
+    const loadMore = eventList.getByRole('button', { name: 'Load more', exact: true });
+    // The observer can already have fetched the final event by the time we scroll.
+    await loadMore.or(lastEvent).first().scrollIntoViewIfNeeded();
+    await expect(lastEvent).toBeVisible();
     await expect(
       eventList.getByRole('status').filter({ hasText: /^No more matching events$/ }),
     ).toBeVisible();
@@ -3115,7 +3199,7 @@ test('calendar event list search, scope, and infinite scroll use real page data'
 
     await eventList.getByRole('button', { name: 'Past', exact: true }).click();
     await expect(ownerPage).toHaveURL(/eventScope=past/);
-    await expect(eventList.getByText('1', { exact: true })).toBeVisible();
+    await expect(eventList.getByRole('status', { name: '1', exact: true })).toBeVisible();
     await expect(
       eventList.getByRole('button', {
         name: `${E2E_PREFIX} calendar list past ${stamp}`,
@@ -3125,7 +3209,7 @@ test('calendar event list search, scope, and infinite scroll use real page data'
 
     await eventList.getByRole('button', { name: 'All', exact: true }).click();
     await expect(ownerPage).toHaveURL(/eventScope=all/);
-    await expect(eventList.getByText('14', { exact: true })).toBeVisible();
+    await expect(eventList.getByRole('status', { name: '14', exact: true })).toBeVisible();
   } finally {
     await sql`
       DELETE FROM calendar_events
@@ -3159,7 +3243,9 @@ test.describe
   });
   test('folder upload exposes document version history', async () => {
     await ownerPage.goto('/app/documents');
-    await expect(ownerPage.getByPlaceholder('Search document chunks')).toBeVisible();
+    await expect(
+      ownerPage.getByRole('searchbox', { name: 'Search document content' }),
+    ).toBeVisible();
 
     await ownerPage.getByRole('button', { name: 'New folder' }).click();
     const newFolderDialog = ownerPage.getByRole('dialog', { name: 'New folder' });
@@ -3304,7 +3390,7 @@ test('document search returns worker-embedded chunks and opens the cited chunk',
     );
 
     await ownerPage.goto('/app/documents');
-    await ownerPage.getByPlaceholder('Search document chunks').fill(chunkText);
+    await ownerPage.getByRole('searchbox', { name: 'Search document content' }).fill(chunkText);
     await waitForPost(ownerPage, '/api/documents/search', () =>
       ownerPage.getByRole('button', { name: 'Search', exact: true }).click(),
     );
@@ -3369,7 +3455,7 @@ test('document search stays pending during recovery and offers a retry after una
   });
   try {
     await page.goto('/app/documents');
-    const input = page.getByRole('searchbox', { name: 'Search document chunks' });
+    const input = page.getByRole('searchbox', { name: 'Search document content' });
     await input.fill('serverless recovery fixture');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Searching', exact: true })).toBeDisabled();
@@ -3447,7 +3533,7 @@ test('global search keeps lexical results when semantic sources are unavailable'
     await expect(page.getByText('GitHub integration')).toBeVisible();
     await expect(page.getByText('Timeline search is temporarily unavailable.')).toBeVisible();
     await expect(page.getByText('Document search is temporarily unavailable.')).toBeVisible();
-    await expect(page.getByText('1 result · some sources unavailable').first()).toBeVisible();
+    await expect(page.getByRole('status', { name: '1 result', exact: true })).toBeVisible();
     await expect(page.getByText('No matches found')).toHaveCount(0);
     await page.screenshot({
       path: test.info().outputPath('global-search-partial-desktop.png'),

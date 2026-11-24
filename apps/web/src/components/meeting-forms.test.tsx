@@ -58,6 +58,8 @@ const {
   ScheduleMeetingBotForm,
 } = await import('./meeting-forms.js');
 
+const TIMEZONES = ['Europe/Helsinki', 'Africa/Asmara', 'UTC'];
+
 function inputValue(label: string): string {
   const control = screen.getByLabelText(label);
   if (control instanceof HTMLInputElement) return control.value;
@@ -77,6 +79,7 @@ describe('EditSavedMeetingForm', () => {
     const user = userEvent.setup();
     render(
       <EditSavedMeetingForm
+        timezones={TIMEZONES}
         saved={{
           id: '11111111-1111-1111-1111-111111111111',
           teamId: '22222222-2222-2222-2222-222222222222',
@@ -125,6 +128,7 @@ describe('EditSavedMeetingForm', () => {
   it('keeps compact schedule weekdays understandable to assistive technology', () => {
     render(
       <EditSavedMeetingForm
+        timezones={TIMEZONES}
         saved={{
           id: '11111111-1111-1111-1111-111111111111',
           teamId: '22222222-2222-2222-2222-222222222222',
@@ -140,7 +144,7 @@ describe('EditSavedMeetingForm', () => {
           scheduleConfig: {
             weekdays: [1, 3, 5],
             times: ['09:00'],
-            timezone: 'UTC',
+            timezone: 'Africa/Asmera',
             joinOffsetMinutes: 2,
           },
           durationMinutes: 30,
@@ -158,6 +162,12 @@ describe('EditSavedMeetingForm', () => {
       />,
     );
 
+    const timezone = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Timezone' });
+    expect(timezone.value).toBe('Africa/Asmera');
+    expect(Array.from(timezone.options, (option) => option.value)).toEqual([
+      'Africa/Asmera',
+      ...TIMEZONES,
+    ]);
     expect(screen.getByRole('checkbox', { name: 'Sunday' }).getAttribute('name')).toBe('weekday-0');
     expect(screen.getByRole('checkbox', { name: 'Wednesday' }).getAttribute('name')).toBe(
       'weekday-3',
@@ -168,6 +178,7 @@ describe('EditSavedMeetingForm', () => {
     const user = userEvent.setup();
     render(
       <EditSavedMeetingForm
+        timezones={TIMEZONES}
         saved={{
           id: '11111111-1111-1111-1111-111111111111',
           teamId: '22222222-2222-2222-2222-222222222222',
@@ -217,7 +228,7 @@ afterEach(() => {
 describe('SavedMeetingForm', () => {
   it('keeps an incomplete recurring schedule from being saved and identifies the fields to fix', async () => {
     const user = userEvent.setup();
-    render(<SavedMeetingForm defaultTimezone="UTC" />);
+    render(<SavedMeetingForm timezones={TIMEZONES} defaultTimezone="UTC" />);
 
     await user.type(screen.getByLabelText('Meeting title'), 'Weekly product sync');
     await user.type(screen.getByLabelText('Meeting URL'), 'https://meet.google.com/abc-defg-hij');
@@ -245,7 +256,7 @@ describe('SavedMeetingForm', () => {
 
   it('announces the required start-time format when a recurring schedule is enabled', async () => {
     const user = userEvent.setup();
-    render(<SavedMeetingForm defaultTimezone="UTC" />);
+    render(<SavedMeetingForm timezones={TIMEZONES} defaultTimezone="UTC" />);
 
     await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
 
@@ -258,7 +269,7 @@ describe('SavedMeetingForm', () => {
 
   it('announces minutes for recurring schedule duration inputs', async () => {
     const user = userEvent.setup();
-    render(<SavedMeetingForm defaultTimezone="UTC" />);
+    render(<SavedMeetingForm timezones={TIMEZONES} defaultTimezone="UTC" />);
 
     await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
 
@@ -279,7 +290,7 @@ describe('SavedMeetingForm', () => {
   it('resets the submitted form after the async create action resolves', async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
-    render(<SavedMeetingForm defaultTimezone="UTC" onSuccess={onSuccess} />);
+    render(<SavedMeetingForm timezones={TIMEZONES} defaultTimezone="UTC" onSuccess={onSuccess} />);
 
     await user.type(screen.getByLabelText('Meeting title'), 'Weekly product sync');
     await user.type(screen.getByLabelText('Meeting URL'), 'https://meet.google.com/abc-defg-hij');
