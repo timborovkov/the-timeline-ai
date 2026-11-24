@@ -1706,17 +1706,26 @@ test.describe
     await dialog.getByRole('button', { name: 'Save meeting' }).click();
     await expect(dialog).toBeHidden();
 
-    const savedMeeting = page
-      .locator('section')
-      .filter({ hasText: 'Saved meetings' })
-      .locator('li')
-      .filter({ hasText: title });
-    await expect(savedMeeting.getByText('Auto-join', { exact: true })).toBeVisible();
-    await savedMeeting
-      .locator('summary')
-      .filter({ hasText: /^Edit details$/ })
-      .click();
-    await expect(savedMeeting.getByLabel('Aliases')).toHaveValue(alias);
+    const clientErrors: string[] = [];
+    const recordClientError = (error: Error) => clientErrors.push(error.message);
+    page.on('pageerror', recordClientError);
+    try {
+      await page.reload();
+      const savedMeeting = page
+        .getByRole('list', { name: 'Saved meetings' })
+        .getByRole('listitem')
+        .filter({ hasText: title });
+      await expect(savedMeeting.getByText('Auto-join', { exact: true })).toBeVisible();
+      await savedMeeting
+        .locator('summary')
+        .filter({ hasText: /^Edit details$/ })
+        .click();
+      await expect(savedMeeting.getByLabel('Aliases')).toHaveValue(alias);
+      await expect(savedMeeting.getByRole('combobox', { name: 'Timezone' })).toBeVisible();
+      expect(clientErrors).toEqual([]);
+    } finally {
+      page.off('pageerror', recordClientError);
+    }
   });
   test('saved recurring meeting appears in scheduled captures', async () => {
     await page.goto('/app/meetings');
