@@ -70,7 +70,10 @@ describe('EvidenceLink', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/api/artifacts/preview',
       expect.objectContaining({
-        body: JSON.stringify({ ref: { kind: 'timeline_event', id: 'event-new' } }),
+        body: JSON.stringify({
+          ref: { kind: 'timeline_event', id: 'event-new' },
+          region: { locale: 'en-US', timezone: 'Europe/Helsinki' },
+        }),
         method: 'POST',
       }),
     );
