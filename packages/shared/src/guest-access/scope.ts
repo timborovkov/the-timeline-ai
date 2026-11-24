@@ -29,7 +29,11 @@ import {
 } from 'drizzle-orm';
 
 import { askSharedWork, type GuestEvidenceRef } from '#src/guest-access/ask.js';
-import { assertActivePrincipal, operatorContext } from '#src/platform-admin/runtime.js';
+import {
+  activeWorkspaceCondition,
+  assertActivePrincipal,
+  operatorContext,
+} from '#src/platform-admin/runtime.js';
 import { rawEventIsActive } from '#src/visibility.js';
 
 function digest(token: string): string {
@@ -175,6 +179,22 @@ export function createGuestAccessScope(
       );
   }
 
+  function activeGuestGrant() {
+    // Apply suspension and grant checks in the same snapshot as the shared content.
+    return and(
+      eq(guestInvitations.acceptedByUserId, userId),
+      isNull(guestInvitations.revokedAt),
+      activeWorkspaceCondition(guestInvitations.teamId),
+      notExists(fullMembership()),
+      exists(
+        db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, userId), isNull(users.suspendedAt))),
+      ),
+    );
+  }
+
   async function requireRealPrincipal(reader = db) {
     if (await operatorContext()) throw new Error('Guest access requires the real account');
     await assertActivePrincipal(reader, teamId, userId);
@@ -217,9 +237,7 @@ export function createGuestAccessScope(
       .where(
         and(
           eq(rawEvents.teamId, teamId),
-          eq(guestInvitations.acceptedByUserId, userId),
-          isNull(guestInvitations.revokedAt),
-          notExists(fullMembership()),
+          activeGuestGrant(),
           shareableNote(),
           ids ? inArray(rawEvents.id, ids) : undefined,
           query ? sql`strpos(lower(${rawEvents.contentText}), lower(${query})) > 0` : undefined,
@@ -283,9 +301,7 @@ export function createGuestAccessScope(
       .where(
         and(
           eq(guestRecordShares.teamId, teamId),
-          eq(guestInvitations.acceptedByUserId, userId),
-          isNull(guestInvitations.revokedAt),
-          notExists(fullMembership()),
+          activeGuestGrant(),
           shareableRecord(),
           ids ? inArray(guestRecordShares.recordId, ids) : undefined,
           query
@@ -661,14 +677,7 @@ export function createGuestAccessScope(
       const [active] = await db
         .select({ id: guestInvitations.id })
         .from(guestInvitations)
-        .where(
-          and(
-            eq(guestInvitations.teamId, teamId),
-            eq(guestInvitations.acceptedByUserId, userId),
-            isNull(guestInvitations.revokedAt),
-            notExists(fullMembership()),
-          ),
-        )
+        .where(and(eq(guestInvitations.teamId, teamId), activeGuestGrant()))
         .limit(1);
       return Boolean(active);
     },
