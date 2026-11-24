@@ -295,6 +295,11 @@ export const WORKSPACE_OPERATOR_POLICY = {
     impersonation: false,
     maintenance: false,
   },
+  'suggestions.acceptedConversationTaskEvidence': {
+    readOnly: true,
+    impersonation: false,
+    maintenance: false,
+  },
   'suggestions.getRecordMaintenancePolicy': {
     readOnly: true,
     impersonation: false,

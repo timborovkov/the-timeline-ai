@@ -3747,3 +3747,161 @@ test('same-task pronoun deadline continuations survive a conjunction', () => {
     run(other, { dueAt }, [support('dueAt', other, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
   ).toBeUndefined();
 });
+
+const problemReportId = '22222222-2222-4222-8222-222222222222';
+const rescheduleId = '33333333-3333-4333-8333-333333333333';
+const loginTaskId = '44444444-4444-4444-8444-444444444444';
+const otherTaskId = '55555555-5555-4555-8555-555555555555';
+const problemReport = 'The login page is broken.';
+const loginTask = { id: loginTaskId, type: 'task', name: 'Fix broken login page' };
+const fridayCommitment = "I'll investigate the login page on Friday.";
+const shortFridayCommitment = "I'll investigate it on Friday.";
+
+function groundLoginPlan(input: {
+  friday?: string;
+  correction?: string;
+  date?: string;
+  otherTask?: { id: string; type: string; name: string };
+  reportTaskId?: string;
+  targetId?: string;
+}) {
+  const friday = input.friday ?? fridayCommitment;
+  const targetId = input.targetId ?? loginTaskId;
+  const reportTaskId = input.reportTaskId ?? loginTaskId;
+  const alternate = input.correction;
+  const date = input.date ?? (alternate ? '2026-11-30' : '2026-11-27');
+  const sources = [
+    { id: problemReportId, text: problemReport, occurredAt: new Date('2026-11-23T15:00:00Z') },
+    { id: event, text: friday, occurredAt: new Date('2026-11-23T15:10:00Z'), authorUserId: alice },
+    ...(alternate
+      ? [
+          {
+            id: rescheduleId,
+            text: alternate,
+            occurredAt: new Date('2026-11-24T03:00:00Z'),
+            authorUserId: alice,
+          },
+        ]
+      : []),
+  ];
+  const context = alternate
+    ? { rawEventId: event, quote: friday }
+    : input.friday
+      ? { rawEventId: problemReportId, quote: problemReport }
+      : undefined;
+  const quote = alternate ?? friday;
+  const currentId = alternate ? rescheduleId : event;
+  const plans: NonNullable<
+    Parameters<typeof groundCommunicationBundles>[0]['verifiedPlannedDates']
+  > = new Map();
+  const [result] = groundCommunicationBundles({
+    bundles: [
+      {
+        title: loginTask.name,
+        confidence: 'high',
+        items: [
+          {
+            title: loginTask.name,
+            auditId: 'login-plan',
+            targetKind: 'task',
+            operation: 'update',
+            targetId,
+            proposedPayload: {
+              ...(!alternate ? { assigneeUserId: alice } : {}),
+              plannedDate: date,
+            },
+            grounding: [
+              ...(!alternate
+                ? [
+                    {
+                      ...support('assignee', quote, alice, loginTask.name),
+                      rawEventId: currentId,
+                      context,
+                    },
+                  ]
+                : []),
+              {
+                ...support('plannedDate', quote, date, loginTask.name),
+                rawEventId: currentId,
+                context,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    packet: sources.map(({ text }) => text).join('\n'),
+    sources,
+    source: 'slack',
+    timezone: 'UTC',
+    members: [{ userId: alice, name: 'Alice', email: 'alice@example.test' }],
+    hubs: [],
+    objects: [loginTask, ...(input.otherTask ? [input.otherTask] : [])],
+    conversationEventIds: sources.map(({ id }) => id),
+    conversationTaskEvidence: {
+      reports: [{ taskId: reportTaskId, rawEventId: problemReportId }],
+      plans: alternate ? [{ taskId: loginTaskId, rawEventId: event }] : [],
+    },
+    verifiedPlannedDates: plans,
+  });
+  return { items: result?.items, proof: plans.get('login-plan') };
+}
+
+test('grounds short and contextual work plans against the uniquely accepted problem report', () => {
+  for (const friday of [undefined, shortFridayCommitment]) {
+    const { items, proof } = groundLoginPlan({ ...(friday ? { friday } : {}) });
+    expect(items?.[0]?.proposedPayload).toEqual({
+      assigneeUserId: alice,
+      plannedDate: '2026-11-27',
+    });
+    expect(proof).toMatchObject({ rawEventId: event, identityRawEventId: problemReportId });
+  }
+  const correction = groundLoginPlan({
+    friday: shortFridayCommitment,
+    correction: 'Actually, Monday.',
+  });
+  expect(correction.items?.[0]?.proposedPayload).toEqual({ plannedDate: '2026-11-30' });
+  expect(correction.proof).toMatchObject({
+    rawEventId: rescheduleId,
+    contextRawEventId: event,
+    identityRawEventId: problemReportId,
+  });
+});
+
+test('keeps a short report reference unresolved when two task identities are plausible', () => {
+  expect(
+    groundLoginPlan({
+      otherTask: { id: otherTaskId, type: 'task', name: 'Fix broken customer login page' },
+    }),
+  ).toEqual({ items: [], proof: undefined });
+});
+
+test('cannot ground a short reference using an unrelated or unrecognized target ID', () => {
+  const unrelated = { id: otherTaskId, type: 'task', name: 'Prepare quarterly audit' };
+  for (const targetId of [unrelated.id, rescheduleId]) {
+    expect(groundLoginPlan({ otherTask: unrelated, targetId })).toEqual({
+      items: [],
+      proof: undefined,
+    });
+  }
+  expect(groundLoginPlan({ reportTaskId: unrelated.id, otherTask: unrelated })).toEqual({
+    items: [],
+    proof: undefined,
+  });
+});
+
+test('grounds the written date in a reschedule and rejects a contradicted weekday', () => {
+  const day = '2026-12-02';
+  expect(
+    groundLoginPlan({
+      correction: 'I am moving my investigation of the login page to Wednesday, December 2.',
+      date: day,
+    }).items?.[0]?.proposedPayload,
+  ).toEqual({ plannedDate: day });
+  expect(
+    groundLoginPlan({
+      correction: 'I am moving my investigation of the login page to Friday, December 2.',
+      date: day,
+    }),
+  ).toEqual({ items: [], proof: undefined });
+});

@@ -449,6 +449,7 @@ export interface SuggestionScopeDeps {
 interface VerifiedTaskClaim {
   rawEventId: string;
   contextRawEventId?: string;
+  identityRawEventId?: string;
   assertedAt: string;
   value: string | null;
 }
@@ -6319,6 +6320,57 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return targetId;
   }
 
+  async function acceptedConversationTaskEvidence(rawEventIds: readonly string[]) {
+    await ensureMember();
+    const ids = [...new Set(rawEventIds)].filter((id) => UUID_RE.test(id));
+    if (!ids.length) return { reports: [], plans: [] };
+    const activeTasks = and(
+      eq(entities.teamId, teamId),
+      eq(entities.type, 'task'),
+      isNull(entities.archivedAt),
+      isNull(entities.mergedIntoId),
+    );
+    const visibleSources = and(
+      eq(rawEvents.teamId, teamId),
+      eq(rawEvents.visibility, 'team'),
+      inArray(rawEvents.id, ids),
+      rawEventIsActive(),
+    );
+    const [reports, plans] = await Promise.all([
+      db
+        .selectDistinct({ taskId: entities.id, rawEventId: rawEvents.id })
+        .from(agentSuggestionEvidence)
+        .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionEvidence.suggestionId))
+        .innerJoin(agentSuggestionItems, eq(agentSuggestionItems.suggestionId, agentSuggestions.id))
+        .innerJoin(entities, eq(entities.id, agentSuggestionItems.resultId))
+        .where(
+          and(
+            activeTasks,
+            visibleSources,
+            eq(agentSuggestionEvidence.teamId, teamId),
+            eq(agentSuggestions.teamId, teamId),
+            eq(agentSuggestions.visibility, 'team'),
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.targetKind, 'task'),
+            eq(agentSuggestionItems.operation, 'create'),
+            eq(agentSuggestionItems.status, 'accepted'),
+            isNotNull(agentSuggestionItems.resolvedAt),
+            sql`(${agentSuggestionItems.metadata} -> 'evidence_raw_event_ids') ? (${rawEvents.id}::text)`,
+          ),
+        ),
+      db
+        .select({ taskId: entities.id, rawEventId: rawEvents.id })
+        .from(entities)
+        .innerJoin(
+          rawEvents,
+          sql`${entities.recordFieldRevisions} -> 'plannedDate' ->> 'rawEventId' = ${rawEvents.id}::text`,
+        )
+        .where(and(activeTasks, visibleSources)),
+    ]);
+    return { reports, plans };
+  }
+
   async function getVerifiedTaskClaim(
     item: typeof agentSuggestionItems.$inferSelect,
     evidenceRecord: unknown,
@@ -6333,6 +6385,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .object({
         rawEventId: uuid,
         contextRawEventId: uuid.optional(),
+        identityRawEventId: uuid.optional(),
         assertedAt: z.iso.datetime(),
       })
       .parse(evidence);
@@ -6340,6 +6393,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       ...new Set([
         parsed.rawEventId,
         ...(parsed.contextRawEventId ? [parsed.contextRawEventId] : []),
+        ...(parsed.identityRawEventId ? [parsed.identityRawEventId] : []),
       ]),
     ];
     const sourceRows = await db
@@ -9394,6 +9448,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     acceptSuggestionItemWithOutcome,
     getRecordMaintenancePolicy,
+    acceptedConversationTaskEvidence,
     setRecordMaintenancePolicy,
     applyPendingRecordMaintenance,
     uniqueActiveObjectByName,

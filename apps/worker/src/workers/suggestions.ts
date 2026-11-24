@@ -5108,12 +5108,19 @@ async function runSuggestionExtraction(
     string,
     NonNullable<suggestions.SuggestionItemInput['taskFieldEvidence']>
   >();
+  const conversationEventIds = args.conversation?.window.map((event) => event.id);
+  const conversationTaskEvidence =
+    auditedSource && conversationEventIds?.length && isHumanCommunication(row.source)
+      ? await scope.suggestions.acceptedConversationTaskEvidence(conversationEventIds)
+      : undefined;
   const groundedBundles = auditedSource
     ? groundCommunicationBundles({
         verifiedLifecycleAuditIds,
         verifiedPlannedDates,
         verifiedRelationships,
         verifiedTaskClaims,
+        conversationEventIds,
+        conversationTaskEvidence,
         reviewedLaterEmailIds: args.conversation?.reviewedLaterEmailIds,
         emailChronologyLookahead: args.conversation?.emailChronologyLookahead,
         bundles: enrichedBundles,
@@ -5436,6 +5443,7 @@ async function runSuggestionExtraction(
           ...[...fields, ...(plan ? [plan] : [])].flatMap((claim) => [
             claim.rawEventId,
             ...(claim.contextRawEventId ? [claim.contextRawEventId] : []),
+            ...(claim.identityRawEventId ? [claim.identityRawEventId] : []),
           ]),
         ];
       }),

@@ -37,6 +37,7 @@ type AssignmentRole = 'owner' | 'assignee';
 interface VerifiedClaim {
   rawEventId: string;
   contextRawEventId?: string;
+  identityRawEventId?: string;
   assertedAt: string;
   value: string | null;
 }
@@ -139,8 +140,32 @@ interface Bundle<T extends Item> {
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 const CONVERSATIONAL_PLAN_CORRECTION =
   /^(?:actually|instead),?\s+(?:today|tomorrow|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d{4}-\d{2}-\d{2}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:,?\s+\d{4})?)(?:\s+(?:in\s+)?(?:utc|gmt|(?:[a-z_]+\/)+[a-z_+-]+))?[.!]?$/i;
-const CONTEXTUAL_TASK_PLAN =
-  /^(?:i[’']ll|i will|we[’']ll|we will) (?:look into|work on|investigate|fix|review|triage|test|check|address) (?:it|this|that)(?: task| issue| problem)? on\b/i;
+const contextualTaskAction =
+  '(?:look into|work on|investigate|fix|review|triage|test|check|address) (?:it|this|that)(?: task| issue| problem)? on\\b';
+const CONTEXTUAL_TASK_PLAN = new RegExp(
+  `^(?:i[’']ll|i will|we[’']ll|we will) ${contextualTaskAction}`,
+  'i',
+);
+const CONTEXTUAL_TASK_ACTION = new RegExp(`^\\s*${contextualTaskAction}`, 'i');
+
+function literalWorkReference(text: string, name: string): boolean {
+  const escaped = normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(normalize(text));
+}
+
+function reportedWorkReference(title: string, quote: string): string | undefined {
+  const report = normalize(quote).replace(/[.!]$/u, '');
+  const label =
+    /^(?:the |our )?([\p{L}\p{N}][\p{L}\p{N}'’ -]{1,96}) (?:is|are) (?:broken|failing|down|unavailable|not working)$/u.exec(
+      report,
+    )?.[1];
+  if (!label?.includes(' ')) return undefined;
+  const name = normalize(title).replace(/[.!]$/u, '');
+  const artifact = name
+    .replace(/^(?:fix|repair|resolve|investigate|address|restore) (?:the )?/u, '')
+    .replace(/^(?:broken|failing|unavailable) /u, '');
+  return artifact === label || name === report.replace(/^(?:the |our )/u, '') ? label : undefined;
+}
 
 function plannedAssertionTimezone(quote: string, fallback: string): string {
   const explicit =
@@ -419,7 +444,11 @@ function taskDateAssertions(
       field === 'plannedDate'
         ? /\b(?:plan(?:ned date)?|rescheduled|moved)(?:\s+(?:is|for|to|on|now))*$|\b(?:i[’']ll|i will|we[’']ll|we will)\b.+\bon$/i.test(
             affirmedPrefix.replaceAll(normalize(subject), '[task]'),
-          ) || CONVERSATIONAL_PLAN_CORRECTION.test(quote.trim())
+          ) ||
+          /^(?:i am|i[’']m|we are|we[’']re) (?:moving|rescheduling) (?:my|our|the) (?:work on|investigation of|review of|testing of) (?:the )?\[task\] to$/i.test(
+            affirmedPrefix.replaceAll(normalize(subject), '[task]'),
+          ) ||
+          CONVERSATIONAL_PLAN_CORRECTION.test(quote.trim())
         : /\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
             affirmedPrefix,
           ) ||
@@ -444,31 +473,38 @@ function taskDateAssertions(
     const kind = deadlineAt(match.index, match[0].length);
     if (kind) add(kind, match[0], quote.slice(match.index + match[0].length));
   }
-  for (const match of quote.matchAll(
-    /\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
-  )) {
+  const absoluteDates = [
+    ...quote.matchAll(
+      /\b(?:(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday),?\s+)?(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})\b(?:,?\s+(\d{4})\b)?/gi,
+    ),
+  ];
+  for (const match of absoluteDates) {
+    const [, weekday, month, day, statedYear] = match;
     const kind = deadlineAt(match.index, match[0].length);
     if (!kind) continue;
     const reference = referenceDate ? zonedDateTimeFromDate(referenceDate, timezone) : undefined;
-    let year = match[3] ? Number(match[3]) : reference?.year;
+    let year = statedYear ? Number(statedYear) : reference?.year;
     if (year === undefined) continue;
-    let date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
-    if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
+    let date = new Date(`${month} ${day}, ${year} 00:00:00 UTC`);
+    if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(day)) continue;
     if (
-      !match[3] &&
+      !statedYear &&
       reference &&
       date.toISOString().slice(0, 10) < reference.toPlainDate().toString()
     ) {
       year++;
-      date = new Date(`${match[1]} ${match[2]}, ${year} 00:00:00 UTC`);
-      if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(match[2])) continue;
+      date = new Date(`${month} ${day}, ${year} 00:00:00 UTC`);
+      if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(day)) continue;
     }
+    const weekdayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' });
+    if (weekday && normalize(weekdayLabel.format(date)) !== normalize(weekday)) continue;
     add(kind, date.toISOString().slice(0, 10), quote.slice(match.index + match[0].length));
   }
   if (referenceDate) {
     for (const match of quote.matchAll(
       /\b(?:today|tomorrow|next (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
     )) {
+      if (absoluteDates.some((date) => date.index === match.index)) continue;
       const kind = deadlineAt(match.index, match[0].length);
       if (!kind) continue;
       const phrase = match[0].toLowerCase();
@@ -897,6 +933,13 @@ export function groundCommunicationBundles<T extends Item>(args: {
     emailEnvelopeSender?: string | null | undefined;
     occurredAt?: Date;
   }[];
+  conversationEventIds?: readonly string[] | undefined;
+  conversationTaskEvidence?:
+    | {
+        reports: readonly { taskId: string; rawEventId: string }[];
+        plans: readonly { taskId: string; rawEventId: string }[];
+      }
+    | undefined;
   reviewedLaterEmailIds?: ReadonlySet<string> | undefined;
   emailChronologyLookahead?: readonly EmailChronologyStatement[] | undefined;
   members: { userId: string; name: string | null; email: string | null }[];
@@ -931,6 +974,33 @@ export function groundCommunicationBundles<T extends Item>(args: {
     ]),
   );
   const packet = normalize(args.packet);
+  const conversationSourceIds = args.conversationEventIds ?? [...sourceIds];
+  const reportIdentities = new Map<string, { label: string; rawEventId: string }[]>();
+  for (const report of args.conversationTaskEvidence?.reports ?? []) {
+    const object = args.objects?.find((candidate) => candidate.id === report.taskId);
+    const source = args.sources.find((candidate) => candidate.id === report.rawEventId);
+    if (!object?.name || !source || !conversationSourceIds.includes(source.id)) continue;
+    const quote = source.text.trim();
+    const label = reportedWorkReference(object.name, quote);
+    if (
+      !label ||
+      !safeSourceQuote(source.text, quote) ||
+      !packet.includes(normalize(quote)) ||
+      args.objects?.some(
+        (candidate) =>
+          candidate.id !== object.id &&
+          isWorkRecord(candidate.type) &&
+          [candidate.name, ...(candidate.aliases ?? [])].some(
+            (name) => name && literalWorkReference(name, label),
+          ),
+      ) ||
+      args.pendingNames?.some((name) => literalWorkReference(name, label))
+    )
+      continue;
+    const references = reportIdentities.get(object.id) ?? [];
+    references.push({ label, rawEventId: source.id });
+    reportIdentities.set(object.id, references);
+  }
   const stripTranscriptSpeaker = (text: string) => text.replace(/^\[\d+s\] [^:\r\n]+:\s*/, '');
   function enclosingAssertion(support: Support): string | undefined {
     const source = args.sources.find((event) => event.id === support.rawEventId);
@@ -1099,7 +1169,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
       context &&
       contextVerified &&
       dateIn(
-        supportedTaskAssertion({ ...support, quote: context.quote }) ?? '',
+        supportedTaskAssertion({ ...support, quote: context.quote }) ??
+          (CONTEXTUAL_TASK_PLAN.test(context.quote.trim()) ? context.quote : ''),
         support.subject,
         context.rawEventId,
         context.quote,
@@ -1116,7 +1187,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
     }
     let latest: number | null | undefined = wanted;
     let priorPlan: { rawEventId: string; subject: string } | undefined;
-    const visibleSourceOrder = [...new Set(args.sources.map((source) => source.id))];
+    const visibleSourceOrder = conversationSourceIds;
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
       const direct = names.find((name) => namesTask(sentence, name, true));
@@ -1220,9 +1291,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
         (!delegation.test(action) ||
           normalize(action).startsWith(normalize(assignment.subject)))) ||
       (hasTaskContext &&
-        /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
-          action.trim(),
-        ));
+        (CONTEXTUAL_TASK_ACTION.test(action) ||
+          /^(?:take(?: over)?|own|handle|do|pick up|be responsible for) (?:it|this(?: task)?|that(?: task)?|the task)(?: instead| now| from here| going forward)?[.!]?$/i.test(
+            action.trim(),
+          )));
     const namedAction =
       name && clause
         ? new RegExp(
@@ -1483,6 +1555,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
       )
         projectCandidates.push({ id: `new:${normalize(name)}`, type: 'project', name });
     }
+    const reportReference = (item: Pick<Item, 'targetId'>, label: string) =>
+      reportIdentities.get(item.targetId ?? '')?.find((entry) => entry.label === normalize(label));
     const taskIdentityNames = (
       item: Pick<Item, 'targetId' | 'title'> &
         Partial<Pick<Item, 'targetKind' | 'proposedPayload' | 'scopedSourceIdentity'>>,
@@ -1502,6 +1576,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       if (!target || !isWorkRecord(target.type)) return names;
       return [
         ...names,
+        ...(reportIdentities.get(target.id) ?? []).map((entry) => entry.label),
         ...(target.aliases ?? []).filter(
           (alias) =>
             alias.trim() &&
@@ -1546,6 +1621,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       );
     };
     const namesTaskQuote = (item: T, text: string, subject: string) => {
+      if (reportReference(item, subject)) return literalWorkReference(text, subject);
       const target = args.objects?.find((object) => object.id === item.targetId);
       const alias = target?.aliases?.find((name) => normalize(name) === normalize(subject));
       if (!alias || normalize(target?.name ?? '') === normalize(subject))
@@ -1554,13 +1630,38 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text);
     };
-    const verified = (item: T) =>
-      (item.grounding ?? [])
+    const verified = (item: T) => {
+      if (
+        args.conversationTaskEvidence &&
+        item.operation === 'update' &&
+        item.targetKind === 'task' &&
+        !args.objects?.some((object) => object.id === item.targetId && isWorkRecord(object.type))
+      )
+        return [];
+      return (item.grounding ?? [])
         .map((support) => {
           const names = taskIdentityNames(item);
           if (names.some((name) => normalize(name) === normalize(support.subject))) {
             const citedName = names.find((name) => namesTaskQuote(item, support.quote, name));
-            if (citedName) support = { ...support, subject: citedName };
+            const nearbyReference = names.find((name) => {
+              const reference = reportReference(item, name);
+              const context = support.context;
+              return (
+                reference &&
+                context &&
+                ((context.rawEventId === reference.rawEventId &&
+                  literalWorkReference(context.quote, name)) ||
+                  (support.field === 'plannedDate' &&
+                    CONTEXTUAL_TASK_PLAN.test(context.quote.trim()) &&
+                    args.conversationTaskEvidence?.plans.some(
+                      (entry) =>
+                        entry.taskId === item.targetId && entry.rawEventId === context.rawEventId,
+                    )))
+              );
+            });
+            if (citedName ?? nearbyReference) {
+              support = { ...support, subject: citedName ?? nearbyReference ?? support.subject };
+            }
           }
           const sourceForQuote = args.sources.find((row) => row.id === support.rawEventId);
           const context = support.context;
@@ -1702,26 +1803,46 @@ export function groundCommunicationBundles<T extends Item>(args: {
         })
         .filter((support) => {
           const source = args.sources.find((row) => row.id === support.rawEventId);
-          const prior =
-            args.sources[args.sources.findIndex((row) => row.id === support.rawEventId) - 1];
+          const priorId =
+            conversationSourceIds[conversationSourceIds.indexOf(support.rawEventId) - 1];
+          const prior = args.sources.find((row) => row.id === priorId);
           const context = support.context;
+          const report = reportReference(item, support.subject);
+          const contextIdentifiesTask = (quote: string, id: string) => {
+            if (report) {
+              if (report.rawEventId === id || support.field === 'plannedDate') {
+                if (literalWorkReference(quote, report.label)) return true;
+              }
+              const plans = args.conversationTaskEvidence?.plans.filter(
+                (entry) => entry.rawEventId === id,
+              );
+              return (
+                support.field === 'plannedDate' &&
+                CONTEXTUAL_TASK_PLAN.test(quote.trim()) &&
+                plans?.length === 1 &&
+                plans[0]?.taskId === item.targetId
+              );
+            }
+            return (
+              namesTask(quote, support.subject) &&
+              new Set(
+                [
+                  ...(args.objects ?? [])
+                    .filter((object) => object.type === 'task')
+                    .map((object) => object.name),
+                  ...(args.pendingNames ?? []),
+                ].filter(
+                  (name): name is string => typeof name === 'string' && namesTask(quote, name),
+                ),
+              ).size === 1
+            );
+          };
           const contextValid =
             context &&
             prior?.id === context.rawEventId &&
             safeSourceQuote(prior.text, context.quote) &&
-            normalize(args.packet).includes(normalize(context.quote)) &&
-            namesTask(context.quote, support.subject) &&
-            new Set(
-              [
-                ...(args.objects ?? [])
-                  .filter((object) => object.type === 'task')
-                  .map((object) => object.name),
-                ...(args.pendingNames ?? []),
-              ].filter(
-                (name): name is string =>
-                  typeof name === 'string' && namesTask(context.quote, name),
-              ),
-            ).size === 1;
+            packet.includes(normalize(context.quote)) &&
+            contextIdentifiesTask(context.quote, context.rawEventId);
           if (contextValid) validContexts.add(support);
           const isTask =
             item.targetKind === 'task' ||
@@ -1753,6 +1874,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
               ))
           );
         });
+    };
     const uncertainty = new Set<string>();
     const extra: T[] = [];
     const items = bundle.items.flatMap((item, index) => {
@@ -2270,8 +2392,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
           source &&
           deadlineReferenceDate(source, source.source ?? args.source, support.quote, support.quote);
         if (!assertedAt) return undefined;
+        const identity = reportReference(item, support.subject);
         return {
           rawEventId: support.rawEventId,
+          ...(identity ? { identityRawEventId: identity.rawEventId } : {}),
           assertedAt: assertedAt.toISOString(),
           ...(support.context && validContexts.has(support)
             ? { contextRawEventId: support.context.rawEventId }
