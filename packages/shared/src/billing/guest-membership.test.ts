@@ -54,6 +54,10 @@ beforeEach(async () => {
     productId: 'prod_fixture',
     seats: 1,
     pendingSeats: null,
+    status: 'active',
+    periodStart: new Date('2026-11-01T00:00:00Z'),
+    periodEnd: new Date('2026-12-01T00:00:00Z'),
+    modifiedAt: new Date('2026-11-16T00:00:00Z'),
   };
   updates = [];
   failProvider = false;
@@ -84,6 +88,8 @@ beforeEach(async () => {
     polarServer: 'sandbox',
     polarSubscriptionId: subscription.id,
     polarProductId: subscription.productId,
+    periodStartedAt: subscription.periodStart,
+    periodEndsAt: subscription.periodEnd,
     teamSeatTerms: {
       paidSeats: 1,
       highWaterSeats: 1,
@@ -129,8 +135,9 @@ describe('paid membership and restricted guests', () => {
     await activateMember();
     expect(updates).toEqual([{ seats: 2, proration: 'invoice' }]);
     expect(await withTeam(db, teamId, guest).guests.hasAccess()).toBe(false);
-    // A provider response is not the confirmed billing webhook that grants usage.
-    expect(await remainingAllowance()).toBe(TEAM_MONTHLY_USAGE_PER_SEAT_CENTS);
+    // The verified subscription read confirms one half-period grant.
+    const grantedAllowance = TEAM_MONTHLY_USAGE_PER_SEAT_CENTS * 1.5;
+    expect(await remainingAllowance()).toBe(grantedAllowance);
     await db
       .update(teamMembers)
       .set({ removedAt: new Date() })
@@ -148,7 +155,7 @@ describe('paid membership and restricted guests', () => {
     });
     expect(updates.at(-1)).toEqual({ seats: 2, proration: 'next_period' });
     expect(updates.filter((update) => update.proration === 'invoice')).toHaveLength(1);
-    expect(await remainingAllowance()).toBe(TEAM_MONTHLY_USAGE_PER_SEAT_CENTS);
+    expect(await remainingAllowance()).toBe(grantedAllowance);
   });
 
   it('retains restricted guest access and no full membership when seat acquisition fails', async () => {
