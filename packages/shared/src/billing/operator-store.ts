@@ -323,6 +323,7 @@ export async function assignCompedPlan(input: {
         ...(existing.planId === 'team' ? { teamSeatPricing: existing.teamSeatTerms !== null } : {}),
       },
       input.entitlementsPlanId === 'team' ? false : undefined,
+      input.entitlementsPlanId === 'enterprise' ? false : undefined,
     );
     await writeAudit({
       tx: db,

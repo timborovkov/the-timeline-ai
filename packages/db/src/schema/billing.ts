@@ -196,6 +196,7 @@ export const billingPlanHistory = pgTable(
       .references(() => teams.id, { onDelete: 'cascade' }),
     planId: billingPlanId('plan_id').notNull(),
     teamSeatPricing: boolean('team_seat_pricing'),
+    enterpriseStorageBundled: boolean('enterprise_storage_bundled'),
     effectiveAt: timestamp('effective_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('billing_plan_history_team_effective_idx').on(table.teamId, table.effectiveAt)],
