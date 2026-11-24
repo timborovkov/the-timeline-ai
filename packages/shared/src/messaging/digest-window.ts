@@ -39,6 +39,33 @@ export function nextScheduledUpdateWindow(
   return { start: windowEnd, end: dateFromInstant(next.toInstant()) };
 }
 
+export function nextScheduledUpdateRecipientJob(
+  recipient: { teamId: string; userId: string; email: string },
+  preference: {
+    enabled: boolean;
+    timezone: string;
+    hour: number;
+    options?: { cadence: 'daily' | 'weekly' };
+  },
+  now = new Date(),
+) {
+  if (!preference.enabled || !preference.options) return null;
+  const { timezone, hour, options } = preference;
+  const current = scheduledUpdateWindow(now, timezone, hour, options.cadence);
+  const next = nextScheduledUpdateWindow(current.end, timezone, hour, options.cadence);
+  return {
+    data: {
+      kind: 'recipient' as const,
+      teamId: recipient.teamId,
+      userId: recipient.userId,
+      email: recipient.email,
+      windowStart: next.start.toISOString(),
+      windowEnd: next.end.toISOString(),
+    },
+    delayMs: next.end.getTime() - now.getTime(),
+  };
+}
+
 export function freshDigestCutoff(windowEnd: Date, timezone: string, hour: number): Date {
   const tz = assertValidTimezone(timezone);
   const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;

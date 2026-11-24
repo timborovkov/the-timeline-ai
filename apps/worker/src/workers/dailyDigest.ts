@@ -100,6 +100,22 @@ export async function processDailyDigestJob(
     return { recipients: recipients.length };
   }
 
+  if (job.kind === 'workspace-reschedule') {
+    const recipients = await messaging.listDailyDigestRecipients(deps.db, { teamId: job.teamId });
+    await Promise.all(
+      recipients.map(async (recipient) => {
+        const preference = await messaging.getDigestPreference({
+          db: deps.db,
+          teamId: job.teamId,
+          userId: recipient.userId,
+        });
+        const next = messaging.nextScheduledUpdateRecipientJob(recipient, preference);
+        if (next) await queue.enqueueDailyDigestRecipientJob(next.data, next.delayMs);
+      }),
+    );
+    return { recipients: recipients.length };
+  }
+
   if (job.kind === 'recipient') {
     const result = await messaging.generateDailyDigest({
       db: deps.db,
