@@ -2605,5 +2605,8 @@
   },
   "apps/worker/src/workers/communication-audit.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/billing/guest-membership.test.ts": {
+    "group": "integration"
   }
 }
