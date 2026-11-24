@@ -48,7 +48,7 @@ beforeAll(async () => {
   fixture = await createResettablePGliteTestDb();
   db = drizzle(fixture.pg) as unknown as Db;
 });
-afterAll(async () => fixture?.close());
+afterAll(async () => fixture.close());
 beforeEach(async () => {
   await fixture.reset();
   await db.insert(teams).values([
@@ -655,32 +655,34 @@ describe('guest access', () => {
     resetEnvForTests();
     const provider = spyOn(globalThis, 'fetch').mockImplementation(
       Object.assign(
-        async (_url: Parameters<typeof fetch>[0], input?: Parameters<typeof fetch>[1]) => {
+        (_url: Parameters<typeof fetch>[0], input?: Parameters<typeof fetch>[1]) => {
           const payload = typeof input?.body === 'string' ? input.body : '';
           expect(payload).toContain('Shared task');
           expect(payload).not.toContain('Public task milestone');
           expect(payload).not.toContain('done');
           expect(payload).not.toContain(due);
-          return Response.json({
-            id: 'synthetic-withheld-field-answer',
-            object: 'chat.completion',
-            created: 0,
-            model: TIMELINE_MODELS.extraction.id,
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: 'assistant',
-                  content: JSON.stringify({
-                    answer: 'The current status is unavailable.',
-                    citations: [1],
-                  }),
+          return Promise.resolve(
+            Response.json({
+              id: 'synthetic-withheld-field-answer',
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content: JSON.stringify({
+                      answer: 'The current status is unavailable.',
+                      citations: [1],
+                    }),
+                  },
+                  finish_reason: 'stop',
                 },
-                finish_reason: 'stop',
-              },
-            ],
-            usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60, cost: 0.001 },
-          });
+              ],
+              usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60, cost: 0.001 },
+            }),
+          );
         },
         { preconnect: fetch.preconnect },
       ),
