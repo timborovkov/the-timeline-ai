@@ -1,4 +1,7 @@
 {
+  "apps/web/scripts/standalone-runtime.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/guest-access/scope.test.ts": {
     "group": "integration"
   },

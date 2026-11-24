@@ -2,6 +2,8 @@ import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { copyBunSentryRuntime } from './standalone-runtime.ts';
+
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = resolve(appRoot, '../..');
 const standaloneRoot = resolve(appRoot, '.next/standalone');
@@ -11,6 +13,7 @@ const sharedEmailTemplatesSource = resolve(
   'packages/shared/dist/messaging/email-templates',
 );
 
+/** @param {string} source @param {string} destination */
 function copyRequiredDirectory(source, destination) {
   if (!existsSync(source)) {
     throw new Error(`required standalone asset source does not exist: ${source}`);
@@ -29,3 +32,5 @@ for (const destination of [
 ]) {
   copyRequiredDirectory(sharedEmailTemplatesSource, destination);
 }
+
+await copyBunSentryRuntime(workspaceRoot, standaloneRoot);
