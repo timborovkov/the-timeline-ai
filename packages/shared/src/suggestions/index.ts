@@ -27,6 +27,7 @@ import {
   teamMembers,
   users,
   type Db,
+  teams,
 } from '@timeline/db';
 import {
   and,
@@ -39,10 +40,12 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
   or,
   sql,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { identityMatchReason } from '#src/suggestions/identity-resolution.js';
 import { z } from 'zod';
 
 import {
@@ -425,6 +428,24 @@ export interface SuggestionScopeDeps {
   /** Pauses acceptance for race tests before application, outside pack evidence locks. */
   beforeApplyItem?: (itemId: string) => Promise<void>;
   acceptance: SuggestionAcceptanceUnitOfWork;
+  recordMaintenanceWorker?: boolean;
+}
+
+type MaintainedTaskField = Exclude<
+  keyof NonNullable<CreateObjectInput['taskFieldEvidence']>,
+  undefined
+>;
+const MAINTAINED_TASK_FIELDS = [
+  'canonicalName',
+  'assigneeUserId',
+  'dueAt',
+  'status',
+] as const satisfies readonly MaintainedTaskField[];
+interface VerifiedTaskClaim {
+  rawEventId: string;
+  contextRawEventId?: string;
+  assertedAt: string;
+  value: string | null;
 }
 
 export interface SuggestionItemInput {
@@ -436,6 +457,8 @@ export interface SuggestionItemInput {
   dedupeKey: string;
   proposedPayload: Record<string, unknown>;
   evidenceRawEventIds?: string[];
+  plannedDateEvidence?: VerifiedTaskClaim;
+  taskFieldEvidence?: Partial<Record<MaintainedTaskField, VerifiedTaskClaim>>;
 }
 
 function missingRequiredTargetReason(
@@ -642,6 +665,7 @@ const objectPayloadFields = {
     z.string().trim().min(1).max(200).optional(),
   ),
   dueAt: blankStringAsNull(z.iso.datetime().nullable()).optional(),
+  plannedDate: z.iso.date().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 };
 
@@ -1037,6 +1061,7 @@ const CREATE_CONFLICT_KEYS = [
   'stage',
   'priority',
   'dueAt',
+  'plannedDate',
   'assigneeUserId',
   'assigneeName',
   'ownerUserId',
@@ -3337,7 +3362,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function refreshBundleStatus(
     suggestionId: string,
-    resolvedByUserId?: string,
+    resolvedByUserId?: string | null,
     client: DbOrTx = db,
   ) {
     const items = await client
@@ -4175,10 +4200,68 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function hasOnlyReplayedTaskEvidence(item: typeof agentSuggestionItems.$inferSelect) {
+    if (
+      item.operation !== 'update' ||
+      !item.targetId ||
+      (item.targetKind !== 'task' && item.targetKind !== 'object')
+    )
+      return false;
+    const metadata = recordFromUnknown(item.metadata);
+    if (Object.hasOwn(metadata, 'proposal_edited_by_user_id')) return false;
+    const claims: Record<string, unknown> = {
+      ...recordFromUnknown(metadata.task_field_evidence),
+      plannedDate: metadata.planned_date_evidence,
+    };
+    const payload = recordFromUnknown(item.proposedPayload);
+    const fields = Object.keys(payload);
+    if (
+      !fields.length ||
+      fields.some(
+        (field) =>
+          !Object.hasOwn(claims, field) ||
+          !recordFromUnknown(claims[field]).assertedAt ||
+          recordFromUnknown(claims[field]).value !== payload[field],
+      )
+    )
+      return false;
+    await lockAcceptanceMutationTarget(item);
+    const [target] = await db
+      .select({
+        plannedDateRevisionAt: entities.plannedDateRevisionAt,
+        plannedDateEvidenceId: entities.plannedDateEvidenceId,
+        revisions: entities.taskFieldRevisions,
+      })
+      .from(entities)
+      .where(
+        and(eq(entities.teamId, teamId), eq(entities.id, item.targetId), eq(entities.type, 'task')),
+      )
+      .limit(1);
+    if (!target) return false;
+    return fields.every((field) => {
+      const claim = recordFromUnknown(claims[field]);
+      const targetRevision =
+        field === 'plannedDate'
+          ? {
+              assertedAt: target.plannedDateRevisionAt?.toISOString(),
+              rawEventId: target.plannedDateEvidenceId,
+            }
+          : target.revisions[field];
+      return (
+        targetRevision?.assertedAt &&
+        typeof claim.assertedAt === 'string' &&
+        (Date.parse(claim.assertedAt) <= Date.parse(targetRevision.assertedAt) ||
+          claim.rawEventId === targetRevision.rawEventId)
+      );
+    });
+  }
+
   async function staleActionableItemReason(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
+    if (await hasOnlyReplayedTaskEvidence(item))
+      return 'Newer task field changes superseded this evidence.';
     const [parentSuggestion] = await db
       .select({
         metadata: agentSuggestions.metadata,
@@ -5061,6 +5144,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+    if (parsed.plannedDate !== undefined) {
+      input.plannedDate = parsed.plannedDate;
+      const evidence = await getPlannedDateEvidence(item, parsed.plannedDate);
+      if (evidence) input.plannedDateEvidence = evidence;
+    }
+    if (type === 'task') input.taskFieldEvidence = await getTaskFieldEvidence(item, parsed);
     if (project) input.parentObjectId = project.id;
     if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
     if (initialManualTaskCategory) input.initialManualTaskCategory = initialManualTaskCategory;
@@ -5127,6 +5216,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!userOverrides.has('dueAt') && parsed.dueAt !== undefined) {
       patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
     }
+    if (!userOverrides.has('plannedDate') && parsed.plannedDate !== undefined) {
+      patch.plannedDate = parsed.plannedDate;
+    }
     if (!userOverrides.has('aliases') && parsed.aliases !== undefined) {
       patch.aliases = mergeAliases(stringArrayFromUnknown(existing.aliases), parsed.aliases);
     }
@@ -5139,7 +5231,22 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     try {
       if (type === 'task') await lockAcceptanceProject(project?.id);
-      await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
+      const plannedDateEvidence = await getPlannedDateEvidence(item, patch.plannedDate);
+      await objects.updateObject(
+        existing.id,
+        patch,
+        { kind: 'agent', userId: null },
+        {
+          ...(plannedDateEvidence ? { plannedDateEvidence } : {}),
+          taskFieldEvidence: await getTaskFieldEvidence(item, {
+            canonicalName: patch.canonicalName,
+            assigneeUserId: patch.assigneeUserId,
+            status: patch.status,
+            dueAt: patch.dueAt?.toISOString() ?? (patch.dueAt as null | undefined),
+          }),
+        },
+      );
+
       if (type === 'task') {
         await objects.setTaskProject(
           existing.id,
@@ -5183,6 +5290,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             'ownerUserId',
             'assigneeUserId',
             'dueAt',
+            'plannedDate',
             'aliases',
             'metadata',
             'primaryProjectId',
@@ -5759,7 +5867,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.targetKind === 'object_merge') {
-      throw new Error('Merge suggestions must be reviewed from the merge preview');
+      if (!deps.recordMaintenanceWorker)
+        throw new Error('Merge suggestions must be reviewed from the merge preview');
+      const merge = objectMergePayload.parse(item.proposedPayload);
+      const result = await objects.mergeObjects({
+        survivorId: merge.survivorId,
+        mergedIds: merge.objectIds.filter((id) => id !== merge.survivorId),
+        actor: { kind: 'agent', userId: null },
+      });
+      await reconcileObjectMerge({
+        survivorId: result.survivor.id,
+        mergedIds: result.mergedIds,
+        reason: 'Exact provider-identity records were merged under workspace policy.',
+      });
+      return result.survivor.id;
     }
     if (
       item.operation === 'create' &&
@@ -5800,6 +5921,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.ownerUserId !== undefined) patch.ownerUserId = parsed.ownerUserId;
         if (parsed.assigneeUserId !== undefined) patch.assigneeUserId = parsed.assigneeUserId;
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+        if (parsed.plannedDate !== undefined) patch.plannedDate = parsed.plannedDate;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
         await lockAcceptanceProject(parsed.parentObjectId);
@@ -5807,15 +5929,43 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           deps.acceptance.kind === 'transaction'
             ? { postCommitEffects: deps.acceptance.postCommitEffects }
             : {};
-        await objects.updateObject(
+        const applied = await objects.updateObject(
           targetId,
           patch,
           { kind: 'agent', userId: null },
           {
             requireActive: true,
             ...mutationOptions,
+            taskFieldEvidence: await getTaskFieldEvidence(item, parsed),
+            ...(deps.recordMaintenanceWorker ? { taskFieldApprovalItemId: item.id } : {}),
+            ...(parsed.plannedDate !== undefined
+              ? { plannedDateEvidence: await getPlannedDateEvidence(item, parsed.plannedDate) }
+              : {}),
           },
         );
+        if (deps.recordMaintenanceWorker) {
+          const proposed = Object.keys(patch) as (keyof typeof patch)[];
+          const appliedFields = applied.changedFields;
+          const skippedFields = proposed.filter((field) => {
+            if (appliedFields.includes(field)) return false;
+            const requested = patch[field];
+            const current = applied.object[field as keyof typeof applied.object];
+            return requested instanceof Date && current instanceof Date
+              ? requested.getTime() !== current.getTime()
+              : requested !== current;
+          });
+          await db
+            .update(agentSuggestionItems)
+            .set({
+              metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+                applied_task_fields: appliedFields,
+                skipped_task_fields: skippedFields,
+              })}::jsonb`,
+            })
+            .where(
+              and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, item.id)),
+            );
+        }
         if (parsed.parentObjectId !== undefined)
           await objects.setTaskProject(
             targetId,
@@ -6087,6 +6237,581 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return targetId;
   }
 
+  async function getVerifiedTaskClaim(
+    item: typeof agentSuggestionItems.$inferSelect,
+    evidenceRecord: unknown,
+    value: string | null | undefined,
+    strict = true,
+  ) {
+    if (value === undefined) return undefined;
+    const evidence = recordFromUnknown(evidenceRecord);
+    if (Object.keys(evidence).length === 0) return undefined;
+    if (value !== evidence.value) return undefined;
+    const parsed = z
+      .object({
+        rawEventId: uuid,
+        contextRawEventId: uuid.optional(),
+        assertedAt: z.iso.datetime(),
+      })
+      .parse(evidence);
+    const requiredIds = [
+      ...new Set([
+        parsed.rawEventId,
+        ...(parsed.contextRawEventId ? [parsed.contextRawEventId] : []),
+      ]),
+    ];
+    const sourceRows = await db
+      .select({ id: rawEvents.id, occurredAt: rawEvents.occurredAt })
+      .from(rawEvents)
+      .innerJoin(agentSuggestionEvidence, eq(agentSuggestionEvidence.rawEventId, rawEvents.id))
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
+          eq(rawEvents.teamId, teamId),
+          inArray(rawEvents.id, requiredIds),
+          eq(rawEvents.visibility, 'team'),
+          rawEventIsActive(),
+        ),
+      )
+      .for('share');
+    const source = sourceRows.find((entry) => entry.id === parsed.rawEventId);
+    const assertedAt = new Date(parsed.assertedAt);
+    if (
+      new Set(sourceRows.map((entry) => entry.id)).size !== requiredIds.length ||
+      !source ||
+      assertedAt > source.occurredAt
+    )
+      if (strict) throw new Error('Task field evidence is no longer available');
+      else return undefined;
+    return { rawEventId: parsed.rawEventId, assertedAt };
+  }
+
+  function getPlannedDateEvidence(
+    item: typeof agentSuggestionItems.$inferSelect,
+    value: string | null | undefined,
+    strict = true,
+  ) {
+    return getVerifiedTaskClaim(
+      item,
+      recordFromUnknown(item.metadata).planned_date_evidence,
+      value,
+      strict,
+    );
+  }
+
+  async function getTaskFieldEvidence(
+    item: typeof agentSuggestionItems.$inferSelect,
+    proposed: Pick<z.infer<typeof objectUpdatePayload>, MaintainedTaskField>,
+    strict = true,
+  ): Promise<NonNullable<CreateObjectInput['taskFieldEvidence']>> {
+    const evidence = recordFromUnknown(recordFromUnknown(item.metadata).task_field_evidence);
+    const verified: NonNullable<CreateObjectInput['taskFieldEvidence']> = {};
+    for (const field of MAINTAINED_TASK_FIELDS) {
+      const claim = await getVerifiedTaskClaim(item, evidence[field], proposed[field], strict);
+      if (claim) verified[field] = claim;
+    }
+    return verified;
+  }
+
+  async function undoAutomaticTaskUpdate(itemId: string): Promise<boolean> {
+    await ensureMember();
+    if (!UUID_RE.test(itemId) || userId === '00000000-0000-0000-0000-000000000000') return false;
+    const entries = await db
+      .select({
+        changeId: objectChanges.id,
+        entityId: objectChanges.entityId,
+        field: objectChanges.field,
+        previousValue: objectChanges.previousValue,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .innerJoin(
+        objectChanges,
+        and(
+          eq(objectChanges.approvalItemId, agentSuggestionItems.id),
+          eq(objectChanges.teamId, teamId),
+          eq(objectChanges.entityId, agentSuggestionItems.resultId),
+        ),
+      )
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.id, itemId),
+          suggestionVisibilityPredicate(teamId, userId),
+          eq(agentSuggestionItems.status, 'accepted'),
+          eq(objectChanges.status, 'applied'),
+          sql`${agentSuggestionItems.metadata} ->> 'approval_decision' = 'automatic'`,
+        ),
+      )
+      .limit(6);
+    const entry = entries[0];
+    if (!entry || entries.length > 5 || entries.some((row) => row.entityId !== entry.entityId))
+      return false;
+    const patch: ObjectPatch = {};
+    const undoTaskFieldChanges: NonNullable<
+      Parameters<typeof objects.updateObject>[3]
+    >['undoTaskFieldChanges'] = {};
+    for (const row of entries) {
+      switch (row.field) {
+        case 'canonicalName':
+          patch.canonicalName = z.string().min(1).parse(row.previousValue);
+          undoTaskFieldChanges.canonicalName = row.changeId;
+          break;
+        case 'plannedDate':
+          patch.plannedDate = z.iso.date().nullable().parse(row.previousValue);
+          undoTaskFieldChanges.plannedDate = row.changeId;
+          break;
+        case 'assigneeUserId':
+          patch.assigneeUserId = uuid.nullable().parse(row.previousValue);
+          undoTaskFieldChanges.assigneeUserId = row.changeId;
+          break;
+        case 'dueAt': {
+          const previous = z.iso.datetime().nullable().parse(row.previousValue);
+          patch.dueAt = previous === null ? null : new Date(previous);
+          undoTaskFieldChanges.dueAt = row.changeId;
+          break;
+        }
+        case 'status':
+          patch.status = z.string().parse(row.previousValue);
+          undoTaskFieldChanges.status = row.changeId;
+          break;
+        default:
+          return false;
+      }
+    }
+    const postCommitEffects: (() => void | Promise<void>)[] = [];
+    await db.transaction(async (tx) => {
+      await objects.updateObject(
+        entry.entityId,
+        patch,
+        { kind: 'user', userId },
+        { requireActive: true, undoTaskFieldChanges, transactionClient: tx, postCommitEffects },
+      );
+      await tx
+        .update(agentSuggestionItems)
+        .set({
+          metadata: sql`${agentSuggestionItems.metadata} || '{"task_update_undo_available":false,"task_update_undone":true}'::jsonb`,
+        })
+        .where(and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, itemId)));
+    });
+    for (const effect of postCommitEffects) await effect();
+    return true;
+  }
+
+  async function getRecordMaintenancePolicy() {
+    await ensureMember();
+    const [workspace] = await db
+      .select({ policy: teams.recordMaintenance })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    if (!workspace) throw new Error('Workspace not found');
+    return workspace.policy;
+  }
+
+  async function setRecordMaintenancePolicy(input: {
+    reviewManualValues: boolean;
+    approveRemovals: boolean;
+    approveMerges: boolean;
+  }) {
+    if ((await ensureMember('admin')) === 'member') throw new Error('Admin access is required');
+    const policy = {
+      ...z
+        .object({
+          reviewManualValues: z.boolean(),
+          approveRemovals: z.boolean(),
+          approveMerges: z.boolean(),
+        })
+        .parse(input),
+      revision: randomUUID(),
+    };
+    await db.update(teams).set({ recordMaintenance: policy }).where(eq(teams.id, teamId));
+    return policy;
+  }
+
+  function exactMergeTrackerKey(row: typeof entities.$inferSelect) {
+    const metadata = recordFromUnknown(row.metadata);
+    const candidate = metadata.url ?? metadata.external_url;
+    if (typeof candidate !== 'string') return null;
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== 'https:' || url.port || url.username || url.password) return null;
+      if (
+        url.hostname === 'github.com' &&
+        (!metadata.integration_provider || metadata.integration_provider === 'github')
+      ) {
+        const item = /^\/([\w.-]+)\/([\w.-]+)\/(issues|pull)\/([1-9]\d*)\/?$/i.exec(url.pathname);
+        return item ? `github:${item.slice(1).join('/').toLowerCase()}` : null;
+      }
+      if (
+        url.hostname === 'linear.app' &&
+        (!metadata.integration_provider || metadata.integration_provider === 'linear')
+      ) {
+        const item = /^\/([\w-]+)\/issue\/([a-z][a-z\d]+-[1-9]\d*)(?:\/[\w-]+)?\/?$/i.exec(
+          url.pathname,
+        );
+        return item ? `linear:${item.slice(1).join('/').toLowerCase()}` : null;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  async function automaticApprovalRevision(
+    item: typeof agentSuggestionItems.$inferSelect,
+    suggestion: typeof agentSuggestions.$inferSelect,
+  ): Promise<string | null> {
+    const metadata = recordFromUnknown(suggestion.metadata);
+    const merge = item.targetKind === 'object_merge' && item.operation === 'merge';
+    const auditedConversation = String(metadata.suggestion_model_version).includes(
+      '-communication-completeness-v',
+    );
+    if (
+      suggestion.source !== 'background' ||
+      suggestion.visibility !== 'team' ||
+      suggestion.confidence === 'low' ||
+      Object.hasOwn(recordFromUnknown(item.metadata), 'proposal_edited_by_user_id') ||
+      (merge
+        ? metadata.cleanup_kind !== 'merge' && !auditedConversation
+        : !auditedConversation || (item.targetKind !== 'task' && item.targetKind !== 'object'))
+    )
+      return null;
+    const [workspace] = await db
+      .select({ policy: teams.recordMaintenance })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1)
+      .for('share');
+    if (!workspace) return null;
+
+    const siblings = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, suggestion.id),
+        ),
+      )
+      .limit(2);
+    if (siblings.length !== 1) return null;
+    async function withActiveExplicitAuthor(quote: string, since: Date) {
+      const rows = await db
+        .select({ id: rawEvents.id })
+        .from(agentSuggestionEvidence)
+        .innerJoin(
+          rawEvents,
+          and(eq(rawEvents.id, agentSuggestionEvidence.rawEventId), eq(rawEvents.teamId, teamId)),
+        )
+        .innerJoin(
+          teamMembers,
+          and(
+            eq(teamMembers.teamId, teamId),
+            eq(teamMembers.userId, rawEvents.authorUserId),
+            isNull(teamMembers.removedAt),
+          ),
+        )
+        .innerJoin(users, and(eq(users.id, rawEvents.authorUserId), isNull(users.suspendedAt)))
+        .where(
+          and(
+            eq(agentSuggestionEvidence.teamId, teamId),
+            eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+            eq(rawEvents.visibility, 'team'),
+            eq(rawEvents.source, 'slack'),
+            rawEventIsActive(),
+            sql`coalesce(${rawEvents.sourceMetadata} ->> 'signal_class', '') <> 'pulse'`,
+            sql`${rawEvents.occurredAt} >= ${since.toISOString()}::timestamptz`,
+            sql`lower(trim(regexp_replace(trim(${rawEvents.contentText}), '[.!]$', ''))) IN (${quote}, ${'please ' + quote})`,
+          ),
+        )
+        .orderBy(asc(rawEvents.id))
+        .limit(1)
+        .for('update', { of: rawEvents });
+      return rows.length !== 0;
+    }
+    if (merge) {
+      if (!workspace.policy.approveMerges || suggestion.confidence !== 'high') return null;
+      const payload = objectMergePayload.safeParse(item.proposedPayload);
+      if (
+        !payload.success ||
+        new Set(payload.data.objectIds).size !== 2 ||
+        !payload.data.objectIds.includes(payload.data.survivorId) ||
+        item.targetId !== payload.data.survivorId
+      )
+        return null;
+      const candidates = await db
+        .select()
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            inArray(entities.id, payload.data.objectIds),
+            isNull(entities.mergedIntoId),
+            isNull(entities.archivedAt),
+          ),
+        )
+        .orderBy(asc(entities.id))
+        .for('update');
+      const [left, right] = candidates;
+      if (!left || !right || left.type !== right.type || ['task', 'follow_up'].includes(left.type))
+        return null;
+      if (identityMatchReason(left, right) !== 'provider_identity') {
+        const key = exactMergeTrackerKey(left);
+        const leftMetadata = recordFromUnknown(left.metadata);
+        const rightMetadata = recordFromUnknown(right.metadata);
+        if (
+          !key ||
+          key !== exactMergeTrackerKey(right) ||
+          (!leftMetadata.integration_external_id && !rightMetadata.integration_external_id) ||
+          (leftMetadata.integration_external_id && rightMetadata.integration_external_id) ||
+          identitiesConflict(left, right)
+        )
+          return null;
+      }
+      const survivor = left.id === payload.data.survivorId ? left : right;
+      const duplicate = survivor.id === left.id ? right : left;
+      const instruction =
+        `merge ${duplicate.canonicalName} into ${survivor.canonicalName}`.toLowerCase();
+      const since = new Date(Math.max(left.updatedAt.getTime(), right.updatedAt.getTime()));
+      if (!(await withActiveExplicitAuthor(instruction, since))) return null;
+      return workspace.policy.revision;
+    }
+    await lockAcceptanceMutationTarget(item);
+    const sources = await db
+      .select({
+        id: rawEvents.id,
+        source: rawEvents.source,
+        visibility: rawEvents.visibility,
+        metadata: rawEvents.sourceMetadata,
+        quote: agentSuggestionEvidence.quote,
+        authorUserId: rawEvents.authorUserId,
+        occurredAt: rawEvents.occurredAt,
+        text: rawEvents.contentText,
+      })
+      .from(agentSuggestionEvidence)
+      .innerJoin(
+        rawEvents,
+        and(eq(rawEvents.id, agentSuggestionEvidence.rawEventId), eq(rawEvents.teamId, teamId)),
+      )
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+          rawEventIsActive(),
+        ),
+      )
+      .orderBy(asc(rawEvents.id))
+      .for('update', { of: rawEvents });
+    const expectedEvidence = await db
+      .select({ id: agentSuggestionEvidence.id })
+      .from(agentSuggestionEvidence)
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+        ),
+      );
+    if (
+      !sources.length ||
+      sources.length !== expectedEvidence.length ||
+      sources.some(
+        (source) =>
+          source.visibility !== 'team' ||
+          !['slack', 'telegram', 'email'].includes(source.source) ||
+          recordFromUnknown(source.metadata).signal_class === 'pulse',
+      )
+    )
+      return null;
+    const payload = recordFromUnknown(item.proposedPayload);
+    if (item.operation === 'create') {
+      const type = item.targetKind === 'task' ? 'task' : payload.type;
+      if (!['task', 'company', 'project', 'person'].includes(String(type))) return null;
+      if (payload.createProjectName !== undefined || payload.metadata !== undefined) return null;
+    } else if (item.operation === 'update') {
+      if (
+        payload.status === 'cancelled' &&
+        sources.some((source) => /^(?:please )?archive\s/i.test(source.quote?.trim() ?? ''))
+      )
+        return null;
+      const fields = Object.keys(payload);
+      if (
+        !item.targetId ||
+        !fields.length ||
+        fields.some((field) => !['plannedDate', ...MAINTAINED_TASK_FIELDS].includes(field))
+      )
+        return null;
+      const parsed = objectUpdatePayload.safeParse(payload);
+      if (!parsed.success) return null;
+      const date = parsed.data.plannedDate;
+      if (date !== undefined && !(await getPlannedDateEvidence(item, date, false))) return null;
+      const claims = await getTaskFieldEvidence(item, parsed.data, false);
+      if (MAINTAINED_TASK_FIELDS.some((field) => fields.includes(field) && !claims[field]))
+        return null;
+      const [task] = await db
+        .select({
+          plannedDate: entities.plannedDate,
+          revisionAt: entities.plannedDateRevisionAt,
+          evidenceId: entities.plannedDateEvidenceId,
+          revisions: entities.taskFieldRevisions,
+          canonicalName: entities.canonicalName,
+          assigneeUserId: entities.assigneeUserId,
+          dueAt: entities.dueAt,
+          status: entities.status,
+        })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, item.targetId),
+            eq(entities.type, 'task'),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!task) return null;
+      if (workspace.policy.reviewManualValues) {
+        if (date !== undefined && date !== task.plannedDate && task.revisionAt && !task.evidenceId)
+          return null;
+        if (
+          MAINTAINED_TASK_FIELDS.some((field) => {
+            const current = task[field];
+            const value = current instanceof Date ? current.toISOString() : current;
+            return (
+              claims[field] &&
+              task.revisions[field] &&
+              !task.revisions[field].rawEventId &&
+              parsed.data[field] !== value
+            );
+          })
+        )
+          return null;
+      }
+    } else if (item.operation === 'archive_or_cancel') {
+      if (
+        !workspace.policy.approveRemovals ||
+        suggestion.confidence !== 'high' ||
+        !item.targetId ||
+        Object.keys(payload).some((field) => field !== 'status')
+      )
+        return null;
+    } else {
+      return null;
+    }
+
+    if (item.operation === 'archive_or_cancel') {
+      const [target] = await db
+        .select({ name: entities.canonicalName, updatedAt: entities.updatedAt })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, item.targetId!),
+            isNull(entities.mergedIntoId),
+            isNull(entities.archivedAt),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!target) return null;
+      const normalizeArchive = (value: string) => value.toLowerCase().trim().replace(/[.!]$/, '');
+      const allowed = new Set([
+        normalizeArchive(`archive ${target.name}`),
+        normalizeArchive(`please archive ${target.name}`),
+      ]);
+      const explicitAuthors = sources.flatMap((source) =>
+        source.quote &&
+        source.authorUserId &&
+        source.occurredAt >= target.updatedAt &&
+        source.text?.trim() === source.quote.trim() &&
+        allowed.has(normalizeArchive(source.quote))
+          ? [source.authorUserId]
+          : [],
+      );
+      if (explicitAuthors.length === 0) return null;
+      const [author] = await db
+        .select({ id: teamMembers.userId })
+        .from(teamMembers)
+        .innerJoin(users, and(eq(users.id, teamMembers.userId), isNull(users.suspendedAt)))
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            isNull(teamMembers.removedAt),
+            inArray(teamMembers.userId, explicitAuthors),
+          ),
+        )
+        .limit(1)
+        .for('share');
+      if (!author) return null;
+      const matching = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            sql`lower(${entities.canonicalName}) = lower(${target.name})`,
+          ),
+        )
+        .limit(2);
+      if (matching.length !== 1) return null;
+    }
+    return workspace.policy.revision;
+  }
+
+  async function applyPendingRecordMaintenance(itemIds?: readonly string[]): Promise<number> {
+    if (!deps.recordMaintenanceWorker || deps.acceptance.kind !== 'root')
+      throw new Error('Record maintenance requires the scoped worker capability');
+    await ensureMember();
+    if (itemIds?.length === 0) return 0;
+    let count = 0;
+    let cursor: string | undefined;
+    for (;;) {
+      const pending = await db
+        .select({ id: agentSuggestionItems.id })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestions.teamId, teamId),
+            eq(agentSuggestions.visibility, 'team'),
+            ne(agentSuggestions.confidence, 'low'),
+            ...(cursor ? [gt(agentSuggestionItems.id, cursor)] : []),
+            ...(itemIds ? [inArray(agentSuggestionItems.id, itemIds)] : []),
+            eq(agentSuggestions.source, 'background'),
+            eq(agentSuggestionItems.status, 'pending'),
+            isNull(agentSuggestionItems.resolvedAt),
+            inArray(agentSuggestionItems.targetKind, ['task', 'object', 'object_merge']),
+            inArray(agentSuggestionItems.operation, [
+              'create',
+              'update',
+              'archive_or_cancel',
+              'merge',
+            ]),
+            or(
+              sql`${agentSuggestions.metadata} ->> 'suggestion_model_version' LIKE '%-communication-completeness-v%'`,
+              sql`${agentSuggestions.metadata} ->> 'cleanup_kind' = 'merge'`,
+            ),
+          ),
+        )
+        .orderBy(asc(agentSuggestionItems.id))
+        .limit(30);
+      if (pending.length === 0) break;
+      cursor = pending.at(-1)?.id;
+      for (const item of pending) {
+        try {
+          if ((await acceptSuggestionItemWithOutcome(item.id)) === 'accepted') count++;
+        } catch (error) {
+          if (!(error instanceof ExpectedSuggestionApplyFailure)) throw error;
+        }
+      }
+    }
+    return count;
+  }
+
   async function acceptSuggestionItemWithOutcome(
     itemId: string,
   ): Promise<'accepted' | 'superseded' | null> {
@@ -6110,6 +6835,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
       isPackBacked ||
+      deps.recordMaintenanceWorker ||
+      Object.hasOwn(recordFromUnknown(row.item.metadata), 'planned_date_evidence') ||
+      Object.hasOwn(recordFromUnknown(row.item.metadata), 'task_field_evidence') ||
       (row.item.operation === 'update' &&
         (row.item.targetKind === 'task' || row.item.targetKind === 'object') &&
         recordFromUnknown(row.item.proposedPayload).parentObjectId !== undefined) ||
@@ -6132,6 +6860,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         throw error.applyError;
       }
     }
+    const automaticRevision = deps.recordMaintenanceWorker
+      ? await automaticApprovalRevision(row.item, row.suggestion)
+      : null;
+    if (deps.recordMaintenanceWorker && automaticRevision === null) return null;
+    const resolutionActor = automaticRevision === null ? userId : null;
     const staleReason = await staleActionableItemReason(row.item);
     if (staleReason) {
       const superseded = await supersedeItem(itemId, null, staleReason);
@@ -6151,8 +6884,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .set({
         status: 'accepted',
         resolvedAt: acceptanceStartedAt,
-        resolvedByUserId: userId,
+        resolvedByUserId: resolutionActor,
         metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+          approval_decision: automaticRevision === null ? 'human' : 'automatic',
+          ...(automaticRevision !== null ? { approval_policy_revision: automaticRevision } : {}),
           [ACCEPTANCE_ATTEMPT_METADATA_KEY]: acceptanceAttemptId,
           [ACCEPTANCE_STARTED_AT_METADATA_KEY]: acceptanceStartedAt.toISOString(),
         })}::jsonb`,
@@ -6164,6 +6899,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(agentSuggestionItems.id, itemId),
           isNull(agentSuggestionItems.resolvedAt),
           inArray(agentSuggestionItems.status, ['pending', 'failed']),
+          ...(automaticRevision !== null
+            ? [eq(agentSuggestionItems.updatedAt, row.item.updatedAt)]
+            : []),
         ),
       )
       .returning();
@@ -6203,7 +6941,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return true;
       });
       if (!recordedFailure) return null;
-      await refreshBundleStatus(row.suggestion.id, userId);
+      await refreshBundleStatus(row.suggestion.id, resolutionActor);
       const staleReason = await staleActionableItemReason({ ...claimed, status: 'failed' });
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
         await reconcileStaleActionableItemsBestEffort({
@@ -6225,12 +6963,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     } finally {
       stopHeartbeat();
     }
+    const taskUpdateUndoAvailable =
+      automaticRevision !== null &&
+      row.item.operation === 'update' &&
+      Boolean(
+        (
+          await db
+            .select({ id: objectChanges.id })
+            .from(objectChanges)
+            .where(and(eq(objectChanges.teamId, teamId), eq(objectChanges.approvalItemId, itemId)))
+            .limit(1)
+        )[0],
+      );
     const finalized = await db.transaction(async (tx) => {
       const [updated] = await tx
         .update(agentSuggestionItems)
         .set({
           resultId,
-          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          metadata: sql`(${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}) || ${JSON.stringify(taskUpdateUndoAvailable ? { task_update_undo_available: true } : {})}::jsonb`,
           updatedAt: new Date(),
           failureReason: null,
         })
@@ -6253,7 +7003,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return null;
     }
-    await refreshBundleStatus(row.suggestion.id, userId);
+    await refreshBundleStatus(row.suggestion.id, resolutionActor);
     await reconcileAcceptedItemBestEffort({ ...claimed, resultId });
     await reconcileStaleActionableItemsBestEffort({
       suggestionItemId: itemId,
@@ -6270,6 +7020,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function recordRolledBackApplyFailure(
     failure: TransactionalSuggestionApplyFailure,
   ): Promise<'failed' | 'superseded' | 'lost_race'> {
+    const attempted = recordFromUnknown(failure.claimedItem.metadata);
+    const decision = {
+      approval_decision: attempted.approval_decision,
+      approval_policy_revision: attempted.approval_policy_revision,
+    };
     const failed = await db.transaction(async (tx) => {
       const [updated] = await tx
         .update(agentSuggestionItems)
@@ -6278,7 +7033,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           failureReason: failure.failureReason,
           resolvedAt: null,
           resolvedByUserId: null,
-          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          metadata: sql`(${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}) || ${JSON.stringify(decision)}::jsonb`,
           updatedAt: new Date(),
         })
         .where(
@@ -6298,7 +7053,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return updated;
     });
     if (!failed) return 'lost_race';
-    await refreshBundleStatus(failed.suggestionId, userId);
+    await refreshBundleStatus(failed.suggestionId, deps.recordMaintenanceWorker ? null : userId);
     const staleReason = await staleActionableItemReason(failed);
     if (staleReason && (await supersedeItem(failed.id, null, staleReason))) {
       await reconcileStaleActionableItemsBestEffort({
@@ -7960,6 +8715,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                         ),
                       }
                     : {}),
+                  ...(item.taskFieldEvidence
+                    ? { task_field_evidence: item.taskFieldEvidence }
+                    : {}),
+                  ...(item.plannedDateEvidence
+                    ? { planned_date_evidence: item.plannedDateEvidence }
+                    : {}),
                   reconciliation_run_id: run.id,
                   reconciliation_output_id: outputIdByItemDedupeKey.get(item.dedupeKey) ?? null,
                   ...(outputRowByItemDedupeKey.get(item.dedupeKey)?.clusterId
@@ -8259,6 +9020,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     acceptSuggestionItem,
 
     acceptSuggestionItemWithOutcome,
+    getRecordMaintenancePolicy,
+    setRecordMaintenancePolicy,
+    applyPendingRecordMaintenance,
+    undoAutomaticTaskUpdate,
 
     acceptObjectMergeSuggestionItem,
 

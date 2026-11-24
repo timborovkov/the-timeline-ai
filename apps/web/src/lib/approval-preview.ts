@@ -3,9 +3,20 @@ import { presentDueDate } from '@timeline/shared/time';
 import { formatDisplayNumber } from '@/lib/regional-format';
 import {
   formatAllDayCalendarDate,
+  formatDisplayDate,
   formatDisplayDateTime,
   parseDisplayDate,
 } from '@/lib/display-dates';
+export function automaticApprovalOutcome(metadata: Record<string, unknown> | undefined): string {
+  const applied = Array.isArray(metadata?.applied_task_fields)
+    ? metadata.applied_task_fields
+    : null;
+  const skipped = Array.isArray(metadata?.skipped_task_fields) ? metadata.skipped_task_fields : [];
+  if (metadata?.task_update_undone === true) return 'Applied automatically, then undone';
+  if (skipped.length)
+    return applied?.length ? 'Applied with some fields skipped' : 'No field changes applied';
+  return applied?.length === 0 ? 'Confirmed automatically' : 'Applied automatically';
+}
 
 export interface ApprovalObjectSnapshot {
   id: string;
@@ -17,6 +28,7 @@ export interface ApprovalObjectSnapshot {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: string | null;
+  plannedDate?: string | null;
   aliases: string[];
   content: string | null;
   createdAt: string;
@@ -69,6 +81,7 @@ const FIELD_LABELS: Record<string, string> = {
   content: 'Content',
   description: 'Details',
   dueAt: 'Due',
+  plannedDate: 'Planned date',
   endAt: 'Ends',
   entityName: 'Item',
   fromDisplayName: 'From',
@@ -176,6 +189,8 @@ function formatValue(
   }
   if (key === 'dueAt' && typeof value === 'string')
     return formatDue(value, options.timezone, options.locale);
+  if (key === 'plannedDate' && typeof value === 'string')
+    return formatDisplayDate(value, { timezone: 'UTC', locale: options.locale });
   if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
     const configuredZone = options.values.timezone;
     const timezone = typeof configuredZone === 'string' ? configuredZone : options.timezone;
@@ -218,6 +233,7 @@ function objectCurrentValues(snapshot: ApprovalObjectSnapshot): Record<string, u
     assigneeUserId: snapshot.assigneeUserId,
     ownerUserId: snapshot.ownerUserId,
     dueAt: snapshot.dueAt,
+    plannedDate: snapshot.plannedDate,
     aliases: snapshot.aliases,
     content: snapshot.content,
   };

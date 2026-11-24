@@ -513,6 +513,7 @@ export interface TeamScopeDeps {
   beforeSuggestionApply?: (itemId: string) => Promise<void>;
   /** Internal transaction context supplied by the suggestion acceptance unit of work. */
   suggestionAcceptanceTransaction?: SuggestionAcceptanceTransaction;
+  recordMaintenanceWorker?: true;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -2105,6 +2106,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     boards: boardScope,
     calendar: calendarScope,
+    recordMaintenanceWorker: Boolean(
+      deps.recordMaintenanceWorker &&
+      deps.skipMembershipCheck &&
+      userId === '00000000-0000-0000-0000-000000000000',
+    ),
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
     ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
     acceptance:

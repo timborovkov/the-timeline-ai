@@ -32,6 +32,7 @@ import {
 import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
 import {
   buildApprovalPreviewFields,
+  automaticApprovalOutcome,
   type ApprovalPreviewField,
   type ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
@@ -66,6 +67,7 @@ export function ApprovalPreviewDialog({
   pending,
   mergeHref,
   onAccept,
+  onUndo,
   onReject,
 }: {
   returnFocusTo?: HTMLElement | null;
@@ -92,6 +94,7 @@ export function ApprovalPreviewDialog({
   pending: boolean;
   mergeHref?: string | null;
   onAccept: () => void;
+  onUndo?: (() => void) | undefined;
   onReject: (reason?: SuggestionRejectionReason) => void;
 }) {
   const requestKey = `${item.id}:${item.targetKind}:${item.targetId ?? ''}:${open ? 'open' : 'closed'}`;
@@ -152,6 +155,7 @@ export function ApprovalPreviewDialog({
       acceptDisabled={acceptDisabled}
       presentation={presentation}
       onAccept={onAccept}
+      onUndo={onUndo}
       onReject={onReject}
     />
   );
@@ -164,6 +168,7 @@ export function ApprovalPreviewDialog({
           status={item.status}
           className="text-sm text-fg-muted"
         />
+        <AutomaticApprovalAttribution item={item} />
         {reason ? (
           <section>
             <h3 className="text-sm font-semibold">Why this change</h3>
@@ -231,6 +236,30 @@ export function ApprovalPreviewDialog({
   );
 }
 
+function AutomaticApprovalAttribution({
+  item,
+}: Pick<ComponentProps<typeof ApprovalPreviewDialog>, 'item'>) {
+  const revision = item.metadata?.approval_policy_revision;
+  if (item.metadata?.approval_decision !== 'automatic' || typeof revision !== 'string') return null;
+  return (
+    <p className="text-xs text-fg-muted">
+      {item.status === 'accepted'
+        ? automaticApprovalOutcome(item.metadata)
+        : 'Automatic application attempted'}
+      {' · Workspace policy revision '}
+      {revision}
+      {Array.isArray(item.metadata?.skipped_task_fields) && item.metadata.skipped_task_fields.length
+        ? ` · Skipped ${item.metadata.skipped_task_fields
+            .map((field) => {
+              const label = String(field).replace(/([a-z])([A-Z])/g, '$1 $2');
+              return label === 'assignee User Id' ? 'assignee' : label.toLowerCase();
+            })
+            .join(', ')}`
+        : null}
+    </p>
+  );
+}
+
 function PreviewDecisionActions({
   item,
   mergeHref,
@@ -239,6 +268,7 @@ function PreviewDecisionActions({
   acceptDisabled,
   presentation,
   onAccept,
+  onUndo,
   onReject,
 }: Pick<
   ComponentProps<typeof ApprovalPreviewDialog>,
@@ -249,6 +279,7 @@ function PreviewDecisionActions({
   | 'acceptDisabled'
   | 'presentation'
   | 'onAccept'
+  | 'onUndo'
   | 'onReject'
 >) {
   return isActionableSuggestionStatus(item.status) ? (
@@ -281,6 +312,10 @@ function PreviewDecisionActions({
       )}
       <RejectProposal key={item.id} disabled={pending || busy} onReject={onReject} />
     </ItemActionGroup>
+  ) : onUndo ? (
+    <Button type="button" variant="outline" size="sm" disabled={pending || busy} onClick={onUndo}>
+      Undo task change
+    </Button>
   ) : (
     <p className="text-sm capitalize text-fg-muted">
       {item.status.replaceAll('_', ' ')} · Read-only

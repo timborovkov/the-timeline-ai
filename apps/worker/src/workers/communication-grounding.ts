@@ -11,7 +11,17 @@ import {
 import { z } from 'zod';
 
 export const communicationGroundingSchema = z.object({
-  field: z.enum(['assignee', 'dueAt', 'status', 'customer', 'project', 'prospect', 'relationship']),
+  field: z.enum([
+    'assignee',
+    'canonicalName',
+    'dueAt',
+    'plannedDate',
+    'status',
+    'customer',
+    'project',
+    'prospect',
+    'relationship',
+  ]),
   rawEventId: z.uuid(),
   quote: z.string().min(3).max(800),
   subject: z.string().min(1).max(200),
@@ -20,6 +30,13 @@ export const communicationGroundingSchema = z.object({
 });
 type Support = z.infer<typeof communicationGroundingSchema>;
 type AssignmentRole = 'owner' | 'assignee';
+type MaintainedClaim = 'canonicalName' | 'assigneeUserId' | 'dueAt' | 'status';
+interface VerifiedClaim {
+  rawEventId: string;
+  contextRawEventId?: string;
+  assertedAt: string;
+  value: string | null;
+}
 interface Item {
   auditId?: string | undefined;
   operation: string;
@@ -39,6 +56,18 @@ interface Bundle<T extends Item> {
   items: T[];
 }
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
+const CONVERSATIONAL_PLAN_CORRECTION =
+  /^(?:actually|instead),?\s+(?:today|tomorrow|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d{4}-\d{2}-\d{2}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:,?\s+\d{4})?)(?:\s+(?:in\s+)?(?:utc|gmt|(?:[a-z_]+\/)+[a-z_+-]+))?[.!]?$/i;
+const CONTEXTUAL_TASK_PLAN =
+  /^(?:i[’']ll|i will|we[’']ll|we will) (?:look into|work on|investigate|fix|review|triage|test|check|address) (?:it|this|that)(?: task| issue| problem)? on\b/i;
+
+function plannedAssertionTimezone(quote: string, fallback: string): string {
+  const explicit =
+    /\b(?:in|time zone) ((?:[A-Za-z_]+\/)+[A-Za-z_+-]+)\b/.exec(quote)?.[1] ??
+    /(?:\s|\()(UTC|GMT)(?:\s|[.!?)]|$)/i.exec(quote)?.[1]?.toUpperCase();
+  return explicit ?? fallback;
+}
+
 const tentativeAssertion =
   /\b(?:maybe|might|perhaps|probably|possibly|tentative(?:ly)?|potentially|provisionally|likely|could|(?:I|we|they|he|she) (?:think|guess|suspect|believe)s?)\b/i;
 const projectMembershipTerms = '(?:under|within|part of|belongs? to|in (?:the )?project)';
@@ -279,15 +308,19 @@ function deadlineInstant(day: string, tail: string, timezone: string): number | 
     return undefined;
   }
 }
-function deadlineAssertions(
+function taskDateAssertions(
   quote: string,
   subject: string,
   timezone: string,
-  referenceDate?: Date,
+  referenceDate: Date | undefined,
+  field: 'dueAt' | 'plannedDate',
 ): { affirmed: Set<number | null>; denied: Set<number> } {
   const dates = { affirmed: new Set<number | null>(), denied: new Set<number>() };
   const add = (kind: 'affirmed' | 'denied', day: string, tail: string) => {
-    const instant = deadlineInstant(day, tail, timezone);
+    const instant =
+      field === 'plannedDate'
+        ? deadlineInstant(day, '', 'UTC')
+        : deadlineInstant(day, tail, timezone);
     if (instant !== undefined) dates[kind].add(instant);
   };
   const deadlineAt = (index: number, length: number) => {
@@ -301,16 +334,22 @@ function deadlineAssertions(
     const negation =
       /\b(?:not|never|no longer|isn[’']t|wasn[’']t|won[’']t|shouldn[’']t|nicht|kein)\b/i;
     const affirmedPrefix = normalize(prefix.replace(negation, ' '));
-    const hasDeadlineCue =
-      /\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
-        affirmedPrefix,
-      ) ||
-      ['is', 'to', 'was', 'is now'].some((verb) =>
-        affirmedPrefix.endsWith(`deadline for ${normalize(subject)} ${verb}`),
-      );
+    const cue =
+      field === 'plannedDate'
+        ? /\b(?:plan(?:ned date)?|rescheduled|moved)(?:\s+(?:is|for|to|on|now))*$|\b(?:i[’']ll|i will|we[’']ll|we will)\b.+\bon$/i.test(
+            affirmedPrefix.replaceAll(normalize(subject), '[task]'),
+          ) || CONVERSATIONAL_PLAN_CORRECTION.test(quote.trim())
+        : /\b(?:deadline|due(?: date)?|by|before|plazo|fecha límite|fällig|bis)\b(?:\s+(?:is|was|on|by|for|set|now|el|es|am|ist))*\s*[:=-]?\s*$/i.test(
+            affirmedPrefix,
+          ) ||
+          ['is', 'to', 'was', 'is now'].some((verb) =>
+            affirmedPrefix.endsWith(`deadline for ${normalize(subject)} ${verb}`),
+          );
     if (
-      !hasDeadlineCue ||
+      !cue ||
       tentativeAssertion.test(assertion) ||
+      (field === 'plannedDate' &&
+        /[?]|\b(?:due|deadline|doesn[’']t|don[’']t|can[’']t|cannot)\b/i.test(assertion)) ||
       /\b(?:if|unless|subject to|provided that)\b|\b(?:may|would) (?:be|have|get|fall)\b/i.test(
         assertion,
       )
@@ -380,7 +419,7 @@ function deadlineAssertions(
 }
 const lifecycleWords: Record<string, RegExp> = {
   doing: /\b(?:started|working on|in progress|empezado|trabajando|begonnen)\b/i,
-  done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
+  done: /\b(?:finished|(?:is|now|was|marked) complete|completed|done|delivered|shipped|verified (?:fixed|resolved)|valmis|terminada|terminado|completada|completado|abgeschlossen)\b/i,
   cancelled: /\b(?:cancel|cancelled|canceled|archive|archived|cancelada|cancelado|abgesagt)\b/i,
   blocked: /\bblocked\b/i,
   todo: /\b(?:reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i,
@@ -653,7 +692,7 @@ function affirmativeLifecycle(
     return false;
 
   if (
-    /\b(?:will|shall|should|would|can|could|may|must|going to|able to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:(?:be|get)\s+|have\s+been\s+)?(?:(?:marked|declared|considered|reported|counted|treated)(?:\s+as)?\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i.test(
+    /\b(?:will|shall|should|would|can|could|may|must|going to|able to|expected to|scheduled to|planned to|needs? to|has to|have to|supposed to)\s+(?:(?:not|never|soon|already|finally|eventually|definitely)\s+)*(?:(?:be|get)\s+|have\s+been\s+)?(?:(?:marked|declared|considered|reported|counted|treated)(?:\s+as)?\s+)?(?:finish(?:ed)?|complete[ds]?|done|delivered|shipped|verified (?:fixed|resolved)|sent|cancel(?:led|ed)?|archive[ds]?|start(?:ed)?|working on|in progress|blocked|reopen(?:ed)?|restart(?:ed)?|unblock(?:ed)?)\b/i.test(
       clause,
     )
   )
@@ -786,6 +825,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
   pendingNames?: string[];
   calendarTargets?: { id: string; title: string }[];
   verifiedLifecycleAuditIds?: Set<string>;
+  verifiedPlannedDates?: Map<string, VerifiedClaim>;
+  verifiedTaskClaims?: Map<string, Partial<Record<MaintainedClaim, VerifiedClaim>>>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
   const sourceIds = new Set(args.sources.map((source) => source.id));
@@ -909,13 +950,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
     }
     return !found || status !== support.value;
   }
-  function deadlineVerified(
+  function taskDateVerified(
     support: Support,
     wanted: number | null,
     names: string[],
     unambiguous: (assertion: string) => boolean,
+    contextVerified = false,
   ): boolean {
-    const deadlineIn = (
+    const field = support.field === 'plannedDate' ? 'plannedDate' : 'dueAt';
+    const dateIn = (
       assertion: string,
       subject: string,
       sourceId: string | undefined,
@@ -924,39 +967,88 @@ export function groundCommunicationBundles<T extends Item>(args: {
     ) => {
       if (
         affirmativeFieldClear(assertion, subject) &&
-        /\b(?:remove|clear) (?:the )?deadline\b/i.test(assertion)
+        (field === 'plannedDate'
+          ? /\b(?:remove|clear) (?:the )?planned date\b/i
+          : /\b(?:remove|clear) (?:the )?deadline\b/i
+        ).test(assertion)
       )
         return { affirmed: new Set<number | null>([null]), denied: new Set<number>() };
       const source = args.sources.find((row) => row.id === sourceId);
-      return deadlineAssertions(
+      const fallbackTimezone = args.timezone ?? 'UTC';
+      const zone =
+        field === 'plannedDate'
+          ? plannedAssertionTimezone(assertion, fallbackTimezone)
+          : fallbackTimezone;
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: zone });
+      } catch {
+        return { affirmed: new Set<number | null>(), denied: new Set<number>() };
+      }
+      return taskDateAssertions(
         assertion,
         subject,
-        args.timezone ?? 'UTC',
+        zone,
         source
           ? deadlineReferenceDate(source, source.source ?? args.source, quote, assertion)
           : emailStatementByQuote.get(`${sourceId}:${occurredAt?.getTime()}:${normalize(quote)}`)
               ?.deadlineReferenceAt,
+        field,
       );
     };
     const enclosing = enclosingAssertion(support);
     if (!enclosing) return false;
-    for (const quote of new Set([support.quote, enclosing])) {
-      const cited = deadlineIn(
-        supportedTaskAssertion({ ...support, quote }) ?? '',
+    const context = support.context;
+    const correction =
+      field === 'plannedDate' &&
+      context &&
+      contextVerified &&
+      dateIn(
+        supportedTaskAssertion({ ...support, quote: context.quote }) ?? '',
         support.subject,
-        support.rawEventId,
-        quote,
-      );
+        context.rawEventId,
+        context.quote,
+      ).affirmed.size === 1;
+    for (const quote of new Set([support.quote, enclosing])) {
+      const assertion =
+        supportedTaskAssertion({ ...support, quote }) ??
+        ((correction && CONVERSATIONAL_PLAN_CORRECTION.test(quote.trim())) ||
+        (field === 'plannedDate' && contextVerified && CONTEXTUAL_TASK_PLAN.test(quote.trim()))
+          ? quote.trim()
+          : '');
+      const cited = dateIn(assertion, support.subject, support.rawEventId, quote);
       if (cited.affirmed.size !== 1 || !cited.affirmed.has(wanted)) return false;
     }
     let latest: number | null | undefined = wanted;
+    let priorPlan: { rawEventId: string; subject: string } | undefined;
+    const visibleSourceOrder = [...new Set(args.sources.map((source) => source.id))];
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
-      const subject = names.find((name) => namesTask(sentence, name, true));
-      if (!subject) continue;
-      const assertion = supportedTaskAssertion({ ...support, subject, quote: sentence });
-      if (!assertion || !unambiguous(assertion)) continue;
-      const dates = deadlineIn(assertion, subject, event.id, sentence, event.occurredAt);
+      const direct = names.find((name) => namesTask(sentence, name, true));
+      const previousId = event.id
+        ? visibleSourceOrder[visibleSourceOrder.indexOf(event.id) - 1]
+        : undefined;
+      const adjacent =
+        field === 'plannedDate' &&
+        !direct &&
+        visible &&
+        priorPlan &&
+        priorPlan.rawEventId === previousId &&
+        CONVERSATIONAL_PLAN_CORRECTION.test(sentence.trim());
+      const subject = direct ?? (adjacent ? priorPlan?.subject : undefined);
+      const assertion =
+        subject &&
+        (adjacent
+          ? sentence.trim()
+          : supportedTaskAssertion({ ...support, subject, quote: sentence }));
+      if (!subject || !assertion || (!adjacent && !unambiguous(assertion))) {
+        if (event.id !== priorPlan?.rawEventId) priorPlan = undefined;
+        continue;
+      }
+      const dates = dateIn(assertion, subject, event.id, sentence, event.occurredAt);
+      priorPlan =
+        field === 'plannedDate' && visible && event.id && dates.affirmed.size === 1
+          ? { rawEventId: event.id, subject }
+          : undefined;
       if (dates.affirmed.size > 0)
         latest = dates.affirmed.size === 1 ? [...dates.affirmed][0] : undefined;
       else if (typeof latest === 'number' && dates.denied.has(latest)) latest = undefined;
@@ -1552,7 +1644,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
               namesTaskQuote(item, support.quote, support.subject) ||
               (support.field === 'assignee' &&
                 contextValid &&
-                /\b(?:this|it|instead)\b/i.test(support.quote))) &&
+                /\b(?:this|it|instead)\b/i.test(support.quote)) ||
+              (support.field === 'plannedDate' &&
+                contextValid &&
+                (CONVERSATIONAL_PLAN_CORRECTION.test(support.quote) ||
+                  CONTEXTUAL_TASK_PLAN.test(support.quote)))) &&
             (item.targetKind === 'object_relationship' ||
               taskIdentityNames(item).some((name) =>
                 isTask
@@ -2140,9 +2236,9 @@ export function groundCommunicationBundles<T extends Item>(args: {
         ) {
           payload.assigneeUserId = [...assignees][0];
         }
-        const retainAssignment = (key: (typeof assignmentFields)[number]) => {
+        const claimFor = (key: (typeof assignmentFields)[number]) => {
           const role = key.startsWith('owner') ? 'owner' : 'assignee';
-          return assignments.some(
+          return assignments.find(
             (assignment) =>
               assignment.role === role &&
               (payload[key] === null
@@ -2152,17 +2248,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
                     (key.endsWith('UserId') ? assignment.member.userId : assignment.member.name)),
           );
         };
-        if (!retainAssignment('assigneeUserId')) delete payload.assigneeUserId;
-        if (!retainAssignment('assigneeName')) delete payload.assigneeName;
-        if (!retainAssignment('ownerUserId')) delete payload.ownerUserId;
-        if (!retainAssignment('ownerName')) delete payload.ownerName;
+        if (!claimFor('assigneeUserId')) delete payload.assigneeUserId;
+        if (!claimFor('assigneeName')) delete payload.assigneeName;
+        if (!claimFor('ownerUserId')) delete payload.ownerUserId;
+        if (!claimFor('ownerName')) delete payload.ownerName;
         const deadline = has('dueAt', payload.dueAt === null ? 'unset' : payload.dueAt);
         if (
           payload.dueAt !== undefined &&
           !(
             deadline &&
             (payload.dueAt === null || typeof payload.dueAt === 'string') &&
-            deadlineVerified(
+            taskDateVerified(
               deadline,
               payload.dueAt === null ? null : Date.parse(payload.dueAt),
               taskIdentityNames(item),
@@ -2171,6 +2267,52 @@ export function groundCommunicationBundles<T extends Item>(args: {
           )
         )
           delete payload.dueAt;
+        const plannedDate = has(
+          'plannedDate',
+          payload.plannedDate === null ? 'unset' : payload.plannedDate,
+        );
+        if (
+          payload.plannedDate !== undefined &&
+          (type !== 'task' ||
+            !plannedDate ||
+            !(
+              payload.plannedDate === null || z.iso.date().safeParse(payload.plannedDate).success
+            ) ||
+            !taskDateVerified(
+              plannedDate,
+              payload.plannedDate === null ? null : Date.parse(String(payload.plannedDate)),
+              taskIdentityNames(item),
+              (assertion) => taskEvidenceUnambiguous(item, assertion),
+              validContexts.has(plannedDate),
+            ))
+        )
+          delete payload.plannedDate;
+        function verifiedClaim(support: Support, value: unknown): VerifiedClaim | undefined {
+          if (value !== null && typeof value !== 'string') return undefined;
+          const source = args.sources.find((row) => row.id === support.rawEventId);
+          const assertedAt =
+            source &&
+            deadlineReferenceDate(
+              source,
+              source.source ?? args.source,
+              support.quote,
+              support.quote,
+            );
+          if (!assertedAt) return undefined;
+          return {
+            rawEventId: support.rawEventId,
+            assertedAt: assertedAt.toISOString(),
+            ...(support.context && validContexts.has(support)
+              ? { contextRawEventId: support.context.rawEventId }
+              : {}),
+            value,
+          };
+        }
+        if (item.auditId && plannedDate && payload.plannedDate !== undefined) {
+          const evidence = verifiedClaim(plannedDate, payload.plannedDate);
+          if (evidence) args.verifiedPlannedDates?.set(item.auditId, evidence);
+          else delete payload.plannedDate;
+        }
         const lifecycle = has('status', payload.status);
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
@@ -2188,6 +2330,47 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !verifiedStatus
         )
           delete payload.status;
+        if (type === 'task' && item.auditId && args.verifiedTaskClaims) {
+          const claims: Partial<Record<MaintainedClaim, VerifiedClaim>> = {};
+          const currentName = args.objects?.find((object) => object.id === item.targetId)?.name;
+          if (
+            item.operation === 'update' &&
+            currentName &&
+            typeof payload.canonicalName === 'string' &&
+            payload.canonicalName !== currentName
+          ) {
+            const rename = has('canonicalName', payload.canonicalName);
+            const matchesRename = (quote: string) => {
+              const match = /^(?:please )?rename (.+?) to ["“](.+?)["”][.!]?$/iu.exec(quote.trim());
+              return (
+                match &&
+                normalize(match[1] ?? '') === normalize(currentName) &&
+                match[2] === payload.canonicalName
+              );
+            };
+            const enclosing = rename && enclosingAssertion(rename);
+            const evidence =
+              rename && enclosing && matchesRename(rename.quote) && matchesRename(enclosing)
+                ? verifiedClaim(rename, payload.canonicalName)
+                : undefined;
+            if (evidence) claims.canonicalName = evidence;
+            else delete payload.canonicalName;
+          }
+          const assignment = claimFor('assigneeUserId');
+          if (assignment && payload.assigneeUserId !== undefined) {
+            const evidence = verifiedClaim(assignment.support, payload.assigneeUserId);
+            if (evidence) claims.assigneeUserId = evidence;
+          }
+          if (deadline && payload.dueAt !== undefined) {
+            const evidence = verifiedClaim(deadline, payload.dueAt);
+            if (evidence) claims.dueAt = evidence;
+          }
+          if (verifiedStatus && lifecycle && payload.status !== undefined) {
+            const evidence = verifiedClaim(lifecycle, payload.status);
+            if (evidence) claims.status = evidence;
+          }
+          if (Object.keys(claims).length) args.verifiedTaskClaims.set(item.auditId, claims);
+        }
         if (payload.parentObjectId === null) {
           const support = has('project', 'unset');
           const enclosing = support && enclosingAssertion(support);
@@ -2352,9 +2535,17 @@ export function groundCommunicationBundles<T extends Item>(args: {
       }
       // Internal grounding must never leak into user-editable canonical payloads.
       delete payload.grounding;
+      const explicitArchive = supports.some(
+        (support) =>
+          support.field === 'status' &&
+          support.value === 'cancelled' &&
+          /^(?:please )?archive\s/i.test(support.quote.trim()),
+      );
       const operation =
-        item.operation === 'archive_or_cancel' && type === 'task' && payload.status === 'cancelled'
-          ? 'update'
+        type === 'task' && payload.status === 'cancelled'
+          ? explicitArchive
+            ? 'archive_or_cancel'
+            : 'update'
           : item.operation;
       if (operation === 'update' && Object.keys(payload).length === 0) return [];
       return [{ ...item, operation, proposedPayload: payload }];

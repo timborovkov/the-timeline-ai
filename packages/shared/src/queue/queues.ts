@@ -216,7 +216,8 @@ export type SuggestionJobData =
   | SuggestionConversationReviewJobData
   | SuggestionDocumentJobData
   | SuggestionObjectCleanupJobData
-  | SuggestionGithubTaskProposalJobData;
+  | SuggestionGithubTaskProposalJobData
+  | { scope: 'record_maintenance'; teamId: string };
 
 export interface SuggestionRawEventJobData {
   rawEventId: string;
@@ -269,6 +270,13 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
       return bullmqCustomJobId([
         'conversation-review',
         data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
+    }
+    if (data.scope === 'record_maintenance') {
+      return bullmqCustomJobId([
+        'record-maintenance',
+        data.teamId,
         ...(jobIdSuffix ? [jobIdSuffix] : []),
       ]);
     }

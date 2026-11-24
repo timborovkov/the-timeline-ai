@@ -212,11 +212,9 @@ describe('fallbackBundles', () => {
       canonicalName: 'Review the next quarter plan',
       metadata: { extracted_from_commitment: true, time_phrase: 'tomorrow' },
     });
-    expect(bundle?.items[1]?.proposedPayload).toMatchObject({
-      startDate: '2026-05-28',
-      endDate: '2026-05-29',
-      allDay: true,
-    });
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload.plannedDate).toBe('2026-05-28');
+    expect(bundle?.items[0]?.proposedPayload.dueAt).toBeUndefined();
   });
 
   it('still supports next weekday phrases', () => {
@@ -228,10 +226,24 @@ describe('fallbackBundles', () => {
     });
 
     expect(bundle?.items[0]?.title).toBe('Send the memo');
-    expect(bundle?.items[1]?.proposedPayload).toMatchObject({
-      startDate: '2026-06-02',
-      endDate: '2026-06-03',
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload.plannedDate).toBe('2026-06-02');
+  });
+
+  it('keeps a by-date as a deadline without proposing a calendar event', () => {
+    const [bundle] = fallbackBundles({
+      text: "I'll finish the access review by tomorrow.",
+      timezone: 'Europe/London',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: null,
     });
+
+    expect(bundle?.items).toHaveLength(1);
+    expect(bundle?.items[0]?.proposedPayload).toMatchObject({
+      canonicalName: 'Finish the access review',
+      dueAt: '2026-05-27T23:00:00.000Z',
+    });
+    expect(bundle?.items[0]?.proposedPayload.plannedDate).toBeUndefined();
   });
 
   it('uses the sentence nearest the time phrase as the commitment title', () => {
@@ -292,10 +304,6 @@ describe('fallbackBundles', () => {
       items: [
         {
           targetKind: 'task',
-          title: 'Send the customer notice',
-        },
-        {
-          targetKind: 'calendar_event',
           title: 'Send the customer notice',
         },
       ],
@@ -3064,7 +3072,7 @@ describe('processSuggestionJobForTests', () => {
     },
   );
 
-  it('turns a commitment raw event into task and calendar suggestions through fallback', async () => {
+  it('turns a commitment raw event into a planned task without a calendar suggestion through fallback', async () => {
     const rawEventId = 'e6ff3009-4745-5ed8-a861-9c15588b7429';
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -3087,22 +3095,14 @@ describe('processSuggestionJobForTests', () => {
       rawEventId,
       quote: "I'll send the proposal next Tuesday",
     });
-    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(
-      expect.arrayContaining(['task', 'calendar_event']),
-    );
-    const task = bundles[0]?.items.find((item) => item.targetKind === 'task');
-    const calendar = bundles[0]?.items.find((item) => item.targetKind === 'calendar_event');
+    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(['task']);
+    const task = bundles[0]?.items[0];
     expect(task?.proposedPayload).toMatchObject({
       canonicalName: 'Send the proposal',
       ownerUserId: OWNER_ID,
+      plannedDate: '2026-06-02',
     });
-    expect(calendar?.proposedPayload).toMatchObject({
-      title: 'Send the proposal',
-      startDate: '2026-06-02',
-      endDate: '2026-06-03',
-      allDay: true,
-      visibility: 'team',
-    });
+    expect(task?.proposedPayload.dueAt).toBeUndefined();
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({

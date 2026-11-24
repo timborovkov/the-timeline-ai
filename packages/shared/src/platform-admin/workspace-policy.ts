@@ -288,6 +288,26 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'suggestions.getSuggestion': read,
   'suggestions.repairApprovalProjectionForOutput': write,
   'suggestions.getApprovalItemCounts': read,
+  'suggestions.applyPendingRecordMaintenance': {
+    readOnly: false,
+    impersonation: false,
+    maintenance: false,
+  },
+  'suggestions.getRecordMaintenancePolicy': {
+    readOnly: true,
+    impersonation: false,
+    maintenance: false,
+  },
+  'suggestions.setRecordMaintenancePolicy': {
+    readOnly: false,
+    impersonation: false,
+    maintenance: false,
+  },
+  'suggestions.undoAutomaticTaskUpdate': {
+    readOnly: false,
+    impersonation: false,
+    maintenance: false,
+  },
   'suggestions.acceptSuggestionItem': write,
   'suggestions.acceptSuggestionItemWithOutcome': write,
   'suggestions.acceptObjectMergeSuggestionItem': write,

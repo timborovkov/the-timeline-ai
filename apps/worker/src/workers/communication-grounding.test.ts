@@ -11,7 +11,7 @@ const alice = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const bob = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const title = 'Review retention policy';
 const support = (
-  field: 'assignee' | 'dueAt' | 'customer' | 'project' | 'prospect' | 'status' | 'relationship',
+  field: ReturnType<typeof communicationGroundingSchema.parse>['field'],
   quote: string,
   value: string,
   subject = title,
@@ -70,6 +70,133 @@ const run = (
     source: options.source ?? 'slack',
     timezone: options.timezone ?? 'UTC',
   });
+test('grounds a work plan from the source day without inventing a deadline', () => {
+  const text = "I'll Review retention policy on Friday.";
+  const result = run(text, { plannedDate: '2026-06-05', dueAt: '2026-06-05T00:00:00.000Z' }, [
+    support('plannedDate', text, '2026-06-05'),
+    support('dueAt', text, '2026-06-05T00:00:00.000Z'),
+  ]);
+  expect(result[0]?.items[0]?.proposedPayload).toEqual({ plannedDate: '2026-06-05' });
+});
+
+test('grounds an adjacent correction only when the prior message establishes a unique work plan', () => {
+  const later = '22222222-2222-4222-8222-222222222222';
+  const check = (
+    earlier: string,
+    correction = 'Actually, Monday.',
+    value = '2026-06-08',
+    citeEarlier = false,
+  ) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              targetKind: 'task',
+              targetId: event,
+              operation: 'update',
+              proposedPayload: { plannedDate: value },
+              grounding: [
+                {
+                  ...support('plannedDate', citeEarlier ? earlier : correction, value),
+                  rawEventId: citeEarlier ? event : later,
+                  ...(citeEarlier ? {} : { context: { rawEventId: event, quote: earlier } }),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: `${earlier}\n${correction}`,
+      source: 'slack',
+      members: [],
+      hubs: [],
+      sources: [
+        {
+          id: event,
+          text: earlier,
+          authorUserId: alice,
+          occurredAt: new Date('2026-06-01T10:00:00Z'),
+        },
+        {
+          id: later,
+          text: correction,
+          authorUserId: alice,
+          occurredAt: new Date('2026-06-02T10:00:00Z'),
+        },
+      ],
+      objects: [{ id: event, type: 'task', name: title }],
+    })[0]?.items;
+  expect(check("I'll Review retention policy on Friday.")?.[0]?.proposedPayload).toEqual({
+    plannedDate: '2026-06-08',
+  });
+  expect(check('Review retention policy is due Friday.')).toEqual([]);
+  const friday = "I'll Review retention policy on Friday.";
+  expect(check(friday, 'Actually, Monday.', '2026-06-05', true)).toEqual([]);
+  expect(check(friday, 'Actually, Monday is the deadline.')).toEqual([]);
+  expect(check(friday, "Actually, Monday doesn't work.")).toEqual([]);
+  expect(
+    check(
+      'Review retention policy is still open.',
+      "I'll investigate it on Friday.",
+      '2026-06-05',
+    )?.[0]?.proposedPayload,
+  ).toEqual({ plannedDate: '2026-06-05' });
+});
+
+test('requires a verified fix before treating a generic PR merge as completion', () => {
+  const subject = 'Login problem';
+  const claims = [
+    ['Login problem was verified fixed.', { status: 'done' }],
+    ['Login problem PR merged.', {}],
+    ['Login problem will be verified fixed.', {}],
+  ] as const;
+  for (const [text, expected] of claims) {
+    const bundles = run(text, { status: 'done' }, [support('status', text, 'done', subject)], {
+      taskTitle: subject,
+    });
+    expect(bundles[0]?.items[0]?.proposedPayload).toEqual(expected);
+  }
+});
+
+test('limits a task title edit to an exact evidenced rename of the existing task', () => {
+  const replacement = 'Review the policy retention schedule';
+  const check = (text: string) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              auditId: 'rename',
+              title,
+              targetKind: 'task',
+              targetId: event,
+              operation: 'update',
+              proposedPayload: { canonicalName: replacement },
+              grounding: [support('canonicalName', text, replacement)],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      source: 'slack',
+      members: [],
+      hubs: [],
+      sources: [{ id: event, text, occurredAt: new Date('2026-06-01T10:00:00Z') }],
+      objects: [{ id: event, type: 'task', name: title }],
+      verifiedTaskClaims: new Map(),
+    })[0]?.items;
+  expect(check(`Rename ${title} to "${replacement}".`)?.[0]?.proposedPayload).toEqual({
+    canonicalName: replacement,
+  });
+  expect(check(`The team may rename ${title} to "${replacement}".`)).toEqual([]);
+});
+
 test('requester names cannot support owner or invented date', () => {
   const text = 'Alice requested that the team review retention policy.';
   const result = run(text, { assigneeUserId: alice, dueAt: '2026-06-01T00:00:00.000Z' }, [

@@ -505,6 +505,7 @@ Priority, Assignee, Due date, Project, and Category. The fields remain editable
 when empty; task collection rows omit unset project, assignee, date, priority, and
 category placeholders. Categories use sentence case at 12px, and priority uses a
 flag rather than the failure icon. Terminal work never shows an overdue warning.
+Team settings let admins require review before evidence replaces a manual task field and separately opt in to explicit archive requests or exact provider-identity merges. Resolved approval rows identify automatically applied changes. A supported task edit offers Undo in its approval preview. The task detail has an editable Planned date alongside Due. It displays the calendar day without an overdue warning.
 If accepted creation evidence exists,
 lead with that “why this exists” excerpt. Discussion (activity and comments)
 always follows as unboxed rows, including the borderless composer so a

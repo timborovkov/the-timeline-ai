@@ -20,10 +20,12 @@ import type { JSX } from 'react';
 import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
 import {
   acceptSuggestionItemAction,
+  undoAutomaticTaskUpdateAction,
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
+import { automaticApprovalOutcome } from '@/lib/approval-preview';
 import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-dialog';
 import { RejectionReason, RejectProposal } from '@/components/approvals/reject-proposal';
 import { StaleEvidence } from '@/components/approvals/stale-evidence';
@@ -473,6 +475,12 @@ function itemKindLabel(kind: string): string {
   if (kind === 'object_note') return 'note';
   if (kind === 'document') return 'document record';
   return kind.replace(/_/g, ' ');
+}
+
+function approvalHistoryStatus(item: SuggestionItem): string {
+  if (item.status === 'accepted' && item.metadata?.approval_decision === 'automatic')
+    return automaticApprovalOutcome(item.metadata);
+  return itemStatusLabel(item.status);
 }
 
 function itemStatusLabel(status: string): string {
@@ -1041,6 +1049,28 @@ function ActiveApprovalPreview({
       }}
       timezone={timezone}
       actionLabel={itemActionLabel(activePreview.item)}
+      onUndo={
+        activePreview.item.status === 'accepted' &&
+        activePreview.item.metadata?.task_update_undo_available === true
+          ? () =>
+              run(
+                async () => {
+                  const result = await undoAutomaticTaskUpdateAction({
+                    itemId: activePreview.item.id,
+                  });
+                  if (result.ok) onClose();
+                  return result;
+                },
+                [],
+                {
+                  id: `undo:${activePreview.item.id}`,
+                  loading: 'Restoring task fields…',
+                  success: 'Task fields restored',
+                  error: 'Could not restore task fields',
+                },
+              )
+          : undefined
+      }
       acceptDisabled={
         activePreview.item.evidenceStatus === 'stale' &&
         isActionableSuggestionStatus(activePreview.item.status)
@@ -1620,7 +1650,7 @@ function ApprovalItemRow({
         </CollectionRow.Subtitle>
         {item.status === 'failed' ? (
           <CollectionRow.Metadata>
-            <span className="text-xs text-danger">{itemStatusLabel(item.status)}</span>
+            <span className="text-xs text-danger">{approvalHistoryStatus(item)}</span>
           </CollectionRow.Metadata>
         ) : null}
         <CollectionRow.Actions>
@@ -1634,7 +1664,7 @@ function ApprovalItemRow({
               onPreview={onPreview}
             />
           ) : (
-            <span className="text-[11px] text-fg-dim">{itemStatusLabel(item.status)}</span>
+            <span className="text-[11px] text-fg-dim">{approvalHistoryStatus(item)}</span>
           )}
         </CollectionRow.Actions>
       </CollectionRow>
@@ -1748,7 +1778,7 @@ function ApprovalInboxRow({
         <span className="mt-1 block text-xs leading-5 text-fg-muted">{context}</span>
         {!isActionableSuggestionStatus(item.status) ? (
           <span className="mt-1 block text-xs capitalize text-fg-dim">
-            {itemStatusLabel(item.status)}
+            {approvalHistoryStatus(item)}
           </span>
         ) : null}
         {item.status === 'failed' || actionFailed ? (

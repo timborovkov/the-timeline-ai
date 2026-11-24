@@ -809,6 +809,58 @@ describe('object scope — team ownership and audit behavior', () => {
     });
   });
 
+  it('stores and audits a planned task date independently of the deadline', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const actor = { kind: 'user', userId: USER_OWNER } as const;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Investigate login issue',
+      plannedDate: '2026-11-27',
+      actor,
+    });
+    expect(task).toMatchObject({ plannedDate: '2026-11-27', dueAt: null });
+
+    await expect(scope.updateObject(task.id, { plannedDate: '2026-02-30' }, actor)).rejects.toThrow(
+      'valid calendar date',
+    );
+    const updated = await scope.updateObject(task.id, { plannedDate: '2026-11-30' }, actor);
+    expect(updated.object).toMatchObject({ plannedDate: '2026-11-30', dueAt: null });
+    expect(updated.changedFields).toEqual(['plannedDate']);
+    const history = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, task.id));
+    expect(history).toContainEqual(
+      expect.objectContaining({
+        field: 'plannedDate',
+        previousValue: '2026-11-27',
+        newValue: '2026-11-30',
+        actorUserId: USER_OWNER,
+      }),
+    );
+  });
+
+  it('keeps a manual planned date when older evidence is replayed', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const actor = { kind: 'user', userId: USER_OWNER } as const;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Verify the login fix',
+      plannedDate: '2026-06-05',
+      actor,
+    });
+    await scope.updateObject(task.id, { plannedDate: '2026-06-09' }, actor);
+    await expect(
+      scope.updateObject(
+        task.id,
+        { plannedDate: '2026-06-05' },
+        { kind: 'agent', userId: null },
+        { plannedDateEvidence: { rawEventId: task.id, assertedAt: new Date('2026-06-01') } },
+      ),
+    ).rejects.toThrow('This item changed');
+    expect(await scope.getObject(task.id)).toMatchObject({ plannedDate: '2026-06-09' });
+  });
+
   it('notifies the responsible user and mirrors task due dates to the team calendar', async () => {
     const teamScope = withTeam(db, TEAM_A, USER_OWNER);
     await teamScope.calendar.upsertCalendarSettings({ defaultTimezone: 'Europe/Madrid' });

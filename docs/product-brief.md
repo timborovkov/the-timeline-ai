@@ -11,7 +11,7 @@ Teams whose work is spread across conversations and operational tools: client de
 - Capture should be low-friction and intentional; connecting a provider does not authorize indiscriminate collection.
 - Source attribution, time and visibility survive ingestion and retrieval.
 - Answers explain what the evidence supports and cite it. Missing visible evidence is not proof that something never happened.
-- Canonical proposed changes wait for authorized approval. Human-owned fields and private information keep their boundaries.
+- A concrete problem reported in the team’s work can produce a task proposal before anyone commits to fixing it. Eligible routine changes can apply automatically through workspace policy. Other changes wait for authorized review. Human-owned fields and private information keep their boundaries.
 - Documents provide reference knowledge; captured events provide work history. Neither should be copied into competing sources of truth.
 - Generated updates should reduce repeated reporting, not create another feed requiring attention.
 

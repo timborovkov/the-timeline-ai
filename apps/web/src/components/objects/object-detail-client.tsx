@@ -25,6 +25,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from 'react';
 
@@ -89,7 +90,7 @@ import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions'
 import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { readJson } from '@/lib/api-response';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
@@ -114,7 +115,14 @@ const RELATIONSHIP_KINDS = [
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 type EditableField =
-  'canonicalName' | 'aliases' | 'status' | 'stage' | 'priority' | 'dueAt' | 'assigneeUserId';
+  | 'canonicalName'
+  | 'aliases'
+  | 'status'
+  | 'stage'
+  | 'priority'
+  | 'dueAt'
+  | 'plannedDate'
+  | 'assigneeUserId';
 type EditableValue = string | number | Date | readonly string[] | null;
 type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
@@ -205,6 +213,7 @@ function isDraftField(field: EditableField): field is DraftField {
 function objectFieldLabel(field: EditableField): string {
   if (field === 'canonicalName') return 'name';
   if (field === 'dueAt') return 'due date';
+  if (field === 'plannedDate') return 'planned date';
   return field;
 }
 
@@ -224,6 +233,7 @@ function isEditableFieldName(field: string): field is EditableField {
     field === 'stage' ||
     field === 'priority' ||
     field === 'dueAt' ||
+    field === 'plannedDate' ||
     field === 'assigneeUserId'
   );
 }
@@ -395,6 +405,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
     stage: undefined,
     priority: undefined,
     dueAt: undefined,
+    plannedDate: undefined,
     assigneeUserId: undefined,
   });
   const savingCountRef = useRef(0);
@@ -418,6 +429,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
     stage: 0,
     priority: 0,
     dueAt: 0,
+    plannedDate: 0,
     assigneeUserId: 0,
   });
   useLayoutEffect(() => {
@@ -438,6 +450,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
         stage: next.stage,
         priority: next.priority,
         dueAt: next.dueAt,
+        plannedDate: next.plannedDate ?? null,
         assigneeUserId: next.assigneeUserId,
       },
     }));
@@ -487,7 +500,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
   }
 
   function patch(field: EditableField, value: EditableValue): void {
-    const currentValue = localDetailRef.current[field];
+    const currentValue = localDetailRef.current[field] ?? null;
     if (sameEditableValue(field, currentValue, value)) return;
     dispatchObjectUi({ error: null });
     updateLocalDetail((current) => ({ ...current, [field]: value }));
@@ -525,17 +538,21 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
             id: detail.id,
             [field]: serializeEditableValue(value),
           }),
-        undo: {
-          run: async () => {
-            applyFieldLocally(field, previousValue);
-            const undoResult = await updateObjectAction({
-              id: detail.id,
-              [field]: serializeEditableValue(previousValue),
-            });
-            if (!undoResult.error) router.refresh();
-            return undoResult;
-          },
-        },
+        ...(field === 'plannedDate'
+          ? {}
+          : {
+              undo: {
+                run: async () => {
+                  applyFieldLocally(field, previousValue);
+                  const undoResult = await updateObjectAction({
+                    id: detail.id,
+                    [field]: serializeEditableValue(previousValue),
+                  });
+                  if (!undoResult.error) router.refresh();
+                  return undoResult;
+                },
+              },
+            }),
       });
       if (result.error) {
         handleFieldSaveFailure(field, value, result.error);
@@ -555,7 +572,10 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
       queuedFieldValuesRef.current[field] === undefined &&
       sameEditableValue(field, localDetailRef.current[field], value)
     ) {
-      applyFieldLocally(field, field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue);
+      applyFieldLocally(
+        field,
+        field === 'dueAt' ? toDateOrNull(rollbackValue) : (rollbackValue ?? null),
+      );
     }
   }
 
@@ -573,7 +593,7 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
         lastSuccessfulValue ??
         (field === 'dueAt'
           ? toDateOrNull(serverDetailRef.current[field])
-          : serverDetailRef.current[field]);
+          : (serverDetailRef.current[field] ?? null));
       beginFieldSave(field, queuedValue, previousForQueued, {
         preserveBatchFailure: batchHadFailureRef.current,
       });
@@ -1688,6 +1708,47 @@ function ObjectHeaderIdentity({
     </div>
   );
 }
+const subscribeDateLocale = () => () => {};
+const getBrowserDateLocale = () => navigator.language;
+const getServerDateLocale = () => 'en-US';
+
+function TaskPlannedDateField({
+  detail,
+  title,
+  patch,
+}: {
+  detail: ObjectDetail;
+  title: string;
+  patch: (field: EditableField, value: EditableValue) => void;
+}) {
+  const locale = useSyncExternalStore(
+    subscribeDateLocale,
+    getBrowserDateLocale,
+    getServerDateLocale,
+  );
+  if (detail.type !== 'task') return null;
+  return (
+    <ObjectRailRow label="Planned date">
+      <EditableMetadata
+        label={`Planned date for ${displayText(title)}`}
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-left text-sm text-fg [&>span]:whitespace-normal"
+      >
+        <EditableMetadata.Value>
+          {detail.plannedDate
+            ? formatDisplayDate(detail.plannedDate, { timezone: 'UTC', locale })
+            : 'Set date'}
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataDateEditor
+            defaultValue={detail.plannedDate ?? ''}
+            onApply={(value) => patch('plannedDate', value || null)}
+          />
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+    </ObjectRailRow>
+  );
+}
+
 function ObjectEditableFields({
   detail,
   aliasesDraft,
@@ -1792,6 +1853,7 @@ function ObjectEditableFields({
           </EditableMetadata>
         </ObjectRailRow>
       ) : null}
+      <TaskPlannedDateField detail={detail} title={title} patch={patch} />
       {detail.type === 'task' && detail.archivedAt ? (
         <p className="px-2 py-1 text-xs text-fg-muted">
           Unarchive this task to change its project or category.
@@ -2913,7 +2975,11 @@ function formatValue(v: unknown, timezone: string, field = ''): string {
   const category = formatTaskCategoryChangeValue(field, v);
   if (category !== null) return category;
   if (v === null || v === undefined) return '∅';
-  if (typeof v === 'string') return displayText(v, { timezone });
+  if (typeof v === 'string') {
+    return field === 'plannedDate'
+      ? formatDisplayDate(v, { timezone: 'UTC' })
+      : displayText(v, { timezone });
+  }
   if (Array.isArray(v)) return v.map((item) => formatValue(item, timezone, field)).join(', ');
   if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
@@ -2930,6 +2996,7 @@ function changeFieldLabel(field: string): string {
     canonicalName: 'Name',
     aliases: 'Aliases',
     dueAt: 'Due date',
+    plannedDate: 'Planned date',
     taskCategory: 'Category',
     ownerUserId: 'Owner',
     assigneeUserId: 'Assignee',

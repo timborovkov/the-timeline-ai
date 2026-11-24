@@ -1,6 +1,7 @@
 'use server';
 
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
+import { enqueueSuggestionJob } from '@timeline/shared/queue';
 import { suggestionRejectionReason } from '@timeline/shared/suggestions/rejection';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { z } from 'zod';
@@ -80,6 +81,72 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Sugges
               fallback: 'Failed to accept suggestion.',
             }),
         ...(itemIsFailed ? { failedItemIds: [parsed.data.itemId] } : {}),
+      };
+    }
+  });
+}
+
+export async function setRecordMaintenancePolicyAction(
+  input: unknown,
+): Promise<SuggestionActionState> {
+  return runSentryServerAction('set_record_maintenance_policy', async () => {
+    const parsed = z
+      .object({
+        reviewManualValues: z.boolean(),
+        approveRemovals: z.boolean(),
+        approveMerges: z.boolean(),
+      })
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid record maintenance settings' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const policy = await r.scope.suggestions.setRecordMaintenancePolicy(parsed.data);
+      await enqueueSuggestionJob(
+        { scope: 'record_maintenance', teamId: r.teamId },
+        { jobIdSuffix: policy.revision },
+      ).catch((err) => {
+        publicActionError(err, {
+          operation: 'enqueue_record_maintenance',
+          fallback: 'Could not schedule record maintenance.',
+        });
+      });
+      return { ok: true };
+    } catch (err) {
+      return {
+        error: publicActionError(err, {
+          operation: 'set_record_maintenance_policy',
+          fallback: 'Could not update record maintenance settings.',
+        }),
+      };
+    }
+  });
+}
+
+export async function undoAutomaticTaskUpdateAction(
+  input: unknown,
+): Promise<SuggestionActionState> {
+  return runSentryServerAction('undo_automatic_task_update', async () => {
+    const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid suggestion item id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      if (!(await r.scope.suggestions.undoAutomaticTaskUpdate(parsed.data.itemId))) {
+        return { error: 'This change is no longer available to undo.' };
+      }
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
+      return { ok: true };
+    } catch (err) {
+      const message = 'A task field changed again. Open the task to edit its current values.';
+      return {
+        error:
+          errorMessage(err, '') === message
+            ? message
+            : publicActionError(err, {
+                operation: 'undo_automatic_task_update',
+                fallback: 'Could not undo this change.',
+              }),
       };
     }
   });

@@ -74,6 +74,7 @@ export interface ObjectRow {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: Date | null;
+  plannedDate?: string | null;
   taskCategory: TaskCategory | null;
   taskCategoryMode: TaskCategoryMode | null;
   taskCategorySource: TaskCategorySource | null;

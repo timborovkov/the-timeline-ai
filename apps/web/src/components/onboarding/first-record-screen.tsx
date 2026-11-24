@@ -111,8 +111,8 @@ export function FirstRecordScreen({
       <ul className="mt-2 border-t border-border">
         {suggestions.length === 0 ? (
           <li className="py-2 text-sm text-fg-muted">
-            Suggestions appear here after this capture is reviewed. Nothing becomes a lasting record
-            until you approve it.
+            Changes from this capture appear here after processing. Some apply automatically. You
+            can review any changes that need your decision.
           </li>
         ) : (
           suggestions.map((suggestion) => {

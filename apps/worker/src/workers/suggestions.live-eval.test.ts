@@ -49,6 +49,60 @@ maybeDescribe('live suggestion worker evals', () => {
     await pg.close();
   });
 
+  // A reported problem can originate one proposal without inventing a commitment.
+  it('proposes an unassigned login issue from a concrete report', async () => {
+    await db
+      .update(rawEvents)
+      .set({ contentText: 'The login page is broken.' })
+      .where(eq(rawEvents.id, RAW_EVENT_ID));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID },
+      { getEnv: liveEnv },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.listPendingSuggestions();
+    const tasks = bundles
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'task');
+    expect(tasks).toHaveLength(1);
+    const [task] = tasks;
+    if (!task) throw new Error('missing reported task');
+    expect(task.operation).toBe('create');
+    expect(task.title).toMatch(/login/i);
+    expect(task.proposedPayload.assigneeUserId ?? null).toBeNull();
+    expect(task.proposedPayload.assigneeName ?? null).toBeNull();
+    expect(task.proposedPayload.dueAt ?? null).toBeNull();
+    expect(task.proposedPayload.status ?? 'todo').toBe('todo');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [accepted] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, task.id));
+    expect(accepted).toMatchObject({
+      status: 'accepted',
+      resolvedByUserId: null,
+      metadata: expect.objectContaining({ approval_decision: 'automatic' }),
+    });
+    const rows = await db.select().from(entities);
+    expect(rows.filter((row) => row.type === 'task')).toEqual([
+      expect.objectContaining({
+        id: accepted?.resultId,
+        status: 'todo',
+        assigneeUserId: null,
+        dueAt: null,
+        plannedDate: null,
+      }),
+    ]);
+  }, 240_000);
+
   // Recall gate: tentative but concrete requests must survive missing optional fields.
   // Real model + migrated persistence, synthetic evidence only; no canonical writes before approval.
   for (let repeat = 0; repeat < 3; repeat++) {

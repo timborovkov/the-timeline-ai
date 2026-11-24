@@ -53,6 +53,7 @@ function serializeObject(row: {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: Date | string | null;
+  plannedDate?: string | null;
   aliases: string[];
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -70,6 +71,7 @@ function serializeObject(row: {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: iso(row.dueAt),
+    plannedDate: row.plannedDate ?? null,
     aliases: row.aliases,
     content: note ?? null,
     createdAt: iso(row.createdAt) ?? '',

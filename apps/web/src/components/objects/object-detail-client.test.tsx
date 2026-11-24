@@ -296,6 +296,18 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('border-border');
   });
 
+  it('shows a planned calendar day in its own task field', () => {
+    const html = renderObjectDetail({
+      detail: { ...detail, type: 'task', plannedDate: '2026-11-30', dueAt: null },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Planned date');
+    expect(html).toContain('Nov 30, 2026');
+    expect(html).toContain('No due date');
+  });
+
   it('formats string-backed due-date changes in the workspace timezone', () => {
     render(
       objectDetailElement({

@@ -600,6 +600,8 @@ const EXPLICIT_STATES: Record<string, string> = {
   finished: 'done',
   shipped: 'done',
   delivered: 'done',
+  'verified fixed': 'done',
+  'verified resolved': 'done',
   blocked: 'blocked',
   started: 'doing',
   'working on it': 'doing',
@@ -694,7 +696,7 @@ export function explicitLifecycleState(sentence: string):
     return { subject: finnish[1], status: 'done', affirmative: !/^ei\b/i.test(finnish[2]) };
   }
   const assertion =
-    /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)(?:\s+(yet|already|now|anymore))?[.!]?$/i.exec(
+    /^(.*?)\s+(is|was|has been|isn[’']t|wasn[’']t|hasn[’']t been)\s+((?:(?:still|now|already|not|yet|never|no longer|almost|nearly|being|partly|partially|half|only|in the process of) )*)(done|complete|completed|finished|shipped|delivered|verified fixed|verified resolved|open|pending|blocked|in progress|working on it|started|reopened|restarted|unblocked|cancelled|canceled)(?:\s+(yet|already|now|anymore))?[.!]?$/i.exec(
       sentence.trim(),
     );
   if (!assertion?.[1] || !assertion[2] || !assertion[4]) return undefined;

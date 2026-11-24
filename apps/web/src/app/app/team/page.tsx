@@ -283,6 +283,11 @@ function TeamSettingsSections({
         {section === 'advanced' && isAdmin ? (
           <>
             <AdminShortcuts isAdmin />
+            <SettingsSection title="Record maintenance">
+              <Link href="/app/team/record-maintenance" className="text-sm text-signal underline">
+                Configure automatic changes
+              </Link>
+            </SettingsSection>
             {isOwner && <TeamDeletionForm teamId={active.teamId} teamName={active.teamName} />}
           </>
         ) : null}

@@ -1099,6 +1099,7 @@ export interface ObjectPatch {
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueAt?: Date | null;
+  plannedDate?: string | null;
   aliases?: string[];
   metadata?: Record<string, unknown>;
   archivedAt?: Date | null;
@@ -4018,6 +4019,18 @@ export async function getObjectMergePreview(
   };
 }
 
+export const MAINTAINED_TASK_FIELDS = [
+  'canonicalName',
+  'assigneeUserId',
+  'dueAt',
+  'status',
+] as const;
+export type MaintainedTaskField = (typeof MAINTAINED_TASK_FIELDS)[number];
+export interface TaskFieldEvidence {
+  rawEventId: string;
+  assertedAt: Date;
+}
+
 export interface CreateObjectInput {
   type: ObjectType;
   canonicalName: string;
@@ -4027,6 +4040,9 @@ export interface CreateObjectInput {
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueAt?: Date | null;
+  plannedDate?: string | null;
+  plannedDateEvidence?: TaskFieldEvidence;
+  taskFieldEvidence?: Partial<Record<MaintainedTaskField, TaskFieldEvidence>>;
   aliases?: string[];
   metadata?: Record<string, unknown>;
   parentObjectId?: string | null;
@@ -4049,6 +4065,19 @@ export interface CreateObjectInput {
   actor: { kind: ActorKind; userId?: string | null };
 }
 
+function parseTaskPlannedDate(type: EntityRow['type'], value: string | null): string | null {
+  if (value === null) return null;
+  if (type !== 'task') throw new Error('Only tasks can have a planned date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) {
+    throw new Error('Planned date must be a valid calendar date');
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new Error('Planned date must be a valid calendar date');
+  }
+  return value;
+}
+
 export async function createObject(
   db: Db,
   scope: TeamScopeCore,
@@ -4057,6 +4086,7 @@ export async function createObject(
   await scope.requireMembership();
   const name = input.canonicalName.trim();
   if (!name) throw new Error('canonicalName is required');
+  const plannedDate = parseTaskPlannedDate(input.type, input.plannedDate ?? null);
 
   // Owner/assignee FK is to `users.id` (system-wide), so the FK alone
   // does not prove team membership. Without this gate an actor (human
@@ -4140,6 +4170,31 @@ export async function createObject(
         ownerUserId: input.ownerUserId ?? null,
         assigneeUserId: input.assigneeUserId ?? null,
         dueAt: input.dueAt ?? null,
+        plannedDate,
+        plannedDateRevisionAt:
+          input.plannedDate !== undefined
+            ? (input.plannedDateEvidence?.assertedAt ?? new Date())
+            : null,
+        plannedDateEvidenceId: input.plannedDateEvidence?.rawEventId ?? null,
+        taskFieldRevisions:
+          input.type === 'task'
+            ? Object.fromEntries(
+                MAINTAINED_TASK_FIELDS.flatMap((field) => {
+                  const evidence = input.taskFieldEvidence?.[field];
+                  if (input[field] === undefined || (!evidence && input.actor.kind !== 'user'))
+                    return [];
+                  return [
+                    [
+                      field,
+                      {
+                        assertedAt: (evidence?.assertedAt ?? new Date()).toISOString(),
+                        rawEventId: evidence?.rawEventId ?? null,
+                      },
+                    ],
+                  ];
+                }),
+              )
+            : {},
         aliases: input.aliases ?? [],
         metadata: input.metadata ?? {},
         sourceEventId: null,
@@ -4434,6 +4489,10 @@ type PostCommitEffect = () => void | Promise<void>;
 
 interface ObjectMutationOptions {
   expectedUpdatedAt?: string | undefined;
+  plannedDateEvidence?: TaskFieldEvidence | undefined;
+  taskFieldEvidence?: Partial<Record<MaintainedTaskField, TaskFieldEvidence>>;
+  taskFieldApprovalItemId?: string;
+  undoTaskFieldChanges?: Partial<Record<MaintainedTaskField | 'plannedDate', string>>;
   transactionClient?: DbOrTx;
   postCommitEffects?: PostCommitEffect[];
   requireActive?: boolean;
@@ -4500,6 +4559,39 @@ export async function updateObject(
         afterTaskId: string;
       } | null,
     });
+    const undoChanges = options?.undoTaskFieldChanges;
+    const undoIds = Object.values(undoChanges ?? {});
+    if (undoChanges && undoIds.length) {
+      if (current.type !== 'task') throw new StaleWorkspaceStateError();
+      const currentIds = {
+        plannedDate: current.plannedDateChangeId,
+        ...Object.fromEntries(
+          MAINTAINED_TASK_FIELDS.map((field) => [
+            field,
+            current.taskFieldRevisions[field]?.changeId,
+          ]),
+        ),
+      };
+      if (
+        Object.entries(undoChanges).some(
+          ([field, id]) => currentIds[field as keyof typeof currentIds] !== id,
+        )
+      ) {
+        const reversed = await tx
+          .select({ id: objectChanges.undoesChangeId })
+          .from(objectChanges)
+          .where(
+            and(
+              eq(objectChanges.teamId, scope.teamId),
+              eq(objectChanges.entityId, entityId),
+              inArray(objectChanges.undoesChangeId, undoIds),
+            ),
+          );
+        if (new Set(reversed.map((row) => row.id)).size === undoIds.length)
+          return unchangedResult();
+        throw new Error('A task field changed again. Open the task to edit its current values.');
+      }
+    }
     const suggestionItemId = options?.archiveSuggestedProjectIfUnusedForItemId;
     if (suggestionItemId) {
       const metadata = recordFromUnknown(current.metadata);
@@ -4548,17 +4640,82 @@ export async function updateObject(
       next[field] = candidate;
     }
 
+    const fieldRevisions = { ...current.taskFieldRevisions };
+    const revisedTaskFields = new Set<MaintainedTaskField>();
+    function diffMaintainedField<K extends MaintainedTaskField>(
+      field: K,
+      candidate: EntityRow[K] | undefined,
+    ): void {
+      if (candidate === undefined) return;
+      if (current.type !== 'task') {
+        diff(field, candidate);
+        return;
+      }
+      const asserted = options?.taskFieldEvidence?.[field];
+      const prior = fieldRevisions[field];
+      const latest = prior ? Date.parse(prior.assertedAt) : 0;
+      if (
+        asserted &&
+        prior &&
+        (asserted.assertedAt.getTime() <= latest || asserted.rawEventId === prior.rawEventId)
+      ) {
+        return;
+      }
+      const previousCount = changes.length;
+      diff(field, candidate);
+      if (changes.length === previousCount && !asserted) return;
+      fieldRevisions[field] = {
+        assertedAt: (asserted?.assertedAt ?? new Date(Math.max(Date.now(), latest))).toISOString(),
+        rawEventId:
+          changes.length === previousCount && prior?.rawEventId === null
+            ? null
+            : (asserted?.rawEventId ?? null),
+        ...(prior?.changeId ? { changeId: prior.changeId } : {}),
+      };
+      revisedTaskFields.add(field);
+      next.taskFieldRevisions = fieldRevisions;
+    }
     if (patch.canonicalName !== undefined) {
       const trimmed = patch.canonicalName.trim();
       if (!trimmed) throw new Error('canonicalName cannot be empty');
-      diff('canonicalName', trimmed);
+      diffMaintainedField('canonicalName', trimmed);
     }
-    if (patch.status !== undefined) diff('status', patch.status);
+    diffMaintainedField('status', patch.status);
     if (patch.stage !== undefined) diff('stage', patch.stage);
     if (patch.priority !== undefined) diff('priority', patch.priority);
     if (patch.ownerUserId !== undefined) diff('ownerUserId', patch.ownerUserId);
-    if (patch.assigneeUserId !== undefined) diff('assigneeUserId', patch.assigneeUserId);
-    if (patch.dueAt !== undefined) diff('dueAt', patch.dueAt);
+    diffMaintainedField('assigneeUserId', patch.assigneeUserId);
+    diffMaintainedField('dueAt', patch.dueAt);
+    if (patch.plannedDate !== undefined) {
+      const asserted = options?.plannedDateEvidence;
+      if (
+        asserted &&
+        current.plannedDateRevisionAt &&
+        (asserted.assertedAt <= current.plannedDateRevisionAt ||
+          asserted.rawEventId === current.plannedDateEvidenceId)
+      ) {
+        if (patch.plannedDate !== current.plannedDate && revisedTaskFields.size === 0) {
+          throw new StaleWorkspaceStateError();
+        }
+      } else {
+        diff('plannedDate', parseTaskPlannedDate(patch.type ?? current.type, patch.plannedDate));
+        if (asserted || patch.plannedDate !== current.plannedDate) {
+          next.plannedDateRevisionAt =
+            asserted?.assertedAt ??
+            new Date(Math.max(Date.now(), current.plannedDateRevisionAt?.getTime() ?? 0));
+          next.plannedDateEvidenceId =
+            patch.plannedDate === current.plannedDate &&
+            current.plannedDateRevisionAt &&
+            current.plannedDateEvidenceId === null
+              ? null
+              : (asserted?.rawEventId ?? null);
+        }
+      }
+    } else if (patch.type !== undefined && patch.type !== 'task' && current.plannedDate !== null) {
+      diff('plannedDate', null);
+      next.plannedDateRevisionAt = new Date();
+      next.plannedDateEvidenceId = null;
+    }
     if (patch.aliases !== undefined) diff('aliases', patch.aliases);
     if (patch.metadata !== undefined) {
       const currentMetadata = recordFromUnknown(current.metadata);
@@ -4568,6 +4725,9 @@ export async function updateObject(
     if (patch.type !== undefined) diff('type', patch.type);
 
     if (changes.length === 0) {
+      if (next.plannedDateRevisionAt !== undefined || revisedTaskFields.size > 0) {
+        await tx.update(entities).set(next).where(eq(entities.id, entityId));
+      }
       return unchangedResult();
     }
 
@@ -4778,9 +4938,29 @@ export async function updateObject(
           previousValue: c.previousValue as never,
           newValue: c.newValue as never,
           sourceEventId: null,
+          approvalItemId: options?.taskFieldApprovalItemId,
+          undoesChangeId: undoChanges?.[c.field as MaintainedTaskField | 'plannedDate'],
         })),
       )
-      .returning({ id: objectChanges.id });
+      .returning({ id: objectChanges.id, field: objectChanges.field });
+    for (const field of revisedTaskFields) {
+      const change = changeRows.find((row) => row.field === field);
+      const revision = fieldRevisions[field];
+      if (change && revision) revision.changeId = change.id;
+    }
+    if (revisedTaskFields.size > 0) {
+      await tx
+        .update(entities)
+        .set({ taskFieldRevisions: fieldRevisions })
+        .where(eq(entities.id, entityId));
+    }
+    const plannedDateChange = changeRows.find((change) => change.field === 'plannedDate');
+    if (plannedDateChange) {
+      await tx
+        .update(entities)
+        .set({ plannedDateChangeId: plannedDateChange.id })
+        .where(eq(entities.id, entityId));
+    }
     const reconciliationOperation =
       changes.length === 1 && changes[0]?.field === 'archivedAt' && updated.archivedAt !== null
         ? 'archive_or_cancel'
@@ -5658,34 +5838,34 @@ export async function mergeObjects(
       () => dispatchDueDateCalendarEffects({ teamId: scope.teamId }, result.dueDateCalendarSync),
       { teamId: scope.teamId, op: 'mergeObjectsDueDateCalendar' },
     );
-  });
-  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
-    teamId: scope.teamId,
-    objectId: result.survivor.id,
-    op: 'mergeObjects',
-  });
-  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.survivor.id), {
-    teamId: scope.teamId,
-    entityId: result.survivor.id,
-    op: 'mergeObjects',
-  });
-  void fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
-    teamId: scope.teamId,
-    objectId: result.survivor.id,
-    op: 'mergeObjects',
-  });
-  for (const mergedId of result.mergedIds) {
-    fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
       teamId: scope.teamId,
-      entityId: mergedId,
-      op: 'mergeObjects:deleteMergedEmbeddings',
+      objectId: result.survivor.id,
+      op: 'mergeObjects',
     });
-  }
-  enqueueProjectTaskCategoryInvalidation(
-    scope.teamId,
-    { jobs: result.linkedTaskCategoryJobs, fanout: result.linkedTaskCategoryFanout },
-    'mergeObjects',
-  );
+    fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.survivor.id), {
+      teamId: scope.teamId,
+      entityId: result.survivor.id,
+      op: 'mergeObjects',
+    });
+    void fireAndForgetObjectSummaryRefresh(scope.postCommitDb ?? db, scope, result.survivor.id, {
+      teamId: scope.teamId,
+      objectId: result.survivor.id,
+      op: 'mergeObjects',
+    });
+    for (const mergedId of result.mergedIds) {
+      fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
+        teamId: scope.teamId,
+        entityId: mergedId,
+        op: 'mergeObjects:deleteMergedEmbeddings',
+      });
+    }
+    enqueueProjectTaskCategoryInvalidation(
+      scope.teamId,
+      { jobs: result.linkedTaskCategoryJobs, fanout: result.linkedTaskCategoryFanout },
+      'mergeObjects',
+    );
+  });
   return result;
 }
 

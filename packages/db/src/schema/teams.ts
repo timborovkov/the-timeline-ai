@@ -65,6 +65,20 @@ export interface TeamLifecycleWork {
 
 export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
+  recordMaintenance: jsonb('record_maintenance')
+    .$type<{
+      revision: string;
+      reviewManualValues: boolean;
+      approveRemovals: boolean;
+      approveMerges: boolean;
+    }>()
+    .notNull()
+    .default({
+      revision: '0',
+      reviewManualValues: false,
+      approveRemovals: false,
+      approveMerges: false,
+    }),
   agentReporting: jsonb('agent_reporting')
     .$type<AgentReportingPreference>()
     .notNull()

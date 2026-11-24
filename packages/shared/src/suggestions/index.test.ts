@@ -247,6 +247,349 @@ describe('suggestion scope', () => {
     expect(await db.select().from(entities)).toHaveLength(0);
   });
 
+  it('automatically applies a pending team report once through the worker capability', async () => {
+    const sourceId = crypto.randomUUID();
+    const text = 'The login page is broken.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: text,
+      visibility: 'team',
+      occurredAt: new Date('2026-06-01T12:00:00Z'),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const proposal = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Broken login page',
+      dedupeKey: 'reported-login',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote: text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Broken login page',
+          dedupeKey: 'reported-login-task',
+          proposedPayload: { canonicalName: 'Broken login page' },
+        },
+      ],
+    });
+    await expect(human.applyPendingRecordMaintenance()).rejects.toThrow('worker capability');
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    const attempts = await Promise.all([
+      automation.applyPendingRecordMaintenance(),
+      automation.applyPendingRecordMaintenance(),
+    ]);
+    expect(attempts.reduce((total, count) => total + count, 0)).toBe(1);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [applied] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, proposal.items[0]!.id));
+    expect(applied).toMatchObject({
+      status: 'accepted',
+      resolvedByUserId: null,
+      metadata: expect.objectContaining({
+        approval_decision: 'automatic',
+        approval_policy_revision: '0',
+      }),
+    });
+    expect(await db.select().from(entities)).toContainEqual(
+      expect.objectContaining({
+        id: applied?.resultId,
+        canonicalName: 'Broken login page',
+        status: 'todo',
+        assigneeUserId: null,
+        dueAt: null,
+        plannedDate: null,
+      }),
+    );
+  });
+
+  it('leaves a proposal pending when its evidence becomes private before automation', async () => {
+    const sourceId = crypto.randomUUID();
+    const text = 'The checkout page is broken.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: text,
+      visibility: 'team',
+      occurredAt: new Date(),
+    });
+    const human = withTeam(db as never, TEAM_ID, USER_ID).suggestions;
+    const pending = await human.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: text,
+      dedupeKey: sourceId,
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote: text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Broken checkout',
+          dedupeKey: sourceId,
+          proposedPayload: { canonicalName: 'Broken checkout' },
+        },
+      ],
+    });
+    await db
+      .update(rawEvents)
+      .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
+      .where(eq(rawEvents.id, sourceId));
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [item] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, pending.items[0]!.id));
+    expect(item).toMatchObject({ status: 'pending', resultId: null });
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
+  it('reviews a manual plan when configured and only undoes the latest automatic edit', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const task = await human.objects.createObject({
+      type: 'task',
+      canonicalName: 'Investigate checkout error',
+      plannedDate: '2026-06-05',
+      actor,
+    });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    async function propose(value: string, afterMs: number, includeAssignee = false) {
+      const sourceId = crypto.randomUUID();
+      const occurredAt = new Date(Date.now() + afterMs);
+      const text = `Investigate checkout error planned date is ${value}.`;
+      await db.insert(rawEvents).values({
+        id: sourceId,
+        teamId: TEAM_ID,
+        source: 'slack',
+        contentText: text,
+        visibility: 'team',
+        occurredAt,
+      });
+      const bundle = await human.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Plan checkout investigation',
+        dedupeKey: sourceId,
+        metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+        evidence: [{ rawEventId: sourceId, quote: text }],
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: task.id,
+            title: 'Investigate checkout error',
+            dedupeKey: sourceId,
+            proposedPayload: {
+              plannedDate: value,
+              ...(includeAssignee ? { assigneeUserId: USER_ID } : {}),
+            },
+            ...(includeAssignee
+              ? {
+                  taskFieldEvidence: {
+                    assigneeUserId: {
+                      rawEventId: sourceId,
+                      assertedAt: occurredAt.toISOString(),
+                      value: USER_ID,
+                    },
+                  },
+                }
+              : {}),
+            plannedDateEvidence: {
+              rawEventId: sourceId,
+              assertedAt: occurredAt.toISOString(),
+              value,
+            },
+          },
+        ],
+      });
+      const item = bundle.items[0];
+      if (!item) throw new Error('Missing proposed update');
+      return item.id;
+    }
+    await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: true,
+      approveRemovals: false,
+      approveMerges: false,
+    });
+    await propose('2026-06-05', 30_000);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const first = await propose('2026-06-08', 60_000);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    expect(await human.objects.getObject(task.id)).toMatchObject({ plannedDate: '2026-06-05' });
+    const policy = await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: false,
+      approveRemovals: false,
+      approveMerges: false,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [applied] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, first));
+    expect(applied?.metadata).toMatchObject({
+      approval_policy_revision: policy.revision,
+      task_update_undo_available: true,
+    });
+    await human.objects.updateObject(task.id, { priority: 2 }, actor);
+    expect(await human.suggestions.undoAutomaticTaskUpdate(first)).toBe(true);
+    expect(await human.suggestions.undoAutomaticTaskUpdate(first)).toBe(true);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      plannedDate: '2026-06-05',
+      priority: 2,
+    });
+    const second = await propose('2026-06-10', 120_000);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    await human.objects.updateObject(task.id, { plannedDate: '2026-06-11' }, actor);
+    await human.objects.updateObject(task.id, { plannedDate: '2026-06-10' }, actor);
+    await expect(human.suggestions.undoAutomaticTaskUpdate(second)).rejects.toThrow(
+      'task field changed again',
+    );
+    expect(await human.objects.getObject(task.id)).toMatchObject({ plannedDate: '2026-06-10' });
+    const compound = await propose('2026-06-15', 180_000, true);
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      plannedDate: '2026-06-15',
+      assigneeUserId: USER_ID,
+    });
+    expect(await human.suggestions.undoAutomaticTaskUpdate(compound)).toBe(true);
+    expect(await human.objects.getObject(task.id)).toMatchObject({
+      plannedDate: '2026-06-10',
+      assigneeUserId: null,
+    });
+  });
+
+  it('requires independent opt-ins for explicit archives and exact provider merges', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const actor = { kind: 'user', userId: USER_ID } as const;
+    const archivedTask = await human.objects.createObject({
+      type: 'task',
+      canonicalName: 'Obsolete runbook',
+      actor,
+    });
+    const url = 'https://linear.app/example/issue/ENG-120/checkout';
+    const left = await human.objects.createObject({
+      type: 'incident',
+      canonicalName: 'First import',
+      metadata: {
+        url,
+        integration_provider: 'linear',
+        integration_external_id: 'fixture-identity',
+      },
+      actor,
+    });
+    const right = await human.objects.createObject({
+      type: 'incident',
+      canonicalName: 'Second import',
+      metadata: { url },
+      actor,
+    });
+    const sourceId = crypto.randomUUID();
+    const quote = 'Archive Obsolete runbook.';
+    await db.insert(rawEvents).values({
+      id: sourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      authorUserId: USER_ID,
+      contentText: quote,
+      occurredAt: new Date(),
+      visibility: 'team',
+    });
+    const archive = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: quote,
+      dedupeKey: sourceId,
+      confidence: 'high',
+      metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+      evidence: [{ rawEventId: sourceId, quote }],
+      items: [
+        {
+          operation: 'archive_or_cancel',
+          targetKind: 'task',
+          targetId: archivedTask.id,
+          title: quote,
+          dedupeKey: sourceId,
+          proposedPayload: {},
+        },
+      ],
+    });
+    const mergeSourceId = crypto.randomUUID();
+    const mergeQuote = 'Merge Second import into First import.';
+    await db.insert(rawEvents).values({
+      id: mergeSourceId,
+      teamId: TEAM_ID,
+      source: 'slack',
+      authorUserId: USER_ID,
+      contentText: mergeQuote,
+      occurredAt: new Date(),
+      visibility: 'team',
+    });
+    const merge = await human.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Exact duplicate imports',
+      dedupeKey: 'exact-duplicate-imports',
+      confidence: 'high',
+      metadata: { cleanup_kind: 'merge' },
+      evidence: [{ rawEventId: mergeSourceId, quote: mergeQuote }],
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: left.id,
+          title: 'Exact duplicate imports',
+          dedupeKey: 'exact-duplicate-imports:merge',
+          proposedPayload: { objectIds: [left.id, right.id], survivorId: left.id },
+        },
+      ],
+    });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: false,
+      approveRemovals: true,
+      approveMerges: false,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [archived] = await db.select().from(entities).where(eq(entities.id, archivedTask.id));
+    expect(archived?.archivedAt).toBeInstanceOf(Date);
+    const [pendingMerge] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, merge.items[0]!.id));
+    expect(pendingMerge?.status).toBe('pending');
+    await human.suggestions.setRecordMaintenancePolicy({
+      reviewManualValues: false,
+      approveRemovals: false,
+      approveMerges: true,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [merged] = await db.select().from(entities).where(eq(entities.id, right.id));
+    expect(merged?.mergedIntoId).toBe(left.id);
+    for (const itemId of [archive.items[0]!.id, merge.items[0]!.id]) {
+      const [accepted] = await db
+        .select()
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.id, itemId));
+      expect(accepted).toMatchObject({ status: 'accepted', resolvedByUserId: null });
+    }
+  });
+
   it('supersedes dependent email identities when their proposed person is rejected', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({

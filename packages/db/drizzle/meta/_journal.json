@@ -869,6 +869,27 @@
       "when": 1795659100000,
       "tag": "0116_scheduled_update_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1795659200000,
+      "tag": "0117_task_planned_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1795659300000,
+      "tag": "0118_task_planned_date_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1795659400000,
+      "tag": "0119_record_maintenance_policy",
+      "breakpoints": true
     }
   ]
 }
