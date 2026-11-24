@@ -323,6 +323,7 @@ function isNativeTrackerCompletion(work: CapturedWorkItem): boolean {
   return (
     work.status === 'done' &&
     ((work.provider === 'linear' && work.eventType === 'issue.completed') ||
+      (work.provider === 'monday' && work.eventType === 'item.updated') ||
       (work.provider === 'github' &&
         work.github?.kind === 'issue' &&
         work.eventType === 'issue.closed'))
@@ -359,6 +360,16 @@ export async function verifyNativeTrackerCompletion(
   const match = matches.length === 1 ? matches[0] : undefined;
   if (match?.task.id !== taskId || match.match === 'title') return false;
   const taskMetadata = recordFromUnknown(match.task.metadata);
+  const sourceMetadata = recordFromUnknown(source.metadata);
+  if (
+    work.provider === 'monday' &&
+    ((stringValue(sourceMetadata.external_object_id) ??
+      stringValue(sourceMetadata.externalObjectId)) !== work.externalId ||
+      match.match !== 'provider_id' ||
+      taskMetadata.integration_provider !== 'monday' ||
+      taskMetadata.integration_external_id !== work.externalId)
+  )
+    return false;
   if (
     taskMetadata.integration_external_id &&
     (taskMetadata.integration_external_id !== work.externalId ||

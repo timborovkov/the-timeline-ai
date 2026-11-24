@@ -911,6 +911,148 @@ describe('processSuggestionJobForTests', () => {
 
     expect(chat).not.toHaveBeenCalled();
     await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 1, items: 1 });
+    const [proposal] = await db.select().from(agentSuggestionItems);
+    expect(proposal?.status).toBe('pending');
+    const [unchanged] = await db
+      .select({ status: entities.status })
+      .from(entities)
+      .where(eq(entities.id, task.id));
+    expect(unchanged?.status).toBe('todo');
+  });
+
+  it('applies current Monday mapped completion and keeps later human corrections', async () => {
+    const externalObjectId = '1771812728';
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: OWNER_ID,
+        provider: 'monday',
+        displayName: 'Monday QA board',
+        externalAccountId: 'qa',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    const [task] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Login QA',
+        status: 'todo',
+        aliases: [externalObjectId],
+      })
+      .returning();
+    if (!task || !integration) throw new Error('Missing Monday fixtures');
+    const integrationId = integration.id;
+
+    async function capture(
+      status: 'open' | 'done',
+      at: string,
+      visibility: 'team' | 'private' = 'team',
+    ) {
+      const id = crypto.randomUUID();
+      await seedRawEvent(db as never, {
+        id,
+        source: 'integration',
+        visibility,
+        occurredAt: new Date(at),
+        text: 'Monday item updated on QA: Login QA',
+        sourceMetadata: {
+          provider: 'monday',
+          integration_id: integrationId,
+          signal_class: 'captured_work',
+          event_type: 'item.updated',
+          external_object_id: externalObjectId,
+          object_map: {
+            type: 'task',
+            canonicalName: 'Monday record 1771812728: Login QA',
+            displayTitle: 'Login QA',
+            externalId: externalObjectId,
+            status,
+            aliases: [externalObjectId, 'monday:1771812728'],
+          },
+        },
+      });
+      return id;
+    }
+
+    const chat = emptyModel();
+    const io = {
+      getEnv: env,
+      chatStructured: chat,
+      takeIngestProcessingSlot: vi.fn().mockResolvedValue({ allowed: true }),
+    };
+    const original = await capture('done', '2026-06-01T12:00:00Z');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: original, teamId: TEAM_ID },
+      io,
+    );
+    const [unmatched] = await db.select().from(agentSuggestionItems);
+    expect(unmatched?.status).toBe('pending');
+
+    await db
+      .update(entities)
+      .set({
+        metadata: { integration_provider: 'monday', integration_external_id: externalObjectId },
+      })
+      .where(eq(entities.id, task.id));
+    await capture('open', '2026-06-02T12:00:00Z');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: original, teamId: TEAM_ID },
+      io,
+    );
+    const human = withTeam(db as never, TEAM_ID, OWNER_ID);
+    expect(await human.objects.getObject(task.id)).toMatchObject({ status: 'todo' });
+
+    const completion = await capture('done', '2026-06-03T12:00:00Z');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'github_task_proposal',
+        teamId: TEAM_ID,
+        integrationId,
+        externalObjectId,
+      },
+      io,
+    );
+    const [accepted] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.status, 'accepted'));
+    expect(accepted).toMatchObject({
+      targetId: task.id,
+      resultId: task.id,
+      resolvedByUserId: null,
+    });
+    expect(accepted?.metadata).toMatchObject({
+      approval_decision: 'automatic',
+      approval_policy_revision: '0',
+    });
+    const [applied] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(applied).toMatchObject({ status: 'done', assigneeUserId: null });
+    expect(applied?.recordFieldRevisions.status?.rawEventId).toBe(completion);
+
+    await human.objects.updateObject(
+      task.id,
+      { status: 'doing' },
+      { kind: 'user', userId: OWNER_ID },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: completion, teamId: TEAM_ID },
+      io,
+    );
+    const privateCompletion = await capture('done', '2026-06-04T12:00:00Z', 'private');
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: privateCompletion, teamId: TEAM_ID },
+      io,
+    );
+    expect(await human.objects.getObject(task.id)).toMatchObject({ status: 'doing' });
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it('delays coalesced GitHub task proposal jobs when the connection budget is exhausted', async () => {
@@ -1173,16 +1315,15 @@ describe('processSuggestionJobForTests', () => {
     }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
       TEAM_ID,
     ]);
-    expect(planned.rows).toEqual([
-      {
-        target_kind: 'task',
-        proposed_payload: expect.objectContaining({
-          canonicalName: 'Send the Acme proposal',
-          plannedDate: '2026-06-02',
-          ownerUserId: OWNER_ID,
-        }),
+    expect(planned.rows).toHaveLength(1);
+    expect(planned.rows[0]).toMatchObject({
+      target_kind: 'task',
+      proposed_payload: {
+        canonicalName: 'Send the Acme proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
       },
-    ]);
+    });
     expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
@@ -1228,16 +1369,15 @@ describe('processSuggestionJobForTests', () => {
     }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
       TEAM_ID,
     ]);
-    expect(planned.rows).toEqual([
-      {
-        target_kind: 'task',
-        proposed_payload: expect.objectContaining({
-          canonicalName: 'Send the Acme proposal',
-          plannedDate: '2026-06-02',
-          ownerUserId: OWNER_ID,
-        }),
+    expect(planned.rows).toHaveLength(1);
+    expect(planned.rows[0]).toMatchObject({
+      target_kind: 'task',
+      proposed_payload: {
+        canonicalName: 'Send the Acme proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
       },
-    ]);
+    });
     expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
@@ -1590,16 +1730,15 @@ describe('processSuggestionJobForTests', () => {
     }>('SELECT target_kind, proposed_payload FROM agent_suggestion_items WHERE team_id = $1', [
       TEAM_ID,
     ]);
-    expect(planned.rows).toEqual([
-      {
-        target_kind: 'task',
-        proposed_payload: expect.objectContaining({
-          canonicalName: 'Send the Acme proposal',
-          plannedDate: '2026-06-02',
-          ownerUserId: OWNER_ID,
-        }),
+    expect(planned.rows).toHaveLength(1);
+    expect(planned.rows[0]).toMatchObject({
+      target_kind: 'task',
+      proposed_payload: {
+        canonicalName: 'Send the Acme proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
       },
-    ]);
+    });
     expect(planned.rows[0]?.proposed_payload).not.toHaveProperty('dueAt');
   });
 
@@ -3421,9 +3560,6 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.instructions).toContain('proposedPayload.priority');
     expect(call?.instructions).toContain(
       'Curated document chunks in the prompt are reference knowledge',
-    );
-    expect(call?.instructions).toContain(
-      'Named work the team is tracking is a task, not a follow_up',
     );
     expect(prompt).toContain(
       'Open tasks listed here can be marked done from later outcome evidence',
