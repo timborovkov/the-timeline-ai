@@ -3,10 +3,12 @@ import {
   type Db,
   agentSuggestionItems,
   agentSuggestions,
+  calendarEvents,
   dailyDigests,
   entities,
   messagePreferences,
   rawEvents,
+  savedWorkViews,
   objectChanges,
   teamBillingAccounts,
   teams,
@@ -451,6 +453,174 @@ describe('configured scheduled updates', () => {
     expect(revoked.hasVisibleChanges).toBe(false);
     expect(revoked.payload.links).toEqual([]);
     expect(revoked.payload.summary).not.toContain('pilot');
+  });
+
+  it('uses a separate evidence allowance for late captures and excludes future or unsettled events before limiting', async () => {
+    await db.update(messagePreferences).set({
+      updateOptions: {
+        cadence: 'weekly',
+        scope: 'workspace',
+        focus: 'progress',
+        destination: 'app',
+      },
+      updatedAt: new Date('2026-07-18T00:00:00Z'),
+    });
+    const time = new Date('2026-07-24T09:00:00Z');
+    const recentContent = 'The approved pilot opened for participants.';
+    const lateContent = 'The earlier prototype passed the accuracy review.';
+    await db.insert(rawEvents).values([
+      ...Array.from({ length: 360 }, () => ({
+        teamId: TEAM_ID,
+        source: 'web' as const,
+        contentText: 'Captured a future calendar event.',
+        occurredAt: new Date('2026-07-29T09:00:00Z'),
+        createdAt: time,
+      })),
+      ...Array.from({ length: 360 }, () => ({
+        teamId: TEAM_ID,
+        source: 'web' as const,
+        contentText: 'Routine update from the pilot.',
+        occurredAt: time,
+        createdAt: time,
+      })),
+      {
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: recentContent,
+        occurredAt: new Date('2026-07-26T09:00:00Z'),
+        createdAt: new Date('2026-07-26T09:00:00Z'),
+      },
+      {
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: lateContent,
+        occurredAt: new Date('2026-07-17T09:00:00Z'),
+        createdAt: time,
+      },
+      {
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: 'Captured after the scheduled boundary.',
+        occurredAt: new Date('2026-07-26T09:30:00Z'),
+        createdAt: new Date('2026-07-27T13:00:00Z'),
+      },
+    ]);
+    const summarize = vi.fn().mockResolvedValue('The approved pilot opened.');
+    const update = await generateDailyDigest({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ...window,
+      summarize,
+    });
+    expect(update.skipped).toBe(false);
+    const prompt: unknown = summarize.mock.calls[0]?.[0];
+    expect(prompt).toContain(recentContent);
+    expect(prompt).toContain(lateContent);
+    expect(prompt).toContain('"capturedLate":true');
+    expect(prompt).not.toContain('Captured a future calendar event.');
+    expect(prompt).not.toContain('Captured after the scheduled boundary.');
+  });
+
+  it('keeps the workspace cursor open when a held briefing publishes saved-view matches', async () => {
+    const identity = { db, teamId: TEAM_ID, userId: USER_ID };
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    const revision = new Date('2026-07-18T00:00:00Z');
+    await db.update(messagePreferences).set({
+      updateOptions: {
+        cadence: 'weekly',
+        scope: 'workspace',
+        focus: 'balanced',
+        destination: 'app',
+      },
+      updatedAt: revision,
+    });
+    const view = await scope.savedViews.create({
+      collection: 'tasks',
+      targetId: null,
+      title: 'New tasks',
+      filters: {},
+    });
+    if (!view) throw new Error('Could not create the test view');
+    await db
+      .update(savedWorkViews)
+      .set({ notify: true, optedInAt: revision, evaluatedThrough: revision })
+      .where(eq(savedWorkViews.id, view));
+    const date = new Date('2026-07-24T09:00:00Z');
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Pilot access',
+      status: 'todo',
+      createdAt: date,
+      updatedAt: date,
+    });
+    const content = 'The team approved opening the pilot.';
+    await db.insert(rawEvents).values({
+      teamId: TEAM_ID,
+      source: 'web',
+      contentText: content,
+      occurredAt: date,
+      createdAt: date,
+    });
+    const blocked = await generateDailyDigest({
+      ...identity,
+      ...window,
+      summarize: vi.fn().mockRejectedValue(new BillingAdmissionError('spend_cap_reached')),
+    });
+    expect(blocked.skipped).toBe(false);
+    expect(blocked.payload).toMatchObject({ savedViewsOnly: true, workspaceSummaryOnHold: true });
+    expect(blocked.payload.savedViewChanges).toHaveLength(1);
+    const preference = await getDigestPreference(identity);
+    expect(await hasScheduledUpdateBillingHold({ ...identity, preference, now: window.now })).toBe(
+      true,
+    );
+
+    const summarize = vi.fn().mockResolvedValue(content);
+    const now = new Date('2026-08-04T12:00:00Z');
+    const recovered = await generateDailyDigest({
+      ...identity,
+      windowStart: window.windowEnd,
+      windowEnd: new Date('2026-08-03T12:00:00Z'),
+      now,
+      summarize,
+    });
+    expect(recovered.skipped).toBe(false);
+    expect(recovered.payload.summary).toBe(content);
+    expect(summarize.mock.calls[0]?.[0]).toContain(content);
+    expect(await hasScheduledUpdateBillingHold({ ...identity, preference, now })).toBe(false);
+  });
+
+  it('persists an all-day calendar event with its source timezone in the archive', async () => {
+    await db.insert(calendarEvents).values({
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: 'Helsinki workshop',
+      startAt: new Date('2026-07-26T21:00:00Z'),
+      endAt: new Date('2026-07-27T21:00:00Z'),
+      allDay: true,
+      timezone: 'Europe/Helsinki',
+    });
+    const identity = { db, teamId: TEAM_ID, userId: USER_ID };
+    const digest = await generateDailyDigest({
+      ...identity,
+      windowStart: new Date('2026-07-26T12:00:00Z'),
+      windowEnd: window.windowEnd,
+      now: new Date('2026-07-27T12:05:00Z'),
+      summarize: vi.fn().mockResolvedValue('The team held a workshop.'),
+    });
+    expect(digest.skipped).toBe(false);
+    const [stored] = await listDailyDigests({ ...identity, id: digest.digestId });
+    expect(stored?.payload).toMatchObject({
+      windowCalendar: [
+        {
+          title: 'Helsinki workshop',
+          startAt: '2026-07-26T21:00:00.000Z',
+          allDay: true,
+          eventTimezone: 'Europe/Helsinki',
+        },
+      ],
+    });
   });
 
   it('skips queued work while paused and keeps a completed quiet window suppressed on retry', async () => {

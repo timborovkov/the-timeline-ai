@@ -17,6 +17,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
+import { withTeam } from '#src/team-scope.js';
 import type * as TelegramApiModule from '#src/telegram/api.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -332,5 +333,106 @@ it('keeps a transient destination retryable when another destination fails perma
     else process.env.RESEND_API_KEY = previousKey;
     resetEnvForTests();
     await db.delete(teamDigestDestinations).where(eq(teamDigestDestinations.id, email.id));
+  }
+});
+
+it('offers and sends configured email only for the member’s current verified address', async () => {
+  const oldApiKey = process.env.RESEND_API_KEY;
+  const oldFrom = process.env.TRANSACTIONAL_EMAIL_FROM;
+  const revision = new Date('2026-06-12T09:00:00.000Z');
+  const [digest] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  if (!digest) throw new Error('Missing test digest');
+  const [emailDestination] = await db
+    .insert(teamDigestDestinations)
+    .values({ teamId, kind: 'email_members' })
+    .returning({ id: teamDigestDestinations.id });
+  if (!emailDestination) throw new Error('Missing test destination');
+  const fetch = vi.fn((..._args: Parameters<typeof globalThis.fetch>) =>
+    Promise.resolve(Response.json({ id: 'fixture-accepted' })),
+  );
+  const scope = withTeam(db, teamId, userId);
+  try {
+    process.env.RESEND_API_KEY = 're_synthetic_digest_test';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'timeline@example.test';
+    resetEnvForTests();
+    await db
+      .update(teamDigestDestinations)
+      .set({ enabled: false })
+      .where(eq(teamDigestDestinations.kind, 'telegram_dm_members'));
+    await db
+      .update(messagePreferences)
+      .set({
+        updateOptions: {
+          cadence: 'daily',
+          scope: 'workspace',
+          focus: 'balanced',
+          destination: 'personal',
+        },
+        updatedAt: revision,
+      })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({
+        payload: {
+          ...(digest.payload as Record<string, unknown>),
+          updateRevision: revision.toISOString(),
+        },
+      })
+      .where(eq(dailyDigests.id, digestId));
+    const sendEmail = () =>
+      sendDailyDigest({
+        db,
+        digestId,
+        to: 'stale@example.test',
+        digestUrl: 'https://example.test/digest',
+        now,
+        fetch,
+      });
+
+    expect(await scope.updatePreferences.availablePersonalDestinations()).toEqual([]);
+    expect(await sendEmail()).toMatchObject({ ok: true, skipped: true });
+    expect(fetch).not.toHaveBeenCalled();
+
+    await db
+      .update(users)
+      .set({ email: 'current@example.test', emailVerified: now })
+      .where(eq(users.id, userId));
+    expect(await scope.updatePreferences.availablePersonalDestinations()).toEqual([
+      'email_members',
+    ]);
+    expect(await sendEmail()).toMatchObject({ ok: true });
+    expect(fetch).toHaveBeenCalledOnce();
+    const body = fetch.mock.calls[0]?.[1]?.body;
+    if (typeof body !== 'string') throw new Error('Missing intercepted delivery body');
+    expect(JSON.parse(body)).toMatchObject({
+      to: ['current@example.test'],
+      subject: 'Your Timeline update is ready',
+    });
+  } finally {
+    if (oldApiKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = oldApiKey;
+    if (oldFrom === undefined) delete process.env.TRANSACTIONAL_EMAIL_FROM;
+    else process.env.TRANSACTIONAL_EMAIL_FROM = oldFrom;
+    resetEnvForTests();
+    await db
+      .update(users)
+      .set({ email: 'digest@example.test', emailVerified: null })
+      .where(eq(users.id, userId));
+    await db
+      .delete(teamDigestDestinations)
+      .where(eq(teamDigestDestinations.id, emailDestination.id));
+    await db
+      .update(teamDigestDestinations)
+      .set({ enabled: true })
+      .where(eq(teamDigestDestinations.kind, 'telegram_dm_members'));
+    await db
+      .update(messagePreferences)
+      .set({ updateOptions: null })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({ payload: digest.payload })
+      .where(eq(dailyDigests.id, digestId));
   }
 });

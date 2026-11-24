@@ -631,30 +631,26 @@ function toDigestCalendarRows(
     title: string;
     startAt: Date | string;
     endAt: Date | string;
+    allDay?: boolean;
+    timezone?: string;
     recurringParentId?: string | null;
     rrule?: string | null;
   }[],
   timezone: string,
 ): DailyDigestPayload['upcomingCalendar'] {
   return collapseDigestCalendarEvents(
-    events.map((event) => {
-      const row: {
-        id: string;
-        title: string;
-        startAt: Date | string;
-        endAt: Date | string;
-        recurringParentId?: string | null;
-        rrule?: string | null;
-      } = {
-        id: event.id,
-        title: event.title,
-        startAt: event.startAt,
-        endAt: event.endAt,
-      };
-      if (event.recurringParentId !== undefined) row.recurringParentId = event.recurringParentId;
-      if (event.rrule !== undefined) row.rrule = event.rrule;
-      return row;
-    }),
+    events.map((event) => ({
+      id: event.id,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      ...(event.allDay !== undefined ? { allDay: event.allDay } : {}),
+      ...(event.timezone !== undefined ? { eventTimezone: event.timezone } : {}),
+      ...(event.recurringParentId !== undefined
+        ? { recurringParentId: event.recurringParentId }
+        : {}),
+      ...(event.rrule !== undefined ? { rrule: event.rrule } : {}),
+    })),
   )
     .map((event) => ({
       ...event,
@@ -957,8 +953,10 @@ export async function hasScheduledUpdateBillingHold(input: {
         eq(dailyDigests.userId, input.userId),
         eq(dailyDigests.windowStart, window.start),
         eq(dailyDigests.windowEnd, window.end),
-        eq(dailyDigests.status, 'failed'),
-        eq(dailyDigests.error, UPDATE_BILLING_HOLD),
+        or(
+          and(eq(dailyDigests.status, 'failed'), eq(dailyDigests.error, UPDATE_BILLING_HOLD)),
+          sql`${dailyDigests.payload} ->> 'workspaceSummaryOnHold' = 'true'`,
+        ),
         sql`${dailyDigests.payload} ->> 'updateRevision' = ${preference.revision}`,
       ),
     )
@@ -1100,23 +1098,26 @@ export async function previewWorkspaceUpdate(
     .filter((object) => object.createdAt < window.windowEnd)
     .map((object) => object.id);
   const lateCutoff = new Date(window.windowStart.getTime() - 72 * 60 * 60 * 1000);
-  const events = (
-    await scope.timeline.listAllEventsInWindow({
+  const [recentEvents, lateEvents] = await Promise.all([
+    scope.timeline.listEvents({
       from: window.windowStart,
       to: window.windowEnd,
-      limit: 350,
-    })
-  ).filter(
-    (event) =>
-      event.occurredAt >= lateCutoff &&
-      event.occurredAt < window.windowEnd &&
-      event.createdAt < window.windowEnd,
-  );
-  const grouped = (rows: typeof events) =>
+      capturedBefore: window.windowEnd,
+      limit: 300,
+    }),
+    scope.timeline.listEvents({
+      from: lateCutoff,
+      to: window.windowStart,
+      capturedFrom: window.windowStart,
+      capturedBefore: window.windowEnd,
+      limit: 50,
+    }),
+  ]);
+  const grouped = (rows: typeof recentEvents) =>
     buildTimelineMoments(rows, new Map(), { timezone, groupingMode: 'moments' });
-  const recent = grouped(events.filter((event) => event.occurredAt >= window.windowStart));
-  const late = grouped(events.filter((event) => event.occurredAt < window.windowStart));
-  const moments = [...recent.slice(0, 20), ...late.slice(0, 4)];
+  const recent = grouped(recentEvents).slice(0, 20);
+  const late = grouped(lateEvents).slice(0, 4);
+  const moments = [...recent, ...late];
   const evidenceIds = [
     ...new Set(moments.flatMap((moment) => moment.rawEvents.map((event) => event.id))),
   ];
@@ -1138,7 +1139,7 @@ export async function previewWorkspaceUpdate(
     visibleMoments: moments.map((moment, index) =>
       sanitizeMomentBriefForPrompt({
         ...momentBrief(moment),
-        ...(index >= Math.min(recent.length, 20) ? { capturedLate: true } : {}),
+        ...(index >= recent.length ? { capturedLate: true } : {}),
       }),
     ),
   });
@@ -1366,6 +1367,7 @@ export async function generateDailyDigest(
       );
     };
     let payload: DailyDigestPayload | null = null;
+    let workspaceSummaryOnHold = false;
     if (options.scope === 'workspace') {
       try {
         payload = await (billing
@@ -1378,6 +1380,7 @@ export async function generateDailyDigest(
           if (revision) await persistUpdateBillingHold(input, revision);
           throw error;
         }
+        workspaceSummaryOnHold = true;
       }
     }
     if (!payload && savedViewChanges.length) {
@@ -1385,6 +1388,7 @@ export async function generateDailyDigest(
         ...disabledDigestPayload(input, preference.timezone),
         summary: 'Your saved views have new matches.',
         savedViewsOnly: true,
+        ...(workspaceSummaryOnHold ? { workspaceSummaryOnHold: true } : {}),
       };
     }
     if (!payload) {
@@ -1761,6 +1765,7 @@ async function latestEvaluatedUpdateEnd(
         lt(dailyDigests.windowEnd, input.windowEnd),
         inArray(dailyDigests.status, ['generated', 'sent', 'skipped']),
         sql`${dailyDigests.payload} ->> 'updateRevision' = ${revision}`,
+        sql`${dailyDigests.payload} ->> 'workspaceSummaryOnHold' IS DISTINCT FROM 'true'`,
       ),
     )
     .orderBy(desc(dailyDigests.windowEnd))

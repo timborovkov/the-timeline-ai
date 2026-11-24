@@ -1,5 +1,6 @@
 'use client';
 
+import type { PersonalDigestRecipient } from '@timeline/shared/messaging';
 import Link from 'next/link';
 import { startTransition, useActionState, useState, type SubmitEvent } from 'react';
 
@@ -7,6 +8,13 @@ import { updateSchedule, type UpdateFormState } from '@/app/app/updates/actions'
 import { Button } from '@/components/ui/button';
 
 type Options = NonNullable<UpdateFormState['preview']>['options'];
+interface Preference {
+  enabled: boolean;
+  hour: number;
+  timezone: string;
+  options?: Options;
+}
+type PersonalDestinations = PersonalDigestRecipient['kind'][];
 
 const labels = {
   cadence: { daily: 'Daily brief', weekly: 'Weekly overview' },
@@ -19,14 +27,54 @@ const labels = {
   },
   destination: { app: 'Home only', personal: 'Home and personal workspace destinations' },
 };
+const personalDestinationLabels = {
+  email_members: 'Email',
+  slack_dm_members: 'Slack DM',
+  telegram_dm_members: 'Telegram DM',
+};
+
 const selectClass = 'min-h-11 w-full rounded-sm border border-border bg-surface px-3 text-sm';
+
+function UpdateScheduleSummary({
+  preference,
+  options,
+  personalDestinations,
+}: {
+  preference: Preference;
+  options: Options;
+  personalDestinations: PersonalDestinations;
+}) {
+  const personalLabel =
+    personalDestinations.length > 0
+      ? `Home and ${personalDestinations.map((kind) => personalDestinationLabels[kind]).join(', ')}`
+      : preference.options
+        ? labels.destination.app
+        : 'Existing digest delivery';
+  const deliveryLabel = options.destination === 'app' ? labels.destination.app : personalLabel;
+  return (
+    <div className="space-y-1">
+      <h2 id="update-schedule-heading" className="font-semibold">
+        {preference.enabled ? 'Active schedule' : 'Updates paused'}
+      </h2>
+      <p className="text-sm text-fg-muted">
+        {labels.cadence[options.cadence]} · {labels.scope[options.scope]} · {deliveryLabel}
+      </p>
+      <p className="text-sm text-fg-muted">
+        {options.cadence === 'weekly' ? 'Monday · ' : ''}
+        {String(preference.hour).padStart(2, '0')}:00 · {preference.timezone}
+      </p>
+    </div>
+  );
+}
 
 export function UpdateScheduleForm({
   preference,
+  personalDestinations,
   teamId,
 }: {
   teamId: string;
-  preference: { enabled: boolean; hour: number; timezone: string; options?: Options };
+  personalDestinations: PersonalDestinations;
+  preference: Preference;
 }) {
   const [state, action, pending] = useActionState(updateSchedule, {});
   const options = preference.options ?? {
@@ -36,7 +84,10 @@ export function UpdateScheduleForm({
     destination: 'personal',
   };
 
-  const [draft, setDraft] = useState(options);
+  const personalAvailable = personalDestinations.length > 0;
+  const [draft, setDraft] = useState<Options>(
+    personalAvailable ? options : { ...options, destination: 'app' },
+  );
   const previewCurrent =
     state.preview &&
     Object.keys(draft).every(
@@ -56,19 +107,11 @@ export function UpdateScheduleForm({
 
   return (
     <section aria-labelledby="update-schedule-heading" className="max-w-xl space-y-5">
-      <div className="space-y-1">
-        <h2 id="update-schedule-heading" className="font-semibold">
-          {preference.enabled ? 'Active schedule' : 'Updates paused'}
-        </h2>
-        <p className="text-sm text-fg-muted">
-          {labels.cadence[options.cadence]} · {labels.scope[options.scope]} ·{' '}
-          {labels.destination[options.destination]}
-        </p>
-        <p className="text-sm text-fg-muted">
-          {options.cadence === 'weekly' ? 'Monday · ' : ''}
-          {String(preference.hour).padStart(2, '0')}:00 · {preference.timezone}
-        </p>
-      </div>
+      <UpdateScheduleSummary
+        preference={preference}
+        options={options}
+        personalDestinations={personalDestinations}
+      />
       <form action={action} onSubmit={handleSubmit} className="space-y-4">
         <input type="hidden" name="teamId" value={teamId} />
         <fieldset disabled={pending} className="grid gap-4 sm:grid-cols-2">
@@ -135,7 +178,9 @@ export function UpdateScheduleForm({
                 setDraft({ ...draft, destination: event.target.value as Options['destination'] });
               }}
             >
-              <option value="personal">{labels.destination.personal}</option>
+              <option value="personal" disabled={!personalAvailable}>
+                {labels.destination.personal}
+              </option>
               <option value="app">{labels.destination.app}</option>
             </select>
           </label>
@@ -145,7 +190,10 @@ export function UpdateScheduleForm({
           <Link href="/app/work/views" className="underline underline-offset-4">
             Saved views
           </Link>
-          . Personal delivery uses the workspace’s enabled email and direct-message destinations.
+          .
+          {personalAvailable
+            ? ' Personal delivery uses your available email and direct-message destinations.'
+            : ' Personal delivery needs a verified email or linked chat enabled for updates.'}
         </p>
         {previewCurrent && state.preview ? (
           <div role="status" className="space-y-1 rounded-sm border border-border p-4 text-sm">

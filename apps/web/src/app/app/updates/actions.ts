@@ -54,6 +54,16 @@ export async function updateSchedule(
   const intent = form.get('intent');
   const parsed = optionsSchema.safeParse(Object.fromEntries(form));
 
+  if (
+    (intent === 'preview' || intent === 'save') &&
+    parsed.data?.destination === 'personal' &&
+    (await scope.updatePreferences.availablePersonalDestinations()).length === 0
+  ) {
+    return {
+      error: 'Choose Home only until you have a verified email or linked chat enabled for updates.',
+    };
+  }
+
   if (intent === 'preview') {
     if (!parsed.success) return { error: 'Choose valid update preferences.' };
     const options = parsed.data;

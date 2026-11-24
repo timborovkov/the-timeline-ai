@@ -2,12 +2,8 @@ import {
   type Db,
   dailyDigests,
   messagePreferences,
-  slackUsers,
-  slackUserTeams,
   teamMembers,
   teamBillingAccounts,
-  telegramUsers,
-  telegramUserTeams,
   users,
 } from '@timeline/db';
 import { and, eq, inArray, isNull, getTableColumns } from 'drizzle-orm';
@@ -17,11 +13,15 @@ import { getEnv } from '#src/env.js';
 import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import {
+  configuredPersonalDigestRecipient,
   digestDestinationDedupeKey,
+  linkedSlackUserId,
+  linkedTelegramChatId,
   listTeamDigestDestinations,
   personalDigestDestinations,
   sharedDigestDestinations,
   type TeamDigestDestination,
+  type PersonalDigestRecipient,
 } from '#src/messaging/destinations.js';
 import { formatDigestChatText } from '#src/messaging/digest-format.js';
 import { isDigestWindowExpired } from '#src/messaging/digest-window.js';
@@ -173,6 +173,7 @@ export async function sendDailyDigest(input: {
   digestUrl?.searchParams.set('team', digest.teamId);
   const results: SendMessageResult[] = [];
   for (const destination of personal) {
+    let contact: PersonalDigestRecipient | null = null;
     if (stored.updateRevision) {
       const latest = await getDigestPreference({
         db: input.db,
@@ -194,13 +195,16 @@ export async function sendDailyDigest(input: {
         (item) => item.id === destination.id,
       );
       if (!enabled) continue;
+      contact = await configuredPersonalDigestRecipient(input.db, destination, digest.userId);
+      if (!contact) continue;
     }
     results.push(
       await deliverPersonalDigestDestination({
         db: input.db,
         digest,
         destination,
-        email: recipient.email,
+        email: contact?.kind === 'email_members' ? contact.email : recipient.email,
+        contact,
         digestUrl: digestUrl?.href ?? input.digestUrl,
         payload: stored.updateRevision
           ? {
@@ -319,6 +323,7 @@ async function deliverPersonalDigestDestination(input: {
   digest: typeof dailyDigests.$inferSelect;
   destination: TeamDigestDestination;
   email: string;
+  contact: PersonalDigestRecipient | null;
   digestUrl: string;
   payload: DailyDigestPayload;
   fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
@@ -345,7 +350,10 @@ async function deliverPersonalDigestDestination(input: {
   }
   const text = formatDigestChatText({ payload: input.payload, digestUrl: input.digestUrl });
   if (input.destination.kind === 'slack_dm_members') {
-    const slackUserId = await linkedSlackUserId(input.db, input.digest.teamId, input.digest.userId);
+    const slackUserId =
+      input.contact?.kind === 'slack_dm_members'
+        ? input.contact.slackUserId
+        : await linkedSlackUserId(input.db, input.digest.teamId, input.digest.userId);
     if (!slackUserId) {
       return { ok: true, skipped: true, skippedStatus: 'skipped' };
     }
@@ -367,11 +375,10 @@ async function deliverPersonalDigestDestination(input: {
         }),
     });
   }
-  const telegramChatId = await linkedTelegramChatId(
-    input.db,
-    input.digest.teamId,
-    input.digest.userId,
-  );
+  const telegramChatId =
+    input.contact?.kind === 'telegram_dm_members'
+      ? input.contact.chatId
+      : await linkedTelegramChatId(input.db, input.digest.teamId, input.digest.userId);
   if (telegramChatId === null) {
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
   }
@@ -508,28 +515,4 @@ async function deliverBotDigest(input: {
     }
     return { ok: false, ...(deliveryId ? { deliveryId } : {}), error, retryable };
   }
-}
-
-async function linkedSlackUserId(db: Db, teamId: string, userId: string): Promise<string | null> {
-  const rows = await db
-    .select({ slackUserId: slackUsers.slackUserId })
-    .from(slackUserTeams)
-    .innerJoin(slackUsers, eq(slackUsers.id, slackUserTeams.slackUserId))
-    .where(and(eq(slackUserTeams.teamId, teamId), eq(slackUserTeams.userId, userId)))
-    .limit(1);
-  return rows[0]?.slackUserId ?? null;
-}
-
-async function linkedTelegramChatId(
-  db: Db,
-  teamId: string,
-  userId: string,
-): Promise<number | null> {
-  const rows = await db
-    .select({ tgUserId: telegramUsers.tgUserId })
-    .from(telegramUserTeams)
-    .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
-    .where(and(eq(telegramUserTeams.teamId, teamId), eq(telegramUsers.userId, userId)))
-    .limit(1);
-  return rows[0]?.tgUserId ?? null;
 }

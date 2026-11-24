@@ -336,17 +336,17 @@ export function collapseDigestCalendarEvents(
     startAt: Date | string;
     endAt: Date | string;
     href?: string;
+    allDay?: boolean;
+    eventTimezone?: string;
     recurringParentId?: string | null;
     rrule?: string | null;
   }[],
 ): DailyDigestCalendarEvent[] {
   type Group = DailyDigestCalendarEvent & { occurrenceCount: number };
   const groups = new Map<string, Group>();
-  const order: string[] = [];
 
   for (const event of events) {
     const startAt = isoTimestamp(event.startAt);
-    const endAt = isoTimestamp(event.endAt);
     const repeating = Boolean(event.recurringParentId ?? event.rrule);
     const key = event.recurringParentId
       ? `series:${event.recurringParentId}`
@@ -354,52 +354,26 @@ export function collapseDigestCalendarEvents(
         ? `self:${event.id}`
         : `once:${event.id}`;
     const existing = groups.get(key);
-    if (existing) {
+    if (existing && startAt >= existing.startAt) {
       existing.occurrenceCount += 1;
-      if (startAt < existing.startAt) {
-        existing.id = event.recurringParentId ?? event.id;
-        existing.title = event.title;
-        existing.startAt = startAt;
-        existing.endAt = endAt;
-      }
       continue;
     }
     groups.set(key, {
       id: event.recurringParentId ?? event.id,
       title: event.title,
       startAt,
-      endAt,
-      href: event.href ?? '/app/calendar',
-      repeating,
-      occurrenceCount: 1,
+      endAt: isoTimestamp(event.endAt),
+      href: existing?.href ?? event.href ?? '/app/calendar',
+      ...(event.allDay !== undefined ? { allDay: event.allDay } : {}),
+      ...(event.eventTimezone !== undefined ? { eventTimezone: event.eventTimezone } : {}),
+      ...(repeating ? { repeating: true } : {}),
+      occurrenceCount: (existing?.occurrenceCount ?? 0) + 1,
     });
-    order.push(key);
   }
 
-  return order.map((key) => {
-    const group = groups.get(key);
-    if (!group) {
-      throw new Error(`Missing collapsed calendar group for ${key}`);
-    }
-    if (!group.repeating) {
-      return {
-        id: group.id,
-        title: group.title,
-        startAt: group.startAt,
-        endAt: group.endAt,
-        href: group.href,
-      };
-    }
-    return {
-      id: group.id,
-      title: group.title,
-      startAt: group.startAt,
-      endAt: group.endAt,
-      href: group.href,
-      repeating: true,
-      occurrenceCount: group.occurrenceCount,
-    };
-  });
+  return [...groups.values()].map(({ occurrenceCount, ...event }) =>
+    event.repeating ? { ...event, occurrenceCount } : event,
+  );
 }
 
 function isoTimestamp(value: Date | string): string {

@@ -122,6 +122,8 @@ export interface DailyDigestCalendarEvent {
   startAt: string;
   endAt: string;
   href: string;
+  allDay?: boolean;
+  eventTimezone?: string;
   repeating?: boolean;
   occurrenceCount?: number;
 }
@@ -145,6 +147,7 @@ export interface DailyDigestPayload {
   savedViewsOnly?: boolean;
   savedViewObservedAt?: string;
   updateRevision?: string;
+  workspaceSummaryOnHold?: true;
   evidenceIds?: string[];
   blockerIds?: string[];
   pendingApprovals: number;

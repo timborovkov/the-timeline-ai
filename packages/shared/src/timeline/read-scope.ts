@@ -181,6 +181,8 @@ export function createTimelineReadScope({
     if (senderCondition) conditions.push(senderCondition);
     if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
     if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
+    if (filters.capturedFrom) conditions.push(gte(rawEvents.createdAt, filters.capturedFrom));
+    if (filters.capturedBefore) conditions.push(lt(rawEvents.createdAt, filters.capturedBefore));
     if (Array.isArray(filters.source) && filters.source.length > 0) {
       conditions.push(
         inArray(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number][]),

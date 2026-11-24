@@ -96,11 +96,13 @@ Updates shows a short summary with its full body folded until opened. Customize
 updates sits beside it, including before the first briefing. Members can preview
 a daily brief or Monday overview, choose workspace activity or followed saved
 views, and pause without losing history. Workspace briefing emphasis applies to
-the summary. Monday overviews can surface work that remains blocked. Personal delivery of a configured briefing opens the authenticated
-archive, where source access is checked again. The follow-up opens Ask with
+the summary. Monday overviews can surface work that remains blocked. The settings
+show available personal destinations. Delivery uses verified email or linked chat
+and opens the authenticated archive, where source access is checked again. The follow-up opens Ask with
 the update’s date range and visible source references, ready for review before
-sending. Home shows when the current briefing is held by the workspace’s AI
-budget, and prior updates stay in history.
+sending. Home shows when the workspace’s AI budget holds a briefing. New
+saved-view matches can still appear while the workspace briefing is on hold.
+Prior updates stay in history.
 Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
 pull-request numbers, commit hashes, CI run IDs, ticket keys, and object

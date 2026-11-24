@@ -781,8 +781,10 @@ Live Google Cloud configuration and scope verification remain open. See
 Handoff snapshots and saved views follow workspace deletion. Handoff reads
 recheck the project, sources and commitments. Saved-view digests reevaluate
 matches for the recipient and use personal destinations. Configurable briefings
-recheck their sources in the archive and send only a link externally. Preview
-and generation use the host workspace’s existing inference budget. Source-health
+recheck their sources in the archive. Their personal email and chat notices
+contain an authenticated archive link. Dispatch rechecks the recipient’s verified
+email or workspace chat link. Shared channel delivery uses team-visible content.
+Preview and generation use the host workspace’s existing inference budget. Source-health
 counts apply source visibility before aggregation. OCR correction history retains
 earlier derived text subject to the source document's access and deletion
 policy.

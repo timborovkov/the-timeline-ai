@@ -15,13 +15,13 @@ export default async function UpdatesSettingsPage() {
   if (impersonation) redirect('/app');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/app');
-  const role = await withTeam(db, active.teamId, session.user.id).requireMembership('member');
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const role = await scope.requireMembership('member');
   if (!['owner', 'admin', 'member'].includes(role)) redirect('/app');
-  const preference = await getDigestPreference({
-    db,
-    teamId: active.teamId,
-    userId: session.user.id,
-  });
+  const [preference, personalDestinations] = await Promise.all([
+    getDigestPreference({ db, teamId: active.teamId, userId: session.user.id }),
+    scope.updatePreferences.availablePersonalDestinations(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -29,7 +29,12 @@ export default async function UpdatesSettingsPage() {
         title="Customize updates"
         subtitle="Choose what to follow and when to catch up."
       />
-      <UpdateScheduleForm key={active.teamId} teamId={active.teamId} preference={preference} />
+      <UpdateScheduleForm
+        key={active.teamId}
+        teamId={active.teamId}
+        preference={preference}
+        personalDestinations={personalDestinations}
+      />
       <Link href="/app/digests" className="inline-block text-sm underline underline-offset-4">
         Update history
       </Link>

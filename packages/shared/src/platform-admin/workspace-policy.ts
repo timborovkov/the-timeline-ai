@@ -524,6 +524,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'savedViews.create': accountWrite,
   'savedViews.manage': accountWrite,
   'savedViews.preview': accountRead,
+  'updatePreferences.availablePersonalDestinations': accountRead,
   'updatePreferences.save': accountWrite,
   'savedViews.evaluate': accountWrite,
   'savedViews.visibleDigestChanges': accountRead,

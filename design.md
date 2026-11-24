@@ -28,7 +28,6 @@ by exposing database implementation details in ordinary product views.
 
 - **Event history** is the immutable sequence of captured source events.
 - **Evidence** is source material backing a generated claim or proposed change.
-- **Updates** are cited answers or progress summaries generated on demand.
 - **Updates** are scheduled briefings about changes and work that needs attention. Work → Digests is the archive.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.

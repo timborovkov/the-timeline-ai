@@ -42,8 +42,8 @@ export const WORKFLOW_GUIDES = [
       {
         index: '03',
         title: 'Configure delivery',
-        body: 'In Timeline’s team settings, ask a team admin to add an available Slack channel under Digest destinations and confirm the Team timezone. If the channel is absent, check the Slack connection and permissions first. Messaging controls your personal email or bot-DM digest; shared Slack delivery is configured separately.',
-        output: 'A shared destination with an explicit audience.',
+        body: 'On Home, open Customize updates to preview a daily brief or weekly overview and choose where to receive it. For a shared Slack channel, ask a team admin to add the channel under Digest destinations and confirm the team time zone.',
+        output: 'A schedule and a delivery destination for the intended audience.',
       },
       {
         index: '04',
@@ -54,7 +54,7 @@ export const WORKFLOW_GUIDES = [
       {
         index: '05',
         title: 'Ask for a focused brief when needed',
-        body: 'The automatic digest covers the workspace. For one project or a special reporting period, ask a bounded question in Ask and use the template below. This prompt does not change the scheduled digest’s format.',
+        body: 'Choose workspace activity or new matches from the saved views you follow. For a narrative brief about one project or a specific reporting period, use the template below in Ask.',
         output: 'A separate project brief for the requested window.',
       },
       {
@@ -168,7 +168,7 @@ export const WORKFLOW_GUIDES = [
       {
         question: 'Can I customize the scheduled digest with this prompt?',
         answer:
-          'This prompt creates a focused answer in Ask. It does not configure the automatic digest. Use team settings for available destinations and timezone controls.',
+          'Use the prompt in Ask for a one-off answer. To change your recurring briefing, use Customize updates on Home.',
       },
       {
         question: 'What if a teammate has no activity in the update?',

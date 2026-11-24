@@ -1,6 +1,12 @@
 import { messagePreferences, type Db } from '@timeline/db';
 import { sql } from 'drizzle-orm';
 
+import {
+  configuredPersonalDigestRecipient,
+  listTeamDigestDestinations,
+  personalDigestDestinations,
+} from '#src/messaging/destinations.js';
+
 type UpdateOptions = NonNullable<typeof messagePreferences.$inferSelect.updateOptions>;
 
 export function createUpdatePreferencesScope(
@@ -10,6 +16,16 @@ export function createUpdatePreferencesScope(
   requireMembership: () => Promise<string>,
 ) {
   return {
+    async availablePersonalDestinations() {
+      await requireMembership();
+      const destinations = personalDigestDestinations(await listTeamDigestDestinations(db, teamId));
+      const contacts = await Promise.all(
+        destinations.map((destination) =>
+          configuredPersonalDigestRecipient(db, destination, userId),
+        ),
+      );
+      return contacts.flatMap((contact) => (contact ? [contact.kind] : []));
+    },
     async save(input: {
       enabled: boolean;
       hour: number;

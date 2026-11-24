@@ -1,8 +1,19 @@
-import { type Db, teamBillingAccounts, teamDigestDestinations } from '@timeline/db';
-import { and, desc, eq, inArray, notExists } from 'drizzle-orm';
+import {
+  type Db,
+  slackUsers,
+  slackUserTeams,
+  teamBillingAccounts,
+  teamDigestDestinations,
+  telegramUsers,
+  telegramUserTeams,
+  users,
+} from '@timeline/db';
+import { and, desc, eq, inArray, isNotNull, notExists } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { getEnv } from '#src/env.js';
 import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
+import { findWorkspaceInstallForTeam } from '#src/slack/workspace-access.js';
 
 const DIGEST_DESTINATION_KINDS = [
   'email_members',
@@ -279,4 +290,76 @@ export async function removeTeamDigestDestination(input: {
     )
     .returning({ id: teamDigestDestinations.id });
   return rows.length > 0;
+}
+
+export type PersonalDigestRecipient =
+  | { kind: 'email_members'; email: string }
+  | { kind: 'slack_dm_members'; slackUserId: string }
+  | { kind: 'telegram_dm_members'; chatId: number };
+
+export async function configuredPersonalDigestRecipient(
+  db: Db,
+  destination: TeamDigestDestination,
+  userId: string,
+): Promise<PersonalDigestRecipient | null> {
+  switch (destination.kind) {
+    case 'email_members': {
+      const env = getEnv();
+      if (!env.RESEND_API_KEY || !env.TRANSACTIONAL_EMAIL_FROM) return null;
+      const [account] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(and(eq(users.id, userId), isNotNull(users.emailVerified)))
+        .limit(1);
+      return account ? { kind: destination.kind, email: account.email } : null;
+    }
+    case 'slack_dm_members': {
+      const install = await findWorkspaceInstallForTeam(db, destination.teamId);
+      if (!install) return null;
+      const slackUserId = await linkedSlackUserId(db, destination.teamId, userId, install.id);
+      return slackUserId ? { kind: destination.kind, slackUserId } : null;
+    }
+    case 'telegram_dm_members': {
+      if (!getEnv().TELEGRAM_BOT_TOKEN) return null;
+      const chatId = await linkedTelegramChatId(db, destination.teamId, userId);
+      return chatId === null ? null : { kind: destination.kind, chatId };
+    }
+    default:
+      return null;
+  }
+}
+
+export async function linkedSlackUserId(
+  db: Db,
+  teamId: string,
+  userId: string,
+  workspaceId?: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ slackUserId: slackUsers.slackUserId })
+    .from(slackUserTeams)
+    .innerJoin(slackUsers, eq(slackUsers.id, slackUserTeams.slackUserId))
+    .where(
+      and(
+        eq(slackUserTeams.teamId, teamId),
+        eq(slackUserTeams.userId, userId),
+        workspaceId ? eq(slackUsers.workspaceId, workspaceId) : undefined,
+      ),
+    )
+    .limit(1);
+  return rows[0]?.slackUserId ?? null;
+}
+
+export async function linkedTelegramChatId(
+  db: Db,
+  teamId: string,
+  userId: string,
+): Promise<number | null> {
+  const rows = await db
+    .select({ tgUserId: telegramUsers.tgUserId })
+    .from(telegramUserTeams)
+    .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
+    .where(and(eq(telegramUserTeams.teamId, teamId), eq(telegramUsers.userId, userId)))
+    .limit(1);
+  return rows[0]?.tgUserId ?? null;
 }
