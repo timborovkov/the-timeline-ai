@@ -73,6 +73,95 @@ afterEach(async () => {
 });
 
 describe('billing runtime', () => {
+  it('does not backfill legacy member charges for historical paid-seat Team days after downgrade', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      INSERT INTO users (id, email) SELECT ('22222222-2222-4222-8222-' || lpad(i::text, 12, '0'))::uuid, 'seat-' || i || '@example.test' FROM generate_series(1, 26) AS i;
+      INSERT INTO team_members (team_id,user_id,role) SELECT '${TEAM_ID}',id,'member' FROM users WHERE email LIKE 'seat-%';
+      INSERT INTO billing_plan_history (team_id,plan_id,effective_at,team_seat_pricing) VALUES
+      ('${TEAM_ID}','team','2026-10-01',false), ('${TEAM_ID}','team','2026-11-01',true), ('${TEAM_ID}','free','2026-12-01',null);
+      UPDATE team_billing_accounts SET plan_id='free', billing_state='free', team_seat_terms=NULL WHERE team_id='${TEAM_ID}';
+    `);
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-11-15' })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    expect(await db.select().from(billingMemberDayLedger)).toHaveLength(0);
+    const legacy = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-15' });
+    expect(legacy.extraMembers).toBe(2);
+    expect(legacy.chargeCents).toBeGreaterThan(0);
+  });
+
+  it('settles stamped legacy member-days on the day Team seat pricing began', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = '2026-11-10';
+    const legacyMember = '21111111-2222-4333-8444-555555555555';
+    const seatMember = '31111111-2222-4333-8444-555555555555';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', spend_cap_cents = 0,
+          team_seat_terms = '{"paidSeats":3,"highWaterSeats":3,"includedUsageCents":3600}',
+          period_started_at = '${day}T12:00:00Z', period_ends_at = '2026-12-10T12:00:00Z',
+          included_discount_remaining_cents = 3600, polar_customer_id = 'cus_team'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at, team_seat_pricing)
+      VALUES ('${TEAM_ID}', 'team', '2026-10-01', false),
+             ('${TEAM_ID}', 'team', '${day}T12:00:00Z', true);
+      INSERT INTO users (id, email)
+      VALUES ('${legacyMember}', 'legacy-member@example.test'),
+             ('${seatMember}', 'new-seat@example.test');
+      INSERT INTO team_members (team_id, user_id, role, created_at)
+      VALUES ('${TEAM_ID}', '${legacyMember}', 'member', '${day}T01:00:00Z'),
+             ('${TEAM_ID}', '${seatMember}', 'member', '${day}T13:00:00Z');
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, plan_id, role, pricing_terms, created_at)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${day}', 'team', 'owner',
+              '{"includedActiveMembers":1,"additionalMemberCents":300,"meteredDiscountPercent":0}', '${day}T02:00:00Z'),
+             ('${TEAM_ID}', '${legacyMember}', '${day}', 'team', 'member',
+              '{"includedActiveMembers":1,"additionalMemberCents":300,"meteredDiscountPercent":0}', '${day}T02:00:00Z');
+    `);
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 1,
+      chargeCents: 10,
+    });
+    const stamped = await db
+      .select({ userId: billingMemberDayLedger.userId })
+      .from(billingMemberDayLedger)
+      .orderBy(billingMemberDayLedger.userId);
+    expect(stamped).toEqual([{ userId: USER_ID }, { userId: legacyMember }]);
+    const [settlement] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.meterId, 'member_days'));
+    expect(settlement).toMatchObject({
+      operationId: `member_days:${TEAM_ID}:${day}:${legacyMember}`,
+      customerChargeCents: 10,
+      metadata: {
+        presentation_currency: 'EUR',
+        invoice_cents: 10,
+        polar_ingest_status: 'pending',
+      },
+    });
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 1,
+      chargeCents: 0,
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(3600);
+  });
+
   it('no-ops AI metering without ALS and settles when context is set', async () => {
     const unmetered = await withAiMetering({ operationClass: 'embedding' }, () =>
       Promise.resolve({
@@ -215,27 +304,68 @@ describe('billing runtime', () => {
     expect(dash.meters.email_units?.nativeUnits).toBe(2);
   });
 
-  it('settles accepted sources on the cumulative cent boundary', async () => {
-    const ids = Array.from(
-      { length: 10 },
-      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
-    );
-    const result = await meterAcceptedSources({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      rawEventIds: ids,
-    });
-    expect(result.ok).toBe(true);
+  it('records bundled Team ingestion with the real actor and no additional charge on replay', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const now = Date.now();
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        shadowBilling: false,
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 1200,
+        spendCapCents: 0,
+        periodStartedAt: new Date(now - 60_000),
+        periodEndsAt: new Date(now + 60 * 60 * 1000),
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const rawEventIds = Array.from(
+      { length: 10 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const input = { db, teamId: TEAM_ID, userId: USER_ID, rawEventIds };
+    expect(await meterAcceptedSources(input)).toEqual({ ok: true, duplicate: false });
+    expect(await meterAcceptedSources(input)).toEqual({ ok: true, duplicate: true });
+
     const dash = await billing.getDashboard();
-    expect(dash.meters.accepted_sources?.nativeUnits).toBe(10);
-    expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
+    expect(dash.meters.accepted_sources).toMatchObject({
+      nativeUnits: 10,
+      customerChargeCents: 0,
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(1200);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, TEAM_ID),
+          eq(billingUsageLedger.meterId, 'accepted_sources'),
+          eq(billingUsageLedger.kind, 'settlement'),
+        ),
+      );
+    expect(ledger.map((row) => row.operationId).sort()).toEqual(
+      rawEventIds.map((id) => `accepted_source:${id}`),
+    );
+    for (const row of ledger) {
+      expect(Number(row.nativeUnits)).toBe(1);
+      expect(row).toMatchObject({
+        actorUserId: USER_ID,
+        operationClass: 'ingest',
+        source: 'event_writer',
+        customerChargeCents: 0,
+        metadata: { invoice_cents: 0, polar_ingest_status: 'not_required' },
+      });
+    }
+    expect(ledger.reduce((sum, row) => sum + Number(row.metadata.list_charge_cents), 0)).toBe(1);
   });
 
   it('does not accrue daily usage during disable or backfill the disabled interval after restoration', async () => {
@@ -1302,6 +1432,186 @@ describe('billing runtime', () => {
     expect(reservation?.state).toBe('released');
   });
 
+  for (const {
+    admittedCap,
+    includedCents = 50,
+    settledCap = 500,
+    openRouterUsd = 1,
+    chargeCents = 400,
+    invoiceCents = admittedCap,
+  } of [
+    { admittedCap: 0 },
+    { admittedCap: 50 },
+    { admittedCap: 100 },
+    {
+      admittedCap: 1000,
+      includedCents: 0,
+      settledCap: 1000,
+      openRouterUsd: 0.125,
+      chargeCents: 50,
+      invoiceCents: 50,
+    },
+  ]) {
+    const name =
+      includedCents === 0
+        ? 'invoices 50 cents for a failed Team attempt after Included usage is exhausted'
+        : `applies the original Team cap of ${admittedCap} cents to a failed AI attempt`;
+    it(name, async () => {
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      const billing = billingScopeMod.createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      const now = new Date();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'team_active',
+          teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+          includedDiscountRemainingCents: includedCents,
+          spendCapCents: admittedCap,
+          periodStartedAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+          periodEndsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+          polarSubscriptionId: 'sub_team',
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+
+      const operationId = 'ai:failed-team-attempt';
+      await expect(
+        runWithBillingContext(
+          { db, teamId: TEAM_ID, userId: USER_ID, operationClass: 'embedding' },
+          () =>
+            withAiMetering({ operationId, reservedChargeCents: 10 }, async () => {
+              await billing.setSpendCap(settledCap);
+              throw Object.assign(new Error('provider failed'), { openRouterUsd });
+            }),
+        ),
+      ).rejects.toThrow('provider failed');
+      const [attempt] = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.operationId, `${operationId}:failed:1`));
+      const [reservation] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.operationId, operationId));
+      expect(attempt).toMatchObject({
+        actorUserId: USER_ID,
+        reservationId: reservation?.id,
+        customerChargeCents: chargeCents,
+        metadata: {
+          discount_cents: includedCents,
+          invoice_cents: invoiceCents,
+          cap_eligible_cents: invoiceCents,
+        },
+      });
+      expect(reservation?.state).toBe('released');
+      expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
+      expect(await settlePendingBillingReservations(db)).toBe(0);
+    });
+  }
+
+  it('recovers failed Team usage using its original terms after downgrade and readmission', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const now = new Date();
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 1200,
+        spendCapCents: 100,
+        periodStartedAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+        periodEndsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+        polarSubscriptionId: 'sub_team',
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await billing.settle({
+      operationId: 'ai:previous-team-usage',
+      meterId: 'ai',
+      nativeUnits: 9.2,
+      customerChargeCents: 9,
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(1190);
+    await pg.exec(`
+      CREATE FUNCTION fail_team_attempt_settlement() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'settlement unavailable'; END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_team_attempt_settlement BEFORE INSERT ON billing_usage_ledger
+      FOR EACH ROW EXECUTE FUNCTION fail_team_attempt_settlement();
+    `);
+
+    const operationId = 'ai:recover-team-failure';
+    await expect(
+      runWithBillingContext(
+        { db, teamId: TEAM_ID, userId: USER_ID, operationClass: 'embedding' },
+        () =>
+          withAiMetering({ operationId }, () =>
+            Promise.reject(Object.assign(new Error('provider failed'), { openRouterUsd: 4 })),
+          ),
+      ),
+    ).rejects.toThrow('provider failed');
+    await billing.patchReservationMetadata(operationId, {
+      pending_failed_attempts: [],
+      pending_failed_attempt_settlement: false,
+    });
+    await billing.release(operationId);
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'free',
+        billingState: 'free',
+        teamSeatTerms: null,
+        includedDiscountRemainingCents: 0,
+        spendCapCents: 0,
+        polarSubscriptionId: null,
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    // Reusing this operation on Free must preserve the earlier Team attempt.
+    expect(
+      await billing.reserve({
+        operationId,
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+    ).toMatchObject({ ok: true, reservation: { admittedPlanId: 'free' } });
+
+    await pg.exec('DROP TRIGGER fail_team_attempt_settlement ON billing_usage_ledger');
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    expect(await settlePendingBillingReservations(db)).toBe(0);
+    const [attempt] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `${operationId}:failed:1`));
+    expect(attempt).toMatchObject({
+      actorUserId: USER_ID,
+      customerChargeCents: 1600,
+      metadata: {
+        failed_attempt_for: operationId,
+        pricing_plan_id: 'team',
+        discount_cents: 1190,
+        invoice_cents: 0,
+        cap_eligible_cents: 0,
+      },
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
+  });
+
   // €7.36 of usage less the €2 Free allowance leaves €5.36 before the admitted discount.
   for (const scenario of [
     { name: 'expires', initial: 50, next: 50, expired: true, invoice: 268 },
@@ -1975,10 +2285,14 @@ describe('billing runtime', () => {
       ), (
         '${TEAM_ID}', '${failedOperationId}', 'ai', 1, 1,
         'reserved', NOW() + INTERVAL '1 hour',
-        '{"pending_failed_attempt_settlement":true,"pending_failed_attempts":[{"operation_id":"${failedOperationId}:failed:1","openrouter_usd":0.02,"usage_at":"2026-08-10T12:00:00.000Z","operation_class":"embedding"}]}'::jsonb
+        '{"pending_failed_attempt_settlement":true,"pending_failed_attempts":[
+          {"operation_id":"${failedOperationId}:failed:1","openrouter_usd":0.02,"usage_at":"2026-08-10T12:00:00.000Z","operation_class":"embedding"},
+          {"operation_id":"${failedOperationId}:failed:2","openrouter_usd":0}
+        ]}'::jsonb
       );
     `);
     expect(await settlePendingBillingReservations(db)).toBe(2);
+    expect(await settlePendingBillingReservations(db)).toBe(0);
     const [recallLedger] = await db
       .select()
       .from(billingUsageLedger)

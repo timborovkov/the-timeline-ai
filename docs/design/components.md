@@ -337,10 +337,16 @@ through `notifyProgress`. Completed redirect results (OAuth callback, export
 download, queued reconciliation) use that same toast channel instead of a page
 banner.
 
-Copyable values use the shared `CopyButton`. The control shows a copy icon plus
-label, then a check and `Copied`. Dense technical rows use the icon appearance
-with the same swap. Copy success stays on the control. Copy failure stays on
-the control with recovery copy. Do not invent a second clipboard helper.
+Copyable values use the shared `CopyButton`. Pair a single displayed value with
+a trailing ghost copy icon in the same row. Use `CopyableTextField` for selectable
+readonly fields and `CopyableCodeValue` where the full code value should wrap in
+view. The value gives up width before the action moves. Icon controls have an
+action-specific accessible name, a matching tooltip on hover and keyboard focus,
+a visible focus ring, and a 44px touch target (36px on desktop). They show a
+temporary check and announce success after the clipboard write resolves. A
+failed write shows recovery text below the row. Standalone actions for setup
+instructions, commands, and code blocks keep their labels and show `Copied` on
+success.
 
 ## Adding a shadcn component
 

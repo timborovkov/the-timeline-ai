@@ -30,7 +30,7 @@ describe('enterprise contact page', () => {
     const element = await EnterpriseContactPage({
       searchParams: Promise.resolve({
         from: 'pricing',
-        plan: 'business',
+        plan: 'team',
         members: '25',
         topics: 'on_premise_deployment',
       }),
@@ -40,7 +40,7 @@ describe('enterprise contact page', () => {
     expect(html).toContain('We reply within one business day.');
     expect(html).toContain('data-testid="enterprise-enquiry-form"');
     expect(html).toContain('data-enterprise-deployment');
-    expect(html).toContain('managed on-premise / private-cloud');
+    expect(html).toContain('an on-premise or private-cloud deployment');
     expect(html).toContain('source-available');
     expect(html).toContain('Elastic License 2.0');
     expect(html).toContain('OpenAI-compatible');

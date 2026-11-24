@@ -73,6 +73,18 @@ describe('CopyButton', () => {
       expect(error.className).not.toContain('sr-only');
     });
   });
+  it('reports a failed write without suggesting selection of a hidden value', async () => {
+    writeText.mockRejectedValueOnce(new Error('Permission denied'));
+    render(
+      <CopyButton appearance="icon" label="Copy invite link" value="token" manualCopy={false} />,
+    );
+    const status = screen.getByRole('status');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy invite link' }));
+    await waitFor(() => {
+      expect(status.textContent).toBe('Could not copy. Try again.');
+    });
+  });
+
   it('clears copy feedback when the value changes', async () => {
     const { rerender } = render(<CopyButton value="old-link" label="Copy invite link" />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy invite link' }));

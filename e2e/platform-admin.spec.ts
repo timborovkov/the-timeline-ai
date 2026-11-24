@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { signIn } from './helpers.js';
+
+import { signIn, signInFromCurrentPage } from './helpers.js';
 import { e2eTeam, e2eUsers, e2eSeedEvents } from './test-data.js';
 
 test('ordinary owners cannot discover or open the platform panel', async ({ page }) => {
@@ -21,7 +22,15 @@ for (const mobile of [false, true]) {
       .getByRole('textbox', { name: 'Search by name, email, slug, or ID' })
       .fill(e2eUsers.member.email);
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await page.getByRole('link', { name: e2eUsers.member.name, exact: true }).click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === '/app/admin/users' && url.searchParams.get('q') === e2eUsers.member.email,
+    );
+    const memberLink = page.getByRole('link', { name: e2eUsers.member.name, exact: true });
+    const memberPath = `/app/admin/users/${e2eUsers.member.id}`;
+    await expect(memberLink).toHaveAttribute('href', memberPath);
+    await memberLink.click();
+    await expect(page).toHaveURL((url) => url.pathname === memberPath);
     await page.getByText('Log in as this member', { exact: true }).click();
     await page.getByLabel('Purpose', { exact: true }).fill('Investigate synthetic fixture');
     await page.getByLabel('Support ticket or incident reference').fill('E2E-123');
@@ -104,8 +113,8 @@ test('platform administrators can reach the panel without a team membership', as
     await sql`UPDATE team_members SET removed_at = now() WHERE user_id = ${e2eUsers.nonMember.id}`;
   });
   try {
-    await signIn(page, e2eUsers.nonMember.email);
-    // Teamless /app routes to Welcome; platform admin is a separate layout.
+    await page.goto('/sign-in');
+    await signInFromCurrentPage(page, e2eUsers.nonMember.email, /\/onboarding(?:\?|$)/);
     await page.goto('/app/admin');
     await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
   } finally {
@@ -180,17 +189,13 @@ test('expired and forged impersonation cookies can always be exited', async ({ p
 test('an outdated Privacy version requires acknowledgment', async ({ page }) => {
   test.setTimeout(120_000);
   const { withE2eDataTransaction } = await import('./cleanup.js');
-  const { E2E_PASSWORD } = await import('./test-data.js');
   const { PRIVACY_VERSION } = await import('@timeline/shared/legal-versions');
   await withE2eDataTransaction(async (sql) => {
     await sql`UPDATE users SET legal_privacy_version = 'older-privacy' WHERE id = ${e2eUsers.owner.id}`;
   });
   try {
     await page.goto('/sign-in');
-    await page.getByLabel('Email').fill(e2eUsers.owner.email);
-    await page.getByLabel('Password').fill(E2E_PASSWORD);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page).toHaveURL(/\/legal\/accept/);
+    await signInFromCurrentPage(page, e2eUsers.owner.email, /\/legal\/accept/, 10_000);
     await expect(
       page.getByText(`Privacy Policy ${PRIVACY_VERSION}`, { exact: false }),
     ).toBeVisible();

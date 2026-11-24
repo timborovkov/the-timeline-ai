@@ -122,6 +122,7 @@ await vi.mock(
         this.options = options;
         fakes.redisInstances.push(this);
       }
+      on = vi.fn(() => this);
       quit = vi.fn(() => Promise.resolve());
     },
   }),

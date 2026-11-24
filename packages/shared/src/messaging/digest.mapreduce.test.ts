@@ -63,6 +63,7 @@ function makeEventBrief(index: number) {
 function makeScope(events: unknown[]) {
   return {
     requireMembership: vi.fn().mockResolvedValue('member'),
+    savedViews: { evaluate: vi.fn().mockResolvedValue([]) },
     timeline: {
       team: vi.fn().mockResolvedValue({ name: 'TestTeam' }),
       listAllEventsInWindow: vi.fn().mockResolvedValue(events),

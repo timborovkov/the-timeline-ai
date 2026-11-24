@@ -1,7 +1,6 @@
 'use client';
 
 import type * as boards from '@timeline/shared/boards';
-import { presentDueDate } from '@timeline/shared/time';
 import { Columns3 } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useReducer, useState, useTransition } from 'react';
@@ -13,13 +12,12 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { MetadataDueDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
@@ -287,7 +285,6 @@ export function CuratedBoardList({
     patch: BoardItemOptimisticPatch,
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
 }) {
-  const timezone = useWorkspaceTimezone();
   const [, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
@@ -452,22 +449,15 @@ export function CuratedBoardList({
                               <DueDateDisplay
                                 value={item.dueAt}
                                 workStatus={item.object.status}
-                                timezone={timezone}
                                 variant="compact"
                               />
                             </EditableMetadata.Value>
                             <EditableMetadata.Editor>
-                              <MetadataDateEditor
-                                defaultValue={
-                                  item.dueAt
-                                    ? (presentDueDate(item.dueAt, { timezone }).dateKey ?? '')
-                                    : ''
-                                }
-                                onApply={(value) =>
-                                  void updateItem(item.id, {
-                                    dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                                  })
-                                }
+                              <MetadataDueDateEditor
+                                value={item.dueAt}
+                                onApply={(dueAt) => {
+                                  void updateItem(item.id, { dueAt });
+                                }}
                               />
                             </EditableMetadata.Editor>
                           </EditableMetadata>

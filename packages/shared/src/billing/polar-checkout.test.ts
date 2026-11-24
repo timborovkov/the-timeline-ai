@@ -54,42 +54,92 @@ describe('expireCheckout', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  it('expires an open checkout only when Polar reports it expired', async () => {
+  it('leaves an open checkout payable until Polar reports a terminal status', async () => {
     const provider = createPolarBillingProvider({
       accessToken: 'polar-test',
       server: 'sandbox',
       organizationId: 'org-synthetic',
     });
     if (!provider) throw new Error('provider');
-    const fetchMock = vi.fn((input: URL | string, init?: RequestInit) => {
-      const url = String(input);
-      if (init?.method === 'PATCH' && url.endsWith('/checkouts/open-stays')) {
-        return Promise.resolve(jsonResponse({ status: 'open' }));
-      }
-      if (init?.method === 'PATCH' && url.endsWith('/checkouts/open-expires')) {
-        return Promise.resolve(jsonResponse({ status: 'expired' }));
-      }
-      if (init?.method === 'PATCH' && url.endsWith('/checkouts/open-rejected')) {
-        return Promise.resolve(new Response('{"detail":"unknown field"}', { status: 422 }));
-      }
+    const fetchMock = vi.fn((_input: URL | string, init?: RequestInit) => {
+      expect(init?.method ?? 'GET').toBe('GET');
       return Promise.resolve(jsonResponse({ status: 'open' }));
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    await expect(provider.expireCheckout('open-stays')).resolves.toBe('still_open');
-    await expect(provider.expireCheckout('open-expires')).resolves.toBe('expired');
-    await expect(provider.expireCheckout('open-rejected')).resolves.toBe('still_open');
-    const patchBodies = fetchMock.mock.calls
-      .filter((call) => call[1]?.method === 'PATCH')
-      .map((call) => {
-        const body = call[1]?.body;
-        return typeof body === 'string' ? body : '';
+    await expect(provider.expireCheckout('open')).resolves.toBe('still_open');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('reconciled checkout identities', () => {
+  it('retains unapplied and still-active subscriptions while recognizing exact applied or ended checkouts', async () => {
+    const provider = polarProvider();
+    if (!provider.listReconciledCheckoutIds) throw new Error('Missing checkout recovery');
+    const fetchMock = vi.fn((input: string | URL) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe('/v1/subscriptions/');
+      expect(url.searchParams.get('organization_id')).toBe('org-synthetic');
+      expect(url.searchParams.get('customer_id')).toBe('customer-a');
+      const row = (id: string, checkoutId: string, status: string) => ({
+        id,
+        customer_id: 'customer-a',
+        checkout_id: checkoutId,
+        status,
       });
-    expect(patchBodies).toEqual([
-      JSON.stringify({ expires_at: '1970-01-01T00:00:00.000Z' }),
-      JSON.stringify({ expires_at: '1970-01-01T00:00:00.000Z' }),
-      JSON.stringify({ expires_at: '1970-01-01T00:00:00.000Z' }),
-    ]);
+      const items =
+        url.searchParams.get('page') === '1'
+          ? [
+              row('sub_applied', 'checkout_applied', 'active'),
+              row('sub_unapplied', 'checkout_unapplied', 'active'),
+              {
+                ...row('sub_scheduled', 'checkout_scheduled', 'canceled'),
+                ends_at: '2099-01-01T00:00:00.000Z',
+              },
+            ]
+          : [
+              {
+                ...row('sub_ended', 'checkout_ended', 'canceled'),
+                ended_at: '2020-01-01T00:00:00.000Z',
+              },
+            ];
+      return jsonResponse({ items, pagination: { max_page: 2 } });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    expect(
+      await provider.listReconciledCheckoutIds({
+        customerId: 'customer-a',
+        currentSubscriptionId: 'sub_applied',
+        checkoutIds: [
+          'checkout_applied',
+          'checkout_unapplied',
+          'checkout_scheduled',
+          'checkout_ended',
+        ],
+      }),
+    ).toEqual(['checkout_applied', 'checkout_ended']);
+
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({
+        items: [
+          {
+            id: 'sub_foreign',
+            status: 'revoked',
+            customer_id: 'another-customer',
+            checkout_id: 'checkout_foreign',
+          },
+        ],
+        pagination: { max_page: 1 },
+      }),
+    );
+    await expect(
+      provider.listReconciledCheckoutIds({
+        customerId: 'customer-a',
+        currentSubscriptionId: null,
+        checkoutIds: ['checkout_foreign'],
+      }),
+    ).rejects.toMatchObject({ code: 'identity_conflict' });
   });
 });
 
@@ -485,6 +535,186 @@ describe('Polar managed checkout discounts', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  const teamCheckoutFixture = {
+    id: 'checkout-synthetic',
+    url: 'https://checkout.test',
+    customer_id: checkoutInput.customerId,
+    product: { id: checkoutInput.productId },
+    status: 'open',
+    currency: 'usd',
+    amount: 3000,
+    seats: 3,
+    min_seats: 3,
+    max_seats: 3,
+    expires_at: '2099-01-01T00:00:00Z',
+    metadata: { timeline_team_checkout: 'standard' },
+  };
+
+  it('fixes the checkout quantity and currency to the verified Team quote', async () => {
+    const checkout = vi.fn(async (_url: URL | string, init?: RequestInit) => {
+      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '{}')).toMatchObject({
+        products: [checkoutInput.productId],
+        customer_id: checkoutInput.customerId,
+        currency: 'usd',
+        allow_trial: false,
+        seats: 3,
+        min_seats: 3,
+        max_seats: 3,
+        metadata: { timeline_team_checkout: 'standard' },
+      });
+      return jsonResponse(teamCheckoutFixture);
+    });
+    const product = {
+      id: checkoutInput.productId,
+      organization_id: 'org-synthetic',
+      is_archived: false,
+      recurring_interval: 'month',
+      recurring_interval_count: 1,
+      prices: [
+        {
+          is_archived: false,
+          amount_type: 'seat_based',
+          price_currency: 'usd',
+          tax_behavior: 'exclusive',
+          seat_tiers: {
+            seat_tier_type: 'volume',
+            tiers: [{ min_seats: 1, max_seats: null, price_per_seat: 1000 }],
+          },
+        },
+      ],
+    };
+    globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+      if (String(url).includes('/customers/'))
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      if (String(url).includes('/products/')) return jsonResponse(product);
+      return checkout(url, init);
+    }) as unknown as typeof fetch;
+    const provider = discountProvider();
+    expect(await provider.createCheckoutSession({ ...checkoutInput, seats: 3 })).toMatchObject({
+      id: 'checkout-synthetic',
+    });
+    product.organization_id = 'another-organization';
+    await expect(provider.createCheckoutSession({ ...checkoutInput, seats: 3 })).rejects.toThrow(
+      'expected monthly USD seat pricing',
+    );
+    expect(checkout).toHaveBeenCalledTimes(1);
+  });
+
+  it('queries scoped payable sessions and recovers only Timeline quotes with fixed Team terms', async () => {
+    const fetchMock = vi.fn(async (url: URL | string) => {
+      const query = new URL(String(url));
+      expect(query.pathname).toBe('/v1/checkouts/');
+      expect(query.searchParams.get('organization_id')).toBe('org-synthetic');
+      expect(query.searchParams.get('customer_id')).toBe(checkoutInput.customerId);
+      expect(query.searchParams.get('product_id')).toBe(checkoutInput.productId);
+      expect(query.searchParams.getAll('status')).toEqual(['open', 'confirmed']);
+      return jsonResponse({
+        items: [
+          teamCheckoutFixture,
+          { ...teamCheckoutFixture, id: 'not-fixed', min_seats: 1 },
+          { ...teamCheckoutFixture, id: 'externally-created', metadata: {} },
+        ],
+        pagination: { max_page: 1 },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const pending = await discountProvider().listPendingTeamCheckouts?.({
+      customerId: checkoutInput.customerId,
+      productId: checkoutInput.productId,
+    });
+    expect(pending).toEqual([
+      {
+        id: 'checkout-synthetic',
+        url: 'https://checkout.test',
+        status: 'open',
+        seats: 3,
+        discountId: null,
+      },
+      {
+        id: 'not-fixed',
+        url: 'https://checkout.test',
+        status: 'open',
+        seats: null,
+        discountId: null,
+      },
+    ]);
+  });
+
+  it('stamps and verifies Enterprise quotes and scopes rediscovery to the same customer', async () => {
+    const enterpriseQuoteKey = 'terms-fingerprint';
+    const quote = {
+      ...teamCheckoutFixture,
+      amount: 150_000,
+      discount_id: discountFixture.id,
+      metadata: { timeline_enterprise_checkout: enterpriseQuoteKey },
+    };
+    globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+      const request = new URL(String(url));
+      if (request.pathname.includes('/customers/')) {
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      }
+      expect(request.pathname).toBe('/v1/checkouts/');
+      if (init?.method === 'POST') {
+        expect(JSON.parse(typeof init.body === 'string' ? init.body : '{}')).toMatchObject({
+          customer_id: checkoutInput.customerId,
+          products: [checkoutInput.productId],
+          amount: quote.amount,
+          currency: 'usd',
+          discount_id: discountFixture.id,
+          metadata: quote.metadata,
+        });
+        return jsonResponse(quote);
+      }
+      expect(request.searchParams.get('organization_id')).toBe('org-synthetic');
+      expect(request.searchParams.get('customer_id')).toBe(checkoutInput.customerId);
+      expect(request.searchParams.getAll('status')).toEqual(['open', 'confirmed', 'succeeded']);
+      return jsonResponse({
+        items: [quote, { ...quote, id: 'legacy-eur', currency: 'eur' }, teamCheckoutFixture],
+        pagination: { max_page: 1 },
+      });
+    }) as unknown as typeof fetch;
+    const provider = discountProvider();
+    const enterpriseInput = {
+      ...checkoutInput,
+      amount: quote.amount,
+      discountId: discountFixture.id,
+      enterpriseQuoteKey,
+    };
+    await expect(provider.createCheckoutSession(enterpriseInput)).resolves.toEqual({
+      id: quote.id,
+      url: quote.url,
+    });
+    quote.currency = 'eur';
+    await expect(provider.createCheckoutSession(enterpriseInput)).rejects.toThrow(
+      'did not confirm the Enterprise checkout quote',
+    );
+    quote.currency = 'usd';
+    await expect(
+      provider.listPendingEnterpriseCheckouts?.(checkoutInput.customerId),
+    ).resolves.toMatchObject([
+      {
+        id: quote.id,
+        status: 'open',
+        productId: checkoutInput.productId,
+        amount: 150_000,
+        currency: 'usd',
+        discountId: discountFixture.id,
+        quoteKey: enterpriseQuoteKey,
+      },
+      { id: 'legacy-eur', currency: 'eur' },
+    ]);
+  });
+
   it('does not need discount configuration or catalog access for no-code checkout', async () => {
     const fetchMock = vi.fn(async (_url: URL | string, init?: RequestInit) => {
       expect(
@@ -649,6 +879,59 @@ describe('Polar managed checkout discounts', () => {
       }),
     ).rejects.toBeInstanceOf(PolarDiscountError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('verified Team subscription snapshots', () => {
+  it('retains known cancellation state and identifies incomplete provider responses', async () => {
+    const provider = polarProvider();
+    const fixture = {
+      id: 'subscription-synthetic',
+      customer_id: 'customer-synthetic',
+      product_id: 'team-synthetic',
+      seats: 1,
+      status: 'active',
+      currency: 'usd',
+      recurring_interval: 'month',
+      recurring_interval_count: 1,
+      current_period_start: '2026-11-01T00:00:00Z',
+      current_period_end: '2026-12-01T00:00:00Z',
+      created_at: '2026-11-01T00:00:00Z',
+    };
+    const fetchMock = vi.fn(() => jsonResponse(fixture));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const read = () => {
+      if (!provider.getTeamSeatSubscription) throw new Error('Missing Team subscription reads');
+      return provider.getTeamSeatSubscription(fixture.id);
+    };
+
+    const unknownCancellation = await read();
+    expect(unknownCancellation).not.toHaveProperty('cancelEffectiveAt');
+    expect(unknownCancellation).not.toHaveProperty('endedAt');
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({ ...fixture, cancel_at_period_end: true, ends_at: null }),
+    );
+    expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(fixture.current_period_end) });
+    const endsAt = '2026-11-29T00:00:00Z';
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({ ...fixture, ends_at: endsAt, ended_at: null }),
+    );
+    expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(endsAt), endedAt: null });
+    const endedAt = '2026-11-30T01:00:00Z';
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({
+        ...fixture,
+        status: 'canceled',
+        cancel_at_period_end: false,
+        ends_at: null,
+        ended_at: endedAt,
+      }),
+    );
+    expect(await read()).toMatchObject({
+      cancelEffectiveAt: null,
+      endedAt: new Date(endedAt),
+      modifiedAt: new Date(fixture.created_at),
+    });
   });
 });
 

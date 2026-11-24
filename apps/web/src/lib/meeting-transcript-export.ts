@@ -1,3 +1,6 @@
+import { formatDisplayDateParts } from '@/lib/display-dates';
+import type { RegionalFormat } from '@/lib/regional-format';
+
 interface MeetingTranscriptExportChunk {
   speaker: string | null;
   text: string;
@@ -21,21 +24,25 @@ export function formatMeetingOffset(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function formatTranscriptExport({
-  title,
-  platform,
-  status,
-  createdAt,
-  meetingUrl,
-  summary,
-  chunks,
-}: MeetingTranscriptExportInput): string {
+export function formatTranscriptExport(
+  { title, platform, status, createdAt, meetingUrl, summary, chunks }: MeetingTranscriptExportInput,
+  region?: RegionalFormat,
+): string {
+  const captured = formatDisplayDateParts(createdAt, region ?? { timezone: 'UTC' }, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
   const lines = [
     `# ${title}`,
     '',
     `Platform: ${platform}`,
     `Status: ${status}`,
-    `Captured: ${createdAt.toLocaleString()}`,
+    `Captured: ${captured}`,
     `URL: ${meetingUrl}`,
   ];
   if (summary) lines.push('', '## Summary', '', summary);

@@ -77,6 +77,9 @@ test('signup and email verification resume the same agent authorization', async 
   await page.getByLabel('Password', { exact: true }).fill('Coworker-test-password-42!');
   await page.locator('input[name="legalAccepted"]').check();
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await page.getByLabel('Team name').fill('New coworker workspace');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page).toHaveURL(/\/oauth\/authorize/);
   expect(new URL(page.url()).searchParams.get('state')).toBe(state);
   await expect(page.getByRole('button', { name: 'Allow access' })).toBeVisible();
@@ -94,6 +97,7 @@ test('signup and email verification resume the same agent authorization', async 
   expect(new URL(link!).searchParams.has('continuation')).toBe(true);
   expect(new URL(link!).searchParams.has('callbackUrl')).toBe(false);
   await page.goto(link!);
+  await page.getByRole('button', { name: 'Confirm email', exact: true }).click();
   await page.getByRole('link', { name: 'Continue connecting your agent' }).click();
   await expect(page).toHaveURL(/\/oauth\/authorize/);
   expect(new URL(page.url()).searchParams.get('state')).toBe(state);
@@ -117,8 +121,8 @@ test('owner provisions once, reads connection context, and manages reporting wit
   await signIn(page, e2eUsers.owner.email, 120_000);
   await page.goto('/app/agent-provisioning');
   await page.getByLabel('Grant name').fill(`Browser coworker ${randomUUID()}`);
-  await page.getByLabel('Allow the agent to capture notes in newly created workspaces').check();
-  await page.getByRole('button', { name: 'Create provisioning grant' }).click();
+  await page.getByRole('checkbox', { name: /Allow note capture/ }).check();
+  await page.getByRole('button', { name: 'Create grant', exact: true }).click();
   const token = await page.getByRole('status').locator('code').textContent();
   expect(token).toMatch(/^tlp_/);
   const headers = { Authorization: `Bearer ${token}`, 'Idempotency-Key': randomUUID() };
@@ -183,13 +187,14 @@ test('owner provisions once, reads connection context, and manages reporting wit
   expect(note.citation).toContain(note.raw_event_id);
   // Change the primary team's agreement through the actual settings form.
   await page.goto('/app/connect-agent');
+  await page.locator('summary').filter({ hasText: 'Reporting preferences' }).click();
   const form = page
     .locator('form')
-    .filter({ has: page.getByRole('heading', { name: 'Workspace default', exact: true }) });
-  await form.getByLabel('Reporting mode').selectOption('handoffs');
-  await form.getByLabel('Project or work scope', { exact: false }).fill('Browser test project');
-  await form.getByRole('button', { name: 'Save reporting preference' }).click();
-  await expect(form.getByRole('status')).toHaveText('Reporting preference saved.');
+    .filter({ has: page.locator('input[name="type"][value="workspace"]') });
+  await form.getByLabel('When to report').selectOption('handoffs');
+  await form.getByLabel('Project or work scope').fill('Browser test project');
+  await form.getByRole('button', { name: 'Save preference' }).click();
+  await expect(page.getByText('Reporting preference saved', { exact: true })).toBeVisible();
 });
 
 async function consentRequest(page: import('@playwright/test').Page, baseURL: string | undefined) {

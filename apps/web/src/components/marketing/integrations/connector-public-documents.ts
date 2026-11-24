@@ -1,4 +1,7 @@
-import { INTEGRATION_CAPABILITY_ANSWERS } from '@/components/marketing/integrations/capability-answers';
+import {
+  INTEGRATION_CAPABILITY_ANSWERS,
+  MEETING_CAPTURE_FAQ,
+} from '@/components/marketing/integrations/capability-answers';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import {
   CONNECTORS,
@@ -8,8 +11,9 @@ import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-cont
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 import type { PublicDocument } from '@/lib/public-site/types';
+import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
 
-export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-19' as const;
+export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-24' as const;
 
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
   canonicalPath: '/integrations',
@@ -24,7 +28,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
   },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.9 },
-  structuredData: [{ type: 'collection-page' }],
+  structuredData: [{ type: 'collection-page' }, { type: 'faq', entries: [MEETING_CAPTURE_FAQ] }],
   llms: {
     section: 'integrations',
     order: 0,
@@ -32,6 +36,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
       'Directory of first-party capture surfaces and six native provider-record connectors, with capability tiers, setup, and honest limits.',
     fullSummary: 'Integration, capture-surface, and capability-tier reference.',
     sections: [
+      { title: MEETING_CAPTURE_FAQ.question, body: MEETING_CAPTURE_FAQ.answer },
       {
         title: 'First-party capture',
         body: CAPTURE_SURFACES.map((surface) => surface.name).join(', '),
@@ -40,7 +45,14 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
         title: 'Provider record sync',
         body: CONNECTORS.map((connector) => connector.name).join(', '),
       },
-      ...INTEGRATION_CAPABILITY_ANSWERS,
+      ...INTEGRATION_CAPABILITY_ANSWERS.map(({ title, body, links }) => ({
+        title,
+        body,
+        links: links.map(({ label, href }) => ({
+          label,
+          href: new URL(href, CANONICAL_PUBLIC_ORIGIN).href,
+        })),
+      })),
       {
         title: 'Planned integrations',
         body: 'Planned native integrations cannot be connected yet.',
@@ -148,22 +160,22 @@ export const WEBSITES_PUBLIC_DOCUMENT = {
     'Capture public website pages as cited evidence, preserve version history, and refresh them manually or on a schedule.',
   structuredData: [],
   indexability: 'index',
-  dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
+  dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   llms: {
     section: 'integrations',
     order: 6,
     summary:
-      'Public website capture: five pages per scan, 20 source units per page; immutable snapshots and current-version answers.',
+      'Public website capture: up to five public same-site pages per scan, with source snapshots and current-version answers.',
     sections: [
       {
         title: 'Capture and refresh',
         body: 'Add your own or another company’s public website in Sources. Members can scan; admins manage daily or weekly schedules and removal. Schedules require service activation. Historical citations remain available. Firecrawl fetches public pages; login-protected pages are not supported.',
       },
       {
-        title: 'Usage',
-        body: 'Twenty accepted-source units per successfully captured page, including unchanged pages. AI and storage are separate. Removing the source stops future scans and retains history; see Privacy for deletion.',
+        title: 'Capture history',
+        body: 'Removing the source stops future scans and retains capture history. See Privacy for deletion.',
       },
     ],
   },

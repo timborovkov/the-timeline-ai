@@ -25,6 +25,8 @@ export interface CreateCheckoutInput {
   discountId?: string;
   /** Custom-price amount in cents. Polar ignores this on a fixed price. */
   amount?: number;
+  seats?: number;
+  enterpriseQuoteKey?: string;
 }
 
 export interface UpdateSubscriptionInput {
@@ -43,6 +45,42 @@ export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal
  */
 export type ExpireCheckoutResult = 'expired' | 'already_paid' | 'still_open';
 
+export interface PendingTeamCheckout {
+  id: string;
+  url: string;
+  status: 'open' | 'confirmed';
+  seats: number | null;
+  discountId: string | null;
+}
+
+export interface PendingEnterpriseCheckout {
+  id: string;
+  url: string;
+  status: 'open' | 'confirmed' | 'succeeded';
+  productId: string;
+  amount: number;
+  currency: string;
+  discountId: string | null;
+  expiresAt: Date;
+  quoteKey: string;
+}
+
+export interface TeamSeatSubscription {
+  id: string;
+  customerId: string;
+  productId: string;
+  seats: number;
+  pendingSeats: number | null;
+  status: string;
+  periodStart: Date;
+  periodEnd: Date;
+  modifiedAt: Date;
+  /** `null` confirms renewal. Omitted when the provider did not report cancellation state. */
+  cancelEffectiveAt?: Date | null;
+  /** Actual termination, distinct from a reversible scheduled end. */
+  endedAt?: Date | null;
+}
+
 export interface BillingProvider {
   identity?: PolarIdentityApi;
   /** Resolve a code or trusted operator assignment in the configured Polar organization. */
@@ -58,6 +96,19 @@ export interface BillingProvider {
     name?: string;
   }): Promise<{ id: string }>;
   createCheckoutSession(input: CreateCheckoutInput): Promise<{ url: string; id: string }>;
+  /** Open or payment-confirmed checkouts created by Timeline for this customer and product. */
+  listPendingTeamCheckouts?(input: {
+    customerId: string;
+    productId: string;
+  }): Promise<PendingTeamCheckout[]>;
+  /** Timeline Enterprise quotes that can still be paid or are awaiting reconciliation. */
+  listPendingEnterpriseCheckouts?(customerId: string): Promise<PendingEnterpriseCheckout[]>;
+  /** Payment-started checkouts already applied locally or attached to an ended subscription. */
+  listReconciledCheckoutIds?(input: {
+    customerId: string;
+    currentSubscriptionId: string | null;
+    checkoutIds: readonly string[];
+  }): Promise<string[]>;
   /**
    * Retire one checkout before another link is issued.
    * Fail closed with `still_open` when Polar leaves the session payable.
@@ -69,6 +120,12 @@ export interface BillingProvider {
     externalCustomerId: string;
     returnUrl: string;
   }): Promise<{ url: string }>;
+  getTeamSeatSubscription?(subscriptionId: string): Promise<TeamSeatSubscription>;
+  updateTeamSeatSubscription?(input: {
+    subscriptionId: string;
+    seats: number;
+    proration: 'invoice' | 'next_period';
+  }): Promise<TeamSeatSubscription>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
   /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
   cancelSubscriptionRenewal(subscriptionId: string, customerId: string): Promise<void>;

@@ -4,16 +4,6 @@ import type { UseCaseContent } from '@/components/marketing/use-cases/content';
 import styles from '@/components/marketing/use-cases/use-case-preview.module.css';
 
 const previews = {
-  'work-record': {
-    title: 'Acme rollout',
-    label: 'One project. The work behind it.',
-    rows: [
-      ['Mon · Telegram', 'Customer update promised'],
-      ['Mon · Slack', 'Onboarding copy approved'],
-      ['Tue · Meeting', 'SSO named as the blocker'],
-      ['Wed · GitHub', 'Migration callback merged'],
-    ],
-  },
   'team-daily-log': {
     title: 'Your team’s daily update',
     label: 'What changed. What needs attention.',
@@ -32,7 +22,7 @@ const previews = {
       ['Document · Checklist', 'Priya owns the review.'],
     ],
   },
-  crm: {
+  'customer-context': {
     title: 'A customer, in context.',
     label: 'People, commitments and open questions.',
     rows: [
@@ -47,7 +37,7 @@ const previews = {
     label: 'A conversation becomes a proposed task.',
     rows: [
       ['Owner', 'Priya Shah'],
-      ['Due', 'The 14th'],
+      ['Planned review', 'The 14th'],
       ['Source', 'Slack · #acme-rollout'],
     ],
   },
@@ -86,9 +76,9 @@ export function UseCasePreview({ useCase }: { useCase: UseCaseContent }) {
         ))}
       </dl>
       <div className={styles.foot}>
-        {useCase.slug === 'task-board' || useCase.slug === 'crm' ? (
+        {useCase.slug === 'task-board' || useCase.slug === 'customer-context' ? (
           <>
-            <ArrowDown size={16} aria-hidden="true" /> Proposed changes wait for your approval
+            <ArrowDown size={16} aria-hidden="true" /> Review suggested changes with their sources
           </>
         ) : (
           <>

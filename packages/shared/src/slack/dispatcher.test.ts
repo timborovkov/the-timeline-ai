@@ -1745,7 +1745,9 @@ describe('Slack dispatcher routing', () => {
       },
     );
     expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team: Team B');
-    expect(JSON.stringify(responseBodies(fetchMock))).toContain('20 per page');
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain(
+      'On Free and Team, AI processing uses shared Included usage.',
+    );
     expect(await db.select().from(rawEvents)).toHaveLength(0);
   });
 

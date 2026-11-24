@@ -1,10 +1,17 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingOperatorAudit, teamBillingAccounts, type Db } from '@timeline/db';
+import {
+  billingOperatorAudit,
+  teamBillingAccounts,
+  teamMembers,
+  teams,
+  type Db,
+} from '@timeline/db';
 import { expect } from '@timeline/test-support';
-import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { afterEach, beforeEach, describe, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { withTeamBillingIdentity } from '#src/billing/customer-identity.js';
 import {
   BillingOperatorError,
   readOperatorBillingAccount,
@@ -17,7 +24,14 @@ import {
   startEnterpriseCheckout,
 } from '#src/billing/operator-store.js';
 import { resolveTeamCommercialTerms } from '#src/billing/operator.js';
-import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { handlePolarWebhookEvent } from '#src/billing/polar-webhook.js';
+import * as polar from '#src/billing/polar.js';
+import {
+  createFakeBillingProvider,
+  type PendingEnterpriseCheckout,
+} from '#src/billing/provider.js';
+import { resetIncludedDiscountIfPeriodElapsed } from '#src/billing/runtime.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -51,6 +65,50 @@ afterEach(async () => {
 });
 
 describe('billing operator store', () => {
+  it('keeps a Team comp usable after revoking its old paid-seat subscription and renewal window', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: OWNER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(
+      `UPDATE team_billing_accounts SET plan_id='team', billing_state='team_active', polar_subscription_id='sub_old_seats', included_discount_remaining_cents=0, period_started_at='2020-01-01', period_ends_at='2020-02-01', team_seat_terms='{"paidSeats":2,"highWaterSeats":2,"includedUsageCents":2400}' WHERE team_id='${TEAM_ID}'`,
+    );
+    const revoked: string[] = [];
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 10000,
+      reason: 'approved internal access',
+      expiresAt: null,
+      cancelPolarSubscription: (id) => {
+        revoked.push(id);
+        return Promise.resolve();
+      },
+    });
+    expect(revoked).toEqual(['sub_old_seats']);
+    expect(await resetIncludedDiscountIfPeriodElapsed({ db, teamId: TEAM_ID })).toBe(true);
+    expect(await billing.getAccount()).toMatchObject({
+      arrangement: 'comped',
+      polarSubscriptionId: null,
+      teamSeatTerms: null,
+      includedDiscountRemainingCents: 6000,
+    });
+    for (const meterId of ['ai', 'recall_minutes'] as const) {
+      const result = await billing.reserve({
+        operationId: `comp-${meterId}`,
+        meterId,
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+
   it('rejects an allowlisted platform admin until their email is verified', async () => {
     await pg.exec(`UPDATE users SET "emailVerified" = NULL WHERE id = '${ADMIN_ID}'`);
     await expect(
@@ -446,6 +504,267 @@ describe('billing operator store', () => {
     });
   });
 
+  it('recovers the exact Enterprise quote after its association, terms and audit roll back', async () => {
+    await db.insert(teamMembers).values({ teamId: TEAM_ID, userId: OWNER_ID, role: 'owner' });
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const input = {
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 150_000,
+      includedActiveMembers: 23,
+      spendCapCents: 32_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    };
+    await pg.exec(`
+      ALTER TABLE billing_operator_audit ADD CONSTRAINT reject_checkout_audit
+      CHECK (action <> 'start_enterprise_checkout');
+    `);
+    await expect(startEnterpriseCheckout(input)).rejects.toThrow(/retry/i);
+
+    const [before] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const [workspaceBefore] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(before?.pendingEnterpriseTerms).toBeNull();
+    expect(workspaceBefore?.lifecycleWork.pendingCheckoutIds).toBeUndefined();
+    expect(await db.select().from(billingOperatorAudit)).toHaveLength(0);
+    expect(provider.checkouts).toHaveLength(1);
+
+    const first = provider.checkouts[0];
+    if (!first?.enterpriseQuoteKey)
+      throw new Error('The provider did not receive the quote identity.');
+    const remoteUrl = 'https://sandbox.polar.sh/checkout/recovered';
+    const remote: PendingEnterpriseCheckout = {
+      id: 'chk_fake_1',
+      url: remoteUrl,
+      status: 'open',
+      productId: first.productId,
+      amount: 150_000,
+      currency: 'usd',
+      discountId: null,
+      expiresAt: new Date('2099-01-01'),
+      quoteKey: first.enterpriseQuoteKey,
+    };
+    provider.listPendingEnterpriseCheckouts = (id) => {
+      expect(id).toBe(first.customerId);
+      return Promise.resolve([remote]);
+    };
+    provider.expireCheckout = () => Promise.resolve('still_open');
+    await pg.exec('ALTER TABLE billing_operator_audit DROP CONSTRAINT reject_checkout_audit');
+    await expect(startEnterpriseCheckout({ ...input, spendCapCents: 32_001 })).rejects.toThrow(
+      'still payable or awaiting confirmation',
+    );
+    remote.status = 'confirmed';
+    await expect(startEnterpriseCheckout(input)).rejects.toThrow(
+      'still payable or awaiting confirmation',
+    );
+    remote.status = 'open';
+    await expect(
+      withTeamBillingIdentity(
+        { db, teamId: TEAM_ID, userId: OWNER_ID, provider },
+        (_identity, context) => context.prepareTeamCheckout({ productId: 'prod_team', seats: 1 }),
+      ),
+    ).resolves.toEqual({ status: 'blocked' });
+
+    await expect(startEnterpriseCheckout(input)).resolves.toEqual({ url: remoteUrl });
+    await expect(startEnterpriseCheckout(input)).resolves.toEqual({ url: remoteUrl });
+    await expect(startEnterpriseCheckout({ ...input, spendCapCents: 32_001 })).rejects.toThrow(
+      'still open',
+    );
+    expect(provider.checkouts).toHaveLength(1);
+    const [after] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const [workspaceAfter] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(after?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_fake_1: { platformFeeCents: 150_000, includedActiveMembers: 23, spendCapCents: 32_000 },
+      },
+    });
+    expect(workspaceAfter?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_fake_1']);
+    expect(await db.select().from(billingOperatorAudit)).toMatchObject([
+      { action: 'start_enterprise_checkout', actorUserId: ADMIN_ID },
+    ]);
+  });
+
+  it('keeps both Enterprise and comp transitions behind a payable Team quote', async () => {
+    await db.insert(teamMembers).values({ teamId: TEAM_ID, userId: OWNER_ID, role: 'owner' });
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: OWNER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await withTeamBillingIdentity(
+      { db, teamId: TEAM_ID, userId: OWNER_ID, provider },
+      (_identity, context) => context.recordCheckout('payable-team'),
+    );
+    provider.expireCheckout = () => Promise.resolve('still_open');
+    const providerMock = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
+    const actor = { userId: ADMIN_ID, email: 'ops@example.test' };
+    const comp = () =>
+      assignCompedPlan({
+        db,
+        actor,
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 0,
+        reason: 'approved internal access',
+        expiresAt: null,
+        cancelPolarSubscription: () => Promise.resolve(),
+      });
+    try {
+      await expect(
+        startEnterpriseCheckout({
+          db,
+          actor,
+          teamId: TEAM_ID,
+          platformFeeCents: 100_000,
+          productId: 'prod_enterprise',
+          successUrl: 'https://thetimeline.cc/app/team?section=billing',
+          provider,
+        }),
+      ).rejects.toThrow('still payable or awaiting confirmation');
+      expect(provider.checkouts).toEqual([]);
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+      expect((await billing.getAccount()).arrangement).toBe('standard');
+
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'payment_retry',
+          polarSubscriptionId: 'sub_unactivated',
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      provider.expireCheckout = () => Promise.resolve('already_paid');
+      provider.listReconciledCheckoutIds = ({ currentSubscriptionId }) =>
+        Promise.resolve(currentSubscriptionId === 'sub_unactivated' ? ['payable-team'] : []);
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+
+      provider.listReconciledCheckoutIds = () => Promise.resolve(['payable-team']);
+      await expect(comp()).resolves.toBeUndefined();
+      expect((await billing.getAccount()).arrangement).toBe('comped');
+      const [workspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+      expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual([]);
+    } finally {
+      providerMock.mockRestore();
+    }
+  });
+
+  it('allows a comp after Enterprise activation and dunning while holding first payments open', async () => {
+    await db.insert(teamMembers).values({ teamId: TEAM_ID, userId: OWNER_ID, role: 'owner' });
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: OWNER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const { customerId } = await withTeamBillingIdentity(
+      { db, teamId: TEAM_ID, userId: OWNER_ID, provider },
+      (identity) => Promise.resolve(identity),
+    );
+    const productId = 'product-enterprise';
+    const checkoutId = 'checkout-for-enterprise';
+    const subscriptionId = 'subscription-for-enterprise';
+    provider.listPendingEnterpriseCheckouts = () =>
+      Promise.resolve([
+        {
+          id: checkoutId,
+          url: 'https://sandbox.polar.sh/checkout/enterprise',
+          status: 'succeeded',
+          productId,
+          amount: 100_000,
+          currency: 'usd',
+          discountId: null,
+          expiresAt: new Date('2099-01-01'),
+          quoteKey: 'enterprise-quote',
+        },
+      ]);
+    const knownAppliedIds: (string | null)[] = [];
+    provider.listReconciledCheckoutIds = ({ currentSubscriptionId, checkoutIds }) => {
+      knownAppliedIds.push(currentSubscriptionId);
+      return Promise.resolve(
+        currentSubscriptionId === subscriptionId && checkoutIds.includes(checkoutId)
+          ? [checkoutId]
+          : [],
+      );
+    };
+    const send = (status: string, hour: string, eventCheckoutId?: string) =>
+      handlePolarWebhookEvent({
+        db,
+        provider,
+        chargesEnabled: true,
+        products: { enterprise: productId },
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: subscriptionId,
+            status,
+            product_id: productId,
+            customer: { id: customerId, external_id: TEAM_ID },
+            modified_at: `2026-02-01T${hour}:00:00Z`,
+            ...(eventCheckoutId ? { checkout_id: eventCheckoutId } : {}),
+          },
+        },
+      });
+    const comp = () =>
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'enterprise',
+        spendCapCents: 0,
+        reason: 'approved comp',
+        expiresAt: null,
+        cancelPolarSubscription: (id) => provider.revokeSubscription(id, customerId),
+      });
+    const savedProduct = process.env.POLAR_PRODUCT_ID_ENTERPRISE;
+    process.env.POLAR_PRODUCT_ID_ENTERPRISE = productId;
+    resetEnvForTests();
+    const providerMock = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
+    try {
+      await send('incomplete', '00', checkoutId);
+      expect((await billing.getAccount()).billingState).toBe('payment_retry');
+      await db
+        .update(teams)
+        .set({ lifecycleWork: { appliedPolarSubscriptionId: 'older-subscription' } })
+        .where(eq(teams.id, TEAM_ID));
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+
+      await send('past_due', '01', checkoutId);
+      expect((await billing.getAccount()).billingState).toBe('past_due');
+      await expect(comp()).rejects.toThrow('still payable or awaiting confirmation');
+
+      await send('active', '02', checkoutId);
+      const [activeWorkspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+      expect(activeWorkspace?.lifecycleWork.appliedPolarSubscriptionId).toBe(subscriptionId);
+      // Simulate an existing active workspace whose activation predates the proof marker.
+      await db.update(teams).set({ lifecycleWork: {} }).where(eq(teams.id, TEAM_ID));
+      await send('past_due', '03');
+      expect((await billing.getAccount()).billingState).toBe('past_due');
+
+      await expect(comp()).resolves.toBeUndefined();
+      expect(knownAppliedIds).toEqual([null, null, subscriptionId]);
+      expect(provider.revokedSubscriptionIds).toEqual([subscriptionId]);
+      expect((await billing.getAccount()).arrangement).toBe('comped');
+    } finally {
+      providerMock.mockRestore();
+      if (savedProduct === undefined) delete process.env.POLAR_PRODUCT_ID_ENTERPRISE;
+      else process.env.POLAR_PRODUCT_ID_ENTERPRISE = savedProduct;
+      resetEnvForTests();
+    }
+  });
+
   it('rechecks a comp applied after Enterprise preparation before creating a payable checkout', async () => {
     await pg.exec(
       `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner')`,
@@ -542,7 +861,7 @@ describe('billing operator store', () => {
     });
   });
 
-  it('does not open a second Enterprise checkout while an earlier one is still payable', async () => {
+  it('replaces a payment-started Enterprise checkout only after Polar verifies its termination', async () => {
     await pg.exec(`
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
@@ -618,6 +937,32 @@ describe('billing operator store', () => {
       byCheckoutId: {
         chk_fake_1: { platformFeeCents: 100_000, spendCapCents: 40_000 },
       },
+    });
+
+    provider.expireCheckout = () => Promise.resolve('already_paid');
+    provider.listReconciledCheckoutIds = (request) => {
+      expect(request).toEqual({
+        customerId: account?.polarCustomerId,
+        currentSubscriptionId: null,
+        checkoutIds: ['chk_fake_1'],
+      });
+      return Promise.resolve(['chk_fake_1']);
+    };
+    await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 250_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    const [replaced] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(replaced?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_fake_2: { platformFeeCents: 250_000 } },
     });
   });
 

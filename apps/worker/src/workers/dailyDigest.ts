@@ -38,24 +38,48 @@ export async function processDailyDigestJob(
     const recipients = await messaging.listDailyDigestRecipients(deps.db);
     await Promise.all(
       recipients.map(async (recipient) => {
-        const preference = explicitWindow
-          ? null
-          : await messaging.getDigestPreference({
-              db: deps.db,
-              teamId: recipient.teamId,
-              userId: recipient.userId,
-            });
-        const window = explicitWindow
-          ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
-          : messaging.defaultDigestWindow(new Date(), preference?.timezone, preference?.hour);
-        await queue.enqueueDailyDigestRecipientJob({
-          kind: 'recipient',
+        const preference = await messaging.getDigestPreference({
+          db: deps.db,
           teamId: recipient.teamId,
           userId: recipient.userId,
-          email: recipient.email,
-          windowStart: window.start.toISOString(),
-          windowEnd: window.end.toISOString(),
         });
+        if (!preference.enabled) return;
+        const now = new Date();
+        const enqueue = (window: { start: Date; end: Date }, delayMs?: number) => {
+          if (preference.revision && window.end <= new Date(preference.revision)) return;
+          const data = {
+            kind: 'recipient' as const,
+            teamId: recipient.teamId,
+            userId: recipient.userId,
+            email: recipient.email,
+            windowStart: window.start.toISOString(),
+            windowEnd: window.end.toISOString(),
+          };
+          return delayMs
+            ? queue.enqueueDailyDigestRecipientJob(data, delayMs)
+            : queue.enqueueDailyDigestRecipientJob(data);
+        };
+        if (preference.options) {
+          const { timezone, hour, options } = preference;
+          const window = messaging.scheduledUpdateWindow(now, timezone, hour, options.cadence);
+          const next = messaging.nextScheduledUpdateWindow(
+            window.end,
+            timezone,
+            hour,
+            options.cadence,
+          );
+          const delay = next.end.getTime() - now.getTime();
+          await Promise.all([
+            enqueue(window),
+            delay > 0 && delay <= 24 * 60 * 60 * 1000 ? enqueue(next, delay) : undefined,
+          ]);
+          return;
+        }
+        await enqueue(
+          explicitWindow
+            ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
+            : messaging.defaultDigestWindow(now, preference.timezone, preference.hour),
+        );
       }),
     );
     const sharedTeamIds = await messaging.listWorkspaceDigestTeamIds(deps.db);
@@ -71,6 +95,22 @@ export async function processDailyDigestJob(
           windowStart: window.start.toISOString(),
           windowEnd: window.end.toISOString(),
         });
+      }),
+    );
+    return { recipients: recipients.length };
+  }
+
+  if (job.kind === 'workspace-reschedule') {
+    const recipients = await messaging.listDailyDigestRecipients(deps.db, { teamId: job.teamId });
+    await Promise.all(
+      recipients.map(async (recipient) => {
+        const preference = await messaging.getDigestPreference({
+          db: deps.db,
+          teamId: job.teamId,
+          userId: recipient.userId,
+        });
+        const next = messaging.nextScheduledUpdateRecipientJob(recipient, preference);
+        if (next) await queue.enqueueDailyDigestRecipientJob(next.data, next.delayMs);
       }),
     );
     return { recipients: recipients.length };

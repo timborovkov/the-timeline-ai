@@ -26,10 +26,12 @@ import {
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
+import { WORK_VIEWS } from '@/components/marketing/features-content';
 import { CitedAnswer } from '@/components/marketing/home/cited-answer';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import {
   HOME_ASK_SHOT,
+  HOME_BOARD_SHOT,
   HOME_CLIENT_SHOT,
   HOME_DIGEST_SHOT,
   HOME_TIMELINE_SHOT,
@@ -92,7 +94,6 @@ export const metadata: Metadata = {
   ...metadataForPublicDocument(HOME_DOCUMENT),
   keywords: [
     'work record',
-    'auto-updating work record',
     'team daily log',
     'linked answers',
     'Slack and Telegram work record',
@@ -107,16 +108,11 @@ function getHomeDocument() {
   return document;
 }
 
-const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
+const LOGIN_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
-const AUDIENCES = USE_CASES.map((useCase) => ({
-  name: useCase.cardTitle,
-  outcome:
-    useCase.slug === 'work-record'
-      ? 'Every decision, promise and handoff on one timeline, with where it was said.'
-      : useCase.cardBody,
-  href: useCase.route,
-}));
+function loginSourceId(id: (typeof LOGIN_EVENTS)[number]['id']) {
+  return `login-source-${id}`;
+}
 
 export default function LandingPage() {
   return (
@@ -134,11 +130,12 @@ export default function LandingPage() {
       <main id="main" tabIndex={-1}>
         <ClaimScene />
         <IntakeScene />
-        <UseCaseOverview />
         <TimelineScene />
         <AnswerScene />
         <OrganisedScene />
+        <AgentScene />
         <AudienceScene />
+        <UseCaseOverview />
         <CtaScene />
       </main>
       <PublicFooter currentSection="product" />
@@ -207,7 +204,10 @@ function ClaimScene() {
             Know where the work stands.
           </h1>
           <div className={styles.heroSupporting}>
-            <p className={styles.heroIntro}>{HERO_INTRO}</p>
+            <div>
+              <p className={styles.heroIntro}>{PRODUCT_POSITIONING.promise}</p>
+              <p className={styles.heroMechanism}>{HERO_INTRO}</p>
+            </div>
             <div>
               <div className={styles.heroActions}>
                 <PublicSessionBranch
@@ -246,9 +246,8 @@ function ClaimScene() {
                   }
                   signedIn={null}
                 />
-                <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+                <GitHubSourceLink appearance="inline-icon" className={styles.heroGithubLink} />
               </div>
-              <AgentSetupCard compact className={styles.heroAgentSetup} />
             </div>
           </div>
         </div>
@@ -270,22 +269,24 @@ function UseCaseOverview() {
       data-use-case-overview
     >
       <h2 id="use-case-overview-title" className={styles.chooserHeading}>
-        Your team’s work, in one shared record.
+        Know what you can tell the customer.
       </h2>
       <p className={styles.overviewIntro}>
-        The Timeline brings selected conversations, calls and documents into a shared work record.
-        Your team can find what was decided, follow up on promises and ask questions with sources to
-        check. Use that record to keep track of the work that matters to you.
+        Before the next customer call, ask what engineering merged, what changed in scope and what
+        still needs checking. Follow the sources before you make a commitment.
       </p>
-      <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
-        {AUDIENCES.map((audience) => (
-          <Link href={audience.href} key={audience.name}>
-            <h3>{audience.name}</h3>
-            <p>{audience.outcome}</p>
+      <div className={styles.audienceRail}>
+        {USE_CASES.map((useCase) => (
+          <Link href={useCase.route} key={useCase.route}>
+            <h3>{useCase.title}</h3>
+            <p>{useCase.cardBody}</p>
             <span aria-hidden="true">→</span>
           </Link>
         ))}
       </div>
+      <Link href="/use-cases" className={styles.textLink}>
+        Explore use cases
+      </Link>
     </section>
   );
 }
@@ -300,8 +301,8 @@ function IntakeScene() {
     >
       <SceneHeading
         id="intake-title"
-        title={<>Bring the work in. Keep the context.</>}
-        copy="Connect the tools you use, forward email, upload documents, or scan a public website."
+        title={<>Work happens across tools. Keeping up should be easier.</>}
+        copy="A decision in chat. An owner agreed in a call. A fix merged while you were doing something else. Choose which channels and sources to connect. Supported activity arrives automatically, and you can add notes or documents when useful."
       />
       <ul className={styles.intakeRow} aria-label="Ways to send work to Timeline">
         {HOME_INTAKE_SURFACES.map((surface) => (
@@ -355,17 +356,17 @@ function TimelineScene() {
     <section className={styles.scene} aria-labelledby="timeline-title" data-scene="03-timeline">
       <SceneHeading
         id="timeline-title"
-        title={<>Everything lands on one timeline.</>}
-        copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
+        title={<>Follow the work as it changes.</>}
+        copy="One login issue goes from a report in chat to an investigation and a linked change. A call is one optional source."
       />
       <div className={styles.timelineStage} data-home-panel-motion>
         <div className={styles.timelineHeader}>
-          <span>Acme rollout · Illustrative example / Last 7 days</span>
-          <span>5 items</span>
+          <span>Login issue · Illustrative example</span>
+          <span>{LOGIN_EVENTS.length} sources</span>
         </div>
         <ol className={styles.timelineList}>
-          {ACME_EVENTS.map((event) => (
-            <li key={event.id} id={`acme-source-${event.id}`}>
+          {LOGIN_EVENTS.map((event) => (
+            <li key={event.id} id={loginSourceId(event.id)}>
               <time dateTime={event.dateTime}>
                 <span>{event.day.slice(0, 3)}</span>
                 {event.time}
@@ -400,83 +401,66 @@ function AnswerScene() {
     >
       <SceneHeading
         id="answer-title"
-        title={<>Status should not require an investigation.</>}
-        copy="Get a status or handoff brief without retracing every conversation."
+        title={<>Ask where things stand.</>}
+        copy="Read the daily update, ask a question or open the relevant record. “What did I work on this week?” and “What changed, and what still needs following up?” both draw on captured activity you can see."
       />
       <CitedAnswer />
       <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
-      <div className={styles.threadBlock} id="chat-to-answer">
-        <h2 className={styles.threadHeading}>One record for chat and agents.</h2>
-        <p className={styles.threadLead}>
-          Ask in a connected chat or through your agent. Both can find the answer and the sources
-          behind it.
-        </p>
-        <div className={styles.threadLayout} data-chat-to-answer>
-          {(['Chat', 'Agent'] as const).map((surface) => (
-            <article
-              key={surface}
-              className={styles.slackThread}
-              aria-label={`${surface} conversation`}
-            >
-              <header className={styles.slackBar}>
-                <strong>{surface}</strong>
-                <span>{surface === 'Chat' ? 'With your team' : 'With your assistant'}</span>
-              </header>
-              <div className={styles.slackMessage}>
-                <span className={styles.slackAvatar} aria-hidden="true">
-                  Y
-                </span>
-                <div>
-                  <p className={styles.slackMeta}>
-                    <strong>You</strong>
-                  </p>
-                  <p>What did we promise Northstar?</p>
-                </div>
-              </div>
-              <div className={styles.slackMessage}>
-                <span className={styles.slackBotAvatar} aria-hidden="true">
-                  {surface === 'Chat' ? 'T' : 'A'}
-                </span>
-                <div>
-                  <p className={styles.slackMeta}>
-                    <strong>{surface === 'Chat' ? 'The Timeline' : 'Your agent'}</strong>
-                  </p>
-                  <p>
-                    The final sample export is due July 8
-                    <ThreadCitation n={1} label="Email from Elena Park" />. Mika owns export
-                    validation, using the CSV fallback
-                    <ThreadCitation n={2} label="Call transcript" />.
-                  </p>
-                  <ol className={styles.threadSources} aria-label="Answer sources">
-                    <li>
-                      <span>[1]</span>
-                      <strong>Email from Elena Park</strong>
-                      <small>Export commitment</small>
-                    </li>
-                    <li>
-                      <span>[2]</span>
-                      <strong>Call transcript</strong>
-                      <small>Handoff and next steps</small>
-                    </li>
-                  </ol>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </div>
+      <HomeProof shot={HOME_DIGEST_SHOT} align="shot-first" />
     </section>
   );
 }
 
-function ThreadCitation({ n, label }: { n: number; label: string }) {
+function AgentScene() {
   return (
-    <span className={styles.superCitation}>
-      <sup aria-hidden="true">[{n}]</sup>
-      <span className="sr-only">
-        Source {n}: {label}
-      </span>
-    </span>
+    <section className={styles.scene} aria-labelledby="agent-title">
+      <div className={styles.agentLayout}>
+        <div className={styles.agentIntro}>
+          <h2 id="agent-title">Your agents work from the same record.</h2>
+          <p>
+            An agent can read the decisions behind a task and leave a progress note for whoever
+            picks up the work next.
+          </p>
+        </div>
+        <figure className={styles.agentHandoff}>
+          <figcaption>Login issue · Illustrative handoff</figcaption>
+          <ol>
+            <li>
+              <h3>Read the context</h3>
+              <p>
+                Priya took the investigation in the{' '}
+                <a href={`#${loginSourceId('02')}`}>rollout review</a>. The linked{' '}
+                <a href={`#${loginSourceId('03')}`}>GitHub PR #482</a> later merged.
+              </p>
+            </li>
+            <li id="login-agent-note">
+              <h3>Report progress</h3>
+              <blockquote>
+                “I signed in with a test account on staging. I left customer verification open.”
+              </blockquote>
+            </li>
+            <li>
+              <h3>Pick up the next check</h3>
+              <p className={styles.agentQuestion}>
+                “What should I check before telling the customer?”
+              </p>
+              <p>
+                Verify that <a href={`#${loginSourceId('03')}`}>PR #482</a> reached the customer’s
+                environment, then ask them to retry the login from the{' '}
+                <a href={`#${loginSourceId('01')}`}>Slack report</a>. The{' '}
+                <a href="#login-agent-note">agent’s note</a> only covers staging.
+              </p>
+            </li>
+          </ol>
+        </figure>
+        <div className={styles.agentSetup}>
+          <AgentSetupCard compact />
+          <Link href="/agents" className={styles.textLink}>
+            Explore agent access and setup
+          </Link>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -485,18 +469,16 @@ function OrganisedScene() {
     <section className={styles.scene} aria-labelledby="organised-title" data-scene="05-organised">
       <SceneHeading
         id="organised-title"
-        title={<>Conversations become connected records.</>}
-        copy="Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place."
+        title={<>Open a view when you need it.</>}
+        copy="Tasks, people and projects stay connected to the activity behind them. Open a board to see the work, or ask for the answer directly."
       />
+      <HomeProof shot={HOME_BOARD_SHOT} align="shot-first" />
       <div className={styles.recordShowcase} aria-label="Connected work records">
-        <div className={styles.recordFlow}>
-          <span>Conversations</span>
-          <span aria-hidden="true">→</span>
-          <span>Suggested changes</span>
-          <span aria-hidden="true">→</span>
-          <span>Your approval</span>
-          <span aria-hidden="true">→</span>
-          <strong>Connected records</strong>
+        <div className={styles.recordFlow} aria-label="Illustrative task update">
+          <strong>Investigate the login issue</strong>
+          <span>Slack report · Unassigned</span>
+          <span>Meeting note · Priya · Planned Friday</span>
+          <span>Linked PR merged · Verification open</span>
         </div>
         <ul className={styles.recordGrid}>
           {[
@@ -548,11 +530,16 @@ function OrganisedScene() {
           Each record keeps the evidence behind it. Related work stays connected.
         </p>
       </div>
-      <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first">
-        <p className={styles.approvalLine}>
-          <strong>Suggested changes wait.</strong> A person approves each one.
-        </p>
-      </HomeProof>
+      <div className={styles.audienceRail}>
+        {WORK_VIEWS.map((view) => (
+          <Link key={view.href} href={view.href}>
+            <h3>{view.title}</h3>
+            <p>{view.body}</p>
+            <span aria-hidden="true">→</span>
+          </Link>
+        ))}
+      </div>
+      <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first" />
     </section>
   );
 }
@@ -567,10 +554,9 @@ function AudienceScene() {
     >
       <SceneHeading
         id="trust-title"
-        title={<>Built for teams that run their work through chat.</>}
-        copy="For client delivery, product and operations work that happens in conversation."
+        title={<>See what changed and why.</>}
+        copy="Eligible routine changes can apply automatically under your workspace policy. See what changed and why in the record history. Changes that need a decision appear in Approvals."
       />
-      <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
       <div
         className={styles.trustFlowPanel}
         data-home-panel-motion
@@ -630,10 +616,8 @@ function CtaScene() {
     >
       <div className={styles.ctaInner}>
         <div className={styles.ctaCopy}>
-          <h2 id="cta-title">Link one channel. Watch the record fill in.</h2>
-          <p>
-            Bring in your first source, then read the daily update or approve the suggested updates.
-          </p>
+          <h2 id="cta-title">Start with the tools your team already uses.</h2>
+          <p>Connect a source and ask about the work happening there.</p>
         </div>
         <div className={styles.ctaActions}>
           <PublicSessionBranch

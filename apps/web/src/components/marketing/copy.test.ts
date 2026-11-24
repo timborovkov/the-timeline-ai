@@ -55,6 +55,7 @@ describe('public marketing copy', () => {
       (tool) => tool.route,
     );
     expect(comingSoonRoutes).toEqual([
+      '/integrations/jira',
       '/integrations/hubspot',
       '/integrations/attio',
       '/integrations/pipedrive',

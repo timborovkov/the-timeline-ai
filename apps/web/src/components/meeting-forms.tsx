@@ -3,7 +3,7 @@
 import type { SavedMeetingRow } from '@timeline/shared/meetings';
 import { Archive, LogIn, SkipForward } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 
 import {
   archiveSavedMeetingAction,
@@ -21,7 +21,7 @@ import { ItemIconButton } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
-import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 const INCOMPLETE_SCHEDULE_ERROR =
@@ -178,13 +178,14 @@ function savedMeetingReducer(
 function TimezoneSelect({
   id,
   value,
+  options,
   onChange,
 }: {
   id: string;
   value: string;
+  options: readonly string[];
   onChange: (timezone: string) => void;
 }) {
-  const options = useMemo(() => timezoneOptions(value), [value]);
   return (
     <NativeSelect
       id={id}
@@ -194,6 +195,7 @@ function TimezoneSelect({
         onChange(event.target.value);
       }}
     >
+      {!options.includes(value) ? <option value={value}>{value}</option> : null}
       {options.map((timezone) => (
         <option key={timezone} value={timezone}>
           {timezone}
@@ -244,6 +246,7 @@ function NumberWithUnit({
 function ScheduleFields({
   idPrefix,
   timezone,
+  timezones,
   onTimezoneChange,
   times,
   weekdays,
@@ -257,6 +260,7 @@ function ScheduleFields({
 }: {
   idPrefix: string;
   timezone: string;
+  timezones: readonly string[];
   onTimezoneChange: (timezone: string) => void;
   times?: string[];
   weekdays?: number[];
@@ -299,6 +303,7 @@ function ScheduleFields({
           <TimezoneSelect
             id={`${idPrefix}-timezone`}
             value={timezone}
+            options={timezones}
             onChange={onTimezoneChange}
           />
           <p className="text-xs text-muted-foreground">Defaults to your current timezone.</p>
@@ -679,12 +684,14 @@ export function SavedMeetingForm({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
   defaultTimezone = 'UTC',
+  timezones,
   members = EMPTY_MEMBERS,
   onSuccess,
 }: {
   defaultVisibility?: Visibility;
   defaultVisibilityUserIds?: string[] | null;
   defaultTimezone?: string;
+  timezones: readonly string[];
   members?: { id: string; label: string }[];
   onSuccess?: () => void;
 }) {
@@ -841,6 +848,7 @@ export function SavedMeetingForm({
             <ScheduleFields
               idPrefix="saved"
               timezone={timezone}
+              timezones={timezones}
               onTimezoneChange={(next) => {
                 dispatch({ type: 'timezone', timezone: next });
               }}
@@ -885,10 +893,12 @@ export function SavedMeetingForm({
 export function EditSavedMeetingForm({
   saved,
   defaultTimezone = 'UTC',
+  timezones,
   members = EMPTY_MEMBERS,
 }: {
   saved: SavedMeetingRow;
   defaultTimezone?: string;
+  timezones: readonly string[];
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
@@ -1037,6 +1047,7 @@ export function EditSavedMeetingForm({
             <ScheduleFields
               idPrefix={`saved-${saved.id}`}
               timezone={timezone}
+              timezones={timezones}
               onTimezoneChange={(next) => {
                 dispatch({ type: 'timezone', timezone: next });
               }}

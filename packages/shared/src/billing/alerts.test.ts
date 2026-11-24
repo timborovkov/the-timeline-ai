@@ -32,6 +32,22 @@ describe('billingUsageAlertKindsForState', () => {
     ).toEqual(['free_exhausted']);
   });
 
+  it('warns on the Free pool instead of its legacy per-meter thresholds', () => {
+    const free = freeAllowanceRemaining({
+      ai: { customerChargeCents: FREE_ALLOWANCES.aiChargeCents },
+    });
+    const alerts = (includedUsageCents: number) =>
+      billingUsageAlertKindsForState({
+        planId: 'free',
+        spendCapCents: 0,
+        meteredSpendCents: 0,
+        freeRemaining: { ...free, includedUsageCents },
+      });
+    expect(alerts(200)).toEqual([]);
+    expect(alerts(50)).toEqual(['free_near_limit']);
+    expect(alerts(0)).toEqual(['free_exhausted']);
+  });
+
   it('stacks spend-cap thresholds through the current warn level', () => {
     expect(
       billingUsageAlertKindsForState({

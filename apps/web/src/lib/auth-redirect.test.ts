@@ -32,6 +32,17 @@ describe('signedInAuthRedirect', () => {
     ).toBe('/accept-invite/callback-token');
   });
 
+  it('continues a guest invitation without converting it into a full-member invite', () => {
+    const callbackUrl = `/guest/11111111-1111-4111-8111-111111111111/invite/${'a'.repeat(43)}`;
+    expect(signedInAuthRedirect({ callbackUrl, pendingInviteToken: 'other-invite' })).toBe(
+      callbackUrl,
+    );
+    expect(signUpHrefFromAuthCallback(callbackUrl)).toBe(
+      `/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`,
+    );
+    expect(postSignupDestination({ event: 'account_created', callbackUrl })).toBe(callbackUrl);
+  });
+
   it('uses a pending invite cookie before generic app callbacks', () => {
     process.env.AUTH_URL = 'https://timeline.example.com';
 
@@ -76,11 +87,9 @@ describe('invite callback helpers', () => {
 
 describe('pricing plan intent', () => {
   it('allows only self-serve paid plans without authorizing a purchase', () => {
-    expect(selectedPlanCallback('payg')).toBe('/app/team?section=billing&plan=payg#change-plan');
+    expect(selectedPlanCallback('payg')).toBeUndefined();
     expect(selectedPlanCallback('team')).toBe('/app/team?section=billing&plan=team#change-plan');
-    expect(selectedPlanCallback('business')).toBe(
-      '/app/team?section=billing&plan=business#change-plan',
-    );
+    expect(selectedPlanCallback('business')).toBeUndefined();
     expect(selectedPlanCallback('free')).toBeUndefined();
     expect(selectedPlanCallback('https://evil.test')).toBeUndefined();
     expect(selectedPlanCallback('enterprise')).toBeUndefined();
@@ -134,9 +143,9 @@ describe('pricing plan intent', () => {
 });
 
 it('carries only fixed plan destinations into verification emails', () => {
-  expect(selectedPlanFromCallback(selectedPlanCallback('payg'))).toBe('payg');
   expect(selectedPlanFromCallback(selectedPlanCallback('team'))).toBe('team');
-  expect(selectedPlanFromCallback('/app/team?plan=payg&section=billing')).toBe('payg');
+  expect(selectedPlanFromCallback(selectedPlanCallback('team'))).toBe('team');
+  expect(selectedPlanFromCallback('/app/team?plan=payg&section=billing')).toBeUndefined();
   expect(selectedPlanFromCallback('https://evil.test/app/team?plan=payg')).toBeUndefined();
   expect(
     selectedPlanFromCallback('/app/team?section=billing&plan=enterprise#change-plan'),

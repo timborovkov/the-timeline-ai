@@ -1,13 +1,11 @@
 import {
   FREE_ALLOWANCES,
-  PLAN_CATALOG,
   SELF_SERVE_PLAN_ORDER,
-  formatEuroFromCents,
-  formatStorageGb,
+  TEAM_MONTHLY_SEAT_CENTS,
+  formatUsdFromCents,
 } from '@timeline/shared/billing/catalog';
 
-/** Paid self-serve plans that can be carried from pricing into Team → Billing. */
-export type PaidSignupPlanId = 'payg' | 'team' | 'business';
+export type PaidSignupPlanId = 'team';
 
 export type SignupPlanId = (typeof SELF_SERVE_PLAN_ORDER)[number];
 
@@ -22,7 +20,7 @@ export function parseSignupPlan(value: unknown): SignupPlanId {
 
 export function paidSignupPlan(value: unknown): PaidSignupPlanId | undefined {
   const plan = parseSignupPlan(value);
-  return plan === 'payg' || plan === 'team' || plan === 'business' ? plan : undefined;
+  return plan === 'team' ? plan : undefined;
 }
 
 /**
@@ -47,63 +45,31 @@ export interface SignupPlanCopy {
   reviewWhere: string;
 }
 
-function includedMembersLabel(planId: SignupPlanId): string {
-  const included = PLAN_CATALOG[planId].includedActiveMembers;
-  return included === 1 ? '1 included member' : `${included} included members`;
-}
-
-function usageInclude(planId: SignupPlanId): string {
-  const credit = PLAN_CATALOG[planId].includedUsageDiscountCents;
-  if (credit > 0) {
-    return `Up to ${formatEuroFromCents(credit)} usage credit / month`;
-  }
-  return `${formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)} AI + ${FREE_ALLOWANCES.acceptedSources.toLocaleString('en-IE')} source units / month`;
-}
-
-function extraMemberInclude(planId: SignupPlanId): string {
-  if (planId === 'free') return 'Stops at your allowance or capacity limit';
-  return `${formatEuroFromCents(PLAN_CATALOG[planId].additionalMemberCents ?? 0)} per extra member / month`;
-}
-
-/**
- * Honest signup copy aligned with the pricing grid and Polar checkout behaviour.
- * Creating an account never starts checkout; paid plans wait for Team → Billing.
- */
+/** Signup records plan intent. Workspace billing owns checkout. */
 export function signupPlanCopy(planId: SignupPlanId): SignupPlanCopy {
-  const plan = PLAN_CATALOG[planId];
-  const includes = [includedMembersLabel(planId), usageInclude(planId), extraMemberInclude(planId)];
-  if (planId === 'free' || planId === 'payg') {
-    includes.push(
-      `Free monthly floor also covers ${FREE_ALLOWANCES.recallMinutes} meeting minutes, ${FREE_ALLOWANCES.emailUnits} email units, and ${formatStorageGb(FREE_ALLOWANCES.storageGb)} storage`,
-    );
-  }
-
   if (planId === 'free') {
     return {
       planId,
-      name: plan.name,
-      subtitle:
-        'Free for up to 3 members — no card required. Name your team next, then bring something in and open the first record.',
-      includes,
-      billingStarts:
-        'Creating an account does not charge you. Free has no card requirement and no platform fee.',
-      reviewWhere:
-        'After setup, open Team settings → Billing anytime to stay on Free or choose another plan. Checkout starts only if you confirm a paid plan there.',
+      name: 'Free',
+      subtitle: `Free for up to ${FREE_ALLOWANCES.activeMembers} full members. No card required.`,
+      includes: [
+        `Up to ${FREE_ALLOWANCES.activeMembers} full members`,
+        'Shared monthly Included usage for AI processing and native meeting capture',
+      ],
+      billingStarts: 'Free requires no payment method.',
+      reviewWhere: 'Open Team settings → Billing to review usage or upgrade to Team.',
     };
   }
-
-  const fee =
-    plan.platformFeeCents && plan.platformFeeCents > 0
-      ? `${formatEuroFromCents(plan.platformFeeCents)}/month platform fee`
-      : '€0 platform fee';
-
   return {
     planId,
-    name: plan.name,
-    subtitle: `${plan.name} — ${fee}. Creating an account does not charge you.`,
-    includes,
+    name: 'Team',
+    subtitle: `Team is ${formatUsdFromCents(TEAM_MONTHLY_SEAT_CENTS)} per full member each month, starting with one.`,
+    includes: [
+      'Each paid seat adds to shared Included usage',
+      'Additional spending is off by default',
+    ],
     billingStarts:
-      'Billing starts only after you confirm a plan in Team settings → Billing and complete Polar checkout. Setup and account creation do not open checkout or save a card. Your team stays on Free until Polar confirms payment.',
-    reviewWhere: `After setup we’ll remind you to finish ${plan.name}. That prompt opens Team settings → Billing with ${plan.name} highlighted. You can dismiss it; cancelled checkout leaves you on Free.`,
+      'Your workspace stays on Free until you complete checkout in Team settings → Billing and Polar confirms activation.',
+    reviewWhere: 'After setup, Team settings → Billing opens with Team selected.',
   };
 }

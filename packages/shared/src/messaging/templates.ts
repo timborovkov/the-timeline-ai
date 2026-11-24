@@ -395,7 +395,9 @@ function renderPasswordReset(input: PasswordResetMessageInput): RenderedMessage 
 
 function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const p = input.payload;
-  const subject = `Daily digest for ${p.teamName}`;
+  const subject = p.updateRevision
+    ? 'Your Timeline update is ready'
+    : `Daily digest for ${p.teamName}`;
   const timezone = p.timezone;
   const windowRange = formatDigestWindowRange(p.windowStart, p.windowEnd, timezone);
   const digestDate = formatDigestDate(p.windowEnd, timezone);
@@ -442,7 +444,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     label: link.label,
   }));
   const textBody = [
-    `Daily digest for ${p.teamName}`,
+    subject,
     digestDate,
     '',
     ...summaryParagraphs.flatMap((paragraph) => [paragraph, '']),
@@ -473,7 +475,7 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   ].join('\n');
   const htmlBody = htmlLayout({
     preview: p.summary,
-    title: `Daily digest for ${p.teamName}`,
+    title: subject,
     body: renderBody(
       'daily-digest',
       {},
@@ -563,7 +565,7 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
         subject: `${input.teamName}: 90% of spend cap used`,
         title: 'Spend cap nearly reached',
         intro:
-          'Your workspace is close to its monthly spend cap. New cost-bearing work will pause at 100%.',
+          'Your workspace is close to its monthly additional-spending cap. New billable processing pauses when the cap is reached.',
         ctaLabel: 'Manage billing',
         ctaHref: input.billingUrl,
       };
@@ -572,7 +574,7 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
         subject: `${input.teamName}: monthly spend cap reached`,
         title: 'Spend cap reached',
         intro:
-          'New cost-bearing work is paused until you raise the spend cap or the period resets.',
+          'New billable processing is paused. A workspace admin can review the cap in Billing, or you can wait for the next monthly reset. Existing records remain available.',
         ctaLabel: 'Manage billing',
         ctaHref: input.billingUrl,
       };
@@ -581,7 +583,7 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
         subject: `${input.teamName}: approaching Free allowance`,
         title: 'Approaching Free allowance',
         intro:
-          'Your Free workspace is near one or more monthly allowances. Pay as you go keeps the Free floor and only charges measured overage under a spend cap.',
+          'Your Free workspace is close to using its shared monthly Included usage. AI processing and native meeting capture share this allowance. Check Usage for the reset date or review Team for more Included usage.',
         ctaLabel: 'Review billing',
         ctaHref: input.billingUrl,
       };
@@ -590,8 +592,8 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
         subject: `${input.teamName}: Free allowance used up`,
         title: 'Free allowance used up',
         intro:
-          'A Free monthly allowance is used up. Reading, export, and billing stay available. Add a payment method to continue metered work under a spend cap.',
-        ctaLabel: 'Add payment method',
+          'Your Free workspace has used its monthly Included usage. New AI processing and native meeting capture are paused. Reading and export remain available. Wait for the allowance to renew or review Team in Billing.',
+        ctaLabel: 'Review Team',
         ctaHref: input.billingUrl,
       };
     case 'subscription_past_due':

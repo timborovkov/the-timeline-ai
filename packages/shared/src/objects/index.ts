@@ -129,6 +129,12 @@ import {
   type PersonPrimaryCompanyRow,
   type TaskPrimaryProjectRow,
 } from '#src/objects/types.js';
+import {
+  MAINTAINED_TASK_FIELDS,
+  maintainedRecordFields,
+  type MaintainedRecordField,
+  type MaintainedTaskField,
+} from '#src/objects/types.js';
 import type { UpdateActor } from '#src/objects/types.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
@@ -238,6 +244,80 @@ const OBJECT_DIRECT_WRITE_PLANNER_VERSION = 'object-direct-write-planner-2026-06
 const SYSTEM_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION = 'system-direct-write-source-snapshot-2026-06';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+const SHAREABLE_RECORD_FIELDS = ['canonicalName', 'status', 'dueAt'];
+
+function hasGuestRecordProjection(type: ObjectType) {
+  return type === 'task' || type === 'project';
+}
+
+// Keep write proof on the canonical field revision. The storage trigger drops
+// it when any writer changes the field, so a repeat value needs fresh proof.
+async function attachRecordWriteProof(
+  tx: DbTx,
+  record: Pick<EntityRow, 'id' | 'teamId' | 'type'>,
+  writeEventId: string | null,
+  changes: { field: string; id: string }[],
+) {
+  if (!writeEventId || !hasGuestRecordProjection(record.type)) return;
+  const fields = changes.filter(({ field }) => SHAREABLE_RECORD_FIELDS.includes(field));
+  if (!fields.length) return;
+
+  let revisions = sql`${entities.recordFieldRevisions}`;
+  for (const { field, id } of fields) {
+    const stamp = JSON.stringify({ changeId: id, writeEventId });
+    revisions = sql`jsonb_set(${revisions}, ARRAY[${field}::text],
+      COALESCE(${entities.recordFieldRevisions} -> ${field}::text, '{}'::jsonb)
+      || ${stamp}::jsonb)`;
+  }
+
+  await tx
+    .update(entities)
+    .set({ recordFieldRevisions: revisions })
+    .where(and(eq(entities.teamId, record.teamId), eq(entities.id, record.id)));
+}
+
+export async function readRecordFieldProvenance(
+  db: DbOrTx,
+  teamId: string,
+  entityId: string,
+  revisions: EntityRow['recordFieldRevisions'],
+): Promise<EntityRow['recordFieldRevisions']> {
+  const legacyProofs = Object.entries(revisions).flatMap(([field, revision]) =>
+    revision.rawEventId === null && revision.changeId && revision.writeEventId
+      ? [{ field, changeId: revision.changeId, writeEventId: revision.writeEventId }]
+      : [],
+  );
+  if (!legacyProofs.length) return revisions;
+
+  // Older guest proof stamps synthesized source-less clocks on agent defaults.
+  // The creation audit distinguishes those defaults from an actual manual write.
+  const creations = await db
+    .select({ id: objectChanges.id })
+    .from(objectChanges)
+    .where(
+      and(
+        eq(objectChanges.teamId, teamId),
+        eq(objectChanges.entityId, entityId),
+        eq(objectChanges.field, '__create__'),
+        eq(objectChanges.status, 'applied'),
+        ne(objectChanges.actorKind, 'user'),
+        inArray(objectChanges.id, [...new Set(legacyProofs.map(({ changeId }) => changeId))]),
+      ),
+    );
+  if (!creations.length) return revisions;
+  const creationIds = new Set(creations.map(({ id }) => id));
+  const normalized = { ...revisions };
+  for (const { field, changeId, writeEventId } of legacyProofs) {
+    if (creationIds.has(changeId)) normalized[field] = { changeId, writeEventId };
+  }
+  return normalized;
+}
+
+interface RecordApprovalProof {
+  itemId: string;
+  outputIds: string[];
+}
+
 function systemDirectWriteSourceMetadata(input: {
   rawEventId: string;
   kind: string;
@@ -1099,6 +1179,7 @@ export interface ObjectPatch {
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueAt?: Date | null;
+  plannedDate?: string | null;
   aliases?: string[];
   metadata?: Record<string, unknown>;
   archivedAt?: Date | null;
@@ -1534,6 +1615,8 @@ export interface ObjectDetail extends ObjectRow {
       title: string;
       startAt: Date;
       endAt: Date;
+      allDay?: boolean;
+      timezone?: string;
       showAs: string;
     }[];
     timelineEvents: {
@@ -3005,6 +3088,8 @@ async function getConnectedWork(
             description: calendarEvents.description,
             startAt: calendarEvents.startAt,
             endAt: calendarEvents.endAt,
+            allDay: calendarEvents.allDay,
+            timezone: calendarEvents.timezone,
             showAs: calendarEvents.showAs,
           })
           .from(calendarEvents)
@@ -4018,6 +4103,11 @@ export async function getObjectMergePreview(
   };
 }
 
+export interface TaskFieldEvidence {
+  rawEventId: string;
+  assertedAt: Date;
+}
+
 export interface CreateObjectInput {
   type: ObjectType;
   canonicalName: string;
@@ -4027,6 +4117,9 @@ export interface CreateObjectInput {
   ownerUserId?: string | null;
   assigneeUserId?: string | null;
   dueAt?: Date | null;
+  plannedDate?: string | null;
+  plannedDateEvidence?: TaskFieldEvidence;
+  taskFieldEvidence?: Partial<Record<MaintainedRecordField, TaskFieldEvidence>>;
   aliases?: string[];
   metadata?: Record<string, unknown>;
   parentObjectId?: string | null;
@@ -4039,6 +4132,7 @@ export interface CreateObjectInput {
     inputHash: string;
     taxonomyVersion: string;
   };
+  approvalProof?: RecordApprovalProof;
   /** A teammate-selected category applied atomically with task creation. */
   initialManualTaskCategory?: {
     category: TaskCategory;
@@ -4049,6 +4143,19 @@ export interface CreateObjectInput {
   actor: { kind: ActorKind; userId?: string | null };
 }
 
+function parseTaskPlannedDate(type: EntityRow['type'], value: string | null): string | null {
+  if (value === null) return null;
+  if (type !== 'task') throw new Error('Only tasks can have a planned date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) {
+    throw new Error('Planned date must be a valid calendar date');
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new Error('Planned date must be a valid calendar date');
+  }
+  return value;
+}
+
 export async function createObject(
   db: Db,
   scope: TeamScopeCore,
@@ -4057,6 +4164,7 @@ export async function createObject(
   await scope.requireMembership();
   const name = input.canonicalName.trim();
   if (!name) throw new Error('canonicalName is required');
+  const plannedDate = parseTaskPlannedDate(input.type, input.plannedDate ?? null);
 
   // Owner/assignee FK is to `users.id` (system-wide), so the FK alone
   // does not prove team membership. Without this gate an actor (human
@@ -4140,6 +4248,27 @@ export async function createObject(
         ownerUserId: input.ownerUserId ?? null,
         assigneeUserId: input.assigneeUserId ?? null,
         dueAt: input.dueAt ?? null,
+        plannedDate,
+        plannedDateRevisionAt:
+          input.plannedDate !== undefined
+            ? (input.plannedDateEvidence?.assertedAt ?? new Date())
+            : null,
+        plannedDateEvidenceId: input.plannedDateEvidence?.rawEventId ?? null,
+        recordFieldRevisions: Object.fromEntries(
+          maintainedRecordFields(input.type).flatMap((field) => {
+            const evidence = input.taskFieldEvidence?.[field];
+            if (input[field] === undefined || (!evidence && input.actor.kind !== 'user')) return [];
+            return [
+              [
+                field,
+                {
+                  assertedAt: (evidence?.assertedAt ?? new Date()).toISOString(),
+                  rawEventId: evidence?.rawEventId ?? null,
+                },
+              ],
+            ];
+          }),
+        ),
         aliases: input.aliases ?? [],
         metadata: input.metadata ?? {},
         sourceEventId: null,
@@ -4197,6 +4326,9 @@ export async function createObject(
             owner_user_id: row.ownerUserId,
             assignee_user_id: row.assigneeUserId,
             due_at: row.dueAt?.toISOString() ?? null,
+            ...(input.approvalProof && hasGuestRecordProjection(input.type)
+              ? { approval_proof: input.approvalProof }
+              : {}),
             aliases: row.aliases,
             metadata: row.metadata,
             actor_kind: input.actor.kind,
@@ -4217,17 +4349,28 @@ export async function createObject(
       text: eventText,
     });
 
-    await tx.insert(objectChanges).values({
-      teamId: scope.teamId,
-      entityId: row.id,
-      actorUserId: input.actor.userId ?? null,
-      actorKind: input.actor.kind,
-      status: 'applied',
-      field: '__create__',
-      previousValue: null,
-      newValue: { type: input.type, canonicalName: name, status: row.status },
-      sourceEventId: null,
-    });
+    const [creation] = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        actorUserId: input.actor.userId ?? null,
+        actorKind: input.actor.kind,
+        status: 'applied',
+        field: '__create__',
+        previousValue: null,
+        newValue: { type: input.type, canonicalName: name, status: row.status },
+        sourceEventId: null,
+      })
+      .returning({ id: objectChanges.id });
+    if (creation) {
+      await attachRecordWriteProof(
+        tx,
+        row,
+        sourceEventId,
+        SHAREABLE_RECORD_FIELDS.map((field) => ({ field, id: creation.id })),
+      );
+    }
     if (initialManualTaskCategory) {
       await tx.insert(taskCategoryAssignments).values({
         teamId: scope.teamId,
@@ -4434,6 +4577,11 @@ type PostCommitEffect = () => void | Promise<void>;
 
 interface ObjectMutationOptions {
   expectedUpdatedAt?: string | undefined;
+  plannedDateEvidence?: TaskFieldEvidence | undefined;
+  taskFieldEvidence?: Partial<Record<MaintainedRecordField, TaskFieldEvidence>>;
+  taskFieldApprovalItemId?: string;
+  undoTaskFieldChanges?: Partial<Record<MaintainedTaskField | 'plannedDate', string>>;
+  approvalProof?: RecordApprovalProof;
   transactionClient?: DbOrTx;
   postCommitEffects?: PostCommitEffect[];
   requireActive?: boolean;
@@ -4500,6 +4648,39 @@ export async function updateObject(
         afterTaskId: string;
       } | null,
     });
+    const undoChanges = options?.undoTaskFieldChanges;
+    const undoIds = Object.values(undoChanges ?? {});
+    if (undoChanges && undoIds.length) {
+      if (current.type !== 'task') throw new StaleWorkspaceStateError();
+      const currentIds = {
+        plannedDate: current.plannedDateChangeId,
+        ...Object.fromEntries(
+          MAINTAINED_TASK_FIELDS.map((field) => [
+            field,
+            current.recordFieldRevisions[field]?.changeId,
+          ]),
+        ),
+      };
+      if (
+        Object.entries(undoChanges).some(
+          ([field, id]) => currentIds[field as keyof typeof currentIds] !== id,
+        )
+      ) {
+        const reversed = await tx
+          .select({ id: objectChanges.undoesChangeId })
+          .from(objectChanges)
+          .where(
+            and(
+              eq(objectChanges.teamId, scope.teamId),
+              eq(objectChanges.entityId, entityId),
+              inArray(objectChanges.undoesChangeId, undoIds),
+            ),
+          );
+        if (new Set(reversed.map((row) => row.id)).size === undoIds.length)
+          return unchangedResult();
+        throw new Error('A task field changed again. Open the task to edit its current values.');
+      }
+    }
     const suggestionItemId = options?.archiveSuggestedProjectIfUnusedForItemId;
     if (suggestionItemId) {
       const metadata = recordFromUnknown(current.metadata);
@@ -4548,17 +4729,86 @@ export async function updateObject(
       next[field] = candidate;
     }
 
+    const fieldRevisions = {
+      ...(options?.taskFieldEvidence && Object.keys(options.taskFieldEvidence).length
+        ? await readRecordFieldProvenance(tx, scope.teamId, entityId, current.recordFieldRevisions)
+        : current.recordFieldRevisions),
+    };
+    const maintainedFields = maintainedRecordFields(current.type);
+    const revisedFields = new Set<MaintainedRecordField>();
+    function diffMaintainedField<K extends MaintainedRecordField>(
+      field: K,
+      candidate: EntityRow[K] | undefined,
+    ): void {
+      if (candidate === undefined) return;
+      if (!maintainedFields.includes(field)) {
+        diff(field, candidate);
+        return;
+      }
+      const asserted = options?.taskFieldEvidence?.[field];
+      const prior = fieldRevisions[field];
+      const latest = prior?.assertedAt ? Date.parse(prior.assertedAt) : 0;
+      if (
+        asserted &&
+        prior &&
+        (asserted.assertedAt.getTime() <= latest || asserted.rawEventId === prior.rawEventId)
+      ) {
+        return;
+      }
+      const previousCount = changes.length;
+      diff(field, candidate);
+      const unchanged = changes.length === previousCount;
+      if (unchanged && !asserted) return;
+      fieldRevisions[field] = {
+        assertedAt: (asserted?.assertedAt ?? new Date(Math.max(Date.now(), latest))).toISOString(),
+        rawEventId: unchanged && prior?.rawEventId === null ? null : (asserted?.rawEventId ?? null),
+        ...(prior?.changeId ? { changeId: prior.changeId } : {}),
+        ...(unchanged && prior?.writeEventId ? { writeEventId: prior.writeEventId } : {}),
+      };
+      revisedFields.add(field);
+      next.recordFieldRevisions = fieldRevisions;
+    }
     if (patch.canonicalName !== undefined) {
       const trimmed = patch.canonicalName.trim();
       if (!trimmed) throw new Error('canonicalName cannot be empty');
-      diff('canonicalName', trimmed);
+      diffMaintainedField('canonicalName', trimmed);
     }
-    if (patch.status !== undefined) diff('status', patch.status);
-    if (patch.stage !== undefined) diff('stage', patch.stage);
+    diffMaintainedField('status', patch.status);
+    diffMaintainedField('stage', patch.stage);
     if (patch.priority !== undefined) diff('priority', patch.priority);
     if (patch.ownerUserId !== undefined) diff('ownerUserId', patch.ownerUserId);
-    if (patch.assigneeUserId !== undefined) diff('assigneeUserId', patch.assigneeUserId);
-    if (patch.dueAt !== undefined) diff('dueAt', patch.dueAt);
+    diffMaintainedField('assigneeUserId', patch.assigneeUserId);
+    diffMaintainedField('dueAt', patch.dueAt);
+    if (patch.plannedDate !== undefined) {
+      const asserted = options?.plannedDateEvidence;
+      if (
+        asserted &&
+        current.plannedDateRevisionAt &&
+        (asserted.assertedAt <= current.plannedDateRevisionAt ||
+          asserted.rawEventId === current.plannedDateEvidenceId)
+      ) {
+        if (patch.plannedDate !== current.plannedDate && revisedFields.size === 0) {
+          throw new StaleWorkspaceStateError();
+        }
+      } else {
+        diff('plannedDate', parseTaskPlannedDate(patch.type ?? current.type, patch.plannedDate));
+        if (asserted || patch.plannedDate !== current.plannedDate) {
+          next.plannedDateRevisionAt =
+            asserted?.assertedAt ??
+            new Date(Math.max(Date.now(), current.plannedDateRevisionAt?.getTime() ?? 0));
+          next.plannedDateEvidenceId =
+            patch.plannedDate === current.plannedDate &&
+            current.plannedDateRevisionAt &&
+            current.plannedDateEvidenceId === null
+              ? null
+              : (asserted?.rawEventId ?? null);
+        }
+      }
+    } else if (patch.type !== undefined && patch.type !== 'task' && current.plannedDate !== null) {
+      diff('plannedDate', null);
+      next.plannedDateRevisionAt = new Date();
+      next.plannedDateEvidenceId = null;
+    }
     if (patch.aliases !== undefined) diff('aliases', patch.aliases);
     if (patch.metadata !== undefined) {
       const currentMetadata = recordFromUnknown(current.metadata);
@@ -4568,6 +4818,9 @@ export async function updateObject(
     if (patch.type !== undefined) diff('type', patch.type);
 
     if (changes.length === 0) {
+      if (next.plannedDateRevisionAt !== undefined || revisedFields.size > 0) {
+        await tx.update(entities).set(next).where(eq(entities.id, entityId));
+      }
       return unchangedResult();
     }
 
@@ -4748,6 +5001,9 @@ export async function updateObject(
             canonical_name: updated.canonicalName,
             actor_kind: actor.kind,
             actor_user_id: actor.userId ?? null,
+            ...(options?.approvalProof && hasGuestRecordProjection(updated.type)
+              ? { approval_proof: options.approvalProof }
+              : {}),
             changes,
           },
         }),
@@ -4778,9 +5034,30 @@ export async function updateObject(
           previousValue: c.previousValue as never,
           newValue: c.newValue as never,
           sourceEventId: null,
+          approvalItemId: options?.taskFieldApprovalItemId,
+          undoesChangeId: undoChanges?.[c.field as MaintainedTaskField | 'plannedDate'],
         })),
       )
-      .returning({ id: objectChanges.id });
+      .returning({ id: objectChanges.id, field: objectChanges.field });
+    for (const field of revisedFields) {
+      const change = changeRows.find((row) => row.field === field);
+      const revision = fieldRevisions[field];
+      if (change && revision) revision.changeId = change.id;
+    }
+    if (revisedFields.size > 0) {
+      await tx
+        .update(entities)
+        .set({ recordFieldRevisions: fieldRevisions })
+        .where(eq(entities.id, entityId));
+    }
+    const plannedDateChange = changeRows.find((change) => change.field === 'plannedDate');
+    if (plannedDateChange) {
+      await tx
+        .update(entities)
+        .set({ plannedDateChangeId: plannedDateChange.id })
+        .where(eq(entities.id, entityId));
+    }
+    await attachRecordWriteProof(tx, updated, sourceEventId, changeRows);
     const reconciliationOperation =
       changes.length === 1 && changes[0]?.field === 'archivedAt' && updated.archivedAt !== null
         ? 'archive_or_cancel'
@@ -5658,34 +5935,34 @@ export async function mergeObjects(
       () => dispatchDueDateCalendarEffects({ teamId: scope.teamId }, result.dueDateCalendarSync),
       { teamId: scope.teamId, op: 'mergeObjectsDueDateCalendar' },
     );
-  });
-  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
-    teamId: scope.teamId,
-    objectId: result.survivor.id,
-    op: 'mergeObjects',
-  });
-  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.survivor.id), {
-    teamId: scope.teamId,
-    entityId: result.survivor.id,
-    op: 'mergeObjects',
-  });
-  void fireAndForgetObjectSummaryRefresh(db, scope, result.survivor.id, {
-    teamId: scope.teamId,
-    objectId: result.survivor.id,
-    op: 'mergeObjects',
-  });
-  for (const mergedId of result.mergedIds) {
-    fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
       teamId: scope.teamId,
-      entityId: mergedId,
-      op: 'mergeObjects:deleteMergedEmbeddings',
+      objectId: result.survivor.id,
+      op: 'mergeObjects',
     });
-  }
-  enqueueProjectTaskCategoryInvalidation(
-    scope.teamId,
-    { jobs: result.linkedTaskCategoryJobs, fanout: result.linkedTaskCategoryFanout },
-    'mergeObjects',
-  );
+    fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.survivor.id), {
+      teamId: scope.teamId,
+      entityId: result.survivor.id,
+      op: 'mergeObjects',
+    });
+    void fireAndForgetObjectSummaryRefresh(scope.postCommitDb ?? db, scope, result.survivor.id, {
+      teamId: scope.teamId,
+      objectId: result.survivor.id,
+      op: 'mergeObjects',
+    });
+    for (const mergedId of result.mergedIds) {
+      fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
+        teamId: scope.teamId,
+        entityId: mergedId,
+        op: 'mergeObjects:deleteMergedEmbeddings',
+      });
+    }
+    enqueueProjectTaskCategoryInvalidation(
+      scope.teamId,
+      { jobs: result.linkedTaskCategoryJobs, fanout: result.linkedTaskCategoryFanout },
+      'mergeObjects',
+    );
+  });
   return result;
 }
 

@@ -20,8 +20,7 @@ utilities support them in the secondary column. Email capture stays visible with
 stacked notice with explicit review actions; job counts remain admin-only. Healthy
 processing adds no notice. Capture and Ask can be used while secondary panels and source guidance load.
 Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
-four moments; the full timeline remains one click away. The latest digest follows
-activity with a bounded summary preview and an expandable full body.
+four moments; the full timeline remains one click away.
 
 The team setup checklist is Home onboarding. For a member who
 has not hidden it, the list sits open directly under Ask with the same small
@@ -62,7 +61,8 @@ New teams start in a focused setup shell for Welcome and Start with one source
 guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
 started strip (Capture, Ask, Approve, Go live). Fresh guided Ask includes the visible
 starter capture in its context; guided Approvals scopes rows and counts to that
-capture, including pagination. First-record suggestions use the same proposal and
+capture, including pagination. It explains that eligible changes apply automatically and leaves
+pending changes available for review. First-record suggestions use the same proposal and
 supporting-evidence visibility checks as the approval queue. Empty first-record and
 guided Approvals views offer Check for suggestions so asynchronously generated
 proposals can be discovered without reloading the page. Home never shows that strip.
@@ -86,13 +86,25 @@ Free teams see the specific verification or grant issue with its resolution acti
 Home’s **Your work** section shows non-zero pending approvals, overdue work,
 open tasks, and open objects, using singular labels for one item. Overdue work
 links to the work queue; tasks and objects link to their respective indexes.
-“You’re caught up” replaces an empty work summary. Recent activity and the digest follow in the primary column. A supporting column
+“You’re caught up” replaces an empty work summary. Updates leads the primary column, followed by work and recent activity. A supporting column
 holds three personal pins, team inbound email (`#team-email`), agent connection onboarding, and
 **Connections & processing** issues. Actual billing restrictions remain prominent;
-upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
+upgrade nudges come last in the supporting column. These columns stack on
 smaller screens. No synthetic records or empty metric cards fill spare space.
 
-The latest digest shows a short summary preview; its full body stays folded until opened.
+Updates shows a short summary with its full body folded until opened. Customize
+updates sits beside it, including before the first briefing. Members can preview
+a daily brief or Monday overview, choose workspace activity or followed saved
+views, and pause without losing history. Changes to the workspace timezone
+reschedule active Updates in that workspace. When queuing fails, settings confirm
+the save and offer Retry scheduling. Workspace briefing emphasis applies to
+the summary. Monday overviews can surface work that remains blocked. The settings
+show available personal destinations. Delivery uses verified email or linked chat
+and opens the authenticated archive, where source access is checked again. The follow-up opens Ask with
+the update’s date range and visible source references, ready for review before
+sending. Home shows when the workspace’s AI budget holds a briefing. New
+saved-view matches can still appear while the workspace briefing is on hold.
+Prior updates stay in history.
 Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
 pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
@@ -101,7 +113,11 @@ lists them, and discards that draft if the rewrite fails. Narrative sections
 use Highlights, Status, Completed, In progress, Decisions, Risks, and
 Follow-ups; Status is the current state of work, not a product-specific label.
 Empty sections and empty task, object, or calendar groups are omitted. The
-header shows the digest date; the covering time range stays footer metadata.
+header shows the digest date, and the covering time range stays footer metadata.
+App timestamps use the viewer’s display preferences. Calendar entries keep an
+all-day event’s original calendar date. Older briefings without event metadata
+retain their briefing time zone for calendar rows. Updates keep their configured
+schedule and original coverage window.
 Activity is a compact count strip using the same mono lime numbers as Home
 Attention, and is hidden when every count is zero. Task, object, and
 calendar blocks are ordinary linked lists: newly created or completed tasks,
@@ -160,8 +176,9 @@ workspace consequences, structured facts, a matching `[ev:…]` citation chip pe
 source evidence item, and a collapsed Original source
 disclosure. Attached files link to Documents. A date band separates each
 workspace day in Moments and All events. Today and Yesterday use the current
-date in the workspace timezone. Date bands and row boundaries extend to the
-main-pane edges while their content stays bounded. Each date band sticks below
+date in the workspace timezone. Row times use the display timezone and include
+the local date when it differs from the date band. Date bands and row boundaries
+extend to the main-pane edges while their content stays bounded. Each date band sticks below
 the measured toolbar until the next day reaches it, including when controls
 wrap or filters expand. Clearing the active filter chip updates the timeline
 in place. Infinite scroll retains virtualized rows. The default view ends at
@@ -279,9 +296,17 @@ Team → General is the default Team settings section and keeps identity as a
 form (rename for admins) plus two readonly copyable support fields — team id
 and slug — with spacing between sections and no nested cards. Renaming updates
 the display name only; slug and inbound email stay put. General also contains
-work style, messaging, digest destinations and timezone; there is no separate
-Preferences tab. Old Preferences links resolve to General. Evaluation tracing
-and conversation report sharing appear as descriptive navigation rows under
+work style, messaging, digest destinations, team timezone and personal display
+preferences. Members can choose a display locale and time zone for their
+account in this browser, or use browser defaults. Saved choices apply on the
+first page after sign-in. Where no choice is saved, the first render uses the
+browser's requested language and the workspace timezone. It follows the
+browser language and timezone once the page is interactive. Calendar grid
+placement, due-date status and date filters still follow their workspace or
+event time contracts. Billing periods retain their UTC boundaries. The
+[cookie notice](../../apps/web/src/app/cookies/page.tsx) owns display preference
+storage and reset details. Old Preferences links resolve to General.
+Evaluation tracing and conversation report sharing appear as descriptive navigation rows under
 Quality and support within General, never above the page header. Solo signup
 defers workspace creation until first-run Welcome: the chosen name mints the
 slug and inbound email then (prefill `${name}'s team`). Invite-only signup
@@ -296,10 +321,8 @@ identity in containers narrower than 32rem, preserving readable text at 200% siz
 An email used as a member or removed-member title is not repeated as secondary
 context. Inviter labels use the trimmed name, then email, then an unknown-member
 fallback. Member, invitation, and removed-member lists independently render 50
-rows per page with Previous/Next controls and a formatted range. Ranges use a
-stable English server/hydration format, then adopt the browser language and follow
-language changes; these controls
-disappear for 50 or fewer rows. Deliberate Previous/Next navigation scrolls the
+rows per page with Previous/Next controls and a formatted range. Ranges use the
+app display locale. These controls disappear for 50 or fewer rows. Deliberate Previous/Next navigation scrolls the
 new page into view below the shell header and focuses its named list, so the
 next Tab reaches the new rows. Automatic membership updates do not move focus. The Team accessible summary uses singular
 “member” for a single-member workspace. Role changes save on
@@ -482,8 +505,9 @@ instruction to unarchive the task first.
 
 Task list selection opens a right-hand peek on the same route (`?task=`); Objects
 rows use `?object=` and preserve list filters. All task, object, and board previews use the same fixed modal Sheet at every viewport, with focus containment, Escape dismissal, scroll preservation, and focus restoration. They never shrink the underlying list. Both task and object previews retain
-discussion and type-appropriate editable properties. The quiet Open task / Open object
-link at the top goes to `/app/objects/[id]` with `returnTo`
+discussion and type-appropriate editable properties. Due-date editors use the
+workspace calendar day. Applying the same day preserves a timed deadline. The
+quiet Open task / Open object link goes to `/app/objects/[id]` with `returnTo`
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
@@ -493,6 +517,7 @@ Priority, Assignee, Due date, Project, and Category. The fields remain editable
 when empty; task collection rows omit unset project, assignee, date, priority, and
 category placeholders. Categories use sentence case at 12px, and priority uses a
 flag rather than the failure icon. Terminal work never shows an overdue warning.
+Team settings let admins require review before evidence replaces a manually set record value and separately opt in to explicit archive requests or exact provider-identity merges. Resolved approval rows identify automatically applied changes. A supported task edit offers Undo in its approval preview. The task detail has an editable Planned date alongside Due. It displays the calendar day in the viewer’s preferred locale without an overdue warning.
 If accepted creation evidence exists,
 lead with that “why this exists” excerpt. Discussion (activity and comments)
 always follows as unboxed rows, including the borderless composer so a
@@ -508,8 +533,12 @@ also keep overflow Add task. The main column uses separated sections with readab
 A generated Summary leads when available; its current-state claims remain in a
 closed disclosure with citations intact. Origin and source context is folded
 below a generated summary to avoid competing lead paragraphs, and stays visible
-when no summary exists. Connected work, evidence, facts, and discussion follow. Connected work omits empty child-task groups on leaf tasks, but keeps a Tasks group on generic objects even
-when empty, with `Open N · Done M` totals (not the truncated preview lengths),
+when no summary exists. Connected work, evidence, facts, and discussion follow.
+Connected calendar rows display timed events in the viewer’s region and preserve
+the calendar day of all-day events. Calendar links open the event’s day in the
+grid. Connected work omits empty child-task groups on leaf tasks, but keeps a
+Tasks group on generic objects even when empty, with `Open N · Done M` totals
+(not the truncated preview lengths),
 always-visible Recent history (quiet
 `No completed tasks yet` when Done is 0), assignee
 chips (including mobile), inline status, and an add-task field pre-linked to
@@ -620,7 +649,8 @@ follows the shared [due-date vocabulary](components.md#due-dates).
 ### Administrator dashboards
 
 Jobs and Reconciliation list rows show status, a human label, and relative time.
-IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
+Timestamp tooltips use the viewer’s display locale and time zone. IDs, raw
+enum keys, and provider errors stay in the row hover title. Copy access
 for reconciliation JSON payloads lives in the row overflow menu. Audit and
 Integration Audit still keep UUIDs, refs, and JSON closed inside
 `TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
@@ -642,29 +672,30 @@ Foundations: [design system](../../design.md). Shared behavior: [component contr
 
 ### Billing benefits and recorded charges
 
-Usage and Billing share the same typed billing summary. Usage presents plan, members,
-and recorded charges in a compact summary, followed by responsive meter cards.
-Each allowance card shows usage against its allowance and the remaining amount;
-positive meter charges stay visible. Detailed recorded charges live in a closed
-Billing details disclosure. Included credit and applicable spend caps remain
-visible outside that disclosure. Billing settings use the same allowance cards, with separate neutral surfaces for
-plan controls, recorded charges, and membership. Plan controls wrap on narrow screens. Free/PAYG show each
-calendar-month allowance with used, included and remaining units, plus the UTC
-reset date. Team/Business instead show pooled included credit, used and remaining
-amounts, and the subscription-period dates. Extra members are separate from that
-credit. Every meter remains visible even at zero usage.
+Free and Team use one Included usage bar for AI processing and meeting capture.
+Show the reset date and additional-spending status with the bar. The sidebar
+shows the reset instant in the viewer’s display locale and time zone. Free
+resets by calendar month in UTC. Team resets on the subscription's renewal
+date. Keep the internal calculation and infrastructure counters in disclosures. The Team
+membership row distinguishes active full members from paid seats available to
+reuse. If the full-member roster exceeds the confirmed quantity, ask the billing
+administrator to review the subscription before adding members. An older payable
+Team quote can be resumed when its quantity and terms still match.
 
-“Charges recorded so far” uses settlement records; it is not a forecast or final
-invoice. The recurring plan fee is separate. Unknown attribution is Unavailable;
-stale credit periods say Updating billing period. No view silently resets credit.
-Monthly caps show their own dates and include metered usage before plan credit
-plus extra members, excluding fees and tax. PAYG's native allowances are deducted
-before its cap is counted. A cap is never presented as free credit.
+Usage and Billing share the same typed summary. Billing settings keep plan
+controls, recorded charges and membership visible in distinct sections. Plan
+controls wrap on narrow screens. “Charges recorded so far” comes from settled
+usage in its recorded currency. Mixed-currency totals are unavailable. Show
+the recurring subscription fee separately in its recorded currency.
+Seat-priced Team shows its USD per-member rate. Legacy Team shows its recorded
+monthly fee. Team additional spending is
+off by default. Show the authorized cap and recorded additional charges when
+enabled. Keep financial controls available to owners and admins.
 
-Sidebar: Free labels the most-used allowance; PAYG labels its monthly cap;
-Team/Business lead with credit remaining and a separate cap line. Keep the credit
-renewal date distinct from the calendar cap reset. Financial details remain for
-owners/admins; members retain the existing limited warning view.
+When a shared allowance or approved cap stops new billable work, explain the
+pause and keep existing records accessible within their visibility rules. Ask
+and meeting capture tell members to wait for usage to renew or contact a
+workspace administrator about the options available to their plan.
 
 Contractual Enterprise displays agreement-based limits instead of a local cap
 warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
@@ -686,14 +717,6 @@ request-new-link action. Success directs the user to sign in again; recovery
 remains available without legal acceptance or new-account publication readiness.
 
 
-### Optional PAYG follow-up
-
-On Home, Free-plan owners/admins who have a persisted assistant answer can see a
-quiet PAYG suggestion. Do not show it before an answer, alongside a restriction,
-or instead of an existing billing warning. “Not now” dismisses this suggestion
-for that user/team in the current browser. The CTA opens plan selection only.
-
-
 ### Coworker account and reporting controls
 
 Connect your agent leads with client setup. Workspace reporting defaults and connection-specific overrides live in a closed “Reporting preferences” disclosure below setup. Use compact, labeled forms with the shared controls; show the required work-scope field only for meaningful-work-and-handoff reporting. Connection overrides expand individually and use client names and consenting member labels, never raw client IDs. Saves announce progress and outcome through the shared toast channel. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
@@ -701,7 +724,7 @@ Connect your agent leads with client setup. Workspace reporting defaults and con
 OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
 
 Website sources are managed from the searchable Websites row directly below Email
-in Connections → Sources. Use compact source rows with one scan action, the latest scan outcome and relative time. Show “Not scanned yet” before the first run; queued and active scans name their progress and disable scan actions until completion. Changed scans link directly to their timeline evidence. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.
+in Connections → Sources. Use compact source rows with one scan action, the latest scan outcome and relative time. Show “Not scanned yet” before the first run; queued and active scans name their progress and disable scan actions until completion. Changed scans link directly to their timeline evidence. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the page limit in a quiet footer. Confirmation explains permission and how AI processing uses Included usage. Archive copy distinguishes stopping capture from erasing evidence.
 
 ### Side-panel reading layout
 
@@ -757,9 +780,9 @@ and contents are disclosed in the [cookie notice](../../apps/web/src/app/cookies
 
 Platform directories expose copyable identifiers, lifecycle status, disabled timestamps, and URL-persisted sorting/filtering. Use “Disabled” for reversible team access suspension, “Deletion requested” for owner requests, and “Active-system data removed” only after verification. Owner deletion requests lead to a standalone confirmation with restoration contact details, reachable without an active team. It confirms the request, not completed deletion, and explains that only platform admins can restore access before permanent deletion begins. Permanent actions live in a danger disclosure with exact team-name confirmation and explicit consequences for every member. Admin deletion details show retries and external retention follow-up separately. UUIDs remain an administrative/support detail rather than ordinary workspace navigation.
 
-Website source management follows [the application patterns](../../docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.
+Website source management follows [the application patterns](../../docs/design/app.md); its internal measurement follows the [website capture contract](../websites.md).
 
-Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Trust audit redaction remains in force on every page.
+Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Their time-zone label and timestamp tooltips use the viewer’s display zone. Trust audit redaction remains in force on every page.
 
 ### Dashboard clarity and responsive controls
 
@@ -781,7 +804,9 @@ User-facing counts say passages, with indexing identifiers retained in technical
 details. Meeting transcripts precede technical identifiers.
 
 Approval actions use plain record/contact-detail/note labels and a visible Accept
-action. Mobile item icon controls have 44px targets. Planned agent tools start
+action. Approval evidence times use the viewer’s display region. Due dates keep
+the workspace day, and calendar proposal schedules keep the event time zone
+and show inclusive dates for all-day events. Mobile item icon controls have 44px targets. Planned agent tools start
 collapsed and open when searching, keeping available connections first.
 
 Team visibility controls have visible column labels as well as accessible names.
@@ -862,5 +887,11 @@ the OCR budget from Captured files.
 
 Approvals, Tasks, Objects, and individual Boards offer Save view for their
 current filters. Work links to personal saved views, where each member can
-opt in to new-match updates through their daily digest. Project handoffs use
+opt in to new-match updates through their scheduled briefing. Project handoffs use
 a dated snapshot header and a separate link to the current project.
+
+### Guest access
+
+Team owners and admins create an invitation link for the guest’s email address. The invited account must verify that address before accepting and can resend verification from the invitation. Eligible notes are team-visible text captured in the app. They can grant live access to an active task or project, or publish a fixed title and text for that guest. Live views show the current title, status and due date where those values have team-visible evidence from a direct edit or an applied proposal. Supporting notes are selected separately. Published snapshots show the title and text entered for the guest and carry a Published snapshot label in Shared work. Updating the original task or project does not update the snapshot. Settings let admins search for work to share and show existing publications and note grants beside the invited guest, with controls to remove either or revoke the invitation.
+
+Shared work gives a guest a list and search over their shares. They can ask a question about an open item or recent shared work from the list. Answers link to the excerpts they cite. Guests reopen Shared work from its direct link or an accepted invitation. Promotion uses the full-member invitation flow. To give a former full member guest access, remove their full membership and issue a fresh guest invitation. Share the work again after a role transition. Guest questions use the host workspace’s shared usage allowance. The view stays readable when questions are paused. Deadline instants use the guest’s display locale and time zone, including the time of day. Date-only deadlines keep their original calendar day. Browser-local preferences saved in a workspace also apply in Shared work for that signed-in account.

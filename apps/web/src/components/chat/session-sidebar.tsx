@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/empty-state';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import {
   chatSessionLabel,
   filterChatSessions,
@@ -62,20 +62,20 @@ function SurfaceBadge({ surface }: { surface: string }) {
 }
 
 function SessionAge({ updatedAt }: { updatedAt: string }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const isClient = useSyncExternalStore(
     subscribeClientRender,
     clientRenderSnapshot,
     serverRenderSnapshot,
   );
-  const absolute = isClient ? formatDisplayDateTime(updatedAt, { timezone }) : undefined;
+  const absolute = isClient ? formatDisplayDateTime(updatedAt, region) : undefined;
   return (
     <time
       dateTime={updatedAt}
       title={absolute}
       className="mt-0.5 block truncate font-mono text-[11px] leading-4 text-fg-dim"
     >
-      {isClient ? formatRelativeAge(updatedAt) : '\u00a0'}
+      {isClient ? formatRelativeAge(updatedAt, region) : '\u00a0'}
     </time>
   );
 }

@@ -36,7 +36,7 @@ export function AgentLoopDiagram() {
           <Link2 size={16} aria-hidden="true" /> Agent progress note · Source attached
         </p>
       </section>
-      <figcaption>A note adds evidence. Lasting record changes still wait for approval.</figcaption>
+      <figcaption>An agent’s note becomes attributed evidence a later answer can cite.</figcaption>
     </MotionFigure>
   );
 }

@@ -20,6 +20,7 @@ import type { JSX } from 'react';
 import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
 import {
   acceptSuggestionItemAction,
+  undoAutomaticTaskUpdateAction,
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
@@ -36,10 +37,17 @@ import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { automaticApprovalOutcome } from '@/lib/approval-preview';
+import {
+  displayText,
+  formatAllDayCalendarDate,
+  formatDisplayDate,
+  formatDisplayDateTime,
+} from '@/lib/display-dates';
 import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 function stableJson(value: unknown): string {
@@ -327,7 +335,7 @@ const CLEARABLE_PAYLOAD_FIELDS = new Set([
 
 function formatPayloadFields(
   payload: Record<string, unknown>,
-  timezone?: string,
+  region: RegionalFormat,
   itemTitle?: string,
   operation?: string,
 ): FormattedPayloadField[] {
@@ -349,7 +357,7 @@ function formatPayloadFields(
       fields.push({
         key: boardUpdateField,
         label: payloadFieldLabel(boardUpdateField),
-        value: formatBoardUpdateValue(boardUpdateField, value, timezone),
+        value: formatBoardUpdateValue(boardUpdateField, value, region),
       });
       continue;
     }
@@ -381,7 +389,7 @@ function formatPayloadFields(
       label: payloadFieldLabel(key),
       value: displaysClearedValue
         ? clearedPayloadValue(key)
-        : formatPayloadValue(key, value, timezone),
+        : formatPayloadValue(key, value, region),
     });
   }
   return fields;
@@ -469,17 +477,23 @@ function itemKindLabel(kind: string): string {
   return kind.replace(/_/g, ' ');
 }
 
+function approvalHistoryStatus(item: SuggestionItem): string {
+  if (item.status === 'accepted' && item.metadata?.approval_decision === 'automatic')
+    return automaticApprovalOutcome(item.metadata);
+  return itemStatusLabel(item.status);
+}
+
 function itemStatusLabel(status: string): string {
   if (status === 'failed') return 'needs retry';
   return status.replace(/_/g, ' ');
 }
 
-function formatPayloadValue(key: string, value: unknown, timezone?: string): string {
+function formatPayloadValue(key: string, value: unknown, region: RegionalFormat): string {
   if (key === 'dueAt' && (typeof value === 'string' || value === null)) {
-    return formatDueDateValue(value, timezone);
+    return formatDueDateValue(value, region);
   }
   if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
-    return formatDisplayDateTime(value, { timezone: timezone ?? 'UTC' });
+    return formatDisplayDateTime(value, region);
   }
   if (key === 'status' && typeof value === 'string') {
     const labels: Record<string, string> = {
@@ -495,8 +509,9 @@ function formatPayloadValue(key: string, value: unknown, timezone?: string): str
   }
   if (TOKEN_PAYLOAD_FIELDS.has(key) && typeof value === 'string') return humanizeToken(value);
   if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'number') return formatDisplayNumber(value, region.locale);
+  if (typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return formatDisplayDateTime(value, region);
   if (Array.isArray(value)) {
     if (value.length === 0) return 'None';
     return value
@@ -517,15 +532,15 @@ function clearedPayloadValue(key: string): string {
   return key === 'ownerUserId' || key === 'assigneeUserId' ? 'Unassigned' : 'None';
 }
 
-function formatBoardUpdateValue(field: string, value: unknown, timezone?: string): string {
+function formatBoardUpdateValue(field: string, value: unknown, region: RegionalFormat): string {
   if (field === 'responsibleUserId') return value === null ? 'Unassigned' : 'Selected team member';
   if (field === 'laneId') return value === null ? 'No lane' : 'Selected lane';
   if (value === null) return field === 'dueAt' ? 'No due date' : 'None';
-  return formatPayloadValue(field, value, timezone);
+  return formatPayloadValue(field, value, region);
 }
 
-function formatDueDateValue(value: string | null, timezone?: string): string {
-  const due = presentDueDate(value, { timezone: timezone ?? 'UTC' });
+function formatDueDateValue(value: string | null, region: RegionalFormat): string {
+  const due = presentDueDate(value, region);
   if (due.status === 'invalid') return due.compactText;
   return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
 }
@@ -567,54 +582,61 @@ function calendarRangeLabel(input: {
   endAt: string | null;
   allDay?: boolean | null;
   timezone: string;
+  locale: string;
 }): string | null {
   if (input.allDay) {
     if (!input.startAt || !input.endAt) {
       if (input.startAt) {
-        return `Starts ${formatDisplayDate(input.startAt, { timezone: input.timezone })}`;
+        return `Starts ${formatDisplayDate(input.startAt, input)}`;
       }
       if (input.endAt) {
-        return `Ends ${formatDisplayDate(input.endAt, { timezone: input.timezone })}`;
+        return `Ends ${formatDisplayDate(input.endAt, input)}`;
       }
       return null;
     }
-    const end = new Date(input.endAt);
-    const displayEnd = Number.isNaN(end.getTime()) ? input.endAt : new Date(end.getTime() - 1);
-    const startLabel = formatDisplayDate(input.startAt, { timezone: input.timezone });
-    const endLabel = formatDisplayDate(displayEnd, { timezone: input.timezone });
+    const startLabel = formatDisplayDate(input.startAt, input);
+    const endLabel = formatAllDayCalendarDate(input.endAt, input, true);
     return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
   }
   if (input.startAt && input.endAt) {
-    return `${formatDisplayDateTime(input.startAt, {
-      timezone: input.timezone,
-    })} -> ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
+    return `${formatDisplayDateTime(input.startAt, input)} -> ${formatDisplayDateTime(input.endAt, input)}`;
   }
   if (input.startAt) {
-    return `Starts ${formatDisplayDateTime(input.startAt, { timezone: input.timezone })}`;
+    return `Starts ${formatDisplayDateTime(input.startAt, input)}`;
   }
   if (input.endAt) {
-    return `Ends ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
+    return `Ends ${formatDisplayDateTime(input.endAt, input)}`;
   }
   return null;
 }
 
-function proposedCalendarRange(item: SuggestionItem, timezone: string): string | null {
+function proposedCalendarRange(
+  item: SuggestionItem,
+  timezone: string,
+  locale: string,
+): string | null {
   const eventTimezone = payloadString(item.proposedPayload, 'timezone') ?? timezone;
   return calendarRangeLabel({
     startAt: payloadString(item.proposedPayload, 'startAt'),
     endAt: payloadString(item.proposedPayload, 'endAt'),
     allDay: payloadBoolean(item.proposedPayload, 'allDay'),
     timezone: eventTimezone,
+    locale,
   });
 }
 
-function calendarEventRange(event: CalendarResolutionEvent, timezone: string): string {
+function calendarEventRange(
+  event: CalendarResolutionEvent,
+  timezone: string,
+  locale: string,
+): string {
   return (
     calendarRangeLabel({
       startAt: event.startAt,
       endAt: event.endAt,
       allDay: event.allDay,
       timezone: event.timezone || timezone,
+      locale,
     }) ?? event.startAt
   );
 }
@@ -1027,6 +1049,29 @@ function ActiveApprovalPreview({
       }}
       timezone={timezone}
       actionLabel={itemActionLabel(activePreview.item)}
+      onUndo={
+        activePreview.item.status === 'accepted' &&
+        activePreview.item.metadata?.task_update_undo_available === true
+          ? () => {
+              run(
+                async () => {
+                  const result = await undoAutomaticTaskUpdateAction({
+                    itemId: activePreview.item.id,
+                  });
+                  if (result.ok) onClose();
+                  return result;
+                },
+                [],
+                {
+                  id: `undo:${activePreview.item.id}`,
+                  loading: 'Restoring task fields…',
+                  success: 'Task fields restored',
+                  error: 'Could not restore task fields',
+                },
+              );
+            }
+          : undefined
+      }
       acceptDisabled={
         activePreview.item.evidenceStatus === 'stale' &&
         isActionableSuggestionStatus(activePreview.item.status)
@@ -1419,6 +1464,7 @@ function ApprovalBundleRow({
   onSelectedChange: (itemId: string, checked: boolean) => void;
   onSelectedMany: (itemIds: string[], checked: boolean) => void;
 }) {
+  const region = useRegionalFormat();
   const inbox = useContext(InboxContext);
   const bundleActionableIds: string[] = [];
   for (const item of bundle.items) {
@@ -1454,7 +1500,7 @@ function ApprovalBundleRow({
   if (bundle.items.length === 1) {
     return <article className="approval-bundle border-b border-border py-2">{items}</article>;
   }
-  const bundleTitle = displayText(bundle.title, { timezone });
+  const bundleTitle = displayText(bundle.title, region);
   return (
     <article
       className={
@@ -1473,8 +1519,7 @@ function ApprovalBundleRow({
               {bundleTitle}
             </span>
             <span className="text-xs font-normal text-fg-dim">
-              {approvalSourceLabel(bundle)} ·{' '}
-              {formatDisplayDateTime(bundle.createdAt, { timezone })}
+              {approvalSourceLabel(bundle)} · {formatDisplayDateTime(bundle.createdAt, region)}
             </span>
           </span>
         }
@@ -1493,7 +1538,7 @@ function ApprovalBundleRow({
       >
         {!inbox.enabled && (bundle.evidence.length > 0 || bundle.reason) ? (
           <div className="pb-3 pl-9 pr-3">
-            <ApprovalEvidence bundle={bundle} timezone={timezone} />
+            <ApprovalEvidence bundle={bundle} />
           </div>
         ) : null}
         {items}
@@ -1529,12 +1574,13 @@ function ApprovalItemRow({
   onPreview: () => void;
   onSelectedChange: (checked: boolean) => void;
 }) {
+  const region = useRegionalFormat();
   const inbox = useContext(InboxContext);
-  const title = displayText(item.title, { timezone });
+  const title = displayText(item.title, region);
   const source = approvalSourceLabel(bundle);
   const context =
     bundle.items.length === 1
-      ? `${itemActionLabel(item)} · ${source} · ${formatDisplayDateTime(bundle.createdAt, { timezone })}`
+      ? `${itemActionLabel(item)} · ${source} · ${formatDisplayDateTime(bundle.createdAt, region)}`
       : itemActionLabel(item);
   const relationship = relationshipEndpoints(item, bundle);
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
@@ -1605,7 +1651,7 @@ function ApprovalItemRow({
         </CollectionRow.Subtitle>
         {item.status === 'failed' ? (
           <CollectionRow.Metadata>
-            <span className="text-xs text-danger">{itemStatusLabel(item.status)}</span>
+            <span className="text-xs text-danger">{approvalHistoryStatus(item)}</span>
           </CollectionRow.Metadata>
         ) : null}
         <CollectionRow.Actions>
@@ -1619,7 +1665,7 @@ function ApprovalItemRow({
               onPreview={onPreview}
             />
           ) : (
-            <span className="text-[11px] text-fg-dim">{itemStatusLabel(item.status)}</span>
+            <span className="text-[11px] text-fg-dim">{approvalHistoryStatus(item)}</span>
           )}
         </CollectionRow.Actions>
       </CollectionRow>
@@ -1665,10 +1711,10 @@ function ApprovalRowDetails({
         className="pb-2 pl-9 pr-3 text-xs text-fg-muted"
       />
       <ApprovalItemDependency item={item} bundle={bundle} />
-      <ApprovalItemEvidence item={item} timezone={timezone} />
+      <ApprovalItemEvidence item={item} />
       {bundle.items.length === 1 && (bundle.evidence.length > 0 || bundle.reason) ? (
         <div className="pb-3 pl-9 pr-3">
-          <ApprovalEvidence bundle={bundle} timezone={timezone} />
+          <ApprovalEvidence bundle={bundle} />
         </div>
       ) : null}
     </>
@@ -1733,7 +1779,7 @@ function ApprovalInboxRow({
         <span className="mt-1 block text-xs leading-5 text-fg-muted">{context}</span>
         {!isActionableSuggestionStatus(item.status) ? (
           <span className="mt-1 block text-xs capitalize text-fg-dim">
-            {itemStatusLabel(item.status)}
+            {approvalHistoryStatus(item)}
           </span>
         ) : null}
         {item.status === 'failed' || actionFailed ? (
@@ -1761,8 +1807,14 @@ function ApprovalRowMetadata({
   timezone: string;
   taskCategoriesEnabled: boolean;
 }) {
+  const { locale } = useRegionalFormat();
   if (relationshipEndpoints(item, bundle)) return null;
-  const fields = formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation)
+  const fields = formatPayloadFields(
+    item.proposedPayload,
+    { timezone, locale },
+    item.title,
+    item.operation,
+  )
     .filter((field) => {
       if (field.key === 'description' || field.key === 'notes') return false;
       if (
@@ -1836,13 +1888,14 @@ function CalendarResolutionLine({
   proposedRange: string | null;
   timezone: string;
 }) {
+  const { locale } = useRegionalFormat();
   const hint = item.calendarResolutionHint;
   if (hint?.kind === 'exact_duplicate_reuse') {
     return (
       <p>
         Matches existing event "{displayText(hint.event.title)}" at{' '}
-        {calendarEventRange(hint.event, timezone)}. Accept will reuse it instead of creating a
-        duplicate.
+        {calendarEventRange(hint.event, timezone, locale)}. Accept will reuse it instead of creating
+        a duplicate.
       </p>
     );
   }
@@ -1850,8 +1903,8 @@ function CalendarResolutionLine({
     return (
       <p>
         Looks related to "{displayText(hint.event.title)}" at{' '}
-        {calendarEventRange(hint.event, timezone)}. Accept will create a new event unless this
-        proposal is revised to target that event.
+        {calendarEventRange(hint.event, timezone, locale)}. Accept will create a new event unless
+        this proposal is revised to target that event.
         {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
@@ -1868,7 +1921,8 @@ function CalendarResolutionLine({
   if (hint?.kind === 'target_event') {
     return (
       <p>
-        Target: "{displayText(hint.event.title)}" at {calendarEventRange(hint.event, timezone)}.
+        Target: "{displayText(hint.event.title)}" at{' '}
+        {calendarEventRange(hint.event, timezone, locale)}.
         {proposedRange ? ` Proposed: ${proposedRange}.` : ''}
       </p>
     );
@@ -1884,8 +1938,9 @@ function CalendarResolutionLine({
 }
 
 function ApprovalCalendarHint({ item, timezone }: { item: SuggestionItem; timezone: string }) {
+  const { locale } = useRegionalFormat();
   if (item.targetKind !== 'calendar_event') return null;
-  const proposedRange = proposedCalendarRange(item, timezone);
+  const proposedRange = proposedCalendarRange(item, timezone, locale);
   return (
     <div className="pb-2 pl-9 pr-3 text-xs text-fg-dim">
       <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
@@ -1949,11 +2004,12 @@ function ApprovalItemActions({
   );
 }
 
-function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezone: string }) {
+function ApprovalItemEvidence({ item }: { item: SuggestionItem }) {
+  const region = useRegionalFormat();
   if (item.evidenceStatus === 'stale' && isActionableSuggestionStatus(item.status)) {
     return (
       <div className="pb-2 pl-9 pr-3">
-        <StaleEvidence itemId={item.id} timezone={timezone} />
+        <StaleEvidence itemId={item.id} />
       </div>
     );
   }
@@ -1994,7 +2050,7 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
                   </span>
                   <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
                     {ev.quote
-                      ? displayText(ev.quote, { timezone })
+                      ? displayText(ev.quote, region)
                       : 'Open the source event on the timeline.'}
                   </span>
                 </EvidenceLink>
@@ -2007,7 +2063,8 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
   );
 }
 
-function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; timezone: string }) {
+function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
+  const region = useRegionalFormat();
   if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
     <details className="pb-2 text-xs">
@@ -2019,7 +2076,7 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
       </summary>
       {bundle.reason ? (
         <p className="max-w-3xl py-2 text-xs leading-5 text-fg-muted">
-          {displayText(bundle.reason, { timezone })}
+          {displayText(bundle.reason, region)}
         </p>
       ) : null}
       {bundle.evidence.map((ev) => (
@@ -2036,9 +2093,7 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
             Evidence from {evidenceSourceContextLabel(ev)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
-            {ev.quote
-              ? displayText(ev.quote, { timezone })
-              : 'Open the source event on the timeline.'}
+            {ev.quote ? displayText(ev.quote, region) : 'Open the source event on the timeline.'}
           </span>
         </EvidenceLink>
       ))}

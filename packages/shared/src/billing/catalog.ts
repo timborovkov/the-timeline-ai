@@ -1,9 +1,12 @@
 /**
- * Timeline v1 commercial catalog (EUR, excl. VAT).
- * Source: Timeline v1 pricing strategy — launch hypothesis, entitlements version `v1`.
+ * Historical billing terms and current launch prices.
  */
 
 export const BILLING_ENTITLEMENTS_VERSION = 'v1' as const;
+
+export const TEAM_MONTHLY_SEAT_CENTS = 1_000;
+export const TEAM_MONTHLY_USAGE_PER_SEAT_CENTS = 1_200;
+export const FREE_MONTHLY_USAGE_CENTS = 400;
 
 export type BillingPlanId = 'free' | 'payg' | 'team' | 'business' | 'enterprise';
 
@@ -156,17 +159,8 @@ export const PLAN_CATALOG: Record<BillingPlanId, PlanCommercial> = {
   },
 };
 
-/** All commercial offers including Enterprise (catalog / internal). */
-export const PUBLIC_PLAN_ORDER: BillingPlanId[] = [
-  'free',
-  'payg',
-  'team',
-  'business',
-  'enterprise',
-];
-
-/** Self-serve columns on the public pricing grid/table. Enterprise is a contact nudge. */
-export const SELF_SERVE_PLAN_ORDER: BillingPlanId[] = ['free', 'payg', 'team', 'business'];
+export const PUBLIC_PLAN_ORDER = ['free', 'team', 'enterprise'] as const;
+export const SELF_SERVE_PLAN_ORDER = ['free', 'team'] as const;
 
 /** Spend-cap warning thresholds (percent of monthly cap). */
 export const SPEND_CAP_WARN_THRESHOLDS = [50, 75, 90, 100] as const;
@@ -269,6 +263,18 @@ export function formatEuroFromCents(cents: number): string {
     currency: 'EUR',
     maximumFractionDigits: euros % 1 === 0 ? 0 : 2,
   }).format(euros);
+}
+
+const USD_INTEGER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+const USD_CENTS = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+export function formatUsdFromCents(cents: number): string {
+  return (cents % 100 === 0 ? USD_INTEGER : USD_CENTS).format(cents / 100);
 }
 
 const EURO_AMOUNT_RE = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/u;

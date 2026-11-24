@@ -36,6 +36,7 @@ const { cleanup, fireEvent, render, screen, within, waitFor } =
   await import('@testing-library/react');
 const { TeamMembersSettings } = await import('@/components/team-members-settings');
 const { TeamListPagination } = await import('@/components/team-list-pagination');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 const { PendingInvitesCard } = await import('@/components/pending-invites-card');
 const { RemovedMembersCard } = await import('@/components/removed-members-card');
 
@@ -301,13 +302,15 @@ it('formats pagination for the browser language and follows language changes', a
   try {
     Object.defineProperty(navigator, 'language', { configurable: true, value: 'de-DE' });
     render(
-      <TeamListPagination
-        page={0}
-        total={1284}
-        label="Member pages"
-        noun="members"
-        onPageChange={() => undefined}
-      />,
+      <WorkspaceTimezoneProvider timezone="UTC" region={{}}>
+        <TeamListPagination
+          page={0}
+          total={1284}
+          label="Member pages"
+          noun="members"
+          onPageChange={() => undefined}
+        />
+      </WorkspaceTimezoneProvider>,
     );
     expect(screen.getByText('1–50 of 1.284 members')).toBeTruthy();
     Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });

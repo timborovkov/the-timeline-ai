@@ -15,6 +15,7 @@ import { PlanIntentPrompt } from '@/components/plan-intent-prompt';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { appMetadataForTeam } from '@/lib/app-metadata';
+import { readAppRegion } from '@/lib/app-region';
 import { auth, getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
@@ -112,7 +113,7 @@ export default async function AppLayout({
   });
   const inbox = loadInboxPreview(scope);
   const billingShell = loadBillingShell(scope, Boolean(impersonation?.readOnly));
-  const [gettingStarted, workspaceTimezone, planIntentCookie] = await Promise.all([
+  const [gettingStarted, workspaceTimezone, planIntentCookie, region] = await Promise.all([
     loadGettingStartedGuide(scope, session.user.id),
     scope.calendar
       .getCalendarSettings()
@@ -123,6 +124,7 @@ export default async function AppLayout({
         return DEFAULT_TIMEZONE;
       }),
     readSignupPlanIntent(),
+    readAppRegion(),
   ]);
 
   const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
@@ -148,6 +150,7 @@ export default async function AppLayout({
         badges={badges}
         inbox={inbox}
         workspaceTimezone={workspaceTimezone}
+        region={region}
         sidebarInitiallyExpanded={sidebarInitiallyExpanded}
         billingSummary={billingShell.then(({ sidebar }) => sidebar)}
         platformAdmin={showPlatformAdmin(

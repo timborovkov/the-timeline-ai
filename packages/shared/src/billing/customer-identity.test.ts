@@ -8,10 +8,11 @@ import {
   type Db,
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
-import { beforeEach, afterEach, describe, it } from 'bun:test';
+import { beforeEach, afterEach, describe, it, spyOn } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { assertTeamMemberSeatCapacity, reconcileTeamPaidSeats } from '#src/billing/capacity.js';
 import {
   assertStoredPolarIdentity,
   resolvePolarOwnerUserId,
@@ -21,7 +22,8 @@ import {
 } from '#src/billing/customer-identity.js';
 import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { handlePolarWebhookEvent } from '#src/billing/polar-webhook.js';
-import { createFakeBillingProvider } from '#src/billing/provider.js';
+import * as polar from '#src/billing/polar.js';
+import { createFakeBillingProvider, type TeamSeatSubscription } from '#src/billing/provider.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const teamId = '11111111-1111-4111-8111-111111111111';
@@ -93,6 +95,227 @@ describe('Polar team identity and revocation', () => {
     await expect(resolve()).rejects.toBeInstanceOf(PolarIdentityError);
     await expect(resolve(owner, secondTeam)).resolves.toBeDefined();
   });
+  it('retains payable links and removes only confirmed expired links under the checkout lock', async () => {
+    await withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+      context.recordCheckout('closed'),
+    );
+    await withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+      context.recordCheckout('payable'),
+    );
+    provider.expireCheckout = (id) => Promise.resolve(id === 'closed' ? 'expired' : 'already_paid');
+    const retire = () =>
+      withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+        context.prepareTeamCheckout({ productId: 'team-product', seats: 3 }),
+      );
+    expect(await retire()).toEqual({ status: 'blocked' });
+    const [remaining] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(remaining?.lifecycleWork.pendingCheckoutIds).toEqual(['payable']);
+    provider.expireCheckout = () => Promise.resolve('expired');
+    expect(await retire()).toEqual({ status: 'ready' });
+    const [cleared] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(cleared?.lifecycleWork.pendingCheckoutIds).toEqual([]);
+  });
+
+  it('recovers an applied Enterprise checkout without releasing a payment still awaiting application', async () => {
+    const identity = await withTeamBillingIdentity(
+      { db, teamId, userId: owner, provider },
+      async (current, context) => {
+        await context.recordCheckout('old-enterprise');
+        await context.recordCheckout('confirming-team');
+        return current;
+      },
+    );
+    provider.expireCheckout = () => Promise.resolve('already_paid');
+    provider.listReconciledCheckoutIds = (input) => {
+      expect(input).toEqual({
+        customerId: identity.customerId,
+        currentSubscriptionId: null,
+        checkoutIds: ['old-enterprise', 'confirming-team'],
+      });
+      return Promise.resolve(['old-enterprise']);
+    };
+
+    await expect(
+      withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+        context.prepareTeamCheckout({ productId: 'team-product', seats: 3 }),
+      ),
+    ).resolves.toEqual({ status: 'blocked' });
+    const [workspace] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual(['confirming-team']);
+  });
+
+  it('rediscovers and records a payable Team quote when the create response was lost', async () => {
+    const url = 'https://checkout.example.test/recovered';
+    provider.listPendingTeamCheckouts = (filter) => {
+      expect(filter).toEqual({
+        customerId: provider.customers.get(teamId)?.id,
+        productId: 'team-product',
+      });
+      return Promise.resolve([
+        {
+          id: 'lost-checkout',
+          status: 'open',
+          seats: 3,
+          discountId: null,
+          url,
+        },
+      ]);
+    };
+    const prepare = (seats: number) =>
+      withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+        context.prepareTeamCheckout({ productId: 'team-product', seats }),
+      );
+    provider.expireCheckout = () => Promise.resolve('still_open');
+
+    expect(await prepare(3)).toEqual({ status: 'resume', url });
+    const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(team?.lifecycleWork.pendingCheckoutIds).toEqual(['lost-checkout']);
+    expect(await prepare(4)).toEqual({ status: 'blocked' });
+    provider.listPendingTeamCheckouts = () => Promise.resolve([]);
+    provider.expireCheckout = () => Promise.resolve('expired');
+    expect(await prepare(4)).toEqual({ status: 'ready' });
+  });
+
+  it('allows invite creation but holds roster growth while a Team quote can still be paid', async () => {
+    const identity = await withTeamBillingIdentity(
+      { db, teamId: secondTeam, userId: owner, provider },
+      async (current, context) => {
+        await context.recordCheckout('one-seat-quote');
+        return current;
+      },
+    );
+    const providerMock = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
+    const productMock = spyOn(polar, 'polarProductIdForPlan').mockReturnValue('team-product');
+    try {
+      const accept = () =>
+        db.transaction(async (tx) => {
+          await assertTeamMemberSeatCapacity({
+            db: tx as unknown as Db,
+            teamId: secondTeam,
+            includePendingInvites: false,
+            acquirePaidSeat: true,
+          });
+          await tx
+            .insert(teamMembers)
+            .values({ teamId: secondTeam, userId: member, role: 'member' });
+        });
+      provider.expireCheckout = () => Promise.resolve('still_open');
+      await expect(
+        assertTeamMemberSeatCapacity({ db, teamId: secondTeam }),
+      ).resolves.toBeUndefined();
+      await expect(accept()).rejects.toThrow('pending Team checkout');
+
+      provider.expireCheckout = () => Promise.resolve('already_paid');
+      await expect(accept()).rejects.toThrow('pending Team checkout');
+
+      const originalId = 'one-seat-quote';
+      const recoveredId = 'unrecorded-team-quote';
+      provider.expireCheckout = (id) =>
+        Promise.resolve(id === originalId ? 'expired' : 'still_open');
+      provider.listPendingTeamCheckouts = (input) => {
+        expect(input).toEqual({ customerId: identity.customerId, productId: 'team-product' });
+        return Promise.resolve([
+          {
+            id: recoveredId,
+            status: 'open',
+            seats: 1,
+            discountId: null,
+            url: 'https://checkout.example.test/recovered',
+          },
+        ]);
+      };
+      await expect(accept()).rejects.toThrow('pending Team checkout');
+      expect(
+        await db.select().from(teamMembers).where(eq(teamMembers.teamId, secondTeam)),
+      ).toHaveLength(1);
+
+      provider.listPendingTeamCheckouts = () => Promise.resolve([]);
+      await expect(accept()).resolves.toBeUndefined();
+      expect(
+        await db.select().from(teamMembers).where(eq(teamMembers.teamId, secondTeam)),
+      ).toHaveLength(2);
+      const [team] = await db.select().from(teams).where(eq(teams.id, secondTeam));
+      expect(team?.lifecycleWork.pendingCheckoutIds).toEqual([]);
+    } finally {
+      providerMock.mockRestore();
+      productMock.mockRestore();
+    }
+  });
+
+  it('reconciles verified seat drift without purchasing seats or granting allowance twice', async () => {
+    const identity = await resolve();
+    const subscription: TeamSeatSubscription = {
+      id: 'synthetic-subscription',
+      customerId: identity.customerId,
+      productId: 'team-product',
+      seats: 1,
+      pendingSeats: null,
+      status: 'active',
+      periodStart: new Date('2026-11-01T00:00:00Z'),
+      periodEnd: new Date('2026-12-01T00:00:00Z'),
+      modifiedAt: new Date('2026-11-16T00:00:00Z'),
+    };
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        polarProductId: subscription.productId,
+        polarSubscriptionId: subscription.id,
+        periodStartedAt: subscription.periodStart,
+        periodEndsAt: subscription.periodEnd,
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 700,
+      })
+      .where(eq(teamBillingAccounts.teamId, teamId));
+
+    provider.getTeamSeatSubscription = () => Promise.resolve({ ...subscription });
+    const changes: { seats: number; proration: string }[] = [];
+    provider.updateTeamSeatSubscription = (change) => {
+      changes.push(change);
+      subscription.pendingSeats = change.seats === subscription.seats ? null : change.seats;
+      return Promise.resolve({ ...subscription });
+    };
+    const reconcile = () => reconcileTeamPaidSeats({ db, teamId, provider });
+    const account = async () =>
+      (
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, teamId))
+      )[0];
+
+    // The roster is larger than the recovered provider quantity. Maintenance
+    // can record a confirmed snapshot but cannot authorize a purchase.
+    await reconcile();
+    expect(changes).toEqual([]);
+    expect((await account())?.includedDiscountRemainingCents).toBe(700);
+
+    subscription.seats = 3;
+    subscription.pendingSeats = 2;
+    await reconcile();
+    await reconcile();
+    expect(changes).toEqual([
+      {
+        subscriptionId: subscription.id,
+        seats: 3,
+        proration: 'next_period',
+      },
+    ]);
+    expect(await account()).toMatchObject({
+      teamSeatTerms: { paidSeats: 3, highWaterSeats: 3, includedUsageCents: 2400 },
+      includedDiscountRemainingCents: 1900,
+    });
+
+    subscription.periodStart = subscription.periodEnd;
+    subscription.periodEnd = new Date('2027-01-01T00:00:00Z');
+    subscription.modifiedAt = subscription.periodStart;
+    await reconcile();
+    await reconcile();
+    expect(await account()).toMatchObject({
+      periodStartedAt: subscription.periodStart,
+      teamSeatTerms: { paidSeats: 3, highWaterSeats: 3, includedUsageCents: 3600 },
+      includedDiscountRemainingCents: 3600,
+    });
+  });
+
   it('gives admins their own billing manager identity and rejects ordinary members', async () => {
     const a = await resolve();
     const b = await resolve(admin);

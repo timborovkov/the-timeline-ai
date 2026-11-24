@@ -9,10 +9,10 @@ describe('core public documents', () => {
     if (!home) throw new Error('Home public document is not registered');
 
     expect(home).toMatchObject({
-      title: 'Your team’s living work record',
+      title: 'A shared work record for teams and their AI agents',
       description:
-        'Turn context from your tools and sources into connected clients, projects, tasks and decisions—with sources attached and changes you approve.',
-      dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
+        'Know what changed, what was agreed, and what still needs doing with a source-linked work record shared by people and AI agents.',
+      dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     });
 
     const graph = buildPublicStructuredData(home, 'https://thetimeline.cc');

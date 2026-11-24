@@ -12,11 +12,15 @@ import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
-import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
+import {
+  activatedPolarSubscriptionId,
+  assertStoredPolarIdentity,
+} from '#src/billing/customer-identity.js';
+import { confirmTeamSeatEntitlement } from '#src/billing/membership.js';
 import {
   assertPriceOverride,
-  pendingEnterpriseTermsAfterActivation,
   pendingEnterpriseTermsForCheckout,
+  pendingEnterpriseTermsWithoutCheckout,
   type PendingEnterpriseTerms,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
@@ -35,6 +39,10 @@ export interface PolarWebhookPayload {
     status?: string;
     product_id?: string;
     amount?: number;
+    currency?: string;
+    seats?: number | null;
+    recurring_interval?: string;
+    recurring_interval_count?: number;
     refunded_amount?: number;
     refundedAmount?: number;
     current_period_start?: string | number;
@@ -49,8 +57,10 @@ export interface PolarWebhookPayload {
     endsAt?: string | number | null;
     modified_at?: string | number;
     updated_at?: string | number;
+    created_at?: string | number;
     modifiedAt?: string | number;
     updatedAt?: string | number;
+    createdAt?: string | number;
     customer?: {
       external_id?: string;
       id?: string;
@@ -344,7 +354,12 @@ export function shouldResetIncludedDiscount(input: {
 
 export function polarEventModifiedAt(data: PolarWebhookPayload['data']): Date | null {
   return parsePolarTimestamp(
-    data?.modified_at ?? data?.updated_at ?? data?.modifiedAt ?? data?.updatedAt,
+    data?.modified_at ??
+      data?.updated_at ??
+      data?.modifiedAt ??
+      data?.updatedAt ??
+      data?.created_at ??
+      data?.createdAt,
   );
 }
 
@@ -565,6 +580,12 @@ async function upsertPaidSubscription(input: {
   compedIncoming?: CompedIncomingSubscription;
 }> {
   return input.db.transaction(async (tx) => {
+    // Checkout creation and lifecycle operations take the workspace lock first.
+    const [workspace] = await tx
+      .select({ lifecycleWork: teams.lifecycleWork })
+      .from(teams)
+      .where(eq(teams.id, input.teamId))
+      .for('update');
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
     if (existing?.arrangement === 'comped') {
       return recordCompedIncomingSubscription(tx as unknown as Db, existing, input.data);
@@ -573,6 +594,15 @@ async function upsertPaidSubscription(input: {
     const trackedSubscriptionId = liveTrackedSubscriptionId(existing, polarSubscriptionId);
     const existingEnterprise =
       existing?.planId === 'enterprise' || existing?.billingState === 'enterprise_active';
+    if (input.plan === 'team' && trackedSubscriptionId && polarSubscriptionId) {
+      return {
+        applied: false,
+        duplicate: {
+          keptSubscriptionId: trackedSubscriptionId,
+          extraSubscriptionId: polarSubscriptionId,
+        },
+      };
+    }
     if (existingEnterprise && input.plan !== 'enterprise') {
       if (trackedSubscriptionId && polarSubscriptionId) {
         return {
@@ -606,14 +636,26 @@ async function upsertPaidSubscription(input: {
       return { applied: false };
     }
     const checkoutId = polarCheckoutId(input.data);
+    const activatesCheckout = input.billingState === billingStateForPolarPlan(input.plan);
     const pending =
-      input.plan === 'enterprise'
+      input.plan === 'enterprise' && activatesCheckout
         ? pendingEnterpriseTermsForCheckout(existing?.pendingEnterpriseTerms ?? null, checkoutId)
         : null;
     const activatedPricing = pending ? enterpriseActivationPricing(pending) : null;
+    const subscriptionCurrency =
+      typeof input.data?.currency === 'string' ? input.data.currency.toUpperCase() : null;
+    const enterpriseFeeCurrency =
+      input.plan === 'enterprise' &&
+      (subscriptionCurrency === 'EUR' || subscriptionCurrency === 'USD')
+        ? subscriptionCurrency
+        : input.plan === 'enterprise' &&
+            existing?.polarSubscriptionId === polarSubscriptionId &&
+            existing.polarProductId === (input.data?.product_id ?? null)
+          ? existing.enterprisePlatformFeeCurrency
+          : null;
     const pendingAfterActivation =
       input.plan === 'enterprise' && pending
-        ? pendingEnterpriseTermsAfterActivation(
+        ? pendingEnterpriseTermsWithoutCheckout(
             existing?.pendingEnterpriseTerms ?? null,
             checkoutId,
           )
@@ -624,7 +666,7 @@ async function upsertPaidSubscription(input: {
       outstandingDebtCents: 0,
       preserveLocalFreeze: true,
     });
-    const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
+    const catalogIncluded = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const now = new Date();
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
@@ -641,6 +683,65 @@ async function upsertPaidSubscription(input: {
       incomingEndsAt: period.periodEndsAt,
       now,
     });
+    const isTeamSeatSubscription =
+      input.plan === 'team' &&
+      ((input.data?.seats !== undefined && input.data.seats !== null) ||
+        Boolean(existing?.teamSeatTerms));
+    // Legacy flat Team subscriptions report EUR too; currency presence is not a seat contract.
+    // A new USD quote must still carry explicit quantity before it can grant access.
+    if (input.plan === 'team' && subscriptionCurrency === 'USD' && !isTeamSeatSubscription)
+      return { applied: false };
+    const seats = input.data?.seats;
+    if (
+      isTeamSeatSubscription &&
+      (subscriptionCurrency !== 'USD' ||
+        input.data?.recurring_interval !== 'month' ||
+        input.data.recurring_interval_count !== 1 ||
+        typeof seats !== 'number' ||
+        !Number.isSafeInteger(seats) ||
+        seats < 1 ||
+        seats > 1000 ||
+        !period.periodStartedAt ||
+        !period.periodEndsAt ||
+        period.periodEndsAt <= period.periodStartedAt)
+    )
+      return { applied: false };
+    if (
+      isTeamSeatSubscription &&
+      existing?.teamSeatTerms &&
+      existing.periodStartedAt &&
+      period.periodStartedAt &&
+      period.periodStartedAt < existing.periodStartedAt
+    ) {
+      return { applied: false };
+    }
+    const seatEntitlement =
+      isTeamSeatSubscription &&
+      typeof seats === 'number' &&
+      period.periodStartedAt &&
+      period.periodEndsAt
+        ? confirmTeamSeatEntitlement({
+            existing:
+              existing?.planId === input.plan &&
+              existing.polarSubscriptionId === polarSubscriptionId
+                ? existing
+                : null,
+            paidSeats: seats,
+            periodStart: period.periodStartedAt,
+            periodEnd: period.periodEndsAt,
+            confirmedAt: polarEventModifiedAt(input.data) ?? now,
+          })
+        : null;
+    const seatValues =
+      seatEntitlement ??
+      (isTeamSeatSubscription && existing?.teamSeatTerms
+        ? {
+            teamSeatTerms: existing.teamSeatTerms,
+            periodStartedAt: existing.periodStartedAt ?? periodStartedAt,
+            periodEndsAt: existing.periodEndsAt ?? periodEndsAt,
+            includedDiscountRemainingCents: existing.includedDiscountRemainingCents,
+          }
+        : null);
     const polarEventModifiedAtValue =
       polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
     const scheduledCancel =
@@ -655,10 +756,12 @@ async function upsertPaidSubscription(input: {
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
-        spendCapCents: PLAN_CATALOG[input.plan].defaultSpendCapCents,
-        includedDiscountRemainingCents: included,
+        enterprisePlatformFeeCurrency: enterpriseFeeCurrency,
+        spendCapCents: seatEntitlement ? 0 : PLAN_CATALOG[input.plan].defaultSpendCapCents,
+        includedDiscountRemainingCents: catalogIncluded,
         periodStartedAt,
         ...(periodEndsAt ? { periodEndsAt } : {}),
+        ...seatValues,
         ...scheduledCancel,
         polarEventModifiedAt: polarEventModifiedAtValue,
         shadowBilling: !input.chargesEnabled,
@@ -675,14 +778,20 @@ async function upsertPaidSubscription(input: {
           periodStartedAt,
           ...(periodEndsAt ? { periodEndsAt } : {}),
           ...scheduledCancel,
-          ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
+          ...(resetDiscount ? { includedDiscountRemainingCents: catalogIncluded } : {}),
+          teamSeatTerms: null,
+          ...seatValues,
           spendCapCents:
             pending?.spendCapCents ??
-            spendCapCentsForPaidActivation({
-              existing,
-              plan: input.plan,
-            }),
-          ...(input.plan === 'enterprise' ? {} : { enterprisePlatformFeeCents: null }),
+            (seatEntitlement && !existing?.teamSeatTerms
+              ? 0
+              : spendCapCentsForPaidActivation({
+                  existing,
+                  plan: input.plan,
+                })),
+          ...(input.plan !== 'enterprise'
+            ? { enterprisePlatformFeeCents: null, enterprisePlatformFeeCurrency: null }
+            : { enterprisePlatformFeeCurrency: enterpriseFeeCurrency }),
           ...(activatedPricing
             ? {
                 enterprisePlatformFeeCents: activatedPricing.platformFeeCents,
@@ -697,12 +806,47 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
+    if (workspace) {
+      const lifecycleWork = { ...workspace.lifecycleWork };
+      // The current provider state may be delinquent even though its checkout was applied.
+      const appliedId = activatesCheckout
+        ? polarSubscriptionId
+        : existing?.polarSubscriptionId === polarSubscriptionId
+          ? activatedPolarSubscriptionId(existing, lifecycleWork.appliedPolarSubscriptionId)
+          : null;
+      const removesCheckout =
+        activatesCheckout &&
+        (input.plan === 'team' || input.plan === 'enterprise') &&
+        checkoutId &&
+        lifecycleWork.pendingCheckoutIds?.includes(checkoutId);
+      if (appliedId !== (lifecycleWork.appliedPolarSubscriptionId ?? null) || removesCheckout) {
+        if (appliedId) lifecycleWork.appliedPolarSubscriptionId = appliedId;
+        else delete lifecycleWork.appliedPolarSubscriptionId;
+        if (removesCheckout) {
+          lifecycleWork.pendingCheckoutIds =
+            lifecycleWork.pendingCheckoutIds?.filter((id) => id !== checkoutId) ?? [];
+        }
+        await tx.update(teams).set({ lifecycleWork }).where(eq(teams.id, input.teamId));
+      }
+    }
     await recordBillingPlan(
       tx as unknown as Db,
       input.teamId,
       input.plan,
       now,
-      existing ? { planId: existing.planId, effectiveAt: existing.createdAt } : undefined,
+      existing
+        ? {
+            planId: existing.planId,
+            effectiveAt: existing.createdAt,
+            ...(existing.planId === 'team'
+              ? { teamSeatPricing: existing.teamSeatTerms !== null }
+              : {}),
+          }
+        : undefined,
+      input.plan === 'team' ? Boolean(seatValues) : undefined,
+      input.plan === 'enterprise' && activatesCheckout && enterpriseFeeCurrency !== null
+        ? enterpriseFeeCurrency === 'USD'
+        : undefined,
     );
     const activated =
       billingState.endsWith('_active') &&
@@ -736,7 +880,7 @@ async function recordCompedIncomingSubscription(
   const clearStoredId = !tracked || tracked === incomingSubscriptionId;
   const checkoutId = polarCheckoutId(data);
   const pendingAfter = checkoutId
-    ? pendingEnterpriseTermsAfterActivation(existing.pendingEnterpriseTerms ?? null, checkoutId)
+    ? pendingEnterpriseTermsWithoutCheckout(existing.pendingEnterpriseTerms ?? null, checkoutId)
     : undefined;
   const customerId = polarCustomerId(data);
   await db
@@ -906,6 +1050,7 @@ async function cancelMatchingSubscription(input: {
   db: Db;
   teamId: string;
   subscriptionId: string | undefined;
+  checkoutId?: string | null;
   incomingModifiedAt: Date | null;
   /**
    * Maintenance sweep only. A webhook cancel still downgrades when Polar has
@@ -915,6 +1060,14 @@ async function cancelMatchingSubscription(input: {
 }): Promise<boolean> {
   if (!input.subscriptionId) return false;
   return input.db.transaction(async (tx) => {
+    const checkoutId = input.checkoutId;
+    const [workspace] = checkoutId
+      ? await tx
+          .select({ lifecycleWork: teams.lifecycleWork })
+          .from(teams)
+          .where(eq(teams.id, input.teamId))
+          .for('no key update')
+      : [];
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
     if (!existing || existing.arrangement === 'comped') return false;
     if (existing.polarSubscriptionId !== input.subscriptionId) return false;
@@ -946,6 +1099,10 @@ async function cancelMatchingSubscription(input: {
       .limit(1);
     const leavingEnterprise =
       existing.planId === 'enterprise' || existing.billingState === 'enterprise_active';
+    const pendingAfterCancellation =
+      checkoutId && pendingEnterpriseTermsForCheckout(existing.pendingEnterpriseTerms, checkoutId)
+        ? pendingEnterpriseTermsWithoutCheckout(existing.pendingEnterpriseTerms, checkoutId)
+        : undefined;
     const downgradedAt = new Date();
     const [downgraded] = await tx
       .update(teamBillingAccounts)
@@ -953,11 +1110,18 @@ async function cancelMatchingSubscription(input: {
         billingState: grant ? 'free' : 'restricted',
         planId: 'free',
         spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
+        ...(existing.teamSeatTerms
+          ? { teamSeatTerms: null, includedDiscountRemainingCents: 0 }
+          : {}),
         polarSubscriptionId: null,
         polarProductId: null,
         cancelEffectiveAt: null,
         enterprisePlatformFeeCents: null,
+        enterprisePlatformFeeCurrency: null,
         ...(leavingEnterprise ? { priceOverride: null, priceOverrideExpiresAt: null } : {}),
+        ...(pendingAfterCancellation !== undefined
+          ? { pendingEnterpriseTerms: pendingAfterCancellation }
+          : {}),
         polarEventModifiedAt:
           input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? downgradedAt,
         updatedAt: downgradedAt,
@@ -976,9 +1140,23 @@ async function cancelMatchingSubscription(input: {
       )
       .returning({ teamId: teamBillingAccounts.teamId });
     if (!downgraded) return false;
+    if (checkoutId && workspace?.lifecycleWork.pendingCheckoutIds?.includes(checkoutId)) {
+      await tx
+        .update(teams)
+        .set({
+          lifecycleWork: {
+            ...workspace.lifecycleWork,
+            pendingCheckoutIds: workspace.lifecycleWork.pendingCheckoutIds.filter(
+              (id) => id !== checkoutId,
+            ),
+          },
+        })
+        .where(eq(teams.id, input.teamId));
+    }
     await recordBillingPlan(tx as unknown as Db, input.teamId, 'free', downgradedAt, {
       planId: existing.planId,
       effectiveAt: existing.createdAt,
+      ...(existing.planId === 'team' ? { teamSeatPricing: existing.teamSeatTerms !== null } : {}),
     });
     return true;
   });
@@ -989,6 +1167,7 @@ export async function applyElapsedScheduledCancellations(
   db: Db,
   now = new Date(),
   hooks?: {
+    provider?: BillingProvider | null;
     /** Test seam for a webhook that commits after the due-row read and before the lock. */
     afterSelect?: () => Promise<void>;
   },
@@ -997,6 +1176,9 @@ export async function applyElapsedScheduledCancellations(
     .select({
       teamId: teamBillingAccounts.teamId,
       polarSubscriptionId: teamBillingAccounts.polarSubscriptionId,
+      polarProductId: teamBillingAccounts.polarProductId,
+      teamSeatTerms: teamBillingAccounts.teamSeatTerms,
+      periodStartedAt: teamBillingAccounts.periodStartedAt,
     })
     .from(teamBillingAccounts)
     .where(
@@ -1011,11 +1193,40 @@ export async function applyElapsedScheduledCancellations(
   let applied = 0;
   for (const row of due) {
     if (!row.polarSubscriptionId) continue;
+    let incomingModifiedAt: Date | null = null;
+    if (row.teamSeatTerms) {
+      const provider = hooks?.provider;
+      if (!provider?.getTeamSeatSubscription || !row.polarProductId) continue;
+      try {
+        const customerId = await assertStoredPolarIdentity(db, row.teamId, provider);
+        const subscription = await provider.getTeamSeatSubscription(row.polarSubscriptionId);
+        if (
+          subscription.id !== row.polarSubscriptionId ||
+          subscription.customerId !== customerId ||
+          subscription.productId !== row.polarProductId ||
+          (row.periodStartedAt && subscription.periodStart < row.periodStartedAt)
+        )
+          continue;
+        const scheduledEnd = subscription.cancelEffectiveAt;
+        const actualEnd = subscription.endedAt;
+        const ended =
+          (actualEnd instanceof Date && actualEnd <= now) ||
+          subscription.status === 'revoked' ||
+          (subscription.status === 'canceled' && (!scheduledEnd || scheduledEnd <= now));
+        // A scheduled timestamp can pass before Polar applies a reversible cancellation.
+        // Active state is safe to downgrade only when Polar reports the actual end.
+        if (!ended) continue;
+        incomingModifiedAt = subscription.modifiedAt;
+      } catch {
+        log.warn({ teamId: row.teamId }, 'Could not verify scheduled Team cancellation');
+        continue;
+      }
+    }
     const downgraded = await cancelMatchingSubscription({
       db,
       teamId: row.teamId,
       subscriptionId: row.polarSubscriptionId,
-      incomingModifiedAt: null,
+      incomingModifiedAt,
       dueBy: now,
     });
     if (downgraded) applied += 1;
@@ -1237,6 +1448,7 @@ async function applyPolarWebhookEvent(input: {
           db: input.db,
           teamId,
           subscriptionId: data?.id,
+          checkoutId: polarCheckoutId(data),
           incomingModifiedAt: polarEventModifiedAt(data),
         });
       } else if (billingState === 'canceled') {
@@ -1305,6 +1517,7 @@ async function applyPolarWebhookEvent(input: {
         db: input.db,
         teamId,
         subscriptionId: data?.id,
+        checkoutId: polarCheckoutId(data),
         incomingModifiedAt: polarEventModifiedAt(data),
       });
     } else {

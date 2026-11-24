@@ -52,29 +52,26 @@ revision date is available. See [retrieval freshness and conflicting evidence](r
 
 ## Billing and safeguards
 
-The `accepted_sources` meter charges **20 source units per captured page**,
-including unchanged pages and ingestion. AI and retained storage remain separate.
-Reserve 100 units before a five-page scan; settle persisted page outcomes once.
-Retries reuse the same operation ID, provider crawl ID and immutable page cache.
-Legacy admissions retain one unit per page. No new Polar meter is introduced.
+On Free and seat-priced Team, website capture and ordinary storage are included within plan limits. AI processing of changed pages draws from shared Included usage. Enterprise follows its agreement.
+
+The internal accepted-source meter counts every captured page, including unchanged pages, and reserves capacity before provider work. Persisted outcomes settle once. Retries reuse the same operation ID, provider crawl ID and immutable page cache. Recovered scans keep the weighting they were admitted with.
 
 Provider credits, when returned by Firecrawl, are recorded separately from source
 units. Unknown provider credits must not be inferred as zero. Actual account costs
 and marginal credit pricing require account verification; failed/unusable crawls
-can incur supplier costs without creating billable captured pages.
+can incur supplier costs without producing captured pages.
 
 Operational defaults are five pages/run, 100 active sources/team, one active
 run/team, one-hour source cooldown, and 10,000 provider-admitted page attempts per
 team in a rolling day. Global leases allow two provider crawls, at most one per
 hostname, with ten seconds between starts for a hostname. Limits apply across
-entry points; paid source capacity, costly-worker limits and spending admission
-still apply. `WEBSITE_CRAWLS_DISABLED=true` stops new provider work.
+entry points. Source capacity, costly-worker limits and spending admission for AI processing still apply. `WEBSITE_CRAWLS_DISABLED=true` stops new provider work.
 
 An ambiguous provider POST is never blindly repeated. A durable provider-start
 marker without a crawl checkpoint fails with `provider_acceptance_unknown`.
 Known jobs resume; up to three transient retries after the first attempt honour Retry-After. Unused queued
 reservations are released on pause/removal. In-flight provider cancellation is
-best effort; already captured usage remains billable.
+best effort. Recorded capture and any incurred AI usage stay in the ledger.
 
 ## Schedules and delivery
 
@@ -120,19 +117,16 @@ synthetic attribution. Queued work stores credential identifiers, never plaintex
 bearer tokens, and revalidates the grant/key before provider work.
 
 MCP exposes `timeline.crawl` with URL, subject, permission confirmation and stable
-idempotency key; `timeline.crawl_status` takes a run ID. Search never initiates a
-paid crawl. Schedule management remains in the app/HTTP API.
+idempotency key; `timeline.crawl_status` takes a run ID. Search never initiates a crawl. Schedule management remains in the app/HTTP API.
 
 ## Rollout and deletion
 
 Apply the additive migration before consuming new jobs. Keep scheduling disabled
-until one-off scans, weighted Polar sandbox reporting, provider concurrency,
+until one-off scans, internal source accounting, provider concurrency,
 retention/DPA evidence and operational monitoring have been checked. Deployment
 and legal approval are separate from a source change. Material terms/privacy
 updates use the shared legal versions and require renewed presentation.
 
-The public pricing calculator reuses the multiplier and billing preview. It uses
-30 daily or five weekly scans for a 30-day estimate; manual scans are explicit.
 Crawling is counted once in source usage. See [billing](architecture/billing.md),
 [provider register](providers.md), [security gaps](security-gaps.md), and
 [manual support deletion](setup/manual-support-deletion.md).

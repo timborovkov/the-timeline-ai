@@ -198,7 +198,7 @@ Current Terms/Privacy versions and renewed-acceptance requirements are owned by 
 
 Every data path must enforce both boundaries:
 
-1. the authenticated actor is an active member of the requested team; and
+1. the authenticated actor is an active member of the requested team or has an active, explicit guest grant for the requested item; and
 2. the actor may see the item's `team`, `private`, or `specific_users`
    visibility.
 
@@ -220,6 +220,8 @@ Current repository hard rules include:
   team-visible proposals but cannot approve them or use personal pins. Enabled
   third-party tools can still cause external side effects and must be disclosed
   before connection.
+
+Guest invitations are bound to a verified email and are separate from full membership. The guest surface reads explicitly granted, team-visible text notes and active task or project records explicitly shared with the guest, including an optional admin-authored snapshot mode. Live views read the current title, status and due date only where the current field revision has a verified direct human write or an applied approval-backed write whose source events are all still team-visible. Older revisions with the same value cannot authorize a new write. Undo preserves the prior value in the workspace and withholds it from the guest projection pending independently authorized proof. Record IDs and type support the authorized view itself. Owner, assignee, relationship, private evidence and cached summaries are outside the live projection. A snapshot carries only the published title and text. Record properties, derived summaries, and linked evidence do not flow into the guest snapshot. A linked note requires its own grant. Guest search runs over the same authorized text. Questions send a bounded selection of granted excerpts and the current question to shared, workspace-metered inference. Permission is checked at read, before provider dispatch, and before answer delivery. Billing retains usage and actor attribution. Guest question and answer content is excluded from chat history and billing recovery metadata.
 
 New roles, admin endpoints, exports, caches, agents, background jobs, and search
 indices must demonstrate both boundaries with negative cross-team and
@@ -713,7 +715,10 @@ Request responses do not disclose whether an email has a password account. Redis
 rate limits apply before account lookup and fail closed when Redis is unavailable.
 Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
 Resend receives the reset URL to deliver the email. Recovery routes have no browser
-analytics, no-index/no-store/no-referrer policies, and sanitized error events.
+analytics, no-index/no-store policies, origin-only referrers that omit URL paths
+and query tokens, and sanitized error events. Sensitive pages retain the browser
+origin for same-origin form submissions so Server Action CSRF validation stays
+enforced.
 Open/click tracking is disclosed as currently enabled. Signed DPA on file, custom
 retention, API key scope, and support access remain G-09; this feature makes no
 new claim for those items. Infrastructure access logs must not retain reset
@@ -775,7 +780,11 @@ Live Google Cloud configuration and scope verification remain open. See
 
 Handoff snapshots and saved views follow workspace deletion. Handoff reads
 recheck the project, sources and commitments. Saved-view digests reevaluate
-matches for the recipient and use personal destinations. Source-health counts
-apply source visibility before aggregation. OCR correction history retains
+matches for the recipient and use personal destinations. Configurable briefings
+recheck their sources in the archive. Their personal email and chat notices
+contain an authenticated archive link. Dispatch rechecks the recipient’s verified
+email or workspace chat link. Shared channel delivery uses team-visible content.
+Preview and generation use the host workspace’s existing inference budget. Source-health
+counts apply source visibility before aggregation. OCR correction history retains
 earlier derived text subject to the source document's access and deletion
 policy.

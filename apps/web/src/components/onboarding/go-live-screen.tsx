@@ -178,6 +178,12 @@ export function GoLiveScreen({
                   setDigest(!next);
                   return;
                 }
+                if ('retryScheduleTeamId' in result && result.retryScheduleTeamId) {
+                  notifyError(
+                    'onboarding:digest-scheduling',
+                    'Digest preference saved. Open Updates to reschedule the next update.',
+                  );
+                }
                 if (next) {
                   try {
                     await recordAgentDeployedAction('digest');

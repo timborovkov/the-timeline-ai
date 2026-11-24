@@ -101,6 +101,7 @@ describe('credential URL privacy', () => {
   for (const path of [
     '/verify-email/synthetic?email=fixture@example.test',
     '/sign-up?invite=synthetic',
+    '/guest/synthetic-workspace/invite/synthetic-token',
     '/api/calendar/feed/synthetic.ics',
     '/api/webhooks/ingest/synthetic',
     '/api/integrations/github/callback?code=synthetic',
@@ -110,7 +111,7 @@ describe('credential URL privacy', () => {
       const protectedResponse = protectSensitiveLinkResponse(response, path);
       expect(sensitiveLinkRequestLogPattern.test(path)).toBe(true);
       expect(protectedResponse?.headers.get('cache-control')).toBe('no-store');
-      expect(protectedResponse?.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(protectedResponse?.headers.get('referrer-policy')).toBe('strict-origin');
       expect(protectedResponse?.headers.get('x-robots-tag')).toBe('noindex, nofollow');
       expect(protectedResponse?.headers.get('location')).toBe('https://timeline.test/sign-in');
       expect(protectedResponse?.status).toBe(302);
@@ -147,7 +148,7 @@ it('stages CSP and allows only the reviewed browser resource origins', () => {
 
 describe('public request routing', () => {
   it('bypasses auth for public reads even with a session cookie', () => {
-    for (const path of ['/', '/pricing', '/integrations/telegram', '/guides']) {
+    for (const path of ['/', '/features', '/pricing', '/integrations/telegram', '/guides']) {
       for (const method of ['GET', 'HEAD']) {
         expect(
           isCookieIndependentPublicRead(

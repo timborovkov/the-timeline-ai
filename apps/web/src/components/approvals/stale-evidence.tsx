@@ -5,10 +5,12 @@ import { useState, useTransition } from 'react';
 import { inspectSuggestionEvidenceAction } from '@/app/actions/approval-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { evidenceSourceLabel } from '@/lib/evidence-source-label';
 
-export function StaleEvidence({ itemId, timezone }: { itemId: string; timezone: string }) {
+export function StaleEvidence({ itemId }: { itemId: string }) {
+  const region = useRegionalFormat();
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof inspectSuggestionEvidenceAction>
   > | null>(null);
@@ -73,7 +75,7 @@ export function StaleEvidence({ itemId, timezone }: { itemId: string; timezone: 
                 >
                   {evidenceSourceLabel(change.source)}
                   {change.occurredAt
-                    ? ` · ${formatDisplayDateTime(change.occurredAt, { timezone })}`
+                    ? ` · ${formatDisplayDateTime(change.occurredAt, region)}`
                     : ''}
                 </EvidenceLink>
                 <dl className="grid gap-3 sm:grid-cols-2">
@@ -81,7 +83,7 @@ export function StaleEvidence({ itemId, timezone }: { itemId: string; timezone: 
                     <dt className="font-medium">Saved quote</dt>
                     <dd className="whitespace-pre-wrap break-words text-fg-muted">
                       {change.savedQuote
-                        ? displayText(change.savedQuote, { timezone })
+                        ? displayText(change.savedQuote, region)
                         : 'No quote saved'}
                     </dd>
                   </div>
@@ -89,7 +91,7 @@ export function StaleEvidence({ itemId, timezone }: { itemId: string; timezone: 
                     <dt className="font-medium">Current source excerpt</dt>
                     <dd className="whitespace-pre-wrap break-words text-fg-muted">
                       {change.currentText
-                        ? displayText(change.currentText, { timezone })
+                        ? displayText(change.currentText, region)
                         : 'Source text unavailable'}
                     </dd>
                   </div>

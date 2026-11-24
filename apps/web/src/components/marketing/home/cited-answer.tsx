@@ -1,29 +1,26 @@
 import styles from '@/app/(landing)/home.module.css';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
-const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
+const LOGIN_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 export function CitedAnswer() {
   return (
     <div className={styles.answerLayout} data-home-panel-motion>
       <article className={styles.answerWindow}>
         <div className={styles.answerBar}>
-          <span>/ask / Acme rollout</span>
-          <span>5 sources linked</span>
+          <span>/ask / Login issue</span>
+          <span>{LOGIN_EVENTS.length} sources linked</span>
         </div>
         <div className={styles.question}>
           <span>You</span>
-          <p>Give me the current status, handoff, blockers, and customer commitments.</p>
+          <p>What changed with the login issue, and what still needs checking?</p>
         </div>
         <div className={styles.answerBody}>
           <span>Timeline</span>
-          <h3>SSO blocks launch. Friday’s customer update is still due.</h3>
+          <h3>A linked change merged. The customer outcome still needs checking.</h3>
           <p>
-            The customer expects an update by Friday{' '}
-            <Citation id="01" label="Telegram group message" />. Onboarding copy was approved{' '}
-            <Citation id="02" label="Slack approval" /> and the migration callback merged{' '}
-            <Citation id="04" label="GitHub pull request" />. SSO remains the launch blocker{' '}
-            <Citation id="03" label="launch review meeting" />. Priya Shah owns the migration
-            checklist and its Friday review{' '}
-            <Citation id="05" label="Timeline Document Drive checklist" />.
+            Slack reported the login problem <Citation id="01" label="Slack report" />. Priya
+            planned to investigate Friday <Citation id="02" label="rollout review meeting" />. The
+            linked pull request merged <Citation id="03" label="GitHub pull request" />. Check
+            whether the change shipped and whether the customer can log in.
           </p>
         </div>
         <div className={styles.answerFooter}>
@@ -34,10 +31,10 @@ export function CitedAnswer() {
       <section className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
         <header className={styles.ledgerTitle}>
           <span id="receipt-ledger-title">Sources behind this answer</span>
-          <span>5 sources</span>
+          <span>{LOGIN_EVENTS.length} sources</span>
         </header>
         <ol>
-          {ACME_EVENTS.map((event) => (
+          {LOGIN_EVENTS.map((event) => (
             <li key={event.id}>
               <div className={styles.sourceCard}>
                 <span>[{event.id}]</span>

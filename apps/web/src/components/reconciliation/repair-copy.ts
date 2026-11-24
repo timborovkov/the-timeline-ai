@@ -1,13 +1,18 @@
-export function repairFailureCopy(failure: {
-  code: string;
-  message: string;
-  rawEventCount: number;
-}): {
+import { formatDisplayNumber } from '@/lib/regional-format';
+
+export function repairFailureCopy(
+  failure: {
+    code: string;
+    message: string;
+    rawEventCount: number;
+  },
+  locale?: string,
+): {
   detail: string;
   hint: string;
   status: string;
 } {
-  const count = failure.rawEventCount.toLocaleString();
+  const count = formatDisplayNumber(failure.rawEventCount, locale);
   const singular = failure.rawEventCount === 1;
   const hint = `${failure.code}: ${failure.message}`;
   if (failure.code.toLowerCase() === 'degraded_replay') {

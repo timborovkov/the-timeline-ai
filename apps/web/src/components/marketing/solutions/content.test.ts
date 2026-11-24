@@ -46,12 +46,13 @@ describe('solution content', () => {
     }
   });
 
-  it('states capture, evidence, and approval boundaries without automatic-update claims', () => {
+  it('states capture, evidence, and workspace review boundaries', () => {
     const copy = JSON.stringify(SOLUTIONS);
 
     expect(copy).toContain('selected');
     expect(copy).toContain('citations');
-    expect(copy).toContain('a person approves them');
+    expect(copy).toContain('Eligible routine changes can apply under workspace policy');
+    expect(copy).toContain('Use Approvals for changes that need a decision');
     expect(copy).not.toMatch(/updates itself|captures everything|always current|real[- ]time/iu);
   });
 

@@ -95,7 +95,7 @@ export function authorizeProductRequest({
   const isAuthed = Boolean(auth?.user);
 
   const isAppRoute = isRouteWithin(path, '/app') || isRouteWithin(path, '/onboarding');
-  const isInviteRoute = isRouteWithin(path, '/accept-invite');
+  const isInviteRoute = isRouteWithin(path, '/accept-invite') || isRouteWithin(path, '/guest');
 
   if (isAppRoute && !isAuthed) return unauthenticatedAppRedirect(request);
   // Platform authorization must decide 404 before clickwrap redirects. The admin

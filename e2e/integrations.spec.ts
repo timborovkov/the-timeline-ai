@@ -44,7 +44,7 @@ async function cleanupIntegrationHealthSeed(): Promise<void> {
   `;
   await sql`
     DELETE FROM provider_connections
-    WHERE owner_user_id = ${e2eUsers.owner.id}
+    WHERE owner_user_id = ${e2eUsers.member.id}
       AND external_account_id LIKE ${`${EXTERNAL_PREFIX}%`}
   `;
 }
@@ -74,7 +74,7 @@ async function seedIntegrationHealthState(): Promise<void> {
     )
     VALUES (
       ${githubConnectionId},
-      ${e2eUsers.owner.id},
+      ${e2eUsers.member.id},
       'github',
       ${`${SEED_PREFIX} GitHub connection`},
       ${`${EXTERNAL_PREFIX}-github-account`},
@@ -224,7 +224,7 @@ async function cleanupIntegrationManageSeed(): Promise<void> {
         )
         OR provider_connection_id IN (
           SELECT id FROM provider_connections
-          WHERE owner_user_id = ${e2eUsers.owner.id}
+          WHERE owner_user_id = ${e2eUsers.member.id}
             AND external_account_id LIKE ${`${MANAGE_EXTERNAL_PREFIX}%`}
         )
       )
@@ -241,7 +241,7 @@ async function cleanupIntegrationManageSeed(): Promise<void> {
   `;
   await sql`
     DELETE FROM provider_connections
-    WHERE owner_user_id = ${e2eUsers.owner.id}
+    WHERE owner_user_id = ${e2eUsers.member.id}
       AND external_account_id LIKE ${`${MANAGE_EXTERNAL_PREFIX}%`}
   `;
 }
@@ -419,7 +419,7 @@ async function seedIntegrationManageState(): Promise<{
     VALUES
       (
         ${firstConnectionId},
-        ${e2eUsers.owner.id},
+        ${e2eUsers.member.id},
         'github',
         ${`${MANAGE_PREFIX} first GitHub connection`},
         ${`${MANAGE_EXTERNAL_PREFIX}-github-first`},
@@ -430,7 +430,7 @@ async function seedIntegrationManageState(): Promise<{
       ),
       (
         ${secondConnectionId},
-        ${e2eUsers.owner.id},
+        ${e2eUsers.member.id},
         'github',
         ${`${MANAGE_PREFIX} second GitHub connection`},
         ${`${MANAGE_EXTERNAL_PREFIX}-github-second`},
@@ -741,8 +741,7 @@ async function clickSourceCheckbox(sourceCard: Locator, label: string): Promise<
 }
 
 async function openProviderDetails(page: Page, label: string): Promise<Locator> {
-  const overlay = page.getByRole('button', { name: `Open ${label} details` });
-  await overlay.click({ force: true });
+  await page.getByRole('link', { name: `Open ${label} details`, exact: true }).click();
   const dialog = page.getByRole('dialog', { name: label });
   await expect(dialog).toBeVisible();
   return dialog;
@@ -829,7 +828,7 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app/team/telegram');
-  await expect(page).toHaveURL(/\/app\/sources#telegram/);
+  await expect(page).toHaveURL(/\/app\/connections\/sources#telegram$/);
   await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
   const telegram = page.getByRole('dialog', { name: 'Telegram' });
   await expect(telegram).toBeVisible();
@@ -895,24 +894,28 @@ test.describe.serial('integrations health states', () => {
     await expect(page.getByText('integration items need attention')).toHaveCount(0);
 
     const githubPanel = await openProviderDetails(page, 'GitHub');
-    const githubRow = githubPanel
-      .locator('div')
-      .filter({ has: githubPanel.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
-      .filter({ hasText: `${SEED_PREFIX} GitHub` })
-      .last();
-    await expect(githubRow.getByText('Webhook delivery degraded:')).toBeVisible();
-    await expect(githubRow.getByText('reconciliation remains active')).toBeVisible();
-    await expect(githubRow.getByRole('button', { name: 'Sync now' })).toBeEnabled();
+    const githubActions = githubPanel.getByRole('group', {
+      name: `Actions for ${SEED_PREFIX} GitHub`,
+      exact: true,
+    });
+    await expect(
+      githubPanel.getByRole('combobox', { name: 'Default visibility for GitHub' }),
+    ).toBeVisible();
+    await expect(githubPanel.getByText('Webhook delivery degraded:')).toBeVisible();
+    await expect(githubPanel.getByText('reconciliation remains active')).toBeVisible();
+    await expect(githubActions.getByRole('button', { name: 'Sync now' })).toBeEnabled();
     await page.keyboard.press('Escape');
 
     const linearPanel = await openProviderDetails(page, 'Linear');
-    const linearRow = linearPanel
-      .locator('div')
-      .filter({ has: linearPanel.getByRole('combobox', { name: 'Default visibility for Linear' }) })
-      .filter({ hasText: `${SEED_PREFIX} Linear` })
-      .last();
-    await expect(linearRow.getByText('Provider quota cooldown (requests).')).toBeVisible();
-    await expect(linearRow.getByRole('button', { name: 'Paused' })).toBeDisabled();
+    const linearActions = linearPanel.getByRole('group', {
+      name: `Actions for ${SEED_PREFIX} Linear`,
+      exact: true,
+    });
+    await expect(
+      linearPanel.getByRole('combobox', { name: 'Default visibility for Linear' }),
+    ).toBeVisible();
+    await expect(linearPanel.getByText('Provider quota cooldown (requests).')).toBeVisible();
+    await expect(linearActions.getByRole('button', { name: 'Paused' })).toBeDisabled();
   });
 
   test('keeps integration management usable on mobile', async ({ page }) => {
@@ -927,9 +930,8 @@ test.describe.serial('integrations health states', () => {
 
     const githubPanel = await openProviderDetails(page, 'GitHub');
     const sourceCard = githubPanel
-      .locator('section.border-y')
-      .filter({ hasText: `${SEED_PREFIX} GitHub connection` })
-      .first();
+      .getByText(`${SEED_PREFIX} GitHub connection`, { exact: true })
+      .locator('xpath=ancestor::section[1]');
     const saveButton = sourceCard.getByRole('button', { name: 'Save team sync' });
     await expect(saveButton).toBeVisible();
 
@@ -942,12 +944,14 @@ test.describe.serial('integrations health states', () => {
       (sourceBox?.x ?? 0) + (sourceBox?.width ?? 0) + 1,
     );
 
-    const githubRow = githubPanel
-      .locator('div')
-      .filter({ has: githubPanel.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
-      .filter({ hasText: `${SEED_PREFIX} GitHub` })
-      .last();
-    const attentionPanel = githubRow
+    const githubActions = githubPanel.getByRole('group', {
+      name: `Actions for ${SEED_PREFIX} GitHub`,
+      exact: true,
+    });
+    await expect(
+      githubPanel.getByRole('combobox', { name: 'Default visibility for GitHub' }),
+    ).toBeVisible();
+    const attentionPanel = githubPanel
       .getByText('Webhook delivery degraded:', { exact: true })
       .locator('xpath=ancestor::div[1]');
     await expect(attentionPanel).toBeVisible();
@@ -955,8 +959,8 @@ test.describe.serial('integrations health states', () => {
     expect(attentionBox).not.toBeNull();
     expect(attentionBox?.width ?? 0).toBeGreaterThan(300);
 
-    const syncButton = githubRow.getByRole('button', { name: 'Sync now' });
-    const disconnectButton = githubRow.getByRole('button', { name: /^Actions for / });
+    const syncButton = githubActions.getByRole('button', { name: 'Sync now' });
+    const disconnectButton = githubActions.getByRole('button', { name: /^Actions for / });
     const syncBox = await syncButton.boundingBox();
     const disconnectBox = await disconnectButton.boundingBox();
     expect(syncBox).not.toBeNull();
@@ -998,32 +1002,36 @@ test.describe.serial('integrations source management', () => {
 
     const githubPanel = await openProviderDetails(page, 'GitHub');
     const firstCard = githubPanel
-      .locator('section.border-y')
-      .filter({ hasText: `${MANAGE_PREFIX} first GitHub connection` })
-      .first();
+      .getByText(`${MANAGE_PREFIX} first GitHub connection`, { exact: true })
+      .locator('xpath=ancestor::section[1]');
     await expect(firstCard.getByText('Shared, not syncing')).toBeVisible();
     await clickSourceCheckbox(firstCard, sourceLabel);
     await expect(firstCard.getByText('1 source selected for team sync')).toBeVisible();
-    await waitForPost(page, '/api/team/integrations/activate', () =>
-      firstCard.getByRole('button', { name: 'Activate team sync' }).click(),
+    await waitForPost(
+      page,
+      '/api/team/integrations/activate',
+      () => firstCard.getByRole('button', { name: 'Activate team sync' }).click(),
+      (response) => response.ok(),
     );
-    await expect(firstCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
     await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(firstConnectionId);
+    await expect(firstCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
 
     const secondCard = githubPanel
-      .locator('section.border-y')
-      .filter({ hasText: `${MANAGE_PREFIX} second GitHub connection` })
-      .first();
+      .getByText(`${MANAGE_PREFIX} second GitHub connection`, { exact: true })
+      .locator('xpath=ancestor::section[1]');
     await expect(secondCard.getByText('Shared, not syncing')).toBeVisible();
     await clickSourceCheckbox(secondCard, sourceLabel);
     await expect(secondCard.getByRole('button', { name: 'Replace active import' })).toBeVisible();
-    await waitForPost(page, '/api/team/integrations/activate', () =>
-      secondCard.getByRole('button', { name: 'Replace active import' }).click(),
+    await waitForPost(
+      page,
+      '/api/team/integrations/activate',
+      () => secondCard.getByRole('button', { name: 'Replace active import' }).click(),
+      (response) => response.ok(),
     );
 
+    await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(secondConnectionId);
     await expect(secondCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
     await expect(firstCard.getByRole('button', { name: 'Activate team sync' })).toBeVisible();
-    await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(secondConnectionId);
   });
 });
 
@@ -1095,10 +1103,10 @@ test.describe.serial('provider-backed source listing', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/me/connections');
 
-    const accountCard = page
-      .locator('section.border-y')
-      .filter({ hasText: `${SOURCE_LISTING_PREFIX} GitHub account` })
-      .first();
+    const accountCard = page.getByRole('region', {
+      name: `GitHub account ${SOURCE_LISTING_PREFIX} GitHub account`,
+      exact: true,
+    });
     await expect(accountCard.getByText('Choose individual repositories')).toBeVisible();
     await expect(accountCard.getByText(`${SOURCE_LISTING_PREFIX} organization`)).toBeVisible();
     await expect(accountCard.getByText(sourceLabel)).toBeVisible();
@@ -1108,7 +1116,7 @@ test.describe.serial('provider-backed source listing', () => {
     await expect(accountCard.getByText(`${SOURCE_LISTING_PREFIX} organization`)).toHaveCount(0);
 
     await clickSourceCheckbox(accountCard, sourceLabel);
-    await expect(accountCard.getByText('1 source shared to this team')).toBeVisible();
+    await expect(accountCard.getByText('1 source shared', { exact: true })).toBeVisible();
     await Promise.all([
       page.waitForResponse(
         (response) =>
@@ -1168,7 +1176,10 @@ test.describe.serial('provider-backed source listing', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/me/connections');
 
-    const accountCard = page.locator('section.border-y').filter({ hasText: accountLabel }).first();
+    const accountCard = page.getByRole('region', {
+      name: `Monday.com account ${accountLabel}`,
+      exact: true,
+    });
     await expect(accountCard.getByText(parentLabel)).toBeVisible();
     await expect(accountCard.getByText(`Subitems of ${parentLabel}`)).toHaveCount(0);
     await clickSourceCheckbox(accountCard, parentLabel);
@@ -1225,7 +1236,7 @@ test('renders native provider OAuth callback denial in the browser', async ({ pa
 
   await page.goto('/api/integrations/github/callback?error=access_denied');
 
-  await expect(page).toHaveURL(/\/app\/sources\?error=oauth_denied$/);
+  await expect(page).toHaveURL(/\/app\/connections\/sources\?error=oauth_denied$/);
   await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
   await expect(page.getByText('The provider denied access. Try connecting again.')).toBeVisible();
   await expect(page.getByText('GitHub', { exact: true }).first()).toBeVisible();
@@ -1326,7 +1337,9 @@ test('Timeline MCP remember stores ingest evidence without mutating records', as
   try {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/mcp-share');
-    await expect(page.getByRole('heading', { name: 'Timeline as MCP server' })).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/connect-agent/);
+    await expect(page.getByRole('heading', { name: 'Connect your agent' })).toBeVisible();
+    await page.locator('summary').filter({ hasText: 'Advanced' }).click();
 
     await page.getByRole('button', { name: 'New key' }).click();
     await page
@@ -1335,7 +1348,7 @@ test('Timeline MCP remember stores ingest evidence without mutating records', as
     await waitForPost(
       page,
       '/api/team/mcp-keys',
-      () => page.getByRole('button', { name: 'Create' }).click(),
+      () => page.getByRole('button', { name: 'Create key', exact: true }).click(),
       (res) => res.ok(),
     );
 

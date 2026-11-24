@@ -48,6 +48,7 @@ import { createDiagnosticScope } from '#src/diagnostics/scope.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createEvaluationTracingScope } from '#src/evaluation-tracing/scope.js';
+import { createGuestAccessScope } from '#src/guest-access/scope.js';
 import { createHandoffScope } from '#src/handoffs.js';
 import {
   acceptIngestWebhookEvidence,
@@ -67,6 +68,7 @@ import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
 import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
+import { createUpdatePreferencesScope } from '#src/messaging/update-preferences.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
@@ -511,6 +513,7 @@ export interface TeamScopeDeps {
   beforeSuggestionApply?: (itemId: string) => Promise<void>;
   /** Internal transaction context supplied by the suggestion acceptance unit of work. */
   suggestionAcceptanceTransaction?: SuggestionAcceptanceTransaction;
+  recordMaintenanceWorker?: true;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -2103,6 +2106,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     boards: boardScope,
     calendar: calendarScope,
+    recordMaintenanceWorker: Boolean(
+      deps.recordMaintenanceWorker &&
+      deps.skipMembershipCheck &&
+      userId === '00000000-0000-0000-0000-000000000000',
+    ),
     ...(deps.chatStructured ? { chatStructured: deps.chatStructured } : {}),
     ...(deps.beforeSuggestionApply ? { beforeApplyItem: deps.beforeSuggestionApply } : {}),
     acceptance:
@@ -2126,6 +2134,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
   const guardedScope = {
     ...core,
+    guests: createGuestAccessScope(db, teamId, userId, () => ensureMember('admin')),
     timeline: {
       /** Internal recovery metadata, never a user-visible event read. */
       async getEmailIngestRecoveryState(id: string) {
@@ -3646,6 +3655,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     handoffs: createHandoffScope(db, teamId, userId, ensureMember),
+    updatePreferences: createUpdatePreferencesScope(db, teamId, userId, ensureMember),
     savedViews: createSavedWorkViewScope({
       db,
       teamId,

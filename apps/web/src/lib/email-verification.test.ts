@@ -233,10 +233,10 @@ it('puts only allowlisted plan intent in verification emails', async () => {
     db,
     userId: 'user-1',
     email: 'USER@example.test',
-    callbackUrl: '/app/team?section=billing&plan=payg#change-plan',
+    callbackUrl: '/app/team?section=billing&plan=team#change-plan',
   });
   const payload = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
-  expect(new URL(payload.verificationUrl).searchParams.get('plan')).toBe('payg');
+  expect(new URL(payload.verificationUrl).searchParams.get('plan')).toBe('team');
   expect(new URL(payload.verificationUrl).searchParams.get('email')).toBe('user@example.test');
   expect(new URL(payload.verificationUrl).searchParams.has('continuation')).toBe(false);
   await sendEmailVerification({
@@ -262,4 +262,19 @@ it('attaches an opaque continuation for a same-origin authorization request', as
   const continuation = new URL(payload.verificationUrl).searchParams.get('continuation');
   expect(continuation).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(payload.verificationUrl).not.toContain('/oauth/authorize');
+});
+
+it('sends a guest recipient an opaque verification continuation', async () => {
+  const invitationToken = 'i'.repeat(43);
+  await sendEmailVerification({
+    db: dbForVerificationEmail() as never,
+    userId: 'user-1',
+    email: 'user@example.test',
+    callbackUrl: `/guest/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/invite/${invitationToken}`,
+  });
+
+  const payload = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
+  const continuation = new URL(payload.verificationUrl).searchParams.get('continuation');
+  expect(continuation).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(payload.verificationUrl).not.toContain(invitationToken);
 });

@@ -5,17 +5,28 @@ import {
   digestSectionBody,
   digestSummaryParagraphs,
   formatDigestActivityItems,
-  formatDigestCalendarEventDetail,
-  formatDigestDate,
   formatDigestObjectType,
-  formatDigestTaskDetail,
-  formatDigestWindowRange,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
+import { localDateFromInstant } from '@timeline/shared/time';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
+import { DigestTaskDetail } from '@/components/home/digest-task-detail';
+import { RegionalDate } from '@/components/regional-date';
+import { RegionalNumber } from '@/components/regional-number';
+import { parseDisplayDate } from '@/lib/display-dates';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { cn } from '@/lib/utils';
+
+const rangeStartParts = {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+} as const;
+
+const rangeEndParts = { ...rangeStartParts, year: 'numeric', timeZoneName: 'short' } as const;
 
 export function DigestBody({
   digest,
@@ -28,25 +39,23 @@ export function DigestBody({
   const sections = digestContentSections(digest);
   const activityItems = formatDigestActivityItems(digestActivityStats(digest));
   const completedTasks = digest.completedTasks ?? [];
+  const dueStatusAt = new Date();
   const newObjects = digest.newObjects ?? [];
   const windowCalendar = digest.windowCalendar ?? [];
   const memberItems = digest.newTeamMembers.map((member) => ({
     key: member.userId,
-    label: `${displayMemberLabel({ name: member.label })} · Joined ${formatDigestDate(
-      member.createdAt,
-      digest.timezone,
-    )}`,
+    label: (
+      <>
+        {displayMemberLabel({ name: member.label })} · Joined{' '}
+        <RegionalDate value={member.createdAt} />
+      </>
+    ),
   }));
   const dashboardLinks: { label: string; href: string }[] = [];
   for (const link of digest.links) {
     const href = digestAppHref(link.href);
     if (href) dashboardLinks.push({ label: link.label, href });
   }
-  const windowRange = formatDigestWindowRange(
-    digest.windowStart,
-    digest.windowEnd,
-    digest.timezone,
-  );
 
   return (
     <div className={cn('@container space-y-6 text-sm', className)}>
@@ -77,7 +86,10 @@ export function DigestBody({
           <p className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-fg-muted">
             {activityItems.map((item) => (
               <span key={item.label}>
-                <span className="text-signal">{item.count}</span> {item.label}
+                <span className="text-signal">
+                  <RegionalNumber value={item.count} />
+                </span>{' '}
+                {item.label}
               </span>
             ))}
           </p>
@@ -91,7 +103,7 @@ export function DigestBody({
             key: task.id,
             href: digestAppHref(task.href) ?? undefined,
             label: task.title,
-            detail: formatDigestTaskDetail(task, digest.timezone),
+            detail: <DigestTaskDetail task={task} timezone={digest.timezone} now={dueStatusAt} />,
           }))}
         />
         <DigestList
@@ -100,7 +112,7 @@ export function DigestBody({
             key: task.id,
             href: digestAppHref(task.href) ?? undefined,
             label: task.title,
-            detail: formatDigestTaskDetail(task, digest.timezone),
+            detail: <DigestTaskDetail task={task} timezone={digest.timezone} now={dueStatusAt} />,
           }))}
         />
         <DigestList
@@ -114,21 +126,11 @@ export function DigestBody({
         />
         <DigestList
           label="Calendar this window"
-          items={windowCalendar.map((event) => ({
-            key: event.id,
-            href: digestAppHref(event.href) ?? undefined,
-            label: event.title,
-            detail: formatDigestCalendarEventDetail(event, digest.timezone),
-          }))}
+          items={digestCalendarItems(windowCalendar, digest.timezone)}
         />
         <DigestList
           label="Upcoming calendar"
-          items={digest.upcomingCalendar.map((event) => ({
-            key: event.id,
-            href: digestAppHref(event.href) ?? undefined,
-            label: event.title,
-            detail: formatDigestCalendarEventDetail(event, digest.timezone),
-          }))}
+          items={digestCalendarItems(digest.upcomingCalendar, digest.timezone)}
         />
         <DigestList label="New team members" items={memberItems} />
       </div>
@@ -146,9 +148,51 @@ export function DigestBody({
         </p>
       ) : null}
 
-      <p className="font-mono text-xs text-fg-dim">Covering {windowRange}</p>
+      <p className="font-mono text-xs text-fg-dim">
+        Covering <RegionalDate value={digest.windowStart} parts={rangeStartParts} />
+        {' – '}
+        <RegionalDate value={digest.windowEnd} parts={rangeEndParts} />
+      </p>
     </div>
   );
+}
+
+function digestCalendarItems(
+  events: DailyDigestPayload['upcomingCalendar'],
+  digestTimezone = 'UTC',
+) {
+  return events.map((event) => {
+    const allDay = 'allDay' in event ? event.allDay : undefined;
+    const eventTimezone =
+      'eventTimezone' in event && typeof event.eventTimezone === 'string'
+        ? event.eventTimezone
+        : digestTimezone;
+    const start = parseDisplayDate(event.startAt);
+    const day =
+      allDay === true && start
+        ? localDateFromInstant(start.toISOString(), eventTimezone)
+        : undefined;
+    return {
+      key: event.id,
+      href: digestAppHref(event.href) ?? undefined,
+      label: event.title,
+      detail: (
+        <>
+          ({event.repeating ? 'repeating · next ' : null}
+          {day ? (
+            <RegionalDate value={day} />
+          ) : (
+            <RegionalDate
+              value={event.startAt}
+              parts={rangeEndParts}
+              timezone={allDay === false ? undefined : digestTimezone}
+            />
+          )}
+          )
+        </>
+      ),
+    };
+  });
 }
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Digest linked lists share the briefing payload renderer.
@@ -157,7 +201,7 @@ function DigestList({
   items,
 }: {
   label: string;
-  items: { key: string; label: string; href?: string; detail?: string }[];
+  items: { key: string; label: ReactNode; href?: string; detail?: ReactNode }[];
 }) {
   if (items.length === 0) return null;
   return (
@@ -176,7 +220,7 @@ function DigestList({
             ) : (
               item.label
             )}
-            {item.detail ? ` ${item.detail}` : null}
+            {item.detail ? <> {item.detail}</> : null}
           </li>
         ))}
       </ul>

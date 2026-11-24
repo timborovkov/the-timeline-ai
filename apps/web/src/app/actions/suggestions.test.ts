@@ -10,6 +10,7 @@ import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  fakeEnqueueSuggestionJob: vi.fn(),
   fakeReportCaughtError: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   fakeSuggestions: {
@@ -20,6 +21,7 @@ const fakes = vi.hoisted(() => ({
     reviseSuggestionItem: vi.fn(),
     reviseTaskSuggestionItem: vi.fn(),
     listSuggestions: vi.fn(),
+    setRecordMaintenancePolicy: vi.fn(),
   },
 }));
 
@@ -52,6 +54,12 @@ await vi.mock(
   () => import('@/lib/sentry-report'),
 );
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/queue'),
+  () => ({ enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob }),
+  () => import('@timeline/shared/queue'),
+);
+
 const { z } = await import('zod');
 const {
   acceptAllSuggestionAction,
@@ -61,6 +69,7 @@ const {
   rejectVisibleSuggestionsAction,
   reviseSuggestionItemAction,
   reviseTaskSuggestionItemAction,
+  setRecordMaintenancePolicyAction,
 } = await import('@/app/actions/suggestions');
 
 const ITEM_ID = '11111111-1111-4111-8111-111111111111';
@@ -111,6 +120,32 @@ function expectSuggestionSurfacesRevalidated() {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(...args);
   }
 }
+
+describe('record maintenance settings', () => {
+  it('reports a saved policy with a failed immediate sweep and permits retry', async () => {
+    const policy = { reviewManualValues: true, approveRemovals: false, approveMerges: true };
+    fakes.fakeSuggestions.setRecordMaintenancePolicy
+      .mockResolvedValueOnce({ ...policy, revision: 'first-revision' })
+      .mockResolvedValueOnce({ ...policy, revision: 'retry-revision' });
+    fakes.fakeEnqueueSuggestionJob
+      .mockRejectedValueOnce(new Error('Queue unavailable'))
+      .mockResolvedValueOnce({ enqueued: true, jobId: 'maintenance' });
+
+    const deferred = await setRecordMaintenancePolicyAction(policy);
+    expect(deferred.ok).toBeUndefined();
+    expect(deferred.error).toContain('Settings saved. Timeline could not schedule a check');
+    expect(fakes.fakeSuggestions.setRecordMaintenancePolicy).toHaveBeenCalledWith(policy);
+    const job = { scope: 'record_maintenance', teamId: ANALYTICS_ACTOR.teamId };
+    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenNthCalledWith(1, job, {
+      jobIdSuffix: 'first-revision',
+    });
+
+    await expect(setRecordMaintenancePolicyAction(policy)).resolves.toEqual({ ok: true });
+    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenNthCalledWith(2, job, {
+      jobIdSuffix: 'retry-revision',
+    });
+  });
+});
 
 describe('suggestion action validation and scope', () => {
   it('rejects malformed ids before resolving scope', async () => {

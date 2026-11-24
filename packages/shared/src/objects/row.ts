@@ -37,6 +37,7 @@ export function toObjectRow(row: EntityRow): ObjectRow {
     ownerUserId: row.ownerUserId,
     assigneeUserId: row.assigneeUserId,
     dueAt: row.dueAt,
+    plannedDate: row.plannedDate,
     taskCategory: row.taskCategory as TaskCategory | null,
     taskCategoryMode: row.taskCategoryMode as TaskCategoryMode | null,
     taskCategorySource: row.taskCategorySource as TaskCategorySource | null,

@@ -1806,7 +1806,9 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
                     meetingId: input.meetingId,
                     attemptKey: input.providerBotId,
                     minutes,
+                    startedAt: prior.startedAt,
                     endedAt: input.endedAt,
+                    metadata: prior.metadata,
                     source: 'meeting_no_show_retry',
                   })
                 : null;
@@ -2035,7 +2037,9 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
               operationId: recallOperationId(meetingId),
               meetingId,
               minutes,
+              startedAt: capturedMeeting.startedAt,
               endedAt: now,
+              metadata: capturedMeeting.metadata,
               source: 'meeting_cancel',
             });
           }

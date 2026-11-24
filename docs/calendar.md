@@ -14,8 +14,7 @@ A calendar suggestion needs a concrete timed range or an all-day date span. If t
 
 ## Workspace timezone
 
-Each team has a workspace timezone stored in `team_calendar_settings.default_timezone`. Admins configure it from Team settings, and new teams initialize it from the creator's browser timezone when available with `Europe/Helsinki` as the product fallback. Existing teams that still carried the old implicit `UTC` default were backfilled to `Europe/Helsinki`. Timeline grouping and timestamps, calendar views, event defaults, saved meeting schedules, daily digests, and workspace-relative chat dates use this timezone unless a specific calendar event supplies its own `calendar_events.timezone`. Global search
-uses the workspace timezone for date bounds and links timed events to their workspace-local day.
+Each team has a workspace timezone stored in `team_calendar_settings.default_timezone`. Admins configure it from Team settings, and new teams initialize it from the creator's browser timezone when available with `Europe/Helsinki` as the product fallback. Existing teams that still carried the old implicit `UTC` default were backfilled to `Europe/Helsinki`. Timeline grouping, calendar grid placement, event defaults, saved meeting schedules, daily digests, and workspace-relative chat dates use this timezone, with event-local calendar dates following `calendar_events.timezone`. Global search uses the workspace timezone for date bounds and links timed events to their workspace-local day. [App display preferences](design/app.md#work-and-settings) control how personal timestamps are presented.
 Date-only filters and links for all-day events use the day labels shown in Calendar.
 
 <span id="agent-suggestions"></span>
@@ -39,7 +38,7 @@ Calendar approval cards may show resolution hints when a proposed create resembl
 
 ## Due dates
 
-Task and follow-up due dates are mirrored to the team calendar as free due-date events. Timeline uses the assignee first, then the owner, as the responsible person for the inbox notification and calendar title. Suggested tasks do not notify anyone or appear on the calendar until a human accepts them.
+Task and follow-up due dates are mirrored to the team calendar as free due-date events. Timeline uses the assignee first, then the owner, as the responsible person for the inbox notification and calendar title. Proposal-only dates do not notify anyone or appear on the calendar. The calendar mirrors accepted canonical dates, including changes applied through authorized workspace automation.
 
 Board item due dates use the board-local responsible person instead of the underlying object's owner or assignee. When that person is set, the in-app inbox receives a board-specific due-date notification, and the calendar event description includes the board name and responsible person so teammates can see who owns the deadline.
 

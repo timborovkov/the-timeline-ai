@@ -4,7 +4,7 @@ import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import type { PublicDocument } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-13' as const;
+const REVIEW_DATE = '2026-11-24' as const;
 
 export const AGENTS_HUB_DOCUMENT = {
   canonicalPath: AGENTS_HUB.route,

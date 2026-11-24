@@ -42,29 +42,27 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'billing',
     title: 'Billing and spending limits',
-    description: 'Understand Free, pay as you go, usage limits and payment settings.',
+    description: 'Understand Free, Team, Included usage, and payment settings.',
     icon: LifeBuoy,
     related: ['capture', 'integrations'],
     updatedAt: '2026-11-03',
     sections: [
       {
-        title: 'Enable pay as you go',
-        body: 'A team owner or admin manages billing for the current workspace. Pay as you go has no platform fee and keeps the included Free allowances; usage above them and additional members can create charges.',
+        title: 'Choose your workspace plan',
+        body: 'Free allows up to three full members with no card. Team is $10 per full member per month in USD, starting with one member. Taxes are calculated at checkout. Restricted guests do not use paid seats or add Included usage.',
         items: [
-          'Open Team settings → Billing and check the workspace name.',
-          'Choose Change plan → Pay as you go. Review the rates, included members and spending limit before continuing to payment.',
-          'After checkout, wait for Billing to confirm activation. Returning from checkout alone does not mean the plan is active.',
-          'Review Usage to see recorded charges. Three active members are included; additional members cost €2 per member per month.',
+          'An owner or admin can choose Team in Billing. Wait for Billing to confirm activation after checkout.',
+          'New seats and the usage they add are prorated. Removing a full member stops their access immediately. The seat remains reusable until renewal.',
         ],
         appLink: { href: '/app/team?section=billing', label: 'Open Billing' },
       },
       {
-        title: 'Understand the spending limit',
-        body: 'The default PAYG spending limit is €25 per month. Owners and admins can change it in Billing. The cap applies to metered spend; platform fees and tax are outside it. On commitment plans, the cap is checked before included usage credit.',
+        title: 'Understand Included usage',
+        body: 'Free includes $4 of shared monthly usage at internal rates. On Team each paid seat contributes $12 to the shared pool. AI consumes four times reported model cost, including background work. Native meeting capture consumes three cents per minute, including joining and waiting.',
         items: [
-          'Free has both usage allowances and capacity limits; reaching either can pause a task.',
-          'Work in progress can reserve allowance temporarily. If Ask cannot start, let other jobs finish and check Usage.',
-          'Meeting minutes include joining and waiting-room time. Capturing sources can also trigger separately metered AI extraction and indexing.',
+          'Ordinary ingestion and storage are bundled. File sizes, storage, source volume and processing concurrency still have fair-use limits.',
+          'When Included usage runs out, new AI processing and native capture pause. Your existing records remain accessible.',
+          'Owners and admins can enable additional spending on Team by setting a monthly cap. Seat charges and tax are outside the cap.',
         ],
         appLink: { href: '/app/usage', label: 'Review Usage' },
       },
@@ -104,13 +102,13 @@ export const HELP_PAGES: HelpPage[] = [
 
       {
         title: 'What gets captured',
-        body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose objects or tasks for review. Every searchable citation stays linked to the captured source.',
+        body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose changes to objects or tasks. Every searchable citation stays linked to the captured source.',
         items: [
           'Text notes and audio uploads from the web app.',
           'Slack and Telegram messages, files, and voice memos from linked spaces.',
-          'A linked Slack channel or Telegram group keeps the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.',
+          'Configured Slack channels and linked Telegram groups capture subsequent activity within their scope. Plain-text questions in a direct chat ask the agent. Use explicit capture to add a note.',
           'Forwarded, CCed, or BCCed email sent to your team address.',
-          'Meeting transcripts from consent-gated bots that join calls.',
+          'Optional meeting transcripts from bots that join supported calls. You can also upload existing notes or text transcripts as documents.',
           'Document uploads that become searchable chunks after extraction.',
         ],
         appLink: { href: '/app/timeline', label: 'Open timeline capture' },
@@ -121,7 +119,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Check source selection and team visibility before activating capture.',
           'Timeline’s stored record is separate from the original tool; disconnecting does not erase earlier captures.',
-          'A proposed change is a suggestion for review. Approving it updates Timeline’s work record. Enabled external tools may have separate effects in other services.',
+          'Eligible proposals can apply under workspace policy. Open the record history to see applied changes and Approvals for changes that need a decision. Enabled external tools may have separate effects in other services.',
         ],
       },
       {
@@ -149,7 +147,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'work',
-    updatedAt: '2026-11-11',
+    updatedAt: '2026-11-24',
     title: 'Work surface',
     description:
       'Use tasks, boards, objects, the daily update, on-demand updates and handoffs that stay current from evidence.',
@@ -163,21 +161,26 @@ export const HELP_PAGES: HelpPage[] = [
           'Open Work to find tasks assigned to you and work that needs attention.',
           'Open a task or object to inspect its source evidence before changing status, owner or due date.',
           'Pin frequently used objects, boards or documents so you can return to them from Home.',
-          'Review proposed changes in Approvals. Accept the changes you agree with; reject unsupported suggestions.',
-          'Work → Digests lists every daily update as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
+          'Open Approvals for changes that need a decision. Accept supported changes or reject unsupported suggestions.',
+          'Work → Digests lists recent updates and their sources. Use Customize updates on Home to preview a daily brief or weekly overview and choose from the delivery options available to you.',
           'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },
+      },
+      {
+        title: 'See scheduled work in Calendar',
+        body: 'Calendar brings together scheduled events and accepted task or follow-up deadlines. A task can also have a planned work day. That date stays on the task and does not put an event on the calendar.',
+        appLink: { href: '/app/calendar', label: 'Open Calendar' },
       },
       {
         title: 'How it stays current',
         resourceLinks: [
           { href: '/help/capture', label: 'How answers handle newer and conflicting evidence' },
         ],
-        body: 'Timeline extracts proposed state from conversations, email, meetings, documents, and integrations, then keeps receipts attached so changes can be reviewed.',
+        body: 'Timeline uses captured evidence to propose changes. Eligible routine changes apply automatically by default and appear in the record history. Workspace policy determines which changes need review.',
         items: [
           'Raw events stay intact; summaries can change without rewriting source evidence.',
-          'Important state can go through human review before it becomes canonical.',
+          'Newer explicit evidence can update an earlier manually set default when policy and field rules allow. Replaying older activity does not roll the record back.',
           'Use manual edits for judgment, not for retyping what already happened.',
         ],
       },

@@ -43,7 +43,7 @@ const scopeDescriptions: Record<McpOAuthScope, { title: string; description: str
   'websites:scan': {
     title: 'Scan public websites',
     description:
-      'Start scans that use 20 source units per captured page, up to 100 per scan, with additional AI and storage usage.',
+      'Start scans of up to five public pages. On Free and Team, AI processing uses shared Included usage, and capture and ordinary storage are included within plan limits.',
   },
   'websites:manage': {
     title: 'Manage website schedules',

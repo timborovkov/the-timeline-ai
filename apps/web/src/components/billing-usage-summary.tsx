@@ -1,12 +1,15 @@
+'use client';
+
 import type { BillingPresentation } from '@timeline/shared/billing';
 import {
   FREE_ALLOWANCES,
-  formatEuroFromCents,
   formatStorageGb,
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
 import type { PlanCapacityKind, PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayCurrency, formatDisplayNumber } from '@/lib/regional-format';
 import { cn } from '@/lib/utils';
 
 const METER_LABELS: Record<BillingMeterId, string> = {
@@ -39,21 +42,21 @@ function AllowanceBar({ used, allowance }: { used: number; allowance: number }) 
   );
 }
 
-function formatCapacityNumber(kind: PlanCapacityKind, value: number): string {
+function formatCapacityNumber(kind: PlanCapacityKind, value: number, locale: string): string {
   if (kind === 'storage_gb') return formatStorageGb(value);
-  return Math.round(value).toLocaleString('en-IE');
+  return formatDisplayNumber(Math.round(value), locale);
 }
 
-function formatCapacityValue(row: PlanCapacityUsageRow): string {
+function formatCapacityValue(row: PlanCapacityUsageRow, locale: string): string {
   if (row.limit === null) {
-    return `${formatCapacityNumber(row.kind, row.used)} · Custom`;
+    return `${formatCapacityNumber(row.kind, row.used, locale)} · Custom`;
   }
   if (row.limit === 0) {
     return row.used > 0
-      ? `${formatCapacityNumber(row.kind, row.used)} · Not included`
+      ? `${formatCapacityNumber(row.kind, row.used, locale)} · Not included`
       : 'Not included';
   }
-  return `${formatCapacityNumber(row.kind, row.used)} of ${formatCapacityNumber(row.kind, row.limit)}`;
+  return `${formatCapacityNumber(row.kind, row.used, locale)} of ${formatCapacityNumber(row.kind, row.limit, locale)}`;
 }
 
 function allowanceLimit(meter: BillingMeterId): number | null {
@@ -73,25 +76,28 @@ function allowanceLimit(meter: BillingMeterId): number | null {
   }
 }
 
-function amountLabel(meter: BillingMeterId, nativeUnits: number): string {
-  if (meter === 'ai') return formatEuroFromCents(nativeUnits);
-  if (meter === 'recall_minutes') return `${nativeUnits.toLocaleString('en-IE')} min`;
+function amountLabel(meter: BillingMeterId, nativeUnits: number, locale: string): string {
+  if (meter === 'ai') return formatDisplayCurrency(nativeUnits, 'EUR', locale, true);
+  if (meter === 'recall_minutes') return `${formatDisplayNumber(nativeUnits, locale)} min`;
   if (meter === 'storage_gb_month') return formatStorageGb(nativeUnits);
-  return nativeUnits.toLocaleString('en-IE');
+  return formatDisplayNumber(nativeUnits, locale);
 }
 
-function meterHint(input: {
-  meter: BillingMeterId;
-  includedActiveMembers?: number | null;
-  additionalMemberCents?: number | null;
-}): string | undefined {
+function meterHint(
+  input: {
+    meter: BillingMeterId;
+    includedActiveMembers?: number | null;
+    additionalMemberCents?: number | null;
+  },
+  locale: string,
+): string | undefined {
   if (input.meter !== 'member_days') return undefined;
   const parts: string[] = [];
   if (input.includedActiveMembers !== null && input.includedActiveMembers !== undefined) {
-    parts.push(`${input.includedActiveMembers.toLocaleString('en-IE')} included`);
+    parts.push(`${formatDisplayNumber(input.includedActiveMembers, locale)} included`);
   }
   if (input.additionalMemberCents !== null && input.additionalMemberCents !== undefined) {
-    parts.push(`${formatEuroFromCents(input.additionalMemberCents)} each`);
+    parts.push(`${formatDisplayCurrency(input.additionalMemberCents, 'EUR', locale, true)} each`);
   }
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
@@ -100,7 +106,9 @@ export function BillingUsageSummary({
   planId,
   layout = 'table',
   allowancesOnly = false,
+  usdCharges = false,
   allowanceBalances,
+  recordedCharges,
   comped = false,
   spendCapCents,
   meteredSpendCents,
@@ -113,7 +121,9 @@ export function BillingUsageSummary({
   planId: string;
   layout?: 'table' | 'cards';
   allowancesOnly?: boolean;
+  usdCharges?: boolean;
   allowanceBalances?: BillingPresentation['allowances'];
+  recordedCharges?: BillingPresentation['charges']['amounts'];
   comped?: boolean;
   spendCapCents?: number;
   meteredSpendCents?: number;
@@ -128,7 +138,11 @@ export function BillingUsageSummary({
   additionalMemberCents?: number | null;
   className?: string;
 }) {
+  const { locale } = useRegionalFormat();
   const liveStorage = capacityUsage.find((item) => item.kind === 'storage_gb');
+  const usdMeterCharges = recordedCharges?.currency
+    ? recordedCharges.currency === 'USD'
+    : usdCharges;
   const rows = (Object.keys(METER_LABELS) as BillingMeterId[])
     .map((meter) => {
       const row = meters[meter];
@@ -138,7 +152,10 @@ export function BillingUsageSummary({
           ? liveStorage.used
           : (balance?.used ?? row?.nativeUnits ?? 0);
       const customerChargeCents =
-        row?.capEligibleChargeCents ?? (planId === 'free' ? 0 : (row?.customerChargeCents ?? 0));
+        recordedCharges === undefined
+          ? (row?.capEligibleChargeCents ??
+            (planId === 'free' ? 0 : (row?.customerChargeCents ?? 0)))
+          : (recordedCharges?.invoiceCentsByMeter[meter] ?? 0);
       const active = nativeUnits > 0 || customerChargeCents > 0;
       const showMeter =
         (ALLOWANCE_METERS as readonly string[]).includes(meter) ||
@@ -148,49 +165,25 @@ export function BillingUsageSummary({
         meter,
         nativeUnits,
         customerChargeCents,
-        allowance:
-          balance?.included ??
-          (planId === 'free' || planId === 'payg' ? allowanceLimit(meter) : null),
+        allowance: balance?.included ?? (planId === 'payg' ? allowanceLimit(meter) : null),
       };
     })
     .filter((row) => row !== null);
 
   return (
     <div className={cn('space-y-4', className)}>
-      {planId === 'payg' &&
-      !comped &&
-      spendCapCents !== undefined &&
-      meteredSpendCents !== undefined ? (
-        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-          <p>
-            Chargeable usage this month:{' '}
-            <span className="font-mono">{formatEuroFromCents(meteredSpendCents)}</span>
-          </p>
-          <p>
-            Monthly spend cap:{' '}
-            <span className="font-mono">{formatEuroFromCents(spendCapCents)}</span>
-          </p>
-        </div>
-      ) : null}
-      {!allowancesOnly && planId === 'payg' && !comped ? (
-        <p className="text-sm text-fg-muted">
-          Your monthly Free allowances are included. You pay for usage above each allowance and
-          extra members. Charges below exclude Free-plan usage; final invoices may include discounts
-          and tax.
-        </p>
-      ) : null}
-      {comped ? (
-        <p className="text-sm text-fg-muted">
-          This team is comped. Usage is tracked without Polar charges.
-        </p>
-      ) : planId !== 'free' && planId !== 'payg' ? (
-        <p className="text-sm text-fg-muted">
-          Metered charges shown before included plan credit, provider discounts and tax.
-        </p>
-      ) : null}
+      <MeteredUsageNotes
+        planId={planId}
+        comped={comped}
+        spendCapCents={spendCapCents}
+        meteredSpendCents={meteredSpendCents}
+        allowancesOnly={allowancesOnly}
+        usdCharges={usdCharges}
+      />
       {layout === 'cards' ? (
         <UsageMeterCards
           rows={rows}
+          usdCharges={usdMeterCharges}
           comped={comped}
           includedActiveMembers={includedActiveMembers}
           additionalMemberCents={additionalMemberCents}
@@ -204,11 +197,14 @@ export function BillingUsageSummary({
           </div>
           <ul>
             {rows.map((row) => {
-              const hint = meterHint({
-                meter: row.meter,
-                includedActiveMembers,
-                additionalMemberCents,
-              });
+              const hint = meterHint(
+                {
+                  meter: row.meter,
+                  includedActiveMembers,
+                  additionalMemberCents,
+                },
+                locale,
+              );
               return (
                 <li
                   key={row.meter}
@@ -224,9 +220,13 @@ export function BillingUsageSummary({
                     {row.allowance === null ? null : (
                       <>
                         <p className="mt-1 text-xs text-fg-muted">
-                          Used: {amountLabel(row.meter, row.nativeUnits)} · Included:{' '}
-                          {amountLabel(row.meter, row.allowance)} · Remaining:{' '}
-                          {amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))}
+                          Used: {amountLabel(row.meter, row.nativeUnits, locale)} · Included:{' '}
+                          {amountLabel(row.meter, row.allowance, locale)} · Remaining:{' '}
+                          {amountLabel(
+                            row.meter,
+                            Math.max(0, row.allowance - row.nativeUnits),
+                            locale,
+                          )}
                           {row.nativeUnits >= row.allowance ? ' · Allowance used up' : ''}
                         </p>
                         <AllowanceBar used={row.nativeUnits} allowance={row.allowance} />
@@ -234,14 +234,19 @@ export function BillingUsageSummary({
                     )}
                   </div>
                   <span className="font-mono text-fg-muted">
-                    {amountLabel(row.meter, row.nativeUnits)}
+                    {amountLabel(row.meter, row.nativeUnits, locale)}
                   </span>
                   <span className="text-right font-mono text-fg">
                     {allowancesOnly && row.allowance !== null
-                      ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))
-                      : comped
+                      ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits), locale)
+                      : comped || recordedCharges === null
                         ? '—'
-                        : formatEuroFromCents(row.customerChargeCents)}
+                        : formatDisplayCurrency(
+                            row.customerChargeCents,
+                            usdMeterCharges ? 'USD' : 'EUR',
+                            locale,
+                            true,
+                          )}
                   </span>
                 </li>
               );
@@ -266,7 +271,7 @@ export function BillingUsageSummary({
                 className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
               >
                 <span className="text-fg-muted">{row.label}</span>
-                <span className="font-mono text-fg">{formatCapacityValue(row)}</span>
+                <span className="font-mono text-fg">{formatCapacityValue(row, locale)}</span>
               </li>
             ))}
           </ul>
@@ -276,12 +281,71 @@ export function BillingUsageSummary({
   );
 }
 
+function MeteredUsageNotes({
+  planId,
+  comped,
+  spendCapCents,
+  meteredSpendCents,
+  allowancesOnly,
+  usdCharges,
+}: {
+  planId: string;
+  comped: boolean | undefined;
+  spendCapCents: number | undefined;
+  meteredSpendCents: number | undefined;
+  allowancesOnly: boolean;
+  usdCharges: boolean;
+}) {
+  const { locale } = useRegionalFormat();
+  return (
+    <>
+      {planId === 'payg' &&
+      !comped &&
+      spendCapCents !== undefined &&
+      meteredSpendCents !== undefined ? (
+        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+          <p>
+            Chargeable usage this month:{' '}
+            <span className="font-mono">
+              {formatDisplayCurrency(meteredSpendCents, 'EUR', locale, true)}
+            </span>
+          </p>
+          <p>
+            Monthly spend cap:{' '}
+            <span className="font-mono">
+              {formatDisplayCurrency(spendCapCents, 'EUR', locale, true)}
+            </span>
+          </p>
+        </div>
+      ) : null}
+      {!allowancesOnly && planId === 'payg' && !comped ? (
+        <p className="text-sm text-fg-muted">
+          Your monthly Free allowances are included. You pay for usage above each allowance and
+          extra members. Charges below exclude Free-plan usage; final invoices may include discounts
+          and tax.
+        </p>
+      ) : null}
+      {comped ? (
+        <p className="text-sm text-fg-muted">
+          This team is comped. Usage is tracked without Polar charges.
+        </p>
+      ) : !usdCharges && planId !== 'free' && planId !== 'payg' ? (
+        <p className="text-sm text-fg-muted">
+          Metered charges shown before included plan credit, provider discounts and tax.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function UsageMeterCards({
   rows,
+  usdCharges,
   comped,
   includedActiveMembers,
   additionalMemberCents,
 }: {
+  usdCharges: boolean;
   rows: {
     meter: BillingMeterId;
     nativeUnits: number;
@@ -292,10 +356,14 @@ function UsageMeterCards({
   includedActiveMembers?: number | null;
   additionalMemberCents?: number | null;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Usage by meter">
       {rows.map((row) => {
-        const hint = meterHint({ meter: row.meter, includedActiveMembers, additionalMemberCents });
+        const hint = meterHint(
+          { meter: row.meter, includedActiveMembers, additionalMemberCents },
+          locale,
+        );
         const remaining =
           row.allowance === null ? null : Math.max(0, row.allowance - row.nativeUnits);
         return (
@@ -308,11 +376,11 @@ function UsageMeterCards({
             <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="sr-only">Used: </span>
               <span className="font-mono text-2xl tracking-tight text-fg">
-                {amountLabel(row.meter, row.nativeUnits)}
+                {amountLabel(row.meter, row.nativeUnits, locale)}
               </span>
               {row.allowance !== null ? (
                 <span className="text-xs text-fg-muted">
-                  / {amountLabel(row.meter, row.allowance)} included
+                  / {amountLabel(row.meter, row.allowance, locale)} included
                 </span>
               ) : (
                 <span className="text-xs text-fg-muted">used</span>
@@ -326,7 +394,7 @@ function UsageMeterCards({
                 <p>
                   {remaining === 0
                     ? 'Allowance used up'
-                    : `${amountLabel(row.meter, remaining)} remaining`}
+                    : `${amountLabel(row.meter, remaining, locale)} remaining`}
                 </p>
               ) : null}
               {hint ? <p>{hint}</p> : null}
@@ -334,7 +402,12 @@ function UsageMeterCards({
                 <p>
                   Meter charges:{' '}
                   <span className="font-mono text-fg">
-                    {formatEuroFromCents(row.customerChargeCents)}
+                    {formatDisplayCurrency(
+                      row.customerChargeCents,
+                      usdCharges ? 'USD' : 'EUR',
+                      locale,
+                      true,
+                    )}
                   </span>
                 </p>
               ) : null}

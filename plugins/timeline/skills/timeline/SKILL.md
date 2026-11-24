@@ -56,7 +56,7 @@ Use this section when the user requests a note, has told you to log this work, o
 - `timeline.remember`: one self-contained note per fact cluster. Lead with the subject, then who, the decision, the next step, the owner, and the date. Rate-limited to 30 notes per minute. Needs the `capture` scope. It stores cited ingest evidence only.
 - Email (only when the user has separately authorized this channel): send, forward, CC or BCC to the team address (Home → Team email). This works only if the sending address is a team member or an allowed sender.
 - Webhook (only with separately authorized ingest access): POST plain text or JSON (1 MB or less) to this Timeline deployment's `/api/webhooks/ingest` with `Authorization: Bearer $TIMELINE_INGEST_TOKEN`. Hosted Timeline uses `https://thetimeline.cc/api/webhooks/ingest`. Self-hosted Timeline must use that deployment's own origin; posting to the hosted URL returns 401. Never print the token. Keep it in the environment.
-- Tell the user what you recorded. Everything becomes cited evidence only. Any resulting proposals still need human approval.
+- Tell the user what you recorded and cite the source. Notes and webhook captures only add evidence. Eligible proposals from captured email can apply automatically under workspace policy. Check the record before reporting an applied change.
 
 ## Report meaningful work
 
@@ -93,4 +93,4 @@ If a Timeline-dependent request has no `timeline.*` tools available, stop and di
 
 ## Website capture
 
-Use `timeline.crawl` only when the user explicitly requests a public website scan and confirms permission and usage (20 source units per captured page, up to five pages; AI/storage additional). It requires `websites:scan`; default grants do not include it. Supply a stable idempotency key, URL, subject and `permissionConfirmed: true`. Poll `timeline.crawl_status` with the returned run ID. Never crawl automatically to answer an ordinary search question.
+Use `timeline.crawl` only when the user explicitly requests a public website scan and confirms permission and usage. A scan captures up to five pages. On Free and Team, capture and ordinary storage are included within plan limits, and AI processing draws from the workspace's shared Included usage. It requires `websites:scan`; default grants do not include it. Supply a stable idempotency key, URL, subject and `permissionConfirmed: true`. Poll `timeline.crawl_status` with the returned run ID. Never crawl automatically to answer an ordinary search question.

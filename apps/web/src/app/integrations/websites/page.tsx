@@ -82,23 +82,6 @@ export default function WebsiteIntegrationPage() {
               <figcaption>Illustrative example · Public website captures</figcaption>
             </figure>
           </div>
-          <section
-            className="mt-12 flex flex-wrap items-baseline justify-between gap-4 border-y border-border py-6"
-            aria-label="Website scan pricing"
-          >
-            <p className="text-lg">
-              A five-page scan: <strong>€0.05</strong>
-            </p>
-            <p className="text-sm text-fg-muted">
-              100 source units, before allowances. AI and storage extra.
-            </p>
-            <Link
-              href="/pricing#estimate-usage"
-              className="py-2 text-sm underline underline-offset-4"
-            >
-              Estimate your usage
-            </Link>
-          </section>
           <div className="my-16 grid gap-8 border-y border-border py-8 sm:grid-cols-3">
             {benefits.map(({ icon: Icon, title, text }) => (
               <section key={title}>
@@ -117,8 +100,8 @@ export default function WebsiteIntegrationPage() {
                 </summary>
                 <p className="mt-3 max-w-2xl leading-6 text-fg-muted">
                   Up to five public pages on the same site, with permission to submit them.
-                  Login-protected pages aren’t supported. Captures are visible to your team;
-                  suggested record changes still need approval.
+                  Login-protected pages aren’t supported. Captures are visible to your team. Any
+                  resulting record changes follow your workspace policy.
                 </p>
               </details>
               <details className="py-5">
@@ -134,21 +117,11 @@ export default function WebsiteIntegrationPage() {
               </details>
               <details className="py-5">
                 <summary className="cursor-pointer font-medium focus-visible:outline-2">
-                  What counts toward usage?
-                </summary>
-                <p className="mt-3 max-w-2xl leading-6 text-fg-muted">
-                  Each captured page uses 20 accepted-source units, including unchanged pages. AI
-                  and storage are separate. Retrying processing on an existing capture doesn’t add
-                  another scan charge.
-                </p>
-              </details>
-              <details className="py-5">
-                <summary className="cursor-pointer font-medium focus-visible:outline-2">
                   Can I scan from chat or an agent?
                 </summary>
                 <p className="mt-3 max-w-2xl leading-6 text-fg-muted">
                   Use <code>/crawl</code> in Telegram or <code>/timeline crawl</code> in Slack. Both
-                  confirm permission and cost first. Scoped MCP and HTTP access are also available.
+                  ask you to confirm the scan first. Scoped MCP and HTTP access are also available.
                 </p>
               </details>
               <details className="py-5">

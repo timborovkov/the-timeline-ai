@@ -1,4 +1,5 @@
 import { revokeMcpOAuthGrantAction } from '@/app/oauth/actions';
+import { RegionalDate } from '@/components/regional-date';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,11 +20,6 @@ interface McpOAuthGrant {
   lastUsedAt: Date | null;
 }
 
-const dateFormatter = new Intl.DateTimeFormat('en', {
-  dateStyle: 'medium',
-  timeZone: 'UTC',
-});
-
 function clientHostname(clientId: string): string | null {
   if (!clientId.startsWith('https://')) return null;
   try {
@@ -38,10 +34,6 @@ function scopeLabel(scope: string): string {
   if (scope === 'capture') return 'Capture notes';
   if (scope === 'agent:ask') return 'Ask Timeline agent';
   return scope;
-}
-
-function dateLabel(date: Date): string {
-  return dateFormatter.format(date);
 }
 
 export function McpOAuthGrants({ grants, teamId }: { grants: McpOAuthGrant[]; teamId: string }) {
@@ -87,14 +79,11 @@ export function McpOAuthGrants({ grants, teamId }: { grants: McpOAuthGrant[]; te
                 ))}
               </div>
               <p className="text-xs leading-5 text-fg-muted">
-                Authorized{' '}
-                <time dateTime={grant.createdAt.toISOString()}>{dateLabel(grant.createdAt)}</time>
+                Authorized <RegionalDate value={grant.createdAt} />
                 {grant.lastUsedAt ? (
                   <>
                     {' · Last used '}
-                    <time dateTime={grant.lastUsedAt.toISOString()}>
-                      {dateLabel(grant.lastUsedAt)}
-                    </time>
+                    <RegionalDate value={grant.lastUsedAt} />
                   </>
                 ) : (
                   ' · Not used yet'

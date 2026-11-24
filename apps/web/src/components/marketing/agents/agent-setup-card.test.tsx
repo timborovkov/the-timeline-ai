@@ -46,6 +46,16 @@ describe('AgentSetupCard', () => {
     }
   });
 
+  it('keeps the visible Copy label and specific accessible name in both card variants', () => {
+    for (const compact of [false, true]) {
+      const html = renderToStaticMarkup(<AgentSetupCard compact={compact} />);
+      const button = /<button\b[^>]*aria-label="Copy setup command"[^>]*>.*?<\/button>/.exec(
+        html,
+      )?.[0];
+      expect(button).toContain('<span>Copy</span>');
+    }
+  });
+
   it('keeps the logo row on one line and the 0.75rem type floor', () => {
     expect(styles).toMatch(/\.marks\s*\{[^}]*flex-wrap:\s*nowrap;/s);
     expect(styles).not.toMatch(/\.marks\s*\{[^}]*flex-wrap:\s*wrap;/s);

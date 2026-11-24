@@ -61,24 +61,23 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     slug: 'jira',
     route: '/integrations/jira',
     name: 'Jira',
-    navLabel: 'Jira · MCP lookup',
+    navLabel: 'Jira · Native capture planned',
     logo: '/connectors/jira.svg',
-    status: 'mcp-lookup',
-    statusLabel: 'MCP lookup',
-    title: 'Jira context, when you need it.',
+    status: 'coming-soon',
+    statusLabel: 'Native capture planned',
+    title: 'Keep your issue workflow in Jira.',
     summary:
-      'Jira stays the issue tracker. Enabled Atlassian MCP can look up issues, sprints and related Confluence pages live when you ask Timeline. Native Jira ingest is planned.',
-    seoTitle: 'Jira lookup in The Timeline',
+      'Timeline can keep a conversation record alongside Jira. Native Jira capture is unavailable, and the built-in Atlassian MCP preset needs an update.',
+    seoTitle: 'Jira and The Timeline',
     seoDescription:
-      'Connect Atlassian MCP so Ask and agents can look up Jira issues, sprints and related Confluence pages. Native Jira ingest is planned; Timeline does not sync Jira history today.',
+      'Keep the conversations around Jira work in The Timeline. Native Jira capture is unavailable and the built-in Atlassian MCP preset needs an update.',
     howItPlugsIn:
-      'Connect Atlassian MCP from Timeline agent tools. When you ask a question, enabled live tools can query Jira and related Confluence pages. Conversation evidence still comes from Slack, Telegram, email and calls. Jira remains the source of issues, sprints and workflows.',
+      'Connect the Slack channels, Telegram groups, email, or calls where your team discusses Jira work. Jira remains the source for its issues, sprints, and workflows.',
     today:
-      'Hosted Atlassian MCP lookup is available. Timeline does not ingest Jira history into the work record by default. Answers that use Jira do so through a live lookup, not a stored Jira chronology.',
-    later:
-      'Native Jira issue, sprint, comment and workflow ingestion is planned. Until then, Jira is queryable through MCP rather than captured as durable Timeline events.',
+      'Timeline does not sync Jira history. Atlassian retired the endpoint used by Timeline’s Jira and Confluence presets, so those presets are unavailable.',
+    later: 'Native Jira capture is planned. You can request the connection you need.',
     gettingStarted:
-      'You may not need Jira in Timeline yet. Link a Slack channel or Telegram group first. Add Atlassian MCP later if Ask should look up issues that already live in Jira.',
+      'You may not need another integration. Start with a source that contains useful conversations about the work, such as a Slack channel or Telegram group.',
     whenAloneBetter:
       'Stay in Jira alone when Jira workflows, sprints and permissions are the system of record you need, and you do not need a conversation work record beside them.',
     nativeConnector: false,
@@ -93,16 +92,16 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     statusLabel: 'MCP lookup',
     title: 'Notion context, when you need it.',
     summary:
-      'Notion stays the wiki. Enabled Notion MCP can search pages, databases and comments live when you ask Timeline. Native page ingest is planned.',
+      'Notion stays the wiki. Enable Notion MCP to look up pages, databases and comments live when you ask Timeline.',
     seoTitle: 'Notion lookup in The Timeline',
     seoDescription:
-      'Connect Notion MCP so Ask and agents can search pages, databases and comments. Native Notion ingest is planned; Timeline does not sync Notion history today.',
+      'Connect Notion MCP so the Timeline Agent can look up pages, databases and comments live. Timeline does not sync Notion history.',
     howItPlugsIn:
       'Connect Notion MCP from Timeline agent tools. When you ask a question, enabled live tools can search pages, databases and comments. Conversation evidence still comes from Slack, Telegram, email and calls. Notion remains the source of pages and databases.',
     today:
-      'Hosted Notion MCP lookup is available. Timeline does not ingest Notion history into the work record by default. Answers that use Notion do so through a live lookup, not a stored Notion chronology.',
+      'Hosted Notion MCP lookup is available. The Timeline Agent can use a connected Notion tool when you ask. Connecting it does not import Notion history.',
     later:
-      'Native Notion page, database, comment and revision ingestion is planned. Until then, Notion is queryable through MCP rather than captured as durable Timeline events.',
+      'Native Notion capture is unavailable. If you need it, request the connection and tell us what should enter your work record.',
     gettingStarted:
       'You may not need Notion in Timeline yet. Start with the conversation record. Add Notion MCP later if Ask should search a wiki that already lives in Notion.',
     whenAloneBetter:
@@ -113,22 +112,21 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     slug: 'hubspot',
     route: '/integrations/hubspot',
     name: 'HubSpot',
-    navLabel: 'HubSpot · Coming soon',
+    navLabel: 'HubSpot · Native capture planned',
     logo: '/connectors/hubspot.svg',
     status: 'coming-soon',
-    statusLabel: 'Coming soon',
+    statusLabel: 'Native capture planned',
     title: 'Keep HubSpot. Connect the context.',
     summary:
       'If HubSpot already holds the pipeline, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls, so a promise is not only a CRM note.',
     seoTitle: 'HubSpot and The Timeline',
     seoDescription:
-      'Keep HubSpot as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native HubSpot ingest is coming soon and is not available today.',
+      'Keep HubSpot as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native HubSpot capture is unavailable.',
     howItPlugsIn:
       'Today HubSpot does not sync into The Timeline. People, company and deal records can still live in Timeline from the conversation record while HubSpot stays your CRM. Native company, contact, deal, ticket, note and pipeline-event ingest is planned.',
     today:
       'Send work to Timeline from Slack, Telegram, email and calls. Ask what was promised, with the source for every line. Timeline does not sync HubSpot companies, contacts, deals or tickets.',
-    later:
-      'Native HubSpot ingest is coming soon. Until it ships, there is no HubSpot MCP lookup and no HubSpot history in the work record.',
+    later: 'Native HubSpot capture is planned. Timeline has no built-in HubSpot lookup.',
     gettingStarted:
       'You may not need HubSpot in Timeline yet. Start with one Slack channel or Telegram group. Add a CRM connection later if pipeline objects should join that chronology.',
     whenAloneBetter:
@@ -139,22 +137,21 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     slug: 'attio',
     route: '/integrations/attio',
     name: 'Attio',
-    navLabel: 'Attio · Coming soon',
+    navLabel: 'Attio · Native capture planned',
     logo: '/connectors/attio.svg',
     status: 'coming-soon',
-    statusLabel: 'Coming soon',
+    statusLabel: 'Native capture planned',
     title: 'Keep Attio. Connect the context.',
     summary:
       'If Attio already holds people, companies and lists, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls.',
     seoTitle: 'Attio and The Timeline',
     seoDescription:
-      'Keep Attio as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native Attio ingest is coming soon and is not available today.',
+      'Keep Attio as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native Attio capture is unavailable.',
     howItPlugsIn:
       'Today Attio does not sync into The Timeline. Conversation evidence still lands from Slack, Telegram, email and calls. Native people, company, list, note, task and pipeline-event ingest is planned.',
     today:
       'Send work to Timeline from Slack, Telegram, email and calls. Timeline does not sync Attio people, companies, lists or pipeline events.',
-    later:
-      'Native Attio ingest is coming soon. Until it ships, there is no Attio MCP lookup and no Attio history in the work record.',
+    later: 'Native Attio capture is planned. Timeline has no built-in Attio lookup.',
     gettingStarted:
       'You may not need Attio in Timeline yet. Start with the conversation record. Add a CRM connection later if Attio objects should join that chronology.',
     whenAloneBetter:
@@ -165,22 +162,21 @@ export const WORKS_WITH_TOOLS: readonly WorksWithTool[] = [
     slug: 'pipedrive',
     route: '/integrations/pipedrive',
     name: 'Pipedrive',
-    navLabel: 'Pipedrive · Coming soon',
+    navLabel: 'Pipedrive · Native capture planned',
     logo: '/connectors/pipedrive.svg',
     status: 'coming-soon',
-    statusLabel: 'Coming soon',
+    statusLabel: 'Native capture planned',
     title: 'Keep Pipedrive. Connect the context.',
     summary:
       'If Pipedrive already holds the pipeline, keep it. The Timeline writes down what was said in Slack or Telegram, email and calls.',
     seoTitle: 'Pipedrive and The Timeline',
     seoDescription:
-      'Keep Pipedrive as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native Pipedrive ingest is coming soon and is not available today.',
+      'Keep Pipedrive as the CRM. The Timeline covers the conversation record from Slack, Telegram, email and calls. Native Pipedrive capture is unavailable.',
     howItPlugsIn:
       'Today Pipedrive does not sync into The Timeline. Conversation evidence still lands from Slack, Telegram, email and calls. Native deal, person, organization, activity, note and pipeline-stage ingest is planned.',
     today:
       'Send work to Timeline from Slack, Telegram, email and calls. Timeline does not sync Pipedrive deals, people, organizations or activities.',
-    later:
-      'Native Pipedrive ingest is coming soon. Until it ships, there is no Pipedrive MCP lookup and no Pipedrive history in the work record.',
+    later: 'Native Pipedrive capture is planned. Timeline has no built-in Pipedrive lookup.',
     gettingStarted:
       'You may not need Pipedrive in Timeline yet. Start with one Slack channel or Telegram group. Add a CRM connection later if pipeline stages should join that chronology.',
     whenAloneBetter:

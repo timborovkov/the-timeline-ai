@@ -28,7 +28,9 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { notifyAction, notifyError } from '@/lib/notify';
+import { formatDisplayNumber } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {
@@ -79,11 +81,12 @@ interface Props {
   initialPinned?: boolean;
 }
 
-function formatBytes(n: number | null): string {
+function formatBytes(n: number | null, locale: string): string {
   if (n === null) return '—';
-  if (n < 1024) return `${String(n)} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024) return `${formatDisplayNumber(n, locale)} B`;
+  if (n < 1024 * 1024)
+    return `${formatDisplayNumber(n / 1024, locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB`;
+  return `${formatDisplayNumber(n / 1024 / 1024, locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
 }
 
 function mediaKind(contentType: string | null): 'image' | 'audio' | 'pdf' | null {
@@ -102,6 +105,7 @@ export function DocumentDetail({
   activeVersionChunks,
   initialPinned = false,
 }: Props) {
+  const { locale } = useRegionalFormat();
   const router = useRouter();
   const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
@@ -331,7 +335,7 @@ export function DocumentDetail({
                       <StatusBadge status={v.processingStatus} />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
+                      {formatBytes(v.byteSize, locale)} · {v.contentType ?? 'unknown'} ·{' '}
                       <RelativeTimestamp value={v.createdAt} />
                     </p>
                     {v.processingError ? (
@@ -394,6 +398,7 @@ function CurrentVersionPanel({
   onDownload: (versionId: string) => Promise<void>;
   downloading: boolean;
 }) {
+  const { locale } = useRegionalFormat();
   const modelUnderstandingId = useId();
   const contentExcerptsId = useId();
   const kind = mediaKind(version.contentType);
@@ -411,7 +416,7 @@ function CurrentVersionPanel({
             {isCurrentVersion ? 'Current version' : 'Selected version'}
           </SectionHeading>
           <p className="mt-1 text-xs text-muted-foreground">
-            v{String(version.version)} · {formatBytes(version.byteSize)} ·{' '}
+            v{String(version.version)} · {formatBytes(version.byteSize, locale)} ·{' '}
             {version.contentType ?? 'unknown'} · <RelativeTimestamp value={version.createdAt} />
           </p>
         </div>

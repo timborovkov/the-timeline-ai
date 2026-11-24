@@ -33,6 +33,7 @@ import {
   DigestDestinationsForm,
   type DigestDestinationOption,
 } from '@/components/digest-destinations';
+import { DisplayRegionForm } from '@/components/display-region-form';
 import { WorkStylePreference } from '@/components/onboarding/work-style-preference';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
@@ -41,7 +42,6 @@ import { TeamDeletionForm } from '@/components/team-deletion-form';
 import {
   InboundEmailPlaceholderNotice,
   InboundEmailWhitelistForm,
-  DigestPreferenceForm,
   RenameTeamForm,
   TeamTimezoneForm,
   TeamExportPanel,
@@ -56,6 +56,7 @@ import { displayMemberLabel } from '@/lib/display-labels';
 import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
 import { paidSignupPlan } from '@/lib/signup-plan';
 import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
+import { timezoneOptions } from '@/lib/timezones';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -63,7 +64,7 @@ export const metadata: Metadata = {
 };
 
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
-type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
+type TeamTimezoneSettings = Pick<ComponentProps<typeof TeamTimezoneForm>, 'timezone'>;
 
 const SETTINGS_ITEMS = [
   { value: 'general', label: 'General' },
@@ -130,6 +131,11 @@ export default async function TeamSettingsPage({
           { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
+      {isAdmin && section === 'members' ? (
+        <Link href="/app/team/guests" className="text-sm underline">
+          Guest access
+        </Link>
+      ) : null}
       {
         <TeamSettingsSections
           section={section}
@@ -217,6 +223,9 @@ function TeamSettingsSections({
           <>
             <TeamIdentitySettings isAdmin={isAdmin} active={active} />
             <TeamQualitySettings />
+            <SettingsSection title="Your display preferences">
+              <DisplayRegionForm timezones={timezoneOptions('')} />
+            </SettingsSection>
             <TeamPreferencesSettings
               digestPreference={digestPreference}
               isAdmin={isAdmin}
@@ -274,6 +283,11 @@ function TeamSettingsSections({
         {section === 'advanced' && isAdmin ? (
           <>
             <AdminShortcuts isAdmin />
+            <SettingsSection title="Record maintenance">
+              <Link href="/app/team/record-maintenance" className="text-sm text-signal underline">
+                Configure automatic changes
+              </Link>
+            </SettingsSection>
             {isOwner && <TeamDeletionForm teamId={active.teamId} teamName={active.teamName} />}
           </>
         ) : null}
@@ -373,7 +387,10 @@ function TeamPreferencesSettings({
       ) : null}
       {isAdmin ? (
         <SettingsSection title="Team timezone">
-          <TeamTimezoneForm {...timezoneSettings} />
+          <TeamTimezoneForm
+            {...timezoneSettings}
+            options={timezoneOptions(timezoneSettings.timezone)}
+          />
         </SettingsSection>
       ) : null}
     </>
@@ -472,13 +489,19 @@ function TeamBillingSettings({
       comp={comp}
       showOperatorLink={showOperatorLink}
       platformFeeCents={commercial?.platformFeeCents}
+      platformFeeCurrency={commercial?.platformFeeCurrency}
     />
   );
 }
 function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
   return (
     <SettingsSection title="Messaging">
-      <DigestPreferenceForm enabled={enabled} />
+      <Link href="/app/updates" className="underline underline-offset-4">
+        Customize updates
+      </Link>
+      <p className="mt-2 text-sm text-fg-muted">
+        {enabled ? 'Personal updates are on.' : 'Personal updates are paused.'}
+      </p>
     </SettingsSection>
   );
 }

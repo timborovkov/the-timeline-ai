@@ -27,6 +27,7 @@ import {
   teamMembers,
   users,
   type Db,
+  teams,
 } from '@timeline/db';
 import {
   and,
@@ -39,6 +40,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
   or,
   sql,
 } from 'drizzle-orm';
@@ -68,18 +70,25 @@ import {
   type CalendarRecurrenceEditMode,
 } from '#src/calendar/locking.js';
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
+import { verifyNativeTrackerCompletion } from '#src/integrations/github-task-proposals.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
-import { isObjectNotFoundError } from '#src/mutation-errors.js';
-import type {
-  CreateObjectInput,
-  IdentityFacetInput,
-  ObjectPatch,
-  ObjectScope,
-  ObjectType,
+import { isObjectNotFoundError, StaleWorkspaceStateError } from '#src/mutation-errors.js';
+import {
+  readRecordFieldProvenance,
+  type CreateObjectInput,
+  type IdentityFacetInput,
+  type ObjectPatch,
+  type ObjectScope,
+  type ObjectType,
 } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
-import { OBJECT_TYPES } from '#src/objects/types.js';
+import {
+  MAINTAINED_RECORD_FIELDS,
+  OBJECT_TYPES,
+  maintainedRecordFields,
+  type MaintainedRecordField,
+} from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
 import {
   buildOutputDedupeKey,
@@ -91,7 +100,11 @@ import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapsho
 import { likePattern } from '#src/sql-like.js';
 import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
-import { identitiesConflict } from '#src/suggestions/identity-resolution.js';
+import {
+  explicitArchiveInstruction,
+  explicitArchiveRetraction,
+} from '#src/suggestions/hub-context.js';
+import { identitiesConflict, identityMatchReason } from '#src/suggestions/identity-resolution.js';
 import {
   canonicalProposalPayloadIssues,
   coerceMemberIdFields,
@@ -119,6 +132,8 @@ export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
   attachUniqueHubsToBundles,
   chronologicalLifecycleEvidence,
+  explicitArchiveInstruction,
+  explicitArchiveRetraction,
   explicitLifecycleState,
   hubEvidenceText,
   hubsChanged,
@@ -260,12 +275,12 @@ class ProposalRevisionConflictError extends Error {
 
 class TransactionalSuggestionApplyFailure extends Error {
   readonly claimedItem: typeof agentSuggestionItems.$inferSelect;
-  readonly preClaimUpdatedAt: Date;
+  readonly preClaimUpdatedAt: string;
   readonly failureReason: string;
   readonly applyError: unknown;
   constructor(
     claimedItem: typeof agentSuggestionItems.$inferSelect,
-    preClaimUpdatedAt: Date,
+    preClaimUpdatedAt: string,
     failureReason: string,
     applyError: unknown,
   ) {
@@ -310,6 +325,10 @@ function reconciliationOutputIdsFromItem(item: typeof agentSuggestionItems.$infe
     : [];
   const ids = [metadata.reconciliation_output_id, ...outputIds];
   return normalizedStringSet(ids.filter((value): value is string => typeof value === 'string'));
+}
+
+function recordApprovalProof(item: typeof agentSuggestionItems.$inferSelect) {
+  return { itemId: item.id, outputIds: reconciliationOutputIdsFromItem(item) };
 }
 
 function normalizedStringSet(values: readonly string[]): string[] {
@@ -425,6 +444,25 @@ export interface SuggestionScopeDeps {
   /** Pauses acceptance for race tests before application, outside pack evidence locks. */
   beforeApplyItem?: (itemId: string) => Promise<void>;
   acceptance: SuggestionAcceptanceUnitOfWork;
+  recordMaintenanceWorker?: boolean;
+}
+
+interface VerifiedTaskClaim {
+  rawEventId: string;
+  contextRawEventId?: string;
+  identityRawEventId?: string;
+  assertedAt: string;
+  value: string | null;
+}
+
+interface AutomaticApproval {
+  revision: string;
+  nativeStatus?: { rawEventId: string; assertedAt: Date };
+  relationship?: {
+    fromEntityId: string;
+    toEntityId: string;
+    kind: 'related' | 'child';
+  };
 }
 
 export interface SuggestionItemInput {
@@ -436,6 +474,9 @@ export interface SuggestionItemInput {
   dedupeKey: string;
   proposedPayload: Record<string, unknown>;
   evidenceRawEventIds?: string[];
+  relationshipEvidence?: z.infer<typeof groundedRelationshipSchema>;
+  plannedDateEvidence?: VerifiedTaskClaim;
+  taskFieldEvidence?: Partial<Record<MaintainedRecordField, VerifiedTaskClaim>>;
 }
 
 function missingRequiredTargetReason(
@@ -642,6 +683,7 @@ const objectPayloadFields = {
     z.string().trim().min(1).max(200).optional(),
   ),
   dueAt: blankStringAsNull(z.iso.datetime().nullable()).optional(),
+  plannedDate: z.iso.date().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 };
 
@@ -691,6 +733,13 @@ const objectNotePayload = z.object({
   noteId: uuid.optional(),
   body: z.string().trim().min(1).max(5000),
   metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const groundedRelationshipSchema = z.object({
+  rawEventIds: z.array(uuid).min(1),
+  fromName: z.string().min(1),
+  toName: z.string().min(1),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 const objectRelationshipPayload = z
@@ -1037,6 +1086,7 @@ const CREATE_CONFLICT_KEYS = [
   'stage',
   'priority',
   'dueAt',
+  'plannedDate',
   'assigneeUserId',
   'assigneeName',
   'ownerUserId',
@@ -3337,7 +3387,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function refreshBundleStatus(
     suggestionId: string,
-    resolvedByUserId?: string,
+    resolvedByUserId?: string | null,
     client: DbOrTx = db,
   ) {
     const items = await client
@@ -4111,13 +4161,77 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .for('update');
   }
 
+  function lockRelationshipEntities(ids: string[]) {
+    return db
+      .select({ id: entities.id, type: entities.type, name: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          inArray(entities.id, ids),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .orderBy(
+        sql`CASE WHEN ${entities.type} = 'project' THEN 0 WHEN ${entities.type} = 'task' THEN 1 WHEN ${entities.type} = 'company' THEN 2 WHEN ${entities.type} = 'person' THEN 3 ELSE 4 END`,
+        asc(entities.id),
+      )
+      .for('update');
+  }
+
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     if (deps.acceptance.kind !== 'transaction') return;
 
-    if (item.targetKind === 'object' || item.targetKind === 'task')
-      await lockAcceptanceProject(recordFromUnknown(item.proposedPayload).parentObjectId);
+    if (item.targetKind === 'object' || item.targetKind === 'task') {
+      const payload = recordFromUnknown(item.proposedPayload);
+      await lockAcceptanceProject(payload.parentObjectId);
+      if (
+        !deps.recordMaintenanceWorker &&
+        item.operation === 'create' &&
+        (item.targetKind === 'task' || payload.type === 'task') &&
+        typeof payload.createProjectName === 'string'
+      ) {
+        const name = payload.createProjectName.trim().toLowerCase();
+        await db
+          .select({ id: entities.id })
+          .from(entities)
+          .where(
+            and(
+              eq(entities.teamId, teamId),
+              eq(entities.type, 'project'),
+              isNull(entities.mergedIntoId),
+              or(
+                sql`lower(${entities.canonicalName}) = ${name}`,
+                sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+                  WHERE lower(alias.value) = ${name})`,
+              ),
+            ),
+          )
+          .orderBy(asc(entities.id))
+          .for('update');
+      }
+    }
+
+    if (item.targetKind === 'object_relationship' && !deps.recordMaintenanceWorker) {
+      const parsed = objectRelationshipPayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      const { fromEntityId, fromRef, fromName, toEntityId, toRef, toName } = parsed.data;
+      const existingEndpoint = async (id?: string, ref?: string, name?: string) => {
+        if (id || ref) return acceptedRelationshipEndpoint(item.suggestionId, id, ref);
+        if (!name) return undefined;
+        const rows = await findRelationshipEndpointsByName(name.trim().toLowerCase());
+        return rows.length === 1 ? rows[0]?.id : undefined;
+      };
+      const ends = [
+        await existingEndpoint(fromEntityId, fromRef, fromName),
+        await existingEndpoint(toEntityId, toRef, toName),
+      ].filter((id): id is string => Boolean(id));
+      if (ends.length) await lockRelationshipEntities(ends);
+      return;
+    }
 
     if (
       item.operation !== 'create' &&
@@ -4129,6 +4243,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .select({ id: entities.id })
         .from(entities)
         .where(and(eq(entities.id, item.targetId), eq(entities.teamId, teamId)))
+        .for('update');
+      return;
+    }
+
+    if (item.targetKind === 'object_merge') {
+      const parsed = objectMergePayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.teamId, teamId), inArray(entities.id, parsed.data.objectIds)))
+        .orderBy(asc(entities.id))
         .for('update');
       return;
     }
@@ -4175,10 +4301,69 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function hasOnlyReplayedRecordEvidence(item: typeof agentSuggestionItems.$inferSelect) {
+    if (
+      item.operation !== 'update' ||
+      !item.targetId ||
+      (item.targetKind !== 'task' && item.targetKind !== 'object')
+    )
+      return false;
+    const metadata = recordFromUnknown(item.metadata);
+    if (Object.hasOwn(metadata, 'proposal_edited_by_user_id')) return false;
+    const claims: Record<string, unknown> = {
+      ...recordFromUnknown(metadata.task_field_evidence),
+      plannedDate: metadata.planned_date_evidence,
+    };
+    const payload = recordFromUnknown(item.proposedPayload);
+    const fields = Object.keys(payload);
+    if (!fields.some((field) => recordFromUnknown(claims[field]).assertedAt)) return false;
+    await lockAcceptanceMutationTarget(item);
+    const [target] = await db
+      .select({
+        canonicalName: entities.canonicalName,
+        plannedDateRevisionAt: entities.plannedDateRevisionAt,
+        plannedDateEvidenceId: entities.plannedDateEvidenceId,
+        revisions: entities.recordFieldRevisions,
+      })
+      .from(entities)
+      .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
+      .limit(1);
+    if (!target) return false;
+    const revisions = await readRecordFieldProvenance(db, teamId, item.targetId, target.revisions);
+    const evidenceFields = fields.filter(
+      (field) =>
+        field !== 'canonicalName' ||
+        Object.hasOwn(claims, field) ||
+        payload.canonicalName !== target.canonicalName,
+    );
+    return (
+      evidenceFields.length > 0 &&
+      evidenceFields.every((field) => {
+        const claim = recordFromUnknown(claims[field]);
+        const targetRevision =
+          field === 'plannedDate'
+            ? {
+                assertedAt: target.plannedDateRevisionAt?.toISOString(),
+                rawEventId: target.plannedDateEvidenceId,
+              }
+            : revisions[field];
+        return (
+          targetRevision?.assertedAt &&
+          typeof claim.assertedAt === 'string' &&
+          claim.value === payload[field] &&
+          (Date.parse(claim.assertedAt) <= Date.parse(targetRevision.assertedAt) ||
+            claim.rawEventId === targetRevision.rawEventId)
+        );
+      })
+    );
+  }
+
   async function staleActionableItemReason(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
+    if (await hasOnlyReplayedRecordEvidence(item))
+      return 'Newer record field changes superseded this evidence.';
     const [parentSuggestion] = await db
       .select({
         metadata: agentSuggestions.metadata,
@@ -4246,7 +4431,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             rawEventVisibilityPredicate(teamId, userId),
             rawEventIsActive(),
           ),
-        );
+        )
+        .orderBy(asc(rawEvents.id));
       const visiblePackEvidence =
         storedPackEvidenceIds.length === 0
           ? []
@@ -4293,11 +4479,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (requiredEvidenceIds.length > 0) {
       const expectedFingerprints = evidenceContentFingerprints(item.metadata);
       await lockAcceptanceMutationTarget(item);
+      await lockCalendarAcceptanceTargets(item, requiredEvidenceIds);
       const evidenceQuery = db
         .select({
           id: rawEvents.id,
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
+          authorUserId: rawEvents.authorUserId,
+          visibility: rawEvents.visibility,
+          visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+          visibilityUserIds: rawEvents.visibilityUserIds,
         })
         .from(rawEvents)
         .where(
@@ -4306,13 +4497,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             rawEventVisibilityPredicate(teamId, userId),
             rawEventIsActive(),
           ),
-        );
+        )
+        .orderBy(asc(rawEvents.id));
       const visibleEvidence =
         deps.acceptance.kind === 'transaction'
           ? await evidenceQuery.for('update')
           : await evidenceQuery;
       if (visibleEvidence.length !== requiredEvidenceIds.length) {
         return 'Required source evidence is no longer available to approve.';
+      }
+      if (
+        parentSuggestion &&
+        visibleEvidence.some((event) => !rawEventSupportsAudience(event, parentSuggestion))
+      ) {
+        return 'Required source evidence no longer supports this approval audience.';
       }
       if (
         visibleEvidence.some(
@@ -5009,6 +5207,35 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return resolved.resultId;
   }
 
+  async function acceptedProjectSibling(suggestionId: string, name: string) {
+    const matches = await db
+      .select({ id: entities.id, name: entities.canonicalName })
+      .from(agentSuggestionItems)
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.id, agentSuggestionItems.resultId),
+          eq(entities.type, 'project'),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestionItems.status, 'accepted'),
+          sql`lower(${entities.canonicalName}) = lower(${name})`,
+        ),
+      )
+      .limit(2)
+      .for('update', { of: entities });
+    const match = matches.length === 1 ? matches[0] : undefined;
+    return match ? { ...match, createdForSuggestion: false } : null;
+  }
+
   async function applyObjectCreateItem(
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
@@ -5024,7 +5251,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         : item.title;
     const type =
       item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
-    const project = type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null;
+    const approvedProject =
+      deps.recordMaintenanceWorker && parsed.createProjectName
+        ? await acceptedProjectSibling(item.suggestionId, parsed.createProjectName)
+        : null;
+    if (deps.recordMaintenanceWorker && parsed.createProjectName && !approvedProject)
+      throw new StaleWorkspaceStateError();
+    const project =
+      approvedProject ?? (type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null);
     const legacyParentId =
       type === 'task' && parsed.parentObjectId && !project ? parsed.parentObjectId : null;
     const precomputedTaskCategory =
@@ -5051,16 +5285,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       type,
       canonicalName,
       actor: { kind: 'agent', userId: null },
+      approvalProof: recordApprovalProof(item),
     };
     if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
     if (parsed.status !== undefined) input.status = parsed.status;
-    else if (type === 'task') input.status = 'todo';
+    else if (type === 'task' || type === 'follow_up') input.status = 'todo';
     else if (type === 'project') input.status = 'planning';
     if (parsed.stage !== undefined) input.stage = parsed.stage;
     if (parsed.priority !== undefined) input.priority = parsed.priority;
     if (parsed.ownerUserId !== undefined) input.ownerUserId = parsed.ownerUserId;
     if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
     if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+    if (parsed.plannedDate !== undefined) {
+      input.plannedDate = parsed.plannedDate;
+      const evidence = await getPlannedDateEvidence(item, parsed.plannedDate);
+      if (evidence) input.plannedDateEvidence = evidence;
+    }
+    if (maintainedRecordFields(type).length)
+      input.taskFieldEvidence = await getTaskFieldEvidence(item, parsed);
     if (project) input.parentObjectId = project.id;
     if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
     if (initialManualTaskCategory) input.initialManualTaskCategory = initialManualTaskCategory;
@@ -5127,6 +5369,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!userOverrides.has('dueAt') && parsed.dueAt !== undefined) {
       patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
     }
+    if (!userOverrides.has('plannedDate') && parsed.plannedDate !== undefined) {
+      patch.plannedDate = parsed.plannedDate;
+    }
     if (!userOverrides.has('aliases') && parsed.aliases !== undefined) {
       patch.aliases = mergeAliases(stringArrayFromUnknown(existing.aliases), parsed.aliases);
     }
@@ -5139,7 +5384,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     try {
       if (type === 'task') await lockAcceptanceProject(project?.id);
-      await objects.updateObject(existing.id, patch, { kind: 'agent', userId: null });
+      const plannedDateEvidence = await getPlannedDateEvidence(item, patch.plannedDate);
+      await objects.updateObject(
+        existing.id,
+        patch,
+        { kind: 'agent', userId: null },
+        {
+          approvalProof: recordApprovalProof(item),
+          ...(plannedDateEvidence ? { plannedDateEvidence } : {}),
+          taskFieldEvidence: await getTaskFieldEvidence(item, {
+            canonicalName: patch.canonicalName,
+            assigneeUserId: patch.assigneeUserId,
+            status: patch.status,
+            dueAt: patch.dueAt?.toISOString() ?? (patch.dueAt as null | undefined),
+          }),
+        },
+      );
+
       if (type === 'task') {
         await objects.setTaskProject(
           existing.id,
@@ -5183,6 +5444,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             'ownerUserId',
             'assigneeUserId',
             'dueAt',
+            'plannedDate',
             'aliases',
             'metadata',
             'primaryProjectId',
@@ -5608,14 +5870,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
   }
 
-  async function resolveRelationshipEndpointName(
-    name: string,
-    endpointLabel: 'source' | 'target',
-    item: typeof agentSuggestionItems.$inferSelect,
-  ): Promise<string> {
-    const normalized = name.trim().toLowerCase();
-    if (!normalized) throw new Error(`Relationship ${endpointLabel} endpoint object is required`);
-    const rows = await db
+  function findRelationshipEndpointsByName(normalized: string) {
+    return db
       .select({ id: entities.id })
       .from(entities)
       .where(
@@ -5634,6 +5890,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         ),
       )
       .limit(2);
+  }
+
+  async function resolveRelationshipEndpointName(
+    name: string,
+    endpointLabel: 'source' | 'target',
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string> {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) throw new Error(`Relationship ${endpointLabel} endpoint object is required`);
+    const rows = await findRelationshipEndpointsByName(normalized);
     const row = rows[0];
     if (rows.length === 1 && row) return row.id;
     if (rows.length > 1) {
@@ -5756,10 +6022,26 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return events;
   }
 
-  async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
+  async function applyItem(
+    item: typeof agentSuggestionItems.$inferSelect,
+    automatic: AutomaticApproval | null = null,
+  ): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.targetKind === 'object_merge') {
-      throw new Error('Merge suggestions must be reviewed from the merge preview');
+      if (!deps.recordMaintenanceWorker)
+        throw new Error('Merge suggestions must be reviewed from the merge preview');
+      const merge = objectMergePayload.parse(item.proposedPayload);
+      const result = await objects.mergeObjects({
+        survivorId: merge.survivorId,
+        mergedIds: merge.objectIds.filter((id) => id !== merge.survivorId),
+        actor: { kind: 'agent', userId: null },
+      });
+      await reconcileObjectMerge({
+        survivorId: result.survivor.id,
+        mergedIds: result.mergedIds,
+        reason: 'Exact provider-identity records were merged under workspace policy.',
+      });
+      return result.survivor.id;
     }
     if (
       item.operation === 'create' &&
@@ -5800,6 +6082,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.ownerUserId !== undefined) patch.ownerUserId = parsed.ownerUserId;
         if (parsed.assigneeUserId !== undefined) patch.assigneeUserId = parsed.assigneeUserId;
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
+        if (parsed.plannedDate !== undefined) patch.plannedDate = parsed.plannedDate;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
         if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
         await lockAcceptanceProject(parsed.parentObjectId);
@@ -5807,15 +6090,50 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           deps.acceptance.kind === 'transaction'
             ? { postCommitEffects: deps.acceptance.postCommitEffects }
             : {};
-        await objects.updateObject(
+        const applied = await objects.updateObject(
           targetId,
           patch,
           { kind: 'agent', userId: null },
           {
             requireActive: true,
+            approvalProof: recordApprovalProof(item),
             ...mutationOptions,
+            taskFieldEvidence: automatic?.nativeStatus
+              ? { status: automatic.nativeStatus }
+              : await getTaskFieldEvidence(item, parsed),
+            ...(!automatic?.nativeStatus &&
+            deps.recordMaintenanceWorker &&
+            (await objectTypeForTarget(targetId)) === 'task'
+              ? { taskFieldApprovalItemId: item.id }
+              : {}),
+            ...(parsed.plannedDate !== undefined
+              ? { plannedDateEvidence: await getPlannedDateEvidence(item, parsed.plannedDate) }
+              : {}),
           },
         );
+        if (deps.recordMaintenanceWorker) {
+          const proposed = Object.keys(patch) as (keyof typeof patch)[];
+          const appliedFields = applied.changedFields;
+          const skippedFields = proposed.filter((field) => {
+            if (appliedFields.includes(field)) return false;
+            const requested = patch[field];
+            const current = applied.object[field as keyof typeof applied.object];
+            return requested instanceof Date && current instanceof Date
+              ? requested.getTime() !== current.getTime()
+              : requested !== current;
+          });
+          await db
+            .update(agentSuggestionItems)
+            .set({
+              metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+                applied_task_fields: appliedFields,
+                skipped_task_fields: skippedFields,
+              })}::jsonb`,
+            })
+            .where(
+              and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, item.id)),
+            );
+        }
         if (parsed.parentObjectId !== undefined)
           await objects.setTaskProject(
             targetId,
@@ -5902,7 +6220,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.targetKind === 'object_relationship') {
       if (item.operation !== 'create') throw new Error('Object relationships only support create');
-      const parsed = await resolveRelationshipPayload(item, payload);
+      const parsed = automatic?.relationship ?? (await resolveRelationshipPayload(item, payload));
       const endpoints = await db
         .select({ id: entities.id, type: entities.type })
         .from(entities)
@@ -6087,13 +6405,956 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return targetId;
   }
 
+  async function acceptedConversationTaskEvidence(rawEventIds: readonly string[]) {
+    await ensureMember();
+    const ids = [...new Set(rawEventIds)].filter((id) => UUID_RE.test(id));
+    if (!ids.length) return { reports: [], plans: [] };
+    const activeTasks = and(
+      eq(entities.teamId, teamId),
+      eq(entities.type, 'task'),
+      isNull(entities.archivedAt),
+      isNull(entities.mergedIntoId),
+    );
+    const visibleSources = and(
+      eq(rawEvents.teamId, teamId),
+      eq(rawEvents.visibility, 'team'),
+      inArray(rawEvents.id, ids),
+      rawEventIsActive(),
+    );
+    const [reports, plans] = await Promise.all([
+      db
+        .selectDistinct({ taskId: entities.id, rawEventId: rawEvents.id })
+        .from(agentSuggestionEvidence)
+        .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionEvidence.suggestionId))
+        .innerJoin(agentSuggestionItems, eq(agentSuggestionItems.suggestionId, agentSuggestions.id))
+        .innerJoin(entities, eq(entities.id, agentSuggestionItems.resultId))
+        .where(
+          and(
+            activeTasks,
+            visibleSources,
+            eq(agentSuggestionEvidence.teamId, teamId),
+            eq(agentSuggestions.teamId, teamId),
+            eq(agentSuggestions.visibility, 'team'),
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.targetKind, 'task'),
+            eq(agentSuggestionItems.operation, 'create'),
+            eq(agentSuggestionItems.status, 'accepted'),
+            isNotNull(agentSuggestionItems.resolvedAt),
+            sql`(${agentSuggestionItems.metadata} -> 'evidence_raw_event_ids') ? (${rawEvents.id}::text)`,
+          ),
+        ),
+      db
+        .select({ taskId: entities.id, rawEventId: rawEvents.id })
+        .from(entities)
+        .innerJoin(rawEvents, eq(entities.plannedDateEvidenceId, rawEvents.id))
+        .where(and(activeTasks, visibleSources, isNotNull(entities.plannedDate))),
+    ]);
+    return { reports, plans };
+  }
+
+  async function getVerifiedTaskClaim(
+    item: typeof agentSuggestionItems.$inferSelect,
+    evidenceRecord: unknown,
+    value: string | null | undefined,
+    strict = true,
+  ) {
+    if (value === undefined) return undefined;
+    const evidence = recordFromUnknown(evidenceRecord);
+    if (Object.keys(evidence).length === 0) return undefined;
+    if (value !== evidence.value) return undefined;
+    const parsed = z
+      .object({
+        rawEventId: uuid,
+        contextRawEventId: uuid.optional(),
+        identityRawEventId: uuid.optional(),
+        assertedAt: z.iso.datetime(),
+      })
+      .parse(evidence);
+    const requiredIds = [
+      ...new Set([
+        parsed.rawEventId,
+        ...(parsed.contextRawEventId ? [parsed.contextRawEventId] : []),
+        ...(parsed.identityRawEventId ? [parsed.identityRawEventId] : []),
+      ]),
+    ];
+    const sourceRows = await db
+      .select({ id: rawEvents.id, occurredAt: rawEvents.occurredAt })
+      .from(rawEvents)
+      .innerJoin(agentSuggestionEvidence, eq(agentSuggestionEvidence.rawEventId, rawEvents.id))
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, item.suggestionId),
+          eq(rawEvents.teamId, teamId),
+          inArray(rawEvents.id, requiredIds),
+          eq(rawEvents.visibility, 'team'),
+          rawEventIsActive(),
+        ),
+      )
+      .for('share');
+    const source = sourceRows.find((entry) => entry.id === parsed.rawEventId);
+    const assertedAt = new Date(parsed.assertedAt);
+    if (
+      new Set(sourceRows.map((entry) => entry.id)).size !== requiredIds.length ||
+      !source ||
+      assertedAt > source.occurredAt
+    )
+      if (strict) throw new Error('Task field evidence is no longer available');
+      else return undefined;
+    return { rawEventId: parsed.rawEventId, assertedAt };
+  }
+
+  function getPlannedDateEvidence(
+    item: typeof agentSuggestionItems.$inferSelect,
+    value: string | null | undefined,
+    strict = true,
+  ) {
+    return getVerifiedTaskClaim(
+      item,
+      recordFromUnknown(item.metadata).planned_date_evidence,
+      value,
+      strict,
+    );
+  }
+
+  async function getTaskFieldEvidence(
+    item: typeof agentSuggestionItems.$inferSelect,
+    proposed: Pick<z.infer<typeof objectUpdatePayload>, MaintainedRecordField>,
+    strict = true,
+  ): Promise<NonNullable<CreateObjectInput['taskFieldEvidence']>> {
+    const evidence = recordFromUnknown(recordFromUnknown(item.metadata).task_field_evidence);
+    const verified: NonNullable<CreateObjectInput['taskFieldEvidence']> = {};
+    for (const field of MAINTAINED_RECORD_FIELDS) {
+      const claim = await getVerifiedTaskClaim(item, evidence[field], proposed[field], strict);
+      if (claim) verified[field] = claim;
+    }
+    return verified;
+  }
+
+  async function undoAutomaticTaskUpdate(itemId: string): Promise<boolean> {
+    await ensureMember();
+    if (!UUID_RE.test(itemId) || userId === '00000000-0000-0000-0000-000000000000') return false;
+    const entries = await db
+      .select({
+        changeId: objectChanges.id,
+        entityId: objectChanges.entityId,
+        field: objectChanges.field,
+        previousValue: objectChanges.previousValue,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .innerJoin(
+        objectChanges,
+        and(
+          eq(objectChanges.approvalItemId, agentSuggestionItems.id),
+          eq(objectChanges.teamId, teamId),
+          eq(objectChanges.entityId, agentSuggestionItems.resultId),
+        ),
+      )
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.id, itemId),
+          suggestionVisibilityPredicate(teamId, userId),
+          eq(agentSuggestionItems.status, 'accepted'),
+          eq(objectChanges.status, 'applied'),
+          sql`${agentSuggestionItems.metadata} ->> 'approval_decision' = 'automatic'`,
+        ),
+      )
+      .limit(6);
+    const entry = entries[0];
+    if (!entry || entries.length > 5 || entries.some((row) => row.entityId !== entry.entityId))
+      return false;
+    const patch: ObjectPatch = {};
+    const undoTaskFieldChanges: NonNullable<
+      Parameters<typeof objects.updateObject>[3]
+    >['undoTaskFieldChanges'] = {};
+    for (const row of entries) {
+      switch (row.field) {
+        case 'canonicalName':
+          patch.canonicalName = z.string().min(1).parse(row.previousValue);
+          undoTaskFieldChanges.canonicalName = row.changeId;
+          break;
+        case 'plannedDate':
+          patch.plannedDate = z.iso.date().nullable().parse(row.previousValue);
+          undoTaskFieldChanges.plannedDate = row.changeId;
+          break;
+        case 'assigneeUserId':
+          patch.assigneeUserId = uuid.nullable().parse(row.previousValue);
+          undoTaskFieldChanges.assigneeUserId = row.changeId;
+          break;
+        case 'dueAt': {
+          const previous = z.iso.datetime().nullable().parse(row.previousValue);
+          patch.dueAt = previous === null ? null : new Date(previous);
+          undoTaskFieldChanges.dueAt = row.changeId;
+          break;
+        }
+        case 'status':
+          patch.status = z.string().parse(row.previousValue);
+          undoTaskFieldChanges.status = row.changeId;
+          break;
+        default:
+          return false;
+      }
+    }
+    const postCommitEffects: (() => void | Promise<void>)[] = [];
+    await db.transaction(async (tx) => {
+      await objects.updateObject(
+        entry.entityId,
+        patch,
+        { kind: 'user', userId },
+        { requireActive: true, undoTaskFieldChanges, transactionClient: tx, postCommitEffects },
+      );
+      await tx
+        .update(agentSuggestionItems)
+        .set({
+          metadata: sql`${agentSuggestionItems.metadata} || '{"task_update_undo_available":false,"task_update_undone":true}'::jsonb`,
+        })
+        .where(and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, itemId)));
+    });
+    for (const effect of postCommitEffects) await effect();
+    return true;
+  }
+
+  async function getRecordMaintenancePolicy() {
+    await ensureMember();
+    const [workspace] = await db
+      .select({ policy: teams.recordMaintenance })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    if (!workspace) throw new Error('Workspace not found');
+    return workspace.policy;
+  }
+
+  async function setRecordMaintenancePolicy(input: {
+    reviewManualValues: boolean;
+    approveRemovals: boolean;
+    approveMerges: boolean;
+  }) {
+    if ((await ensureMember('admin')) === 'member') throw new Error('Admin access is required');
+    const policy = {
+      ...z
+        .object({
+          reviewManualValues: z.boolean(),
+          approveRemovals: z.boolean(),
+          approveMerges: z.boolean(),
+        })
+        .parse(input),
+      revision: randomUUID(),
+    };
+    await db.update(teams).set({ recordMaintenance: policy }).where(eq(teams.id, teamId));
+    return policy;
+  }
+
+  async function uniqueActiveObjectByName(name: string) {
+    await ensureMember();
+    const rows = await db
+      .select({ id: entities.id, name: entities.canonicalName, type: entities.type })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`lower(${entities.canonicalName}) = lower(${name.trim()})`,
+        ),
+      )
+      .limit(2);
+    return rows.length === 1 ? (rows[0] ?? null) : null;
+  }
+
+  function exactMergeTrackerKey(row: typeof entities.$inferSelect) {
+    const metadata = recordFromUnknown(row.metadata);
+    const candidate = metadata.url ?? metadata.external_url;
+    if (typeof candidate !== 'string') return null;
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== 'https:' || url.port || url.username || url.password) return null;
+      if (
+        url.hostname === 'github.com' &&
+        (!metadata.integration_provider || metadata.integration_provider === 'github')
+      ) {
+        const item = /^\/([\w.-]+)\/([\w.-]+)\/(issues|pull)\/([1-9]\d*)\/?$/i.exec(url.pathname);
+        return item ? `github:${item.slice(1).join('/').toLowerCase()}` : null;
+      }
+      if (
+        url.hostname === 'linear.app' &&
+        (!metadata.integration_provider || metadata.integration_provider === 'linear')
+      ) {
+        const item = /^\/([\w-]+)\/issue\/([a-z][a-z\d]+-[1-9]\d*)(?:\/[\w-]+)?\/?$/i.exec(
+          url.pathname,
+        );
+        return item ? `linear:${item.slice(1).join('/').toLowerCase()}` : null;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  async function acceptedRelationshipEndpoint(suggestionId: string, id?: string, ref?: string) {
+    if (id) return id;
+    const localRef = normalizedLocalRef(ref);
+    if (!localRef) return undefined;
+    const siblings = await db
+      .select({ id: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestionItems.status, 'accepted'),
+          isNotNull(agentSuggestionItems.resolvedAt),
+          isNotNull(agentSuggestionItems.resultId),
+          inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+          sql`lower(${agentSuggestionItems.proposedPayload}->>'localRef') = ${localRef}`,
+        ),
+      )
+      .limit(2);
+    return siblings.length === 1 ? siblings[0]?.id : undefined;
+  }
+
+  async function approvedRelationship(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: Record<string, unknown>,
+  ): Promise<AutomaticApproval['relationship']> {
+    const proof = groundedRelationshipSchema.safeParse(
+      recordFromUnknown(item.metadata).relationship_evidence,
+    );
+    const parsed = objectRelationshipPayload.safeParse(payload);
+    if (
+      !proof.success ||
+      !parsed.success ||
+      stableStringify(proof.data.payload) !== stableStringify(payload) ||
+      (parsed.data.kind !== 'related' && parsed.data.kind !== 'child')
+    )
+      return undefined;
+
+    const fromEntityId = await acceptedRelationshipEndpoint(
+      item.suggestionId,
+      parsed.data.fromEntityId,
+      parsed.data.fromRef,
+    );
+    const toEntityId = await acceptedRelationshipEndpoint(
+      item.suggestionId,
+      parsed.data.toEntityId,
+      parsed.data.toRef,
+    );
+    if (!fromEntityId || !toEntityId || fromEntityId === toEntityId) return undefined;
+    const endpoints = await lockRelationshipEntities([fromEntityId, toEntityId]);
+    const from = endpoints.find(({ id }) => id === fromEntityId);
+    const to = endpoints.find(({ id }) => id === toEntityId);
+    if (
+      !from ||
+      !to ||
+      from.name.toLowerCase() !== proof.data.fromName.toLowerCase() ||
+      to.name.toLowerCase() !== proof.data.toName.toLowerCase() ||
+      (await uniqueActiveObjectByName(from.name))?.id !== from.id ||
+      (await uniqueActiveObjectByName(to.name))?.id !== to.id
+    )
+      return undefined;
+
+    const replacesMembership =
+      (from.type === 'person' && to.type === 'company') ||
+      (from.type === 'company' && to.type === 'person') ||
+      (parsed.data.kind === 'child' && from.type === 'task' && to.type === 'project');
+    if (replacesMembership) {
+      // These setters replace an existing exclusive relationship. Leave replacements for review.
+      const member = from.type === 'company' ? to : from;
+      const destination = member === from ? to : from;
+      const prior = await db
+        .select({ id: entityRelationships.id })
+        .from(entityRelationships)
+        .innerJoin(
+          entities,
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.type, destination.type),
+            isNull(entities.mergedIntoId),
+            sql`${entities.id} = CASE WHEN ${entityRelationships.fromEntityId} = ${member.id}::uuid
+            THEN ${entityRelationships.toEntityId} ELSE ${entityRelationships.fromEntityId} END`,
+          ),
+        )
+        .where(
+          and(
+            eq(entityRelationships.teamId, teamId),
+            eq(entityRelationships.kind, parsed.data.kind),
+            or(
+              eq(entityRelationships.fromEntityId, member.id),
+              eq(entityRelationships.toEntityId, member.id),
+            ),
+            ne(entities.id, destination.id),
+          ),
+        )
+        .limit(1);
+      if (prior.length) return undefined;
+    }
+    return { fromEntityId, toEntityId, kind: parsed.data.kind };
+  }
+
+  async function automaticApprovalRevision(
+    item: typeof agentSuggestionItems.$inferSelect,
+    suggestion: typeof agentSuggestions.$inferSelect,
+  ): Promise<AutomaticApproval | null> {
+    const metadata = recordFromUnknown(suggestion.metadata);
+    const native =
+      metadata.kind === 'github_task_proposal' &&
+      item.targetKind === 'task' &&
+      item.operation === 'update' &&
+      item.targetId !== null;
+    const relationship = item.targetKind === 'object_relationship' && item.operation === 'create';
+    const merge = item.targetKind === 'object_merge' && item.operation === 'merge';
+    const auditedConversation = String(metadata.suggestion_model_version).includes(
+      '-communication-completeness-v',
+    );
+    if (
+      suggestion.source !== 'background' ||
+      suggestion.visibility !== 'team' ||
+      suggestion.confidence === 'low' ||
+      Object.hasOwn(recordFromUnknown(item.metadata), 'proposal_edited_by_user_id') ||
+      (merge
+        ? metadata.cleanup_kind !== 'merge' && !auditedConversation
+        : !native &&
+          (!auditedConversation ||
+            (!relationship && item.targetKind !== 'task' && item.targetKind !== 'object')))
+    )
+      return null;
+    const [workspace] = await db
+      .select({ policy: teams.recordMaintenance })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1)
+      .for('share');
+    if (!workspace) return null;
+
+    const payload = recordFromUnknown(item.proposedPayload);
+    if (
+      item.operation === 'create' &&
+      payload.createProjectName !== undefined &&
+      (item.targetKind !== 'task' ||
+        payload.parentObjectId !== undefined ||
+        typeof payload.createProjectName !== 'string' ||
+        !(await acceptedProjectSibling(item.suggestionId, payload.createProjectName)))
+    )
+      return null;
+    const resolvedRelationship = relationship
+      ? await approvedRelationship(item, payload)
+      : undefined;
+    if (relationship && !resolvedRelationship) return null;
+    await lockAcceptanceMutationTarget(item);
+    const sources = await db
+      .select({
+        id: rawEvents.id,
+        source: rawEvents.source,
+        visibility: rawEvents.visibility,
+        metadata: rawEvents.sourceMetadata,
+        authorUserId: rawEvents.authorUserId,
+        occurredAt: rawEvents.occurredAt,
+        text: rawEvents.contentText,
+      })
+      .from(agentSuggestionEvidence)
+      .innerJoin(
+        rawEvents,
+        and(eq(rawEvents.id, agentSuggestionEvidence.rawEventId), eq(rawEvents.teamId, teamId)),
+      )
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+          rawEventIsActive(),
+        ),
+      )
+      .orderBy(asc(rawEvents.id))
+      .for('update', { of: rawEvents });
+    const expectedEvidence = await db
+      .select({ id: agentSuggestionEvidence.id })
+      .from(agentSuggestionEvidence)
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+        ),
+      );
+    if (
+      !sources.length ||
+      sources.length !== expectedEvidence.length ||
+      sources.some(
+        (source) =>
+          source.visibility !== 'team' ||
+          !(native
+            ? source.source === 'integration'
+            : ['slack', 'telegram', 'email', 'meeting'].includes(source.source)) ||
+          recordFromUnknown(source.metadata).signal_class === 'pulse',
+      )
+    )
+      return null;
+    const requiredSources = itemEvidenceRawEventIds(item.metadata);
+    if (requiredSources.some((id) => !sources.some((source) => source.id === id))) return null;
+    if (!requiredSources.length) {
+      const siblings = await db
+        .select({ id: agentSuggestionItems.id })
+        .from(agentSuggestionItems)
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.suggestionId, suggestion.id),
+          ),
+        )
+        .limit(2);
+      if (siblings.length !== 1 || sources.length !== 1) return null;
+    }
+
+    const revision = workspace.policy.revision;
+    if (resolvedRelationship) {
+      const proof = groundedRelationshipSchema.parse(
+        recordFromUnknown(item.metadata).relationship_evidence,
+      );
+      if (proof.rawEventIds.some((id) => !requiredSources.includes(id))) return null;
+      const proofSources = sources.filter((source) => proof.rawEventIds.includes(source.id));
+      const assertedAt = new Date(
+        Math.min(...proofSources.map((source) => source.occurredAt.getTime())),
+      );
+      const { fromEntityId, toEntityId, kind } = resolvedRelationship;
+      const [laterRemoval] = await db
+        .select({ id: objectChanges.id })
+        .from(objectChanges)
+        .where(
+          and(
+            eq(objectChanges.teamId, teamId),
+            eq(objectChanges.status, 'applied'),
+            gt(objectChanges.changedAt, assertedAt),
+            or(
+              and(
+                eq(objectChanges.field, '__relationship_delete__'),
+                sql`${objectChanges.previousValue}->>'kind' = ${kind}`,
+                or(
+                  and(
+                    eq(objectChanges.entityId, fromEntityId),
+                    sql`COALESCE(${objectChanges.previousValue}->>'to', ${objectChanges.previousValue}->>'from') = ${toEntityId}`,
+                  ),
+                  and(
+                    eq(objectChanges.entityId, toEntityId),
+                    sql`COALESCE(${objectChanges.previousValue}->>'to', ${objectChanges.previousValue}->>'from') = ${fromEntityId}`,
+                  ),
+                ),
+              ),
+              and(
+                inArray(objectChanges.entityId, [fromEntityId, toEntityId]),
+                inArray(objectChanges.field, ['primaryProjectId', 'primaryCompanyId']),
+                sql`COALESCE(${objectChanges.newValue}, 'null'::jsonb) = 'null'::jsonb`,
+              ),
+            ),
+          ),
+        )
+        .limit(1);
+      if (laterRemoval) return null;
+      return { revision, relationship: resolvedRelationship };
+    }
+    if (native) {
+      const cited = sources.filter((source) => requiredSources.includes(source.id));
+      const source = cited.length === 1 ? cited[0] : undefined;
+      if (
+        !source ||
+        !item.targetId ||
+        !(await verifyNativeTrackerCompletion(db, teamId, item.targetId, source, payload))
+      )
+        return null;
+      const [task] = await db
+        .select({ status: entities.status, revisions: entities.recordFieldRevisions })
+        .from(entities)
+        .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
+        .limit(1);
+      if (!task) return null;
+      const { status: latest } = await readRecordFieldProvenance(
+        db,
+        teamId,
+        item.targetId,
+        task.revisions,
+      );
+      if (
+        latest?.rawEventId === source.id ||
+        (latest?.assertedAt && Date.parse(latest.assertedAt) >= source.occurredAt.getTime())
+      )
+        return null;
+      if (
+        workspace.policy.reviewManualValues &&
+        latest?.rawEventId === null &&
+        task.status !== payload.status
+      )
+        return null;
+      return { revision, nativeStatus: { rawEventId: source.id, assertedAt: source.occurredAt } };
+    }
+
+    async function hasActiveSlackAuthor(since: Date, matches: (text: string) => boolean) {
+      const authors = sources.flatMap((source) =>
+        source.source === 'slack' &&
+        source.authorUserId &&
+        source.occurredAt >= since &&
+        source.text &&
+        matches(source.text)
+          ? [source.authorUserId]
+          : [],
+      );
+      if (authors.length === 0) return false;
+      const [author] = await db
+        .select({ id: teamMembers.userId })
+        .from(teamMembers)
+        .innerJoin(users, and(eq(users.id, teamMembers.userId), isNull(users.suspendedAt)))
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            isNull(teamMembers.removedAt),
+            inArray(teamMembers.userId, authors),
+          ),
+        )
+        .limit(1)
+        .for('share');
+      return Boolean(author);
+    }
+    if (merge) {
+      if (!workspace.policy.approveMerges || suggestion.confidence !== 'high') return null;
+      const payload = objectMergePayload.safeParse(item.proposedPayload);
+      if (
+        !payload.success ||
+        new Set(payload.data.objectIds).size !== 2 ||
+        !payload.data.objectIds.includes(payload.data.survivorId) ||
+        item.targetId !== payload.data.survivorId
+      )
+        return null;
+      const candidates = await db
+        .select()
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            inArray(entities.id, payload.data.objectIds),
+            isNull(entities.mergedIntoId),
+            isNull(entities.archivedAt),
+          ),
+        )
+        .orderBy(asc(entities.id))
+        .for('update');
+      const [left, right] = candidates;
+      if (!left || left.type !== right?.type || ['task', 'follow_up'].includes(left.type))
+        return null;
+      if (identityMatchReason(left, right) !== 'provider_identity') {
+        const key = exactMergeTrackerKey(left);
+        const leftMetadata = recordFromUnknown(left.metadata);
+        const rightMetadata = recordFromUnknown(right.metadata);
+        if (
+          !key ||
+          key !== exactMergeTrackerKey(right) ||
+          (!leftMetadata.integration_external_id && !rightMetadata.integration_external_id) ||
+          (leftMetadata.integration_external_id && rightMetadata.integration_external_id) ||
+          identitiesConflict(left, right)
+        )
+          return null;
+      }
+      const survivor = left.id === payload.data.survivorId ? left : right;
+      const duplicate = survivor.id === left.id ? right : left;
+      if (
+        (await uniqueActiveObjectByName(survivor.canonicalName))?.id !== survivor.id ||
+        (await uniqueActiveObjectByName(duplicate.canonicalName))?.id !== duplicate.id
+      )
+        return null;
+      const instruction =
+        `merge ${duplicate.canonicalName} into ${survivor.canonicalName}`.toLowerCase();
+      const since = new Date(Math.max(left.updatedAt.getTime(), right.updatedAt.getTime()));
+      if (
+        !(await hasActiveSlackAuthor(since, (text) => {
+          const command = text.trim().replace(/[.!]$/, '').toLowerCase();
+          return command === instruction || command === `please ${instruction}`;
+        }))
+      )
+        return null;
+      return { revision };
+    }
+    if (item.operation === 'create') {
+      const type = item.targetKind === 'task' ? 'task' : payload.type;
+      if (typeof type !== 'string' || !maintainedRecordFields(type).length) return null;
+      if (payload.metadata !== undefined) return null;
+      const proposed = objectCreatePayload.safeParse(payload);
+      if (!proposed.success) return null;
+      const allowed = [
+        'type',
+        'canonicalName',
+        'localRef',
+        'aliases',
+        ...maintainedRecordFields(type),
+      ];
+      if (type === 'task') {
+        if (
+          proposed.data.taskCategoryMode === 'manual' ||
+          (typeof proposed.data.ownerUserId === 'string' && requiredSources.length === 0) ||
+          (proposed.data.parentObjectId &&
+            (await objectTypeForTarget(proposed.data.parentObjectId)) !== 'project')
+        )
+          return null;
+        allowed.push(
+          'plannedDate',
+          'parentObjectId',
+          'projectName',
+          'createProjectName',
+          'taskCategory',
+          'taskCategoryConfidence',
+          'taskCategoryModel',
+          'taskCategoryMode',
+          'taskCategoryInputHash',
+          'taskCategoryTaxonomyVersion',
+          'ownerUserId',
+          'priority',
+        );
+        const date = proposed.data.plannedDate;
+        if (date !== undefined && !(await getPlannedDateEvidence(item, date, false))) return null;
+      }
+      if (Object.keys(payload).some((field) => !allowed.includes(field))) return null;
+      const defaultStatus =
+        type === 'task' || type === 'follow_up' ? 'todo' : type === 'project' ? 'planning' : 'open';
+      const claims = await getTaskFieldEvidence(item, proposed.data, false);
+      if (
+        type === 'task' &&
+        typeof proposed.data.priority === 'number' &&
+        !(proposed.data.priority === 2 && proposed.data.dueAt && claims.dueAt)
+      )
+        return null;
+      if (
+        MAINTAINED_RECORD_FIELDS.some(
+          (field) =>
+            field !== 'canonicalName' &&
+            proposed.data[field] !== undefined &&
+            !(field === 'status' && proposed.data.status === defaultStatus) &&
+            !claims[field],
+        )
+      )
+        return null;
+    } else if (item.operation === 'update') {
+      const fields = Object.keys(payload);
+      if (
+        !item.targetId ||
+        !fields.length ||
+        fields.some((field) => !['plannedDate', ...MAINTAINED_RECORD_FIELDS].includes(field))
+      )
+        return null;
+      const parsed = objectUpdatePayload.safeParse(payload);
+      if (!parsed.success) return null;
+      const date = parsed.data.plannedDate;
+      if (date !== undefined && !(await getPlannedDateEvidence(item, date, false))) return null;
+      const claims = await getTaskFieldEvidence(item, parsed.data, false);
+      const [target] = await db
+        .select({
+          type: entities.type,
+          plannedDate: entities.plannedDate,
+          revisionAt: entities.plannedDateRevisionAt,
+          evidenceId: entities.plannedDateEvidenceId,
+          revisions: entities.recordFieldRevisions,
+          canonicalName: entities.canonicalName,
+          assigneeUserId: entities.assigneeUserId,
+          dueAt: entities.dueAt,
+          status: entities.status,
+          stage: entities.stage,
+        })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, item.targetId),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!target) return null;
+      if (
+        MAINTAINED_RECORD_FIELDS.some(
+          (field) =>
+            fields.includes(field) &&
+            !claims[field] &&
+            !(field === 'canonicalName' && parsed.data.canonicalName === target.canonicalName),
+        )
+      )
+        return null;
+      if (
+        payload.status === 'cancelled' &&
+        sources.some(
+          (source) => source.text && explicitArchiveInstruction(source.text, target.canonicalName),
+        )
+      )
+        return null;
+      const supported = maintainedRecordFields(target.type);
+      if (
+        fields.some(
+          (field) =>
+            !supported.some((entry) => entry === field) &&
+            !(field === 'plannedDate' && target.type === 'task'),
+        )
+      )
+        return null;
+      if (workspace.policy.reviewManualValues) {
+        if (
+          date !== undefined &&
+          date !== target.plannedDate &&
+          target.revisionAt &&
+          !target.evidenceId
+        )
+          return null;
+        const revisions = await readRecordFieldProvenance(
+          db,
+          teamId,
+          item.targetId,
+          target.revisions,
+        );
+        if (
+          MAINTAINED_RECORD_FIELDS.some((field) => {
+            const current = target[field];
+            const value = current instanceof Date ? current.toISOString() : current;
+            return (
+              claims[field] && revisions[field]?.rawEventId === null && parsed.data[field] !== value
+            );
+          })
+        )
+          return null;
+      }
+    } else if (item.operation === 'archive_or_cancel') {
+      if (
+        !workspace.policy.approveRemovals ||
+        suggestion.confidence !== 'high' ||
+        !item.targetId ||
+        Object.keys(payload).some((field) => field !== 'status')
+      )
+        return null;
+    } else {
+      return null;
+    }
+
+    if (item.operation === 'archive_or_cancel') {
+      const targetId = item.targetId;
+      if (!targetId) return null;
+      const [target] = await db
+        .select({ name: entities.canonicalName, updatedAt: entities.updatedAt })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            eq(entities.id, targetId),
+            isNull(entities.mergedIntoId),
+            isNull(entities.archivedAt),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!target) return null;
+      if (
+        !(await hasActiveSlackAuthor(target.updatedAt, (text) =>
+          explicitArchiveInstruction(text, target.name),
+        ))
+      )
+        return null;
+      if (
+        sources.some(
+          (source) =>
+            source.text &&
+            source.occurredAt >= target.updatedAt &&
+            explicitArchiveRetraction(source.text, target.name),
+        )
+      )
+        return null;
+      if ((await uniqueActiveObjectByName(target.name))?.id !== item.targetId) return null;
+    }
+    return { revision };
+  }
+
+  async function applyPendingRecordMaintenance(
+    itemIds?: readonly string[],
+    trackerExternalId?: string,
+  ): Promise<number> {
+    if (!deps.recordMaintenanceWorker || deps.acceptance.kind !== 'root')
+      throw new Error('Record maintenance requires the scoped worker capability');
+    await ensureMember();
+    if (itemIds?.length === 0) return 0;
+    let count = 0;
+    const dependentTaskIds: string[] = [];
+    const relationshipIds: string[] = [];
+    async function apply(id: string) {
+      try {
+        if ((await acceptSuggestionItemWithOutcome(id)) === 'accepted') count++;
+      } catch (error) {
+        if (!(error instanceof ExpectedSuggestionApplyFailure)) throw error;
+      }
+    }
+    let cursor: string | undefined;
+    for (;;) {
+      const pending = await db
+        .select({
+          id: agentSuggestionItems.id,
+          targetKind: agentSuggestionItems.targetKind,
+          dependsOnProject: sql<boolean>`${agentSuggestionItems.operation} = 'create' AND ${agentSuggestionItems.proposedPayload} ? 'createProjectName'`,
+        })
+        .from(agentSuggestionItems)
+        .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestions.teamId, teamId),
+            eq(agentSuggestions.visibility, 'team'),
+            ne(agentSuggestions.confidence, 'low'),
+            ...(cursor ? [gt(agentSuggestionItems.id, cursor)] : []),
+            ...(itemIds ? [inArray(agentSuggestionItems.id, itemIds)] : []),
+            eq(agentSuggestions.source, 'background'),
+            eq(agentSuggestionItems.status, 'pending'),
+            isNull(agentSuggestionItems.resolvedAt),
+            inArray(agentSuggestionItems.targetKind, [
+              'task',
+              'object',
+              'object_merge',
+              'object_relationship',
+            ]),
+            inArray(agentSuggestionItems.operation, [
+              'create',
+              'update',
+              'archive_or_cancel',
+              'merge',
+            ]),
+            or(
+              sql`${agentSuggestions.metadata} ->> 'suggestion_model_version' LIKE '%-communication-completeness-v%'`,
+              sql`${agentSuggestions.metadata} ->> 'cleanup_kind' = 'merge'`,
+              sql`${agentSuggestions.metadata} ->> 'kind' = 'github_task_proposal'`,
+            ),
+            trackerExternalId
+              ? sql`${agentSuggestions.metadata} ->> 'github_external_id' = ${trackerExternalId}`
+              : undefined,
+          ),
+        )
+        .orderBy(asc(agentSuggestionItems.id))
+        .limit(30);
+      if (pending.length === 0) break;
+      cursor = pending.at(-1)?.id;
+      for (const item of pending) {
+        if (item.targetKind === 'object_relationship') relationshipIds.push(item.id);
+        else if (item.dependsOnProject) dependentTaskIds.push(item.id);
+        else await apply(item.id);
+      }
+    }
+    for (const id of dependentTaskIds) await apply(id);
+    for (const id of relationshipIds) await apply(id);
+    return count;
+  }
+
   async function acceptSuggestionItemWithOutcome(
     itemId: string,
   ): Promise<'accepted' | 'superseded' | null> {
     await ensureMember();
     await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
-      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .select({
+        item: agentSuggestionItems,
+        suggestion: agentSuggestions,
+        // Rows written by PostgreSQL can have sub-millisecond precision.
+        updatedAtVersion: sql<string>`${agentSuggestionItems.updatedAt}::text`,
+      })
       .from(agentSuggestionItems)
       .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
       .where(
@@ -6110,6 +7371,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
       isPackBacked ||
+      deps.recordMaintenanceWorker === true ||
+      itemEvidenceRawEventIds(row.item.metadata).length > 0 ||
+      Object.hasOwn(recordFromUnknown(row.item.metadata), 'planned_date_evidence') ||
+      Object.hasOwn(recordFromUnknown(row.item.metadata), 'task_field_evidence') ||
       (row.item.operation === 'update' &&
         (row.item.targetKind === 'task' || row.item.targetKind === 'object') &&
         recordFromUnknown(row.item.proposedPayload).parentObjectId !== undefined) ||
@@ -6132,6 +7397,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         throw error.applyError;
       }
     }
+    const automatic = deps.recordMaintenanceWorker
+      ? await automaticApprovalRevision(row.item, row.suggestion)
+      : null;
+    const automaticRevision = automatic?.revision ?? null;
+    if (deps.recordMaintenanceWorker && automaticRevision === null) return null;
+    const resolutionActor = automaticRevision === null ? userId : null;
     const staleReason = await staleActionableItemReason(row.item);
     if (staleReason) {
       const superseded = await supersedeItem(itemId, null, staleReason);
@@ -6151,8 +7422,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .set({
         status: 'accepted',
         resolvedAt: acceptanceStartedAt,
-        resolvedByUserId: userId,
+        resolvedByUserId: resolutionActor,
         metadata: sql`${agentSuggestionItems.metadata} || ${JSON.stringify({
+          approval_decision: automaticRevision === null ? 'human' : 'automatic',
+          ...(automaticRevision !== null ? { approval_policy_revision: automaticRevision } : {}),
           [ACCEPTANCE_ATTEMPT_METADATA_KEY]: acceptanceAttemptId,
           [ACCEPTANCE_STARTED_AT_METADATA_KEY]: acceptanceStartedAt.toISOString(),
         })}::jsonb`,
@@ -6164,6 +7437,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(agentSuggestionItems.id, itemId),
           isNull(agentSuggestionItems.resolvedAt),
           inArray(agentSuggestionItems.status, ['pending', 'failed']),
+          ...(deps.acceptance.kind === 'transaction'
+            ? [sql`${agentSuggestionItems.updatedAt}::text = ${row.updatedAtVersion}`]
+            : []),
         ),
       )
       .returning();
@@ -6172,13 +7448,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const stopHeartbeat = startAcceptanceHeartbeat(itemId, acceptanceAttemptId);
     try {
       await deps.beforeApplyItem?.(itemId);
-      resultId = await applyItem(claimed);
+      resultId = await applyItem(claimed, automatic);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
       if (deps.acceptance.kind === 'transaction') {
         throw new TransactionalSuggestionApplyFailure(
           claimed,
-          row.item.updatedAt,
+          row.updatedAtVersion,
           failureReason,
           err,
         );
@@ -6203,7 +7479,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return true;
       });
       if (!recordedFailure) return null;
-      await refreshBundleStatus(row.suggestion.id, userId);
+      await refreshBundleStatus(row.suggestion.id, resolutionActor);
       const staleReason = await staleActionableItemReason({ ...claimed, status: 'failed' });
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
         await reconcileStaleActionableItemsBestEffort({
@@ -6225,12 +7501,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     } finally {
       stopHeartbeat();
     }
+    const taskUpdateUndoAvailable =
+      automaticRevision !== null &&
+      row.item.operation === 'update' &&
+      Boolean(
+        (
+          await db
+            .select({ id: objectChanges.id })
+            .from(objectChanges)
+            .where(and(eq(objectChanges.teamId, teamId), eq(objectChanges.approvalItemId, itemId)))
+            .limit(1)
+        )[0],
+      );
     const finalized = await db.transaction(async (tx) => {
       const [updated] = await tx
         .update(agentSuggestionItems)
         .set({
           resultId,
-          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          metadata: sql`(${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}) || ${JSON.stringify(taskUpdateUndoAvailable ? { task_update_undo_available: true } : {})}::jsonb`,
           updatedAt: new Date(),
           failureReason: null,
         })
@@ -6253,7 +7541,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return null;
     }
-    await refreshBundleStatus(row.suggestion.id, userId);
+    await refreshBundleStatus(row.suggestion.id, resolutionActor);
     await reconcileAcceptedItemBestEffort({ ...claimed, resultId });
     await reconcileStaleActionableItemsBestEffort({
       suggestionItemId: itemId,
@@ -6270,6 +7558,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function recordRolledBackApplyFailure(
     failure: TransactionalSuggestionApplyFailure,
   ): Promise<'failed' | 'superseded' | 'lost_race'> {
+    const attempted = recordFromUnknown(failure.claimedItem.metadata);
+    const decision = {
+      approval_decision: attempted.approval_decision,
+      approval_policy_revision: attempted.approval_policy_revision,
+    };
     const failed = await db.transaction(async (tx) => {
       const [updated] = await tx
         .update(agentSuggestionItems)
@@ -6278,7 +7571,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           failureReason: failure.failureReason,
           resolvedAt: null,
           resolvedByUserId: null,
-          metadata: sql`${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}`,
+          metadata: sql`(${agentSuggestionItems.metadata} - ${ACCEPTANCE_ATTEMPT_METADATA_KEY} - ${ACCEPTANCE_STARTED_AT_METADATA_KEY}) || ${JSON.stringify(decision)}::jsonb`,
           updatedAt: new Date(),
         })
         .where(
@@ -6287,7 +7580,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             eq(agentSuggestionItems.teamId, teamId),
             isNull(agentSuggestionItems.resolvedAt),
             inArray(agentSuggestionItems.status, ['pending', 'failed']),
-            eq(agentSuggestionItems.updatedAt, failure.preClaimUpdatedAt),
+            sql`${agentSuggestionItems.updatedAt}::text = ${failure.preClaimUpdatedAt}`,
           ),
         )
         .returning();
@@ -6298,7 +7591,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return updated;
     });
     if (!failed) return 'lost_race';
-    await refreshBundleStatus(failed.suggestionId, userId);
+    await refreshBundleStatus(failed.suggestionId, deps.recordMaintenanceWorker ? null : userId);
     const staleReason = await staleActionableItemReason(failed);
     if (staleReason && (await supersedeItem(failed.id, null, staleReason))) {
       await reconcileStaleActionableItemsBestEffort({
@@ -7960,6 +9253,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                         ),
                       }
                     : {}),
+                  ...(item.relationshipEvidence
+                    ? { relationship_evidence: item.relationshipEvidence }
+                    : {}),
+                  ...(item.taskFieldEvidence
+                    ? { task_field_evidence: item.taskFieldEvidence }
+                    : {}),
+                  ...(item.plannedDateEvidence
+                    ? { planned_date_evidence: item.plannedDateEvidence }
+                    : {}),
                   reconciliation_run_id: run.id,
                   reconciliation_output_id: outputIdByItemDedupeKey.get(item.dedupeKey) ?? null,
                   ...(outputRowByItemDedupeKey.get(item.dedupeKey)?.clusterId
@@ -8259,6 +9561,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     acceptSuggestionItem,
 
     acceptSuggestionItemWithOutcome,
+    getRecordMaintenancePolicy,
+    acceptedConversationTaskEvidence,
+    setRecordMaintenancePolicy,
+    applyPendingRecordMaintenance,
+    uniqueActiveObjectByName,
+    undoAutomaticTaskUpdate,
 
     acceptObjectMergeSuggestionItem,
 

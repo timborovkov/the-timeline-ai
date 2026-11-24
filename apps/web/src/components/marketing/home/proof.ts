@@ -40,11 +40,20 @@ export const HOME_DIGEST_SHOT = {
   body: 'Read the day’s highlights and follow-ups, then open the linked tasks and calendar items.',
 } as const satisfies MarketingScreenshotSlot & { kicker: string; body: string };
 
+export const HOME_BOARD_SHOT = {
+  file: '27-board-dealflow-dark.png',
+  kicker: 'Boards',
+  alt: 'A Timeline board of example work records grouped into columns.',
+  caption: 'Open a board when you want to see the work together.',
+  body: 'This example board shows how records can be grouped. Open a card for its details and sources.',
+} as const satisfies MarketingScreenshotSlot & { kicker: string; body: string };
+
 export const HOME_PROOF_SHOTS = [
   HOME_VOICE_SHOT,
   HOME_TIMELINE_SHOT,
   HOME_ASK_SHOT,
   HOME_CLIENT_SHOT,
+  HOME_BOARD_SHOT,
   HOME_DIGEST_SHOT,
 ] as const satisfies readonly (MarketingScreenshotSlot & { kicker: string; body: string })[];
 

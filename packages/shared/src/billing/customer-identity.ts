@@ -13,7 +13,11 @@ import {
   type PolarIdentityApi,
   type PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
-import type { BillingProvider } from '#src/billing/provider.js';
+import type {
+  BillingProvider,
+  PendingEnterpriseCheckout,
+  PendingTeamCheckout,
+} from '#src/billing/provider.js';
 import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/index.js';
 
 export interface TeamBillingIdentity {
@@ -89,6 +93,85 @@ export function resolvePolarOwnerUserId(
   throw new PolarIdentityError('identity_conflict', 'owner_mapping');
 }
 
+type TeamCheckoutPreparation =
+  { status: 'ready' } | { status: 'blocked' } | { status: 'resume'; url: string };
+
+export function activatedPolarSubscriptionId(
+  account: Pick<
+    typeof teamBillingAccounts.$inferSelect,
+    'arrangement' | 'billingState' | 'polarSubscriptionId'
+  >,
+  appliedSubscriptionId?: string,
+): string | null {
+  const { arrangement, billingState, polarSubscriptionId } = account;
+  return polarSubscriptionId === appliedSubscriptionId ||
+    (arrangement === 'standard' && billingState.endsWith('_active'))
+    ? polarSubscriptionId
+    : null;
+}
+
+/** Read pending quotes while holding the workspace row lock shared by checkout and roster growth. */
+export async function readOutstandingTeamCheckouts(input: {
+  provider: BillingProvider;
+  customerId: string;
+  productId: string | undefined;
+  recordedIds: readonly string[];
+  currentSubscriptionId?: string | null;
+  matchesQuote?: (checkout: PendingTeamCheckout) => boolean;
+  enterpriseCheckouts?: readonly PendingEnterpriseCheckout[];
+  excludedIds?: readonly string[];
+}): Promise<{ ids: string[]; match: PendingTeamCheckout | undefined }> {
+  const discovered = input.productId
+    ? ((await input.provider.listPendingTeamCheckouts?.({
+        customerId: input.customerId,
+        productId: input.productId,
+      })) ?? [])
+    : [];
+  const enterprise =
+    input.enterpriseCheckouts ??
+    (await input.provider.listPendingEnterpriseCheckouts?.(input.customerId)) ??
+    [];
+  const matches = input.matchesQuote ? discovered.filter(input.matchesQuote) : [];
+  const match = matches.length === 1 ? matches[0] : undefined;
+  const ids = new Set([
+    ...input.recordedIds,
+    ...discovered.map(({ id }) => id),
+    ...enterprise.map(({ id }) => id),
+  ]);
+  const confirmationStarted = new Set([
+    ...discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
+    ...enterprise.filter((row) => row.status !== 'open').map(({ id }) => id),
+  ]);
+  const openEnterprise = new Set(
+    enterprise.filter((row) => row.status === 'open').map((row) => row.id),
+  );
+  const excluded = new Set(input.excludedIds);
+  const retained: string[] = [];
+  const paymentStarted: string[] = [];
+  for (const id of ids) {
+    if (excluded.has(id)) continue;
+    if (id === match?.id || openEnterprise.has(id)) {
+      retained.push(id);
+      continue;
+    }
+    const status = confirmationStarted.has(id)
+      ? 'already_paid'
+      : await input.provider.expireCheckout(id);
+    if (status !== 'expired') retained.push(id);
+    if (status === 'already_paid') paymentStarted.push(id);
+  }
+  const reconciled = new Set(
+    paymentStarted.length === 0
+      ? []
+      : ((await input.provider.listReconciledCheckoutIds?.({
+          customerId: input.customerId,
+          currentSubscriptionId: input.currentSubscriptionId ?? null,
+          checkoutIds: paymentStarted,
+        })) ?? []),
+  );
+  return { ids: retained.filter((id) => !reconciled.has(id)), match };
+}
+
 /** Caller authorization and session creation share the account lock with revocation. */
 export async function withTeamBillingIdentity<T>(
   input: {
@@ -104,6 +187,16 @@ export async function withTeamBillingIdentity<T>(
       db: Db;
       account: typeof teamBillingAccounts.$inferSelect;
       recordCheckout: (id: string) => Promise<void>;
+      hasPendingCheckouts: (lookup: {
+        teamProductId?: string | undefined;
+        excludedIds?: readonly string[];
+        enterpriseCheckouts?: readonly PendingEnterpriseCheckout[];
+      }) => Promise<boolean>;
+      prepareTeamCheckout: (quote: {
+        productId: string;
+        seats: number;
+        discountId?: string;
+      }) => Promise<TeamCheckoutPreparation>;
     },
   ) => Promise<T>,
 ): Promise<T> {
@@ -338,21 +431,52 @@ export async function withTeamBillingIdentity<T>(
           pending.some((row) => row.pendingRole !== null)
         )
           throw new PolarIdentityError('forbidden', 'billing_member');
+        let pendingCheckoutIds = [...(lifecycle.lifecycleWork.pendingCheckoutIds ?? [])];
+        const savePendingCheckouts = async (ids: string[]) => {
+          await db
+            .update(teams)
+            .set({ lifecycleWork: { ...lifecycle.lifecycleWork, pendingCheckoutIds: ids } })
+            .where(eq(teams.id, input.teamId));
+          pendingCheckoutIds = ids;
+        };
         return action(identity, {
           db,
           account,
-          recordCheckout: async (id) => {
-            await db
-              .update(teams)
-              .set({
-                lifecycleWork: {
-                  ...lifecycle.lifecycleWork,
-                  pendingCheckoutIds: [
-                    ...new Set([...(lifecycle.lifecycleWork.pendingCheckoutIds ?? []), id]),
-                  ],
-                },
-              })
-              .where(eq(teams.id, input.teamId));
+          recordCheckout: (id) => savePendingCheckouts([...new Set([...pendingCheckoutIds, id])]),
+          hasPendingCheckouts: async ({ teamProductId, excludedIds = [], enterpriseCheckouts }) => {
+            const { ids } = await readOutstandingTeamCheckouts({
+              provider: input.provider,
+              customerId: identity.customerId,
+              productId: teamProductId,
+              recordedIds: pendingCheckoutIds,
+              currentSubscriptionId: activatedPolarSubscriptionId(
+                account,
+                lifecycle.lifecycleWork.appliedPolarSubscriptionId,
+              ),
+              excludedIds,
+              ...(enterpriseCheckouts ? { enterpriseCheckouts } : {}),
+            });
+            if (ids.length || pendingCheckoutIds.length) await savePendingCheckouts(ids);
+            return ids.length > 0;
+          },
+          prepareTeamCheckout: async (quote) => {
+            const { ids, match } = await readOutstandingTeamCheckouts({
+              provider: input.provider,
+              customerId: identity.customerId,
+              productId: quote.productId,
+              recordedIds: pendingCheckoutIds,
+              currentSubscriptionId: activatedPolarSubscriptionId(
+                account,
+                lifecycle.lifecycleWork.appliedPolarSubscriptionId,
+              ),
+              matchesQuote: (row) =>
+                row.status === 'open' &&
+                row.seats === quote.seats &&
+                row.discountId === (quote.discountId ?? null),
+            });
+            if (ids.length || pendingCheckoutIds.length) await savePendingCheckouts(ids);
+            if (match && ids.length === 1) return { status: 'resume', url: match.url };
+            return { status: ids.length ? 'blocked' : 'ready' };
           },
         });
       }),

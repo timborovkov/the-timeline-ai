@@ -10,9 +10,9 @@ afterEach(() => {
 });
 it('remembers dismissal for this user/team without hiding another team suggestion', () => {
   const view = render(<PaygValueNudge storageKey="test:user:team-a" />);
-  expect(
-    screen.getByRole('link', { name: 'Explore Pay as you go' }).getAttribute('href'),
-  ).toContain('plan=payg');
+  expect(screen.getByRole('link', { name: 'Explore Team' }).getAttribute('href')).toContain(
+    'plan=team',
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
   expect(screen.queryByRole('complementary')).toBeNull();
   view.unmount();

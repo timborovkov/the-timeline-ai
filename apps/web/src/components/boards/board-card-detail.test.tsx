@@ -4,6 +4,8 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -490,6 +492,39 @@ describe('BoardCardDetail', () => {
     expect(html).toContain('No source evidence linked to board changes yet.');
     expect(html).toContain('Lane');
     expect(html).toContain('Doing');
+  });
+
+  it('localizes board-history dates without changing the workspace due day', () => {
+    const item = boardItem({ id: 'item-1', entityId: 'object-1', canonicalName: 'Pilot' });
+    const history: boards.BoardItemChangeRow[] = [
+      {
+        id: 'date-change',
+        boardId: 'board-1',
+        boardItemId: item.id,
+        entityId: item.entityId,
+        field: 'dueAt',
+        previousValue: null,
+        newValue: '2026-12-01T00:15:00.000Z',
+        note: null,
+        sourceEventId: null,
+        suggestionItemId: null,
+        evidence: [],
+        actorUserId: 'user-1',
+        actorKind: 'user',
+        status: 'applied',
+        changedAt: new Date('2026-11-27T12:00:00Z'),
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <WorkspaceTimezoneProvider
+        timezone="Europe/Helsinki"
+        region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+      >
+        <BoardCardDetail boardId="board-1" view="kanban" item={item} history={history} />
+      </WorkspaceTimezoneProvider>,
+    );
+    expect(html).toContain('01.12.2026');
+    expect(html).not.toContain('30.11.2026');
   });
 
   it('shows board-local provenance from accepted suggestion evidence', () => {

@@ -1,11 +1,13 @@
 'use client';
 
-import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
+import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { ChevronDown, Newspaper } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { EmptyState } from '@/components/empty-state';
 import { DigestBody } from '@/components/home/digest-body';
+import { UpdateFollowUp } from '@/components/home/update-follow-up';
+import { RegionalDate } from '@/components/regional-date';
 import { cn } from '@/lib/utils';
 
 export interface DigestHistoryRow {
@@ -13,7 +15,6 @@ export interface DigestHistoryRow {
   status: string;
   summary: string;
   windowEnd: string;
-  timezone?: string;
   payload: DailyDigestPayload;
 }
 
@@ -56,7 +57,6 @@ export function DigestHistoryTable({
       </div>
       {digests.map((digest) => {
         const open = openId === digest.id;
-        const timezone = digest.timezone ?? digest.payload.timezone;
         return (
           <details
             key={digest.id}
@@ -76,7 +76,7 @@ export function DigestHistoryTable({
               className="grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[8rem_minmax(0,1fr)_6rem] items-center gap-x-4 gap-y-2 py-3 text-sm [&::-webkit-details-marker]:hidden"
             >
               <span className="font-mono text-xs text-fg-dim">
-                {formatDigestDate(digest.windowEnd, timezone)}
+                <RegionalDate value={digest.windowEnd} />
               </span>
               <span className="col-span-2 row-start-2 min-w-0 text-fg md:col-span-1 md:row-start-auto md:truncate">
                 {digest.summary || 'No summary'}
@@ -93,6 +93,7 @@ export function DigestHistoryTable({
             </summary>
             <div id={`digest-panel-${digest.id}`} className="px-1 pb-5 pt-1">
               <DigestBody digest={digest.payload} />
+              <UpdateFollowUp digestId={digest.id} />
             </div>
           </details>
         );

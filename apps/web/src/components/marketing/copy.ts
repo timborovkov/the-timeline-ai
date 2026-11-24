@@ -2,7 +2,7 @@ import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-cont
 
 export const START_FREE_LABEL = 'Start free';
 export const START_FREE_HREF = '/sign-up' as const;
-export const SEE_IT_FIRST_LABEL = 'See it first';
+export const SEE_IT_FIRST_LABEL = 'Take the tour';
 export const SEE_IT_FIRST_HREF = '/product-tour' as const;
 export const CTA_MICROCOPY_LEAD = 'Free for up to 3 members · no card required ·';
 export const PRODUCT_SCREENSHOT_DIR = '/marketing/screenshots';
@@ -17,12 +17,13 @@ export const FIRST_RUN_STEPS = [
     index: '02',
     title: 'Bring something in',
     detail:
-      'Scan a website, upload a document, forward an email, or skip. Connect Slack or Telegram later at go-live.',
+      'Start with a document, website or forwarded email. You can also connect a relevant Slack channel or Telegram group from Sources.',
   },
   {
     index: '03',
-    title: 'Open the first record, or ask',
-    detail: 'Once something has landed, the source stays attached. Ask from Home or Ask.',
+    title: 'Ask about the work',
+    detail:
+      'Once activity is available, ask a question from Home or Ask and follow the answer back to its sources.',
   },
 ] as const;
 
@@ -30,16 +31,15 @@ export const FIRST_RUN_NOTE =
   'A linked Slack channel or Telegram group captures the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.';
 
 export const USE_CASE_NAV_ITEMS = [
-  { href: '/use-cases/work-record', label: 'Work record' },
   { href: '/use-cases/team-daily-log', label: 'Team daily log' },
   { href: '/use-cases/communication-trail', label: 'Communication trail' },
-  { href: '/use-cases/crm', label: 'CRM' },
+  { href: '/use-cases/customer-context', label: 'Customer context' },
   { href: '/use-cases/task-board', label: 'Task board' },
   {
     href: '/use-cases/onboarding-and-repeat-questions',
-    label: 'Onboarding and repeat questions',
+    label: 'Picking up work',
   },
-  { href: '/product-tour', label: 'Product tour' },
+  { href: '/solutions/client-project-handoffs', label: 'Work handoffs' },
 ] as const;
 
 export const COMPARE_NAV_ITEMS = [
@@ -87,6 +87,6 @@ export const TIMELINE_AGENT_SETUP_COMMAND = 'Set up The Timeline - https://theti
 
 export const AGENT_SETUP_CARD = {
   kicker: 'For agents',
-  title: 'Give your agents the work record — and let them write back like teammates.',
-  body: 'They read what the team said in Slack, email, calls and docs, then add their own notes to the same cited log.',
+  title: 'Give your agents the context to pick up work.',
+  body: 'Agents can read permitted workspace context and record their progress as attributed notes.',
 } as const;

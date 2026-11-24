@@ -12,10 +12,7 @@ export default function ApprovalsError({
 }) {
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Approvals"
-        subtitle="Review evidence-backed changes before they become team memory."
-      />
+      <PageHeader title="Approvals" subtitle="Review pending changes and see past decisions." />
       <ErrorState
         title="Unable to load approvals"
         description="Your pending approvals and saved decisions have not changed. Check your connection, then try again."

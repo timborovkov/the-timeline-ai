@@ -24,12 +24,13 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { postJson } from '@/lib/api-response';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { isoTimestamp } from '@/lib/iso-timestamp';
 import { notifyProgress as jobsMutationToast } from '@/lib/notify';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import {
   type FinishedJobArchivePage,
   useFinishedJobsInfiniteQuery,
@@ -141,6 +142,7 @@ export function JobRecoveryList({
   olderCount,
   defaultFilter,
 }: JobRecoveryListProps) {
+  const { locale } = useRegionalFormat();
   const router = useRouter();
   const dialog = useAppDialog();
   const finishedJobs = useFinishedJobsInfiniteQuery();
@@ -331,7 +333,7 @@ export function JobRecoveryList({
               reportOlderCount(remainingOlder);
               if (remainingOlder > 0) {
                 update(
-                  `Dismissed ${dismissedTotal.toLocaleString()} of ${startOlder.toLocaleString()} older jobs…`,
+                  `Dismissed ${formatDisplayNumber(dismissedTotal, locale)} of ${formatDisplayNumber(startOlder, locale)} older jobs…`,
                 );
               }
             }
@@ -344,18 +346,18 @@ export function JobRecoveryList({
         {
           loading:
             window === 'older'
-              ? `Dismissing ${startOlder.toLocaleString()} older jobs…`
+              ? `Dismissing ${formatDisplayNumber(startOlder, locale)} older jobs…`
               : 'Dismissing jobs…',
           success: (result) => {
             if (window === 'older') {
               const jobWord = result.dismissedTotal === 1 ? 'job' : 'jobs';
               if (result.remainingOlder > 0) {
-                return `Dismissed ${result.dismissedTotal.toLocaleString()} older ${jobWord}. ${result.remainingOlder.toLocaleString()} still hidden — dismiss again to continue.`;
+                return `Dismissed ${formatDisplayNumber(result.dismissedTotal, locale)} older ${jobWord}. ${formatDisplayNumber(result.remainingOlder, locale)} still hidden — dismiss again to continue.`;
               }
-              return `Dismissed ${result.dismissedTotal.toLocaleString()} older ${jobWord}.`;
+              return `Dismissed ${formatDisplayNumber(result.dismissedTotal, locale)} older ${jobWord}.`;
             }
             const count = recentKeys.length;
-            return `Dismissed ${count.toLocaleString()} ${count === 1 ? 'job' : 'jobs'}.`;
+            return `Dismissed ${formatDisplayNumber(count, locale)} ${count === 1 ? 'job' : 'jobs'}.`;
           },
           tone: (result) =>
             window === 'older' && result.remainingOlder > 0 ? 'warning' : 'success',
@@ -422,7 +424,9 @@ export function JobRecoveryList({
           <div className="flex flex-col gap-3 rounded-sm border border-border bg-surface px-3 py-3 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
               <p className="text-sm font-medium text-fg">
-                <span className="font-mono tabular-nums">{pendingOlderCount.toLocaleString()}</span>{' '}
+                <span className="font-mono tabular-nums">
+                  {formatDisplayNumber(pendingOlderCount, locale)}
+                </span>{' '}
                 older jobs are hidden
               </p>
               <p className="text-xs text-fg-muted">
@@ -674,7 +678,7 @@ function JobRecoveryRows({
   onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
   retryStates: RetryStates;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const isClient = useSyncExternalStore(
     subscribeClientRender,
     clientRenderSnapshot,
@@ -684,9 +688,9 @@ function JobRecoveryRows({
     <ul>
       {items.map((item) => {
         const retry = retryStates[item.id];
-        const hint = jobRecoveryRowHint(item, timezone);
+        const hint = jobRecoveryRowHint(item, region.timezone, region.locale);
         const iso = isoTimestamp(item.detectedAt);
-        const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
+        const relative = isClient && iso ? formatRelativeAge(iso, region) : '\u00a0';
         return (
           <li key={item.id}>
             <CollectionRow>
@@ -899,9 +903,12 @@ function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   );
 }
 
-function finishedJobHint(item: FinishedJobArchivePage['items'][number], timezone: string): string {
+function finishedJobHint(
+  item: FinishedJobArchivePage['items'][number],
+  region: RegionalFormat,
+): string {
   const lines = [
-    formatDisplayDateTime(item.finishedAt, { timezone }),
+    formatDisplayDateTime(item.finishedAt, region),
     `Queue: ${item.queue} · Attempts: ${String(item.attemptsMade)}`,
     `Job ID: ${item.id}`,
   ];
@@ -916,7 +923,7 @@ function FinishedJobsArchive({
   items: FinishedJobArchivePage['items'];
   query: ReturnType<typeof useFinishedJobsInfiniteQuery>;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const isClient = useSyncExternalStore(
     subscribeClientRender,
     clientRenderSnapshot,
@@ -939,9 +946,9 @@ function FinishedJobsArchive({
       ) : (
         <ul>
           {items.map((item) => {
-            const hint = finishedJobHint(item, timezone);
+            const hint = finishedJobHint(item, region);
             const iso = isoTimestamp(item.finishedAt);
-            const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
+            const relative = isClient && iso ? formatRelativeAge(iso, region) : '\u00a0';
             return (
               <li key={item.id}>
                 <CollectionRow>

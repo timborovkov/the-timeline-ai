@@ -4,7 +4,7 @@ import type { BillingPresentation } from '@timeline/shared/billing';
 import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
-  formatEuroFromCents,
+  TEAM_MONTHLY_SEAT_CENTS,
   parseEuroAmountToCents,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
@@ -24,13 +24,14 @@ import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
 import { BillingCheckoutStatus } from '@/components/billing-checkout-status';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
-import { BillingPlanPreview } from '@/components/billing-plan-preview';
 import {
   BillingRestrictionNotice,
   type BillingRestrictionReason,
 } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayCurrency, formatDisplayPercent } from '@/lib/regional-format';
 
 const PRIMARY_CLASS =
   'inline-flex min-h-11 cursor-pointer list-none items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg [&::-webkit-details-marker]:hidden';
@@ -64,6 +65,7 @@ export interface BillingSettingsPanelProps {
   } | null;
   showOperatorLink: boolean;
   platformFeeCents?: number | null;
+  platformFeeCurrency?: 'USD' | 'EUR';
   hasActiveTeamDiscount?: boolean;
 }
 
@@ -88,12 +90,18 @@ function billingFormReducer(
   return { ...state, ...patch };
 }
 
-function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null): string {
+function planPriceLabel(
+  { planId, platformFeeCents, platformFeeCurrency, presentation }: BillingSettingsPanelProps,
+  locale: string,
+): string {
   if (planId === 'enterprise' && (platformFeeCents === null || platformFeeCents === undefined)) {
     return 'Custom';
   }
+  if (planId === 'team' && presentation?.paidSeats !== undefined)
+    return `${formatDisplayCurrency(TEAM_MONTHLY_SEAT_CENTS, 'USD', locale, true)} per member / month`;
+  if (planId === 'free') return `${formatDisplayCurrency(0, 'USD', locale, true)} / month`;
   const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
-  return `${formatEuroFromCents(cents)} / month`;
+  return `${formatDisplayCurrency(cents, platformFeeCurrency ?? 'EUR', locale, true)} / month`;
 }
 
 function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
@@ -120,13 +128,15 @@ function SpendBar({ percent, danger }: { percent: number; danger: boolean }) {
 }
 
 function ThisMonth(props: BillingSettingsPanelProps) {
+  const { locale } = useRegionalFormat();
+  const currency = props.presentation?.paidSeats !== undefined ? 'USD' : 'EUR';
   if (props.planId === 'free') {
     const percent = freeAllowancePercent(props.freeRemaining);
     return (
       <div data-billing-spend>
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="text-fg-muted">Allowance</span>
-          <span className="font-mono text-fg">{percent}%</span>
+          <span className="font-mono text-fg">{formatDisplayPercent(percent / 100, locale)}</span>
         </div>
         <SpendBar percent={percent} danger={percent >= 100} />
       </div>
@@ -136,7 +146,9 @@ function ThisMonth(props: BillingSettingsPanelProps) {
     return (
       <div className="flex items-baseline justify-between gap-3 text-sm" data-billing-spend>
         <span className="text-fg-muted">Metered spend this month</span>
-        <span className="font-mono text-fg">{formatEuroFromCents(props.meteredSpendCents)}</span>
+        <span className="font-mono text-fg">
+          {formatDisplayCurrency(props.meteredSpendCents, currency, locale, true)}
+        </span>
       </div>
     );
   }
@@ -146,8 +158,8 @@ function ThisMonth(props: BillingSettingsPanelProps) {
       <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="text-fg-muted">Metered spend this month</span>
         <span className="font-mono text-fg">
-          {formatEuroFromCents(props.meteredSpendCents)} of{' '}
-          {formatEuroFromCents(props.spendCapCents)} spend cap
+          {formatDisplayCurrency(props.meteredSpendCents, currency, locale, true)} of{' '}
+          {formatDisplayCurrency(props.spendCapCents, currency, locale, true)} spend cap
         </span>
       </div>
       <SpendBar percent={percent} danger={percent >= 90} />
@@ -198,9 +210,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
     let spendCapCents: number;
     try {
       spendCapCents = parseEuroAmountToCents(spendCapEuros);
-    } catch (error) {
+    } catch {
       updateForm({
-        error: error instanceof Error ? error.message : 'Enter a non-negative spend cap in euros.',
+        error: 'Enter a non-negative amount with up to two decimal places.',
       });
       return;
     }
@@ -263,10 +275,6 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         <p className="text-sm text-fg-muted">Charges recorded so far: Unavailable</p>
       )}
 
-      {props.comp ? null : (
-        <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
-      )}
-
       {props.canManage &&
       props.planId !== 'free' &&
       props.presentation?.cap.exemption !== 'enterprise_contract' ? (
@@ -322,7 +330,9 @@ function BillingSpendCapEditor({
       <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">Spend cap</summary>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="block text-sm">
-          <span className="text-fg-muted">EUR</span>
+          <span className="text-fg-muted">
+            {props.presentation?.paidSeats !== undefined ? 'USD' : 'EUR'}
+          </span>
           <input
             type="number"
             min={0}
@@ -401,6 +411,7 @@ function billingPanelState(form: BillingFormState, props: BillingSettingsPanelPr
     spendCapCents: props.spendCapCents,
     meteredSpendCents: props.meteredSpendCents,
     warnPercent: props.utilization.percent,
+    usesSeatBilling: props.presentation?.paidSeats !== undefined,
   });
   const checkoutActive =
     props.hasPolarSubscription &&
@@ -408,7 +419,7 @@ function billingPanelState(form: BillingFormState, props: BillingSettingsPanelPr
     props.billingState === `${props.planId}_active` &&
     (!props.checkoutPlan || props.checkoutPlan === props.planId);
   const checkoutPending = Boolean(props.checkoutReturned && !checkoutActive);
-  const selfServe = props.canManage && props.comp === null && props.planId !== 'enterprise';
+  const selfServe = props.canManage && props.comp === null && props.planId === 'free';
   const showPortal =
     props.canManage &&
     props.comp === null &&
@@ -449,13 +460,14 @@ function BillingPlanControls({
   checkoutPending: boolean;
   runCheckout: (plan: 'payg' | 'team' | 'business') => void;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <div className="flex flex-wrap items-start justify-between gap-6 rounded-lg bg-surface p-5">
       <div>
         <p className="text-sm text-fg-muted">Current plan</p>
         <p className="mt-2 text-2xl font-semibold text-fg">{props.planName}</p>
         <p className="mt-1 font-mono text-sm text-fg" data-billing-price>
-          {planPriceLabel(props.planId, props.platformFeeCents)}
+          {planPriceLabel(props, locale)}
         </p>
         {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
           <p className="mt-2 text-sm text-fg-muted" data-enterprise-subscription="pending">
@@ -474,7 +486,7 @@ function BillingPlanControls({
             id="change-plan"
             open={
               props.restrictionReason === 'free_grant_elsewhere' ||
-              ['payg', 'team', 'business'].includes(props.selectedPlan ?? '') ||
+              props.selectedPlan === 'team' ||
               undefined
             }
           >
@@ -486,10 +498,9 @@ function BillingPlanControls({
               Change plan
             </summary>
             <p className="mt-3 max-w-sm text-sm text-fg-muted">
-              Pay as you go has no platform fee and keeps your Free allowances. Usage above those
-              allowances and members beyond the first three are charged. Extra members cost €2/month
-              each. The default PAYG spending limit is €25/month; platform fees and tax are outside
-              the cap. Review your limit in Billing before starting additional work.
+              Team starts at $10 per full member each month. Your workspace shares Included usage.
+              Additional spending is off until you set a monthly cap. Taxes are calculated at
+              checkout.
             </p>
             <details className="mt-3">
               <summary className="cursor-pointer text-sm text-fg-muted">Have a promo code?</summary>
@@ -524,13 +535,7 @@ function BillingPlanControls({
               </div>
             </details>
             <div className="mt-2 flex flex-wrap justify-end gap-2">
-              {(
-                [
-                  ['payg', 'Pay as you go'],
-                  ['team', 'Team · €49/mo'],
-                  ['business', 'Business · €199/mo'],
-                ] as const
-              ).map(([plan, label]) => (
+              {([['team', 'Team · $10 per member / month']] as const).map(([plan, label]) => (
                 <button
                   key={plan}
                   aria-label={

@@ -69,11 +69,9 @@ function CurrentBrowserStorage() {
               lasting up to 7 days. It is Secure in production.
             </td>
             <td>
-              Remember a self-serve plan chosen on Pricing or sign-up (Pay as you go, Team, or
-              Business) so we can remind you after setup and highlight it in Team settings →
-              Billing. It stores only the plan id, never payment details, and never changes your
-              plan, limits, or entitlements — those stay Free until Polar confirms a paid
-              subscription.
+              Remember when you choose Team on Pricing or sign-up so we can highlight it in Team
+              settings → Billing. The cookie stores the selected plan. Your workspace stays on Free
+              until Polar confirms a paid subscription.
             </td>
           </tr>
           <tr>
@@ -105,6 +103,21 @@ function CurrentBrowserStorage() {
               reads the local-storage preference only in that route area.
             </td>
             <td>Remember whether the signed-in workspace sidebar is expanded.</td>
+          </tr>
+          <tr>
+            <td>
+              <strong>timeline-display-locale-&lt;hash&gt;</strong> and{' '}
+              <strong>timeline-display-timezone-&lt;hash&gt;</strong> on <strong>/app</strong>, and{' '}
+              <strong>timeline-display-guest-locale-&lt;hash&gt;</strong> and{' '}
+              <strong>timeline-display-guest-timezone-&lt;hash&gt;</strong> on{' '}
+              <strong>/guest</strong>. These per-account preference cookies are host-only, HTTP-only
+              and SameSite=Lax, Secure in production, and last up to 365 days.
+            </td>
+            <td>
+              Remember the display locale and time zone you choose for this account in this browser.
+              The cookies remain in this browser after sign-out. Choosing Automatic for a preference
+              clears its saved values in both areas. You can also clear them in your browser.
+            </td>
           </tr>
           <tr>
             <td>

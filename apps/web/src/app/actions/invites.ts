@@ -2,6 +2,10 @@
 
 import { teamInvites, teamMembers, users, type TeamMemberPriorInterval } from '@timeline/db';
 import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
+import {
+  PENDING_TEAM_CHECKOUT_RETRY_MESSAGE,
+  PendingTeamCheckoutError,
+} from '@timeline/shared/billing/errors';
 import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -143,6 +147,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           teamId: invite.teamId,
           additionalSeats: 1,
           includePendingInvites: false,
+          acquirePaidSeat: true,
         });
         await acceptTeamMembership(tx, {
           teamId: invite.teamId,
@@ -177,14 +182,18 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         raw === 'already-member' ||
         raw === 'member-limit'
           ? raw
-          : isBillingAdmissionError(e)
-            ? 'member-limit'
-            : 'failed';
-      reportCaughtError(e, {
-        surface: 'server_action',
-        operation: 'accept_invite',
-        tags: { reason },
-      });
+          : e instanceof PendingTeamCheckoutError
+            ? 'checkout-pending'
+            : isBillingAdmissionError(e)
+              ? 'member-limit'
+              : 'failed';
+      if (reason !== 'checkout-pending') {
+        reportCaughtError(e, {
+          surface: 'server_action',
+          operation: 'accept_invite',
+          tags: { reason },
+        });
+      }
 
       // Invite-only OAuth signups never receive an owned team. If acceptance
       // fails they stay at zero memberships and can name a workspace later via
@@ -263,7 +272,9 @@ export async function declineInviteAction(formData: FormData): Promise<void> {
   });
 }
 
-export async function acceptRecipientInviteAction(formData: FormData): Promise<void> {
+export async function acceptRecipientInviteAction(
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
   return runSentryServerAction('accept_recipient_invite', async () => {
     const session = await auth();
     if (!session?.user) return;
@@ -319,6 +330,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
           teamId: invite.teamId,
           additionalSeats: 1,
           includePendingInvites: false,
+          acquirePaidSeat: true,
         });
 
         await acceptTeamMembership(tx, {
@@ -345,6 +357,9 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
         return { teamId: invite.teamId, role: invite.role };
       });
     } catch (err) {
+      if (err instanceof PendingTeamCheckoutError) {
+        return { error: PENDING_TEAM_CHECKOUT_RETRY_MESSAGE };
+      }
       reportCaughtError(err, { surface: 'server_action', operation: 'accept_recipient_invite' });
       revalidatePath('/app', 'layout');
       return;

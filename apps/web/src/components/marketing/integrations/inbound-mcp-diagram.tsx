@@ -8,8 +8,6 @@ import { MotionFigure } from '@/components/marketing/motion-figure';
 
 const TOOL_MARKS: Record<(typeof MCP_GUIDE_HOSTED_TOOL_NAMES)[number], string> = {
   Notion: '/connectors/notion.svg',
-  Jira: '/connectors/jira.svg',
-  Confluence: '/connectors/confluence.svg',
   Stripe: '/connectors/stripe.svg',
 };
 

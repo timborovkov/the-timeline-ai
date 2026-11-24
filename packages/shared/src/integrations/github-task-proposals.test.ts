@@ -25,6 +25,7 @@ const {
   agentSuggestions,
   entities,
   integrations,
+  objectChanges,
   rawEvents,
 } = await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
@@ -1247,7 +1248,7 @@ describe('GitHub task proposal persistence', () => {
     });
   });
 
-  it('proposes done when a matching GitHub issue is closed', async () => {
+  it('applies GitHub issue closure to one hard-matched task', async () => {
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -1268,6 +1269,7 @@ describe('GitHub task proposal persistence', () => {
         type: 'task',
         canonicalName: 'Document the audit seed contract in audit-ai issue #22',
         status: 'todo',
+        aliases: ['timborovkov/audit-ai#issue:22'],
       })
       .returning();
     if (!task) throw new Error('task insert failed');
@@ -1309,9 +1311,31 @@ describe('GitHub task proposal persistence', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.targetId).toBe(task.id);
     expect(items[0]?.proposedPayload).toMatchObject({ status: 'done' });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [updated] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(updated).toMatchObject({ status: 'done', assigneeUserId: null });
+    const [accepted] = await db.select().from(agentSuggestionItems);
+    expect(accepted).toMatchObject({
+      status: 'accepted',
+      resolvedByUserId: null,
+      resultId: task.id,
+    });
+    expect(accepted?.metadata).toMatchObject({ approval_decision: 'automatic' });
+    const [change] = await db.select().from(objectChanges).where(eq(objectChanges.field, 'status'));
+    expect(change).toMatchObject({
+      entityId: task.id,
+      actorKind: 'agent',
+      actorUserId: null,
+      previousValue: 'todo',
+      newValue: 'done',
+    });
   });
 
-  it('proposes done for Linear captured work matched only by task aliases', async () => {
+  it('applies Linear status and protects a later manual correction from source replay', async () => {
     const [task] = await db
       .insert(entities)
       .values({
@@ -1362,5 +1386,67 @@ describe('GitHub task proposal persistence', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.targetId).toBe(task.id);
     expect(items[0]?.proposedPayload).toMatchObject({ status: 'done' });
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    const reopenedAt = new Date('2026-06-02T12:00:00Z');
+    const raw = event.sourceMetadata as {
+      object_map: { status: string; externalId: string };
+      event_type: string;
+    };
+    await db.insert(rawEvents).values({
+      teamId: TEAM_ID,
+      source: 'integration',
+      visibility: 'team',
+      contentText: 'Linear ENG-42 reopened',
+      occurredAt: reopenedAt,
+      sourceMetadata: {
+        ...raw,
+        event_type: 'issue.updated',
+        object_map: { ...raw.object_map, status: 'open' },
+      },
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    const [untouched] = await db.select().from(entities).where(eq(entities.id, task.id));
+    expect(untouched?.status).toBe('todo');
+
+    const [completion] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        source: 'integration',
+        visibility: 'team',
+        contentText: event.contentText,
+        occurredAt: new Date('2026-06-03T12:00:00Z'),
+        sourceMetadata: event.sourceMetadata,
+      })
+      .returning();
+    if (!completion) throw new Error('Missing newer closure');
+    await proposeGithubTaskUpdatesFromRawEvent({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEvent: completion,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(1);
+    const [applied] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.status, 'accepted'));
+    expect(applied?.metadata).toMatchObject({ approval_decision: 'automatic' });
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    expect(await human.objects.getObject(task.id)).toMatchObject({ status: 'done' });
+    await human.objects.updateObject(
+      task.id,
+      { status: 'doing' },
+      { kind: 'user', userId: USER_ID },
+    );
+    await proposeGithubTaskUpdatesFromRawEvent({
+      db: db as never,
+      teamId: TEAM_ID,
+      rawEvent: event,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+    expect(await human.objects.getObject(task.id)).toMatchObject({ status: 'doing' });
   });
 });
