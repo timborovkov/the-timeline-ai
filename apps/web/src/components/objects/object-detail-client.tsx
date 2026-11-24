@@ -1710,7 +1710,9 @@ function ObjectHeaderIdentity({
 }
 function subscribeDateLocale(listener: () => void) {
   window.addEventListener('languagechange', listener);
-  return () => window.removeEventListener('languagechange', listener);
+  return () => {
+    window.removeEventListener('languagechange', listener);
+  };
 }
 const getBrowserDateLocale = () => navigator.language;
 const getServerDateLocale = () => 'en-US';

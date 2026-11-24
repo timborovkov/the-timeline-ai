@@ -1,8 +1,3 @@
-import {
-  MAINTAINED_TASK_FIELDS,
-  maintainedRecordFields,
-  type MaintainedTaskField,
-} from '#src/objects/types.js';
 /**
  * Phase 8 — workspace object helpers.
  *
@@ -133,6 +128,11 @@ import {
   type ObjectType,
   type PersonPrimaryCompanyRow,
   type TaskPrimaryProjectRow,
+} from '#src/objects/types.js';
+import {
+  MAINTAINED_TASK_FIELDS,
+  maintainedRecordFields,
+  type MaintainedTaskField,
 } from '#src/objects/types.js';
 import type { UpdateActor } from '#src/objects/types.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';

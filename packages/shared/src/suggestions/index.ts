@@ -45,7 +45,6 @@ import {
   sql,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { identityMatchReason } from '#src/suggestions/identity-resolution.js';
 import { z } from 'zod';
 
 import {
@@ -99,7 +98,11 @@ import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapsho
 import { likePattern } from '#src/sql-like.js';
 import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
-import { identitiesConflict } from '#src/suggestions/identity-resolution.js';
+import {
+  explicitArchiveInstruction,
+  explicitArchiveRetraction,
+} from '#src/suggestions/hub-context.js';
+import { identitiesConflict, identityMatchReason } from '#src/suggestions/identity-resolution.js';
 import {
   canonicalProposalPayloadIssues,
   coerceMemberIdFields,
@@ -122,11 +125,6 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
-
-import {
-  explicitArchiveInstruction,
-  explicitArchiveRetraction,
-} from '#src/suggestions/hub-context.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
@@ -275,12 +273,12 @@ class ProposalRevisionConflictError extends Error {
 
 class TransactionalSuggestionApplyFailure extends Error {
   readonly claimedItem: typeof agentSuggestionItems.$inferSelect;
-  readonly preClaimUpdatedAt: Date;
+  readonly preClaimUpdatedAt: string;
   readonly failureReason: string;
   readonly applyError: unknown;
   constructor(
     claimedItem: typeof agentSuggestionItems.$inferSelect,
-    preClaimUpdatedAt: Date,
+    preClaimUpdatedAt: string,
     failureReason: string,
     applyError: unknown,
   ) {
@@ -6675,7 +6673,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .orderBy(asc(entities.id))
         .for('update');
       const [left, right] = candidates;
-      if (!left || !right || left.type !== right.type || ['task', 'follow_up'].includes(left.type))
+      if (!left || left.type !== right?.type || ['task', 'follow_up'].includes(left.type))
         return null;
       if (identityMatchReason(left, right) !== 'provider_identity') {
         const key = exactMergeTrackerKey(left);
@@ -6803,13 +6801,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
 
     if (item.operation === 'archive_or_cancel') {
+      const targetId = item.targetId;
+      if (!targetId) return null;
       const [target] = await db
         .select({ name: entities.canonicalName, updatedAt: entities.updatedAt })
         .from(entities)
         .where(
           and(
             eq(entities.teamId, teamId),
-            eq(entities.id, item.targetId!),
+            eq(entities.id, targetId),
             isNull(entities.mergedIntoId),
             isNull(entities.archivedAt),
           ),
@@ -6903,7 +6903,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     await ensureMember();
     await recoverInterruptedTaskCreateAcceptances();
     const rows = await db
-      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .select({
+        item: agentSuggestionItems,
+        suggestion: agentSuggestions,
+        // Rows written by PostgreSQL can have sub-millisecond precision.
+        updatedAtVersion: sql<string>`${agentSuggestionItems.updatedAt}::text`,
+      })
       .from(agentSuggestionItems)
       .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
       .where(
@@ -6920,7 +6925,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
       isPackBacked ||
-      deps.recordMaintenanceWorker ||
+      deps.recordMaintenanceWorker === true ||
       Object.hasOwn(recordFromUnknown(row.item.metadata), 'planned_date_evidence') ||
       Object.hasOwn(recordFromUnknown(row.item.metadata), 'task_field_evidence') ||
       (row.item.operation === 'update' &&
@@ -6985,7 +6990,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           isNull(agentSuggestionItems.resolvedAt),
           inArray(agentSuggestionItems.status, ['pending', 'failed']),
           ...(automaticRevision !== null
-            ? [eq(agentSuggestionItems.updatedAt, row.item.updatedAt)]
+            ? [sql`${agentSuggestionItems.updatedAt}::text = ${row.updatedAtVersion}`]
             : []),
         ),
       )
@@ -7001,7 +7006,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (deps.acceptance.kind === 'transaction') {
         throw new TransactionalSuggestionApplyFailure(
           claimed,
-          row.item.updatedAt,
+          row.updatedAtVersion,
           failureReason,
           err,
         );
@@ -7127,7 +7132,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             eq(agentSuggestionItems.teamId, teamId),
             isNull(agentSuggestionItems.resolvedAt),
             inArray(agentSuggestionItems.status, ['pending', 'failed']),
-            eq(agentSuggestionItems.updatedAt, failure.preClaimUpdatedAt),
+            sql`${agentSuggestionItems.updatedAt}::text = ${failure.preClaimUpdatedAt}`,
           ),
         )
         .returning();

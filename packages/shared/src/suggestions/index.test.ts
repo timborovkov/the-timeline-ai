@@ -275,6 +275,11 @@ describe('suggestion scope', () => {
         },
       ],
     });
+    const [taskProposal] = proposal.items;
+    if (!taskProposal) throw new Error('Missing task proposal');
+    await db.execute(sql`UPDATE agent_suggestion_items
+      SET updated_at = TIMESTAMPTZ '2026-06-01 12:00:00.123456+00'
+      WHERE id = ${taskProposal.id}`);
     await expect(human.applyPendingRecordMaintenance()).rejects.toThrow('worker capability');
     const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
       skipMembershipCheck: true,
@@ -289,14 +294,14 @@ describe('suggestion scope', () => {
     const [applied] = await db
       .select()
       .from(agentSuggestionItems)
-      .where(eq(agentSuggestionItems.id, proposal.items[0]!.id));
+      .where(eq(agentSuggestionItems.id, taskProposal.id));
     expect(applied).toMatchObject({
       status: 'accepted',
       resolvedByUserId: null,
-      metadata: expect.objectContaining({
-        approval_decision: 'automatic',
-        approval_policy_revision: '0',
-      }),
+    });
+    expect(applied?.metadata).toMatchObject({
+      approval_decision: 'automatic',
+      approval_policy_revision: '0',
     });
     expect(await db.select().from(entities)).toContainEqual(
       expect.objectContaining({
@@ -487,6 +492,8 @@ describe('suggestion scope', () => {
         },
       ],
     });
+    const [pendingTask] = pending.items;
+    if (!pendingTask) throw new Error('Missing task proposal');
     await db
       .update(rawEvents)
       .set({ visibility: 'private', visibilityOwnerUserId: USER_ID })
@@ -499,7 +506,7 @@ describe('suggestion scope', () => {
     const [item] = await db
       .select()
       .from(agentSuggestionItems)
-      .where(eq(agentSuggestionItems.id, pending.items[0]!.id));
+      .where(eq(agentSuggestionItems.id, pendingTask.id));
     expect(item).toMatchObject({ status: 'pending', resultId: null });
     expect(await db.select().from(entities)).toHaveLength(0);
   });
@@ -733,6 +740,9 @@ describe('suggestion scope', () => {
         },
       ],
     });
+    const [archiveItem] = archive.items;
+    const [mergeItem] = merge.items;
+    if (!archiveItem || !mergeItem) throw new Error('Missing archive or merge proposal');
     const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
       skipMembershipCheck: true,
       recordMaintenanceWorker: true,
@@ -749,7 +759,7 @@ describe('suggestion scope', () => {
     const [pendingMerge] = await db
       .select()
       .from(agentSuggestionItems)
-      .where(eq(agentSuggestionItems.id, merge.items[0]!.id));
+      .where(eq(agentSuggestionItems.id, mergeItem.id));
     expect(pendingMerge?.status).toBe('pending');
     await human.suggestions.setRecordMaintenancePolicy({
       reviewManualValues: false,
@@ -759,7 +769,7 @@ describe('suggestion scope', () => {
     expect(await automation.applyPendingRecordMaintenance()).toBe(1);
     const [merged] = await db.select().from(entities).where(eq(entities.id, right.id));
     expect(merged?.mergedIntoId).toBe(left.id);
-    for (const itemId of [archive.items[0]!.id, merge.items[0]!.id]) {
+    for (const itemId of [archiveItem.id, mergeItem.id]) {
       const [accepted] = await db
         .select()
         .from(agentSuggestionItems)
