@@ -13,11 +13,14 @@ import type { ObjectScope } from '#src/objects/index.js';
 import { encodeCursor } from '#src/pagination.js';
 import type { createSuggestionScope, SuggestionListStatus } from '#src/suggestions/index.js';
 import {
+  SAVED_WORK_VIEW_FILTER_VALUE_MAX,
+  savedWorkViewFilterKeys,
+} from '#src/work-filter-params.js';
+import {
   boardItemFilterFromWorkFilters,
   objectListFilterFromWorkFilters,
   parseWorkFilters,
   taskObjectFilterFromWorkFilters,
-  WORK_FILTER_PARAM_KEYS,
 } from '#src/work-filters.js';
 
 export const SAVED_WORK_COLLECTIONS = ['approvals', 'tasks', 'objects', 'boards'] as const;
@@ -39,14 +42,10 @@ export function savedApprovalStatus(status: string | undefined): SuggestionListS
 }
 
 function normalizeFilters(collection: Collection, filters: Record<string, string>) {
-  const keys =
-    collection === 'approvals'
-      ? ['status', 'boardId', 'project', 'decision']
-      : [...WORK_FILTER_PARAM_KEYS, ...(['tasks', 'boards'].includes(collection) ? ['view'] : [])];
   return Object.fromEntries(
-    keys.flatMap((key) => {
+    savedWorkViewFilterKeys(collection).flatMap((key) => {
       const value = filters[key]?.trim();
-      return value ? [[key, value.slice(0, 500)]] : [];
+      return value ? [[key, value.slice(0, SAVED_WORK_VIEW_FILTER_VALUE_MAX)]] : [];
     }),
   );
 }

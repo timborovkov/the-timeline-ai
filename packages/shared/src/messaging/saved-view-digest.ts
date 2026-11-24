@@ -7,7 +7,11 @@ export async function presentSavedViewDigest(
   scope: TeamScope,
   stored: DailyDigestPayload,
   now = new Date(),
-): Promise<{ payload: DailyDigestPayload; hasVisibleChanges: boolean }> {
+): Promise<{
+  payload: DailyDigestPayload;
+  hasVisibleChanges: boolean;
+  visibleSavedViewLinks?: DailyDigestPayload['links'];
+}> {
   const { savedViewChanges, evidenceIds, blockerIds, savedViewObservedAt, ...payload } = stored;
   let hasVisibleChanges = false;
   if (evidenceIds?.length) {
@@ -75,6 +79,7 @@ export async function presentSavedViewDigest(
       ],
     },
   ];
-  payload.links = [...payload.links, ...changes.map(({ title, href }) => ({ label: title, href }))];
-  return { payload, hasVisibleChanges: true };
+  const visibleSavedViewLinks = changes.map(({ title, href }) => ({ label: title, href }));
+  payload.links = [...payload.links, ...visibleSavedViewLinks];
+  return { payload, hasVisibleChanges: true, visibleSavedViewLinks };
 }

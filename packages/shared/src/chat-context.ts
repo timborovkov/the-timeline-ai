@@ -1,3 +1,8 @@
+import {
+  SAVED_WORK_VIEW_FILTER_VALUE_MAX,
+  savedWorkViewFilterKeys,
+} from '#src/work-filter-params.js';
+
 export const CHAT_CONTEXT_TRAIL_MAX = 8;
 export const CHAT_CONTEXT_LABEL_MAX = 80;
 export const CHAT_CONTEXT_HREF_MAX = 240;
@@ -34,6 +39,9 @@ export interface ChatContextRef {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MOMENT_ID_RE = /^moment:[a-z0-9:._/-]{1,180}$/i;
+const SAVED_WORK_VIEW_HREF =
+  /^(\/app\/(?:(tasks|objects|approvals)|boards\/([0-9a-fA-F-]+)))(?:\?([^#\s]*))?$/;
+const SAVED_WORK_VIEW_BOARD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isUuid(value: string | undefined): value is string {
   return typeof value === 'string' && UUID_RE.test(value);
@@ -49,6 +57,41 @@ function optionalMomentId(value: unknown): string | undefined {
 
 function clip(value: string, max: number): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function matchSavedWorkViewHref(href: string) {
+  const match = SAVED_WORK_VIEW_HREF.exec(href);
+  if (!match || (match[3] !== undefined && !SAVED_WORK_VIEW_BOARD_ID.test(match[3]))) return null;
+  return match;
+}
+
+export function isSavedWorkViewContextHref(href: string): boolean {
+  return matchSavedWorkViewHref(href) !== null;
+}
+
+function parseSavedWorkViewFilters(
+  collection: string,
+  query: string,
+): Record<string, string> | null {
+  const keys = savedWorkViewFilterKeys(collection);
+  // A UTF-16 code unit can take up to nine ASCII characters in a percent-encoded URL.
+  const maxLength = keys.reduce(
+    (length, key) => length + key.length + 2 + SAVED_WORK_VIEW_FILTER_VALUE_MAX * 9,
+    0,
+  );
+  if (query.length > maxLength) return null;
+  const filters: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(query)) {
+    if (
+      !keys.includes(key) ||
+      Object.hasOwn(filters, key) ||
+      value.length > SAVED_WORK_VIEW_FILTER_VALUE_MAX
+    ) {
+      return null;
+    }
+    filters[key] = value;
+  }
+  return filters;
 }
 
 export function isChatContextKind(value: unknown): value is ChatContextKind {
@@ -75,7 +118,14 @@ export function parseChatContextRef(value: unknown): ChatContextRef | null {
   const raw = value as Record<string, unknown>;
   if (!isChatContextKind(raw.kind)) return null;
   if (typeof raw.href !== 'string' || typeof raw.label !== 'string') return null;
-  const href = clip(raw.href, CHAT_CONTEXT_HREF_MAX);
+  const rawHref = raw.href.trim();
+  const savedView = raw.kind === 'page' ? matchSavedWorkViewHref(rawHref) : null;
+  const longSavedView = savedView && rawHref.length > CHAT_CONTEXT_HREF_MAX;
+  // Filtered view URLs are atomic. Clipping can change a filter or split its encoding.
+  if (longSavedView && !parseSavedWorkViewFilters(savedView[2] ?? 'boards', savedView[4] ?? '')) {
+    return null;
+  }
+  const href = longSavedView ? rawHref : clip(rawHref, CHAT_CONTEXT_HREF_MAX);
   const label = clip(raw.label, CHAT_CONTEXT_LABEL_MAX);
   if (!href.startsWith('/app') || !label) return null;
 
@@ -152,11 +202,19 @@ export function pinnedObjectIdFromContext(refs: readonly ChatContextRef[]): stri
 }
 
 function refLines(ref: ChatContextRef, role: 'current' | 'earlier'): string[] {
+  const savedView =
+    ref.kind === 'page' && ref.href.length > CHAT_CONTEXT_HREF_MAX
+      ? matchSavedWorkViewHref(ref.href)
+      : null;
+  const filters = savedView
+    ? parseSavedWorkViewFilters(savedView[2] ?? 'boards', savedView[4] ?? '')
+    : null;
   const lines = [
     `- ${role}_label: ${ref.label}`,
     `- ${role}_kind: ${ref.kind}`,
-    `- ${role}_href: ${ref.href}`,
+    `- ${role}_href: ${filters ? (savedView?.[1] ?? ref.href) : ref.href}`,
   ];
+  if (filters) lines.push(`- ${role}_query_params: ${JSON.stringify(filters)}`);
   const ids: [string, string | undefined][] = [
     ['object_id', ref.objectId],
     ['document_id', ref.documentId],

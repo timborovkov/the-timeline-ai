@@ -10,6 +10,8 @@ import {
 import { taskStatusFilterValues } from '#src/task-statuses.js';
 import { workspaceDueDateBoundaries } from '#src/time/index.js';
 
+export { WORK_FILTER_PARAM_KEYS } from '#src/work-filter-params.js';
+
 export const TASK_OPEN_STATUSES_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 
 export const UNASSIGNED_FILTER_VALUE = 'unassigned';
@@ -17,26 +19,6 @@ export const NONE_FILTER_VALUE = 'none';
 const UNCATEGORIZED_FILTER_VALUE = UNCATEGORIZED_TASK_CATEGORY_FILTER;
 const DUE_PRESETS = ['overdue', 'today', 'next7', 'none', 'range'] as const;
 const PRIORITY_VALUES = ['1', '2', '3', '4', NONE_FILTER_VALUE] as const;
-export const WORK_FILTER_PARAM_KEYS = [
-  'q',
-  'type',
-  'status',
-  'category',
-  'project',
-  'stage',
-  'owner',
-  'assignee',
-  'responsible',
-  'lane',
-  'priority',
-  'due',
-  'dueFrom',
-  'dueTo',
-  'createdFrom',
-  'createdTo',
-  'updatedFrom',
-  'updatedTo',
-] as const;
 
 type DuePreset = (typeof DUE_PRESETS)[number];
 

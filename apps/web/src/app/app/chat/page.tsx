@@ -1,5 +1,10 @@
 import { entities, type Db } from '@timeline/db';
-import { parseChatContextTrail, type ChatContextRef } from '@timeline/shared/chat-context';
+import {
+  CHAT_CONTEXT_TRAIL_MAX,
+  isSavedWorkViewContextHref,
+  parseChatContextTrail,
+  type ChatContextRef,
+} from '@timeline/shared/chat-context';
 import {
   listDailyDigests,
   presentSavedViewDigest,
@@ -200,15 +205,20 @@ async function loadChatPage({
         limit: 1,
       })
     : [];
-  const updatePayload = update
-    ? (await presentSavedViewDigest(scope, update.payload as DailyDigestPayload)).payload
+  const presentedUpdate = update
+    ? await presentSavedViewDigest(scope, update.payload as DailyDigestPayload)
     : null;
+  const updatePayload = presentedUpdate?.payload;
   const updateQuestion = updatePayload
     ? `What still needs attention from the work between ${updatePayload.windowStart} and ${updatePayload.windowEnd}?`
     : null;
   const guidedAsk = activeSessionId || updateQuestion ? null : await loadGuidedAsk(scope);
-  if (updatePayload) contextTrail = updateContextTrail(updatePayload.links);
-  else if (guidedAsk) contextTrail = guidedAsk.contextTrail;
+  if (presentedUpdate) {
+    contextTrail = updateContextTrail(
+      presentedUpdate.payload.links,
+      presentedUpdate.visibleSavedViewLinks,
+    );
+  } else if (guidedAsk) contextTrail = guidedAsk.contextTrail;
 
   const listedActive = sessionEntries.find((entry) => entry.id === activeSessionId);
   const activeTitle = listedActive
@@ -237,22 +247,31 @@ async function loadChatPage({
   };
 }
 
-function updateContextTrail(links: DailyDigestPayload['links']): ChatContextRef[] {
-  return parseChatContextTrail(
-    links.flatMap<ChatContextRef>(({ href, label }) => {
-      const timelineEventId = /^\/app\/timeline\?event=([^&#]+)/.exec(href)?.[1];
-      if (timelineEventId) return [{ kind: 'timeline-event', timelineEventId, href, label }];
-      const objectId = /^\/app\/objects\/([^/?#]+)$/.exec(href)?.[1];
-      if (objectId) return [{ kind: 'object', objectId, href, label }];
-      const collectionView = /^\/app\/(?:tasks|objects|approvals)(?:\?[^#]*)?$/.test(href);
-      const boardId = /^\/app\/boards\/([^/?#]+)(?:\?[^#]*)?$/.exec(href)?.[1];
-      // Keep the complete filtered view as context, not just its underlying board.
-      // presentSavedViewDigest has already rechecked the viewer's current access.
-      return collectionView || z.uuid().safeParse(boardId).success || href.startsWith('/app/work/')
-        ? [{ kind: 'page', href, label }]
-        : [];
-    }),
+function updateContextTrail(
+  links: DailyDigestPayload['links'],
+  visibleSavedViewLinks: DailyDigestPayload['links'] = [],
+): ChatContextRef[] {
+  const views = parseChatContextTrail(
+    visibleSavedViewLinks
+      .filter(({ href }) => isSavedWorkViewContextHref(href))
+      .map(({ href, label }) => ({ kind: 'page', href, label })),
   );
+  const sources: ChatContextRef[] = [];
+  for (const { href, label } of links) {
+    const timelineEventId = /^\/app\/timeline\?event=([^&#]+)/.exec(href)?.[1];
+    const objectId = /^\/app\/objects\/([^/?#]+)$/.exec(href)?.[1];
+    if (timelineEventId) sources.push({ kind: 'timeline-event', timelineEventId, href, label });
+    else if (objectId) sources.push({ kind: 'object', objectId, href, label });
+    else if (href.startsWith('/app/work/')) sources.push({ kind: 'page', href, label });
+  }
+
+  // A full set of timeline links should leave room for filtered saved views.
+  const viewSlots = Math.floor(CHAT_CONTEXT_TRAIL_MAX / 2);
+  return parseChatContextTrail([
+    ...views.slice(0, viewSlots),
+    ...sources,
+    ...views.slice(viewSlots),
+  ]);
 }
 
 function starterContextTrail(sources: FirstRunSource[]): ChatContextRef[] {
