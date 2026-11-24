@@ -1,5 +1,3 @@
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
-import { formatDisplayNumber } from '@/lib/regional-format';
 import { eventSource } from '@timeline/db';
 import type {
   ReconciliationDashboardCount,
@@ -31,14 +29,17 @@ import { runMetricHint } from '@/components/reconciliation/run-metric-hint';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { Button } from '@/components/ui/button';
+import { formatDisplayNumber, formatDisplayPercent } from '@/lib/regional-format';
 
 const MANUAL_FIELD_CLASS =
   'h-10 rounded-sm border border-border bg-surface px-3 text-sm font-normal text-fg';
 
 export function ReconciliationAdvancedTools({
   dashboard,
+  locale,
 }: {
   dashboard: ReconciliationDashboardSnapshot;
+  locale?: string;
 }) {
   const coverage = dashboard.evidenceCoverage;
   const diagnostics = dashboard.diagnostics;
@@ -53,7 +54,7 @@ export function ReconciliationAdvancedTools({
       <div className="mt-3 space-y-8">
         <p className="text-xs text-fg-muted">Manual repair, coverage by source, and run history.</p>
         <ManualReconcilePanel />
-        <EvidenceBySource coverage={coverage} />
+        <EvidenceBySource coverage={coverage} locale={locale} />
         <div className="grid gap-8 xl:grid-cols-2">
           <CountSection
             title="Cluster kinds"
@@ -117,11 +118,12 @@ export function ReconciliationAdvancedTools({
             rows={diagnostics.topNoActionReasons}
             labelFor={diagnosticLabel}
           />
-          <ApprovalHealth stats={diagnostics.approvalStats} />
+          <ApprovalHealth stats={diagnostics.approvalStats} locale={locale} />
         </div>
         <RecentRuns
           rows={dashboard.runs.recent}
           history={dashboard.runs.history}
+          locale={locale}
           statusOptions={dashboard.runs.byStatus.map((row) => row.key)}
           triggerOptions={dashboard.runs.byTrigger.map((row) => row.key)}
         />
@@ -156,8 +158,10 @@ function CountSection({
 
 function ApprovalHealth({
   stats,
+  locale,
 }: {
   stats: ReconciliationDashboardSnapshot['diagnostics']['approvalStats'];
+  locale?: string;
 }) {
   return (
     <section className="space-y-3">
@@ -168,10 +172,13 @@ function ApprovalHealth({
           { key: 'rejected', label: 'Rejected', value: stats.rejected },
           { key: 'open', label: 'Open', value: stats.open },
           {
-            hint: `Decided approvals: ${String(stats.totalDecided)}`,
+            hint: `Decided approvals: ${formatDisplayNumber(stats.totalDecided, locale)}`,
             key: 'acceptance',
             label: 'Acceptance',
-            value: formatRate(stats.acceptanceRate),
+            value:
+              stats.acceptanceRate === null
+                ? 'n/a'
+                : formatDisplayPercent(stats.acceptanceRate, locale),
           },
         ]}
       />
@@ -181,8 +188,10 @@ function ApprovalHealth({
 
 function EvidenceBySource({
   coverage,
+  locale,
 }: {
   coverage: ReconciliationDashboardSnapshot['evidenceCoverage'];
+  locale?: string;
 }) {
   return (
     <section className="space-y-3">
@@ -208,15 +217,23 @@ function EvidenceBySource({
             {Object.entries(coverage.bySource).map(([source, row]) => (
               <tr key={source}>
                 <td className="px-3 py-2 font-medium">{eventSourceLabel(source)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{row.totalRawEvents}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{row.normalizedRawEvents}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {formatDisplayNumber(row.totalRawEvents, locale)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {formatDisplayNumber(row.normalizedRawEvents, locale)}
+                </td>
                 <td
                   className={`px-3 py-2 text-right tabular-nums${row.missingRawEvents > 0 ? ' text-danger' : ''}`}
                 >
-                  {row.missingRawEvents}
+                  {formatDisplayNumber(row.missingRawEvents, locale)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">{row.fullReplayEvidence}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{row.degradedReplayEvidence}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {formatDisplayNumber(row.fullReplayEvidence, locale)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {formatDisplayNumber(row.degradedReplayEvidence, locale)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -337,16 +354,17 @@ function FormField({ label, children }: { label: string; children: ReactNode }) 
 
 function RecentRuns({
   history,
+  locale,
   rows,
   statusOptions,
   triggerOptions,
 }: {
   history: ReconciliationDashboardRunHistory;
+  locale?: string;
   rows: ReconciliationDashboardRun[];
   statusOptions: string[];
   triggerOptions: string[];
 }) {
-  const { locale } = useRegionalFormat();
   const statusValues = uniqueOptions(statusOptions, history.status);
   const triggerValues = uniqueOptions(triggerOptions, history.trigger);
   return (
@@ -455,11 +473,6 @@ function RecentRuns({
       </div>
     </section>
   );
-}
-
-function formatRate(rate: number | null): string {
-  if (rate === null) return 'n/a';
-  return `${Math.round(rate * 100)}%`;
 }
 
 function uniqueOptions(values: string[], selected: string | null): string[] {

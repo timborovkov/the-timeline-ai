@@ -1,6 +1,5 @@
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
-import { formatDisplayDate } from '@/lib/display-dates';
 import { revokeMcpOAuthGrantAction } from '@/app/oauth/actions';
+import { RegionalDate } from '@/components/regional-date';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,7 +37,6 @@ function scopeLabel(scope: string): string {
 }
 
 export function McpOAuthGrants({ grants, teamId }: { grants: McpOAuthGrant[]; teamId: string }) {
-  const region = useRegionalFormat();
   if (grants.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border p-6">
@@ -81,16 +79,11 @@ export function McpOAuthGrants({ grants, teamId }: { grants: McpOAuthGrant[]; te
                 ))}
               </div>
               <p className="text-xs leading-5 text-fg-muted">
-                Authorized{' '}
-                <time dateTime={grant.createdAt.toISOString()}>
-                  {formatDisplayDate(grant.createdAt, region)}
-                </time>
+                Authorized <RegionalDate value={grant.createdAt} />
                 {grant.lastUsedAt ? (
                   <>
                     {' · Last used '}
-                    <time dateTime={grant.lastUsedAt.toISOString()}>
-                      {formatDisplayDate(grant.lastUsedAt, region)}
-                    </time>
+                    <RegionalDate value={grant.lastUsedAt} />
                   </>
                 ) : (
                   ' · Not used yet'

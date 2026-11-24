@@ -39,8 +39,10 @@ import { RegionalNumber } from '@/components/regional-number';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
+import { readAppRegion } from '@/lib/app-region';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayNumber } from '@/lib/regional-format';
 
 export const metadata: Metadata = {
   title: 'Reconciliation',
@@ -81,13 +83,17 @@ export default async function ReconciliationDashboardPage({
   if (!dashboard) redirect('/app/team');
 
   const coverage = dashboard.evidenceCoverage;
-  const cleanupRuns = await scope.engineMaintenance.latestRuns();
+  const [cleanupRuns, region] = await Promise.all([
+    scope.engineMaintenance.latestRuns(),
+    readAppRegion(),
+  ]);
+  const locale = region.locale ?? region.browserLocale;
 
   return (
     <div className="space-y-8">
       <ReconciliationPageHeader
         teamName={active.teamName}
-        srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair.`}
+        srLabel={`Reconciliation for ${active.teamName}. Admins only. ${formatDisplayNumber(coverage.totalRawEvents, locale)} captured items checked; ${formatDisplayNumber(coverage.missingRawEvents + coverage.degradedReplayEvidence, locale)} need repair.`}
       />
       {notice ? (
         <RedirectActionToast
@@ -155,7 +161,7 @@ export default async function ReconciliationDashboardPage({
         <RecentOutputs rows={dashboard.outputs.recent} />
       </div>
 
-      <ReconciliationAdvancedTools dashboard={dashboard} />
+      <ReconciliationAdvancedTools dashboard={dashboard} locale={locale} />
     </div>
   );
 }
