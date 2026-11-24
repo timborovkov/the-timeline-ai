@@ -96,9 +96,11 @@ async function createMemberInvite(page: Page, email: string): Promise<string> {
   await page.getByPlaceholder('teammate@example.com').fill(email);
   await page.getByLabel('Role', { exact: true }).selectOption('member');
   await page.getByRole('button', { name: 'Create invite' }).click();
-  const inviteRow = page.locator('li').filter({ hasText: email }).last();
-  await expect(inviteRow).toBeVisible();
-  const inviteCode = inviteRow.getByText(/^https?:\/\/.*\/accept-invite\/[^/]+$/);
+  await expect(teamMemberRow(page, email)).toBeVisible();
+  const inviteForm = page.locator('form').filter({
+    has: page.getByRole('button', { name: 'Create invite', exact: true }),
+  });
+  const inviteCode = inviteForm.getByText(/^https?:\/\/.*\/accept-invite\/[^/]+$/);
   await expect(inviteCode).toBeVisible();
   return (await inviteCode.innerText()).trim();
 }
@@ -1002,7 +1004,7 @@ test('seeded owner can sign in, switch teams, and sign out', async ({ page }) =>
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app');
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: e2eTeam.name, exact: true })).toBeVisible();
   await expect(page.getByLabel('Question for Ask')).toBeVisible();
 
   await page.getByRole('button', { name: new RegExp(`Switch team.*${e2eTeam.name}`) }).click();
@@ -1227,8 +1229,12 @@ test('onboarding checklist supports manual completion, dismissal, and reopening'
   const ownerPage = await newSignedInPage(browser, 'owner');
 
   await ownerPage.goto('/app');
-  await expect(ownerPage.getByRole('heading', { name: 'Team setup checklist' })).toBeVisible();
-  const markNextStep = ownerPage.getByRole('button', { name: /^Mark .+ complete$/ });
+  const checklist = ownerPage.getByRole('region', { name: 'Team setup checklist' });
+  await expect(checklist).toBeVisible();
+  await checklist
+    .getByText('Optional setup: sources, teammates and billing', { exact: true })
+    .click();
+  const markNextStep = checklist.getByRole('button', { name: /^Mark .+ complete$/ });
   await expect(markNextStep).toBeVisible();
   const completedStepLabel = await markNextStep.getAttribute('aria-label');
   if (!completedStepLabel) throw new Error('next setup step is missing an accessible label');
@@ -1433,7 +1439,9 @@ test('timeline inspector edits visibility and removes conversational events', as
     await ownerPage.goto(`/app/timeline?mode=events&event=${rawEvent.id}`);
     const inspector = ownerPage.locator('#inspector-pane');
     await expect(inspector).toBeVisible();
-    await expect(ownerPage.getByText(eventText).first()).toBeVisible();
+    await expect(
+      inspector.getByText(eventText, { exact: true }).filter({ visible: true }).first(),
+    ).toBeVisible();
 
     await inspector
       .locator('summary')
@@ -1537,8 +1545,15 @@ test('Resend inbound email lands as a cited team timeline event', async ({ page 
   });
 
   await signIn(page, e2eUsers.owner.email);
-  await page.goto('/app/timeline');
-  await expect(page.getByText(emailText).first()).toBeVisible();
+  await page.goto('/app/timeline?mode=events');
+  const capturedEmail = page.getByRole('button', { name: literalPattern(emailText) });
+  await expect(capturedEmail).toBeVisible();
+  await capturedEmail.click();
+  const inspector = page.locator('#inspector-pane');
+  await expect(
+    inspector.getByText(emailText, { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(inspector.getByRole('button', { name: /^Copy citation/ }).first()).toBeVisible();
 });
 
 test('inbound email sender whitelist blocks and allows Resend capture from the browser', async ({
@@ -1594,9 +1609,9 @@ test('inbound email sender whitelist blocks and allows Resend capture from the b
       subject: `E2E allowed sender ${stamp}`,
     });
 
-    await page.goto('/app/timeline');
-    await expect(page.getByText(allowedText).first()).toBeVisible();
-    await expect(page.getByText(blockedText)).toHaveCount(0);
+    await page.goto('/app/timeline?mode=events');
+    await expect(page.getByRole('button', { name: literalPattern(allowedText) })).toBeVisible();
+    await expect(page.getByRole('button', { name: literalPattern(blockedText) })).toHaveCount(0);
   } finally {
     await resetInboundEmailWhitelist();
     await page.context().close();
@@ -1678,19 +1693,18 @@ test.describe
     await page.goto('/app/meetings?tab=saved');
     await expect(page.getByRole('heading', { name: 'Meetings', exact: true })).toBeVisible();
 
-    await page
-      .locator('summary')
-      .filter({ hasText: /^Save a meeting$/ })
-      .click();
-    await page.getByLabel('Title').fill(title);
-    await page.getByLabel('Meeting URL').fill('https://meet.google.com/e2e-meet-final');
-    await page.getByLabel('Description').fill('Customer launch readiness sync');
-    await page.getByLabel('Aliases').fill(alias);
-    await page.getByRole('checkbox', { name: 'Add a recurring schedule' }).check();
-    await page.getByLabel('Start times').fill('09:30');
-    await page.getByRole('checkbox', { name: 'Auto-join scheduled occurrences' }).check();
-    await page.getByRole('checkbox', { name: /I confirm this team has permission/ }).check();
-    await page.getByRole('button', { name: 'Save meeting' }).click();
+    await page.getByRole('button', { name: 'Save a meeting', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Save a meeting' });
+    await dialog.getByLabel('Title').fill(title);
+    await dialog.getByLabel('Meeting URL').fill('https://meet.google.com/e2e-meet-final');
+    await dialog.getByLabel('Description').fill('Customer launch readiness sync');
+    await dialog.getByLabel('Aliases').fill(alias);
+    await dialog.getByRole('checkbox', { name: 'Add a recurring schedule' }).check();
+    await dialog.getByLabel('Start times').fill('09:30');
+    await dialog.getByRole('checkbox', { name: 'Auto-join scheduled occurrences' }).check();
+    await dialog.getByRole('checkbox', { name: /I confirm this team has permission/ }).check();
+    await dialog.getByRole('button', { name: 'Save meeting' }).click();
+    await expect(dialog).toBeHidden();
 
     const savedMeeting = page
       .locator('section')
