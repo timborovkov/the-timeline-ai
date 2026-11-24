@@ -91,7 +91,7 @@ function BillingMembersSummary({ summary }: { summary: BillingPresentation }) {
   );
 }
 
-export function IncludedUsageSummary({ summary }: { summary: BillingPresentation }) {
+function IncludedUsageSummary({ summary }: { summary: BillingPresentation }) {
   const { locale } = useRegionalFormat();
   const usage = summary.includedUsage;
   if (!usage) return null;
