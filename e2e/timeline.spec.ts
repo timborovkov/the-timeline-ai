@@ -1730,8 +1730,7 @@ test.describe
   test('saved recurring meeting appears in scheduled captures', async () => {
     await page.goto('/app/meetings');
     const scheduledCapture = page
-      .locator('section')
-      .filter({ hasText: 'Recent captures' })
+      .getByRole('region', { name: 'Scheduled and captured' })
       .locator('[class~="group/collection-row"]')
       .filter({ hasText: title })
       .filter({ hasText: 'Scheduled' })
