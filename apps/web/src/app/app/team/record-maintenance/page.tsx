@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { RecordMaintenanceForm } from '@/components/record-maintenance-form';
 import { PageHeader } from '@/components/page-header';
+import { RecordMaintenanceForm } from '@/components/record-maintenance-form';
 import { resolveScope } from '@/lib/action-scope';
 
 export default async function RecordMaintenancePage() {

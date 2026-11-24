@@ -105,7 +105,7 @@ export async function setRecordMaintenancePolicyAction(
       await enqueueSuggestionJob(
         { scope: 'record_maintenance', teamId: r.teamId },
         { jobIdSuffix: policy.revision },
-      ).catch((err) => {
+      ).catch((err: unknown) => {
         publicActionError(err, {
           operation: 'enqueue_record_maintenance',
           fallback: 'Could not schedule record maintenance.',

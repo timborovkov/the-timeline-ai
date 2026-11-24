@@ -282,6 +282,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'pins.deleteForTarget': write,
   'pins.pruneDeletedTimelineMomentPins': maintenanceWrite,
   'suggestions.createOrMergeSuggestionBundle': write,
+  'suggestions.uniqueActiveObjectByName': read,
   'suggestions.listSuggestions': read,
   'suggestions.listPendingSuggestions': read,
   'suggestions.listPendingSuggestionsForObject': read,

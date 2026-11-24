@@ -464,6 +464,62 @@ describe('processSuggestionJobForTests', () => {
     resetEnvForTests();
   });
 
+  it('audits a team meeting and automatically applies its two independent task reports', async () => {
+    const id = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id,
+      source: 'meeting',
+      text: '[30s] Alex: The login page is broken.\n[40s] Lee: The export button is broken.',
+    });
+    const titles = ['Broken login page', 'Broken export button'];
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: id, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Unresolved defects',
+                confidence: 'high',
+                items: titles.map((title) => ({
+                  operation: 'create',
+                  targetKind: 'task',
+                  title,
+                  proposedPayload: { canonicalName: title },
+                  grounding: [],
+                })),
+              },
+            ],
+          },
+        }),
+      },
+    );
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.items).toHaveLength(2);
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const items = await db.select().from(agentSuggestionItems);
+    expect(
+      items.every(
+        (item) =>
+          item.status === 'accepted' && item.resultId !== null && item.resolvedByUserId === null,
+      ),
+    ).toBe(true);
+    const tasks = await db.select().from(entities).where(eq(entities.type, 'task'));
+    expect(tasks.map((task) => task.canonicalName).sort()).toEqual([...titles].sort());
+    expect(tasks.every((task) => task.assigneeUserId === null)).toBe(true);
+  });
+
   it('skips suggestion extraction for integration-sourced events without calling the LLM', async () => {
     const rawEventId = '99999999-4444-4444-8444-444444444444';
     await seedRawEvent(db as never, {

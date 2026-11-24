@@ -239,9 +239,9 @@ describe('ApprovalsClient', () => {
     expect(within(review).getByText(/workspace policy revision revision-1/i)).toBeTruthy();
     expect(within(review).queryByRole('button', { name: 'Accept' })).toBeNull();
     fireEvent.click(within(review).getByRole('button', { name: 'Undo task change' }));
-    await waitFor(() =>
-      expect(fakes.undoAutomaticTaskUpdateAction).toHaveBeenCalledWith({ itemId: item.id }),
-    );
+    await waitFor(() => {
+      expect(fakes.undoAutomaticTaskUpdateAction).toHaveBeenCalledWith({ itemId: item.id });
+    });
   });
 
   it('renders the empty approval state', () => {

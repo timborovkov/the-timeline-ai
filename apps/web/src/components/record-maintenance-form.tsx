@@ -6,10 +6,14 @@ import { setRecordMaintenancePolicyAction } from '@/app/actions/suggestions';
 import { Button } from '@/components/ui/button';
 import type { SuggestionActionState } from '@/lib/suggestion-action-result';
 
-type Policy = { reviewManualValues: boolean; approveRemovals: boolean; approveMerges: boolean };
+interface Policy {
+  reviewManualValues: boolean;
+  approveRemovals: boolean;
+  approveMerges: boolean;
+}
 
 const SETTINGS = [
-  { name: 'reviewManualValues', label: 'Require review to replace a manually set task value' },
+  { name: 'reviewManualValues', label: 'Require review to replace a manually set record value' },
   { name: 'approveRemovals', label: 'Automatically apply explicit archive requests' },
   {
     name: 'approveMerges',

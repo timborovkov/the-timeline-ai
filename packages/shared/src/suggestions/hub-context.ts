@@ -617,6 +617,23 @@ const EXPLICIT_STATES: Record<string, string> = {
   archived: 'cancelled',
 };
 
+export function explicitArchiveInstruction(text: string, name: string): boolean {
+  const assertion = text.trim().replace(/[.!]$/, '').toLowerCase();
+  const target = name.trim().toLowerCase();
+  if (!target || /[?\r\n]/u.test(assertion)) return false;
+  return [
+    /^(?:please )?archive (.+)$/u,
+    /^we decided to archive (.+)$/u,
+    /^(?:please )?move (.+) to the archive$/u,
+    /^(?:please )?mark (.+) as archived$/u,
+  ].some((pattern) => pattern.exec(assertion)?.[1]?.trim() === target);
+}
+
+export function explicitArchiveRetraction(text: string, name: string): boolean {
+  const negative = /^(?:please )?(?:do not|don['’]t|never) (.+)$/iu.exec(text.trim());
+  return Boolean(negative?.[1] && explicitArchiveInstruction(negative[1], name));
+}
+
 export function explicitLifecycleState(sentence: string):
   | {
       subject: string;

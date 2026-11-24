@@ -89,12 +89,13 @@ maybeDescribe('live suggestion worker evals', () => {
     expect(accepted).toMatchObject({
       status: 'accepted',
       resolvedByUserId: null,
-      metadata: expect.objectContaining({ approval_decision: 'automatic' }),
     });
+    expect(accepted?.metadata).toMatchObject({ approval_decision: 'automatic' });
+    const taskResultId = accepted?.resultId ?? null;
     const rows = await db.select().from(entities);
     expect(rows.filter((row) => row.type === 'task')).toEqual([
       expect.objectContaining({
-        id: accepted?.resultId,
+        id: taskResultId,
         status: 'todo',
         assigneeUserId: null,
         dueAt: null,

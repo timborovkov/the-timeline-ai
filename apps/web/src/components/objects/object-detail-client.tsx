@@ -1708,7 +1708,10 @@ function ObjectHeaderIdentity({
     </div>
   );
 }
-const subscribeDateLocale = () => () => {};
+function subscribeDateLocale(listener: () => void) {
+  window.addEventListener('languagechange', listener);
+  return () => window.removeEventListener('languagechange', listener);
+}
 const getBrowserDateLocale = () => navigator.language;
 const getServerDateLocale = () => 'en-US';
 
@@ -1741,7 +1744,9 @@ function TaskPlannedDateField({
         <EditableMetadata.Editor>
           <MetadataDateEditor
             defaultValue={detail.plannedDate ?? ''}
-            onApply={(value) => patch('plannedDate', value || null)}
+            onApply={(value) => {
+              patch('plannedDate', value || null);
+            }}
           />
         </EditableMetadata.Editor>
       </EditableMetadata>

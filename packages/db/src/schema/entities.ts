@@ -78,7 +78,7 @@ export const entities = pgTable(
     assigneeUserId: uuid('assignee_user_id').references(() => users.id, { onDelete: 'set null' }),
     dueAt: timestamp('due_at', { withTimezone: true }),
     plannedDate: date('planned_date'),
-    taskFieldRevisions: jsonb('task_field_revisions')
+    recordFieldRevisions: jsonb('task_field_revisions')
       .$type<
         Record<
           string,

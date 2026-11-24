@@ -25,7 +25,6 @@ import {
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
 } from '@/app/actions/suggestions';
-import { automaticApprovalOutcome } from '@/lib/approval-preview';
 import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-dialog';
 import { RejectionReason, RejectProposal } from '@/components/approvals/reject-proposal';
 import { StaleEvidence } from '@/components/approvals/stale-evidence';
@@ -46,6 +45,7 @@ import {
   formatDisplayDate,
   formatDisplayDateTime,
 } from '@/lib/display-dates';
+import { automaticApprovalOutcome } from '@/lib/approval-preview';
 import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
 import { notifyAction } from '@/lib/notify';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
@@ -1052,7 +1052,7 @@ function ActiveApprovalPreview({
       onUndo={
         activePreview.item.status === 'accepted' &&
         activePreview.item.metadata?.task_update_undo_available === true
-          ? () =>
+          ? () => {
               run(
                 async () => {
                   const result = await undoAutomaticTaskUpdateAction({
@@ -1068,7 +1068,8 @@ function ActiveApprovalPreview({
                   success: 'Task fields restored',
                   error: 'Could not restore task fields',
                 },
-              )
+              );
+            }
           : undefined
       }
       acceptDisabled={

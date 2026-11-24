@@ -1,6 +1,8 @@
 import { splitStoredEmailContent } from '@timeline/shared/email';
 import {
   chronologicalLifecycleEvidence,
+  explicitArchiveInstruction,
+  explicitArchiveRetraction,
   explicitLifecycleState,
 } from '@timeline/shared/suggestions';
 import {
@@ -849,9 +851,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
     ]),
   );
   const packet = normalize(args.packet);
+  const stripTranscriptSpeaker = (text: string) => text.replace(/^\[\d+s\] [^:\r\n]+:\s*/, '');
   function enclosingAssertion(support: Support): string | undefined {
     const source = args.sources.find((event) => event.id === support.rawEventId);
-    return source && completeSourceAssertion(source.text, support.quote);
+    if (!source) return undefined;
+    const enclosing = completeSourceAssertion(source.text, support.quote);
+    return (
+      enclosing && (source.source === 'meeting' ? stripTranscriptSpeaker(enclosing) : enclosing)
+    );
   }
   function groupedProjectEvidence(
     subject: string,
@@ -877,18 +884,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
   }
   function lifecycleVerified(support: Support, status: unknown, sendTask = false): boolean {
     const enclosing = enclosingAssertion(support);
-    return (
-      Boolean(enclosing) &&
-      [support.quote, enclosing].every(
-        (quote) =>
-          quote &&
-          affirmativeLifecycle(
-            taskClause(quote, support.subject),
-            support.subject,
-            status,
-            sendTask,
-          ),
-      )
+    if (!enclosing) return false;
+    if (status === 'cancelled' && explicitArchiveInstruction(support.quote, support.subject))
+      return explicitArchiveInstruction(enclosing, support.subject);
+    return [support.quote, enclosing].every((quote) =>
+      affirmativeLifecycle(taskClause(quote, support.subject), support.subject, status, sendTask),
     );
   }
   function* assertionsFromCitation(support: Support) {
@@ -915,7 +915,14 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const text = offset === 0 ? event.contentText.slice(assertionStart) : event.contentText;
       for (const sentence of text.split(/(?<=[.!?])\s+|\n+/u)) {
         if (sentence.trim() && safeSourceQuote(event.contentText, sentence.trim()))
-          yield { event, sentence, visible: packet.includes(normalize(sentence)) };
+          yield {
+            event,
+            sentence:
+              (event.source ?? args.source) === 'meeting'
+                ? stripTranscriptSpeaker(sentence)
+                : sentence,
+            visible: packet.includes(normalize(sentence)),
+          };
       }
     }
   }
@@ -937,6 +944,15 @@ export function groundCommunicationBundles<T extends Item>(args: {
     });
     for (const { event, sentence, visible } of assertionsFromCitation(support)) {
       found = true;
+      const admitted = visible || Boolean(event.id && chronologyVetoIds.has(event.id));
+      if (
+        admitted &&
+        status === 'cancelled' &&
+        names.some((name) => explicitArchiveRetraction(sentence, name))
+      ) {
+        status = undefined;
+        continue;
+      }
       const state = explicitLifecycleState(sentence);
       if (
         state &&
@@ -1642,13 +1658,11 @@ export function groundCommunicationBundles<T extends Item>(args: {
             !unsafe(support.quote) &&
             (item.targetKind === 'object_relationship' ||
               namesTaskQuote(item, support.quote, support.subject) ||
-              (support.field === 'assignee' &&
-                contextValid &&
-                /\b(?:this|it|instead)\b/i.test(support.quote)) ||
-              (support.field === 'plannedDate' &&
-                contextValid &&
-                (CONVERSATIONAL_PLAN_CORRECTION.test(support.quote) ||
-                  CONTEXTUAL_TASK_PLAN.test(support.quote)))) &&
+              (Boolean(contextValid) &&
+                ((support.field === 'assignee' && /\b(?:this|it|instead)\b/i.test(support.quote)) ||
+                  (support.field === 'plannedDate' &&
+                    (CONVERSATIONAL_PLAN_CORRECTION.test(support.quote) ||
+                      CONTEXTUAL_TASK_PLAN.test(support.quote)))))) &&
             (item.targetKind === 'object_relationship' ||
               taskIdentityNames(item).some((name) =>
                 isTask
@@ -2159,6 +2173,142 @@ export function groundCommunicationBundles<T extends Item>(args: {
                 Number.isFinite(Date.parse(value)) &&
                 Date.parse(support.value) === Date.parse(value))),
         );
+      function verifiedClaim(support: Support, value: unknown): VerifiedClaim | undefined {
+        if (value !== null && typeof value !== 'string') return undefined;
+        const source = args.sources.find((row) => row.id === support.rawEventId);
+        const assertedAt =
+          source &&
+          deadlineReferenceDate(source, source.source ?? args.source, support.quote, support.quote);
+        if (!assertedAt) return undefined;
+        return {
+          rawEventId: support.rawEventId,
+          assertedAt: assertedAt.toISOString(),
+          ...(support.context && validContexts.has(support)
+            ? { contextRawEventId: support.context.rawEventId }
+            : {}),
+          value,
+        };
+      }
+      const hubType = type === 'person' || type === 'company' || type === 'project';
+      const target = args.objects?.find((object) => object.id === item.targetId);
+      const hubUnambiguous =
+        hubType &&
+        target?.name &&
+        !args.objects?.some(
+          (object) =>
+            object.id !== target.id &&
+            [object.name, ...(object.aliases ?? [])].some(
+              (label) => label && normalize(label) === normalize(target.name ?? ''),
+            ),
+        );
+      let renameClaim: VerifiedClaim | undefined;
+      if (
+        (hubUnambiguous || type === 'task') &&
+        item.operation === 'update' &&
+        target?.name &&
+        typeof payload.canonicalName === 'string' &&
+        payload.canonicalName !== target.name
+      ) {
+        const rename = has('canonicalName', payload.canonicalName);
+        const currentName = target.name;
+        const renameState = (text: string) => {
+          const match =
+            /^(?:please )?(?:(do not|don['’]t|never) )?rename (.+?) to ["“](.+?)["”][.!]?$/iu.exec(
+              text.trim(),
+            );
+          const name =
+            match && normalize(match[2] ?? '') === normalize(currentName) ? match[3] : undefined;
+          return name ? { name, denied: Boolean(match?.[1]) } : undefined;
+        };
+        const enclosing = rename && enclosingAssertion(rename);
+        let latestName: string | null | undefined;
+        if (rename) {
+          for (const { event, sentence, visible } of assertionsFromCitation(rename)) {
+            if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
+            const claim = renameState(sentence);
+            if (!claim) continue;
+            if (!claim.denied) latestName = claim.name;
+            else if (
+              latestName === claim.name ||
+              (latestName === undefined && claim.name === payload.canonicalName)
+            )
+              latestName = null;
+          }
+        }
+        const contradicted = latestName !== undefined && latestName !== payload.canonicalName;
+        const quoted = rename && renameState(rename.quote);
+        const full = enclosing ? renameState(enclosing) : undefined;
+        if (
+          rename &&
+          quoted &&
+          !quoted.denied &&
+          quoted.name === payload.canonicalName &&
+          full &&
+          !full.denied &&
+          full.name === payload.canonicalName &&
+          !contradicted
+        )
+          renameClaim = verifiedClaim(rename, payload.canonicalName);
+        if (!renameClaim && (type === 'task' || contradicted)) delete payload.canonicalName;
+      }
+      if (hubUnambiguous && item.operation === 'update' && target.name && item.auditId) {
+        const state = has('status', payload.status);
+        const statuses: Record<string, string> = {
+          planning: 'in planning',
+          active: 'active|in progress|underway',
+          on_hold: 'on hold|paused',
+          shipped: 'shipped|completed|finished',
+          cancelled: 'cancelled|canceled',
+        };
+        const projectState = (text: string) => {
+          const clause = normalize(text).replace(/[.!]$/, '');
+          const name = normalize(target.name ?? '');
+          if (!clause.startsWith(name + ' is ')) return undefined;
+          const predicate = clause.slice(name.length + 4);
+          const denied = /^(?:not|no longer) /u.exec(predicate);
+          const value = denied ? predicate.slice(denied[0].length) : predicate;
+          const status = Object.entries(statuses).find(([, terms]) =>
+            terms.split('|').includes(value),
+          )?.[0];
+          return status ? { status, denied: Boolean(denied) } : undefined;
+        };
+        const enclosing = state && enclosingAssertion(state);
+        let current: string | null | undefined;
+        if (state) {
+          for (const { event, sentence, visible } of assertionsFromCitation(state)) {
+            if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
+            const claim = projectState(sentence);
+            if (!claim) continue;
+            if (!claim.denied) current = claim.status;
+            else if (
+              current === claim.status ||
+              (current === undefined && claim.status === payload.status)
+            )
+              current = null;
+          }
+        }
+        const contradictsProposedState = current !== undefined && current !== payload.status;
+        const quoteState = state && projectState(state.quote);
+        const enclosingState = enclosing ? projectState(enclosing) : undefined;
+        const statusClaim =
+          type === 'project' &&
+          state &&
+          quoteState &&
+          !quoteState.denied &&
+          quoteState.status === payload.status &&
+          enclosingState &&
+          !enclosingState.denied &&
+          enclosingState.status === payload.status &&
+          !contradictsProposedState
+            ? verifiedClaim(state, payload.status)
+            : undefined;
+        if (contradictsProposedState) delete payload.status;
+        if (renameClaim || statusClaim)
+          args.verifiedTaskClaims?.set(item.auditId, {
+            ...(renameClaim ? { canonicalName: renameClaim } : {}),
+            ...(statusClaim ? { status: statusClaim } : {}),
+          });
+      }
       if (type === 'company' || type === 'project') {
         const tentative = supports.find(
           (support) =>
@@ -2267,47 +2417,25 @@ export function groundCommunicationBundles<T extends Item>(args: {
           )
         )
           delete payload.dueAt;
-        const plannedDate = has(
-          'plannedDate',
-          payload.plannedDate === null ? 'unset' : payload.plannedDate,
-        );
+        const plannedValue = payload.plannedDate;
+        const plannedDate = has('plannedDate', plannedValue === null ? 'unset' : plannedValue);
         if (
           payload.plannedDate !== undefined &&
           (type !== 'task' ||
             !plannedDate ||
             !(
-              payload.plannedDate === null || z.iso.date().safeParse(payload.plannedDate).success
+              plannedValue === null ||
+              (typeof plannedValue === 'string' && z.iso.date().safeParse(plannedValue).success)
             ) ||
             !taskDateVerified(
               plannedDate,
-              payload.plannedDate === null ? null : Date.parse(String(payload.plannedDate)),
+              plannedValue === null ? null : Date.parse(plannedValue),
               taskIdentityNames(item),
               (assertion) => taskEvidenceUnambiguous(item, assertion),
               validContexts.has(plannedDate),
             ))
         )
           delete payload.plannedDate;
-        function verifiedClaim(support: Support, value: unknown): VerifiedClaim | undefined {
-          if (value !== null && typeof value !== 'string') return undefined;
-          const source = args.sources.find((row) => row.id === support.rawEventId);
-          const assertedAt =
-            source &&
-            deadlineReferenceDate(
-              source,
-              source.source ?? args.source,
-              support.quote,
-              support.quote,
-            );
-          if (!assertedAt) return undefined;
-          return {
-            rawEventId: support.rawEventId,
-            assertedAt: assertedAt.toISOString(),
-            ...(support.context && validContexts.has(support)
-              ? { contextRawEventId: support.context.rawEventId }
-              : {}),
-            value,
-          };
-        }
         if (item.auditId && plannedDate && payload.plannedDate !== undefined) {
           const evidence = verifiedClaim(plannedDate, payload.plannedDate);
           if (evidence) args.verifiedPlannedDates?.set(item.auditId, evidence);
@@ -2332,30 +2460,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           delete payload.status;
         if (type === 'task' && item.auditId && args.verifiedTaskClaims) {
           const claims: Partial<Record<MaintainedClaim, VerifiedClaim>> = {};
-          const currentName = args.objects?.find((object) => object.id === item.targetId)?.name;
-          if (
-            item.operation === 'update' &&
-            currentName &&
-            typeof payload.canonicalName === 'string' &&
-            payload.canonicalName !== currentName
-          ) {
-            const rename = has('canonicalName', payload.canonicalName);
-            const matchesRename = (quote: string) => {
-              const match = /^(?:please )?rename (.+?) to ["“](.+?)["”][.!]?$/iu.exec(quote.trim());
-              return (
-                match &&
-                normalize(match[1] ?? '') === normalize(currentName) &&
-                match[2] === payload.canonicalName
-              );
-            };
-            const enclosing = rename && enclosingAssertion(rename);
-            const evidence =
-              rename && enclosing && matchesRename(rename.quote) && matchesRename(enclosing)
-                ? verifiedClaim(rename, payload.canonicalName)
-                : undefined;
-            if (evidence) claims.canonicalName = evidence;
-            else delete payload.canonicalName;
-          }
+          if (renameClaim) claims.canonicalName = renameClaim;
           const assignment = claimFor('assigneeUserId');
           if (assignment && payload.assigneeUserId !== undefined) {
             const evidence = verifiedClaim(assignment.support, payload.assigneeUserId);
@@ -2365,7 +2470,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
             const evidence = verifiedClaim(deadline, payload.dueAt);
             if (evidence) claims.dueAt = evidence;
           }
-          if (verifiedStatus && lifecycle && payload.status !== undefined) {
+          if (verifiedStatus && payload.status !== undefined) {
             const evidence = verifiedClaim(lifecycle, payload.status);
             if (evidence) claims.status = evidence;
           }
@@ -2539,7 +2644,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         (support) =>
           support.field === 'status' &&
           support.value === 'cancelled' &&
-          /^(?:please )?archive\s/i.test(support.quote.trim()),
+          explicitArchiveInstruction(support.quote, support.subject),
       );
       const operation =
         type === 'task' && payload.status === 'cancelled'

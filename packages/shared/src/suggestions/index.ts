@@ -73,7 +73,7 @@ import {
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
-import { isObjectNotFoundError } from '#src/mutation-errors.js';
+import { isObjectNotFoundError, StaleWorkspaceStateError } from '#src/mutation-errors.js';
 import type {
   CreateObjectInput,
   IdentityFacetInput,
@@ -82,7 +82,12 @@ import type {
   ObjectType,
 } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
-import { OBJECT_TYPES } from '#src/objects/types.js';
+import {
+  MAINTAINED_TASK_FIELDS,
+  OBJECT_TYPES,
+  maintainedRecordFields,
+  type MaintainedTaskField,
+} from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
 import {
   buildOutputDedupeKey,
@@ -118,10 +123,17 @@ import {
   rawEventVisibleToUser,
 } from '#src/visibility.js';
 
+import {
+  explicitArchiveInstruction,
+  explicitArchiveRetraction,
+} from '#src/suggestions/hub-context.js';
+
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
   attachUniqueHubsToBundles,
   chronologicalLifecycleEvidence,
+  explicitArchiveInstruction,
+  explicitArchiveRetraction,
   explicitLifecycleState,
   hubEvidenceText,
   hubsChanged,
@@ -431,16 +443,6 @@ export interface SuggestionScopeDeps {
   recordMaintenanceWorker?: boolean;
 }
 
-type MaintainedTaskField = Exclude<
-  keyof NonNullable<CreateObjectInput['taskFieldEvidence']>,
-  undefined
->;
-const MAINTAINED_TASK_FIELDS = [
-  'canonicalName',
-  'assigneeUserId',
-  'dueAt',
-  'status',
-] as const satisfies readonly MaintainedTaskField[];
 interface VerifiedTaskClaim {
   rawEventId: string;
   contextRawEventId?: string;
@@ -4158,6 +4160,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return;
     }
 
+    if (item.targetKind === 'object_merge') {
+      const parsed = objectMergePayload.safeParse(item.proposedPayload);
+      if (!parsed.success) return;
+      await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.teamId, teamId), inArray(entities.id, parsed.data.objectIds)))
+        .orderBy(asc(entities.id))
+        .for('update');
+      return;
+    }
+
     if (item.targetKind === 'board_membership') {
       // Settings lock board before lanes/items; manual edits lock items first.
       // A busy target must abort this approval for retry rather than form a lock cycle.
@@ -4200,7 +4214,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
-  async function hasOnlyReplayedTaskEvidence(item: typeof agentSuggestionItems.$inferSelect) {
+  async function hasOnlyReplayedRecordEvidence(item: typeof agentSuggestionItems.$inferSelect) {
     if (
       item.operation !== 'update' ||
       !item.targetId ||
@@ -4230,12 +4244,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .select({
         plannedDateRevisionAt: entities.plannedDateRevisionAt,
         plannedDateEvidenceId: entities.plannedDateEvidenceId,
-        revisions: entities.taskFieldRevisions,
+        revisions: entities.recordFieldRevisions,
       })
       .from(entities)
-      .where(
-        and(eq(entities.teamId, teamId), eq(entities.id, item.targetId), eq(entities.type, 'task')),
-      )
+      .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
       .limit(1);
     if (!target) return false;
     return fields.every((field) => {
@@ -4260,8 +4272,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
     if (item.status !== 'pending' && item.status !== 'failed') return null;
-    if (await hasOnlyReplayedTaskEvidence(item))
-      return 'Newer task field changes superseded this evidence.';
+    if (await hasOnlyReplayedRecordEvidence(item))
+      return 'Newer record field changes superseded this evidence.';
     const [parentSuggestion] = await db
       .select({
         metadata: agentSuggestions.metadata,
@@ -5092,6 +5104,35 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return resolved.resultId;
   }
 
+  async function acceptedProjectSibling(suggestionId: string, name: string) {
+    const matches = await db
+      .select({ id: entities.id, name: entities.canonicalName })
+      .from(agentSuggestionItems)
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.id, agentSuggestionItems.resultId),
+          eq(entities.type, 'project'),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestionItems.status, 'accepted'),
+          sql`lower(${entities.canonicalName}) = lower(${name})`,
+        ),
+      )
+      .limit(2)
+      .for('update', { of: entities });
+    const match = matches.length === 1 ? matches[0] : undefined;
+    return match ? { ...match, createdForSuggestion: false } : null;
+  }
+
   async function applyObjectCreateItem(
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
@@ -5107,7 +5148,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         : item.title;
     const type =
       item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.type) ?? 'other');
-    const project = type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null;
+    const approvedProject =
+      deps.recordMaintenanceWorker && parsed.createProjectName
+        ? await acceptedProjectSibling(item.suggestionId, parsed.createProjectName)
+        : null;
+    if (deps.recordMaintenanceWorker && parsed.createProjectName && !approvedProject)
+      throw new StaleWorkspaceStateError();
+    const project =
+      approvedProject ?? (type === 'task' ? await resolveSuggestedTaskProject(item, parsed) : null);
     const legacyParentId =
       type === 'task' && parsed.parentObjectId && !project ? parsed.parentObjectId : null;
     const precomputedTaskCategory =
@@ -5149,7 +5197,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const evidence = await getPlannedDateEvidence(item, parsed.plannedDate);
       if (evidence) input.plannedDateEvidence = evidence;
     }
-    if (type === 'task') input.taskFieldEvidence = await getTaskFieldEvidence(item, parsed);
+    if (maintainedRecordFields(type).length)
+      input.taskFieldEvidence = await getTaskFieldEvidence(item, parsed);
     if (project) input.parentObjectId = project.id;
     if (precomputedTaskCategory) input.precomputedTaskCategory = precomputedTaskCategory;
     if (initialManualTaskCategory) input.initialManualTaskCategory = initialManualTaskCategory;
@@ -5937,7 +5986,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             requireActive: true,
             ...mutationOptions,
             taskFieldEvidence: await getTaskFieldEvidence(item, parsed),
-            ...(deps.recordMaintenanceWorker ? { taskFieldApprovalItemId: item.id } : {}),
+            ...(deps.recordMaintenanceWorker && (await objectTypeForTarget(targetId)) === 'task'
+              ? { taskFieldApprovalItemId: item.id }
+              : {}),
             ...(parsed.plannedDate !== undefined
               ? { plannedDateEvidence: await getPlannedDateEvidence(item, parsed.plannedDate) }
               : {}),
@@ -6430,6 +6481,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return policy;
   }
 
+  async function uniqueActiveObjectByName(name: string) {
+    await ensureMember();
+    const rows = await db
+      .select({ id: entities.id, name: entities.canonicalName, type: entities.type })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          sql`lower(${entities.canonicalName}) = lower(${name.trim()})`,
+        ),
+      )
+      .limit(2);
+    return rows.length === 1 ? (rows[0] ?? null) : null;
+  }
+
   function exactMergeTrackerKey(row: typeof entities.$inferSelect) {
     const metadata = recordFromUnknown(row.metadata);
     const candidate = metadata.url ?? metadata.external_url;
@@ -6486,50 +6554,102 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .for('share');
     if (!workspace) return null;
 
-    const siblings = await db
-      .select({ id: agentSuggestionItems.id })
-      .from(agentSuggestionItems)
+    const payload = recordFromUnknown(item.proposedPayload);
+    if (
+      item.operation === 'create' &&
+      payload.createProjectName !== undefined &&
+      (item.targetKind !== 'task' ||
+        payload.parentObjectId !== undefined ||
+        typeof payload.createProjectName !== 'string' ||
+        !(await acceptedProjectSibling(item.suggestionId, payload.createProjectName)))
+    )
+      return null;
+    await lockAcceptanceMutationTarget(item);
+    const sources = await db
+      .select({
+        id: rawEvents.id,
+        source: rawEvents.source,
+        visibility: rawEvents.visibility,
+        metadata: rawEvents.sourceMetadata,
+        authorUserId: rawEvents.authorUserId,
+        occurredAt: rawEvents.occurredAt,
+        text: rawEvents.contentText,
+      })
+      .from(agentSuggestionEvidence)
+      .innerJoin(
+        rawEvents,
+        and(eq(rawEvents.id, agentSuggestionEvidence.rawEventId), eq(rawEvents.teamId, teamId)),
+      )
       .where(
         and(
-          eq(agentSuggestionItems.teamId, teamId),
-          eq(agentSuggestionItems.suggestionId, suggestion.id),
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+          rawEventIsActive(),
         ),
       )
-      .limit(2);
-    if (siblings.length !== 1) return null;
-    async function withActiveExplicitAuthor(quote: string, since: Date) {
-      const rows = await db
-        .select({ id: rawEvents.id })
-        .from(agentSuggestionEvidence)
-        .innerJoin(
-          rawEvents,
-          and(eq(rawEvents.id, agentSuggestionEvidence.rawEventId), eq(rawEvents.teamId, teamId)),
-        )
-        .innerJoin(
-          teamMembers,
-          and(
-            eq(teamMembers.teamId, teamId),
-            eq(teamMembers.userId, rawEvents.authorUserId),
-            isNull(teamMembers.removedAt),
-          ),
-        )
-        .innerJoin(users, and(eq(users.id, rawEvents.authorUserId), isNull(users.suspendedAt)))
+      .orderBy(asc(rawEvents.id))
+      .for('update', { of: rawEvents });
+    const expectedEvidence = await db
+      .select({ id: agentSuggestionEvidence.id })
+      .from(agentSuggestionEvidence)
+      .where(
+        and(
+          eq(agentSuggestionEvidence.teamId, teamId),
+          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
+        ),
+      );
+    if (
+      !sources.length ||
+      sources.length !== expectedEvidence.length ||
+      sources.some(
+        (source) =>
+          source.visibility !== 'team' ||
+          !['slack', 'telegram', 'email', 'meeting'].includes(source.source) ||
+          recordFromUnknown(source.metadata).signal_class === 'pulse',
+      )
+    )
+      return null;
+    const requiredSources = itemEvidenceRawEventIds(item.metadata);
+    if (requiredSources.some((id) => !sources.some((source) => source.id === id))) return null;
+    if (!requiredSources.length) {
+      const siblings = await db
+        .select({ id: agentSuggestionItems.id })
+        .from(agentSuggestionItems)
         .where(
           and(
-            eq(agentSuggestionEvidence.teamId, teamId),
-            eq(agentSuggestionEvidence.suggestionId, suggestion.id),
-            eq(rawEvents.visibility, 'team'),
-            eq(rawEvents.source, 'slack'),
-            rawEventIsActive(),
-            sql`coalesce(${rawEvents.sourceMetadata} ->> 'signal_class', '') <> 'pulse'`,
-            sql`${rawEvents.occurredAt} >= ${since.toISOString()}::timestamptz`,
-            sql`lower(trim(regexp_replace(trim(${rawEvents.contentText}), '[.!]$', ''))) IN (${quote}, ${'please ' + quote})`,
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.suggestionId, suggestion.id),
           ),
         )
-        .orderBy(asc(rawEvents.id))
+        .limit(2);
+      if (siblings.length !== 1 || sources.length !== 1) return null;
+    }
+
+    async function hasActiveSlackAuthor(since: Date, matches: (text: string) => boolean) {
+      const authors = sources.flatMap((source) =>
+        source.source === 'slack' &&
+        source.authorUserId &&
+        source.occurredAt >= since &&
+        source.text &&
+        matches(source.text)
+          ? [source.authorUserId]
+          : [],
+      );
+      if (authors.length === 0) return false;
+      const [author] = await db
+        .select({ id: teamMembers.userId })
+        .from(teamMembers)
+        .innerJoin(users, and(eq(users.id, teamMembers.userId), isNull(users.suspendedAt)))
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            isNull(teamMembers.removedAt),
+            inArray(teamMembers.userId, authors),
+          ),
+        )
         .limit(1)
-        .for('update', { of: rawEvents });
-      return rows.length !== 0;
+        .for('share');
+      return Boolean(author);
     }
     if (merge) {
       if (!workspace.policy.approveMerges || suggestion.confidence !== 'high') return null;
@@ -6572,69 +6692,28 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       const survivor = left.id === payload.data.survivorId ? left : right;
       const duplicate = survivor.id === left.id ? right : left;
+      if (
+        (await uniqueActiveObjectByName(survivor.canonicalName))?.id !== survivor.id ||
+        (await uniqueActiveObjectByName(duplicate.canonicalName))?.id !== duplicate.id
+      )
+        return null;
       const instruction =
         `merge ${duplicate.canonicalName} into ${survivor.canonicalName}`.toLowerCase();
       const since = new Date(Math.max(left.updatedAt.getTime(), right.updatedAt.getTime()));
-      if (!(await withActiveExplicitAuthor(instruction, since))) return null;
+      if (
+        !(await hasActiveSlackAuthor(since, (text) => {
+          const command = text.trim().replace(/[.!]$/, '').toLowerCase();
+          return command === instruction || command === `please ${instruction}`;
+        }))
+      )
+        return null;
       return workspace.policy.revision;
     }
-    await lockAcceptanceMutationTarget(item);
-    const sources = await db
-      .select({
-        id: rawEvents.id,
-        source: rawEvents.source,
-        visibility: rawEvents.visibility,
-        metadata: rawEvents.sourceMetadata,
-        quote: agentSuggestionEvidence.quote,
-        authorUserId: rawEvents.authorUserId,
-        occurredAt: rawEvents.occurredAt,
-        text: rawEvents.contentText,
-      })
-      .from(agentSuggestionEvidence)
-      .innerJoin(
-        rawEvents,
-        and(eq(rawEvents.id, agentSuggestionEvidence.rawEventId), eq(rawEvents.teamId, teamId)),
-      )
-      .where(
-        and(
-          eq(agentSuggestionEvidence.teamId, teamId),
-          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
-          rawEventIsActive(),
-        ),
-      )
-      .orderBy(asc(rawEvents.id))
-      .for('update', { of: rawEvents });
-    const expectedEvidence = await db
-      .select({ id: agentSuggestionEvidence.id })
-      .from(agentSuggestionEvidence)
-      .where(
-        and(
-          eq(agentSuggestionEvidence.teamId, teamId),
-          eq(agentSuggestionEvidence.suggestionId, suggestion.id),
-        ),
-      );
-    if (
-      !sources.length ||
-      sources.length !== expectedEvidence.length ||
-      sources.some(
-        (source) =>
-          source.visibility !== 'team' ||
-          !['slack', 'telegram', 'email'].includes(source.source) ||
-          recordFromUnknown(source.metadata).signal_class === 'pulse',
-      )
-    )
-      return null;
-    const payload = recordFromUnknown(item.proposedPayload);
     if (item.operation === 'create') {
       const type = item.targetKind === 'task' ? 'task' : payload.type;
       if (!['task', 'company', 'project', 'person'].includes(String(type))) return null;
-      if (payload.createProjectName !== undefined || payload.metadata !== undefined) return null;
+      if (payload.metadata !== undefined) return null;
     } else if (item.operation === 'update') {
-      if (
-        payload.status === 'cancelled' &&
-        sources.some((source) => /^(?:please )?archive\s/i.test(source.quote?.trim() ?? ''))
-      )
-        return null;
       const fields = Object.keys(payload);
       if (
         !item.targetId ||
@@ -6649,12 +6728,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const claims = await getTaskFieldEvidence(item, parsed.data, false);
       if (MAINTAINED_TASK_FIELDS.some((field) => fields.includes(field) && !claims[field]))
         return null;
-      const [task] = await db
+      const [target] = await db
         .select({
+          type: entities.type,
           plannedDate: entities.plannedDate,
           revisionAt: entities.plannedDateRevisionAt,
           evidenceId: entities.plannedDateEvidenceId,
-          revisions: entities.taskFieldRevisions,
+          revisions: entities.recordFieldRevisions,
           canonicalName: entities.canonicalName,
           assigneeUserId: entities.assigneeUserId,
           dueAt: entities.dueAt,
@@ -6665,23 +6745,45 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             eq(entities.teamId, teamId),
             eq(entities.id, item.targetId),
-            eq(entities.type, 'task'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
           ),
         )
         .limit(1)
         .for('update');
-      if (!task) return null;
+      if (!target) return null;
+      if (
+        payload.status === 'cancelled' &&
+        sources.some(
+          (source) => source.text && explicitArchiveInstruction(source.text, target.canonicalName),
+        )
+      )
+        return null;
+      const supported = maintainedRecordFields(target.type);
+      if (
+        fields.some(
+          (field) =>
+            !supported.some((entry) => entry === field) &&
+            !(field === 'plannedDate' && target.type === 'task'),
+        )
+      )
+        return null;
       if (workspace.policy.reviewManualValues) {
-        if (date !== undefined && date !== task.plannedDate && task.revisionAt && !task.evidenceId)
+        if (
+          date !== undefined &&
+          date !== target.plannedDate &&
+          target.revisionAt &&
+          !target.evidenceId
+        )
           return null;
         if (
           MAINTAINED_TASK_FIELDS.some((field) => {
-            const current = task[field];
+            const current = target[field];
             const value = current instanceof Date ? current.toISOString() : current;
             return (
               claims[field] &&
-              task.revisions[field] &&
-              !task.revisions[field].rawEventId &&
+              target.revisions[field] &&
+              !target.revisions[field].rawEventId &&
               parsed.data[field] !== value
             );
           })
@@ -6715,48 +6817,22 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1)
         .for('update');
       if (!target) return null;
-      const normalizeArchive = (value: string) => value.toLowerCase().trim().replace(/[.!]$/, '');
-      const allowed = new Set([
-        normalizeArchive(`archive ${target.name}`),
-        normalizeArchive(`please archive ${target.name}`),
-      ]);
-      const explicitAuthors = sources.flatMap((source) =>
-        source.quote &&
-        source.authorUserId &&
-        source.occurredAt >= target.updatedAt &&
-        source.text?.trim() === source.quote.trim() &&
-        allowed.has(normalizeArchive(source.quote))
-          ? [source.authorUserId]
-          : [],
-      );
-      if (explicitAuthors.length === 0) return null;
-      const [author] = await db
-        .select({ id: teamMembers.userId })
-        .from(teamMembers)
-        .innerJoin(users, and(eq(users.id, teamMembers.userId), isNull(users.suspendedAt)))
-        .where(
-          and(
-            eq(teamMembers.teamId, teamId),
-            isNull(teamMembers.removedAt),
-            inArray(teamMembers.userId, explicitAuthors),
-          ),
+      if (
+        !(await hasActiveSlackAuthor(target.updatedAt, (text) =>
+          explicitArchiveInstruction(text, target.name),
+        ))
+      )
+        return null;
+      if (
+        sources.some(
+          (source) =>
+            source.text &&
+            source.occurredAt >= target.updatedAt &&
+            explicitArchiveRetraction(source.text, target.name),
         )
-        .limit(1)
-        .for('share');
-      if (!author) return null;
-      const matching = await db
-        .select({ id: entities.id })
-        .from(entities)
-        .where(
-          and(
-            eq(entities.teamId, teamId),
-            isNull(entities.archivedAt),
-            isNull(entities.mergedIntoId),
-            sql`lower(${entities.canonicalName}) = lower(${target.name})`,
-          ),
-        )
-        .limit(2);
-      if (matching.length !== 1) return null;
+      )
+        return null;
+      if ((await uniqueActiveObjectByName(target.name))?.id !== item.targetId) return null;
     }
     return workspace.policy.revision;
   }
@@ -6767,10 +6843,21 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     await ensureMember();
     if (itemIds?.length === 0) return 0;
     let count = 0;
+    const dependentTaskIds: string[] = [];
+    async function apply(id: string) {
+      try {
+        if ((await acceptSuggestionItemWithOutcome(id)) === 'accepted') count++;
+      } catch (error) {
+        if (!(error instanceof ExpectedSuggestionApplyFailure)) throw error;
+      }
+    }
     let cursor: string | undefined;
     for (;;) {
       const pending = await db
-        .select({ id: agentSuggestionItems.id })
+        .select({
+          id: agentSuggestionItems.id,
+          dependsOnProject: sql<boolean>`${agentSuggestionItems.operation} = 'create' AND ${agentSuggestionItems.proposedPayload} ? 'createProjectName'`,
+        })
         .from(agentSuggestionItems)
         .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
         .where(
@@ -6802,13 +6889,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (pending.length === 0) break;
       cursor = pending.at(-1)?.id;
       for (const item of pending) {
-        try {
-          if ((await acceptSuggestionItemWithOutcome(item.id)) === 'accepted') count++;
-        } catch (error) {
-          if (!(error instanceof ExpectedSuggestionApplyFailure)) throw error;
-        }
+        if (item.dependsOnProject) dependentTaskIds.push(item.id);
+        else await apply(item.id);
       }
     }
+    for (const id of dependentTaskIds) await apply(id);
     return count;
   }
 
@@ -9023,6 +9108,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     getRecordMaintenancePolicy,
     setRecordMaintenancePolicy,
     applyPendingRecordMaintenance,
+    uniqueActiveObjectByName,
     undoAutomaticTaskUpdate,
 
     acceptObjectMergeSuggestionItem,

@@ -57,7 +57,8 @@ const run = (
       {
         id: event,
         text,
-        authorUserId: alice,
+        source: options.source ?? 'slack',
+        authorUserId: options.source === 'meeting' ? null : alice,
         occurredAt: options.occurredAt ?? new Date('2026-06-01T10:00:00.000Z'),
         ...(options.speakerContext ? { speakerContext: options.speakerContext } : {}),
       },
@@ -70,6 +71,80 @@ const run = (
     source: options.source ?? 'slack',
     timezone: options.timezone ?? 'UTC',
   });
+test('grounds a meeting project state from the utterance and vetoes a later correction', () => {
+  const name = 'Northstar';
+  const statement = 'Northstar is on hold.';
+  const check = (later = '') => {
+    const text = '[30s] Alex: ' + statement + later;
+    const claims: NonNullable<
+      Parameters<typeof groundCommunicationBundles>[0]['verifiedTaskClaims']
+    > = new Map();
+    const result = groundCommunicationBundles({
+      verifiedTaskClaims: claims,
+      bundles: [
+        {
+          title: 'Project state',
+          confidence: 'high',
+          items: [
+            {
+              title: 'Project state',
+              auditId: 'proposal-1',
+              operation: 'update',
+              targetKind: 'object',
+              targetId: event,
+              proposedPayload: { status: 'on_hold' },
+              grounding: [
+                {
+                  field: 'status',
+                  rawEventId: event,
+                  quote: statement,
+                  subject: name,
+                  value: 'on_hold',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      sources: [
+        {
+          id: event,
+          source: 'meeting',
+          text,
+          authorUserId: null,
+          occurredAt: new Date('2026-06-01T10:00:00Z'),
+        },
+      ],
+      source: 'meeting',
+      timezone: 'UTC',
+      members: [],
+      hubs: [],
+      objects: [{ id: event, type: 'project', name, aliases: [] }],
+    });
+    return { claim: claims.get('proposal-1'), items: result[0]?.items };
+  };
+  expect(check().claim?.status?.value).toBe('on_hold');
+  for (const later of ['Northstar is underway.', 'Northstar is not on hold.']) {
+    expect(check('\n[60s] Lee: ' + later)).toEqual({ claim: undefined, items: [] });
+  }
+});
+
+test('meeting label and capturer supply no assignment, while a named assignment does', () => {
+  const self = "I'll Review retention policy.";
+  const named = 'Bob will Review retention policy.';
+  for (const [quote, id, expected] of [
+    [self, alice, undefined],
+    [named, bob, bob],
+  ] as const) {
+    const text = '[50s] Alice: ' + quote;
+    const result = run(text, { assigneeUserId: id }, [support('assignee', quote, id)], {
+      source: 'meeting',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.assigneeUserId).toBe(expected);
+  }
+});
+
 test('grounds a work plan from the source day without inventing a deadline', () => {
   const text = "I'll Review retention policy on Friday.";
   const result = run(text, { plannedDate: '2026-06-05', dueAt: '2026-06-05T00:00:00.000Z' }, [
@@ -2301,6 +2376,24 @@ test('grounded task cancellation updates its lifecycle rather than archiving the
       proposedPayload: { status: 'cancelled' },
     });
   }
+});
+
+test('retains archive intent in explicit paraphrases while rejecting qualified examples', () => {
+  for (const quote of [
+    'Please move Review retention policy to the archive.',
+    'Mark Review retention policy as archived.',
+    'We decided to archive Review retention policy.',
+  ]) {
+    const result = run(quote, {}, [support('status', quote, 'cancelled')], {
+      operation: 'archive_or_cancel',
+    });
+    expect(result[0]?.items[0]?.operation).toBe('archive_or_cancel');
+  }
+  const quote = 'Please move Review retention policy to the archive.';
+  const hypothetical = run('Example only: ' + quote, {}, [support('status', quote, 'cancelled')], {
+    operation: 'archive_or_cancel',
+  });
+  expect(hypothetical[0]?.items).toEqual([]);
 });
 
 test('owner confirmation needs adjacent visible task context and explicit ownership', () => {

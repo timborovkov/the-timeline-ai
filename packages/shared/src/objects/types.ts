@@ -387,3 +387,17 @@ export interface UpdateActor {
   kind: ActorKind;
   userId: string | null;
 }
+
+export const MAINTAINED_TASK_FIELDS = [
+  'canonicalName',
+  'assigneeUserId',
+  'dueAt',
+  'status',
+] as const;
+export type MaintainedTaskField = (typeof MAINTAINED_TASK_FIELDS)[number];
+export function maintainedRecordFields(type: string): readonly MaintainedTaskField[] {
+  if (type === 'task') return MAINTAINED_TASK_FIELDS;
+  if (type === 'person' || type === 'company' || type === 'project')
+    return ['canonicalName', 'status'];
+  return [];
+}

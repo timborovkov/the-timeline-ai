@@ -1,3 +1,8 @@
+import {
+  MAINTAINED_TASK_FIELDS,
+  maintainedRecordFields,
+  type MaintainedTaskField,
+} from '#src/objects/types.js';
 /**
  * Phase 8 — workspace object helpers.
  *
@@ -4019,13 +4024,6 @@ export async function getObjectMergePreview(
   };
 }
 
-export const MAINTAINED_TASK_FIELDS = [
-  'canonicalName',
-  'assigneeUserId',
-  'dueAt',
-  'status',
-] as const;
-export type MaintainedTaskField = (typeof MAINTAINED_TASK_FIELDS)[number];
 export interface TaskFieldEvidence {
   rawEventId: string;
   assertedAt: Date;
@@ -4176,25 +4174,21 @@ export async function createObject(
             ? (input.plannedDateEvidence?.assertedAt ?? new Date())
             : null,
         plannedDateEvidenceId: input.plannedDateEvidence?.rawEventId ?? null,
-        taskFieldRevisions:
-          input.type === 'task'
-            ? Object.fromEntries(
-                MAINTAINED_TASK_FIELDS.flatMap((field) => {
-                  const evidence = input.taskFieldEvidence?.[field];
-                  if (input[field] === undefined || (!evidence && input.actor.kind !== 'user'))
-                    return [];
-                  return [
-                    [
-                      field,
-                      {
-                        assertedAt: (evidence?.assertedAt ?? new Date()).toISOString(),
-                        rawEventId: evidence?.rawEventId ?? null,
-                      },
-                    ],
-                  ];
-                }),
-              )
-            : {},
+        recordFieldRevisions: Object.fromEntries(
+          maintainedRecordFields(input.type).flatMap((field) => {
+            const evidence = input.taskFieldEvidence?.[field];
+            if (input[field] === undefined || (!evidence && input.actor.kind !== 'user')) return [];
+            return [
+              [
+                field,
+                {
+                  assertedAt: (evidence?.assertedAt ?? new Date()).toISOString(),
+                  rawEventId: evidence?.rawEventId ?? null,
+                },
+              ],
+            ];
+          }),
+        ),
         aliases: input.aliases ?? [],
         metadata: input.metadata ?? {},
         sourceEventId: null,
@@ -4568,7 +4562,7 @@ export async function updateObject(
         ...Object.fromEntries(
           MAINTAINED_TASK_FIELDS.map((field) => [
             field,
-            current.taskFieldRevisions[field]?.changeId,
+            current.recordFieldRevisions[field]?.changeId,
           ]),
         ),
       };
@@ -4640,14 +4634,15 @@ export async function updateObject(
       next[field] = candidate;
     }
 
-    const fieldRevisions = { ...current.taskFieldRevisions };
-    const revisedTaskFields = new Set<MaintainedTaskField>();
+    const fieldRevisions = { ...current.recordFieldRevisions };
+    const maintainedFields = maintainedRecordFields(current.type);
+    const revisedFields = new Set<MaintainedTaskField>();
     function diffMaintainedField<K extends MaintainedTaskField>(
       field: K,
       candidate: EntityRow[K] | undefined,
     ): void {
       if (candidate === undefined) return;
-      if (current.type !== 'task') {
+      if (!maintainedFields.includes(field)) {
         diff(field, candidate);
         return;
       }
@@ -4672,8 +4667,8 @@ export async function updateObject(
             : (asserted?.rawEventId ?? null),
         ...(prior?.changeId ? { changeId: prior.changeId } : {}),
       };
-      revisedTaskFields.add(field);
-      next.taskFieldRevisions = fieldRevisions;
+      revisedFields.add(field);
+      next.recordFieldRevisions = fieldRevisions;
     }
     if (patch.canonicalName !== undefined) {
       const trimmed = patch.canonicalName.trim();
@@ -4694,7 +4689,7 @@ export async function updateObject(
         (asserted.assertedAt <= current.plannedDateRevisionAt ||
           asserted.rawEventId === current.plannedDateEvidenceId)
       ) {
-        if (patch.plannedDate !== current.plannedDate && revisedTaskFields.size === 0) {
+        if (patch.plannedDate !== current.plannedDate && revisedFields.size === 0) {
           throw new StaleWorkspaceStateError();
         }
       } else {
@@ -4725,7 +4720,7 @@ export async function updateObject(
     if (patch.type !== undefined) diff('type', patch.type);
 
     if (changes.length === 0) {
-      if (next.plannedDateRevisionAt !== undefined || revisedTaskFields.size > 0) {
+      if (next.plannedDateRevisionAt !== undefined || revisedFields.size > 0) {
         await tx.update(entities).set(next).where(eq(entities.id, entityId));
       }
       return unchangedResult();
@@ -4943,15 +4938,15 @@ export async function updateObject(
         })),
       )
       .returning({ id: objectChanges.id, field: objectChanges.field });
-    for (const field of revisedTaskFields) {
+    for (const field of revisedFields) {
       const change = changeRows.find((row) => row.field === field);
       const revision = fieldRevisions[field];
       if (change && revision) revision.changeId = change.id;
     }
-    if (revisedTaskFields.size > 0) {
+    if (revisedFields.size > 0) {
       await tx
         .update(entities)
-        .set({ taskFieldRevisions: fieldRevisions })
+        .set({ recordFieldRevisions: fieldRevisions })
         .where(eq(entities.id, entityId));
     }
     const plannedDateChange = changeRows.find((change) => change.field === 'plannedDate');

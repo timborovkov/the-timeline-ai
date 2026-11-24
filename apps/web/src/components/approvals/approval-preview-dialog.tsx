@@ -248,7 +248,7 @@ function AutomaticApprovalAttribution({
         : 'Automatic application attempted'}
       {' · Workspace policy revision '}
       {revision}
-      {Array.isArray(item.metadata?.skipped_task_fields) && item.metadata.skipped_task_fields.length
+      {Array.isArray(item.metadata.skipped_task_fields) && item.metadata.skipped_task_fields.length
         ? ` · Skipped ${item.metadata.skipped_task_fields
             .map((field) => {
               const label = String(field).replace(/([a-z])([A-Z])/g, '$1 $2');
