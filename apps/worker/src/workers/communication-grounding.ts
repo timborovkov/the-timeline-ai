@@ -376,7 +376,10 @@ interface DeadlineTiming {
 }
 
 /** A missing suffix allows fallback. An unsupported explicit zone does not. */
-function deadlineSuffixTimezone(suffix: string): string | null | undefined {
+function deadlineSuffixTimezone(
+  suffix: string,
+  position: 'first' | 'following' = 'first',
+): { timezone: string; remainder: string } | null | undefined {
   const cue = /^\s+(?:(time\s+zone)|in)(?=[\s.,:;!?()]|$)/i.exec(suffix);
   const tail = suffix.slice(cue?.[0].length ?? 0).trimStart();
   const parenthesized = tail.startsWith('(');
@@ -385,9 +388,13 @@ function deadlineSuffixTimezone(suffix: string): string | null | undefined {
   if (candidate) {
     const utc = /^(?:UTC|GMT)$/i.test(candidate);
     if (utc || /^[+-]\d{2}:\d{2}$/.test(candidate) || candidate.includes('/')) {
-      if (parenthesized && !/^\s*\)(?=[\s.,;!?)]|$)/.test(zoneText.slice(candidate.length)))
-        return null;
-      return utc ? 'UTC' : candidate;
+      const remainder = zoneText.slice(candidate.length);
+      const closing = parenthesized ? /^\s*\)(?=[\s.,;!?)]|$)/.exec(remainder) : null;
+      if (parenthesized && !closing) return null;
+      return {
+        timezone: utc ? 'UTC' : candidate,
+        remainder: remainder.slice(closing?.[0].length ?? 0),
+      };
     }
     if (/^[+-]\d/.test(candidate)) return null;
   }
@@ -395,9 +402,12 @@ function deadlineSuffixTimezone(suffix: string): string | null | undefined {
 
   const token = /^[A-Za-z][A-Za-z_/-]*/.exec(zoneText)?.[0];
   if (!token || /^(?:for|before|after|with|to|on|in|by|at)$/i.test(token)) return undefined;
+  const remainder = zoneText.slice(token.length);
+  // A wrapper can introduce prose. Reserve the broad abbreviation check for isolated tokens.
+  const isolated = parenthesized ? /^\s*\)/.test(remainder) : /^[\s.,;!?]*$/.test(remainder);
   if (
     /^(?:am|pm|[PMCE][SD]T|[A-Z]EST|[A-Z]EDT|CET|CEST|BST|IST)$/i.test(token) ||
-    /^[A-Z]{2,6}$/.test(token)
+    (position === 'first' && ((!cue && !parenthesized) || isolated) && /^[A-Z]{2,6}$/.test(token))
   )
     return null;
   try {
@@ -426,11 +436,16 @@ function deadlineTiming(tail: string, fallbackTimezone: string): DeadlineTiming 
   const suffix = tail.slice(time[0].length);
   if (/^[\p{L}\p{N}]|^\s*[+-]\d/u.test(suffix)) return undefined;
   if (/^\s*(?:a\.?m\.?|p\.?m\.?)(?:\b|[.\s]|$)/i.test(suffix)) return undefined;
-  const suffixTimezone = deadlineSuffixTimezone(suffix);
+  const suffixZone = deadlineSuffixTimezone(suffix);
   const inlineTimezone = time[5];
-  if (suffixTimezone === null || (suffixTimezone && inlineTimezone)) return undefined;
+  if (
+    suffixZone === null ||
+    (suffixZone &&
+      (inlineTimezone || deadlineSuffixTimezone(suffixZone.remainder, 'following') !== undefined))
+  )
+    return undefined;
   const timezone =
-    suffixTimezone ??
+    suffixZone?.timezone ??
     (inlineTimezone && /^(UTC|GMT|Z)$/i.test(inlineTimezone) ? 'UTC' : inlineTimezone);
   if (timezone) {
     try {

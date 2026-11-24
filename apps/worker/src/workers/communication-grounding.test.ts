@@ -3114,6 +3114,7 @@ for (const [suffix, dueAt] of [
   ['in GMT', '2026-06-12T09:00:00.000Z'],
   ['time zone UTC', '2026-06-12T09:00:00.000Z'],
   ['(America/Los_Angeles)', '2026-06-12T16:00:00.000Z'],
+  ['(America/Los_Angeles) (QA signoff comes next)', '2026-06-12T16:00:00.000Z'],
   ['in +02:00', '2026-06-12T07:00:00.000Z'],
   ['time zone +02:00', '2026-06-12T07:00:00.000Z'],
   ['(+02:00)', '2026-06-12T07:00:00.000Z'],
@@ -3146,6 +3147,7 @@ for (const [suffix, dueAt] of [
     'time zone: Atlantis',
     'time zone',
     'in PST',
+    'in PST for QA signoff',
     'in pst',
     '(America/Atlantis)',
     '(America/Los_Angeles',
@@ -3155,6 +3157,7 @@ for (const [suffix, dueAt] of [
   ].map((suffix) => [suffix, '2026-06-12T06:00:00.000Z'] as const),
   ['+02:00 in UTC', '2026-06-12T07:00:00.000Z'],
   ['UTC (+02:00)', '2026-06-12T09:00:00.000Z'],
+  ['(America/Los_Angeles) in UTC', '2026-06-12T16:00:00.000Z'],
 ] as const) {
   test(`deadline rejects the unsupported zone in "${suffix}"`, () => {
     const quote = `Review retention policy is due June 12, 2026 at 09:00 ${suffix}.`;
@@ -3162,6 +3165,17 @@ for (const [suffix, dueAt] of [
       run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
         ?.items[0]?.proposedPayload.dueAt,
     ).toBeUndefined();
+  });
+}
+
+for (const suffix of ['(QA signoff comes next)', 'in QA before launch']) {
+  test(`deadline preserves ordinary trailing prose in "${suffix}"`, () => {
+    const dueAt = '2026-06-12T06:00:00.000Z';
+    const quote = `Review retention policy is due June 12, 2026 at 09:00 ${suffix}.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBe(dueAt);
   });
 }
 
