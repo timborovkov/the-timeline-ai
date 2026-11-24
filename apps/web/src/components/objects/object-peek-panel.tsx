@@ -1,6 +1,5 @@
 'use client';
 import type * as objects from '@timeline/shared/objects/types';
-import { presentDueDate } from '@timeline/shared/time';
 import { ArrowUpRight, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -10,7 +9,7 @@ import { createNoteAction, deleteNoteAction, updateNoteAction } from '@/app/acti
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { MetadataDueDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
 import { ObjectOrigin } from '@/components/objects/object-origin';
@@ -20,7 +19,6 @@ import { ObjectRelatedContext } from '@/components/objects/object-related-contex
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { DetailField, DetailRail } from '@/components/ui/detail-rail';
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
@@ -124,8 +122,6 @@ export function ObjectPeekPanel({
   });
   const { saving, error, noteBody, editingNoteId, editingBody } = panelUi;
   const [notePending, startNoteTransition] = useTransition();
-  const region = useRegionalFormat();
-  const { timezone } = region;
   const router = useRouter();
   const title = displayObjectTitle(task);
   const assignee = members.find((member) => member.id === task.assigneeUserId);
@@ -245,7 +241,6 @@ export function ObjectPeekPanel({
             columns={columns}
             assignee={assignee}
             members={members}
-            timezone={timezone}
             primaryProject={primaryProject}
             projects={projects}
             onProjectChange={onProjectChange}
@@ -294,7 +289,6 @@ function TaskDetailMetadata({
   columns,
   assignee,
   members,
-  timezone,
   primaryProject,
   projects,
   onProjectChange,
@@ -308,7 +302,6 @@ function TaskDetailMetadata({
   columns: string[];
   assignee: TaskMemberOption | undefined;
   members: TaskMemberOption[];
-  timezone: string;
   primaryProject: objects.TaskPrimaryProjectRow | null;
   projects: TaskMemberOption[];
   onProjectChange: (project: { id: string; label: string } | null) => void;
@@ -390,7 +383,6 @@ function TaskDetailMetadata({
           save={save}
           assignee={assignee}
           members={members}
-          timezone={timezone}
         />
       ) : null}
       {task.type === 'task' ? (
@@ -430,14 +422,12 @@ function ObjectScheduleMetadata({
   save,
   assignee,
   members,
-  timezone,
 }: {
   task: objects.ObjectRow;
   saving: string | null;
   save: (field: string, patch: TaskPatch) => void;
   assignee: TaskMemberOption | undefined;
   members: TaskMemberOption[];
-  timezone: string;
 }) {
   return (
     <>
@@ -477,15 +467,10 @@ function ObjectScheduleMetadata({
             <DueDateDisplay workStatus={task.status} value={task.dueAt} variant="field-hint" />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>
-            <MetadataDateEditor
-              defaultValue={
-                task.dueAt ? (presentDueDate(task.dueAt, { timezone }).dateKey ?? '') : ''
-              }
-              label="Due date"
-              onApply={(value) => {
-                save('due date', {
-                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                });
+            <MetadataDueDateEditor
+              value={task.dueAt}
+              onApply={(dueAt) => {
+                save('due date', { dueAt });
               }}
             />
           </EditableMetadata.Editor>
