@@ -1,6 +1,7 @@
 'use client';
 
 import { presentDueDate } from '@timeline/shared/time';
+import { useState } from 'react';
 
 import { useEditableMetadataOpen } from '@/components/collections/editable-metadata';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
@@ -56,15 +57,17 @@ export function MetadataDueDateEditor({
   onApply: (value: Date | null) => void;
 }) {
   const workspaceTimezone = useWorkspaceTimezone();
-  const deadline = toDateOrNull(value);
-  const date = presentDueDate(deadline, { timezone: timezone ?? workspaceTimezone }).dateKey ?? '';
+  const [date] = useState(
+    () =>
+      presentDueDate(toDateOrNull(value), { timezone: timezone ?? workspaceTimezone }).dateKey ??
+      '',
+  );
   return (
     <MetadataDateEditor
       defaultValue={date}
       onApply={(selected) => {
-        const next =
-          selected === date ? deadline : selected ? new Date(`${selected}T00:00:00.000Z`) : null;
-        onApply(next);
+        if (selected === date) return;
+        onApply(selected ? new Date(`${selected}T00:00:00.000Z`) : null);
       }}
     />
   );
