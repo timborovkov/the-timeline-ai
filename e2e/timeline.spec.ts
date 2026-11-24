@@ -1746,18 +1746,15 @@ test.describe
       title,
     });
 
-    await page.goto('/app/meetings');
+    const filters = new URLSearchParams({ status: 'completed', q: title });
+    await page.goto(`/app/meetings?${filters.toString()}`);
     const completedCapture = page
+      .getByRole('region', { name: 'Scheduled and captured' })
       .locator('[class~="group/collection-row"]')
-      .filter({ hasText: title })
-      .filter({
-        hasText: 'Completed',
-      });
-    await expect(completedCapture.first()).toBeVisible();
-    await completedCapture
-      .first()
-      .getByRole('link', { name: literalPattern(title) })
-      .click();
+      .filter({ hasText: 'Completed' });
+    const captureLink = completedCapture.getByRole('link', { name: title, exact: true });
+    await expect(captureLink).toHaveAttribute('href', `/app/meetings/${meetingId}`);
+    await captureLink.click();
     await expect(page).toHaveURL(new RegExp(`/app/meetings/${meetingId}`));
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
     await expect(page.getByText(summary)).toBeVisible();
