@@ -227,7 +227,69 @@ function lookupPort(container: string, port: number): string | null {
   assert.deepEqual(buildE2eWebServerConfig(env), {
     baseURL: 'http://localhost:43123',
     command: 'bun run --cwd apps/web dev -H 127.0.0.1 -p 43123',
+    bunOptions: '--smol',
   });
+}
+
+{
+  const options = '--user-agent="Timeline E2E"';
+  assert.equal(
+    buildE2eWebServerConfig({ E2E_WEB_PORT: '43123', BUN_OPTIONS: options }).bunOptions,
+    `${options} --smol`,
+  );
+  assert.equal(
+    buildE2eWebServerConfig({
+      E2E_WEB_PORT: '43123',
+      E2E_PROD_SMOKE: '1',
+      BUN_OPTIONS: options,
+    }).bunOptions,
+    options,
+  );
+  assert.equal(
+    buildE2eWebServerConfig({ E2E_WEB_PORT: '43123', E2E_PROD_SMOKE: '1' }).bunOptions,
+    undefined,
+  );
+}
+
+// Next reformats runtime flags into NODE_OPTIONS before forking its server.
+// Verify the Bun-specific mode and quoted caller options survive that boundary.
+{
+  const dir = mkdtempSync(path.join(tmpdir(), 'timeline-e2e-bun-memory-'));
+  try {
+    const child = path.join(dir, 'child.cjs');
+    const parent = path.join(dir, 'parent.cjs');
+    const nextUtils = createRequire(import.meta.url).resolve('next/dist/server/lib/utils.js');
+    writeFileSync(child, 'console.log(JSON.stringify(process.execArgv)); process.disconnect();');
+    writeFileSync(
+      parent,
+      `const { fork } = require('node:child_process');
+const { getParsedNodeOptions, formatNodeOptions } = require(${JSON.stringify(nextUtils)});
+const { nodeOptions, execArgv } = formatNodeOptions(getParsedNodeOptions());
+const child = fork(${JSON.stringify(child)}, [], {
+  execArgv, env: { ...process.env, NODE_OPTIONS: nodeOptions }, stdio: 'inherit',
+});
+child.on('exit', code => process.exit(code ?? 1));`,
+    );
+    const result = spawnSync(process.execPath, [parent], {
+      cwd: dir,
+      env: {
+        PATH: process.env.PATH,
+        BUN_OPTIONS: buildE2eWebServerConfig({
+          E2E_WEB_PORT: '43123',
+          BUN_OPTIONS: '--user-agent="Timeline E2E"',
+        }).bunOptions,
+      },
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args: unknown = JSON.parse(result.stdout.trim());
+    assert.ok(Array.isArray(args));
+    assert.ok(args.includes('--smol'));
+    assert.ok(args.includes('--user-agent="Timeline E2E"'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 {
