@@ -103,8 +103,7 @@ export function buildE2eWebServerConfig(input: Env = process.env): {
   const port = normalizedWebPort(input.E2E_WEB_PORT);
   return {
     baseURL: input.E2E_BASE_URL ?? `http://localhost:${port}`,
-    command:
-      input.E2E_WEB_SERVER_COMMAND ?? `bun run --cwd apps/web dev -H 127.0.0.1 -p ${port}`,
+    command: input.E2E_WEB_SERVER_COMMAND ?? `bun run --cwd apps/web dev -H 127.0.0.1 -p ${port}`,
   };
 }
 
