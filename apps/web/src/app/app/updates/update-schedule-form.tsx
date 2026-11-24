@@ -231,6 +231,11 @@ export function UpdateScheduleForm({
               Save and enable
             </Button>
           ) : null}
+          {state.retryScheduling ? (
+            <Button type="submit" name="intent" value="retry" variant="outline" disabled={pending}>
+              Retry scheduling
+            </Button>
+          ) : null}
           <Button
             type="submit"
             name="intent"

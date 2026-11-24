@@ -3,6 +3,7 @@
 import { isBillingAdmissionError, runWithBillingContext } from '@timeline/shared/billing';
 import {
   getDigestPreference,
+  nextScheduledUpdateWindow,
   previewWorkspaceUpdate,
   presentSavedViewDigest,
   scheduledUpdateWindow,
@@ -15,6 +16,8 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const optionsSchema = z.object({
   cadence: z.enum(['daily', 'weekly']),
@@ -32,6 +35,7 @@ export interface UpdateFormState {
     links?: { id?: string; label: string; href: string }[];
   };
   saved?: boolean;
+  retryScheduling?: boolean;
 }
 
 export async function updateSchedule(
@@ -132,7 +136,7 @@ export async function updateSchedule(
     }
   }
 
-  if (intent !== 'pause' && intent !== 'resume' && intent !== 'save') {
+  if (intent !== 'pause' && intent !== 'resume' && intent !== 'save' && intent !== 'retry') {
     return { error: 'Choose an update action.' };
   }
   if (
@@ -153,15 +157,62 @@ export async function updateSchedule(
   ) {
     return { error: 'Follow at least one saved view before choosing this scope.' };
   }
-  await scope.updatePreferences.save({
-    enabled: intent !== 'pause',
-    hour: preference.hour,
-    timezone: preference.timezone,
-    ...(intent === 'save' && options ? { options } : {}),
-  });
-  await safeMarkOnboardingStep(scope, 'daily_digest');
+  if (intent !== 'retry') {
+    try {
+      await scope.updatePreferences.save({
+        enabled: intent !== 'pause',
+        hour: preference.hour,
+        timezone: preference.timezone,
+        ...(intent === 'save' && options ? { options } : {}),
+      });
+    } catch (error) {
+      reportCaughtError(error, { surface: 'server_action', operation: 'save_update_schedule' });
+      return {
+        preview: previous.preview,
+        error: 'Could not confirm the schedule was saved. Try again.',
+      };
+    }
+  }
+
+  let retryScheduling = false;
+  if (intent !== 'pause') {
+    try {
+      const saved = intent === 'retry' ? preference : await getDigestPreference(identity);
+      if (saved.enabled && saved.options) {
+        const now = new Date();
+        const { timezone, hour, options: savedOptions } = saved;
+        const current = scheduledUpdateWindow(now, timezone, hour, savedOptions.cadence);
+        const next = nextScheduledUpdateWindow(current.end, timezone, hour, savedOptions.cadence);
+        const queue = await requireRedisQueue();
+        await queue.enqueueDailyDigestRecipientJob(
+          {
+            kind: 'recipient',
+            teamId: identity.teamId,
+            userId: identity.userId,
+            email: session.user.email ?? '',
+            windowStart: next.start.toISOString(),
+            windowEnd: next.end.toISOString(),
+          },
+          next.end.getTime() - now.getTime(),
+        );
+      } else if (intent === 'retry') {
+        return { error: 'There is no active update schedule to retry.' };
+      }
+    } catch (error) {
+      reportCaughtError(error, { surface: 'server_action', operation: 'queue_update_schedule' });
+      retryScheduling = true;
+    }
+  }
+
+  if (intent !== 'retry') await safeMarkOnboardingStep(scope, 'daily_digest');
   revalidatePath('/app/updates');
   revalidatePath('/app');
   revalidatePath('/app/team');
-  return { saved: true };
+  return retryScheduling
+    ? {
+        saved: true,
+        retryScheduling,
+        error: 'The next update could not be queued. Retry scheduling.',
+      }
+    : { saved: true };
 }
