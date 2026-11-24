@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import type { VerificationState } from '@/app/verify-email/[token]/confirmation';
 import { resolveAuthContinuation } from '@/lib/auth-continuation';
-import { selectedPlanCallback } from '@/lib/auth-redirect';
+import { isGuestInvitePath, selectedPlanCallback } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { verifyEmailToken } from '@/lib/email-verification';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -38,7 +38,13 @@ export async function confirmEmailVerification(
     return {
       status,
       continuationExpired: Boolean(continuation && !destination),
-      next: destination ? 'agent' : callback ? 'billing' : 'dashboard',
+      next: destination
+        ? isGuestInvitePath(destination)
+          ? 'guest'
+          : 'agent'
+        : callback
+          ? 'billing'
+          : 'dashboard',
       href: callback ? `/sign-in?callbackUrl=${encodeURIComponent(callback)}` : '/app',
     };
   });

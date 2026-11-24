@@ -4,7 +4,11 @@ import { paidSignupPlan, type PaidSignupPlanId } from '@/lib/signup-plan';
 const APP_FALLBACK = '/app';
 const SIGN_IN_CONTINUATION_PATH = '/sign-in/continue';
 const AUTH_PATHS = ['/sign-in', '/sign-up', SIGN_IN_CONTINUATION_PATH];
-const GUEST_INVITE_PATH = /^\/guest\/[0-9a-f-]{36}\/invite\/[A-Za-z0-9_-]{43}$/;
+export function isGuestInvitePath(path: string): boolean {
+  return /^\/guest\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\/invite\/[A-Za-z0-9_-]{43}$/.test(
+    path,
+  );
+}
 
 function inviteRedirectPath(token: string): string {
   return `/accept-invite/${encodeURIComponent(token)}`;
@@ -34,7 +38,7 @@ export function signedInAuthRedirect(input: {
   const callbackPath = safeSameOriginPath(input.callbackUrl, APP_FALLBACK, {
     blockedPaths: AUTH_PATHS,
   });
-  if (callbackPath.startsWith('/accept-invite/') || GUEST_INVITE_PATH.test(callbackPath))
+  if (callbackPath.startsWith('/accept-invite/') || isGuestInvitePath(callbackPath))
     return callbackPath;
   if (input.pendingInviteToken) return inviteRedirectPath(input.pendingInviteToken);
   return callbackPath;
@@ -96,7 +100,7 @@ export function postSignupDestination(input: {
 }): string {
   if (input.inviteToken || input.event === 'invite_accepted') return '/app';
   const guestInvite = safeSameOriginPath(input.callbackUrl, '', { blockedPaths: AUTH_PATHS });
-  if (GUEST_INVITE_PATH.test(guestInvite)) return guestInvite;
+  if (isGuestInvitePath(guestInvite)) return guestInvite;
   // callbackUrl is intentionally ignored for solo account_created — Welcome
   // always runs first; plan intent stays in the cookie, MCP parking elsewhere.
   return '/onboarding';

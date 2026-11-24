@@ -1269,6 +1269,9 @@
   "apps/web/src/lib/approval-preview.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/guest-access-errors.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/auth-continuation.test.ts": {
     "group": "integration"
   },

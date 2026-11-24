@@ -794,7 +794,10 @@ export async function withAiMetering<T>(
     throw err;
   }
   const usd = finish ? openRouterUsdCostFromFinishEvent(finish) : 0;
-  const providerValue = jsonSafeProviderValue(value);
+  // Guest answers are only delivered after the caller rechecks sharing. Keep
+  // settlement recoverable without retaining or replaying the answer.
+  const providerValue =
+    ctx.operationClass === 'guest_ask' ? undefined : jsonSafeProviderValue(value);
   await billing.patchReservationMetadata(operationId, {
     provider_completed: true,
     worker_settlement_pending: true,

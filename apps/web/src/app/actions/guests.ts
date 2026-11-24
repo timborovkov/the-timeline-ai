@@ -9,10 +9,15 @@ import { z } from 'zod';
 
 import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { withGuestErrorRedaction } from '@/lib/guest-access-errors';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { getSiteUrl } from '@/lib/site-url';
 
 const id = z.uuid();
+
+function runGuestAction<T>(operation: string, callback: () => Promise<T>): Promise<T> {
+  return runSentryServerAction(operation, () => withGuestErrorRedaction(callback));
+}
 
 async function guestScope(teamId: string) {
   const { session, impersonation } = await getRequestIdentity();
@@ -30,19 +35,19 @@ export async function inviteGuest(
   _previous: GuestInviteResult,
   form: FormData,
 ): Promise<GuestInviteResult> {
-  return runSentryServerAction('guest_invite_create', async () => {
+  return runGuestAction('guest_invite_create', async () => {
     const email = z.email().max(254).safeParse(form.get('email'));
     if (!email.success) return { error: 'Enter a valid email address.' };
     const { scope } = await guestScope(teamId);
     const result = await scope.invite(email.data);
-    if (!result) return { error: 'This person already has guest access.' };
+    if (!result) return { error: 'This person already has access to the workspace.' };
     revalidatePath('/app/team/guests');
     return { url: `${getSiteUrl()}/guest/${teamId}/invite/${result.token}` };
   });
 }
 
 export async function acceptGuest(teamId: string, token: string): Promise<void> {
-  await runSentryServerAction('guest_invite_accept', async () => {
+  await runGuestAction('guest_invite_accept', async () => {
     const parsed = z
       .string()
       .regex(/^[A-Za-z0-9_-]{43}$/)
@@ -54,7 +59,7 @@ export async function acceptGuest(teamId: string, token: string): Promise<void> 
 }
 
 export async function changeGuestGrant(teamId: string, form: FormData): Promise<void> {
-  await runSentryServerAction('guest_share_change', async () => {
+  await runGuestAction('guest_share_change', async () => {
     const invitation = id.parse(form.get('invitation'));
     const { scope } = await guestScope(teamId);
     const operation = z
@@ -121,7 +126,7 @@ export async function askGuestWork(
   _previous: GuestAnswer,
   form: FormData,
 ): Promise<GuestAnswer> {
-  return runSentryServerAction('guest_ask', async () => {
+  return runGuestAction('guest_ask', async () => {
     const parsed = z.string().trim().min(1).max(2000).safeParse(form.get('question'));
     if (!parsed.success) return { error: 'Enter a question of up to 2,000 characters.' };
     const { scope, userId } = await guestScope(teamId);

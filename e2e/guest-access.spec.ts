@@ -49,7 +49,7 @@ test('guests can open explicit notes and record snapshots until revocation', asy
     await expect(settings.getByLabel('Invitation link')).toBeVisible();
     const inviteLink = new URL(await settings.getByLabel('Invitation link').inputValue());
     await expect(settings.getByRole('option', { name: privateText })).toHaveCount(0);
-    await settings.getByLabel('Workspace note').selectOption(allowed);
+    await settings.getByLabel('Team-visible captured note').selectOption(allowed);
     await settings.getByRole('button', { name: 'Share note', exact: true }).click();
     await expect(settings.getByRole('button', { name: 'Unshare', exact: true })).toBeVisible();
 

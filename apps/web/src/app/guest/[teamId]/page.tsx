@@ -15,6 +15,7 @@ import { readAppRegion } from '@/lib/app-region';
 import { getRequestIdentity } from '@/lib/auth';
 import { hasCurrentLegalSession } from '@/lib/auth.config';
 import { db } from '@/lib/db';
+import { withGuestErrorRedaction } from '@/lib/guest-access-errors';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { sensitiveLinkReferrerPolicy } from '@/lib/sensitive-links';
 
@@ -197,7 +198,9 @@ export default async function SharedWorkPage({
     redirect(`/legal/accept?returnTo=${destination}`);
   }
 
-  const work = await loadSharedWork(teamId, session.user.id, selection, query);
+  const work = await withGuestErrorRedaction(() =>
+    loadSharedWork(teamId, session.user.id, selection, query),
+  );
   if (!work) notFound();
   const region = await readAppRegion('guest');
   return (

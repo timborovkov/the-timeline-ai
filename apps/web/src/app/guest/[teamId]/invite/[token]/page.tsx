@@ -1,3 +1,5 @@
+import { users } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -5,11 +7,13 @@ import { z } from 'zod';
 
 import { acceptGuest } from '@/app/actions/guests';
 import { AuthShell } from '@/components/auth-shell';
-import { AcceptGuestForm } from '@/components/guest-forms';
+import { AcceptGuestForm, GuestVerificationForm } from '@/components/guest-forms';
 import { SignOutButton } from '@/components/sign-out-button';
 import { Button } from '@/components/ui/button';
 import { getRequestIdentity } from '@/lib/auth';
 import { hasCurrentLegalSession } from '@/lib/auth.config';
+import { db } from '@/lib/db';
+import { withGuestErrorRedaction } from '@/lib/guest-access-errors';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { sensitiveLinkReferrerPolicy } from '@/lib/sensitive-links';
 
@@ -37,6 +41,17 @@ export default async function GuestInvitationPage({
   if (session?.user && isLegalPublicationReady() && !hasCurrentLegalSession(session.user)) {
     redirect(`/legal/accept?returnTo=${encodeURIComponent(invite)}`);
   }
+  const userId = session?.user.id;
+  const [account] = userId
+    ? await withGuestErrorRedaction(() =>
+        db
+          .select({ verifiedAt: users.emailVerified })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1),
+      )
+    : [];
+
   return (
     <AuthShell
       title="Guest invitation"
@@ -50,7 +65,11 @@ export default async function GuestInvitationPage({
               invitation. If the link has expired, ask for a fresh one.
             </p>
           ) : null}
-          <AcceptGuestForm action={acceptGuest.bind(null, teamId, token)} />
+          {account?.verifiedAt ? (
+            <AcceptGuestForm action={acceptGuest.bind(null, teamId, token)} />
+          ) : (
+            <GuestVerificationForm invitation={invite} />
+          )}
           <SignOutButton label="Switch account" callbackUrl={invite} />
         </>
       ) : (

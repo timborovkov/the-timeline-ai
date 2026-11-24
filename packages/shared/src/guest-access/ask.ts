@@ -94,5 +94,11 @@ export async function askSharedWork(
     const ref = refs[index - 1];
     return ref ? [{ ...ref, reference: index }] : [];
   });
-  return { answer: result.object.answer, citations };
+  return {
+    answer:
+      citations.length > 0
+        ? result.object.answer
+        : 'I couldn’t find enough support in the shared work to answer that.',
+    citations,
+  };
 }

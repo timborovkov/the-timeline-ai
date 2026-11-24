@@ -71,17 +71,21 @@ function teamVisibleApproval(field: string, value: SQL, snapshot: SQL) {
     THEN ${approval} -> 'outputIds' ELSE '[]'::jsonb END`;
   const refs = sql`CASE WHEN jsonb_typeof(${output.sourceRefs}) = 'array'
     THEN ${output.sourceRefs} ELSE '[]'::jsonb END`;
-  const proposed = sql`${output.payload} -> 'proposed_payload' -> ${field}`;
-  const dateOnly =
+  const proposed = sql`${output.payload} -> 'proposed_payload' ->> ${field}`;
+  const matchesValue =
     field === 'dueAt'
-      ? sql`OR (right(${value}, 14) = 'T00:00:00.000Z' AND ${proposed} = to_jsonb(left(${value}, 10)))`
-      : sql.empty();
+      ? sql`CASE
+          WHEN right(${value}, 14) = 'T00:00:00.000Z' AND ${proposed} = left(${value}, 10) THEN true
+          WHEN ${proposed} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND pg_input_is_valid(${proposed}, 'timestamp with time zone')
+            THEN date_trunc('milliseconds', (${proposed})::timestamptz) = (${value})::timestamptz
+          END`
+      : sql`${proposed} = ${value}`;
 
   // Every output attached to the actual write must still have team-readable
   // sources. A different proposal with the same value cannot justify it.
   return sql`(
     SELECT count(DISTINCT ${output.id}) = jsonb_array_length(${outputIds})
-      AND bool_or(${proposed} = to_jsonb(${value}) ${dateOnly})
+      AND bool_or(${matchesValue})
     FROM ${outbox}
     INNER JOIN ${output}
       ON ${output.teamId} = ${outbox.teamId} AND ${output.id} = ${outbox.outputId}
@@ -142,6 +146,7 @@ function visibleRecordField(field: string, createKey: string, value: SQL) {
       )
       AND (
         (${objectChanges.actorKind} = 'user'
+          AND ${objectChanges.undoesChangeId} IS NULL
           AND ${snapshot} ->> 'actor_user_id' = ${rawEvents.authorUserId}::text
           AND ${rawEvents.authorUserId} = ${objectChanges.actorUserId})
         OR (${objectChanges.actorKind} = 'agent' AND ${teamVisibleApproval(field, value, snapshot)})
@@ -170,9 +175,9 @@ export function createGuestAccessScope(
       );
   }
 
-  async function requireRealPrincipal() {
+  async function requireRealPrincipal(reader = db) {
     if (await operatorContext()) throw new Error('Guest access requires the real account');
-    await assertActivePrincipal(db, teamId, userId);
+    await assertActivePrincipal(reader, teamId, userId);
   }
 
   async function requireManager() {
@@ -180,9 +185,14 @@ export function createGuestAccessScope(
     await requireAdmin();
   }
 
-  async function readSources(ids?: string[], query?: string, limit = 100) {
+  async function readSources(
+    ids?: string[],
+    query?: string,
+    limit = 100,
+    reader: Pick<Db, 'select'> = db,
+  ) {
     if (ids?.length === 0) return [];
-    return db
+    return reader
       .select({
         id: rawEvents.id,
         contentText: rawEvents.contentText,
@@ -219,7 +229,12 @@ export function createGuestAccessScope(
       .limit(limit);
   }
 
-  async function readRecords(ids?: string[], query?: string, limit = 100) {
+  async function readRecords(
+    ids?: string[],
+    query?: string,
+    limit = 100,
+    reader: Pick<Db, 'select'> = db,
+  ) {
     if (ids?.length === 0) return [];
     const liveTitle = visibleRecordField(
       'canonicalName',
@@ -238,7 +253,7 @@ export function createGuestAccessScope(
       'due_at',
       sql`to_char(${entities.dueAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     );
-    return db
+    return reader
       .select({
         id: guestRecordShares.recordId,
         live: guestRecordShares.live,
@@ -413,20 +428,28 @@ export function createGuestAccessScope(
       const normalized = question.trim();
       if (!normalized || normalized.length > 2000) return null;
       return askSharedWork(db, teamId, userId, normalized, async (refs) => {
-        await requireRealPrincipal();
         const selection = refs ?? (selected ? [selected] : undefined);
-        const [notes, records] = await Promise.all([
-          readSources(
-            selection?.filter((ref) => ref.kind === 'note').map((ref) => ref.id),
-            undefined,
-            EVIDENCE_LIMIT,
-          ),
-          readRecords(
-            selection?.filter((ref) => ref.kind === 'record').map((ref) => ref.id),
-            undefined,
-            EVIDENCE_LIMIT,
-          ),
-        ]);
+        // Notes and records must be current at the same authorization snapshot.
+        const [notes, records] = await db.transaction(
+          async (tx) => {
+            await requireRealPrincipal(tx as unknown as Db);
+            return [
+              await readSources(
+                selection?.filter((ref) => ref.kind === 'note').map((ref) => ref.id),
+                undefined,
+                EVIDENCE_LIMIT,
+                tx,
+              ),
+              await readRecords(
+                selection?.filter((ref) => ref.kind === 'record').map((ref) => ref.id),
+                undefined,
+                EVIDENCE_LIMIT,
+                tx,
+              ),
+            ];
+          },
+          { isolationLevel: 'repeatable read', accessMode: 'read only' },
+        );
         return [
           ...notes.flatMap((note) =>
             note.contentText
@@ -494,6 +517,20 @@ export function createGuestAccessScope(
     async invite(email: string) {
       await requireManager();
       const normalized = email.trim().toLowerCase();
+      const [member] = await db
+        .select({ userId: teamMembers.userId })
+        .from(teamMembers)
+        .innerJoin(users, eq(users.id, teamMembers.userId))
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            isNull(teamMembers.removedAt),
+            sql`lower(${users.email}) = ${normalized}`,
+          ),
+        )
+        .limit(1);
+      if (member) return null;
+
       const token = randomBytes(32).toString('base64url');
       const now = new Date();
       const values = {

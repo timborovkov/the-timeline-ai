@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react';
 
+import { resendEmailVerificationAction } from '@/app/actions/auth';
 import { askGuestWork, inviteGuest, type GuestSelection } from '@/app/actions/guests';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,24 @@ export function AcceptGuestForm({ action }: { action: () => Promise<void> }) {
       <Button type="submit" disabled={!hydrated}>
         Accept guest access
       </Button>
+    </form>
+  );
+}
+
+export function GuestVerificationForm({ invitation }: { invitation: string }) {
+  const [state, action, pending] = useActionState(resendEmailVerificationAction, {});
+  const hydrated = useHydrated();
+  return (
+    <form action={action} className="space-y-2">
+      <p>Verify your email address before accepting guest access.</p>
+      <input type="hidden" name="callbackUrl" value={invitation} />
+      <Button type="submit" variant="outline" disabled={!hydrated || pending}>
+        {pending ? 'Sending…' : 'Resend verification email'}
+      </Button>
+      <div aria-live="polite">
+        {state.ok ? <p>Check your email for a verification link.</p> : null}
+        {state.error ? <p>{state.error}</p> : null}
+      </div>
     </form>
   );
 }

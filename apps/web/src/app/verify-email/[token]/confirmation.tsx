@@ -11,7 +11,7 @@ export type VerificationState =
   | {
       status: 'verified';
       continuationExpired: boolean;
-      next: 'agent' | 'billing' | 'dashboard';
+      next: 'agent' | 'billing' | 'dashboard' | 'guest';
       href: string;
     };
 
@@ -55,13 +55,14 @@ export function EmailVerificationConfirmation({
       agent: 'Continue connecting your agent',
       billing: 'Continue to billing',
       dashboard: 'Open dashboard',
+      guest: 'Return to guest invitation',
     }[verification.next];
     return (
       <AuthShell
         title="Email verified"
         subtitle={
           verification.continuationExpired
-            ? 'Your agent connection request expired. Restart authorization from your agent to connect it.'
+            ? 'Your previous request expired. Reopen the original invitation or restart the request.'
             : 'This email address is now confirmed for your Timeline account.'
         }
       >

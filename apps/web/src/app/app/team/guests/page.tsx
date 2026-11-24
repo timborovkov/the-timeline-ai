@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { withGuestErrorRedaction } from '@/lib/guest-access-errors';
 
 export default async function GuestSettingsPage({
   searchParams,
@@ -26,11 +27,10 @@ export default async function GuestSettingsPage({
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active || (active.role !== 'owner' && active.role !== 'admin')) notFound();
   const query = z.string().trim().max(200).catch('').parse(q);
-  const { invites, notes, grants, records, recordShares } = await withTeam(
-    db,
-    active.teamId,
-    session.user.id,
-  ).guests.settings(query);
+  const scope = withTeam(db, active.teamId, session.user.id).guests;
+  const { invites, notes, grants, records, recordShares } = await withGuestErrorRedaction(() =>
+    scope.settings(query),
+  );
   const change = changeGuestGrant.bind(null, active.teamId);
   return (
     <div className="space-y-6">
@@ -95,7 +95,7 @@ export default async function GuestSettingsPage({
               <form action={change} className="flex flex-wrap items-end gap-3">
                 <input type="hidden" name="invitation" value={invite.id} />
                 <label className="block min-w-0 max-w-full">
-                  <span className="block text-sm font-medium">Workspace note</span>
+                  <span className="block text-sm font-medium">Team-visible captured note</span>
                   <select
                     className="max-w-full rounded-md border bg-background p-2 text-sm"
                     name="source"

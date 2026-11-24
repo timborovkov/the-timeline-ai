@@ -2,6 +2,7 @@ import {
   agentSuggestionItems,
   billingFreeGrants,
   billingUsageLedger,
+  billingUsageReservations,
   chatSessions,
   entities,
   facts,
@@ -127,70 +128,65 @@ beforeEach(async () => {
   });
 });
 
+async function applyAutomaticTaskChange(status: 'todo' | 'done', taskId?: string) {
+  const host = withTeam(db, team, admin);
+  const worker = withTeam(db, team, '00000000-0000-0000-0000-000000000000', {
+    skipMembershipCheck: true,
+    recordMaintenanceWorker: true,
+  }).suggestions;
+  const rawEventId = crypto.randomUUID();
+  const quote = taskId ? 'Broken login page is done.' : 'The login page is broken.';
+  const occurredAt = new Date(taskId ? '2026-12-02T10:00:00Z' : '2026-12-01T10:00:00Z');
+  await db.insert(rawEvents).values({
+    id: rawEventId,
+    teamId: team,
+    source: 'slack',
+    visibility: 'team',
+    contentText: quote,
+    occurredAt,
+  });
+  const bundle = await host.suggestions.createOrMergeSuggestionBundle({
+    source: 'background',
+    title: quote,
+    dedupeKey: rawEventId,
+    metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+    evidence: [{ rawEventId, quote }],
+    items: [
+      {
+        operation: taskId ? 'update' : 'create',
+        targetKind: 'task',
+        ...(taskId
+          ? {
+              targetId: taskId,
+              taskFieldEvidence: {
+                status: { rawEventId, assertedAt: occurredAt.toISOString(), value: status },
+              },
+            }
+          : {}),
+        title: quote,
+        dedupeKey: rawEventId,
+        proposedPayload: taskId ? { status } : { canonicalName: 'Broken login page', status },
+        evidenceRawEventIds: [rawEventId],
+      },
+    ],
+  });
+  const [item] = bundle.items;
+  if (!item) throw new Error('Expected task proposal');
+  expect(await worker.applyPendingRecordMaintenance()).toBe(1);
+  const [applied] = await db
+    .select()
+    .from(agentSuggestionItems)
+    .where(eq(agentSuggestionItems.id, item.id));
+  expect(applied).toMatchObject({ status: 'accepted', resolvedByUserId: null });
+  expect(applied?.metadata).toMatchObject({ approval_decision: 'automatic' });
+  if (!applied?.resultId) throw new Error('Expected applied task');
+  return { taskId: applied.resultId, itemId: item.id, rawEventId };
+}
+
 describe('guest access', () => {
   it('shares automatically maintained task fields using the same current revision and rejects unaudited reversion', async () => {
     const host = withTeam(db, team, admin);
-    const worker = withTeam(db, team, '00000000-0000-0000-0000-000000000000', {
-      skipMembershipCheck: true,
-      recordMaintenanceWorker: true,
-    }).suggestions;
-    async function propose(
-      operation: 'create' | 'update',
-      payload: Record<string, unknown>,
-      targetId?: string,
-    ) {
-      const rawEventId = crypto.randomUUID();
-      const quote =
-        operation === 'create' ? 'The login page is broken.' : 'Broken login page is done.';
-      const occurredAt = new Date(
-        operation === 'create' ? '2026-12-01T10:00:00Z' : '2026-12-02T10:00:00Z',
-      );
-      await db.insert(rawEvents).values({
-        id: rawEventId,
-        teamId: team,
-        source: 'slack',
-        visibility: 'team',
-        contentText: quote,
-        occurredAt,
-      });
-      const bundle = await host.suggestions.createOrMergeSuggestionBundle({
-        source: 'background',
-        title: quote,
-        dedupeKey: rawEventId,
-        metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
-        evidence: [{ rawEventId, quote }],
-        items: [
-          {
-            operation,
-            targetKind: 'task',
-            ...(targetId ? { targetId } : {}),
-            title: quote,
-            dedupeKey: rawEventId,
-            proposedPayload: payload,
-            evidenceRawEventIds: [rawEventId],
-            ...(operation === 'update'
-              ? {
-                  taskFieldEvidence: {
-                    status: { rawEventId, assertedAt: occurredAt.toISOString(), value: 'done' },
-                  },
-                }
-              : {}),
-          },
-        ],
-      });
-      const [item] = bundle.items;
-      if (!item) throw new Error('Expected task proposal');
-      expect(await worker.applyPendingRecordMaintenance()).toBe(1);
-      const [applied] = await db
-        .select()
-        .from(agentSuggestionItems)
-        .where(eq(agentSuggestionItems.id, item.id));
-      expect(applied).toMatchObject({ status: 'accepted', resolvedByUserId: null });
-      expect(applied?.metadata).toMatchObject({ approval_decision: 'automatic' });
-      if (!applied?.resultId) throw new Error('Expected applied task');
-      return applied.resultId;
-    }
-    const taskId = await propose('create', { canonicalName: 'Broken login page', status: 'todo' });
+    const { taskId } = await applyAutomaticTaskChange('todo');
     const invitation = await host.guests.invite('guest@example.test');
     if (!invitation) throw new Error('Expected guest invitation');
     await host.guests.shareRecord(invitation.id, taskId);
@@ -199,7 +195,7 @@ describe('guest access', () => {
     expect(await reader.listRecords(taskId)).toMatchObject([
       { title: 'Broken login page', status: 'todo' },
     ]);
-    await propose('update', { status: 'done' }, taskId);
+    await applyAutomaticTaskChange('done', taskId);
     expect(await reader.listRecords(taskId)).toMatchObject([
       { title: 'Broken login page', status: 'done' },
     ]);
@@ -229,6 +225,29 @@ describe('guest access', () => {
     expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'open' }]);
     // A later unproven write must not reuse the previous public proof for the same value.
     await db.update(entities).set({ status: 'done' }).where(eq(entities.id, taskId));
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: null }]);
+  });
+
+  it('keeps an undone task field hidden when its original evidence was restricted', async () => {
+    const host = withTeam(db, team, admin);
+    const { taskId, rawEventId } = await applyAutomaticTaskChange('todo');
+    const invitation = await host.guests.invite('guest@example.test');
+    if (!invitation) throw new Error('Expected guest invitation');
+    await host.guests.shareRecord(invitation.id, taskId);
+    const reader = withTeam(db, team, guest).guests;
+    expect(await reader.accept(invitation.token)).toBe(true);
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'todo' }]);
+
+    const { itemId } = await applyAutomaticTaskChange('done', taskId);
+    await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, rawEventId));
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'done' }]);
+
+    expect(await host.suggestions.undoAutomaticTaskUpdate(itemId)).toBe(true);
+    const [task] = await db
+      .select({ status: entities.status })
+      .from(entities)
+      .where(eq(entities.id, taskId));
+    expect(task?.status).toBe('todo');
     expect(await reader.listRecords(taskId)).toMatchObject([{ status: null }]);
   });
 
@@ -423,6 +442,7 @@ describe('guest access', () => {
     });
     const promoted = withTeam(db, team, guest);
     await expect(promoted.requireMembership()).resolves.toBe('member');
+    expect(await owner.guests.invite('GUEST@example.test')).toBeNull();
     expect(await promoted.guests.listSources(shared)).toEqual([]);
     await db
       .update(teamMembers)
@@ -702,7 +722,7 @@ describe('guest access', () => {
       expect(await host.suggestions.acceptSuggestionItem(item.id)).toBe(true);
     }
 
-    const due = '2026-12-03T00:00:00.000Z';
+    const due = '2026-12-03T00:00:00Z';
     await applyUpdate([shared], 'Apply team task change', {
       canonicalName: 'Public task milestone',
       status: 'done',
@@ -713,7 +733,7 @@ describe('guest access', () => {
     expect(publicTask).toMatchObject({
       title: 'Public task milestone',
       status: 'done',
-      dueDate: due,
+      dueDate: new Date(due).toISOString(),
       body: null,
     });
     expect(JSON.stringify(publicTask)).not.toContain(admin);
@@ -832,6 +852,7 @@ describe('guest access', () => {
     };
     resetEnvForTests();
     let selectedOnly = false;
+    let invalidCitation = false;
     let revoke = false;
     const synthetic = async (
       _url: Parameters<typeof fetch>[0],
@@ -871,7 +892,7 @@ describe('guest access', () => {
               role: 'assistant',
               content: JSON.stringify({
                 answer: 'Synthetic answer.',
-                citations: selectedOnly ? [1, 9000] : [2, 1, 2, 9000],
+                citations: invalidCitation ? [9000] : selectedOnly ? [1, 9000] : [2, 1, 2, 9000],
               }),
             },
             finish_reason: 'stop',
@@ -896,13 +917,30 @@ describe('guest access', () => {
         answer: 'Synthetic answer.',
         citations: [{ ...note, reference: 1 }],
       });
+      invalidCitation = true;
+      expect(await recipient.ask('Describe this note.', note)).toEqual({
+        answer: 'I couldn’t find enough support in the shared work to answer that.',
+        citations: [],
+      });
+      invalidCitation = false;
       selectedOnly = false;
       revoke = true;
       expect(await recipient.ask('Summarize shared work.')).toBeNull();
-      expect(provider).toHaveBeenCalledTimes(3);
+      expect(provider).toHaveBeenCalledTimes(4);
       expect(await db.select().from(chatSessions)).toHaveLength(0);
+      const reservations = await db.select().from(billingUsageReservations);
+      expect(reservations).toHaveLength(4);
+      for (const reservation of reservations) {
+        expect(reservation).toMatchObject({
+          teamId: team,
+          actorUserId: guest,
+          state: 'settled',
+          metadata: { provider_completed: true, openrouter_usd: 0.001 },
+        });
+        expect(reservation.metadata).not.toHaveProperty('provider_value');
+      }
       const usage = await db.select().from(billingUsageLedger);
-      expect(usage).toHaveLength(3);
+      expect(usage).toHaveLength(4);
       for (const entry of usage) {
         expect(entry).toMatchObject({
           teamId: team,
