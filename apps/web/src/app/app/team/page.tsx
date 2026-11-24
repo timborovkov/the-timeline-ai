@@ -64,7 +64,7 @@ export const metadata: Metadata = {
 };
 
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
-type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
+type TeamTimezoneSettings = Pick<ComponentProps<typeof TeamTimezoneForm>, 'timezone'>;
 
 const SETTINGS_ITEMS = [
   { value: 'general', label: 'General' },
@@ -387,7 +387,10 @@ function TeamPreferencesSettings({
       ) : null}
       {isAdmin ? (
         <SettingsSection title="Team timezone">
-          <TeamTimezoneForm {...timezoneSettings} />
+          <TeamTimezoneForm
+            {...timezoneSettings}
+            options={timezoneOptions(timezoneSettings.timezone)}
+          />
         </SettingsSection>
       ) : null}
     </>

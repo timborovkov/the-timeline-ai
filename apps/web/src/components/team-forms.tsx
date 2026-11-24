@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useActionState, useMemo, useSyncExternalStore } from 'react';
+import { type ReactNode, useActionState, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
@@ -34,7 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
+import { DEFAULT_TIMEZONE } from '@/lib/timezones';
 
 function unsubscribeTimezone(): void {
   return undefined;
@@ -190,9 +190,8 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   );
 }
 
-export function TeamTimezoneForm({ timezone }: { timezone: string }) {
+export function TeamTimezoneForm({ timezone, options }: { timezone: string; options: string[] }) {
   const [state, action] = useActionState<TeamTimezoneState, FormData>(updateTeamTimezoneAction, {});
-  const options = useMemo(() => timezoneOptions(timezone), [timezone]);
   const timezoneError = state.error === 'Choose a valid timezone' ? state.error : undefined;
   return (
     <form action={action} className="space-y-3">
