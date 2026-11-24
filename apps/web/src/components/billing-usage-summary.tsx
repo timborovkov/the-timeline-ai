@@ -108,6 +108,7 @@ export function BillingUsageSummary({
   allowancesOnly = false,
   usdCharges = false,
   allowanceBalances,
+  recordedCharges,
   comped = false,
   spendCapCents,
   meteredSpendCents,
@@ -122,6 +123,7 @@ export function BillingUsageSummary({
   allowancesOnly?: boolean;
   usdCharges?: boolean;
   allowanceBalances?: BillingPresentation['allowances'];
+  recordedCharges?: BillingPresentation['charges']['amounts'];
   comped?: boolean;
   spendCapCents?: number;
   meteredSpendCents?: number;
@@ -138,6 +140,9 @@ export function BillingUsageSummary({
 }) {
   const { locale } = useRegionalFormat();
   const liveStorage = capacityUsage.find((item) => item.kind === 'storage_gb');
+  const usdMeterCharges = recordedCharges?.currency
+    ? recordedCharges.currency === 'USD'
+    : usdCharges;
   const rows = (Object.keys(METER_LABELS) as BillingMeterId[])
     .map((meter) => {
       const row = meters[meter];
@@ -147,7 +152,10 @@ export function BillingUsageSummary({
           ? liveStorage.used
           : (balance?.used ?? row?.nativeUnits ?? 0);
       const customerChargeCents =
-        row?.capEligibleChargeCents ?? (planId === 'free' ? 0 : (row?.customerChargeCents ?? 0));
+        recordedCharges === undefined
+          ? (row?.capEligibleChargeCents ??
+            (planId === 'free' ? 0 : (row?.customerChargeCents ?? 0)))
+          : (recordedCharges?.invoiceCentsByMeter[meter] ?? 0);
       const active = nativeUnits > 0 || customerChargeCents > 0;
       const showMeter =
         (ALLOWANCE_METERS as readonly string[]).includes(meter) ||
@@ -175,7 +183,7 @@ export function BillingUsageSummary({
       {layout === 'cards' ? (
         <UsageMeterCards
           rows={rows}
-          usdCharges={usdCharges}
+          usdCharges={usdMeterCharges}
           comped={comped}
           includedActiveMembers={includedActiveMembers}
           additionalMemberCents={additionalMemberCents}
@@ -231,11 +239,11 @@ export function BillingUsageSummary({
                   <span className="text-right font-mono text-fg">
                     {allowancesOnly && row.allowance !== null
                       ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits), locale)
-                      : comped
+                      : comped || recordedCharges === null
                         ? '—'
                         : formatDisplayCurrency(
                             row.customerChargeCents,
-                            usdCharges ? 'USD' : 'EUR',
+                            usdMeterCharges ? 'USD' : 'EUR',
                             locale,
                             true,
                           )}

@@ -64,6 +64,8 @@ describe('billing presentation', () => {
     });
     expect(result.calendarPeriod.start).toBe('2026-10-01T00:00:00.000Z');
     expect(result.charges.amounts).toEqual({
+      currency: 'EUR',
+      invoiceCentsByMeter: { ai: 500, member_days: 100 },
       usageCents: 2000,
       creditAppliedCents: 1500,
       usageAfterCreditCents: 500,
@@ -250,6 +252,78 @@ it('preserves recorded paid charges after moving to Free or a comp', () => {
     const result = summary({ account: { ...account, ...next }, settlements: [paid] });
     expect(result.charges.amounts?.totalCents).toBe(500);
   }
+});
+
+it('uses admitted USD seat pricing for earlier usage after a downgrade to Free', () => {
+  const paid = row({
+    reservationMetadata: {
+      team_seat_pricing_at_admission: { includedUsageCents: 3600, subscriptionId: 'seat' },
+    },
+  });
+  const result = summary({
+    account: { ...account, planId: 'free', includedDiscountRemainingCents: 0 },
+    settlements: [
+      paid,
+      row({
+        metadata: { usage_at: now.toISOString(), discount_cents: 0, invoice_cents: 0 },
+      }),
+    ],
+  });
+  expect(result.charges.amounts).toMatchObject({
+    currency: 'USD',
+    invoiceCentsByMeter: { ai: 500 },
+    totalCents: 500,
+  });
+});
+
+it('refuses to add recorded charges in different currencies', () => {
+  const seatCharge = row({
+    metadata: {
+      usage_at: now.toISOString(),
+      discount_cents: 0,
+      invoice_cents: 500,
+      presentation_currency: 'USD',
+    },
+  });
+  const result = summary({
+    account: { ...account, planId: 'free', includedDiscountRemainingCents: 0 },
+    settlements: [row(), seatCharge],
+  });
+  expect(result.charges).toMatchObject({ status: 'unavailable', amounts: null });
+});
+
+it('does not use a retryable parent reservation to price an older failed attempt', () => {
+  const olderAttempt = row({
+    metadata: { ...row().metadata, failed_attempt_for: 'parent' },
+    reservationMetadata: { team_seat_pricing_at_admission: { subscriptionId: 'new-seat' } },
+  });
+  expect(recordedChargesForPeriod([olderAttempt], period)).toBeNull();
+  expect(
+    recordedChargesForPeriod(
+      [
+        row({
+          ...olderAttempt,
+          metadata: { ...olderAttempt.metadata, presentation_currency: 'EUR' },
+        }),
+      ],
+      period,
+    )?.currency,
+  ).toBe('EUR');
+});
+
+it('shows only verified Enterprise usage currency after a plan change', () => {
+  const metadata = { ...row().metadata, pricing_plan_id: 'enterprise' };
+  const accountAfterDowngrade = { ...account, planId: 'free' as const };
+  for (const unverified of [metadata, { ...metadata, presentation_currency: null }]) {
+    expect(
+      summary({ account: accountAfterDowngrade, settlements: [row({ metadata: unverified })] })
+        .charges.amounts,
+    ).toBeNull();
+  }
+  const verified = row({ metadata: { ...metadata, presentation_currency: 'USD' } });
+  expect(
+    summary({ account: accountAfterDowngrade, settlements: [verified] }).charges.amounts,
+  ).toMatchObject({ currency: 'USD', totalCents: 500 });
 });
 
 it('marks incomplete recorded history unavailable instead of contradicting consumed credit', () => {

@@ -451,6 +451,7 @@ describe('team lifecycle', () => {
         usage_at: '2026-10-31T23:59:30Z',
         usage_ended_at: '2026-10-31T23:59:50Z',
         pricing_plan_id: 'team',
+        presentation_currency: 'USD',
         polar_ingest_status: 'sent',
         private_content: 'Erase this content',
         credentials: 'Erase this secret',
@@ -459,7 +460,7 @@ describe('team lifecycle', () => {
     const before = await db.select().from(schema.billingUsageLedger);
     const period = { start: '2026-10-01T00:00:00Z', end: '2026-11-01T00:00:00Z' };
     const expected = recordedChargesForPeriod(before, period);
-    expect(expected?.totalCents).toBe(2);
+    expect(expected).toMatchObject({ totalCents: 2, currency: 'USD' });
     await beginTeamDeletion(db, actor, {
       teamId: TEAM,
       confirmation: 'First',

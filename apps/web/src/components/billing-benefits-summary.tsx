@@ -279,7 +279,7 @@ function BillingRecordedCharges({
         <p className="text-sm">
           {charges.status === 'updating'
             ? 'Updating billing period'
-            : 'Unavailable — some recorded usage cannot be assigned reliably to this billing period.'}
+            : 'Unavailable. Recorded charges cannot be totaled reliably for this period.'}
         </p>
       ) : (
         <RecordedChargeAmounts credit={credit} amounts={charges.amounts} summary={summary} />
@@ -304,13 +304,14 @@ function RecordedChargeAmounts({
   amounts: RecordedCharges;
   summary: BillingPresentation;
 }) {
+  const usd = amounts.currency ? amounts.currency === 'USD' : summary.paidSeats !== undefined;
   return (
     <dl className="space-y-2 text-sm">
       {credit.totalCents > 0 || amounts.creditAppliedCents > 0 ? (
         <div className="flex flex-wrap justify-between gap-2">
           <dt>Usage before included credit</dt>
           <dd>
-            <Money usd={summary.paidSeats !== undefined} value={amounts.usageCents} />
+            <Money usd={usd} value={amounts.usageCents} />
           </dd>
         </div>
       ) : null}
@@ -318,7 +319,7 @@ function RecordedChargeAmounts({
         <div className="flex flex-wrap justify-between gap-2">
           <dt>Included credit applied</dt>
           <dd>
-            −<Money usd={summary.paidSeats !== undefined} value={amounts.creditAppliedCents} />
+            −<Money usd={usd} value={amounts.creditAppliedCents} />
           </dd>
         </div>
       ) : null}
@@ -331,19 +332,19 @@ function RecordedChargeAmounts({
               : 'Usage after included credit'}
         </dt>
         <dd>
-          <Money usd={summary.paidSeats !== undefined} value={amounts.usageAfterCreditCents} />
+          <Money usd={usd} value={amounts.usageAfterCreditCents} />
         </dd>
       </div>
       <div className="flex flex-wrap justify-between gap-2">
         <dt>Extra members</dt>
         <dd>
-          <Money usd={summary.paidSeats !== undefined} value={amounts.extraMemberCents} />
+          <Money usd={usd} value={amounts.extraMemberCents} />
         </dd>
       </div>
       <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-2 font-medium">
         <dt>Total recorded usage charges</dt>
         <dd>
-          <Money usd={summary.paidSeats !== undefined} value={amounts.totalCents} />
+          <Money usd={usd} value={amounts.totalCents} />
         </dd>
       </div>
     </dl>
@@ -404,6 +405,8 @@ export function BillingUsageOverview({
 }
 
 function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
+  const { amounts } = summary.charges;
+  const usd = amounts?.currency ? amounts.currency === 'USD' : summary.paidSeats !== undefined;
   return (
     <dl className="grid gap-6 sm:grid-cols-3">
       <div className="space-y-2">
@@ -424,11 +427,8 @@ function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
             summary.charges.status === 'available' ? 'font-mono text-xl' : 'text-base text-fg-muted'
           }
         >
-          {summary.charges.status === 'available' && summary.charges.amounts ? (
-            <Money
-              usd={summary.paidSeats !== undefined}
-              value={summary.charges.amounts.totalCents}
-            />
+          {summary.charges.status === 'available' && amounts ? (
+            <Money usd={usd} value={amounts.totalCents} />
           ) : summary.charges.status === 'updating' ? (
             'Updating'
           ) : (

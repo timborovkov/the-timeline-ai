@@ -15,7 +15,12 @@ import {
   PLAN_CATALOG,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
-import { withTeamBillingIdentity } from '#src/billing/customer-identity.js';
+import {
+  activatedPolarSubscriptionId,
+  assertStoredPolarIdentity,
+  readOutstandingTeamCheckouts,
+  withTeamBillingIdentity,
+} from '#src/billing/customer-identity.js';
 import {
   activePolarDiscountId,
   activePriceOverride,
@@ -32,6 +37,7 @@ import {
   type TeamPriceOverride,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
+import { createPolarBillingProvider, polarProductIdForPlan } from '#src/billing/polar.js';
 import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 import { getEnv } from '#src/env.js';
 import {
@@ -217,12 +223,20 @@ export async function assignCompedPlan(input: {
           'An Enterprise checkout already started payment. Wait for that subscription to finish before assigning a comp.',
         stillOpen: 'An Enterprise checkout is still payable. Close it before assigning a comp.',
       },
+      (ids) => readTerminatedEnterpriseCheckouts(input, createPolarBillingProvider(), ids),
     );
   }
   const closedCheckoutIds = new Set(outstandingCheckoutIds);
   const polarSubscriptionId = await input.db.transaction(async (tx) => {
     const db = tx as unknown as Db;
     await requirePlatformAdmin(db, input.actor);
+    // Serialize with Team/Enterprise checkout creation before taking the account lock.
+    const [workspace] = await db
+      .select({ lifecycleWork: teams.lifecycleWork })
+      .from(teams)
+      .where(eq(teams.id, input.teamId))
+      .for('no key update');
+    if (!workspace) throw new BillingOperatorError('Team not found.');
     const existing = await lockAccount(db, input.teamId);
     const stillOpen = Object.keys(
       readPendingEnterpriseTerms(existing.pendingEnterpriseTerms).byCheckoutId,
@@ -231,6 +245,39 @@ export async function assignCompedPlan(input: {
       throw new BillingOperatorError(
         'An Enterprise checkout opened while the comp was being saved. Close it before assigning a comp.',
       );
+    }
+    const checkoutIds = workspace.lifecycleWork.pendingCheckoutIds ?? [];
+    const recordedIds = checkoutIds.filter((id) => !closedCheckoutIds.has(id));
+    const teamProductId = polarProductIdForPlan('team');
+    if (recordedIds.length > 0 || (existing.polarCustomerId && teamProductId)) {
+      let pending: Awaited<ReturnType<typeof readOutstandingTeamCheckouts>>;
+      try {
+        const provider = createPolarBillingProvider();
+        if (!provider) throw new Error('Polar is not configured');
+        const customerId = await assertStoredPolarIdentity(db, input.teamId, provider);
+        pending = await readOutstandingTeamCheckouts({
+          provider,
+          customerId,
+          productId: teamProductId,
+          recordedIds,
+          currentSubscriptionId: activatedPolarSubscriptionId(existing),
+        });
+      } catch {
+        throw new BillingOperatorError(
+          'Polar checkout state could not be verified. Retry before assigning a comp.',
+        );
+      }
+      if (pending.ids.length > 0) {
+        throw new BillingOperatorError(
+          'A billing checkout is still payable or awaiting confirmation. Wait until it expires or completes before assigning a comp.',
+        );
+      }
+    }
+    if (checkoutIds.length > 0) {
+      await db
+        .update(teams)
+        .set({ lifecycleWork: { ...workspace.lifecycleWork, pendingCheckoutIds: [] } })
+        .where(eq(teams.id, input.teamId));
     }
     if (existing.polarSubscriptionId && !input.cancelPolarSubscription) {
       throw new BillingOperatorError(
@@ -768,14 +815,19 @@ export async function startEnterpriseCheckout(input: {
     };
   });
 
-  await closeOutstandingEnterpriseCheckouts(input.provider, prepared.outstandingCheckoutIds, {
-    unreachable:
-      'An earlier Enterprise checkout could not be closed in Polar. Retry before opening another link.',
-    paymentStarted:
-      'An earlier Enterprise checkout already started payment. Wait for the subscription webhook before opening another link.',
-    stillOpen:
-      'An earlier Enterprise checkout is still open in Polar. Wait until it expires before opening another link.',
-  });
+  await closeOutstandingEnterpriseCheckouts(
+    input.provider,
+    prepared.outstandingCheckoutIds,
+    {
+      unreachable:
+        'An earlier Enterprise checkout could not be closed in Polar. Retry before opening another link.',
+      paymentStarted:
+        'An earlier Enterprise checkout already started payment. Wait for the subscription webhook before opening another link.',
+      stillOpen:
+        'An earlier Enterprise checkout is still open in Polar. Wait until it expires before opening another link.',
+    },
+    (ids) => readTerminatedEnterpriseCheckouts(input, input.provider, ids),
+  );
 
   let checkout: { url: string; id: string };
   try {
@@ -786,9 +838,19 @@ export async function startEnterpriseCheckout(input: {
         userId: prepared.ownerUserId,
         provider: input.provider,
       },
-      async (identity, { db, account: current, recordCheckout }) => {
+      async (identity, { db, account: current, recordCheckout, hasPendingCheckouts }) => {
         await requirePlatformAdmin(db, input.actor);
         assertEnterpriseCheckoutAllowed(current);
+        if (
+          await hasPendingCheckouts({
+            teamProductId: polarProductIdForPlan('team'),
+            expiredIds: prepared.outstandingCheckoutIds,
+          })
+        ) {
+          throw new BillingOperatorError(
+            'A billing checkout is still payable or awaiting confirmation. Wait until it expires or completes before opening an Enterprise checkout.',
+          );
+        }
         const merged = assertPriceOverride({
           ...(activePriceOverride(current, now) ?? {}),
           ...override,
@@ -866,8 +928,9 @@ async function closeOutstandingEnterpriseCheckouts(
   provider: { expireCheckout(checkoutId: string): Promise<ExpireCheckoutResult> },
   checkoutIds: readonly string[],
   failure: { unreachable: string; paymentStarted: string; stillOpen: string },
+  readTerminatedCheckouts: (ids: readonly string[]) => Promise<readonly string[]>,
 ): Promise<void> {
-  let paymentStarted = false;
+  const paymentStarted: string[] = [];
   let stillOpen = false;
   for (const checkoutId of checkoutIds) {
     let result: ExpireCheckoutResult;
@@ -877,11 +940,35 @@ async function closeOutstandingEnterpriseCheckouts(
       if (error instanceof BillingOperatorError) throw error;
       throw new BillingOperatorError(failure.unreachable);
     }
-    if (result === 'already_paid') paymentStarted = true;
+    if (result === 'already_paid') paymentStarted.push(checkoutId);
     if (result === 'still_open') stillOpen = true;
   }
-  if (paymentStarted) throw new BillingOperatorError(failure.paymentStarted);
+  if (paymentStarted.length > 0) {
+    let terminated: readonly string[];
+    try {
+      terminated = await readTerminatedCheckouts(paymentStarted);
+    } catch {
+      throw new BillingOperatorError(failure.unreachable);
+    }
+    if (paymentStarted.some((id) => !terminated.includes(id))) {
+      throw new BillingOperatorError(failure.paymentStarted);
+    }
+  }
   if (stillOpen) throw new BillingOperatorError(failure.stillOpen);
+}
+
+async function readTerminatedEnterpriseCheckouts(
+  input: { db: Db; teamId: string },
+  provider: BillingProvider | null,
+  checkoutIds: readonly string[],
+): Promise<readonly string[]> {
+  if (!provider?.listReconciledCheckoutIds) return [];
+  const customerId = await assertStoredPolarIdentity(input.db, input.teamId, provider);
+  return provider.listReconciledCheckoutIds({
+    customerId,
+    checkoutIds,
+    currentSubscriptionId: null,
+  });
 }
 
 function assertEnterpriseCheckoutAllowed(existing: {

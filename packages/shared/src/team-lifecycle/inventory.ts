@@ -12,6 +12,7 @@ export const RETAINED_USAGE_METADATA_FIELDS = [
   'period_segments',
   'presentation_comped',
   'presentation_chargeable',
+  'presentation_currency',
   'polar_ingest_status',
   'polar_ingest_name',
   'polar_ingest_units',
