@@ -63,7 +63,7 @@ The October 2026 sandbox accepted `email: null` while retaining a legacy custome
 
 ## Verification and release
 
-The [24 November sandbox evidence](../evidence/polar-team-quotes-2026-11-24.md) covers unpaid quotes and local signed samples. Paid confirmation, invoice and tax verification, and delivery from a registered endpoint remain open.
+The [sandbox signing check](../evidence/polar-team-quotes-2026-11-24.md) covers local signed samples. The [USD catalog cutover evidence](../evidence/polar-usd-catalog-2026-11-24.md) covers unpaid quotes in both environments. Paid confirmation, invoice and tax verification, and delivery from a registered endpoint remain open.
 
 Before enabling `BILLING_CHARGES_ENABLED`, retain dated evidence for the deployed revision, environment and customer mapping, registered webhook delivery, member portal isolation and revocation, cancellation and recovery, and a shadow-billing month reconciling invoice totals. Use synthetic authorized accounts.
 
