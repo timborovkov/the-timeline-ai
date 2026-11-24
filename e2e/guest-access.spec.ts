@@ -74,6 +74,36 @@ test('guests can open explicit notes and record snapshots until revocation', asy
     await reader.getByRole('link', { name: 'All shared work' }).click();
     await reader.getByRole('link', { name: 'Open note' }).click();
     await expect(reader.getByLabel('Question about this note')).toBeVisible();
+    await settings.getByLabel('Live task or project').selectOption(record);
+    await settings.getByRole('button', { name: 'Share live record' }).click();
+    await expect(settings.getByRole('button', { name: 'Unshare live record' })).toBeVisible();
+    const liveTitle = 'Updated title from a team-visible edit';
+    await withE2eDataTransaction(async (sql) => {
+      const event = randomUUID();
+      const audit = JSON.stringify({
+        entity_id: record,
+        source_snapshot_kind: 'system_direct_write_event',
+        source_snapshot: {
+          entity_id: record,
+          raw_event_id: event,
+          event_kind: 'object_update',
+          actor_kind: 'user',
+          actor_user_id: e2eUsers.owner.id,
+          changes: [
+            { field: 'canonicalName', newValue: liveTitle },
+            { field: 'status', newValue: 'active' },
+          ],
+        },
+      });
+      await sql`UPDATE entities SET canonical_name = ${liveTitle}, status = 'active' WHERE id = ${record}`;
+      await sql`INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility, source_metadata)
+        VALUES (${event}, ${e2eTeam.id}, ${e2eUsers.owner.id}, 'system', 'Synthetic record update', 'team', ${audit}::jsonb)`;
+    });
+    await reader.goto(`/guest/${e2eTeam.id}?record=${record}`);
+    await expect(reader.getByRole('heading', { name: liveTitle })).toBeVisible();
+    await expect(reader.getByText('active', { exact: true })).toBeVisible();
+    await expect(reader.getByText(publishedText)).toHaveCount(0);
+    await reader.goto(`/guest/${e2eTeam.id}?note=${allowed}`);
     const evidenceDir = process.env.GUEST_UI_EVIDENCE_DIR;
     if (evidenceDir) {
       await settings.reload();
@@ -92,6 +122,7 @@ test('guests can open explicit notes and record snapshots until revocation', asy
     await expect(reader.getByLabel('Question about this note')).toHaveCount(0);
     await reader.goto(`/guest/${e2eTeam.id}?record=${record}`);
     await expect(reader.getByText(publishedText)).toHaveCount(0);
+    await expect(reader.getByText(liveTitle)).toHaveCount(0);
   } finally {
     await Promise.all([owner.close(), guest.close()]);
   }

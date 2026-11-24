@@ -7,7 +7,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { assertTeamMemberSeatCapacity, reconcileTeamPaidSeats } from '#src/billing/capacity.js';
 import { TEAM_MONTHLY_USAGE_PER_SEAT_CENTS } from '#src/billing/catalog.js';
 import * as polar from '#src/billing/polar.js';
-import { createFakeBillingProvider, type BillingProvider, type TeamSeatSubscription } from '#src/billing/provider.js';
+import {
+  createFakeBillingProvider,
+  type BillingProvider,
+  type TeamSeatSubscription,
+} from '#src/billing/provider.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -38,8 +42,17 @@ beforeEach(async () => {
   await db.insert(teamMembers).values({ teamId, userId: owner, role: 'owner' });
   const fake = createFakeBillingProvider({ teamIdentity: true });
   if (!fake.identity) throw new Error('Expected fixture identity');
-  const customer = await fake.identity.create(teamId, 'Paid guests', { userId: owner, email: 'owner@example.test' });
-  subscription = { id: 'sub_fixture', customerId: customer.id, productId: 'prod_fixture', seats: 1, pendingSeats: null };
+  const customer = await fake.identity.create(teamId, 'Paid guests', {
+    userId: owner,
+    email: 'owner@example.test',
+  });
+  subscription = {
+    id: 'sub_fixture',
+    customerId: customer.id,
+    productId: 'prod_fixture',
+    seats: 1,
+    pendingSeats: null,
+  };
   updates = [];
   failProvider = false;
   provider = {
@@ -48,17 +61,32 @@ beforeEach(async () => {
     updateTeamSeatSubscription(input) {
       if (failProvider) return Promise.reject(new Error('Synthetic provider unavailable'));
       updates.push({ seats: input.seats, proration: input.proration });
-      if (input.proration === 'invoice') subscription = { ...subscription, seats: input.seats, pendingSeats: null };
-      else subscription = { ...subscription, pendingSeats: input.seats === subscription.seats ? null : input.seats };
+      if (input.proration === 'invoice')
+        subscription = { ...subscription, seats: input.seats, pendingSeats: null };
+      else
+        subscription = {
+          ...subscription,
+          pendingSeats: input.seats === subscription.seats ? null : input.seats,
+        };
       return Promise.resolve({ ...subscription });
     },
   };
   providerSpy = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
   await db.insert(teamBillingAccounts).values({
-    teamId, planId: 'team', billingState: 'team_active', shadowBilling: false,
-    polarCustomerId: customer.id, polarOrganizationId: 'org-synthetic', polarServer: 'sandbox',
-    polarSubscriptionId: subscription.id, polarProductId: subscription.productId,
-    teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: TEAM_MONTHLY_USAGE_PER_SEAT_CENTS },
+    teamId,
+    planId: 'team',
+    billingState: 'team_active',
+    shadowBilling: false,
+    polarCustomerId: customer.id,
+    polarOrganizationId: 'org-synthetic',
+    polarServer: 'sandbox',
+    polarSubscriptionId: subscription.id,
+    polarProductId: subscription.productId,
+    teamSeatTerms: {
+      paidSeats: 1,
+      highWaterSeats: 1,
+      includedUsageCents: TEAM_MONTHLY_USAGE_PER_SEAT_CENTS,
+    },
     includedDiscountRemainingCents: TEAM_MONTHLY_USAGE_PER_SEAT_CENTS,
   });
 });
@@ -71,13 +99,22 @@ async function inviteGuest() {
 
 async function activateMember() {
   await db.transaction(async (tx) => {
-    await assertTeamMemberSeatCapacity({ db: tx as unknown as Db, teamId, additionalSeats: 1, includePendingInvites: false, acquirePaidSeat: true });
+    await assertTeamMemberSeatCapacity({
+      db: tx as unknown as Db,
+      teamId,
+      additionalSeats: 1,
+      includePendingInvites: false,
+      acquirePaidSeat: true,
+    });
     await tx.insert(teamMembers).values({ teamId, userId: guest, role: 'member' });
   });
 }
 
 async function remainingAllowance() {
-  const [account] = await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, teamId));
+  const [account] = await db
+    .select()
+    .from(teamBillingAccounts)
+    .where(eq(teamBillingAccounts.teamId, teamId));
   return account?.includedDiscountRemainingCents;
 }
 
@@ -92,11 +129,19 @@ describe('paid membership and restricted guests', () => {
     expect(await withTeam(db, teamId, guest).guests.hasAccess()).toBe(false);
     // A provider response is not the confirmed billing webhook that grants usage.
     expect(await remainingAllowance()).toBe(TEAM_MONTHLY_USAGE_PER_SEAT_CENTS);
-    await db.update(teamMembers).set({ removedAt: new Date() }).where(eq(teamMembers.userId, guest));
+    await db
+      .update(teamMembers)
+      .set({ removedAt: new Date() })
+      .where(eq(teamMembers.userId, guest));
     await reconcileTeamPaidSeats({ db, teamId, provider });
     expect(updates.at(-1)).toEqual({ seats: 1, proration: 'next_period' });
     await db.transaction(async (tx) => {
-      await assertTeamMemberSeatCapacity({ db: tx as unknown as Db, teamId, includePendingInvites: false, acquirePaidSeat: true });
+      await assertTeamMemberSeatCapacity({
+        db: tx as unknown as Db,
+        teamId,
+        includePendingInvites: false,
+        acquirePaidSeat: true,
+      });
       await tx.update(teamMembers).set({ removedAt: null }).where(eq(teamMembers.userId, guest));
     });
     expect(updates.at(-1)).toEqual({ seats: 2, proration: 'next_period' });

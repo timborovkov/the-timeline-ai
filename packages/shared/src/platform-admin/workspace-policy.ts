@@ -49,6 +49,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'guests.listSources': accountRead,
   'guests.listRecords': accountRead,
   'guests.publishRecord': accountWrite,
+  'guests.shareRecord': accountWrite,
   'guests.unshareRecord': accountWrite,
   requireMembership: read,
   requireTeamMember: read,

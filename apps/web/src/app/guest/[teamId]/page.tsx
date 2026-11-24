@@ -82,6 +82,36 @@ function SharedWorkNavigation({
   );
 }
 
+function SharedRecordDetails({
+  record,
+}: {
+  record: NonNullable<Awaited<ReturnType<typeof loadSharedWork>>>['records'][number];
+}) {
+  if (!record.live) return <p className="whitespace-pre-wrap break-words">{record.body}</p>;
+  return (
+    <dl className="space-y-2 text-sm">
+      {record.status ? (
+        <div className="flex gap-2">
+          <dt>Status</dt>
+          <dd>{record.status}</dd>
+        </div>
+      ) : null}
+      {record.dueDate ? (
+        <div className="flex gap-2">
+          <dt>Due</dt>
+          <dd>
+            <time dateTime={record.dueDate}>{record.dueDate.slice(0, 10)}</time>
+          </dd>
+        </div>
+      ) : null}
+      <div className="text-muted-foreground">
+        <dt className="sr-only">Field visibility</dt>
+        <dd>Fields may be omitted when unset or unsupported by team-visible evidence.</dd>
+      </div>
+    </dl>
+  );
+}
+
 function SharedWorkItems({
   path,
   detail,
@@ -93,11 +123,13 @@ function SharedWorkItems({
       {records.map((item) => (
         <article key={item.id} className="space-y-3 rounded-lg border p-4">
           <div>
-            <p className="text-sm text-muted-foreground">Published snapshot</p>
+            <p className="text-sm text-muted-foreground">
+              {item.live ? `Live ${item.type}` : 'Published snapshot'}
+            </p>
             <h2 className="font-semibold">{item.title}</h2>
           </div>
           {detail ? (
-            <p className="whitespace-pre-wrap break-words">{item.body}</p>
+            <SharedRecordDetails record={item} />
           ) : (
             <a className="underline" href={`${path}?record=${item.id}`}>
               Open record

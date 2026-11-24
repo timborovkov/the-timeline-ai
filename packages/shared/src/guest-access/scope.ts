@@ -7,6 +7,7 @@ import {
   guestRecordShares,
   guestSourceGrants,
   rawEvents,
+  reconciliationOutputs,
   teamMembers,
   users,
 } from '@timeline/db';
@@ -22,6 +23,7 @@ import {
   notExists,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 
 import { askSharedWork, type GuestEvidenceRef } from '#src/guest-access/ask.js';
@@ -52,6 +54,71 @@ function shareableRecord() {
     isNull(entities.archivedAt),
     isNull(entities.mergedIntoId),
   );
+}
+
+// A grant opens the record, not its source graph. Exact current values need
+// matching, still team-visible provenance from a direct edit or accepted proposal.
+function humanRecordField(field: string, createKey: string, value: SQL) {
+  const metadata = rawEvents.sourceMetadata;
+  const snapshot = sql`${metadata} -> 'source_snapshot'`;
+  return sql`EXISTS (
+    SELECT 1 FROM ${rawEvents}
+    WHERE ${rawEvents.teamId} = ${entities.teamId}
+      AND ${metadata} ->> 'entity_id' = ${entities.id}::text
+      AND ${metadata} ->> 'source_snapshot_kind' = 'system_direct_write_event'
+      AND ${rawEvents.source} = 'system'
+      AND ${rawEvents.visibility} = 'team'
+      AND ${rawEventIsActive()}
+      AND ${snapshot} ->> 'entity_id' = ${entities.id}::text
+      AND ${snapshot} ->> 'raw_event_id' = ${rawEvents.id}::text
+      AND ${snapshot} ->> 'actor_kind' = 'user'
+      AND ${snapshot} ->> 'actor_user_id' = ${rawEvents.authorUserId}::text
+      AND (
+        (${snapshot} ->> 'event_kind' = 'object_create' AND ${snapshot} -> ${createKey} = to_jsonb(${value}))
+        OR (${snapshot} ->> 'event_kind' = 'object_update'
+          AND ${snapshot} -> 'changes' @> jsonb_build_array(jsonb_build_object('field', ${field}::text, 'newValue', to_jsonb(${value}))))
+      )
+  )`;
+}
+
+function appliedRecordField(field: string, value: SQL) {
+  const output = reconciliationOutputs;
+  const refs = sql`CASE WHEN jsonb_typeof(${output.sourceRefs}) = 'array' THEN ${output.sourceRefs} ELSE '[]'::jsonb END`;
+  const proposed = sql`${output.payload} -> 'proposed_payload' -> ${field}`;
+  const dateOnly =
+    field === 'dueAt'
+      ? sql`OR (right(${value}, 14) = 'T00:00:00.000Z' AND ${proposed} = to_jsonb(left(${value}, 10)))`
+      : sql.empty();
+  return sql`EXISTS (
+    SELECT 1 FROM ${output}
+    WHERE ${output.teamId} = ${entities.teamId}
+      AND COALESCE(${output.payload} ->> 'projection_result_id', ${output.targetId}::text) = ${entities.id}::text
+      AND ${output.outputKind} = 'approval_bundle'
+      AND ${output.operation} IN ('create', 'update')
+      AND ${output.targetKind} IN ('task', 'object')
+      AND ${output.status} = 'applied'
+      AND ${output.visibility} = 'team'
+      AND ${output.visibilityFloor} = 'team'
+      AND (${proposed} = to_jsonb(${value}) ${dateOnly})
+      AND jsonb_array_length(${refs}) > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(${refs}) AS source_ref
+        WHERE NOT EXISTS (
+          SELECT 1 FROM ${rawEvents}
+          WHERE ${rawEvents.teamId} = ${output.teamId}
+            AND ${rawEvents.id} = CASE
+              WHEN (source_ref ->> 'rawEventId') ~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+              THEN (source_ref ->> 'rawEventId')::uuid END
+            AND ${rawEvents.visibility} = 'team'
+            AND ${rawEventIsActive()}
+        )
+      )
+  )`;
+}
+
+function visibleRecordField(field: string, createKey: string, value: SQL) {
+  return sql`CASE WHEN (${humanRecordField(field, createKey, value)}
+    OR ${appliedRecordField(field, value)}) THEN ${value} END`;
 }
 
 const EVIDENCE_LIMIT = 12;
@@ -126,11 +193,32 @@ export function createGuestAccessScope(
 
   async function readRecords(ids?: string[], query?: string, limit = 100) {
     if (ids?.length === 0) return [];
+    const liveTitle = visibleRecordField(
+      'canonicalName',
+      'canonical_name',
+      sql`${entities.canonicalName}`,
+    );
+    const title = sql<string>`CASE WHEN ${guestRecordShares.live}
+      THEN COALESCE(${liveTitle}, CASE WHEN ${entities.type} = 'task' THEN 'Shared task' ELSE 'Shared project' END)
+      ELSE ${guestRecordShares.title} END`;
+    const body = sql<
+      string | null
+    >`CASE WHEN NOT ${guestRecordShares.live} THEN ${guestRecordShares.body} END`;
+    const status = visibleRecordField('status', 'status', sql`${entities.status}`);
+    const dueDate = visibleRecordField(
+      'dueAt',
+      'due_at',
+      sql`to_char(${entities.dueAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+    );
     return db
       .select({
         id: guestRecordShares.recordId,
-        title: guestRecordShares.title,
-        body: guestRecordShares.body,
+        live: guestRecordShares.live,
+        type: entities.type,
+        title,
+        body,
+        status: sql<string | null>`CASE WHEN ${guestRecordShares.live} THEN ${status} END`,
+        dueDate: sql<string | null>`CASE WHEN ${guestRecordShares.live} THEN ${dueDate} END`,
         revision: guestRecordShares.revision,
         publishedAt: guestRecordShares.publishedAt,
       })
@@ -158,7 +246,7 @@ export function createGuestAccessScope(
           shareableRecord(),
           ids ? inArray(guestRecordShares.recordId, ids) : undefined,
           query
-            ? sql`strpos(lower(${guestRecordShares.title} || ' ' || ${guestRecordShares.body}), lower(${query})) > 0`
+            ? sql`strpos(lower(concat_ws(' ', ${title}, ${body})), lower(${query})) > 0`
             : undefined,
         ),
       )
@@ -183,6 +271,35 @@ export function createGuestAccessScope(
       )
       .for('update');
     return invite;
+  }
+
+  async function saveRecordShare(
+    invitationId: string,
+    recordId: string,
+    content: { live: boolean; title: string | null; body: string | null },
+  ) {
+    return db.transaction(async (tx) => {
+      if (!(await lockShareableInvite(tx, invitationId))) return false;
+      const [record] = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.teamId, teamId), eq(entities.id, recordId), shareableRecord()))
+        .for('share');
+      if (!record) return false;
+      const share = { ...content, publishedByUserId: userId };
+      await tx
+        .insert(guestRecordShares)
+        .values({ teamId, invitationId, recordId, ...share })
+        .onConflictDoUpdate({
+          target: [
+            guestRecordShares.teamId,
+            guestRecordShares.invitationId,
+            guestRecordShares.recordId,
+          ],
+          set: { ...share, revision: sql`gen_random_uuid()`, publishedAt: new Date() },
+        });
+      return true;
+    });
   }
 
   return {
@@ -248,9 +365,17 @@ export function createGuestAccessScope(
           .select({
             invitationId: guestRecordShares.invitationId,
             recordId: guestRecordShares.recordId,
-            title: guestRecordShares.title,
+            live: guestRecordShares.live,
+            title: sql<string>`COALESCE(${guestRecordShares.title}, ${entities.canonicalName})`,
           })
           .from(guestRecordShares)
+          .innerJoin(
+            entities,
+            and(
+              eq(entities.teamId, guestRecordShares.teamId),
+              eq(entities.id, guestRecordShares.recordId),
+            ),
+          )
           .where(eq(guestRecordShares.teamId, teamId)),
       ]);
       return { invites, notes, grants, records, recordShares };
@@ -291,8 +416,15 @@ export function createGuestAccessScope(
           ...records.map((record) => ({
             kind: 'record' as const,
             id: record.id,
-            content: `${record.title}
-${record.body}`,
+            content: record.live
+              ? JSON.stringify({
+                  view: 'live record',
+                  type: record.type,
+                  title: record.title,
+                  status: record.status,
+                  dueDate: record.dueDate,
+                })
+              : `Published snapshot\n${record.title}\n${record.body}`,
             revision: record.revision,
             time: record.publishedAt,
           })),
@@ -306,28 +438,16 @@ ${record.body}`,
       const cleanBody = body.trim();
       if (!cleanTitle || cleanTitle.length > 200 || !cleanBody || cleanBody.length > 8000)
         return false;
-      return db.transaction(async (tx) => {
-        if (!(await lockShareableInvite(tx, invitationId))) return false;
-        const [record] = await tx
-          .select({ id: entities.id })
-          .from(entities)
-          .where(and(eq(entities.teamId, teamId), eq(entities.id, recordId), shareableRecord()))
-          .for('share');
-        if (!record) return false;
-        const snapshot = { title: cleanTitle, body: cleanBody, publishedByUserId: userId };
-        await tx
-          .insert(guestRecordShares)
-          .values({ teamId, invitationId, recordId, ...snapshot })
-          .onConflictDoUpdate({
-            target: [
-              guestRecordShares.teamId,
-              guestRecordShares.invitationId,
-              guestRecordShares.recordId,
-            ],
-            set: { ...snapshot, revision: sql`gen_random_uuid()`, publishedAt: new Date() },
-          });
-        return true;
+      return saveRecordShare(invitationId, recordId, {
+        live: false,
+        title: cleanTitle,
+        body: cleanBody,
       });
+    },
+
+    async shareRecord(invitationId: string, recordId: string) {
+      await requireManager();
+      return saveRecordShare(invitationId, recordId, { live: true, title: null, body: null });
     },
 
     async unshareRecord(invitationId: string, recordId: string) {

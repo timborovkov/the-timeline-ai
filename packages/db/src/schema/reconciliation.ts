@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -340,6 +341,12 @@ export const reconciliationOutputs = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index('reconciliation_outputs_guest_record_idx')
+      .on(
+        table.teamId,
+        sql`COALESCE(${table.payload} ->> 'projection_result_id', ${table.targetId}::text)`,
+      )
+      .where(sql`${table.status} = 'applied' AND ${table.outputKind} = 'approval_bundle'`),
     uniqueIndex('reconciliation_outputs_team_dedupe_unq').on(table.teamId, table.dedupeKey),
     index('reconciliation_outputs_team_run_status_idx').on(table.teamId, table.runId, table.status),
     index('reconciliation_outputs_team_cluster_kind_status_idx').on(

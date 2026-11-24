@@ -58,7 +58,7 @@ export async function changeGuestGrant(teamId: string, form: FormData): Promise<
     const invitation = id.parse(form.get('invitation'));
     const { scope } = await guestScope(teamId);
     const operation = z
-      .enum(['share', 'unshare', 'publish-record', 'unshare-record', 'revoke'])
+      .enum(['share', 'unshare', 'share-record', 'publish-record', 'unshare-record', 'revoke'])
       .parse(form.get('operation'));
     switch (operation) {
       case 'revoke':
@@ -71,6 +71,11 @@ export async function changeGuestGrant(teamId: string, form: FormData): Promise<
         break;
       case 'unshare':
         await scope.unshareSource(invitation, id.parse(form.get('source')));
+        break;
+      case 'share-record':
+        if (!(await scope.shareRecord(invitation, id.parse(form.get('record'))))) {
+          redirect('/app/team/guests?error=unavailable');
+        }
         break;
       case 'publish-record': {
         const record = z

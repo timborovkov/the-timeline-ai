@@ -890,6 +890,13 @@
       "when": 1795659400000,
       "tag": "0119_record_maintenance_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1795659500000,
+      "tag": "0120_guest_live_records",
+      "breakpoints": true
     }
   ]
 }

@@ -192,6 +192,36 @@ describe('guest access', () => {
     expect(await reader.accept(invite.token)).toBe(false);
   });
 
+  it('clears live and snapshot record grants before a replacement invite can be accepted', async () => {
+    const manager = withTeam(db, team, admin).guests;
+    const reader = withTeam(db, team, guest).guests;
+    const original = await manager.invite('guest@example.test');
+    if (!original) throw new Error('Expected an invitation');
+    const liveTask = crypto.randomUUID();
+    await db.insert(entities).values({
+      id: liveTask,
+      teamId: team,
+      type: 'task',
+      canonicalName: 'Task with a live grant',
+    });
+    expect(await manager.shareRecord(original.id, liveTask)).toBe(true);
+    expect(await manager.publishRecord(original.id, recordId, 'Snapshot', 'Snapshot text')).toBe(
+      true,
+    );
+    expect(await manager.shareSource(original.id, shared)).toBe(true);
+    expect(await reader.accept(original.token)).toBe(true);
+    expect(await reader.listRecords()).toHaveLength(2);
+    await manager.revoke(original.id);
+    const replacement = await manager.invite('guest@example.test');
+    if (!replacement) throw new Error('Expected a replacement invitation');
+    expect(replacement.id).toBe(original.id);
+    expect(await reader.accept(original.token)).toBe(false);
+    expect(await reader.accept(replacement.token)).toBe(true);
+    expect(await reader.listRecords()).toEqual([]);
+    expect(await reader.listSources()).toEqual([]);
+    expect(await reader.ask('What used to be shared?')).toBeNull();
+  });
+
   it('lets admins find eligible work by literal text without crossing tenant or visibility', async () => {
     const manager = withTeam(db, team, admin).guests;
     const found = await manager.settings('synthetic note');
@@ -265,7 +295,16 @@ describe('guest access', () => {
     const recipient = withTeam(db, team, guest);
     await owner.guests.shareSource(invite.id, shared);
     await owner.guests.publishRecord(invite.id, recordId, 'Project', 'Original publication.');
+    const liveTask = crypto.randomUUID();
+    await db.insert(entities).values({
+      id: liveTask,
+      teamId: team,
+      type: 'task',
+      canonicalName: 'Live task before promotion',
+    });
+    expect(await owner.guests.shareRecord(invite.id, liveTask)).toBe(true);
     await recipient.guests.accept(invite.token);
+    expect(await recipient.guests.listRecords()).toHaveLength(2);
     await expect(
       assertTeamMemberSeatCapacity({ db, teamId: team, additionalSeats: 2 }),
     ).resolves.toBeUndefined();
@@ -367,6 +406,211 @@ describe('guest access', () => {
     await db.update(entities).set({ archivedAt: null }).where(eq(entities.id, recordId));
     expect(await reader.listRecords()).toEqual([]);
     expect(await reader.listSources(shared)).toHaveLength(1);
+  });
+
+  it('reads current live fields and rechecks record and supporting-note visibility before delivery', async () => {
+    const owner = withTeam(db, team, admin).guests;
+    const invite = await owner.invite('guest@example.test');
+    if (!invite) throw new Error('Expected an invitation');
+    const reader = withTeam(db, team, guest).guests;
+    expect(await owner.shareRecord(invite.id, foreignRecordId)).toBe(false);
+    expect(await owner.shareRecord(invite.id, recordId)).toBe(true);
+    expect(await reader.listRecords()).toEqual([]);
+    await reader.accept(invite.token);
+    expect(await reader.listRecords(recordId)).toMatchObject([
+      { title: 'Shared project', status: null, body: null, live: true },
+    ]);
+
+    const auditId = crypto.randomUUID();
+    const dueDate = new Date('2026-12-03T12:30:00.000Z');
+    await db
+      .update(entities)
+      .set({
+        canonicalName: 'Revised launch plan',
+        status: 'active',
+        dueAt: dueDate,
+        ownerUserId: admin,
+      })
+      .where(eq(entities.id, recordId));
+    await db.insert(rawEvents).values({
+      id: auditId,
+      teamId: team,
+      source: 'system',
+      authorUserId: admin,
+      contentText: 'Internal audit text',
+      sourceMetadata: {
+        entity_id: recordId,
+        source_snapshot_kind: 'system_direct_write_event',
+        source_snapshot: {
+          entity_id: recordId,
+          raw_event_id: auditId,
+          event_kind: 'object_update',
+          actor_kind: 'user',
+          actor_user_id: admin,
+          changes: [
+            { field: 'canonicalName', newValue: 'Revised launch plan' },
+            { field: 'status', newValue: 'active' },
+            { field: 'dueAt', newValue: dueDate.toISOString() },
+            { field: 'ownerUserId', newValue: admin },
+          ],
+        },
+      },
+    });
+    expect(await reader.listRecords(undefined, 'Revised launch')).toMatchObject([
+      {
+        id: recordId,
+        title: 'Revised launch plan',
+        status: 'active',
+        dueDate: dueDate.toISOString(),
+      },
+    ]);
+    expect(await reader.listRecords(undefined, 'Internal canonical')).toEqual([]);
+    await owner.shareSource(invite.id, shared);
+
+    const env = process.env;
+    process.env = {
+      ...env,
+      AUTH_SECRET: 'a'.repeat(32),
+      DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+      OPENROUTER_API_KEY: 'synthetic-provider-key',
+      OPENROUTER_BASE_URL: 'https://example.test/v1',
+    };
+    resetEnvForTests();
+    let revokeNote = true;
+    const synthetic = async (
+      _url: Parameters<typeof fetch>[0],
+      input?: Parameters<typeof fetch>[1],
+    ) => {
+      const payload = typeof input?.body === 'string' ? input.body : '';
+      expect(payload).toContain('Revised launch plan');
+      expect(payload).toContain(dueDate.toISOString());
+      expect(payload).not.toContain(admin);
+      expect(payload).not.toContain(secretText);
+      expect(payload).not.toContain('Internal audit text');
+      if (revokeNote) {
+        expect(payload).toContain('Synthetic note');
+        await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, shared));
+      } else {
+        expect(payload).not.toContain('Synthetic note');
+      }
+      return Response.json({
+        id: 'live-guest-answer',
+        object: 'chat.completion',
+        created: 0,
+        model: TIMELINE_MODELS.extraction.id,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({ answer: 'The launch plan is active.', citations: [1] }),
+            },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60, cost: 0.001 },
+      });
+    };
+    const provider = spyOn(globalThis, 'fetch').mockImplementation(
+      Object.assign(synthetic, { preconnect: fetch.preconnect }),
+    );
+    try {
+      expect(await reader.ask('Summarize current shared work.')).toBeNull();
+      revokeNote = false;
+      expect(await reader.ask('What is the project status?', publishedRecord)).toEqual({
+        answer: 'The launch plan is active.',
+        citations: [{ ...publishedRecord, reference: 1 }],
+      });
+      expect(provider).toHaveBeenCalledTimes(2);
+      await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, auditId));
+      expect(await reader.listRecords(recordId)).toMatchObject([
+        { title: 'Shared project', status: null, dueDate: null },
+      ]);
+      expect(await reader.listRecords(undefined, 'Revised launch')).toEqual([]);
+      expect(await reader.listSources(shared)).toEqual([]);
+      const entries = await db.select().from(billingUsageLedger);
+      expect(entries).toHaveLength(2);
+      for (const entry of entries) {
+        expect(entry).toMatchObject({ teamId: team, actorUserId: guest, meterId: 'ai' });
+      }
+    } finally {
+      provider.mockRestore();
+      process.env = env;
+      resetEnvForTests();
+    }
+  });
+
+  it('shows applied task updates with current team evidence and withholds mixed or restricted fields', async () => {
+    const host = withTeam(db, team, admin);
+    const taskId = crypto.randomUUID();
+    await db.insert(entities).values({
+      id: taskId,
+      teamId: team,
+      type: 'task',
+      canonicalName: 'Internal task',
+      status: 'open',
+    });
+    const link = await host.guests.invite('guest@example.test');
+    if (!link) throw new Error('Expected an invitation');
+    await host.guests.shareRecord(link.id, taskId);
+    const reader = withTeam(db, team, guest).guests;
+    expect(await reader.accept(link.token)).toBe(true);
+
+    async function applyUpdate(
+      sourceIds: string[],
+      name: string,
+      proposedPayload: Record<string, unknown>,
+    ) {
+      const bundle = await host.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: name,
+        dedupeKey: name,
+        evidence: sourceIds.map((rawEventId) => ({ rawEventId })),
+        items: [
+          {
+            operation: 'update',
+            targetKind: 'task',
+            targetId: taskId,
+            title: name,
+            dedupeKey: name,
+            proposedPayload,
+            evidenceRawEventIds: sourceIds,
+          },
+        ],
+      });
+      const item = bundle.items[0];
+      if (!item) throw new Error('Expected an approval-backed change');
+      expect(await host.suggestions.acceptSuggestionItem(item.id)).toBe(true);
+    }
+
+    const due = '2026-12-03T00:00:00.000Z';
+    await applyUpdate([shared], 'Apply team task change', {
+      status: 'done',
+      dueAt: due,
+      ownerUserId: admin,
+    });
+    const [publicTask] = await reader.listRecords(taskId);
+    expect(publicTask).toMatchObject({
+      title: 'Shared task',
+      status: 'done',
+      dueDate: due,
+      body: null,
+    });
+    expect(JSON.stringify(publicTask)).not.toContain(admin);
+    expect(JSON.stringify(publicTask)).not.toContain(shared);
+    expect(await reader.listSources(shared)).toEqual([]);
+
+    await applyUpdate([shared, privateSource], 'Apply mixed task change', {
+      dueAt: '2026-12-05T00:00:00.000Z',
+    });
+    const [canonical] = await db
+      .select({ dueAt: entities.dueAt })
+      .from(entities)
+      .where(eq(entities.id, taskId));
+    expect(canonical?.dueAt?.toISOString()).toBe('2026-12-05T00:00:00.000Z');
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: 'done', dueDate: null }]);
+    await db.update(rawEvents).set({ visibility: 'private' }).where(eq(rawEvents.id, shared));
+    expect(await reader.listRecords(taskId)).toMatchObject([{ status: null, dueDate: null }]);
   });
 
   it('meters shared-work questions, fences excerpts and citations, and invalidates in-flight answers', async () => {

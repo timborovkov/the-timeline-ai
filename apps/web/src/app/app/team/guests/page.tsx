@@ -39,7 +39,7 @@ export default async function GuestSettingsPage({
       </Link>
       <PageHeader
         title="Guest access"
-        subtitle="Share individual notes or publish a task or project snapshot for a specific guest."
+        subtitle="Share individual notes and live tasks or projects with a specific guest."
       />
       {error ? <p role="alert">This work or guest invitation is unavailable.</p> : null}
       <InviteGuestForm key={active.teamId} teamId={active.teamId} />
@@ -124,10 +124,37 @@ export default async function GuestSettingsPage({
                 <input type="hidden" name="record" value={share.recordId} />
                 <p className="break-words">{share.title}</p>
                 <Button type="submit" name="operation" value="unshare-record" variant="outline">
-                  Unpublish record
+                  {share.live ? 'Unshare live record' : 'Unpublish record'}
                 </Button>
               </form>
             ))}
+            {records.length ? (
+              <form action={change} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="invitation" value={invite.id} />
+                <label className="block min-w-0 max-w-full">
+                  <span className="block text-sm font-medium">Live task or project</span>
+                  <select
+                    className="max-w-full rounded-md border bg-background p-2 text-sm"
+                    name="record"
+                    required
+                  >
+                    <option value="">Choose a record</option>
+                    {records.map((record) => (
+                      <option key={record.id} value={record.id}>
+                        {record.name} ({record.type})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button type="submit" name="operation" value="share-record">
+                  Share live record
+                </Button>
+                <p className="basis-full text-sm text-muted-foreground">
+                  Guests see eligible title, status and due date as they change. Share supporting
+                  notes separately.
+                </p>
+              </form>
+            ) : null}
             {records.length ? (
               <details className="space-y-3">
                 <summary className="cursor-pointer font-medium">

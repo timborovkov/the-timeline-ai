@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -81,8 +82,9 @@ export const guestRecordShares = pgTable(
     teamId: uuid('team_id').notNull(),
     invitationId: uuid('invitation_id').notNull(),
     recordId: uuid('record_id').notNull(),
-    title: text('title').notNull(),
-    body: text('body').notNull(),
+    live: boolean('live').notNull().default(false),
+    title: text('title'),
+    body: text('body'),
     revision: uuid('revision').defaultRandom().notNull(),
     publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
     publishedByUserId: uuid('published_by_user_id').references(() => users.id, {
@@ -102,7 +104,13 @@ export const guestRecordShares = pgTable(
       foreignColumns: [entities.teamId, entities.id],
     }).onDelete('cascade'),
     index('guest_record_shares_record_idx').on(table.teamId, table.recordId),
-    check('guest_record_shares_title_check', sql`char_length(${table.title}) between 1 and 200`),
-    check('guest_record_shares_body_check', sql`char_length(${table.body}) between 1 and 8000`),
+    check(
+      'guest_record_shares_content_check',
+      sql`(
+      (${table.live} AND ${table.title} IS NULL AND ${table.body} IS NULL)
+      OR (NOT ${table.live} AND ${table.title} IS NOT NULL AND ${table.body} IS NOT NULL
+        AND char_length(${table.title}) BETWEEN 1 AND 200 AND char_length(${table.body}) BETWEEN 1 AND 8000)
+    )`,
+    ),
   ],
 );
