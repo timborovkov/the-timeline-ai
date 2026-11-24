@@ -226,7 +226,7 @@ function lookupPort(container: string, port: number): string | null {
   assert.equal(env.E2E_WEB_PORT, '43123');
   assert.deepEqual(buildE2eWebServerConfig(env), {
     baseURL: 'http://localhost:43123',
-    command: 'bun run --filter @timeline/web dev -H 127.0.0.1 -p 43123',
+    command: 'bun run --cwd apps/web dev -H 127.0.0.1 -p 43123',
   });
 }
 

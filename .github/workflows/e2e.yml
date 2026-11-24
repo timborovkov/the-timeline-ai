@@ -49,7 +49,24 @@ jobs:
         run: bun run test:dist-imports
 
       - name: Run Playwright E2E
-        run: bun run e2e
+        run: |
+          # Keep resource/exit evidence even if development warmup is interrupted.
+          # Print process names only: command arguments can contain fixture secrets.
+          snapshot_resources() {
+            date -u || true
+            free -m || true
+            ps -eo pid,ppid,pgid,rss,comm --sort=-rss | head -15 || true
+            for metric in memory.current memory.max memory.events; do
+              if [ -r "/sys/fs/cgroup/$metric" ]; then
+                echo "$metric"
+                cat "/sys/fs/cgroup/$metric" || true
+              fi
+            done
+          }
+          while true; do snapshot_resources; sleep 30; done &
+          monitor_pid=$!
+          trap 'status=$?; kill "$monitor_pid" 2>/dev/null || true; snapshot_resources; exit "$status"' EXIT
+          bun run e2e
 
       - name: Upload Playwright report
         if: always()
