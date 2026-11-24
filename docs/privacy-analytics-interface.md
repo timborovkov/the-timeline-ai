@@ -316,7 +316,7 @@ occur only after authorization and successful hydration and do not count cached
 reopenings. Private pages still load no browser analytics and forward no click events.
 Production delivery and provider settings are not verified by source tests.
 
-The optional PAYG suggestion uses a per-user/team local-storage dismissal preference.
+The optional Team upgrade suggestion uses a per-user/team local-storage dismissal preference.
 It stays on the device, is not exported to analytics, and does not hide billing
 restrictions or spend-cap warnings. Clearing browser storage resets the preference.
 

@@ -113,7 +113,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
           </MarketingContainer>
           <MarketingCtaBand
             title="Start with the sources you already use."
-            body="Build a shared work record around your team’s tools, with sources attached and lasting changes you approve."
+            body="Build a shared work record around your team’s tools. Open sources and record history, and review changes that need a decision."
           />
         </article>
       </main>

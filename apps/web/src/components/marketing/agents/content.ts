@@ -8,9 +8,9 @@ export const AGENTS_HUB = {
     'Agents can recover why a decision was made, do their part, and leave an attributed progress note for the next person or agent.',
   seoTitle: 'AI agents and the shared work record',
   seoDescription:
-    'Agents read cited team context and write updates back into The Timeline. They get decisions, owners and history from the shared work record, and they add notes through remember, email or a webhook.',
+    'Agents read cited team context and add attributed updates to The Timeline. They get decisions, owners and history from the shared work record, and they add notes through remember, email or a webhook.',
   llmsSummary:
-    'External agents read the same permitted, cited work record as the team and contribute attributed progress notes. Write paths: timeline.remember, ingest email, authenticated ingest webhooks. Read path: hosted MCP tools timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember. One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes.',
+    'External agents read the same permitted, cited work record as the team and contribute attributed progress notes. Write paths: timeline.remember, ingest email, authenticated ingest webhooks. Read path: hosted MCP tools timeline.search, timeline.get, timeline.subject, and timeline.ask. One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes.',
   reportIn: {
     index: '01',
     label: 'Read and write',
@@ -63,7 +63,7 @@ export const AGENTS_HUB = {
     label: 'Full agent install guide',
   },
   cta: {
-    title: 'Start free. Agents read the record and write back.',
+    title: 'Start free. Agents can read the record and add notes.',
     body: 'Create your workspace, then connect your agent.',
   },
   screenshot: {

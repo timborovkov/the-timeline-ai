@@ -34,22 +34,22 @@ describe('works-with content', () => {
 
     expect(linear.status).toBe('native-sync');
     expect(linear.today).toMatch(/Native Linear ingest/i);
-    expect(jira.status).toBe('mcp-lookup');
-    expect(jira.today).toMatch(/Atlassian MCP/i);
+    expect(jira.status).toBe('coming-soon');
+    expect(jira.today).toMatch(/Atlassian retired the endpoint/);
     expect(notion.status).toBe('mcp-lookup');
     expect(notion.today).toMatch(/Notion MCP/i);
     expect(hubspot.status).toBe('coming-soon');
     expect(attio.status).toBe('coming-soon');
     expect(pipedrive.status).toBe('coming-soon');
     expect(hubspot.today).toMatch(/does not sync HubSpot/i);
-    expect(attio.later).toMatch(/no Attio MCP lookup/i);
-    expect(pipedrive.later).toMatch(/no Pipedrive MCP lookup/i);
+    expect(attio.later).toMatch(/no built-in Attio lookup/i);
+    expect(pipedrive.later).toMatch(/no built-in Pipedrive lookup/i);
 
     const copy = JSON.stringify(WORKS_WITH_TOOLS);
     expect(copy).not.toMatch(/\bvs\.?\b|switch from/iu);
 
-    expect(hubspot.statusLabel).toBe('Coming soon');
-    expect(jira.statusLabel).toBe('MCP lookup');
+    expect(hubspot.statusLabel).toBe('Native capture planned');
+    expect(jira.statusLabel).toBe('Native capture planned');
     expect(linear.statusLabel).toBe('Native sync');
 
     for (const tool of WORKS_WITH_TOOLS) {

@@ -16,9 +16,7 @@ describe('AgentLoopDiagram', () => {
     expect(html).toContain('Agents write into Timeline');
     expect(html).toContain('Agents read Timeline');
     expect(html).toContain('Illustrative example');
-    expect(html).toContain(
-      'Workspace policy determines which resulting changes can apply automatically and which need review.',
-    );
+    expect(html).toContain('An agent’s note becomes attributed evidence a later answer can cite.');
     expect(html).toContain('Source attached');
     expect(html).not.toContain('data-inbound-mcp');
     expect(html).not.toMatch(/tli_|tla_|timeline\.remember|POST \/api/u);

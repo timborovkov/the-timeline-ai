@@ -65,7 +65,7 @@ export const COMPARE_HUB = {
 export const COMPARE_PAGES: readonly ComparePageContent[] = [
   {
     slug: 'the-timeline-vs-day-ai',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-day-ai',
     name: 'Day AI',
@@ -95,13 +95,13 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline captures selected Slack, Telegram, email and calls into an auto-updating work record, with the source on every line and a person approving lasting record changes. It is not a GTM agent control plane and does not ship named agents in an org chart.',
+      'The Timeline captures selected Slack, Telegram, email and calls into a source-linked work record. Eligible updates apply under workspace policy, with a history of changes and a queue for decisions. It is not a GTM agent control plane and does not ship named agents in an org chart.',
     whenCompetitorBetter:
       'Choose Day AI when you want a go-to-market context graph and a roster of named agents that report to people on the sales, success or support team, with approval before outbound. That is the product Day AI publishes on day.ai.',
   },
   {
     slug: 'the-timeline-vs-folk',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-folk',
     name: 'Folk',
@@ -134,7 +134,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline can hold people, company and deal records that come from the conversation record, with an evidence-linked review queue for proposals. Native HubSpot, Attio and Pipedrive ingest is coming soon. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
+      'The Timeline can hold people, company and deal records that come from the conversation record, with an evidence-linked review queue for proposals. Native capture from HubSpot, Attio and Pipedrive is unavailable. Timeline does not prospect, enrich leads, or record sales calls onto a CRM phone number.',
     whenCompetitorBetter:
       "Choose Folk when you want an AI CRM for the sales motion: prospecting, enrichment, multi-channel outreach and calls recorded on Folk's own number. That is the product Folk publishes on folk.app.",
   },
@@ -210,7 +210,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
   },
   {
     slug: 'the-timeline-vs-suda',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-suda',
     name: 'Suda',
@@ -250,13 +250,13 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline captures selected Slack, Telegram, email and calls into an auto-updating work record of decisions, promises and handoffs, with the source on every line. People Ask in the product or Slack. Agents read that record over MCP and contribute notes through timeline.remember, ingest email or an ingest webhook. Lasting record changes wait for a person to approve them. It is not a 700-source context graph for any MCP client.',
+      'The Timeline captures selected Slack, Telegram, email and calls into an auto-updating work record of decisions, promises and handoffs, with the source on every line. People Ask in the product or Slack. Agents read that record over MCP and contribute notes through timeline.remember, ingest email or an ingest webhook. Eligible routine changes apply under workspace policy and appear in history alongside their evidence. Changes needing a decision go to Approvals. It is not a 700-source context graph for any MCP client.',
     whenCompetitorBetter:
       'Choose Suda when you want context infrastructure that feeds the agents already in your stack over MCP, with a graph that retires stale facts and that people can also query, including from Slack. That is the product Suda publishes on suda.so.',
   },
   {
     slug: 'the-timeline-vs-memorycrow',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-memorycrow',
     name: 'MemoryCrow',
@@ -296,13 +296,13 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline keeps a chronology of who said what, when, with sources, from selected Slack channels, Telegram groups, forwarded email and calls. People Ask with citations, read a daily workspace update, and approve lasting record changes. Agents read the same cited record over MCP and can add notes. It is not a memory layer whose primary surface is recall inside Claude, ChatGPT or Cursor.',
+      'The Timeline keeps a chronology of who said what, when, with sources, from selected Slack channels, Telegram groups, forwarded email and calls. People ask with citations, read a daily workspace update, and use the history and Approvals to see what changed or needs a decision. Agents read the same cited record over MCP and can add notes. It is not a memory layer whose primary surface is recall inside Claude, ChatGPT or Cursor.',
     whenCompetitorBetter:
       'Choose MemoryCrow when you mainly need trusted recall inside the AI tools the team already uses, with answers scoped to the asker and abstention when proof is missing. That is the product MemoryCrow publishes on memorycrow.com.',
   },
   {
     slug: 'the-timeline-vs-achiral',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     factsReviewedOn: '2026-11-06',
     route: '/compare/the-timeline-vs-achiral',
     name: 'Achiral',
@@ -342,7 +342,7 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       },
     ],
     timelineSide:
-      'The Timeline builds a cited chronology of decisions, promises and handoffs from Slack, Telegram, email, calls and docs. People Ask with receipts and approve lasting record changes. Agents read and contribute to that same record through MCP, remember, email or webhook. It is not an emergent-memory platform of personal executive assistants plus org-wide Chiro, and it does not model memory as ACT-R decay and activation.',
+      'The Timeline builds a cited chronology of decisions, promises and handoffs from Slack, Telegram, email, calls and docs. People ask with citations and review changes that need a decision. Eligible routine changes apply under workspace policy and appear in history. Agents read and contribute to that same record through MCP, remember, email or webhook. It is not an emergent-memory platform of personal executive assistants plus org-wide Chiro, and it does not model memory as ACT-R decay and activation.',
     whenCompetitorBetter:
       'Choose Achiral when you want organic org memory plus collaborative assistants (shared Chiro and a personal assistant per member), a decay and activation lifecycle, and connectors across Slack, Teams, Notion, HubSpot and more. That is the product Achiral publishes on achiral.ai.',
   },

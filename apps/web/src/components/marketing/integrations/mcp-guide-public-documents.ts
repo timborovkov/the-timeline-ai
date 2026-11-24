@@ -46,7 +46,7 @@ export const MCP_GUIDE_DOCUMENT = {
       },
       {
         title: MCP_GUIDE_PAGE.catalog.title,
-        body: `${MCP_GUIDE_PAGE.catalog.intro} Hosted catalog tools: ${hostedToolsLabel}. Local desktop: ${localDesktopToolsLabel}. ${MCP_GUIDE_PAGE.catalog.localBody}`,
+        body: `${MCP_GUIDE_PAGE.catalog.intro} Hosted catalog tools: ${hostedToolsLabel}. ${MCP_GUIDE_PAGE.catalog.unavailable} Local desktop: ${localDesktopToolsLabel}. ${MCP_GUIDE_PAGE.catalog.localBody}`,
       },
       {
         title: MCP_GUIDE_PAGE.notNative.title,

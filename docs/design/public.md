@@ -109,9 +109,10 @@ target “[competitor] alternatives” on the existing URLs rather than extra
 doorway routes; every competitor fact cites and links that competitor's own
 site. Notion stays under Integrations, never as a vs page.
 Works-with pages live under `/integrations` (Linear, Jira, Notion, HubSpot,
-Attio, Pipedrive), not under Compare: Linear has native ingest, Jira and Notion
-explain hosted MCP lookup and link to `/integrations/mcp`, and HubSpot, Attio,
-and Pipedrive native ingest is coming soon. `/integrations/mcp` is the general
+Attio, Pipedrive). Linear has native capture. Notion explains hosted MCP lookup.
+Jira and Confluence presets use an endpoint Atlassian retired. Identify the
+affected presets as unavailable until a replacement is verified. Native
+capture for Jira, HubSpot, Attio, and Pipedrive remains planned. `/integrations/mcp` is the general
 guide for connecting third-party MCP servers to The Timeline Agent, distinct
 from `/agents`. Retired `/compare/{hubspot,jira,linear,notion}` URLs
 permanent-redirect to the matching integrations page.
@@ -153,9 +154,10 @@ inventory-tested so a missing asset fails CI instead of shipping as a silent
 placeholder. Public screenshot URLs carry a hash of the committed PNG bytes so recaptures invalidate optimized variants. Ask
 captures are stored examples; captions explain the pictured workflow without
 repeated demo disclaimers or implementation noise.
-Visible copy must stay consistent with deliberate capture, source-linked claims,
-daily (not weekly) updates, and human review before inferred durable workspace
-changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
+Explain automatic capture within configured source scope and optional explicit
+capture. Describe the daily update where it is pictured. Eligible routine
+changes can apply under workspace policy and appear in history. Changes that
+need a decision go to Approvals. Do not claim WhatsApp, Teams chat, or Slack Connect.
 
 Public pages use responsive Switzer display headings, readable body copy and
 Commit Mono for source metadata. Plain warm surfaces and deliberate whitespace
@@ -214,18 +216,10 @@ account actions rather than guessing the visitor's session state.
 The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The agent setup card and evidence ledger are labelled sections within the landing main content.
-The masthead exposes five primary destinations in this order:
-Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
-and Pricing (`/pricing`). Desktop headers show them directly; below the hamburger
-breakpoint the top bar keeps only the wordmark, `Start free`, and a far-right
-native menu disclosure (icon-only hamburger, stable accessible name `Menu`, no
-border box, focus ring retained). `Sign in` moves into that disclosure (still
-server-rendered and usable without JavaScript via native `<details>`). At phone
-widths the header theme control also moves into the disclosure instead of
-disappearing, and the disclosure closes after link activation or a
-persisted-layout route change. The shared footer repeats the
-primary destinations alongside How it works, Resources, and a legal/privacy
-rail. The current destination uses `aria-current="page"`.
+Below the hamburger breakpoint the top bar keeps the wordmark, primary
+account action, and a far-right native disclosure with the accessible name
+`Menu`. Keep the focus ring. Sign in and the theme control move into the
+disclosure at phone widths.
 Native connector labels on the landing page link to their integration detail
 pages, while native source badges in public walkthroughs link back to the same
 provider truth. The landing hero and public navigation also link directly to

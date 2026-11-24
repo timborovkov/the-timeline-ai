@@ -67,7 +67,7 @@ Use-case documents live beside their shared page content under
 and appear in the footer Use cases column. Compare documents live beside
 their shared page content under
 [`components/marketing/compare`](../apps/web/src/components/marketing/compare)
-and appear in the footer Compare column as head-to-head pages versus Day AI,
+and appear under Resources in the footer as head-to-head pages versus Day AI,
 Folk, Glean, Geekbot, Suda, MemoryCrow, and Achiral. SEO titles and
 descriptions on those vs URLs also name each as a competitor alternative so
 people searching `[competitor] alternatives` can land on the cited comparison.
@@ -76,8 +76,7 @@ Set a claim's `reviewedOn` when checking that claim independently. The
 comparison page and expanded LLM entry show the same check date.
 Notion remains integrations-only.
 The Integrations header link opens the directory. The footer retains native and
-capture destinations. Slack and Telegram retain dedicated pages. Jira and Notion
-are live-lookup examples where supported, and planned CRM pages follow the
+capture destinations. Slack and Telegram retain dedicated pages. Notion is a live-lookup example. Jira and the planned CRM pages follow the
 planned-page discovery policy below. The Features hub is registered with the
 public product pages. The integration directory's capability table and both LLM files share the same answers for
 native sync, deliberate capture, live lookup, historical coverage, and

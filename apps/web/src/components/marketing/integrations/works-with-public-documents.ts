@@ -5,7 +5,7 @@ import {
 import type { PublicCapabilityState, PublicDocument } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-12' as const;
+const REVIEW_DATE = '2026-11-24' as const;
 
 function worksWithCapability(tool: WorksWithTool): PublicCapabilityState {
   if (tool.status === 'coming-soon') return { kind: 'planned', provider: tool.slug };

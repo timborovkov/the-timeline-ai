@@ -48,6 +48,6 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 
 ## Product validation
 
-Run a closed beta with 3–5 friendly teams. Measure text/voice capture friction (initial targets under 10/15 seconds), cited answer usefulness (initial target over 85% positive), daily object use, and correct-version document answers. Treat these as proposed pilot targets, not achieved metrics. Use findings to choose prompt changes; re-extract only through the bounded runbook.
+Prepare the first customer offer and recruit a direct pilot, starting with the customer-facing cofounder hypothesis in the [product brief](docs/product-brief.md#who-it-serves). Learn from one piece of ongoing work and a real question. Set formal targets after pilot learning.
 
 Recurring backups, rotation, capacity review and isolation checks are procedures in [operations](docs/operations.md), not permanently unchecked roadmap entries.

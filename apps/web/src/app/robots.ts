@@ -4,7 +4,14 @@ import { getSiteUrl } from '@/lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
-const DISALLOWED_PATHS = ['/api/', '/app$', '/app/', '/accept-invite/', '/verify-email/'];
+const DISALLOWED_PATHS = [
+  '/api/',
+  '/app$',
+  '/app/',
+  '/guest/',
+  '/accept-invite/',
+  '/verify-email/',
+];
 
 const SEARCH_BOTS = [
   'Googlebot',

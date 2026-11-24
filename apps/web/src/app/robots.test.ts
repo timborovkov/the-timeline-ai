@@ -23,7 +23,14 @@ describe('robots', () => {
       return rules.find((rule) => [rule.userAgent].flat().includes(agent));
     }
 
-    const privatePaths = ['/api/', '/app$', '/app/', '/accept-invite/', '/verify-email/'];
+    const privatePaths = [
+      '/api/',
+      '/app$',
+      '/app/',
+      '/guest/',
+      '/accept-invite/',
+      '/verify-email/',
+    ];
     const search = ruleFor('Googlebot');
     const retrieval = ruleFor('ChatGPT-User');
     const training = ruleFor('GPTBot');

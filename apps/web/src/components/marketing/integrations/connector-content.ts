@@ -614,7 +614,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline checks selected Sentry organizations or projects and connects captured issue and release evidence to cited incidents. Project selection applies to scheduled history checks; after one matching webhook, later webhook events from another project in the same Sentry installation may also be captured.',
+      'Timeline checks selected Sentry organizations or projects and connects captured issue and release evidence to cited incidents. Scheduled checks and webhook delivery use the activated organization or project scope. Ambiguous deliveries are ignored.',
     providerStatement:
       'Sentry remains the monitoring and error-diagnostics system. Timeline does not collect application telemetry on Sentry’s behalf or replace Sentry alerting, traces, performance views, or issue management.',
     diagram: DEMO_CONNECTORS.sentry.diagram,
@@ -627,11 +627,11 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     scenario: DEMO_CONNECTORS.sentry.scenario,
     capturedRecords: [
       'Issues entering an open lifecycle state',
-      'The first captured resolved lifecycle transition per issue',
-      'The first captured ignored lifecycle transition per issue',
-      'Issue alerts delivered for the remembered Sentry installation, including the project-scope caveat below',
+      'Resolved lifecycle transitions',
+      'Ignored lifecycle transitions',
+      'Issue alerts in the selected scope',
       'Release creation activity',
-      'The first captured deployment activity per Sentry release',
+      'Release deployment activity in the selected scope',
     ],
     recipes: [
       {
@@ -652,7 +652,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     setup: [
       'Connect Sentry using a confidential server-side OAuth application.',
-      'Choose individual projects to scope reconciliation or an organization for all accessible projects there; review the installation-webhook limitation before treating a project choice as a strict webhook boundary.',
+      'Choose individual projects or an organization for all accessible projects there. Timeline applies that choice to polling and webhook delivery.',
       'Have a Timeline team admin activate the shared sources.',
       'Configure the signed Sentry integration webhook for issue, alert, and release delivery. Daily reconciliation can recover release creation and issue state only when a newer occurrence advances the polling cursor; it cannot recover webhook-only alerts or deployment records.',
     ],
@@ -742,7 +742,13 @@ export function getConnectorCapabilityTiers(catalog: readonly CatalogEntry[] = l
     if (entry.kind === 'native' && entry.ingestStatus === 'implemented') {
       tiers.nativeProviders.push(entry.label);
     }
-    if (entry.kind === 'mcp' && entry.status === 'mcp_available') {
+    // Atlassian retired the endpoint used by these two presets.
+    if (
+      entry.kind === 'mcp' &&
+      entry.status === 'mcp_available' &&
+      entry.id !== 'jira' &&
+      entry.id !== 'confluence'
+    ) {
       tiers.mcpAccess.push(entry.label);
     }
     if (entry.kind === 'mcp' && entry.status === 'mcp_local') {

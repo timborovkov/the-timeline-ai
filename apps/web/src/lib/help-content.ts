@@ -102,7 +102,7 @@ export const HELP_PAGES: HelpPage[] = [
 
       {
         title: 'What gets captured',
-        body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose objects or tasks for review. Every searchable citation stays linked to the captured source.',
+        body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose changes to objects or tasks. Every searchable citation stays linked to the captured source.',
         items: [
           'Text notes and audio uploads from the web app.',
           'Slack and Telegram messages, files, and voice memos from linked spaces.',
@@ -119,7 +119,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Check source selection and team visibility before activating capture.',
           'Timeline’s stored record is separate from the original tool; disconnecting does not erase earlier captures.',
-          'A proposed change is a suggestion for review. Approving it updates Timeline’s work record. Enabled external tools may have separate effects in other services.',
+          'Eligible proposals can apply under workspace policy. Open the record history to see applied changes and Approvals for changes that need a decision. Enabled external tools may have separate effects in other services.',
         ],
       },
       {
@@ -162,7 +162,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Open a task or object to inspect its source evidence before changing status, owner or due date.',
           'Pin frequently used objects, boards or documents so you can return to them from Home.',
           'Open Approvals for changes that need a decision. Accept supported changes or reject unsupported suggestions.',
-          'Work → Digests lists every daily update as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
+          'Work → Digests lists recent daily updates as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
           'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },

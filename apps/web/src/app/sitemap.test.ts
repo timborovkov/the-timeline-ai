@@ -51,14 +51,14 @@ describe('sitemap', () => {
     expect(second).toEqual(first);
     expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-11-24');
     expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-11-24');
-    expect(byUrl.get('https://thetimeline.cc/integrations/mcp')).toBe('2026-11-12');
+    expect(byUrl.get('https://thetimeline.cc/integrations/mcp')).toBe('2026-11-24');
     expect(byUrl.get('https://thetimeline.cc/use-cases')).toBe('2026-11-24');
     expect(byUrl.get('https://thetimeline.cc/product-tour')).toBe('2026-11-24');
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-11-12');
     expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-19');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe(TERMS_VERSION.slice(0, 10));
     expect(byUrl.get('https://thetimeline.cc/privacy')).toBe(PRIVACY_VERSION.slice(0, 10));
-    expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-10-24');
+    expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-11-24');
     expect(first.every((entry) => typeof entry.lastModified === 'string')).toBe(true);
     for (const path of ['/terms', '/privacy']) {
       expect(byUrl.get(`https://thetimeline.cc${path}`)).toMatch(/^\d{4}-\d{2}-\d{2}$/);

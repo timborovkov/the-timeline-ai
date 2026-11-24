@@ -38,7 +38,7 @@ Calendar approval cards may show resolution hints when a proposed create resembl
 
 ## Due dates
 
-Task and follow-up due dates are mirrored to the team calendar as free due-date events. Timeline uses the assignee first, then the owner, as the responsible person for the inbox notification and calendar title. Suggested tasks do not notify anyone or appear on the calendar until a human accepts them.
+Task and follow-up due dates are mirrored to the team calendar as free due-date events. Timeline uses the assignee first, then the owner, as the responsible person for the inbox notification and calendar title. Proposal-only dates do not notify anyone or appear on the calendar. The calendar mirrors accepted canonical dates, including changes applied through authorized workspace automation.
 
 Board item due dates use the board-local responsible person instead of the underlying object's owner or assignee. When that person is set, the in-app inbox receives a board-specific due-date notification, and the calendar event description includes the board name and responsible person so teammates can see who owns the deadline.
 

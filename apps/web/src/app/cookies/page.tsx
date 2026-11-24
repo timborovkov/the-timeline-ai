@@ -97,25 +97,27 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
-              <strong>timeline-display-*</strong> on <strong>/app</strong> and{' '}
-              <strong>timeline-display-guest-*</strong> on <strong>/guest</strong>. These are
-              host-only, HTTP-only, SameSite=Lax cookies. They last up to one year and are Secure in
-              production.
-            </td>
-            <td>
-              Store the display locale and time zone you choose for this account in this browser.
-              The cookies stay after sign-out. Choosing browser defaults in Team settings clears
-              your saved choices. You can also clear them in your browser.
-            </td>
-          </tr>
-          <tr>
-            <td>
               <strong>timeline_sidebar_expanded</strong>, a cookie lasting up to one year, and{' '}
               <strong>timeline.sidebar.expanded</strong> in local storage until it is replaced or
               browser data is cleared. The cookie is scoped to <strong>/app</strong>, and Timeline
               reads the local-storage preference only in that route area.
             </td>
             <td>Remember whether the signed-in workspace sidebar is expanded.</td>
+          </tr>
+          <tr>
+            <td>
+              <strong>timeline-display-locale-&lt;hash&gt;</strong> and{' '}
+              <strong>timeline-display-timezone-&lt;hash&gt;</strong> on <strong>/app</strong>, and{' '}
+              <strong>timeline-display-guest-locale-&lt;hash&gt;</strong> and{' '}
+              <strong>timeline-display-guest-timezone-&lt;hash&gt;</strong> on{' '}
+              <strong>/guest</strong>. These per-account preference cookies are host-only, HTTP-only
+              and SameSite=Lax, Secure in production, and last up to 365 days.
+            </td>
+            <td>
+              Remember the display locale and time zone you choose for this account in this browser.
+              The cookies remain in this browser after sign-out. Choosing Automatic for a preference
+              clears its saved values in both areas. You can also clear them in your browser.
+            </td>
           </tr>
           <tr>
             <td>

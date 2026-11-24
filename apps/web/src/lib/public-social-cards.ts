@@ -13,10 +13,10 @@ export const PUBLIC_SOCIAL_CARDS: readonly PublicSocialCard[] = [
     id: 'pricing',
     path: '/pricing',
     title: 'Pricing that starts free',
-    alt: 'The Timeline pricing preview showing how to start free and choose a plan.',
+    alt: 'The Timeline pricing preview showing Free, monthly Team seats, and custom Enterprise pricing.',
     label: 'Pricing options',
-    steps: ['Start free', 'Pay as you go', 'Team or Business'],
-    markers: ['FREE', 'USAGE', 'PLAN'],
+    steps: ['Up to 3 members', '$10 per member / month', 'Custom pricing'],
+    markers: ['FREE', 'TEAM', 'ENT'],
   },
   {
     id: 'product-tour',

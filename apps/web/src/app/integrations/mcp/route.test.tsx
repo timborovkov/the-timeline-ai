@@ -27,7 +27,8 @@ describe('Connect MCP tools route', () => {
     expect(html).toContain(MCP_GUIDE_PAGE.title);
     expect(text).toContain(MCP_GUIDE_PAGE.distinction.inboundTitle);
     expect(text).toContain(MCP_GUIDE_PAGE.distinction.outboundTitle);
-    expect(text).toContain('Notion, Jira, Confluence, and Stripe');
+    expect(text).toContain('Notion and Stripe');
+    expect(text).toContain('The Jira and Confluence presets need an update');
     expect(text).toContain('Figma');
     expect(text).toContain('not connectable from hosted Timeline');
     expect(html).toContain('href="/agents"');

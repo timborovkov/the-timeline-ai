@@ -82,7 +82,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     example: {
       label: 'Example',
       lines: [
-        'SHIPPED: Migration callback merged (GitHub · PR #482).',
+        'MERGED: Migration callback (GitHub · PR #482).',
         'DECIDED: Onboarding copy approved (Slack · #acme-rollout).',
         'BLOCKED: SSO validation before launch (Meeting · launch review).',
       ],
@@ -95,7 +95,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       },
       {
         question: 'Can I see past days?',
-        answer: 'Yes. Work → Digests keeps every daily update.',
+        answer: 'Yes. Open Work → Digests for recent daily updates.',
       },
     ],
     screenshots: [
@@ -120,7 +120,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '44-work-dark.png',
         alt: 'Work surface listing past daily updates next to tasks, boards and approvals.',
         caption:
-          'Every past daily update stays under Work → Digests, next to tasks, boards and approvals.',
+          'Recent daily updates are available under Work → Digests, next to tasks, boards and approvals.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-how-it-works',
       },

@@ -424,8 +424,8 @@ function AgentScene() {
         <article className={styles.recordCard}>
           <h3>Later answer</h3>
           <p>
-            The agent reported a successful staging check. Follow up after release to confirm the
-            customer can log in.
+            The agent reported checking the staging login flow. Follow up after release to confirm
+            the customer can log in.
           </p>
         </article>
       </div>

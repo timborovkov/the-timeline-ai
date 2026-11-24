@@ -172,7 +172,10 @@ export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
         .forLlms('primary')
         .filter(
           (document) =>
-            document.canonicalPath === '/features' || document.canonicalPath === '/product-tour',
+            document.canonicalPath === '/features' ||
+            document.canonicalPath === '/product-tour' ||
+            document.canonicalPath === '/agents' ||
+            document.canonicalPath === '/pricing',
         ),
       siteUrl,
     ),

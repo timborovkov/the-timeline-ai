@@ -55,6 +55,10 @@ describe('Terms legal links', () => {
 
     expect(html).toContain('Firecrawl (SideGuide Technologies, Inc.)');
     expect(html).toContain('up to five public pages');
+    expect(html).toContain('Ordinary capture and storage are included');
+    expect(html).toContain('AI processing of captured pages draws from Included usage');
+    expect(html).toContain('Additional spending is off by default.');
+    expect(html).not.toMatch(/pay as you go|metered in euros|storage are charged separately/iu);
     expect(html).toContain('to be confirmed');
     expect(html).not.toContain('Mendable');
   });

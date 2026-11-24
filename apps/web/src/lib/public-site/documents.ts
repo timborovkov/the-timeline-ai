@@ -409,7 +409,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     description:
       'The cookies, browser storage, analytics, and related technologies used by The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-10-24', reviewed: '2026-10-24' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],

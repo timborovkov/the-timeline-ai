@@ -36,10 +36,7 @@ export function AgentLoopDiagram() {
           <Link2 size={16} aria-hidden="true" /> Agent progress note · Source attached
         </p>
       </section>
-      <figcaption>
-        An agent’s note adds attributed evidence. Workspace policy determines which resulting
-        changes can apply automatically and which need review.
-      </figcaption>
+      <figcaption>An agent’s note becomes attributed evidence a later answer can cite.</figcaption>
     </MotionFigure>
   );
 }
