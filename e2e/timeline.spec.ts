@@ -1775,16 +1775,13 @@ test.describe
       page.getByText('Decision: keep onboarding scope unchanged and ship the checklist.'),
     ).toBeVisible();
 
-    await page.goto('/app/timeline');
-    await expect(page.getByRole('link', { name: 'Open transcript' })).toHaveAttribute(
-      'href',
-      `/app/meetings/${meetingId}`,
-    );
+    const timelineFilters = new URLSearchParams({ source: 'meeting', q: String(stamp) });
+    await page.goto(`/app/timeline?${timelineFilters.toString()}`);
+    const transcriptLink = page.getByRole('link', { name: 'Open transcript', exact: true });
+    await expect(transcriptLink).toHaveAttribute('href', `/app/meetings/${meetingId}`);
+    const meetingMoment = page.locator('[data-moment-id]').filter({ has: transcriptLink });
     // Compact titles trim punctuation; open the evidence to verify its full summary.
-    await page
-      .getByRole('button', { name: literalPattern(summary.slice(0, -1)) })
-      .first()
-      .click();
+    await meetingMoment.getByRole('button', { name: literalPattern(summary.slice(0, -1)) }).click();
     await expect(page.getByText(summary).first()).toBeVisible();
   });
 });
