@@ -648,7 +648,11 @@ async function upsertPaidSubscription(input: {
       input.plan === 'enterprise' &&
       (subscriptionCurrency === 'EUR' || subscriptionCurrency === 'USD')
         ? subscriptionCurrency
-        : undefined;
+        : input.plan === 'enterprise' &&
+            existing?.polarSubscriptionId === polarSubscriptionId &&
+            existing.polarProductId === (input.data?.product_id ?? null)
+          ? existing.enterprisePlatformFeeCurrency
+          : null;
     const pendingAfterActivation =
       input.plan === 'enterprise' && pending
         ? pendingEnterpriseTermsWithoutCheckout(
@@ -752,6 +756,7 @@ async function upsertPaidSubscription(input: {
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
+        enterprisePlatformFeeCurrency: enterpriseFeeCurrency,
         spendCapCents: seatEntitlement ? 0 : PLAN_CATALOG[input.plan].defaultSpendCapCents,
         includedDiscountRemainingCents: catalogIncluded,
         periodStartedAt,
@@ -786,9 +791,7 @@ async function upsertPaidSubscription(input: {
                 })),
           ...(input.plan !== 'enterprise'
             ? { enterprisePlatformFeeCents: null, enterprisePlatformFeeCurrency: null }
-            : enterpriseFeeCurrency
-              ? { enterprisePlatformFeeCurrency: enterpriseFeeCurrency }
-              : {}),
+            : { enterprisePlatformFeeCurrency: enterpriseFeeCurrency }),
           ...(activatedPricing
             ? {
                 enterprisePlatformFeeCents: activatedPricing.platformFeeCents,
@@ -841,6 +844,9 @@ async function upsertPaidSubscription(input: {
           }
         : undefined,
       input.plan === 'team' ? Boolean(seatValues) : undefined,
+      input.plan === 'enterprise' && activatesCheckout && enterpriseFeeCurrency !== null
+        ? enterpriseFeeCurrency === 'USD'
+        : undefined,
     );
     const activated =
       billingState.endsWith('_active') &&

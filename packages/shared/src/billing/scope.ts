@@ -72,6 +72,7 @@ import {
 } from '#src/billing/operator.js';
 import {
   billingPlanIdForSettlement,
+  historicalEnterpriseStorageBundledOnDay,
   historicalTeamSeatPricingOnDay,
   includedDiscountCentsBeforeCurrentWindow,
   recordBillingPlan,
@@ -130,6 +131,23 @@ const admittedTeamSeatPricingSchema = z
   })
   .nullable();
 
+const enterpriseUsageTargetSchema = z.object({
+  productId: z.string().min(1),
+  subscriptionId: z.string().min(1),
+});
+
+function confirmedUsdEnterpriseUsageTarget(account: typeof teamBillingAccounts.$inferSelect) {
+  const { polarProductId, polarSubscriptionId } = account;
+  return account.planId === 'enterprise' &&
+    account.billingState === 'enterprise_active' &&
+    contractualEnterpriseAccount(account) &&
+    account.enterprisePlatformFeeCurrency === 'USD' &&
+    polarProductId &&
+    polarSubscriptionId
+    ? { productId: polarProductId, subscriptionId: polarSubscriptionId }
+    : null;
+}
+
 const failedAiAdmissionSchema = z.object({
   planId: z
     .custom<BillingPlanId>(
@@ -139,6 +157,7 @@ const failedAiAdmissionSchema = z.object({
   actorUserId: z.uuid().nullable(),
   meteredDiscountPercent: z.number().min(0).max(100).optional(),
   seatPricing: admittedTeamSeatPricingSchema.optional(),
+  enterpriseUsageTarget: enterpriseUsageTargetSchema.optional(),
   overageCapCents: z.number().int().nonnegative().optional(),
 });
 
@@ -430,6 +449,7 @@ async function dispositionForLiveAccount(
   account: typeof teamBillingAccounts.$inferSelect,
   event: PolarUsageEvent,
   provider: BillingProvider | undefined,
+  metadata: Record<string, unknown>,
 ): Promise<PolarIngestDisposition> {
   const chargeCents = event.metadata?.charge_cents;
   const invoiceCents = typeof chargeCents === 'number' ? chargeCents : 0;
@@ -443,6 +463,18 @@ async function dispositionForLiveAccount(
     invoiceCents,
   });
   if (early) return early;
+  const target = enterpriseUsageTargetSchema.safeParse(
+    metadata.polar_ingest_enterprise_target,
+  ).data;
+  const liveEnterpriseTarget = confirmedUsdEnterpriseUsageTarget(account);
+  if (
+    target
+      ? target.subscriptionId !== liveEnterpriseTarget?.subscriptionId ||
+        target.productId !== liveEnterpriseTarget.productId
+      : liveEnterpriseTarget !== null ||
+        (metadata.pricing_plan_id === 'enterprise' && account.planId !== 'enterprise')
+  )
+    return 'hold';
   // Member-day settlements retain the legacy EUR price even if the active
   // USD product reports coverage for an event with the same name.
   if (billingMeterIdForPolarEvent(event.name) === 'member_days' && isSeatPricedTeamAccount(account))
@@ -483,7 +515,7 @@ async function ingestPolarUsageIfPending(input: {
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
   const disposition = account
-    ? await dispositionForLiveAccount(account, event, input.provider)
+    ? await dispositionForLiveAccount(account, event, input.provider, input.metadata)
     : 'hold';
   // Shadow and comps are not billed. Leave the row pending so a later live
   // period can still invoice a charge that was payable when it was recorded.
@@ -1167,9 +1199,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const metersForAdmission = metersPlusPendingReservations(byMeter, pending, ym);
         const seatTerms = entitlementsPlanId === 'team' ? locked.teamSeatTerms : null;
         const seatBilling = seatTerms !== null;
+        const enterpriseUsageTarget = confirmedUsdEnterpriseUsageTarget(locked);
+        const usdUsage = seatBilling || enterpriseUsageTarget !== null;
         const bundledInfrastructure =
-          bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
-          !enterpriseContract;
+          (enterpriseUsageTarget !== null || !enterpriseContract) &&
+          bundledInfrastructureMeter(entitlementsPlanId, input.meterId, usdUsage);
         if (
           seatBilling &&
           (input.meterId === 'ai' || input.meterId === 'recall_minutes') &&
@@ -1190,7 +1224,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             });
             const discount = commercial.meteredDiscountPercent ?? 0;
             return Math.ceil(
-              (billableUnits * (100 - discount)) / (seatBilling ? 100 * BILLING_EUR_PER_USD : 100),
+              (billableUnits * (100 - discount)) / (usdUsage ? 100 * BILLING_EUR_PER_USD : 100),
             );
           }
           return applyMeteredDiscountCents(
@@ -1324,6 +1358,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           pending_failed_attempt_settlement: undefined,
           admitted_metered_discount_percent: commercial.meteredDiscountPercent ?? 0,
           bundled_infrastructure_at_admission: bundledInfrastructure,
+          enterprise_usage_target_at_admission: enterpriseUsageTarget,
           team_seat_pricing_at_admission: seatTerms
             ? {
                 includedUsageCents: seatTerms.includedUsageCents,
@@ -1486,6 +1521,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         actorUserId: row.actorUserId,
         meteredDiscountPercent: row.metadata.admitted_metered_discount_percent,
         seatPricing: row.metadata.team_seat_pricing_at_admission,
+        enterpriseUsageTarget: row.metadata.enterprise_usage_target_at_admission ?? undefined,
         overageCapCents: row.metadata.team_overage_cap_at_admission,
       }).data;
       const usageAt = row.createdAt.toISOString();
@@ -1754,6 +1790,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   : commercial.meteredDiscountPercent;
           const comped = compSuppressesPolarCharges(account);
           const enterpriseContract = contractualEnterpriseAccount(account);
+          const retiredEnterpriseCharge =
+            entitlementsPlanId === 'enterprise' && livePlanId !== 'enterprise';
           // member_days ignore the caller's customerChargeCents and recompute from
           // the commercial extra-member price so a custom rate cannot be bypassed.
           // A replay passes the historical plan's rate instead of the live price.
@@ -1767,6 +1805,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             ? {
                 bundled_infrastructure_at_admission: false,
                 team_seat_pricing_at_admission: failedAdmission.seatPricing,
+                enterprise_usage_target_at_admission: failedAdmission.enterpriseUsageTarget,
                 team_overage_cap_at_admission: failedAdmission.overageCapCents,
               }
             : admission?.meterId === input.meterId &&
@@ -1813,7 +1852,18 @@ export function createBillingScope(deps: BillingScopeDeps) {
             account.periodStartedAt &&
             startedAt >= account.periodStartedAt &&
             (!account.periodEndsAt || startedAt < account.periodEndsAt);
-          const presentationCurrency = seatBilling
+          const enterpriseUsageTarget =
+            entitlementsPlanId !== 'enterprise'
+              ? null
+              : admission || failedAdmission
+                ? (enterpriseUsageTargetSchema.safeParse(
+                    admittedPricing?.enterprise_usage_target_at_admission,
+                  ).data ?? null)
+                : usesLiveEnterpriseTerms
+                  ? confirmedUsdEnterpriseUsageTarget(account)
+                  : null;
+          const usdUsage = seatBilling || enterpriseUsageTarget !== null;
+          const presentationCurrency = usdUsage
             ? 'USD'
             : entitlementsPlanId !== 'enterprise'
               ? 'EUR'
@@ -1836,11 +1886,21 @@ export function createBillingScope(deps: BillingScopeDeps) {
               : needsAdmissionCap && admittedPricing
                 ? null
                 : undefined;
+          const historicalStorageBundled =
+            !admission &&
+            input.meterId === 'storage_gb_month' &&
+            entitlementsPlanId === 'enterprise' &&
+            (await historicalEnterpriseStorageBundledOnDay({
+              db: tx,
+              teamId,
+              day: startedAt.toISOString().slice(0, 10),
+            }));
           const bundledInfrastructure =
             typeof admittedBundle === 'boolean'
               ? admittedBundle
-              : bundledInfrastructureMeter(entitlementsPlanId, input.meterId, seatBilling) &&
-                !enterpriseContract;
+              : historicalStorageBundled === true ||
+                ((enterpriseUsageTarget !== null || !enterpriseContract) &&
+                  bundledInfrastructureMeter(entitlementsPlanId, input.meterId, usdUsage));
           const segmentCharges = segments.map((segment) => {
             const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
             const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
@@ -1868,7 +1928,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               cumulativeBillableChargeCents({
                 ...billableInput,
                 nativeUnits:
-                  seatBilling && input.meterId === 'ai'
+                  usdUsage && input.meterId === 'ai'
                     ? nativeUnits / BILLING_EUR_PER_USD
                     : nativeUnits,
               });
@@ -1887,6 +1947,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               enterpriseContract,
               chargeCents:
                 needsAdmissionCap ||
+                retiredEnterpriseCharge ||
                 (legacyMemberDayOnSeatPlan && segment.periodYm === periodYm(now))
                   ? 0
                   : actualChargeCents,
@@ -2059,8 +2120,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
             invoiceCents,
           };
           const earlyDisposition = polarIngestDispositionBeforeCoverage(coverageInput);
+          const liveEnterpriseTarget = confirmedUsdEnterpriseUsageTarget(account);
+          const matchesEnterpriseTarget = enterpriseUsageTarget
+            ? enterpriseUsageTarget.productId === liveEnterpriseTarget?.productId &&
+              enterpriseUsageTarget.subscriptionId === liveEnterpriseTarget.subscriptionId
+            : liveEnterpriseTarget === null &&
+              (entitlementsPlanId !== 'enterprise' || livePlanId === 'enterprise');
           const coverage =
-            earlyDisposition === null && !legacyMemberDayOnSeatPlan
+            earlyDisposition === null && !legacyMemberDayOnSeatPlan && matchesEnterpriseTarget
               ? cachedCoverageForPayableSettlement(provider, account.polarProductId)
               : { names: null as readonly string[] | null };
           if ('productId' in coverage) {
@@ -2072,6 +2139,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               ...coverageInput,
               subscriptionCoversMeter:
                 !legacyMemberDayOnSeatPlan &&
+                matchesEnterpriseTarget &&
                 polarSubscriptionCoversMeter({
                   planId: effectiveBillingPlanId(account),
                   billingState: account.billingState,
@@ -2161,12 +2229,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 ...(input.failedAiAttemptFor
                   ? { failed_attempt_for: input.failedAiAttemptFor }
                   : {}),
-                ...(input.pricingPlanId || entitlementsPlanId !== livePlanId
+                ...(input.pricingPlanId ||
+                entitlementsPlanId !== livePlanId ||
+                entitlementsPlanId === 'enterprise'
                   ? { pricing_plan_id: entitlementsPlanId }
                   : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
                 presentation_comped: comped,
                 presentation_currency: presentationCurrency,
+                polar_ingest_enterprise_target: enterpriseUsageTarget ?? undefined,
                 presentation_chargeable:
                   !comped && !accountUsesShadowBilling(account) && input.billable !== false,
                 usage_at: startedAt.toISOString(),
@@ -2435,6 +2506,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         pending_failed_attempt_settlement: undefined,
         admitted_metered_discount_percent: undefined,
         bundled_infrastructure_at_admission: undefined,
+        enterprise_usage_target_at_admission: undefined,
         team_seat_pricing_at_admission: undefined,
         team_overage_cap_at_admission: undefined,
       });

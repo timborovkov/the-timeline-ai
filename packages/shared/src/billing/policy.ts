@@ -55,10 +55,10 @@ export function freeAllowanceRemaining(meters: {
 export function bundledInfrastructureMeter(
   planId: BillingPlanId,
   meterId: BillingMeterId,
-  seatBilling: boolean,
+  paidPlanBundlesInfrastructure: boolean,
 ): boolean {
   return (
-    (planId === 'free' || seatBilling) &&
+    (planId === 'free' || paidPlanBundlesInfrastructure) &&
     (meterId === 'accepted_sources' || meterId === 'storage_gb_month' || meterId === 'email_units')
   );
 }

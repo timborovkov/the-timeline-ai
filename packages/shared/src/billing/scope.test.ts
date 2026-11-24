@@ -1299,6 +1299,265 @@ describe('billing scope', () => {
     });
   });
 
+  it('settles USD Enterprise AI and capture in dollars while counting bundled infrastructure', async () => {
+    const productId = enableCoveredPolar('enterprise');
+    const provider = createFakeBillingProvider();
+    provider.pricedEventNamesByProduct.set(productId, [
+      'timeline_ai_eur_cents',
+      'timeline_recall_minutes',
+    ]);
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    const now = Date.now();
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        enterprisePlatformFeeCurrency: 'USD',
+        polarCustomerId: 'cus_enterprise',
+        polarSubscriptionId: 'sub_enterprise',
+        polarProductId: productId,
+        periodStartedAt: new Date(now - 60_000),
+        periodEndsAt: new Date(now + 60_000),
+        shadowBilling: false,
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+
+    for (const [meterId, nativeUnits] of [
+      ['accepted_sources', 20],
+      ['email_units', 100],
+      ['storage_gb_month', 1],
+    ] as const) {
+      expect(
+        await scope.settle({
+          operationId: `bundle:${meterId}`,
+          meterId,
+          nativeUnits,
+          customerChargeCents: 1,
+        }),
+      ).toMatchObject({
+        ok: true,
+        ledger: {
+          customerChargeCents: 0,
+          metadata: { invoice_cents: 0, polar_ingest_status: 'not_required' },
+        },
+      });
+      const [counter] = await db
+        .select()
+        .from(billingUsageCounters)
+        .where(
+          and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, meterId)),
+        );
+      expect(Number(counter?.nativeUnits)).toBe(nativeUnits);
+    }
+
+    expect(
+      await scope.reserve({
+        operationId: 'ai:enterprise-usd',
+        meterId: 'ai',
+        reservedNativeUnits: 92,
+        reservedChargeCents: 92,
+      }),
+    ).toMatchObject({ ok: true, reservation: { metadata: { invoice_reserved_cents: 100 } } });
+    expect(
+      await scope.settle({
+        operationId: 'ai:enterprise-usd',
+        meterId: 'ai',
+        nativeUnits: 92,
+        customerChargeCents: 92,
+      }),
+    ).toMatchObject({
+      ok: true,
+      ledger: {
+        customerChargeCents: 100,
+        metadata: { presentation_currency: 'USD', invoice_cents: 100 },
+      },
+    });
+    expect(
+      await scope.settle({
+        operationId: 'recall:enterprise-usd',
+        meterId: 'recall_minutes',
+        nativeUnits: 2,
+        customerChargeCents: 6,
+      }),
+    ).toMatchObject({
+      ok: true,
+      ledger: {
+        customerChargeCents: 6,
+        metadata: { presentation_currency: 'USD', invoice_cents: 6 },
+      },
+    });
+    expect(provider.events.map(({ name, units }) => ({ name, units }))).toEqual([
+      { name: 'timeline_ai_eur_cents', units: 100 },
+      { name: 'timeline_recall_minutes', units: 2 },
+    ]);
+    expect(await db.select().from(billingUnbilledAlerts)).toHaveLength(0);
+  });
+
+  it('keeps the USD Enterprise storage bundle after renewal and after downgrade', async () => {
+    const productId = enableCoveredPolar('enterprise');
+    const provider = createFakeBillingProvider();
+    provider.pricedEventNamesByProduct.set(productId, ['timeline_ai_eur_cents']);
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    vi.setSystemTime(new Date('2026-10-01T00:00:00.000Z'));
+    const subscription = {
+      id: 'sub_enterprise_storage',
+      product_id: productId,
+      customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+      status: 'active',
+      currency: 'usd',
+    };
+    for (const [start, end] of [
+      ['2026-10-01', '2026-11-01'],
+      ['2026-11-01', '2026-12-01'],
+    ]) {
+      vi.setSystemTime(new Date(`${start}T00:00:00.000Z`));
+      await handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: POLAR_PRODUCT_IDS,
+        payload: {
+          type: 'subscription.active',
+          data: {
+            ...subscription,
+            modified_at: `${start}T00:00:00.000Z`,
+            current_period_start: `${start}T00:00:00.000Z`,
+            current_period_end: `${end}T00:00:00.000Z`,
+          },
+        },
+      });
+      expect((await scope.getAccount()).enterprisePlatformFeeCurrency).toBe('USD');
+    }
+    for (const [day, status] of [
+      ['2026-10-30', 'enterprise_active'],
+      ['2026-10-31', 'restricted'],
+    ] as const) {
+      if (status === 'restricted') {
+        vi.setSystemTime(new Date('2026-11-03T12:00:00.000Z'));
+        await handlePolarWebhookEvent({
+          db,
+          chargesEnabled: true,
+          products: POLAR_PRODUCT_IDS,
+          payload: {
+            type: 'subscription.revoked',
+            data: {
+              ...subscription,
+              status: 'canceled',
+              modified_at: '2026-11-03T12:00:00.000Z',
+            },
+          },
+        });
+      }
+      expect((await scope.getAccount()).billingState).toBe(status);
+      expect(
+        await scope.settle({
+          operationId: `storage:${day}`,
+          meterId: 'storage_gb_month',
+          nativeUnits: 4,
+          customerChargeCents: 100,
+          usageAt: new Date(`${day}T12:00:00.000Z`),
+          pricingPeriodYm: '2026-10',
+          pricingPlanId: 'enterprise',
+        }),
+      ).toMatchObject({
+        ok: true,
+        ledger: {
+          customerChargeCents: 0,
+          metadata: { invoice_cents: 0, polar_ingest_status: 'not_required' },
+        },
+      });
+    }
+    expect(provider.events).toEqual([]);
+  });
+
+  it.each(['USD', 'EUR'] as const)(
+    'keeps a %s Enterprise reservation off a replacement Team invoice and cap',
+    async (currency) => {
+      enableCoveredPolar('enterprise');
+      const provider = createFakeBillingProvider();
+      const scope = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+        provider,
+      });
+      await scope.getAccount();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'enterprise',
+          billingState: 'enterprise_active',
+          enterprisePlatformFeeCurrency: currency,
+          polarCustomerId: 'cus_enterprise',
+          polarSubscriptionId: 'sub_enterprise',
+          polarProductId: POLAR_PRODUCT_IDS.enterprise,
+          shadowBilling: false,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(
+        await scope.reserve({
+          operationId: 'ai:old-enterprise',
+          meterId: 'ai',
+          reservedNativeUnits: 92,
+          reservedChargeCents: 92,
+        }),
+      ).toMatchObject({ ok: true });
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'team_active',
+          enterprisePlatformFeeCurrency: null,
+          polarSubscriptionId: 'sub_team',
+          polarProductId: POLAR_PRODUCT_IDS.team,
+          spendCapCents: 95,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+
+      const usage = {
+        operationId: 'ai:old-enterprise',
+        meterId: 'ai' as const,
+        nativeUnits: 92,
+        customerChargeCents: 92,
+      };
+      const amount = currency === 'USD' ? 100 : 92;
+      expect(await scope.settle(usage)).toMatchObject({
+        ok: true,
+        ledger: {
+          customerChargeCents: amount,
+          metadata: {
+            invoice_cents: amount,
+            cap_eligible_cents: 0,
+            polar_ingest_status: 'pending',
+            polar_ingest_block: 'missing_subscription_price',
+          },
+        },
+      });
+      expect(await scope.settle(usage)).toEqual({ ok: true, duplicate: true });
+      await flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID });
+      expect(provider.events).toEqual([]);
+      expect(await scope.getAccount()).toMatchObject({
+        billingState: 'team_active',
+        spendCapCents: 95,
+      });
+      expect((await scope.getDashboard()).meteredSpendCents).toBe(0);
+    },
+  );
+
   it('stamps the verified Enterprise contract currency only when that contract priced the usage', async () => {
     vi.setSystemTime(new Date('2026-11-20T12:00:00.000Z'));
     const scope = createBillingScope({

@@ -14,6 +14,7 @@ export const RETAINED_USAGE_METADATA_FIELDS = [
   'presentation_chargeable',
   'presentation_currency',
   'polar_ingest_status',
+  'polar_ingest_enterprise_target',
   'polar_ingest_name',
   'polar_ingest_units',
   'polar_ingest_customer_id',

@@ -16,7 +16,7 @@ Full workspace membership uses an explicit role allowlist. Guests have no paid-s
 
 ## Meter semantics
 
-Free and seat-priced Team bundle email, accepted sources and storage within plan limits. Only AI and native meeting capture use the shared allowance. On seat-priced Team those two meters can produce additional invoice charges after explicit opt-in. Enterprise pricing follows the agreement. Existing legacy subscriptions and ledger rows retain their recorded terms.
+Free and seat-priced Team bundle email, accepted sources and storage within plan limits. Only AI and native meeting capture use the shared allowance. On seat-priced Team those two meters can produce additional invoice charges after explicit opt-in. The launch USD Enterprise catalog bundles ordinary infrastructure and prices AI and native meeting capture in USD. Admission and retries retain the original subscription target. Storage backfill uses the recorded billing history across renewals and downgrades. Existing legacy subscriptions and ledger rows retain their recorded terms.
 
 | Meter | Boundary |
 | --- | --- |

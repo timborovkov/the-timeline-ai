@@ -24,9 +24,10 @@ export interface BillingPlanBaseline {
   planId: BillingPlanId;
   effectiveAt: Date;
   teamSeatPricing?: boolean;
+  enterpriseStorageBundled?: boolean;
 }
 
-/** Append a row when the commercial plan or Team pricing generation changes. */
+/** Append a row when the commercial plan or its historical pricing changes. */
 export async function recordBillingPlan(
   db: Db,
   teamId: string,
@@ -34,11 +35,13 @@ export async function recordBillingPlan(
   effectiveAt = new Date(),
   openedFrom?: BillingPlanBaseline,
   teamSeatPricing?: boolean,
+  enterpriseStorageBundled?: boolean,
 ): Promise<void> {
   const [latest] = await db
     .select({
       planId: billingPlanHistory.planId,
       teamSeatPricing: billingPlanHistory.teamSeatPricing,
+      enterpriseStorageBundled: billingPlanHistory.enterpriseStorageBundled,
     })
     .from(billingPlanHistory)
     .where(eq(billingPlanHistory.teamId, teamId))
@@ -49,22 +52,31 @@ export async function recordBillingPlan(
       teamId,
       planId: openedFrom.planId,
       teamSeatPricing: openedFrom.teamSeatPricing ?? null,
+      enterpriseStorageBundled: openedFrom.enterpriseStorageBundled ?? null,
       effectiveAt: openedFrom.effectiveAt,
     });
     if (
       openedFrom.planId === planId &&
-      (teamSeatPricing === undefined || openedFrom.teamSeatPricing === teamSeatPricing)
+      (teamSeatPricing === undefined || openedFrom.teamSeatPricing === teamSeatPricing) &&
+      (enterpriseStorageBundled === undefined ||
+        openedFrom.enterpriseStorageBundled === enterpriseStorageBundled)
     )
       return;
   }
   if (
     latest?.planId === planId &&
-    (teamSeatPricing === undefined || latest.teamSeatPricing === teamSeatPricing)
+    (teamSeatPricing === undefined || latest.teamSeatPricing === teamSeatPricing) &&
+    (enterpriseStorageBundled === undefined ||
+      latest.enterpriseStorageBundled === enterpriseStorageBundled)
   )
     return;
-  await db
-    .insert(billingPlanHistory)
-    .values({ teamId, planId, teamSeatPricing: teamSeatPricing ?? null, effectiveAt });
+  await db.insert(billingPlanHistory).values({
+    teamId,
+    planId,
+    teamSeatPricing: teamSeatPricing ?? null,
+    enterpriseStorageBundled: enterpriseStorageBundled ?? null,
+    effectiveAt,
+  });
 }
 
 /**
@@ -126,6 +138,7 @@ async function billingPlanHistoryOnDay(input: {
     .select({
       planId: billingPlanHistory.planId,
       teamSeatPricing: billingPlanHistory.teamSeatPricing,
+      enterpriseStorageBundled: billingPlanHistory.enterpriseStorageBundled,
     })
     .from(billingPlanHistory)
     .where(
@@ -144,6 +157,15 @@ export async function historicalTeamSeatPricingOnDay(input: {
 }): Promise<boolean | undefined> {
   const row = await billingPlanHistoryOnDay(input);
   return row?.planId === 'team' ? (row.teamSeatPricing ?? false) : undefined;
+}
+
+export async function historicalEnterpriseStorageBundledOnDay(input: {
+  db: Pick<Db, 'select'>;
+  teamId: string;
+  day: string;
+}): Promise<boolean | undefined> {
+  const row = await billingPlanHistoryOnDay(input);
+  return row?.planId === 'enterprise' ? (row.enterpriseStorageBundled ?? undefined) : undefined;
 }
 
 const PERIOD_YM = /^(\d{4})-(\d{2})$/u;
