@@ -38,6 +38,7 @@ import {
   DEMO_LEGAL_ACCEPTED_AT,
   EMPTY_DEMO_LOGIN,
   adoptDemoSeedClock,
+  demoBillingPeriod,
   getDemoTimes,
   hydrateDemoSeedClock,
   refreshDemoFixture,
@@ -1028,6 +1029,15 @@ try {
   refreshDemoFixture();
   refreshDemoCorpus();
   const shifted = getDemoTimes();
+  assert.ok(demoTimes(shiftedNow).seedNowLegacy < new Date('2026-11-01T00:00:00.000Z'));
+  assert.deepEqual(demoBillingPeriod(shiftedNow), {
+    periodStartedAt: new Date('2026-11-01T00:00:00.000Z'),
+    periodEndsAt: new Date('2026-12-01T00:00:00.000Z'),
+  });
+  assert.deepEqual(demoBillingPeriod(new Date('2026-12-01T00:00:00.000Z')), {
+    periodStartedAt: new Date('2026-12-01T00:00:00.000Z'),
+    periodEndsAt: new Date('2027-01-01T00:00:00.000Z'),
+  });
   assert.equal(
     shifted.note,
     isoAt(DEMO_TIME_OFFSETS.note.days, DEMO_TIME_OFFSETS.note.time, shiftedNow),

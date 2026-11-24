@@ -20,6 +20,8 @@ export interface BillingPeriod {
   end: string;
 }
 export interface RecordedCharges {
+  currency: 'USD' | 'EUR' | null;
+  invoiceCentsByMeter: Partial<Record<BillingMeterId, number>>;
   usageCents: number;
   creditAppliedCents: number;
   usageAfterCreditCents: number;
@@ -64,6 +66,9 @@ export interface PresentationSettlement {
   occurredAt: Date;
   billable: boolean;
   metadata: Record<string, unknown>;
+  reservationId?: string | null;
+  reservationMetadata?: Record<string, unknown> | null;
+  reservationAdmittedPlanId?: BillingPlanId | null;
 }
 const LIMITS: Partial<Record<BillingMeterId, number>> = {
   ai: FREE_ALLOWANCES.aiChargeCents,
@@ -74,14 +79,53 @@ const LIMITS: Partial<Record<BillingMeterId, number>> = {
 };
 const cents = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-function addCharge(total: RecordedCharges, meter: BillingMeterId, credit: number, invoice: number) {
-  if (meter === 'member_days') total.extraMemberCents += invoice;
+export function recordedSettlementCurrency(
+  row: Pick<
+    PresentationSettlement,
+    'meterId' | 'metadata' | 'reservationId' | 'reservationMetadata' | 'reservationAdmittedPlanId'
+  >,
+): 'USD' | 'EUR' | null {
+  const currency = row.metadata.presentation_currency;
+  if (currency === 'USD' || currency === 'EUR') return currency;
+  if (
+    currency !== undefined ||
+    row.metadata.pricing_plan_id === 'enterprise' ||
+    row.reservationAdmittedPlanId === 'enterprise'
+  )
+    return null;
+  // Failed attempts link to a parent reservation that can be admitted again.
+  if (typeof row.metadata.failed_attempt_for === 'string') return null;
+  if (row.meterId === 'member_days') return 'EUR';
+  if (row.reservationId && !row.reservationMetadata) return null;
+  const pricing = row.reservationMetadata?.team_seat_pricing_at_admission;
+  const cap = row.reservationMetadata?.team_overage_cap_at_admission;
+  // Earlier seat settlements stored their pricing generation on the reservation.
+  if (pricing !== undefined)
+    return pricing !== null && typeof pricing === 'object' && !Array.isArray(pricing)
+      ? 'USD'
+      : 'EUR';
+  return typeof cap === 'number' && cap > 0 ? 'USD' : 'EUR';
+}
+
+function addCharge(
+  total: RecordedCharges,
+  row: PresentationSettlement,
+  credit: number,
+  invoice: number,
+): boolean {
+  if (credit === 0 && invoice === 0) return true;
+  const currency = recordedSettlementCurrency(row);
+  if (!currency || (total.currency && total.currency !== currency)) return false;
+  total.currency = currency;
+  total.invoiceCentsByMeter[row.meterId] = (total.invoiceCentsByMeter[row.meterId] ?? 0) + invoice;
+  if (row.meterId === 'member_days') total.extraMemberCents += invoice;
   else {
     total.usageCents += credit + invoice;
     total.creditAppliedCents += credit;
     total.usageAfterCreditCents += invoice;
   }
   total.totalCents += invoice;
+  return true;
 }
 
 /** Reads recorded settlement splits, never reprices historical usage using today's plan. */
@@ -92,6 +136,8 @@ export function recordedChargesForPeriod(
   const start = Date.parse(period.start);
   const end = Date.parse(period.end);
   const total: RecordedCharges = {
+    currency: null,
+    invoiceCentsByMeter: {},
     usageCents: 0,
     creditAppliedCents: 0,
     usageAfterCreditCents: 0,
@@ -124,7 +170,7 @@ export function recordedChargesForPeriod(
         // A partial window cannot safely be prorated from its totals.
         if (ws < start || we > end || !cents(w.discount_cents) || !cents(w.invoice_cents))
           return null;
-        addCharge(total, row.meterId, w.discount_cents, w.invoice_cents);
+        if (!addCharge(total, row, w.discount_cents, w.invoice_cents)) return null;
       }
       continue;
     }
@@ -146,7 +192,8 @@ export function recordedChargesForPeriod(
     )
       return null;
     if (!cents(row.metadata.discount_cents) || !cents(row.metadata.invoice_cents)) return null;
-    addCharge(total, row.meterId, row.metadata.discount_cents, row.metadata.invoice_cents);
+    if (!addCharge(total, row, row.metadata.discount_cents, row.metadata.invoice_cents))
+      return null;
   }
   return total;
 }
@@ -207,7 +254,8 @@ export function buildBillingPresentation(input: {
     totalCredit > 0 &&
     validCredit &&
     amounts &&
-    amounts.creditAppliedCents < totalCredit - balance
+    (amounts.currency === (seatTerms ? 'USD' : 'EUR') ? amounts.creditAppliedCents : 0) <
+      totalCredit - balance
   )
     amounts = null;
   return {

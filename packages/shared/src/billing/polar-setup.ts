@@ -38,8 +38,8 @@ export const TIMELINE_POLAR_WEBHOOK_EVENTS = [
   'subscription.revoked',
 ] as const;
 
-/** High ceiling used only when Polar rejects a custom price that omits a maximum. */
-export const TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS = 100_000_000;
+/** Polar custom prices accept at most eight digits in minor currency units. */
+export const TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS = 99_999_999;
 
 const METER_PRICING = {
   ai: {

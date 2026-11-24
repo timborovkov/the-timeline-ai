@@ -26,6 +26,7 @@ export interface CreateCheckoutInput {
   /** Custom-price amount in cents. Polar ignores this on a fixed price. */
   amount?: number;
   seats?: number;
+  enterpriseQuoteKey?: string;
 }
 
 export interface UpdateSubscriptionInput {
@@ -52,6 +53,18 @@ export interface PendingTeamCheckout {
   discountId: string | null;
 }
 
+export interface PendingEnterpriseCheckout {
+  id: string;
+  url: string;
+  status: 'open' | 'confirmed' | 'succeeded';
+  productId: string;
+  amount: number;
+  currency: string;
+  discountId: string | null;
+  expiresAt: Date;
+  quoteKey: string;
+}
+
 export interface TeamSeatSubscription {
   id: string;
   customerId: string;
@@ -64,6 +77,8 @@ export interface TeamSeatSubscription {
   modifiedAt: Date;
   /** `null` confirms renewal. Omitted when the provider did not report cancellation state. */
   cancelEffectiveAt?: Date | null;
+  /** Actual termination, distinct from a reversible scheduled end. */
+  endedAt?: Date | null;
 }
 
 export interface BillingProvider {
@@ -86,6 +101,14 @@ export interface BillingProvider {
     customerId: string;
     productId: string;
   }): Promise<PendingTeamCheckout[]>;
+  /** Timeline Enterprise quotes that can still be paid or are awaiting reconciliation. */
+  listPendingEnterpriseCheckouts?(customerId: string): Promise<PendingEnterpriseCheckout[]>;
+  /** Payment-started checkouts already applied locally or attached to an ended subscription. */
+  listReconciledCheckoutIds?(input: {
+    customerId: string;
+    currentSubscriptionId: string | null;
+    checkoutIds: readonly string[];
+  }): Promise<string[]>;
   /**
    * Retire one checkout before another link is issued.
    * Fail closed with `still_open` when Polar leaves the session payable.

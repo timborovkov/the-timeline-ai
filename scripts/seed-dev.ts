@@ -81,6 +81,7 @@ import {
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
   EMPTY_DEMO_LOGIN,
+  demoBillingPeriod,
 } from './demo-fixture.js';
 import { seedCurrentLegalAcceptances } from './demo-legal.js';
 import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
@@ -2334,8 +2335,7 @@ async function main(): Promise<void> {
         );
       const paidSeats = roster?.size ?? 2;
       const includedUsageCents = paidSeats * TEAM_MONTHLY_USAGE_PER_SEAT_CENTS;
-      const periodStartedAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-      const periodEndsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      const { periodStartedAt, periodEndsAt } = demoBillingPeriod(new Date());
       await tx
         .update(teamBillingAccounts)
         .set({

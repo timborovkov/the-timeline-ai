@@ -137,8 +137,8 @@ export function pendingEnterpriseTermsForCheckout(
   return parsed.legacy;
 }
 
-/** Drop the checkout that just activated. Other unpaid checkouts keep their terms. */
-export function pendingEnterpriseTermsAfterActivation(
+/** Drop a resolved checkout and preserve terms for other unpaid checkouts. */
+export function pendingEnterpriseTermsWithoutCheckout(
   stored: unknown,
   checkoutId: string | null,
 ): StoredPendingEnterpriseTerms | null {

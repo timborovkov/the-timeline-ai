@@ -998,6 +998,7 @@ async function planEntitlementForMemberDay(input: {
   account: BillingOperatorAccount;
 }): Promise<{
   planId: BillingPlanId;
+  hasRecordedMemberDays: boolean;
   included: number | null;
   additionalMemberCents: number | null;
   meteredDiscountPercent: number | null;
@@ -1022,6 +1023,7 @@ async function planEntitlementForMemberDay(input: {
   if (stampedPlanId && existing?.pricingTerms) {
     return {
       planId: stampedPlanId,
+      hasRecordedMemberDays: true,
       included: existing.pricingTerms.includedActiveMembers,
       additionalMemberCents: existing.pricingTerms.additionalMemberCents,
       meteredDiscountPercent: existing.pricingTerms.meteredDiscountPercent,
@@ -1098,6 +1100,7 @@ async function planEntitlementForMemberDay(input: {
   );
   return {
     planId,
+    hasRecordedMemberDays: stampedPlanId !== null,
     included: terms.includedActiveMembers,
     additionalMemberCents: terms.additionalMemberCents,
     meteredDiscountPercent: terms.meteredDiscountPercent,
@@ -1232,11 +1235,14 @@ async function accrueMemberDays(
         additionalMemberCents: terms.additionalMemberCents,
         meteredDiscountPercent: terms.meteredDiscountPercent,
       };
-      if (terms.planId === 'team') {
-        const seatPricing = await historicalTeamSeatPricingOnDay({ db, teamId: input.teamId, day });
-        if (seatPricing ?? Boolean(account?.teamSeatTerms)) return null;
-      }
-      for (const member of members) {
+      const seatPricing =
+        terms.planId === 'team' &&
+        ((await historicalTeamSeatPricingOnDay({ db, teamId: input.teamId, day })) ??
+          Boolean(account?.teamSeatTerms));
+      if (seatPricing && !terms.hasRecordedMemberDays) return null;
+      // Previously stamped legacy facts need settlement even if the workspace
+      // started seat pricing later that day. New seats get no legacy facts.
+      for (const member of seatPricing ? [] : members) {
         await db
           .insert(billingMemberDayLedger)
           .values({
@@ -1509,7 +1515,7 @@ export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number
   if (polarProvider) {
     await flushPendingPolarUsageIngest({ db, provider: polarProvider });
   }
-  await applyElapsedScheduledCancellations(db);
+  await applyElapsedScheduledCancellations(db, new Date(), { provider: polarProvider });
   const rows = await db.select({ id: teams.id }).from(teams);
   for (const team of rows) {
     if (polarProvider) {

@@ -772,7 +772,7 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.priceOverrideExpiresAt).toBeNull();
   });
 
-  it('activates only the Enterprise checkout that Polar says was paid', async () => {
+  it('applies Enterprise checkout terms and removes its reference only after activation', async () => {
     const billing = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -785,20 +785,45 @@ describe('handlePolarWebhookEvent', () => {
       SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
           pending_enterprise_terms = '{"byCheckoutId":{"chk_early":{"platformFeeCents":100000,"spendCapCents":40000},"chk_later":{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}}}'::jsonb
       WHERE team_id = '${TEAM_ID}';
+      UPDATE teams SET lifecycle_work = '{"pendingCheckoutIds":["chk_early","chk_later"]}'
+      WHERE id = '${TEAM_ID}';
     `);
+    const subscription = {
+      id: 'sub_early',
+      product_id: 'prod_enterprise',
+      checkout_id: 'chk_early',
+      customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+    };
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.created',
+        data: { ...subscription, status: 'incomplete', modified_at: '2026-02-01T00:00:00Z' },
+      },
+    });
+    expect(await billing.getAccount()).toMatchObject({
+      billingState: 'payment_retry',
+      spendCapCents: 2500,
+      enterprisePlatformFeeCents: null,
+      pendingEnterpriseTerms: {
+        byCheckoutId: {
+          chk_early: { platformFeeCents: 100000, spendCapCents: 40000 },
+          chk_later: { platformFeeCents: 250000, includedActiveMembers: 12, spendCapCents: 80000 },
+        },
+      },
+    });
+    const [pending] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(pending?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_early', 'chk_later']);
+
     await handlePolarWebhookEvent({
       db,
       chargesEnabled: true,
       products: PRODUCTS,
       payload: {
         type: 'subscription.active',
-        data: {
-          id: 'sub_early',
-          status: 'active',
-          product_id: 'prod_enterprise',
-          checkout_id: 'chk_early',
-          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
-        },
+        data: { ...subscription, status: 'active', modified_at: '2026-02-01T00:01:00Z' },
       },
     });
     const account = await billing.getAccount();
@@ -815,6 +840,60 @@ describe('handlePolarWebhookEvent', () => {
         },
       },
     });
+    const [workspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_later']);
+  });
+
+  it('releases only the terminated Enterprise checkout after an incomplete payment', async () => {
+    await pg.exec(`
+      UPDATE teams SET lifecycle_work = '{"pendingCheckoutIds":["chk_ended","chk_open"]}'
+      WHERE id = '${TEAM_ID}';
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, polar_subscription_id, polar_event_modified_at,
+        pending_enterprise_terms
+      ) VALUES (
+        '${TEAM_ID}', 'enterprise', 'payment_retry', 'sub_ended', '2026-02-01T00:00:00Z',
+        '{"byCheckoutId":{"chk_ended":{"platformFeeCents":100000},"chk_open":{"platformFeeCents":250000}}}'
+      );
+    `);
+    const subscription = {
+      id: 'sub_ended',
+      product_id: 'prod_enterprise',
+      checkout_id: 'chk_ended',
+      customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+      status: 'revoked',
+    };
+    const revoke = (modifiedAt: string) =>
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        payload: {
+          type: 'subscription.revoked',
+          data: { ...subscription, modified_at: modifiedAt },
+        },
+      });
+    await revoke('2026-01-31T23:59:00Z');
+    const [before] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(before?.billingState).toBe('payment_retry');
+    expect(before?.pendingEnterpriseTerms).toMatchObject({
+      byCheckoutId: { chk_ended: { platformFeeCents: 100000 } },
+    });
+
+    await revoke('2026-02-01T00:01:00Z');
+    const [after] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(after?.polarSubscriptionId).toBeNull();
+    expect(after?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_open: { platformFeeCents: 250000 } },
+    });
+    const [workspace] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    expect(workspace?.lifecycleWork.pendingCheckoutIds).toEqual(['chk_open']);
   });
 
   it('does not apply another Enterprise checkout when the paid event names a different one', async () => {
@@ -1688,6 +1767,98 @@ describe('handlePolarWebhookEvent', () => {
     expect(kept.polarSubscriptionId).toBe('sub_resume');
     expect(kept.cancelEffectiveAt).toBeNull();
   });
+
+  it.each(['renewed', 'unverified', 'scheduled', 'ended', 'ended_at'] as const)(
+    'checks a due seat cancellation against the verified provider state (%s)',
+    async (status) => {
+      const provider = createFakeBillingProvider({ teamIdentity: true });
+      if (!provider.identity) throw new Error('Expected a verified provider identity');
+      const customer = await provider.identity.create(TEAM_ID, 'Polar Hook', {
+        userId: USER_ID,
+        email: 'owner@example.test',
+      });
+      const periodStart = new Date('2099-06-01T00:00:00Z');
+      const periodEnd = new Date('2099-07-01T00:00:00Z');
+      const now = new Date('2099-07-02T00:00:00Z');
+      const nextPeriodEnd = new Date('2099-08-01T00:00:00Z');
+      const providerClock = new Date('2099-07-01T01:00:00Z');
+      await db.insert(teamBillingAccounts).values({
+        teamId: TEAM_ID,
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_due_seats',
+        polarCustomerId: customer.id,
+        polarProductId: PRODUCTS.team,
+        polarServer: 'sandbox',
+        polarOrganizationId: 'org-synthetic',
+        polarEventModifiedAt: new Date('2099-06-15T00:00:00Z'),
+        teamSeatTerms: { paidSeats: 2, highWaterSeats: 2, includedUsageCents: 2400 },
+        includedDiscountRemainingCents: 17,
+        periodStartedAt: periodStart,
+        periodEndsAt: periodEnd,
+        cancelEffectiveAt: periodEnd,
+      });
+      provider.getTeamSeatSubscription = () => {
+        if (status === 'unverified') throw new Error('Provider temporarily unavailable');
+        const renewing = status === 'renewed';
+        return Promise.resolve({
+          id: 'sub_due_seats',
+          productId: PRODUCTS.team,
+          customerId: customer.id,
+          seats: 2,
+          pendingSeats: null,
+          status: status === 'ended' ? 'canceled' : 'active',
+          periodStart: renewing ? periodEnd : periodStart,
+          periodEnd: renewing ? nextPeriodEnd : periodEnd,
+          modifiedAt: providerClock,
+          cancelEffectiveAt: renewing || status === 'ended_at' ? null : periodEnd,
+          endedAt: status === 'ended_at' ? periodEnd : null,
+        });
+      };
+      provider.updateTeamSeatSubscription = () => {
+        throw new Error('A renewal check cannot adjust the billed quantity');
+      };
+      // Match ordinary maintenance: the cancellation pass verifies safety, then
+      // the active subscription reconciliation applies the renewed allowance.
+      expect(await applyElapsedScheduledCancellations(db, now, { provider })).toBe(
+        status === 'ended' || status === 'ended_at' ? 1 : 0,
+      );
+      if (status === 'renewed') {
+        await pg.exec(`
+          INSERT INTO users (id, email)
+          VALUES ('33333333-4444-4555-8666-777777777777', 'second@example.test');
+          INSERT INTO team_members (team_id, user_id, role)
+          VALUES ('${TEAM_ID}', '33333333-4444-4555-8666-777777777777', 'member');
+        `);
+        await reconcileTeamPaidSeats({ db, provider, teamId: TEAM_ID });
+      }
+      const [account] = await db
+        .select()
+        .from(teamBillingAccounts)
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      if (status === 'renewed') {
+        expect(account).toMatchObject({
+          planId: 'team',
+          cancelEffectiveAt: null,
+          polarEventModifiedAt: providerClock,
+          periodEndsAt: nextPeriodEnd,
+          includedDiscountRemainingCents: 2400,
+        });
+      } else if (status === 'unverified' || status === 'scheduled') {
+        expect(account).toMatchObject({
+          planId: 'team',
+          cancelEffectiveAt: periodEnd,
+          includedDiscountRemainingCents: 17,
+        });
+      } else {
+        expect(account).toMatchObject({
+          planId: 'free',
+          cancelEffectiveAt: null,
+          teamSeatTerms: null,
+        });
+      }
+    },
+  );
 
   it('does not downgrade when the locked cancel is no longer due', async () => {
     const billing = createBillingScope({

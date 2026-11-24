@@ -72,6 +72,77 @@ describe('expireCheckout', () => {
   });
 });
 
+describe('reconciled checkout identities', () => {
+  it('retains unapplied and still-active subscriptions while recognizing exact applied or ended checkouts', async () => {
+    const provider = polarProvider();
+    if (!provider.listReconciledCheckoutIds) throw new Error('Missing checkout recovery');
+    const fetchMock = vi.fn((input: string | URL) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe('/v1/subscriptions/');
+      expect(url.searchParams.get('organization_id')).toBe('org-synthetic');
+      expect(url.searchParams.get('customer_id')).toBe('customer-a');
+      const row = (id: string, checkoutId: string, status: string) => ({
+        id,
+        customer_id: 'customer-a',
+        checkout_id: checkoutId,
+        status,
+      });
+      const items =
+        url.searchParams.get('page') === '1'
+          ? [
+              row('sub_applied', 'checkout_applied', 'active'),
+              row('sub_unapplied', 'checkout_unapplied', 'active'),
+              {
+                ...row('sub_scheduled', 'checkout_scheduled', 'canceled'),
+                ends_at: '2099-01-01T00:00:00.000Z',
+              },
+            ]
+          : [
+              {
+                ...row('sub_ended', 'checkout_ended', 'canceled'),
+                ended_at: '2020-01-01T00:00:00.000Z',
+              },
+            ];
+      return jsonResponse({ items, pagination: { max_page: 2 } });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    expect(
+      await provider.listReconciledCheckoutIds({
+        customerId: 'customer-a',
+        currentSubscriptionId: 'sub_applied',
+        checkoutIds: [
+          'checkout_applied',
+          'checkout_unapplied',
+          'checkout_scheduled',
+          'checkout_ended',
+        ],
+      }),
+    ).toEqual(['checkout_applied', 'checkout_ended']);
+
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({
+        items: [
+          {
+            id: 'sub_foreign',
+            status: 'revoked',
+            customer_id: 'another-customer',
+            checkout_id: 'checkout_foreign',
+          },
+        ],
+        pagination: { max_page: 1 },
+      }),
+    );
+    await expect(
+      provider.listReconciledCheckoutIds({
+        customerId: 'customer-a',
+        currentSubscriptionId: null,
+        checkoutIds: ['checkout_foreign'],
+      }),
+    ).rejects.toMatchObject({ code: 'identity_conflict' });
+  });
+});
+
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 
 function polarProvider() {
@@ -574,6 +645,76 @@ describe('Polar managed checkout discounts', () => {
     ]);
   });
 
+  it('stamps and verifies Enterprise quotes and scopes rediscovery to the same customer', async () => {
+    const enterpriseQuoteKey = 'terms-fingerprint';
+    const quote = {
+      ...teamCheckoutFixture,
+      amount: 150_000,
+      discount_id: discountFixture.id,
+      metadata: { timeline_enterprise_checkout: enterpriseQuoteKey },
+    };
+    globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+      const request = new URL(String(url));
+      if (request.pathname.includes('/customers/')) {
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      }
+      expect(request.pathname).toBe('/v1/checkouts/');
+      if (init?.method === 'POST') {
+        expect(JSON.parse(typeof init.body === 'string' ? init.body : '{}')).toMatchObject({
+          customer_id: checkoutInput.customerId,
+          products: [checkoutInput.productId],
+          amount: quote.amount,
+          currency: 'usd',
+          discount_id: discountFixture.id,
+          metadata: quote.metadata,
+        });
+        return jsonResponse(quote);
+      }
+      expect(request.searchParams.get('organization_id')).toBe('org-synthetic');
+      expect(request.searchParams.get('customer_id')).toBe(checkoutInput.customerId);
+      expect(request.searchParams.getAll('status')).toEqual(['open', 'confirmed', 'succeeded']);
+      return jsonResponse({
+        items: [quote, { ...quote, id: 'legacy-eur', currency: 'eur' }, teamCheckoutFixture],
+        pagination: { max_page: 1 },
+      });
+    }) as unknown as typeof fetch;
+    const provider = discountProvider();
+    const enterpriseInput = {
+      ...checkoutInput,
+      amount: quote.amount,
+      discountId: discountFixture.id,
+      enterpriseQuoteKey,
+    };
+    await expect(provider.createCheckoutSession(enterpriseInput)).resolves.toEqual({
+      id: quote.id,
+      url: quote.url,
+    });
+    quote.currency = 'eur';
+    await expect(provider.createCheckoutSession(enterpriseInput)).rejects.toThrow(
+      'did not confirm the Enterprise checkout quote',
+    );
+    quote.currency = 'usd';
+    await expect(
+      provider.listPendingEnterpriseCheckouts?.(checkoutInput.customerId),
+    ).resolves.toMatchObject([
+      {
+        id: quote.id,
+        status: 'open',
+        productId: checkoutInput.productId,
+        amount: 150_000,
+        currency: 'usd',
+        discountId: discountFixture.id,
+        quoteKey: enterpriseQuoteKey,
+      },
+      { id: 'legacy-eur', currency: 'eur' },
+    ]);
+  });
+
   it('does not need discount configuration or catalog access for no-code checkout', async () => {
     const fetchMock = vi.fn(async (_url: URL | string, init?: RequestInit) => {
       expect(
@@ -764,19 +905,31 @@ describe('verified Team subscription snapshots', () => {
       return provider.getTeamSeatSubscription(fixture.id);
     };
 
-    expect(await read()).not.toHaveProperty('cancelEffectiveAt');
+    const unknownCancellation = await read();
+    expect(unknownCancellation).not.toHaveProperty('cancelEffectiveAt');
+    expect(unknownCancellation).not.toHaveProperty('endedAt');
     fetchMock.mockImplementationOnce(() =>
       jsonResponse({ ...fixture, cancel_at_period_end: true, ends_at: null }),
     );
     expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(fixture.current_period_end) });
     const endsAt = '2026-11-29T00:00:00Z';
-    fetchMock.mockImplementationOnce(() => jsonResponse({ ...fixture, ends_at: endsAt }));
-    expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(endsAt) });
     fetchMock.mockImplementationOnce(() =>
-      jsonResponse({ ...fixture, cancel_at_period_end: false, ends_at: null }),
+      jsonResponse({ ...fixture, ends_at: endsAt, ended_at: null }),
+    );
+    expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(endsAt), endedAt: null });
+    const endedAt = '2026-11-30T01:00:00Z';
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({
+        ...fixture,
+        status: 'canceled',
+        cancel_at_period_end: false,
+        ends_at: null,
+        ended_at: endedAt,
+      }),
     );
     expect(await read()).toMatchObject({
       cancelEffectiveAt: null,
+      endedAt: new Date(endedAt),
       modifiedAt: new Date(fixture.created_at),
     });
   });
