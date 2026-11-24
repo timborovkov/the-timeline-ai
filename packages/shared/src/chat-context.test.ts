@@ -70,7 +70,8 @@ describe('chat context trail', () => {
   });
 
   it('carries bounded work-view URLs intact through repeated parsing and into the prompt', () => {
-    const filters = new URLSearchParams({ q: 'Helsinki '.repeat(32).trim(), status: 'blocked' });
+    const values = { q: '東'.repeat(500), stage: '京'.repeat(500), status: 'blocked' };
+    const filters = new URLSearchParams(values);
     const ref = {
       kind: 'page' as const,
       href: `/app/tasks?${filters.toString()}`,
@@ -78,10 +79,13 @@ describe('chat context trail', () => {
     };
     const trail = parseChatContextTrail(parseChatContextTrail([ref]));
     expect(trail).toEqual([ref]);
-    expect(chatContextPrompt(trail)).toContain(ref.href);
+    expect(ref.href.length).toBeGreaterThan(8192);
+    expect(chatContextPrompt(trail)).toContain('current_href: /app/tasks');
+    expect(chatContextPrompt(trail)).toContain(`current_query_params: ${JSON.stringify(values)}`);
 
-    const oversized = { ...ref, href: `/app/tasks?q=${'x'.repeat(9000)}` };
+    const oversized = { ...ref, href: `/app/tasks?q=${'x'.repeat(501)}` };
     expect(parseChatContextRef(oversized)).toBeNull();
+    expect(parseChatContextRef({ ...ref, href: `${ref.href}&status=done` })).toBeNull();
   });
 
   it('parses a stored trail and ignores junk', () => {

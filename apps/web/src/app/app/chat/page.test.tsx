@@ -254,10 +254,16 @@ describe('Update follow-up context', () => {
     const href = savedWorkViewHref({
       collection: 'tasks',
       targetId: null,
-      filters: { q: 'Helsinki '.repeat(32).trim(), status: 'blocked', due: 'today' },
+      filters: { q: '東'.repeat(500), stage: '京'.repeat(500), status: 'blocked', due: 'today' },
     });
     fakes.listDailyDigests.mockResolvedValue([
-      { payload: { ...payload, savedViewsOnly: false, links } },
+      {
+        payload: {
+          ...payload,
+          savedViewsOnly: false,
+          links: [{ label: 'Approvals', href: '/app/approvals' }, ...links],
+        },
+      },
     ]);
     fakes.visibleDigestChanges.mockResolvedValue([
       { title: 'Blocked launch work', href, count: 1 },
