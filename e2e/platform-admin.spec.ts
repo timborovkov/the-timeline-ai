@@ -22,7 +22,15 @@ for (const mobile of [false, true]) {
       .getByRole('textbox', { name: 'Search by name, email, slug, or ID' })
       .fill(e2eUsers.member.email);
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await page.getByRole('link', { name: e2eUsers.member.name, exact: true }).click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === '/app/admin/users' && url.searchParams.get('q') === e2eUsers.member.email,
+    );
+    const memberLink = page.getByRole('link', { name: e2eUsers.member.name, exact: true });
+    const memberPath = `/app/admin/users/${e2eUsers.member.id}`;
+    await expect(memberLink).toHaveAttribute('href', memberPath);
+    await memberLink.click();
+    await expect(page).toHaveURL((url) => url.pathname === memberPath);
     await page.getByText('Log in as this member', { exact: true }).click();
     await page.getByLabel('Purpose', { exact: true }).fill('Investigate synthetic fixture');
     await page.getByLabel('Support ticket or incident reference').fill('E2E-123');
