@@ -24,7 +24,13 @@ test('password recovery replaces credentials and revokes both browser sessions',
   await sql`INSERT INTO users (id, email, name, password_hash, legal_terms_version, legal_privacy_version, legal_accepted_at)
     VALUES (${userId}, ${email}, 'Recovery test', ${hash}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, now())`;
   await sql`INSERT INTO team_members (team_id, user_id, role) VALUES (${e2eTeam.id}, ${userId}, 'member')`;
-  const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  // Both sessions share one fixture client identity and its real rate limit.
+  const headers = { 'x-real-ip': `2001:db8:${userId.slice(0, 4)}:${userId.slice(4, 8)}::1` };
+  await page.setExtraHTTPHeaders(headers);
+  const other = await browser.newContext({
+    baseURL: test.info().project.use.baseURL,
+    extraHTTPHeaders: headers,
+  });
   const second = await other.newPage();
   try {
     for (const signedInPage of [page, second]) {
