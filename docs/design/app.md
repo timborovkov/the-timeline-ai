@@ -88,7 +88,7 @@ links to the work queue; tasks and objects link to their respective indexes.
 “You’re caught up” replaces an empty work summary. Updates leads the primary column, followed by work and recent activity. A supporting column
 holds three personal pins, team inbound email (`#team-email`), agent connection onboarding, and
 **Connections & processing** issues. Actual billing restrictions remain prominent;
-upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
+upgrade nudges come last in the supporting column. These columns stack on
 smaller screens. No synthetic records or empty metric cards fill spare space.
 
 Updates shows a short summary with its full body folded until opened. Customize
@@ -656,33 +656,26 @@ Foundations: [design system](../../design.md). Shared behavior: [component contr
 
 ### Billing benefits and recorded charges
 
-Free and Team use one Included usage bar for AI processing and meeting capture. Put the
-UTC reset and spending status with the bar. Show the internal calculation in a
-disclosure and retain infrastructure counters in the Usage breakdown.
+Free and Team use one Included usage bar for AI processing and meeting capture.
+Show the reset date and additional-spending status with the bar. Free resets by
+calendar month in UTC. Team resets on the subscription's renewal date. Keep the
+internal calculation and infrastructure counters in disclosures. The Team
+membership row distinguishes active full members from paid seats available to
+reuse. If the full-member roster exceeds the confirmed quantity, ask the billing
+administrator to review the subscription before adding members. An older payable
+Team quote can be resumed when its quantity and terms still match.
 
-Usage and Billing share the same typed billing summary. Usage presents plan, members,
-and recorded charges in a compact summary, followed by responsive meter cards.
-Each allowance card shows usage against its allowance and the remaining amount;
-positive meter charges stay visible. Detailed recorded charges live in a closed
-Billing details disclosure. Included credit and applicable spend caps remain
-visible outside that disclosure. Billing settings use the same allowance cards, with separate neutral surfaces for
-plan controls, recorded charges, and membership. Plan controls wrap on narrow screens. Free/PAYG show each
-calendar-month allowance with used, included and remaining units, plus the UTC
-reset date. Team/Business instead show pooled included credit, used and remaining
-amounts, and the subscription-period dates. Extra members are separate from that
-credit. Every meter remains visible even at zero usage.
+Usage and Billing share the same typed summary. Billing settings keep plan
+controls, recorded charges and membership visible in distinct sections. Plan
+controls wrap on narrow screens. “Charges recorded so far” comes from settled
+usage. The recurring subscription fee is separate. Team additional spending is
+off by default. Show the authorized cap and recorded additional charges when
+enabled. Keep financial controls available to owners and admins.
 
-“Charges recorded so far” uses settlement records; it is not a forecast or final
-invoice. The recurring plan fee is separate. Unknown attribution is Unavailable;
-stale credit periods say Updating billing period. No view silently resets credit.
-Monthly caps show their own dates and include metered usage before plan credit
-plus extra members, excluding fees and tax. PAYG's native allowances are deducted
-before its cap is counted. A cap is never presented as free credit.
-
-Sidebar: Free labels the most-used allowance; PAYG labels its monthly cap;
-Team/Business lead with credit remaining and a separate cap line. Keep the credit
-renewal date distinct from the calendar cap reset. Financial details remain for
-owners/admins; members retain the existing limited warning view.
+When a shared allowance or approved cap stops new billable work, explain the
+pause and keep existing records accessible within their visibility rules. Ask
+and meeting capture tell members to wait for usage to renew or contact a
+workspace administrator about the options available to their plan.
 
 Contractual Enterprise displays agreement-based limits instead of a local cap
 warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
@@ -702,14 +695,6 @@ available for retry. Reset asks for matching new passwords (8–200 characters),
 announces pending/error/success states, and replaces expired or used links with a
 request-new-link action. Success directs the user to sign in again; recovery
 remains available without legal acceptance or new-account publication readiness.
-
-
-### Optional PAYG follow-up
-
-On Home, Free-plan owners/admins who have a persisted assistant answer can see a
-quiet PAYG suggestion. Do not show it before an answer, alongside a restriction,
-or instead of an existing billing warning. “Not now” dismisses this suggestion
-for that user/team in the current browser. The CTA opens plan selection only.
 
 
 ### Coworker account and reporting controls

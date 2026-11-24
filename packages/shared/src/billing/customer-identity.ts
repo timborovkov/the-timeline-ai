@@ -89,6 +89,9 @@ export function resolvePolarOwnerUserId(
   throw new PolarIdentityError('identity_conflict', 'owner_mapping');
 }
 
+type TeamCheckoutPreparation =
+  { status: 'ready' } | { status: 'blocked' } | { status: 'resume'; url: string };
+
 /** Caller authorization and session creation share the account lock with revocation. */
 export async function withTeamBillingIdentity<T>(
   input: {
@@ -104,7 +107,11 @@ export async function withTeamBillingIdentity<T>(
       db: Db;
       account: typeof teamBillingAccounts.$inferSelect;
       recordCheckout: (id: string) => Promise<void>;
-      retirePendingCheckouts: () => Promise<boolean>;
+      prepareTeamCheckout: (quote: {
+        productId: string;
+        seats: number;
+        discountId?: string;
+      }) => Promise<TeamCheckoutPreparation>;
     },
   ) => Promise<T>,
 ): Promise<T> {
@@ -340,35 +347,46 @@ export async function withTeamBillingIdentity<T>(
         )
           throw new PolarIdentityError('forbidden', 'billing_member');
         let pendingCheckoutIds = [...(lifecycle.lifecycleWork.pendingCheckoutIds ?? [])];
+        const savePendingCheckouts = async (ids: string[]) => {
+          await db
+            .update(teams)
+            .set({ lifecycleWork: { ...lifecycle.lifecycleWork, pendingCheckoutIds: ids } })
+            .where(eq(teams.id, input.teamId));
+          pendingCheckoutIds = ids;
+        };
         return action(identity, {
-          retirePendingCheckouts: async () => {
-            const retained: string[] = [];
-            for (const id of pendingCheckoutIds) {
-              if ((await input.provider.expireCheckout(id)) !== 'expired') retained.push(id);
-            }
-            if (retained.length !== pendingCheckoutIds.length) {
-              await db
-                .update(teams)
-                .set({
-                  lifecycleWork: { ...lifecycle.lifecycleWork, pendingCheckoutIds: retained },
-                })
-                .where(eq(teams.id, input.teamId));
-            }
-            pendingCheckoutIds = retained;
-            return retained.length === 0;
-          },
           db,
           account,
-          recordCheckout: async (id) => {
-            await db
-              .update(teams)
-              .set({
-                lifecycleWork: {
-                  ...lifecycle.lifecycleWork,
-                  pendingCheckoutIds: [...new Set([...pendingCheckoutIds, id])],
-                },
-              })
-              .where(eq(teams.id, input.teamId));
+          recordCheckout: (id) => savePendingCheckouts([...new Set([...pendingCheckoutIds, id])]),
+          prepareTeamCheckout: async (quote) => {
+            const discovered =
+              (await input.provider.listPendingTeamCheckouts?.({
+                customerId: identity.customerId,
+                productId: quote.productId,
+              })) ?? [];
+            const matches = discovered.filter(
+              (row) =>
+                row.status === 'open' &&
+                row.seats === quote.seats &&
+                row.discountId === (quote.discountId ?? null),
+            );
+            const match = matches.length === 1 ? matches[0] : undefined;
+            const ids = new Set([...pendingCheckoutIds, ...discovered.map(({ id }) => id)]);
+            const confirmed = new Set(
+              discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
+            );
+            const retained: string[] = [];
+            for (const id of ids) {
+              if (
+                id === match?.id ||
+                confirmed.has(id) ||
+                (await input.provider.expireCheckout(id)) !== 'expired'
+              )
+                retained.push(id);
+            }
+            if (ids.size > 0) await savePendingCheckouts(retained);
+            if (match && retained.length === 1) return { status: 'resume', url: match.url };
+            return { status: retained.length ? 'blocked' : 'ready' };
           },
         });
       }),

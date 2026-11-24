@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
 
+import { TEAM_MONTHLY_SEAT_CENTS } from '#src/billing/catalog.js';
 import { createPolarIdentityApi, PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import {
   isMonthlyUsdTeamCheckoutProduct,
@@ -10,6 +11,7 @@ import {
 import type {
   BillingProvider,
   CreateCheckoutInput,
+  PendingTeamCheckout,
   PolarUsageEvent,
   UpdateSubscriptionInput,
 } from '#src/billing/provider.js';
@@ -93,6 +95,38 @@ export function polarCustomerIdForExternalId(
   return customer.id;
 }
 
+const TEAM_CHECKOUT_METADATA_KEY = 'timeline_team_checkout';
+const TEAM_CHECKOUT_WITHOUT_ASSIGNED_DISCOUNT = 'standard';
+
+const teamCheckoutSchema = z.object({
+  id: z.string().min(1),
+  url: z.url({ protocol: /^https$/ }),
+  customer_id: z.string(),
+  product: z.object({ id: z.string() }),
+  status: z.enum(['open', 'confirmed']),
+  currency: z.string(),
+  amount: z.number().int(),
+  seats: z.number().int().nullable(),
+  min_seats: z.number().int().nullable(),
+  max_seats: z.number().int().nullable(),
+  expires_at: z.iso.datetime({ offset: true }),
+  discount_id: z.string().nullish(),
+  metadata: z.record(z.string(), z.unknown()),
+});
+
+function fixedTeamCheckoutSeats(row: z.infer<typeof teamCheckoutSchema>): number | null {
+  const { seats } = row;
+  return row.status === 'open' &&
+    Date.parse(row.expires_at) > Date.now() &&
+    row.currency === 'usd' &&
+    seats !== null &&
+    row.min_seats === seats &&
+    row.max_seats === seats &&
+    row.amount === seats * TEAM_MONTHLY_SEAT_CENTS
+    ? seats
+    : null;
+}
+
 const seatSubscriptionSchema = z
   .object({
     id: z.string(),
@@ -102,6 +136,11 @@ const seatSubscriptionSchema = z
     recurring_interval: z.literal('month'),
     recurring_interval_count: z.literal(1),
     seats: z.number().int().min(1).max(1000),
+    status: z.string(),
+    current_period_start: z.iso.datetime({ offset: true }),
+    current_period_end: z.iso.datetime({ offset: true }),
+    modified_at: z.iso.datetime({ offset: true }).nullish(),
+    created_at: z.iso.datetime({ offset: true }),
     pending_update: z
       .object({ seats: z.number().int().min(1).max(1000).nullable() })
       .nullable()
@@ -113,6 +152,10 @@ const seatSubscriptionSchema = z
     productId: row.product_id,
     seats: row.seats,
     pendingSeats: row.pending_update?.seats ?? null,
+    status: row.status,
+    periodStart: new Date(row.current_period_start),
+    periodEnd: new Date(row.current_period_end),
+    modifiedAt: new Date(row.modified_at ?? row.created_at),
   }));
 
 export function createPolarBillingProvider(options?: {
@@ -241,7 +284,19 @@ export function createPolarBillingProvider(options?: {
           products: [input.productId],
           success_url: input.successUrl,
           customer_id: input.customerId,
-          ...(input.seats !== undefined ? { seats: input.seats } : {}),
+          ...(input.seats !== undefined
+            ? {
+                currency: 'usd',
+                allow_trial: false,
+                seats: input.seats,
+                min_seats: input.seats,
+                max_seats: input.seats,
+                metadata: {
+                  [TEAM_CHECKOUT_METADATA_KEY]:
+                    input.discountId ?? TEAM_CHECKOUT_WITHOUT_ASSIGNED_DISCOUNT,
+                },
+              }
+            : {}),
           allow_discount_codes: !input.discountId,
           ...(input.discountId ? { discount_id: input.discountId } : {}),
           ...(typeof input.amount === 'number' ? { amount: input.amount } : {}),
@@ -251,11 +306,68 @@ export function createPolarBillingProvider(options?: {
         if (input.discountId) throw await discountWriteError(created);
         throw new Error(`Polar checkout failed: ${created.status}`);
       }
-      const row = (await created.json()) as { id: string; url: string; discount_id?: string };
+      const body: unknown = await created.json();
+      if (input.seats !== undefined) {
+        const row = teamCheckoutSchema.parse(body);
+        if (
+          row.customer_id !== input.customerId ||
+          row.product.id !== input.productId ||
+          fixedTeamCheckoutSeats(row) !== input.seats
+        )
+          throw new Error('Polar did not confirm the Team checkout quote.');
+      }
+      const row = z
+        .object({
+          id: z.string().min(1),
+          url: z.url({ protocol: /^https$/ }),
+          discount_id: z.string().nullish(),
+        })
+        .parse(body);
       if (input.discountId && row.discount_id !== input.discountId) {
         throw new PolarDiscountError('unavailable');
       }
       return { id: row.id, url: row.url };
+    },
+
+    async listPendingTeamCheckouts(input) {
+      if (!organizationId) throw new PolarIdentityError('configuration', 'checkout_organization');
+      const pending: PendingTeamCheckout[] = [];
+      for (let page = 1; ; page++) {
+        const query = new URLSearchParams({
+          organization_id: organizationId,
+          customer_id: input.customerId,
+          product_id: input.productId,
+          limit: '100',
+          page: String(page),
+        });
+        query.append('status', 'open');
+        query.append('status', 'confirmed');
+        const response = await polarFetch(`/checkouts/?${query.toString()}`);
+        if (!response.ok) throw new Error(`Polar checkout recovery failed: ${response.status}`);
+        const result = z
+          .object({
+            items: z.array(z.object({ metadata: z.record(z.string(), z.unknown()) }).loose()),
+            pagination: z.object({ max_page: z.number().int().nonnegative() }),
+          })
+          .parse(await response.json());
+        for (const item of result.items) {
+          const intent = item.metadata[TEAM_CHECKOUT_METADATA_KEY];
+          if (typeof intent !== 'string') continue;
+          const row = teamCheckoutSchema.parse(item);
+          if (row.customer_id !== input.customerId || row.product.id !== input.productId)
+            throw new PolarIdentityError('identity_conflict', 'checkout_customer');
+          const discountId = intent === TEAM_CHECKOUT_WITHOUT_ASSIGNED_DISCOUNT ? null : intent;
+          pending.push({
+            id: row.id,
+            url: row.url,
+            status: row.status,
+            seats:
+              discountId && discountId !== row.discount_id ? null : fixedTeamCheckoutSeats(row),
+            discountId,
+          });
+        }
+        if (page >= result.pagination.max_page) return pending;
+      }
     },
 
     async expireCheckout(checkoutId) {
@@ -272,23 +384,6 @@ export function createPolarBillingProvider(options?: {
       if (status !== 'open') {
         throw new Error(`Polar checkout status is ${status || 'unknown'}`);
       }
-      // CheckoutUpdate has no status field. A past expires_at expires the
-      // session only when Polar applies it; otherwise the link stays payable.
-      const updated = await polarFetch(path, {
-        method: 'PATCH',
-        body: JSON.stringify({ expires_at: '1970-01-01T00:00:00.000Z' }),
-      });
-      if (updated.status === 404) return 'expired';
-      if (!updated.ok) {
-        await updated.text();
-        if (updated.status >= 500) {
-          throw new Error(`Polar checkout expire failed: ${updated.status}`);
-        }
-        return 'still_open';
-      }
-      const after = (await updated.json()) as { status?: string };
-      const next = (after.status ?? '').trim().toLowerCase();
-      if (next === 'expired' || next === 'failed') return 'expired';
       return 'still_open';
     },
 

@@ -1,10 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { teams, teamBillingAccounts, type Db } from '@timeline/db';
+import { teams, teamBillingAccounts, teamMembers, type Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { applyOwnedTeamFreeGrant, assertTeamMemberSeatCapacity } from '#src/billing/capacity.js';
 import {
   billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
@@ -1275,6 +1276,50 @@ describe('handlePolarWebhookEvent', () => {
     expect(ended.billingState).toBe('restricted');
     expect(ended.polarSubscriptionId).toBeNull();
     expect(ended.cancelEffectiveAt).toBeNull();
+  });
+
+  it('preserves existing full members on downgrade and enforces the Free cap on additions', async () => {
+    await pg.exec(`
+      UPDATE users SET "emailVerified" = now() WHERE id = '${USER_ID}';
+      INSERT INTO users (email)
+      SELECT 'downgrade-' || n || '@example.test' FROM generate_series(1, 3) n;
+      INSERT INTO team_members (team_id, user_id, role)
+      SELECT '${TEAM_ID}', id, 'member' FROM users WHERE email LIKE 'downgrade-%';
+    `);
+    expect((await applyOwnedTeamFreeGrant({ db, teamId: TEAM_ID, userId: USER_ID })).ok).toBe(true);
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_downgrade',
+        teamSeatTerms: { paidSeats: 4, highWaterSeats: 4, includedUsageCents: 4800 },
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.revoked',
+        data: {
+          id: 'sub_downgrade',
+          status: 'canceled',
+          product_id: PRODUCTS.team,
+          customer: { id: 'cus_fixture', external_id: TEAM_ID },
+        },
+      },
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account).toMatchObject({ planId: 'free', billingState: 'free', teamSeatTerms: null });
+    const roster = await db.select().from(teamMembers).where(eq(teamMembers.teamId, TEAM_ID));
+    expect(roster.filter((member) => !member.removedAt)).toHaveLength(4);
+    await expect(assertTeamMemberSeatCapacity({ db, teamId: TEAM_ID })).rejects.toThrow(
+      'Active member limit reached',
+    );
   });
 
   it('downgrades on subscription.revoked while a period-end cancel is still scheduled', async () => {

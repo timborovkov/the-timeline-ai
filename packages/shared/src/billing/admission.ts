@@ -127,11 +127,11 @@ export function askBillingUserMessage(error: AskBillingError): string {
     case 'security_blocked':
       return 'This workspace cannot run paid AI right now. Contact support if that looks wrong.';
     case 'free_allowance_reached':
-      return 'There is not enough unreserved Free AI allowance to start this Ask. Other jobs may temporarily reserve allowance. Retry after they finish, check Usage for the reset date, or ask an admin to enable pay as you go in Billing.';
+      return 'There is not enough Free Included usage to answer this question. AI processing and meeting capture share the allowance. Retry after other work finishes or the allowance resets, or ask a workspace admin about upgrading to Team.';
     case 'usage_limit_reached':
-      return 'Usage balance is too low for this Ask. Top up or raise the spend cap in Billing.';
+      return 'This workspace cannot start another answer right now. Ask a workspace admin to check Included usage and billing status.';
     case 'spend_cap_reached':
-      return 'This workspace hit its spend cap. Raise the cap in Billing to continue Ask.';
+      return 'This workspace has insufficient Included usage for another answer within its additional-spending limit. Retry after the allowance resets, or ask a workspace admin about enabling capped additional spending or raising the cap.';
     case 'costly_worker_busy':
       return 'This workspace is running other billed jobs. Retry shortly.';
   }
@@ -142,11 +142,11 @@ export function recallBillingUserMessage(code: BillingReserveFailureCode): strin
     case 'security_blocked':
       return 'This workspace cannot start meeting notetakers right now.';
     case 'free_allowance_reached':
-      return 'Free meeting minutes are used up for this period. Add a payment method in Billing (or ask an admin) to continue.';
+      return 'There is not enough Free Included usage to start a meeting notetaker. Meeting capture and AI processing share the allowance. Retry after other work finishes or the allowance resets, or ask a workspace admin about upgrading to Team.';
     case 'usage_limit_reached':
-      return 'Usage balance is too low to start a meeting notetaker. Top up or raise the spend cap in Billing.';
+      return 'This workspace cannot start a meeting notetaker right now. Ask a workspace admin to check Included usage and billing status.';
     case 'spend_cap_reached':
-      return 'This workspace hit its spend cap. Raise the cap in Billing before inviting a notetaker.';
+      return 'This workspace has insufficient Included usage to start a meeting notetaker within its additional-spending limit. Retry after the allowance resets, or ask a workspace admin about enabling capped additional spending or raising the cap.';
     case 'costly_worker_busy':
       return 'This workspace is running other billed jobs. Retry shortly.';
   }

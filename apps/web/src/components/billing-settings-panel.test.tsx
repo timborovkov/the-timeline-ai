@@ -343,7 +343,8 @@ describe('specific billing setup guidance', () => {
       panelElement({ restrictionReason: 'free_grant_elsewhere', billingState: 'restricted' }),
     );
     expect(html).toContain('Your Free allowance is assigned to another team');
-    expect(html).toContain('Choose a plan');
+    expect(html).toContain('View Team');
+    expect(html).not.toContain('Pay as you go');
     expect(html).toContain('id="change-plan" open=""');
   });
 });

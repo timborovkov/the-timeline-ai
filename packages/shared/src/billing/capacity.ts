@@ -24,7 +24,11 @@ import {
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
-import { FULL_MEMBER_ROLES, teamSeatQuantityChange } from '#src/billing/membership.js';
+import {
+  confirmTeamSeatEntitlement,
+  FULL_MEMBER_ROLES,
+  teamSeatQuantityChange,
+} from '#src/billing/membership.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
@@ -218,6 +222,7 @@ async function reconcileSeatSubscription(input: {
   active: number;
   provider: BillingProvider | null;
   mode: 'activate' | 'maintenance';
+  additionalSeats?: number;
 }) {
   const { account, provider } = input;
   if (account.planId !== 'team' || !account.teamSeatTerms || account.arrangement !== 'standard')
@@ -239,39 +244,77 @@ async function reconcileSeatSubscription(input: {
     !productId
   )
     throw new BillingAdmissionError('usage_limit_reached', 'Team seats could not be verified.');
-  if (input.mode === 'maintenance' && account.cancelEffectiveAt) return;
   const customerId = await assertStoredPolarIdentity(input.db, input.teamId, provider);
   const expected = { subscriptionId, productId, customerId };
   const subscription = await provider.getTeamSeatSubscription(subscriptionId);
   assertSeatSubscription(subscription, expected);
+  if (subscription.status !== 'active') {
+    if (input.mode === 'maintenance') return;
+    throw new BillingAdmissionError(
+      'usage_limit_reached',
+      'Team seats are unavailable while billing is paused.',
+    );
+  }
   const desired = Math.max(1, input.active);
-  if (input.mode === 'maintenance' && desired > subscription.seats) {
-    // Workspaces can change while checkout is open. The customer approved the
-    // checkout quantity, so reconciliation must not buy the difference.
+  if (input.mode === 'activate' && desired - (input.additionalSeats ?? 0) > subscription.seats)
     throw new BillingAdmissionError(
       'usage_limit_reached',
-      'The full-member roster exceeds the confirmed seat quantity.',
+      'The full-member roster exceeds the confirmed seat quantity. Ask a billing admin to review the subscription before adding members.',
     );
+
+  let confirmed = subscription;
+  const proration =
+    input.mode === 'maintenance' && account.cancelEffectiveAt
+      ? null
+      : teamSeatQuantityChange({
+          desired,
+          current: subscription.seats,
+          pending: subscription.pendingSeats,
+          activating: input.mode === 'activate',
+        });
+  if (proration) {
+    confirmed = await provider.updateTeamSeatSubscription({
+      subscriptionId,
+      seats: desired,
+      proration,
+    });
+    assertSeatSubscription(confirmed, expected);
+    if (confirmed.status !== 'active' || (input.mode === 'activate' && confirmed.seats < desired)) {
+      throw new BillingAdmissionError(
+        'usage_limit_reached',
+        'The Team seat change could not be confirmed.',
+      );
+    }
+    if (
+      proration === 'next_period' &&
+      confirmed.pendingSeats !== (desired === confirmed.seats ? null : desired)
+    )
+      throw new Error('Polar did not confirm the scheduled Team seat change.');
   }
-  const proration = teamSeatQuantityChange({
-    desired,
-    current: subscription.seats,
-    pending: subscription.pendingSeats,
-    activating: input.mode === 'activate',
+
+  const entitlementAt =
+    proration === 'next_period' &&
+    confirmed.seats === subscription.seats &&
+    confirmed.periodStart.getTime() === subscription.periodStart.getTime()
+      ? subscription.modifiedAt
+      : confirmed.modifiedAt;
+  const needsReconciliation =
+    account.teamSeatTerms.paidSeats !== confirmed.seats ||
+    account.periodStartedAt?.getTime() !== confirmed.periodStart.getTime() ||
+    account.periodEndsAt?.getTime() !== confirmed.periodEnd.getTime();
+  if (!needsReconciliation) return;
+  const entitlement = confirmTeamSeatEntitlement({
+    existing: account,
+    paidSeats: confirmed.seats,
+    periodStart: confirmed.periodStart,
+    periodEnd: confirmed.periodEnd,
+    confirmedAt: entitlementAt,
   });
-  if (!proration) return;
-  const updated = await provider.updateTeamSeatSubscription({
-    subscriptionId,
-    seats: desired,
-    proration,
-  });
-  assertSeatSubscription(updated, expected);
-  if (input.mode === 'activate' && updated.seats < desired) {
-    throw new BillingAdmissionError(
-      'usage_limit_reached',
-      'The additional Team seat could not be confirmed.',
-    );
-  }
+  if (!entitlement) return;
+  await input.db
+    .update(teamBillingAccounts)
+    .set({ ...entitlement, updatedAt: new Date() })
+    .where(eq(teamBillingAccounts.teamId, input.teamId));
 }
 
 export async function reconcileTeamPaidSeats(input: {
@@ -386,6 +429,7 @@ export async function assertTeamMemberSeatCapacity(input: {
       active: (memberRow?.n ?? 0) + additionalSeats,
       provider: createPolarBillingProvider(),
       mode: 'activate',
+      additionalSeats,
     });
   }
 }

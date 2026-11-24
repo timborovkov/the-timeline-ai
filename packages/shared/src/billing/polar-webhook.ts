@@ -13,7 +13,7 @@ import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
-import { applyConfirmedSeatQuantity } from '#src/billing/membership.js';
+import { confirmTeamSeatEntitlement } from '#src/billing/membership.js';
 import {
   assertPriceOverride,
   pendingEnterpriseTermsAfterActivation,
@@ -690,24 +690,33 @@ async function upsertPaidSubscription(input: {
     ) {
       return { applied: false };
     }
-    const priorSeatTerms = resetDiscount ? null : (existing?.teamSeatTerms ?? null);
-    const seatGrant =
+    const seatEntitlement =
       isTeamSeatSubscription &&
       typeof seats === 'number' &&
       period.periodStartedAt &&
       period.periodEndsAt
-        ? applyConfirmedSeatQuantity({
-            prior: priorSeatTerms,
+        ? confirmTeamSeatEntitlement({
+            existing:
+              existing?.planId === input.plan &&
+              existing.polarSubscriptionId === polarSubscriptionId
+                ? existing
+                : null,
             paidSeats: seats,
             periodStart: period.periodStartedAt,
             periodEnd: period.periodEndsAt,
             confirmedAt: polarEventModifiedAt(input.data) ?? now,
           })
         : null;
-    const included = seatGrant
-      ? (priorSeatTerms ? (existing?.includedDiscountRemainingCents ?? 0) : 0) +
-        seatGrant.grantCents
-      : catalogIncluded;
+    const seatValues =
+      seatEntitlement ??
+      (isTeamSeatSubscription && existing?.teamSeatTerms
+        ? {
+            teamSeatTerms: existing.teamSeatTerms,
+            periodStartedAt: existing.periodStartedAt ?? periodStartedAt,
+            periodEndsAt: existing.periodEndsAt ?? periodEndsAt,
+            includedDiscountRemainingCents: existing.includedDiscountRemainingCents,
+          }
+        : null);
     const polarEventModifiedAtValue =
       polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
     const scheduledCancel =
@@ -722,11 +731,11 @@ async function upsertPaidSubscription(input: {
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
-        spendCapCents: seatGrant ? 0 : PLAN_CATALOG[input.plan].defaultSpendCapCents,
-        ...(seatGrant ? { teamSeatTerms: seatGrant.terms } : {}),
-        includedDiscountRemainingCents: included,
+        spendCapCents: seatEntitlement ? 0 : PLAN_CATALOG[input.plan].defaultSpendCapCents,
+        includedDiscountRemainingCents: catalogIncluded,
         periodStartedAt,
         ...(periodEndsAt ? { periodEndsAt } : {}),
+        ...seatValues,
         ...scheduledCancel,
         polarEventModifiedAt: polarEventModifiedAtValue,
         shadowBilling: !input.chargesEnabled,
@@ -743,11 +752,12 @@ async function upsertPaidSubscription(input: {
           periodStartedAt,
           ...(periodEndsAt ? { periodEndsAt } : {}),
           ...scheduledCancel,
-          ...(resetDiscount || seatGrant ? { includedDiscountRemainingCents: included } : {}),
-          teamSeatTerms: seatGrant?.terms ?? null,
+          ...(resetDiscount ? { includedDiscountRemainingCents: catalogIncluded } : {}),
+          teamSeatTerms: null,
+          ...seatValues,
           spendCapCents:
             pending?.spendCapCents ??
-            (seatGrant && !existing?.teamSeatTerms
+            (seatEntitlement && !existing?.teamSeatTerms
               ? 0
               : spendCapCentsForPaidActivation({
                   existing,
@@ -1041,6 +1051,9 @@ async function cancelMatchingSubscription(input: {
         billingState: grant ? 'free' : 'restricted',
         planId: 'free',
         spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
+        ...(existing.teamSeatTerms
+          ? { teamSeatTerms: null, includedDiscountRemainingCents: 0 }
+          : {}),
         polarSubscriptionId: null,
         polarProductId: null,
         cancelEffectiveAt: null,

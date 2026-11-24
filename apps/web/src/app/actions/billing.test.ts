@@ -26,7 +26,7 @@ const withTeam = vi.fn(() => ({
     },
   },
 }));
-const retirePendingCheckouts = vi.fn();
+const prepareTeamCheckout = vi.fn();
 const resolveDiscount = vi.fn();
 provider.resolveDiscount = resolveDiscount;
 await vi.mock(
@@ -70,7 +70,7 @@ await vi.mock(
           account: unknown;
           db: unknown;
           recordCheckout: (id: string) => Promise<void>;
-          retirePendingCheckouts: () => Promise<boolean>;
+          prepareTeamCheckout: () => Promise<{ status: string; url?: string }>;
         },
       ) => Promise<unknown>,
     ) =>
@@ -84,7 +84,7 @@ await vi.mock(
           account: lockedAccount ?? preflightAccount,
           db: {},
           recordCheckout: () => Promise.resolve(),
-          retirePendingCheckouts,
+          prepareTeamCheckout,
         },
       ),
     createPolarBillingProvider: () => provider,
@@ -114,7 +114,7 @@ beforeEach(() => {
   });
   requireMembership.mockResolvedValue('owner');
   getAccount.mockResolvedValue(account);
-  retirePendingCheckouts.mockResolvedValue(true);
+  prepareTeamCheckout.mockResolvedValue({ status: 'ready' });
   resolveDiscount.mockResolvedValue('discount-synthetic');
 });
 
@@ -145,11 +145,19 @@ describe('promo checkout action', () => {
   });
 
   it('does not create a replacement while a previous checkout may still take payment', async () => {
-    retirePendingCheckouts.mockResolvedValueOnce(false);
+    prepareTeamCheckout.mockResolvedValueOnce({ status: 'blocked' });
     expect((await startBillingCheckout({ plan: 'team' })).ok).toBe(false);
     expect(provider.checkouts).toHaveLength(0);
     expect((await startBillingCheckout({ plan: 'team' })).ok).toBe(true);
     expect(provider.checkouts).toHaveLength(1);
+  });
+
+  it('returns the recovered checkout without opening another link', async () => {
+    const url = 'https://checkout.example.test/recovered';
+    prepareTeamCheckout.mockResolvedValueOnce({ status: 'resume', url });
+    expect(await startBillingCheckout({ plan: 'team' })).toEqual({ ok: true, url });
+    expect(prepareTeamCheckout).toHaveBeenCalledWith({ productId: 'product-synthetic', seats: 2 });
+    expect(provider.checkouts).toHaveLength(0);
   });
 
   it('returns distinct eligibility and provider errors without creating a checkout', async () => {

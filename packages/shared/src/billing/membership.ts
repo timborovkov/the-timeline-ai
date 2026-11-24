@@ -19,6 +19,7 @@ export interface TeamSeatTerms {
   paidSeats: number;
   highWaterSeats: number;
   includedUsageCents: number;
+  confirmedAt?: string;
 }
 
 /** Only confirmed increases over the period high-water mark earn another grant. */
@@ -50,6 +51,49 @@ export function applyConfirmedSeatQuantity(input: {
       highWaterSeats,
       includedUsageCents: (prior?.includedUsageCents ?? 0) + grantCents,
     },
+  };
+}
+
+/** Apply the same entitlement transition for a webhook or a verified Polar subscription read. */
+export function confirmTeamSeatEntitlement(input: {
+  existing: {
+    teamSeatTerms: TeamSeatTerms | null;
+    includedDiscountRemainingCents: number;
+    periodStartedAt: Date | null;
+  } | null;
+  paidSeats: number;
+  periodStart: Date;
+  periodEnd: Date;
+  confirmedAt: Date;
+}) {
+  const { existing, paidSeats, periodStart, periodEnd, confirmedAt } = input;
+  if (
+    periodEnd <= periodStart ||
+    (existing?.teamSeatTerms &&
+      existing.periodStartedAt &&
+      periodStart < existing.periodStartedAt) ||
+    (existing?.teamSeatTerms?.confirmedAt &&
+      confirmedAt < new Date(existing.teamSeatTerms.confirmedAt))
+  )
+    return null;
+
+  const prior =
+    existing && periodStart.getTime() === existing.periodStartedAt?.getTime()
+      ? existing.teamSeatTerms
+      : null;
+  const { terms, grantCents } = applyConfirmedSeatQuantity({
+    prior,
+    paidSeats,
+    periodStart,
+    periodEnd,
+    confirmedAt,
+  });
+  return {
+    teamSeatTerms: { ...terms, confirmedAt: confirmedAt.toISOString() },
+    includedDiscountRemainingCents:
+      (prior ? (existing?.includedDiscountRemainingCents ?? 0) : 0) + grantCents,
+    periodStartedAt: periodStart,
+    periodEndsAt: periodEnd,
   };
 }
 

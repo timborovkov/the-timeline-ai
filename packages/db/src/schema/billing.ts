@@ -112,6 +112,7 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
     paidSeats: number;
     highWaterSeats: number;
     includedUsageCents: number;
+    confirmedAt?: string;
   } | null>(),
   periodStartedAt: timestamp('period_started_at', { withTimezone: true }),
   periodEndsAt: timestamp('period_ends_at', { withTimezone: true }),

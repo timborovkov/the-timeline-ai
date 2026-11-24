@@ -337,6 +337,9 @@ export function applyBillingPresentationToSidebar(
       remainingCents === null ? 0 : Math.round((1 - remainingCents / totalCents) * 100);
     summary.atLimit =
       remainingCents === 0 && presentation.cap.usedCents >= presentation.cap.limitCents;
+    if (summary.atLimit && presentation.cap.limitCents === 0)
+      summary.warningLabel = 'Included usage used up';
+    else if (!summary.atLimit) delete summary.warningLabel;
     summary.detailLabel =
       remainingCents === null
         ? 'Updating billing period'

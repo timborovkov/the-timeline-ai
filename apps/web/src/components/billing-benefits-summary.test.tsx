@@ -62,6 +62,15 @@ describe('BillingBenefitsSummary', () => {
     expect(html).not.toContain('Next invoice');
     expect(html).toContain('sm:grid-cols-3');
   });
+  it('explains when confirmed paid seats fall short of the full-member roster', () => {
+    const summary = { ...fixture(), paidSeats: 10 };
+    const html = renderToStaticMarkup(<BillingBenefitsSummary summary={summary} />);
+    expect(html).toContain('12 full members · 10 paid seats');
+    expect(html).toContain('The full-member count exceeds confirmed paid seats.');
+    expect(
+      renderToStaticMarkup(<BillingBenefitsSummary summary={{ ...summary, paidSeats: 12 }} />),
+    ).not.toContain('The full-member count exceeds confirmed paid seats.');
+  });
   it('shows updating or unavailable rather than invented charges', () => {
     const summary = fixture();
     summary.credit.status = 'updating';

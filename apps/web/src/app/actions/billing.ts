@@ -10,6 +10,7 @@ import {
   createPolarBillingProvider,
   isPolarBillingConfigured,
   polarProductIdForPlan,
+  polarSubscriptionIdForPlanChange,
   selfServeCheckoutPlan,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
@@ -48,8 +49,7 @@ export async function startBillingCheckout(input: {
     if (!plan) {
       return {
         ok: false,
-        error:
-          'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
+        error: 'Team is the only plan available for self-serve checkout.',
       };
     }
     if (!isPolarBillingConfigured()) {
@@ -84,7 +84,7 @@ export async function startBillingCheckout(input: {
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
         async (
           identity,
-          { account: current, db: checkoutDb, recordCheckout, retirePendingCheckouts },
+          { account: current, db: checkoutDb, recordCheckout, prepareTeamCheckout },
         ) => {
           if (compSuppressesPolarCharges(current)) {
             return {
@@ -110,12 +110,19 @@ export async function startBillingCheckout(input: {
           ]);
           if (seats < 1)
             return { ok: false as const, error: 'Team requires at least one full member.' };
-          if (!current.polarSubscriptionId && !(await retirePendingCheckouts())) {
-            return {
-              ok: false as const,
-              error:
-                'A previous checkout is still open or awaiting payment confirmation. Finish that checkout or wait for it to expire before creating another.',
-            };
+          if (!polarSubscriptionIdForPlanChange(current)) {
+            const pending = await prepareTeamCheckout({
+              productId,
+              seats,
+              ...(discountId ? { discountId } : {}),
+            });
+            if (pending.status === 'resume') return { ok: true as const, url: pending.url };
+            if (pending.status === 'blocked')
+              return {
+                ok: false as const,
+                error:
+                  'A previous checkout is still open or awaiting payment confirmation. Finish that checkout or wait for it to expire before creating another.',
+              };
           }
           const checkout = await createPlanChangeSession({
             ...identity,
@@ -130,10 +137,10 @@ export async function startBillingCheckout(input: {
             ...(discountId ? { discountId } : {}),
           });
           if (checkout.id) await recordCheckout(checkout.id);
-          return { ok: true as const, url: checkout.url };
+          return { ok: true as const, url: checkout.url, created: Boolean(checkout.id) };
         },
       );
-      if (checkoutResult.ok) {
+      if (checkoutResult.ok && checkoutResult.created) {
         // Keep plan intent until Polar confirms payment (or the user dismisses).
         // Creating a checkout session is not confirmation — abandoned checkout
         // must leave Free and keep the finish-setup reminder available.
@@ -143,7 +150,7 @@ export async function startBillingCheckout(input: {
           { plan },
         );
       }
-      return checkoutResult;
+      return checkoutResult.ok ? { ok: true, url: checkoutResult.url } : checkoutResult;
     } catch (error) {
       return {
         ok: false,

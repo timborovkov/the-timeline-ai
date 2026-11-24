@@ -30,7 +30,7 @@ Run `bun run billing:polar-setup` with the selected environment configured. Sand
 
 The shared catalog owns current prices, commitments, member rates and allowances. Reconcile the setup output with that catalog rather than copying a dated price list. The Team product uses one seat price starting at one seat and two metered prices for AI and native capture. The application applies Included usage and the approved cap before recording invoice usage. Local storage/free allowances must not also be credited by Polar. If historical provider credits differ, review the account and schedule an explicit correction; do not change production pricing as an incidental setup task.
 
-Legacy Timeline top-up products are retired by the supported setup flow. There is no auto-reload or prepaid-wallet configuration to add. Configure campaigns in Polar and assign per-team discounts/overrides through the audited operator interface; do not add global discount environment variables or modify historical usage.
+The setup flow can archive superseded Timeline offers and legacy top-ups. For end-to-end sandbox testing, dry-run against a dedicated sandbox organization before authorizing writes. Use a fixture-only HTTPS webhook and database. Verify the planned organization, product changes, and endpoint before applying the plan. There is no auto-reload or prepaid-wallet configuration to add. Configure campaigns in Polar and assign per-team discounts/overrides through the audited operator interface; do not add global discount environment variables or modify historical usage.
 
 ## Webhook
 
@@ -52,7 +52,8 @@ The October 2026 sandbox accepted `email: null` while retaining a legacy custome
 
 ## Recovery and support
 
-- A delayed checkout return is pending until a verified subscription webhook updates the stored plan. Ask the user to check again rather than creating another checkout.
+- A delayed checkout return is pending until a verified subscription webhook updates the stored plan. Retrying an unchanged Team quote can recover its original payable link. If the roster or discount changed, wait for Polar to mark the previous checkout expired or failed. Polar has no merchant checkout-expiration operation.
+- Maintenance checks the recorded subscription for missed seat updates. It can reconcile confirmed quantities and schedule reductions. A roster larger than the confirmed quantity requires a billing administrator to review the subscription before adding members.
 - Inspect missing-price/unbilled alerts in `/app/admin/billing`; reconcile catalog configuration and retry delivery without deleting the ledger.
 - Resume pending membership revocation or conversion through the original operation; never clear pending intent to unblock access.
 - Comp/Enterprise changes use `/app/admin/billing` or `bun run billing:operator`; cancellation/checkout failures must resolve before a comp can replace paid state.

@@ -44,12 +44,24 @@ export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal
  */
 export type ExpireCheckoutResult = 'expired' | 'already_paid' | 'still_open';
 
+export interface PendingTeamCheckout {
+  id: string;
+  url: string;
+  status: 'open' | 'confirmed';
+  seats: number | null;
+  discountId: string | null;
+}
+
 export interface TeamSeatSubscription {
   id: string;
   customerId: string;
   productId: string;
   seats: number;
   pendingSeats: number | null;
+  status: string;
+  periodStart: Date;
+  periodEnd: Date;
+  modifiedAt: Date;
 }
 
 export interface BillingProvider {
@@ -67,6 +79,11 @@ export interface BillingProvider {
     name?: string;
   }): Promise<{ id: string }>;
   createCheckoutSession(input: CreateCheckoutInput): Promise<{ url: string; id: string }>;
+  /** Open or payment-confirmed checkouts created by Timeline for this customer and product. */
+  listPendingTeamCheckouts?(input: {
+    customerId: string;
+    productId: string;
+  }): Promise<PendingTeamCheckout[]>;
   /**
    * Retire one checkout before another link is issued.
    * Fail closed with `still_open` when Polar leaves the session payable.

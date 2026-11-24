@@ -82,6 +82,11 @@ function BillingMembersSummary({ summary }: { summary: BillingPresentation }) {
           Extra member price: <Money value={members.additionalMemberCents} />
           {members.additionalMemberCents === null ? '' : ' per member / month, prorated'}
         </p>
+      ) : members.current > paidSeats ? (
+        <p className="text-fg-muted">
+          The full-member count exceeds confirmed paid seats. Review the subscription before adding
+          members.
+        </p>
       ) : null}
     </section>
   );

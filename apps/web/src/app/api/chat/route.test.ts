@@ -189,8 +189,8 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
-  () => ({
-    askBillingUserMessage: (error: string) => error,
+  async () => ({
+    askBillingUserMessage: (await import('@timeline/shared/billing')).askBillingUserMessage,
     askOperationId: () => 'ask:web:test',
     ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS: 250,
     mapAskBillingError: (code: string) => code,
@@ -722,24 +722,34 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
   });
 
-  it('returns the admission error when Ask billing reservation hits a free allowance cap', async () => {
-    const { reserveAskAi } = await import('@timeline/shared/billing');
-    vi.mocked(reserveAskAi).mockResolvedValueOnce({
-      ok: false,
-      code: 'free_allowance_reached',
-    });
+  it.each([
+    [
+      'free_allowance_reached',
+      /Free Included usage.*share the allowance.*ask a workspace admin about upgrading to Team/,
+    ],
+    [
+      'spend_cap_reached',
+      /Included usage.*ask a workspace admin about enabling capped additional spending/,
+    ],
+  ] as const)(
+    'returns customer guidance without starting inference for %s',
+    async (code, message) => {
+      const { reserveAskAi } = await import('@timeline/shared/billing');
+      vi.mocked(reserveAskAi).mockResolvedValueOnce({
+        ok: false,
+        code,
+      });
 
-    const response = await POST(request(validBody()));
+      const response = await POST(request(validBody()));
 
-    expect(response.status).toBe(402);
-    await expect(response.json()).resolves.toEqual({
-      ok: false,
-      error: 'free_allowance_reached',
-      message: 'free_allowance_reached',
-    });
-    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
-    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(402);
+      const body = (await response.json()) as { ok: boolean; error: string; message: string };
+      expect(body).toMatchObject({ ok: false, error: code });
+      expect(body.message).toMatch(message);
+      expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+      expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    },
+  );
 
   it('forwards chat tool BillingAdmissionError through reportCaughtError for expected caps', async () => {
     let onToolError: ((err: unknown, context: { tool: string }) => void) | undefined;

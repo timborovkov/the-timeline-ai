@@ -2,8 +2,10 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import { FREE_ALLOWANCES, PLAN_CATALOG } from '#src/billing/catalog.js';
+import { buildBillingPresentation } from '#src/billing/presentation.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
 import {
+  applyBillingPresentationToSidebar,
   deriveBillingNudge,
   deriveSidebarBillingSummary,
   exhaustedFreeAllowanceNotice,
@@ -126,6 +128,41 @@ describe('billing status', () => {
     const nudge = deriveBillingNudge({ ...common, planId: 'payg', planPreview: preview });
     expect(nudge?.kind).toBe('suggest_commitment');
     expect(nudge?.href).toBe('/app/team?section=billing');
+  });
+
+  it('shows the exhausted Team allowance when additional spending is off', () => {
+    const summary = deriveSidebarBillingSummary({
+      planId: 'team',
+      canManageBilling: true,
+      meteredSpendCents: 0,
+      spendCapCents: 0,
+      includedDiscountRemainingCents: 0,
+      freeRemaining: freeAllowanceRemaining({}),
+    });
+    const presentation = buildBillingPresentation({
+      account: {
+        planId: 'team',
+        billingState: 'team_active',
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 0,
+        periodStartedAt: new Date('2026-11-01T00:00:00Z'),
+        periodEndsAt: new Date('2026-12-01T00:00:00Z'),
+        spendCapCents: 0,
+      },
+      activeMembers: 1,
+      meters: {},
+      settlements: [],
+      meteredSpendCents: 0,
+      shadowBilling: false,
+      now: new Date('2026-11-24T00:00:00Z'),
+    });
+
+    applyBillingPresentationToSidebar(summary, presentation);
+    expect(summary).toMatchObject({
+      atLimit: true,
+      warningLabel: 'Included usage used up',
+      secondaryLabel: 'Additional spending off',
+    });
   });
 
   it('builds a sidebar summary with overage for PAYG', () => {
