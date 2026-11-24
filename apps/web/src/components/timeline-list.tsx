@@ -1,6 +1,5 @@
 'use client';
 
-import type { RegionalFormat } from '@/lib/regional-format';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { isMachineIdentityLabel } from '@timeline/shared/event-class';
 import {
@@ -56,6 +55,7 @@ import {
   formatDisplayTime,
 } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import type { RegionalFormat } from '@/lib/regional-format';
 import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';

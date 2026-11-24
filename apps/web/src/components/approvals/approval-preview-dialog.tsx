@@ -29,6 +29,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
 import {
   buildApprovalPreviewFields,
@@ -36,7 +37,6 @@ import {
   type ApprovalPreviewField,
   type ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';

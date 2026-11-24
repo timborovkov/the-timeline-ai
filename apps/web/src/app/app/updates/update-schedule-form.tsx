@@ -3,9 +3,8 @@
 import Link from 'next/link';
 import { startTransition, useActionState, useState, type SubmitEvent } from 'react';
 
+import { updateSchedule, type UpdateFormState } from '@/app/app/updates/actions';
 import { Button } from '@/components/ui/button';
-
-import { updateSchedule, type UpdateFormState } from './actions';
 
 type Options = NonNullable<UpdateFormState['preview']>['options'];
 
@@ -50,7 +49,9 @@ export function UpdateScheduleForm({
     const form = new FormData(event.currentTarget, event.nativeEvent.submitter);
     for (const [name, value] of Object.entries(draft)) form.set(name, value);
     // Dispatch explicitly so React's automatic form reset cannot undo the previewed selections.
-    startTransition(() => action(form));
+    startTransition(() => {
+      action(form);
+    });
   }
 
   return (
@@ -77,13 +78,13 @@ export function UpdateScheduleForm({
               name="scope"
               className={selectClass}
               value={draft.scope}
-              onChange={(event) =>
+              onChange={(event) => {
                 setDraft({
                   ...draft,
                   scope: event.target.value as Options['scope'],
                   focus: event.target.value === 'saved_views' ? 'balanced' : draft.focus,
-                })
-              }
+                });
+              }}
             >
               <option value="workspace">{labels.scope.workspace}</option>
               <option value="saved_views">{labels.scope.saved_views}</option>
@@ -95,9 +96,9 @@ export function UpdateScheduleForm({
               name="cadence"
               className={selectClass}
               value={draft.cadence}
-              onChange={(event) =>
-                setDraft({ ...draft, cadence: event.target.value as Options['cadence'] })
-              }
+              onChange={(event) => {
+                setDraft({ ...draft, cadence: event.target.value as Options['cadence'] });
+              }}
             >
               <option value="daily">{labels.cadence.daily}</option>
               <option value="weekly">{labels.cadence.weekly}</option>
@@ -112,9 +113,9 @@ export function UpdateScheduleForm({
                 name="focus"
                 className={selectClass}
                 value={draft.focus}
-                onChange={(event) =>
-                  setDraft({ ...draft, focus: event.target.value as Options['focus'] })
-                }
+                onChange={(event) => {
+                  setDraft({ ...draft, focus: event.target.value as Options['focus'] });
+                }}
               >
                 {Object.entries(labels.focus).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -130,9 +131,9 @@ export function UpdateScheduleForm({
               name="destination"
               className={selectClass}
               value={draft.destination}
-              onChange={(event) =>
-                setDraft({ ...draft, destination: event.target.value as Options['destination'] })
-              }
+              onChange={(event) => {
+                setDraft({ ...draft, destination: event.target.value as Options['destination'] });
+              }}
             >
               <option value="personal">{labels.destination.personal}</option>
               <option value="app">{labels.destination.app}</option>

@@ -10,7 +10,6 @@ import type { PlanCapacityKind, PlanCapacityUsageRow } from '@timeline/shared/bi
 
 import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { formatDisplayCurrency, formatDisplayNumber } from '@/lib/regional-format';
-
 import { cn } from '@/lib/utils';
 
 const METER_LABELS: Record<BillingMeterId, string> = {

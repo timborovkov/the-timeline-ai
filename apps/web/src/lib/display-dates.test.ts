@@ -1,10 +1,3 @@
-import {
-  formatDisplayCurrency,
-  formatDisplayNumber,
-  formatDisplayPercent,
-  resolveRegionalFormat,
-} from '@/lib/regional-format';
-
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
@@ -15,6 +8,12 @@ import {
   formatDisplayTime,
   formatRelativeAge,
 } from '@/lib/display-dates';
+import {
+  formatDisplayCurrency,
+  formatDisplayNumber,
+  formatDisplayPercent,
+  resolveRegionalFormat,
+} from '@/lib/regional-format';
 const RAW_ISO_INSTANT = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/;
 
 describe('displayText', () => {

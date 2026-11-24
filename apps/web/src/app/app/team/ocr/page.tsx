@@ -4,13 +4,12 @@ import { notFound, redirect } from 'next/navigation';
 
 import { updateOcrBudget } from '@/app/actions/file-extraction';
 import { PageHeader } from '@/components/page-header';
+import { RegionalNumber } from '@/components/regional-number';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-
-import { RegionalNumber } from '@/components/regional-number';
 
 export default async function OcrBudgetPage() {
   const session = await auth();

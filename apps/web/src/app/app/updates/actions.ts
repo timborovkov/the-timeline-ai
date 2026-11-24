@@ -23,7 +23,7 @@ const optionsSchema = z.object({
   destination: z.enum(['app', 'personal']),
 });
 
-export type UpdateFormState = {
+export interface UpdateFormState {
   error?: string;
   preview?: {
     teamId: string;
@@ -32,7 +32,7 @@ export type UpdateFormState = {
     links?: { id?: string; label: string; href: string }[];
   };
   saved?: boolean;
-};
+}
 
 export async function updateSchedule(
   previous: UpdateFormState,
@@ -42,7 +42,7 @@ export async function updateSchedule(
   if (!session?.user) return { error: 'Sign in to customize updates.' };
   if (impersonation) return { error: 'Exit impersonation to customize updates.' };
   const { active } = await resolveActiveTeam(session.user.id);
-  if (!active || form.get('teamId') !== active.teamId) {
+  if (form.get('teamId') !== active?.teamId) {
     return { error: 'Your active workspace changed. Reopen Customize updates to continue.' };
   }
   const identity = { db, teamId: active.teamId, userId: session.user.id };

@@ -4,10 +4,10 @@ import { useActionState } from 'react';
 
 import { saveDisplayRegion } from '@/app/app/team/display-region-action';
 import { FormActionToast } from '@/components/form-action-toast';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useRegionalChoices } from '@/components/workspace-timezone-context';
 
 export function DisplayRegionForm({ timezones }: { timezones: string[] }) {

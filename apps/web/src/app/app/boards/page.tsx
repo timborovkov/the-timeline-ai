@@ -9,12 +9,12 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { RegionalDate } from '@/components/regional-date';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { visibleBoardDescription } from '@/lib/board-description';
 import { db } from '@/lib/db';
-import { RegionalDate } from '@/components/regional-date';
 
 export const metadata: Metadata = {
   title: 'Boards',

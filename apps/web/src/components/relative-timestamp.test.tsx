@@ -57,11 +57,13 @@ describe('RelativeTimestamp', () => {
       onRecoverableError: (error) => errors.push(error),
     });
     try {
-      await act(async () => {});
+      await act(() => Promise.resolve());
       expect(container.querySelector('time')?.textContent).toBe(expected);
       expect(errors).toEqual([]);
     } finally {
-      await act(async () => root.unmount());
+      act(() => {
+        root.unmount();
+      });
     }
   });
 

@@ -2,12 +2,11 @@ import { buildBillingPresentation } from '@timeline/shared/billing';
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
-
 import {
   BillingBenefitsSummary,
   BillingUsageOverview,
 } from '@/components/billing-benefits-summary';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 
 function fixture(
   planId: 'free' | 'payg' | 'team' | 'business' | 'enterprise' = 'team',

@@ -1,7 +1,5 @@
 'use client';
 
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
-import { formatDisplayNumber } from '@/lib/regional-format';
 import {
   documentPresentation,
   truncateFilenameMiddle,
@@ -30,7 +28,9 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { notifyAction, notifyError } from '@/lib/notify';
+import { formatDisplayNumber } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {

@@ -1,4 +1,3 @@
-import { RegionalDate } from '@/components/regional-date';
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import { Search } from 'lucide-react';
@@ -21,6 +20,7 @@ import { MobileNav } from '@/components/mobile-nav';
 import type { NavBadgeMap } from '@/components/nav-items';
 import { GettingStartedStrip } from '@/components/onboarding/getting-started-strip';
 import { PlanIntentPrompt } from '@/components/plan-intent-prompt';
+import { RegionalDate } from '@/components/regional-date';
 import { SkipLink } from '@/components/skip-link';
 import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
 import type { RecipientInvite } from '@/components/team-switcher';

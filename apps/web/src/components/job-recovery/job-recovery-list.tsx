@@ -26,11 +26,11 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { postJson } from '@/lib/api-response';
-import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { isoTimestamp } from '@/lib/iso-timestamp';
 import { notifyProgress as jobsMutationToast } from '@/lib/notify';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import {
   type FinishedJobArchivePage,
   useFinishedJobsInfiniteQuery,

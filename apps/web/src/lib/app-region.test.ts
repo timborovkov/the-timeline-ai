@@ -3,23 +3,26 @@ import { expect, mock, test } from 'bun:test';
 const saved = new Map<string, { value: string; maxAge: number }>();
 let userId: string | undefined = 'synthetic-viewer-a';
 let impersonation = false;
-mock.module('next/headers', () => ({
-  cookies: async () => ({
-    set(name: string, value: string, options: { maxAge: number }) {
-      if (options.maxAge) saved.set(name, { value, maxAge: options.maxAge });
-      else saved.delete(name);
-    },
-    get(name: string) {
-      return saved.get(name);
-    },
-  }),
-  headers: async () => new Headers({ 'accept-language': 'fr-FR;q=0.2,de-DE;q=0.8,en-US;q=0.7' }),
+await mock.module('next/headers', () => ({
+  cookies: () =>
+    Promise.resolve({
+      set(name: string, value: string, options: { maxAge: number }) {
+        if (options.maxAge) saved.set(name, { value, maxAge: options.maxAge });
+        else saved.delete(name);
+      },
+      get(name: string) {
+        return saved.get(name);
+      },
+    }),
+  headers: () =>
+    Promise.resolve(new Headers({ 'accept-language': 'fr-FR;q=0.2,de-DE;q=0.8,en-US;q=0.7' })),
 }));
-mock.module('@/lib/auth', () => ({
-  getRequestIdentity: async () => ({
-    session: userId ? { user: { id: userId } } : null,
-    impersonation,
-  }),
+await mock.module('@/lib/auth', () => ({
+  getRequestIdentity: () =>
+    Promise.resolve({
+      session: userId ? { user: { id: userId } } : null,
+      impersonation,
+    }),
 }));
 const { saveDisplayRegion } = await import('@/app/app/team/display-region-action');
 const { readAppRegion } = await import('@/lib/app-region');

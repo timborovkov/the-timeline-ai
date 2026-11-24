@@ -4,15 +4,14 @@ import type { BillingPresentation, BillingPeriod, RecordedCharges } from '@timel
 import { PLAN_CATALOG, TEAM_MONTHLY_USAGE_PER_SEAT_CENTS } from '@timeline/shared/billing/catalog';
 import type { ReactNode } from 'react';
 
+import { RegionalDate } from '@/components/regional-date';
+import { RegionalNumber } from '@/components/regional-number';
 import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import {
   formatDisplayCurrency,
   formatDisplayNumber,
   formatDisplayPercent,
 } from '@/lib/regional-format';
-
-import { RegionalDate } from '@/components/regional-date';
-import { RegionalNumber } from '@/components/regional-number';
 
 function Period({ value }: { value: BillingPeriod }) {
   return (

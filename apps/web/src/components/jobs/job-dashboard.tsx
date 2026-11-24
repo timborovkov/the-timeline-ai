@@ -7,8 +7,8 @@ import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDisplayTime } from '@/lib/display-dates';
 import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayTime } from '@/lib/display-dates';
 import { useJobDashboardQuery } from '@/lib/use-paginated-queries';
 
 export function JobDashboard() {

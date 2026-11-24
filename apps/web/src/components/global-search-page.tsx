@@ -32,7 +32,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { ApiResponseError } from '@/lib/api-response';
 import { chatViewLabel } from '@/lib/chat-view';
-import type { RegionalFormat } from '@/lib/regional-format';
 import { formatDisplayDate } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
@@ -40,6 +39,7 @@ import { fetchGlobalSearch } from '@/lib/global-search';
 import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { searchDateErrors, searchDateOnly } from '@/lib/global-search-dates';
 import { GLOBAL_SEARCH_SOURCE_OPTIONS } from '@/lib/global-search-sources';
+import type { RegionalFormat } from '@/lib/regional-format';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;

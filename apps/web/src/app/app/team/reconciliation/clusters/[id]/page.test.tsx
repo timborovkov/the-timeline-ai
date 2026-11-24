@@ -1,7 +1,8 @@
-import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 // Test environment: happy-dom
 
 const CLUSTER_ID = '33333333-3333-4333-8333-333333333333';

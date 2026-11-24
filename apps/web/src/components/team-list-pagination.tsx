@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { formatDisplayNumber } from '@/lib/regional-format';
-import { Button } from '@/components/ui/button';
 
 const PAGE_SIZE = 50;
 

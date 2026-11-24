@@ -5,13 +5,13 @@ import { notFound, redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import type { GuestSelection } from '@/app/actions/guests';
-import { SharedRecordDetails } from '@/components/guest-record-details';
-import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
-import { readAppRegion } from '@/lib/app-region';
 import { AskGuestWorkForm } from '@/components/guest-forms';
+import { SharedRecordDetails } from '@/components/guest-record-details';
 import { SignOutButton } from '@/components/sign-out-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+import { readAppRegion } from '@/lib/app-region';
 import { getRequestIdentity } from '@/lib/auth';
 import { hasCurrentLegalSession } from '@/lib/auth.config';
 import { db } from '@/lib/db';
@@ -24,7 +24,11 @@ export const metadata: Metadata = {
   referrer: sensitiveLinkReferrerPolicy,
 };
 
-type SharedWorkParams = { note?: string; record?: string; q?: string };
+interface SharedWorkParams {
+  note?: string;
+  record?: string;
+  q?: string;
+}
 
 function openItem({ note, record }: SharedWorkParams): GuestSelection | null {
   if (note && record) notFound();

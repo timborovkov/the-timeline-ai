@@ -3,12 +3,11 @@ import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { UpdateScheduleForm } from '@/app/app/updates/update-schedule-form';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
-
-import { UpdateScheduleForm } from './update-schedule-form';
 
 export default async function UpdatesSettingsPage() {
   const { session, impersonation } = await getRequestIdentity();

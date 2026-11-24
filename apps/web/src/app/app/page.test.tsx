@@ -85,8 +85,8 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/messaging'),
   () => ({
     latestDailyDigest: fakes.latestDailyDigest,
-    getDigestPreference: async () => ({ enabled: true }),
-    hasScheduledUpdateBillingHold: async () => false,
+    getDigestPreference: () => Promise.resolve({ enabled: true }),
+    hasScheduledUpdateBillingHold: () => Promise.resolve(false),
     presentSavedViewDigest: (_scope: unknown, payload: unknown) =>
       Promise.resolve({ payload, hasVisibleChanges: false }),
   }),

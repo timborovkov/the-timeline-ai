@@ -20,8 +20,6 @@ import {
   startBillingPortal,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
-import { formatDisplayCurrency, formatDisplayPercent } from '@/lib/regional-format';
 import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
 import { BillingCheckoutStatus } from '@/components/billing-checkout-status';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
@@ -32,6 +30,8 @@ import {
 } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+import { formatDisplayCurrency, formatDisplayPercent } from '@/lib/regional-format';
 
 const PRIMARY_CLASS =
   'inline-flex min-h-11 cursor-pointer list-none items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg [&::-webkit-details-marker]:hidden';

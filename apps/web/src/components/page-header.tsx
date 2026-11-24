@@ -1,4 +1,3 @@
-import { RegionalNumber } from '@/components/regional-number';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -6,6 +5,7 @@ import {
   createCollectionSlot,
   readCollectionSlots,
 } from '@/components/collections/collection-slot';
+import { RegionalNumber } from '@/components/regional-number';
 import { cn } from '@/lib/utils';
 
 const PageHeaderLeading = createCollectionSlot('leading');

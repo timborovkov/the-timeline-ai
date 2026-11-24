@@ -1,8 +1,5 @@
 'use client';
 
-import { useRegionalFormat } from '@/components/workspace-timezone-context';
-import { formatDisplayDateParts } from '@/lib/display-dates';
-import { formatDisplayNumber } from '@/lib/regional-format';
 import { Temporal } from '@js-temporal/polyfill';
 import {
   assertValidTimezone,
@@ -77,8 +74,11 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
+import { formatDisplayDateParts } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 import type { SaveState } from '@/lib/utils';
 

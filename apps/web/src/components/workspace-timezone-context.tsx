@@ -18,7 +18,9 @@ function subscribe() {
 
 function subscribeLanguage(onChange: () => void) {
   window.addEventListener('languagechange', onChange);
-  return () => window.removeEventListener('languagechange', onChange);
+  return () => {
+    window.removeEventListener('languagechange', onChange);
+  };
 }
 
 function readBrowserLocale() {
@@ -57,7 +59,7 @@ export function WorkspaceTimezoneProvider({
       resolveRegionalFormat(
         region,
         {
-          locale: region ? browserLocale || region.browserLocale : undefined,
+          locale: region ? (browserLocale ?? region.browserLocale) : undefined,
           timezone: region ? browserTimezone : undefined,
         },
         timezone,

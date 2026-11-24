@@ -9,8 +9,8 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
-import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';

@@ -8,7 +8,6 @@ import {
   mentionInsertToken,
   type MentionMember,
 } from '@timeline/shared/objects/mentions';
-import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { humanizeMetadataKey } from '@timeline/shared/objects/metadata-schemas';
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 import Link from 'next/link';
@@ -31,6 +30,7 @@ import {
   OBJECT_ROW_TITLE_CLASS,
   OBJECT_SECTION_CLASS,
 } from '@/components/objects/object-detail-type';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { cn } from '@/lib/utils';
 
 export interface DiscussionMember {

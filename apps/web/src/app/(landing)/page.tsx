@@ -19,13 +19,13 @@ import type { ReactNode } from 'react';
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { GitHubSourceLink } from '@/components/github-source-link';
-import { WORK_VIEWS } from '@/components/marketing/features-content';
 import {
   CTA_MICROCOPY_LEAD,
   SEE_IT_FIRST_HREF,
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
+import { WORK_VIEWS } from '@/components/marketing/features-content';
 import { CitedAnswer } from '@/components/marketing/home/cited-answer';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import {

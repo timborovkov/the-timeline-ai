@@ -1,12 +1,12 @@
 import { presentDueDate } from '@timeline/shared/time';
 
-import { formatDisplayNumber } from '@/lib/regional-format';
 import {
   formatAllDayCalendarDate,
   formatDisplayDate,
   formatDisplayDateTime,
   parseDisplayDate,
 } from '@/lib/display-dates';
+import { formatDisplayNumber } from '@/lib/regional-format';
 export function automaticApprovalOutcome(metadata: Record<string, unknown> | undefined): string {
   const applied = Array.isArray(metadata?.applied_task_fields)
     ? metadata.applied_task_fields
@@ -316,9 +316,7 @@ function sameBoundary(current: string, proposed: string): boolean {
   if (!current.includes('T') || !proposed.includes('T')) return false;
   const currentInstant = parseDisplayDate(current);
   const proposedInstant = parseDisplayDate(proposed);
-  return Boolean(
-    currentInstant && proposedInstant && currentInstant.getTime() === proposedInstant.getTime(),
-  );
+  return currentInstant !== undefined && currentInstant.getTime() === proposedInstant?.getTime();
 }
 
 export function buildApprovalPreviewFields(input: {

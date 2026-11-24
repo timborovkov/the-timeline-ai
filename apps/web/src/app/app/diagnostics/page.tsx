@@ -7,8 +7,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { DiagnosticReportForm, DeleteDiagnosticReport } from '@/components/diagnostic-report-form';
-import { RegionalDate } from '@/components/regional-date';
 import { PageHeader } from '@/components/page-header';
+import { RegionalDate } from '@/components/regional-date';
 import { resolveScope } from '@/lib/action-scope';
 
 export const dynamic = 'force-dynamic';

@@ -38,16 +38,16 @@ import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
 import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
+import { automaticApprovalOutcome } from '@/lib/approval-preview';
 import {
   displayText,
   formatAllDayCalendarDate,
   formatDisplayDate,
   formatDisplayDateTime,
 } from '@/lib/display-dates';
-import { automaticApprovalOutcome } from '@/lib/approval-preview';
 import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 function stableJson(value: unknown): string {

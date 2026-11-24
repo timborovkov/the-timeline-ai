@@ -1,6 +1,5 @@
 'use client';
 
-import { RegionalDate } from '@/components/regional-date';
 import { useQuery } from '@tanstack/react-query';
 import type * as boards from '@timeline/shared/boards';
 import {
@@ -80,6 +79,7 @@ import {
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { PersonCompanySelect } from '@/components/objects/person-company-select';
+import { RegionalDate } from '@/components/regional-date';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
