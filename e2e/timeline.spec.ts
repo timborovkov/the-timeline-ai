@@ -1176,7 +1176,15 @@ test.describe
       sql`SELECT 1 FROM entity_relationships WHERE from_entity_id = ${taskId}`,
     ).resolves.toHaveLength(0);
 
-    await ownerPage.getByLabel('Task category').selectOption('__automatic__');
+    await waitForPost(ownerPage, `/app/objects/${taskId}`, async () => {
+      await ownerPage.getByLabel('Task category').selectOption('__automatic__');
+    });
+    const categoryToast = ownerPage.getByRole('listitem').filter({
+      has: ownerPage.getByText('Category updated', { exact: true }),
+    });
+    // The persistent Undo toast can cover the project choices at this viewport.
+    await categoryToast.getByRole('button', { name: 'Close toast', exact: true }).click();
+    await expect(categoryToast).toBeHidden();
     const firstPendingHash = await expect
       .poll(async () => {
         const [row] = await sql<{ requestedHash: string | null }[]>`
