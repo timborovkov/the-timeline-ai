@@ -240,6 +240,8 @@ export interface ObjectDetail extends ObjectRow {
       title: string;
       startAt: Date;
       endAt: Date;
+      allDay?: boolean;
+      timezone?: string;
       showAs: string;
     }[];
     timelineEvents: {

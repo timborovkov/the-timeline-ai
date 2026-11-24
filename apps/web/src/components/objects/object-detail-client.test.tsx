@@ -359,32 +359,89 @@ describe('ObjectDetailClient', () => {
     expect(screen.queryByLabelText('Due date')).toBeNull();
   });
 
-  it('formats string-backed due-date changes in the workspace timezone', () => {
+  it('keeps calendar days and timed deadline edits distinct in recent changes', () => {
     render(
-      objectDetailElement({
-        detail: {
-          ...detail,
-          recentChanges: [
-            {
-              id: 'change-due-at',
-              field: 'dueAt',
-              previousValue: null,
-              newValue: '2026-07-01T00:00:00.000Z',
-              actorKind: 'user',
-              actorUserId: 'user-1',
-              status: 'applied',
-              note: null,
-              changedAt: new Date('2026-06-30T12:00:00.000Z'),
-            },
-          ],
-        },
-        userId: 'user-1',
-        suggestions: [],
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'Europe/Helsinki',
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles' },
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            recentChanges: [
+              {
+                id: 'change-due-at',
+                field: 'dueAt',
+                previousValue: null,
+                newValue: '2026-12-01T00:00:00.000Z',
+                actorKind: 'user',
+                actorUserId: 'user-1',
+                status: 'applied',
+                note: null,
+                changedAt: new Date('2026-11-27T12:00:00.000Z'),
+              },
+              {
+                id: 'change-due-time',
+                field: 'dueAt',
+                previousValue: '2026-12-01T08:15:00.000Z',
+                newValue: '2026-12-01T16:15:00.000Z',
+                actorKind: 'user',
+                actorUserId: 'user-1',
+                status: 'applied',
+                note: null,
+                changedAt: new Date('2026-11-27T13:00:00.000Z'),
+              },
+            ],
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
       }),
     );
 
-    expect(document.body.textContent).toContain('Jul 1, 2026');
-    expect(document.body.textContent).not.toContain('2026-07-01T00:00:00.000Z');
+    expect(screen.getByText('∅ → 01.12.2026')).toBeTruthy();
+    expect(screen.getByText('01.12.2026, 00:15 → 01.12.2026, 08:15')).toBeTruthy();
+  });
+
+  it('keeps connected calendar links on the grid day and localizes the visible date', () => {
+    const allDay = {
+      id: 'offsite',
+      title: 'All-day offsite',
+      startAt: new Date('2026-11-30T15:00:00.000Z'),
+      endAt: new Date('2026-12-01T15:00:00.000Z'),
+      showAs: 'busy',
+      allDay: true,
+      timezone: 'Asia/Tokyo',
+    };
+    const timed = { ...allDay, id: 'review', title: 'Timed review', allDay: false };
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'Europe/Helsinki',
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles' },
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            type: 'company',
+            connectedWork: {
+              ...detail.connectedWork,
+              openTaskCount: 1200,
+              calendarEvents: [allDay, timed],
+            },
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByText('Open 1.200 · Done 0')).toBeTruthy();
+    const offsite = screen.getByRole('link', { name: 'All-day offsite' });
+    expect(offsite.getAttribute('href')).toBe(
+      '/app/calendar?event=offsite&date=2026-12-01&view=day',
+    );
+    expect(offsite.parentElement?.querySelector('time')?.textContent).toBe('01.12.2026');
+    const review = screen.getByRole('link', { name: 'Timed review' });
+    expect(review.getAttribute('href')).toBe('/app/calendar?event=review&date=2026-11-30&view=day');
+    expect(review.parentElement?.querySelector('time')?.textContent).toBe('30.11.2026, 07:00');
   });
 
   it('renders task category snapshots as readable recent changes', () => {

@@ -9,7 +9,7 @@ import {
 } from '@timeline/shared/citation';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import type * as objects from '@timeline/shared/objects/types';
-import { presentDueDate } from '@timeline/shared/time';
+import { dateOnlyDueDateKey, localDateFromInstant, presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -89,13 +89,19 @@ import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions'
 import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { readJson } from '@/lib/api-response';
-import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
+import {
+  displayText,
+  formatDisplayDate,
+  formatDisplayDateTime,
+  parseDisplayDate,
+} from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { displayObjectTitle } from '@/lib/object-title';
 import { queryKeys } from '@/lib/query-keys';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';
 import { TASK_STATUS_COLUMNS, taskDisplayStatus } from '@/lib/task-statuses';
@@ -1384,12 +1390,14 @@ function ObjectSummaryActions({
   requestSummary: () => void;
   actionLabel: string;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2">
       {generated && summary.generatedAt ? (
         <p className={DETAIL_META_CLASS}>
           Updated <RegionalDate value={summary.generatedAt} variant="datetime" /> ·{' '}
-          {summary.sourceRefs.length} {summary.sourceRefs.length === 1 ? 'source' : 'sources'}
+          {formatDisplayNumber(summary.sourceRefs.length, locale)}{' '}
+          {summary.sourceRefs.length === 1 ? 'source' : 'sources'}
         </p>
       ) : summary.status === 'pending' ? (
         <p className={DETAIL_META_CLASS}>Generating</p>
@@ -2110,12 +2118,13 @@ function ConnectedWorkSection({
   count?: number;
   children: ReactNode;
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <section className="min-w-0 py-2 first:pt-1.5">
       <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>
         {title}
         {typeof count === 'number' && count > 0 ? (
-          <span className={DETAIL_COUNT_CLASS}> · {count}</span>
+          <span className={DETAIL_COUNT_CLASS}> · {formatDisplayNumber(count, locale)}</span>
         ) : null}
       </h3>
       {children}
@@ -2144,12 +2153,14 @@ function ConnectedTaskList({
   openTaskCount: number;
   doneTaskCount: number;
 }) {
+  const { locale } = useRegionalFormat();
   const openCount = Math.max(openTaskCount, openTasks.length);
   const doneCount = Math.max(doneTaskCount, recentTasks.length);
   return (
     <ConnectedWorkSection title="Tasks">
       <p className={`mb-1.5 ${DETAIL_COUNT_CLASS}`}>
-        Open {openCount} · Done {doneCount}
+        Open {formatDisplayNumber(openCount, locale)} · Done{' '}
+        {formatDisplayNumber(doneCount, locale)}
       </p>
       {canAdd ? (
         <ConnectedTaskComposer objectId={objectId} objectType={objectType} disabled={pending} />
@@ -2460,19 +2471,26 @@ function ConnectedCalendarList({
         items={events}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(event) => event.id}
-        Item={({ item: event }) => (
-          <div className="grid gap-0.5">
-            <Link
-              href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
-              className={DETAIL_LINK_CLASS}
-            >
-              {displayText(event.title)}
-            </Link>
-            <span className={DETAIL_META_CLASS}>
-              {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
-            </span>
-          </div>
-        )}
+        Item={({ item: event }) => {
+          const date = localDateFromInstant(
+            event.startAt.toISOString(),
+            event.allDay ? (event.timezone ?? timezone) : timezone,
+          );
+          return (
+            <div className="grid gap-0.5">
+              <Link
+                href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${date}&view=day`}
+                className={DETAIL_LINK_CLASS}
+              >
+                {displayText(event.title)}
+              </Link>
+              <span className={DETAIL_META_CLASS}>
+                <RegionalDate value={event.allDay ? date : event.startAt} variant="datetime" /> ·{' '}
+                {statusLabel(event.showAs)}
+              </span>
+            </div>
+          );
+        }}
       />
     </ConnectedWorkSection>
   );
@@ -2863,8 +2881,7 @@ function ObjectRecentChangeItem({
   onAcceptChange: (changeId: string) => void;
   onRejectChange: (changeId: string) => void;
 }) {
-  const timezone = useWorkspaceTimezone();
-  const { locale } = useRegionalFormat();
+  const region = useRegionalFormat();
   const isSuggested = change.status === 'suggested';
   const isRejected = change.status === 'rejected';
   return (
@@ -2880,8 +2897,8 @@ function ObjectRecentChangeItem({
         </span>
       </div>
       <div className={`mt-0.5 break-words ${DETAIL_META_CLASS}`}>
-        {formatValue(change.previousValue, timezone, change.field, locale)} →{' '}
-        {formatValue(change.newValue, timezone, change.field, locale)}
+        {formatValue(change.previousValue, change.field, region)} →{' '}
+        {formatValue(change.newValue, change.field, region)}
       </div>
       <div className={`mt-0.5 flex items-center justify-between ${DETAIL_META_CLASS}`}>
         <span>
@@ -2967,20 +2984,24 @@ function toLocalInputValue(value: unknown, timezone: string): string {
   return d ? (presentDueDate(d, { timezone }).dateKey ?? '') : '';
 }
 
-function formatValue(v: unknown, timezone: string, field: string, locale: string): string {
-  const category = formatTaskCategoryChangeValue(field, v);
+function formatValue(value: unknown, field: string, region: RegionalFormat): string {
+  const category = formatTaskCategoryChangeValue(field, value);
   if (category !== null) return category;
-  if (v === null || v === undefined) return '∅';
-  if (typeof v === 'string') {
-    return field === 'plannedDate'
-      ? formatDisplayDate(v, { timezone: 'UTC', locale })
-      : displayText(v, { timezone });
+  if (value === null || value === undefined) return '∅';
+  if (field === 'dueAt' && (typeof value === 'string' || value instanceof Date)) {
+    const source = typeof value === 'string' ? value : parseDisplayDate(value)?.toISOString();
+    const day = source && dateOnlyDueDateKey(source);
+    return day ? formatDisplayDate(day, region) : formatDisplayDateTime(value, region);
   }
-  if (Array.isArray(v))
-    return v.map((item) => formatValue(item, timezone, field, locale)).join(', ');
-  if (v instanceof Date) return formatDisplayDateTime(v, { timezone });
-  if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
-  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+  if (typeof value === 'string') {
+    return field === 'plannedDate' ? formatDisplayDate(value, region) : displayText(value, region);
+  }
+  if (Array.isArray(value)) return value.map((item) => formatValue(item, field, region)).join(', ');
+  if (value instanceof Date) return formatDisplayDateTime(value, region);
+  if (typeof value === 'object') return summarizeObjectValue(value as Record<string, unknown>);
+  if (typeof value === 'number')
+    return formatDisplayNumber(value, region.locale, { maximumSignificantDigits: 21 });
+  if (typeof value === 'boolean' || typeof value === 'bigint') return String(value);
   return 'updated';
 }
 

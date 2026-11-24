@@ -55,7 +55,7 @@ import {
   formatDisplayTime,
 } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
-import type { RegionalFormat } from '@/lib/regional-format';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
@@ -139,10 +139,6 @@ function eventDate(input: Date | string): Date {
   return new Date(input);
 }
 
-function formatTimestamp(input: string, timezone: string): string {
-  return formatDisplayDateTime(eventDate(input), { timezone });
-}
-
 function formatMetadataValue(value: unknown, timezone: string): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return displayText(value, { timezone });
@@ -173,14 +169,16 @@ function friendlyMeta(meta: Record<string, unknown>, key: string, timezone: stri
   return value.length > 0 ? value : null;
 }
 
-function formatVisibilitySummary(events: TimelineEvent[]): string {
+function formatVisibilitySummary(events: TimelineEvent[], locale: string): string {
   const counts = new Map<string, number>();
   for (const event of events) {
     counts.set(event.visibility, (counts.get(event.visibility) ?? 0) + 1);
   }
   return [...counts.entries()]
     .map(([visibility, count]) =>
-      count === events.length ? visibility : `${visibility} x ${count}`,
+      count === events.length
+        ? visibility
+        : `${visibility} x ${formatDisplayNumber(count, locale)}`,
     )
     .join(' · ');
 }
@@ -358,10 +356,6 @@ function evidenceStrengthLabel(
 ): string {
   if (evidence.authoritative) return 'status source';
   return titleCase(evidence.strength);
-}
-
-function evidenceCountLabel(count: number): string {
-  return `${count} signal${count === 1 ? '' : 's'}`;
 }
 
 function shouldCapSourceEvidenceBody(body: string): boolean {
@@ -847,7 +841,7 @@ function InspectorAttachments({
             setVisibleRawEventCount((count) => count + INSPECTOR_RAW_EVENT_LIMIT);
           }}
         >
-          Show {hiddenRawEventCount} older evidence item
+          Show {formatDisplayNumber(hiddenRawEventCount, region.locale)} older evidence item
           {hiddenRawEventCount === 1 ? '' : 's'}
         </Button>
       ) : null}
@@ -861,6 +855,7 @@ function InspectorTechnicalDetails({
   moment: TimelineMoment;
   timezone: string;
 }) {
+  const { locale } = useRegionalFormat();
   const metadata = inspectorSourceDetailEntries(moment, timezone);
   const evidenceIds = moment.rawEvents.map((event) => event.id).join(', ');
   return (
@@ -869,7 +864,7 @@ function InspectorTechnicalDetails({
         { label: 'Moment ID', value: moment.id, copyValue: moment.id },
         { label: 'Event class', value: moment.eventClass },
         { label: 'Evidence IDs', value: evidenceIds, copyValue: evidenceIds },
-        { label: 'Visibility', value: formatVisibilitySummary(moment.rawEvents) },
+        { label: 'Visibility', value: formatVisibilitySummary(moment.rawEvents, locale) },
         ...metadata.map(([label, value]) => ({ label, value, copyValue: value })),
       ]}
     />
@@ -885,6 +880,8 @@ function ArtifactEvidenceBundle({
 }) {
   const region = useRegionalFormat();
   const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
+  const evidenceCount = cluster.relatedEvidence.length;
+  const evidenceCountLabel = formatDisplayNumber(evidenceCount, region.locale);
   return (
     <div className="space-y-3 py-2">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -893,20 +890,20 @@ function ArtifactEvidenceBundle({
             {cluster.canonicalName}
           </p>
           <p className="mt-1 text-xs text-fg-dim">
-            {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} ·{' '}
-            {evidenceCountLabel(cluster.relatedEvidence.length)}
+            {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} · {evidenceCountLabel}{' '}
+            signal{evidenceCount === 1 ? '' : 's'}
           </p>
         </div>
         {statusSources > 0 ? (
           <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 text-xs text-signal">
-            {statusSources} status source{statusSources === 1 ? '' : 's'}
+            {formatDisplayNumber(statusSources, region.locale)} status source
+            {statusSources === 1 ? '' : 's'}
           </span>
         ) : null}
       </div>
       <details>
         <summary className="cursor-pointer text-xs font-medium text-fg-muted">
-          {cluster.relatedEvidence.length} related source
-          {cluster.relatedEvidence.length === 1 ? '' : 's'}
+          {evidenceCountLabel} related source{evidenceCount === 1 ? '' : 's'}
         </summary>
         <ol className="mt-3 space-y-3">
           {cluster.relatedEvidence.map((evidence, index) => {
@@ -1095,25 +1092,29 @@ function SourceEvidenceCard({
         canRemove={canRemove}
         members={members}
         onVisibilitySaved={setSavedVisibility}
-        timezone={timezone}
+        region={region}
       />
     </li>
   );
 }
 
-function visibilityLabel(value: SavedEventVisibility): string {
+function visibilityLabel(value: SavedEventVisibility, locale: string): string {
   if (value.visibility === 'private') return 'Private';
   if (value.visibility === 'specific_users') {
-    return `Specific people · ${value.visibilityUserIds.length}`;
+    return `Specific people · ${formatDisplayNumber(value.visibilityUserIds.length, locale)}`;
   }
   return 'Team visibility';
 }
 
-function evidenceTargetLabel(event: TimelineEvent, actorLabel: string, timezone: string): string {
+function evidenceTargetLabel(
+  event: TimelineEvent,
+  actorLabel: string,
+  region: RegionalFormat,
+): string {
   const firstLine = event.contentText?.split(/\r?\n/, 1)[0]?.trim();
   const subject = firstLine?.length ? firstLine : 'Evidence item';
   const compactSubject = subject.length > 60 ? `${subject.slice(0, 57)}…` : subject;
-  return `${formatSourceLabel(event.source)} evidence “${compactSubject}” from ${actorLabel} at ${formatTimestamp(event.occurredAt, timezone)}`;
+  return `${formatSourceLabel(event.source)} evidence “${compactSubject}” from ${actorLabel} at ${formatDisplayDateTime(event.occurredAt, region)}`;
 }
 
 function SourceEvidenceActions({
@@ -1125,7 +1126,7 @@ function SourceEvidenceActions({
   canRemove,
   members,
   onVisibilitySaved,
-  timezone,
+  region,
 }: {
   event: TimelineEvent;
   actorLabel: string;
@@ -1135,9 +1136,9 @@ function SourceEvidenceActions({
   canRemove: boolean;
   members: { id: string; label: string }[];
   onVisibilitySaved: (value: SavedEventVisibility) => void;
-  timezone: string;
+  region: RegionalFormat;
 }) {
-  const targetLabel = evidenceTargetLabel(event, actorLabel, timezone);
+  const targetLabel = evidenceTargetLabel(event, actorLabel, region);
   const hasActions = [Boolean(event.contentAudioUrl), visibilityEditable, canRemove].some(Boolean);
   if (!hasActions) return null;
 
@@ -1167,7 +1168,7 @@ function SourceEvidenceActions({
       {visibilityEditable ? (
         <details className="min-w-0 basis-full text-xs">
           <summary className="w-fit cursor-pointer rounded-sm px-1 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/30">
-            {visibilityLabel(visibility)}
+            {visibilityLabel(visibility, region.locale)}
           </summary>
           <EventVisibilityForm
             eventId={event.id}
