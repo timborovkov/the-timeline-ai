@@ -297,7 +297,7 @@ page views/page leave, heatmaps, replay, and unreviewed feature flags.
 
 ## Acquisition event contract
 
-Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use only fixed `choose_free`, `choose_payg`, `choose_team` and `choose_business` CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.
+Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use the fixed Free and Team CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.
 
 ## Lifecycle event contract
 

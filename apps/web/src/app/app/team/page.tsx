@@ -489,6 +489,7 @@ function TeamBillingSettings({
       comp={comp}
       showOperatorLink={showOperatorLink}
       platformFeeCents={commercial?.platformFeeCents}
+      platformFeeCurrency={commercial?.platformFeeCurrency}
     />
   );
 }

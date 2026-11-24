@@ -2,6 +2,10 @@
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
 import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
+import {
+  PENDING_TEAM_CHECKOUT_RETRY_MESSAGE,
+  PendingTeamCheckoutError,
+} from '@timeline/shared/billing/errors';
 import { sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -253,6 +257,9 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           error:
             'This invite was sent to a different email. Sign up with the email it was sent to.',
         };
+      }
+      if (e instanceof PendingTeamCheckoutError) {
+        return { error: PENDING_TEAM_CHECKOUT_RETRY_MESSAGE };
       }
       if (isBillingAdmissionError(e)) {
         reportCaughtError(e, {

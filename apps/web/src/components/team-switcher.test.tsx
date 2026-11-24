@@ -3,13 +3,20 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
+const fakes = vi.hoisted(() => ({ acceptInvite: vi.fn(), notifyError: vi.fn() }));
+
 await vi.mock(
   import.meta.resolve('@/app/actions/invites'),
   () => ({
-    acceptRecipientInviteAction: vi.fn(),
+    acceptRecipientInviteAction: fakes.acceptInvite,
     declineInviteAction: vi.fn(),
   }),
   () => import('@/app/actions/invites'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  () => ({ notifyError: fakes.notifyError }),
+  () => import('@/lib/notify'),
 );
 await vi.mock(
   import.meta.resolve('@/components/team-forms'),
@@ -25,6 +32,7 @@ const { TeamSwitcher } = await import('@/components/team-switcher');
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
 
 const active = {
@@ -76,8 +84,10 @@ describe('TeamSwitcher', () => {
     expect(otherTeamButton.className).toContain('rounded-sm');
   });
 
-  it('keeps pending invite actions readable and stacked until the dialog has room', async () => {
+  it('keeps pending invite actions readable and offers a checkout retry', async () => {
     const user = userEvent.setup();
+    const error = 'Try accepting again after checkout completes or expires.';
+    fakes.acceptInvite.mockResolvedValueOnce({ error });
     render(
       <TeamSwitcher
         active={active}
@@ -105,5 +115,12 @@ describe('TeamSwitcher', () => {
     expect(accept.className).toContain('sm:w-auto');
     expect(decline.className).toContain('rounded-sm');
     expect(screen.getByText(/A teammate with a long address/).className).toContain('break-words');
+
+    await user.click(accept);
+
+    await waitFor(() => {
+      expect(fakes.notifyError).toHaveBeenCalledWith('accept-invite:invite-1', error);
+    });
+    expect(accept.disabled).toBe(false);
   });
 });

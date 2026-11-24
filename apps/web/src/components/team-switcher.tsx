@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import type { TeamMembership } from '@/lib/active-team';
 import { initials } from '@/lib/initials';
+import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 export interface RecipientInvite {
@@ -246,7 +247,13 @@ export function TeamSwitcher({
                         </p>
                       </div>
                       <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                        <form action={acceptRecipientInviteAction}>
+                        <form
+                          action={async (data) => {
+                            const result = await acceptRecipientInviteAction(data);
+                            if (result?.error)
+                              notifyError(`accept-invite:${invite.id}`, result.error);
+                          }}
+                        >
                           <input type="hidden" name="inviteId" value={invite.id} />
                           <RecipientInviteActionButton
                             label="Accept"

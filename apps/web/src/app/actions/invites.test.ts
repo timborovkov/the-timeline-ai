@@ -1,3 +1,8 @@
+import {
+  PENDING_TEAM_CHECKOUT_RETRY_MESSAGE,
+  PendingTeamCheckoutError,
+} from '@timeline/shared/billing/errors';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
@@ -10,6 +15,7 @@ import { beforeEach, describe, it } from 'bun:test';
  */
 
 const fakes = vi.hoisted(() => ({
+  fakeAssertSeatCapacity: vi.fn(),
   fakeAuth: vi.fn(),
   fakeTransaction: vi.fn(),
   fakeDbSelect: vi.fn(),
@@ -78,7 +84,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
   () => ({
-    assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+    assertTeamMemberSeatCapacity: fakes.fakeAssertSeatCapacity,
     isBillingAdmissionError: () => false,
   }),
   () => import('@timeline/shared/billing'),
@@ -191,11 +197,12 @@ function invite(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.fakeAssertSeatCapacity.mockResolvedValue(undefined);
   mockSignedIn();
   fakes.fakeClearPendingInvite.mockResolvedValue(undefined);
   fakes.fakeGetUserLegalAcceptance.mockResolvedValue({
-    legalTermsVersion: 'current',
-    legalPrivacyVersion: 'current',
+    legalTermsVersion: TERMS_VERSION,
+    legalPrivacyVersion: PRIVACY_VERSION,
     legalAcceptedAt: new Date(),
   });
   fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(true);
@@ -307,6 +314,19 @@ describe('acceptInviteAction', () => {
     expect(fakes.fakeClearPendingInvite).toHaveBeenCalled();
     expect(fakes.fakeCookieSet).not.toHaveBeenCalled();
   });
+
+  it('maps a pending checkout to a retryable link without consuming the invitation', async () => {
+    const { tx, inserts, updates } = makeTx([[invite()], []]);
+    fakes.fakeTransaction.mockImplementation((fn: (arg: unknown) => unknown) => fn(tx));
+    fakes.fakeAssertSeatCapacity.mockRejectedValueOnce(new PendingTeamCheckoutError());
+
+    await expect(acceptInviteAction(form({ token: TOKEN }))).rejects.toThrow(
+      'NEXT_REDIRECT:/accept-invite/invite-token?error=checkout-pending',
+    );
+    expect(inserts).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(fakes.fakeCookieSet).not.toHaveBeenCalled();
+  });
 });
 
 describe('acceptRecipientInviteAction', () => {
@@ -382,6 +402,20 @@ describe('acceptRecipientInviteAction', () => {
 
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledTimes(3);
     expect(fakes.fakeRedirect).not.toHaveBeenCalledWith('/app/timeline');
+  });
+
+  it('lets the recipient retry after checkout without consuming the invitation', async () => {
+    const { tx, inserts, updates } = makeTx([[{ email: 'invited@example.test' }], [invite()], []]);
+    fakes.fakeTransaction.mockImplementation((fn: (arg: unknown) => unknown) => fn(tx));
+    fakes.fakeAssertSeatCapacity.mockRejectedValueOnce(new PendingTeamCheckoutError());
+
+    await expect(acceptRecipientInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: PENDING_TEAM_CHECKOUT_RETRY_MESSAGE,
+    });
+    expect(inserts).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(fakes.fakeCookieSet).not.toHaveBeenCalled();
+    expect(fakes.fakeRedirect).not.toHaveBeenCalled();
   });
 });
 

@@ -499,7 +499,6 @@ function reservationMetadataRecord(
 }
 
 interface StoredFailedAttempt {
-  admittedMeteredDiscountPercent?: number;
   operationId: string;
   openRouterUsd: number;
   usageAt: string;
@@ -510,14 +509,19 @@ interface StoredFailedAttempt {
   billable: boolean;
 }
 
-function storedFailedAttempts(metadata: Record<string, unknown>): StoredFailedAttempt[] {
+function storedFailedAttempts(metadata: Record<string, unknown>): {
+  attempts: StoredFailedAttempt[];
+  observedIds: string[];
+} {
   const raw = metadata.pending_failed_attempts;
-  if (!Array.isArray(raw)) return [];
   const attempts: StoredFailedAttempt[] = [];
-  for (const item of raw) {
+  const observedIds: string[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
     const row = item as Record<string, unknown>;
-    if (typeof row.operation_id !== 'string' || row.operation_id.length === 0) continue;
+    if (typeof row.operation_id !== 'string') continue;
+    observedIds.push(row.operation_id);
+    if (row.operation_id.length === 0) continue;
     const usd = metadataNumber({ openrouter_usd: row.openrouter_usd }, 'openrouter_usd');
     if (usd === undefined || usd <= 0) continue;
     if (typeof row.usage_at !== 'string' || Number.isNaN(new Date(row.usage_at).getTime())) {
@@ -530,31 +534,12 @@ function storedFailedAttempts(metadata: Record<string, unknown>): StoredFailedAt
       operationClass: typeof row.operation_class === 'string' ? row.operation_class : 'worker_ai',
       billable: row.billable !== false,
     };
-    const discount = metadataNumber(row, 'admitted_metered_discount_percent');
-    if (discount !== undefined && discount >= 0 && discount <= 100)
-      attempt.admittedMeteredDiscountPercent = discount;
     if (typeof row.model === 'string') attempt.model = row.model;
     if (typeof row.source === 'string') attempt.source = row.source;
     if (typeof row.delivery_surface === 'string') attempt.deliverySurface = row.delivery_surface;
     attempts.push(attempt);
   }
-  return attempts;
-}
-
-function failedAttemptMetadata(attempt: StoredFailedAttempt): Record<string, unknown> {
-  return {
-    ...(attempt.admittedMeteredDiscountPercent !== undefined
-      ? { admitted_metered_discount_percent: attempt.admittedMeteredDiscountPercent }
-      : {}),
-    operation_id: attempt.operationId,
-    openrouter_usd: attempt.openRouterUsd,
-    usage_at: attempt.usageAt,
-    operation_class: attempt.operationClass,
-    billable: attempt.billable,
-    ...(attempt.model ? { model: attempt.model } : {}),
-    ...(attempt.source ? { source: attempt.source } : {}),
-    ...(attempt.deliverySurface ? { delivery_surface: attempt.deliverySurface } : {}),
-  };
+  return { attempts, observedIds };
 }
 
 /**
@@ -580,27 +565,15 @@ async function commitStoredFailedAttempts(input: {
     .limit(1);
   if (!row) return;
   const metadata = reservationMetadataRecord(row.metadata);
-  const attempts = storedFailedAttempts(metadata);
-  if (attempts.length === 0) {
-    if (metadata.pending_failed_attempt_settlement === true) {
-      await reviveReservationForSettlement(input.db, row);
-      await input.billing.patchReservationMetadata(input.operationId, {
-        pending_failed_attempts: [],
-        pending_failed_attempt_settlement: false,
-      });
-    }
-    return;
-  }
-  await reviveReservationForSettlement(input.db, row);
+  if (metadata.pending_failed_attempt_settlement !== true) return;
+  const { attempts, observedIds } = storedFailedAttempts(metadata);
   for (const attempt of attempts) {
     const { providerCostCents, customerChargeExactCents } = customerAiChargeCentsFromOpenRouterUsd(
       attempt.openRouterUsd,
     );
     await input.billing.settle({
       operationId: attempt.operationId,
-      ...(attempt.admittedMeteredDiscountPercent !== undefined
-        ? { pricingAiDiscountPercent: attempt.admittedMeteredDiscountPercent }
-        : {}),
+      failedAiAttemptFor: input.operationId,
       meterId: 'ai',
       nativeUnits: customerChargeExactCents,
       customerChargeCents: Math.round(customerChargeExactCents),
@@ -614,14 +587,35 @@ async function commitStoredFailedAttempts(input: {
       usageAt: new Date(attempt.usageAt),
       metadata: {
         openrouter_usd: attempt.openRouterUsd,
-        failed_attempt_for: input.operationId,
       },
     });
   }
-  await input.billing.patchReservationMetadata(input.operationId, {
-    pending_failed_attempts: [],
-    pending_failed_attempt_settlement: false,
-  });
+  // Remove only the observed attempts. Another provider call can append
+  // while this pass writes the ledger.
+  const pending = sql`${billingUsageReservations.metadata}->'pending_failed_attempts'`;
+  await input.db
+    .update(billingUsageReservations)
+    .set({
+      metadata: sql`
+        ${billingUsageReservations.metadata} || (
+          SELECT jsonb_build_object(
+            'pending_failed_attempts', coalesce(jsonb_agg(attempt), '[]'::jsonb),
+            'pending_failed_attempt_settlement', count(*) > 0
+          )
+          FROM jsonb_array_elements(
+            CASE WHEN jsonb_typeof(${pending}) = 'array' THEN ${pending} ELSE '[]'::jsonb END
+          ) AS saved(attempt)
+          WHERE NOT (${JSON.stringify(observedIds)}::jsonb ? (attempt->>'operation_id'))
+        )
+      `,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(billingUsageReservations.teamId, input.teamId),
+        eq(billingUsageReservations.operationId, input.operationId),
+      ),
+    );
 }
 
 /**
@@ -748,36 +742,13 @@ export async function withAiMetering<T>(
     const failedFinish = openRouterFinishFromCaughtError(err);
     const failedUsd = failedFinish ? openRouterUsdCostFromFinishEvent(failedFinish) : 0;
     if (failedUsd > 0) {
-      const attemptId = await nextFailedAttemptOperationId(ctx.db, ctx.teamId, operationId);
-      const [current] = await ctx.db
-        .select({ metadata: billingUsageReservations.metadata })
-        .from(billingUsageReservations)
-        .where(
-          and(
-            eq(billingUsageReservations.teamId, ctx.teamId),
-            eq(billingUsageReservations.operationId, operationId),
-          ),
-        )
-        .limit(1);
-      const existing = storedFailedAttempts(reservationMetadataRecord(current?.metadata));
-      const attempt: StoredFailedAttempt = {
-        operationId: attemptId,
+      await reserved.recordFailedAiAttempt({
         openRouterUsd: failedUsd,
-        usageAt: new Date().toISOString(),
         operationClass,
         billable: ctx.billable !== false,
-      };
-      const admittedDiscount = metadataNumber(existingMeta, 'admitted_metered_discount_percent');
-      if (admittedDiscount !== undefined) attempt.admittedMeteredDiscountPercent = admittedDiscount;
-      if (input.model) attempt.model = input.model;
-      if (ctx.source) attempt.source = ctx.source;
-      if (ctx.deliverySurface) attempt.deliverySurface = ctx.deliverySurface;
-      const attempts = existing.some((row) => row.operationId === attemptId)
-        ? existing
-        : [...existing, attempt];
-      await billing.patchReservationMetadata(operationId, {
-        pending_failed_attempts: attempts.map(failedAttemptMetadata),
-        pending_failed_attempt_settlement: true,
+        ...(input.model ? { model: input.model } : {}),
+        ...(ctx.source ? { source: ctx.source } : {}),
+        ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
       });
       try {
         await commitStoredFailedAttempts({
@@ -814,20 +785,6 @@ export async function withAiMetering<T>(
   // and pay the provider a second time while the first call stays uncharged.
   await settleUsd(operationId, usd);
   return value;
-}
-
-async function nextFailedAttemptOperationId(
-  db: Db,
-  teamId: string,
-  operationId: string,
-): Promise<string> {
-  const rows = await db
-    .select({ operationId: billingUsageLedger.operationId })
-    .from(billingUsageLedger)
-    .where(eq(billingUsageLedger.teamId, teamId));
-  const prefix = `${operationId}:failed:`;
-  const count = rows.filter((row) => row.operationId.startsWith(prefix)).length;
-  return `${prefix}${count + 1}`;
 }
 
 export async function snapshotTeamStorageGbMonth(input: {
@@ -1402,21 +1359,16 @@ export async function settlePendingBillingReservations(db: Db, teamId?: string):
             or(
               sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') = 'true'`,
               sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') = 'true'`,
-              sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') = 'true'`,
             ),
           ),
+          sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') = 'true'`,
         ),
       ),
     );
   let settled = 0;
   for (const row of rows) {
     const metadata = reservationMetadataRecord(row.metadata);
-    const billing = createBillingScope({
-      db,
-      teamId: row.teamId,
-      userId: BILLING_SYSTEM_USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
+    const billing = billingScope({ db, teamId: row.teamId, userId: BILLING_SYSTEM_USER_ID });
     if (metadata.pending_failed_attempt_settlement === true) {
       try {
         await commitStoredFailedAttempts({

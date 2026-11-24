@@ -86,6 +86,25 @@ describe('billing presentation', () => {
     expect(result.credit).toMatchObject({ totalCents: 25000, usedCents: 0, remainingCents: 25000 });
     expect(result.recurringFeeCents).toBe(12345);
   });
+  it('preserves the denomination of legacy and provider-verified Enterprise fees', () => {
+    const legacy = {
+      ...account,
+      planId: 'enterprise' as const,
+      billingState: 'enterprise_active',
+      enterprisePlatformFeeCents: 12345,
+    };
+    expect(summary({ account: legacy })).toMatchObject({
+      recurringFeeCents: 12345,
+      recurringFeeCurrency: 'EUR',
+    });
+    expect(summary({ account: { ...legacy, enterprisePlatformFeeCurrency: 'USD' } })).toMatchObject(
+      {
+        recurringFeeCents: 12345,
+        recurringFeeCurrency: 'USD',
+      },
+    );
+  });
+
   it('shows one Free pool and keeps the legacy PAYG allowances separate', () => {
     const meters = { ai: { nativeUnits: 184 }, recall_minutes: { nativeUnits: 20 } };
     const free = summary({
@@ -142,6 +161,23 @@ describe('billing presentation', () => {
       )?.totalCents,
     ).toBe(500);
   });
+  it('does not attribute a rounded Recall minute past its recorded end', () => {
+    const settlement = row({
+      meterId: 'recall_minutes',
+      nativeUnits: '1',
+      metadata: {
+        usage_at: '2026-10-14T23:59:30Z',
+        usage_ended_at: '2026-10-14T23:59:50Z',
+        discount_cents: 0,
+        invoice_cents: 3,
+      },
+    });
+    const previousPeriod = { start: '2026-09-15T00:00:00Z', end: period.start };
+
+    expect(recordedChargesForPeriod([settlement], period)?.totalCents).toBe(0);
+    expect(recordedChargesForPeriod([settlement], previousPeriod)?.totalCents).toBe(3);
+  });
+
   it('uses explicit renewal splits and refuses ambiguous legacy splits', () => {
     const windows = [
       {

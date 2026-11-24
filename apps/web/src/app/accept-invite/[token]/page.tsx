@@ -1,4 +1,5 @@
 import { teamInvites, teams } from '@timeline/db';
+import { PENDING_TEAM_CHECKOUT_RETRY_MESSAGE } from '@timeline/shared/billing/errors';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -128,6 +129,11 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
       {error === 'member-limit' ? (
         <p className="text-sm text-destructive">
           This plan’s member limit is reached. Ask an owner to upgrade before you join.
+        </p>
+      ) : null}
+      {error === 'checkout-pending' ? (
+        <p role="alert" className="text-sm text-destructive">
+          {PENDING_TEAM_CHECKOUT_RETRY_MESSAGE}
         </p>
       ) : null}
       <form action={acceptInviteAction} className="flex items-center gap-3">

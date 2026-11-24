@@ -32,6 +32,19 @@ function Money({ value, usd = false }: { value: number | null; usd?: boolean }) 
     </span>
   );
 }
+
+function RecurringPlanFee({ summary }: { summary: BillingPresentation }) {
+  const usd = summary.recurringFeeCurrency
+    ? summary.recurringFeeCurrency === 'USD'
+    : summary.paidSeats !== undefined || summary.planId === 'free';
+  return (
+    <>
+      <Money usd={usd} value={summary.recurringFeeCents} />
+      {summary.recurringFeeCents === null ? '' : ' / month'}
+    </>
+  );
+}
+
 export function BillingBenefitsSummary({ summary }: { summary: BillingPresentation }) {
   const { credit, charges, cap } = summary;
   return (
@@ -276,13 +289,7 @@ function BillingRecordedCharges({
         invoice.
       </p>
       <p className="text-sm">
-        Recurring plan fee:{' '}
-        {summary.paidSeats !== undefined && summary.recurringFeeCents !== null ? (
-          <Money usd value={summary.recurringFeeCents} />
-        ) : (
-          <Money value={summary.recurringFeeCents} />
-        )}
-        {summary.recurringFeeCents === null ? '' : ' / month'}
+        Recurring plan fee: <RecurringPlanFee summary={summary} />
       </p>
     </section>
   );
@@ -406,12 +413,7 @@ function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
           {summary.comped ? ' · Comped' : ''}
         </dd>
         <dd className="text-xs text-fg-muted">
-          Plan fee:{' '}
-          <Money
-            usd={summary.paidSeats !== undefined || summary.planId === 'free'}
-            value={summary.recurringFeeCents}
-          />
-          {summary.recurringFeeCents === null ? '' : ' / month'}
+          Plan fee: <RecurringPlanFee summary={summary} />
         </dd>
       </div>
       <UsageMemberCount summary={summary} />

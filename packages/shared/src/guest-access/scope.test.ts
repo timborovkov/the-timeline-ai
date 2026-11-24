@@ -8,6 +8,8 @@ import {
   facts,
   factEntities,
   guestInvitations,
+  guestRecordShares,
+  guestSourceGrants,
   rawEvents,
   objectSummaries,
   teamInvites,
@@ -18,7 +20,7 @@ import {
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it, spyOn } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { assertTeamMemberSeatCapacity } from '#src/billing/capacity.js';
@@ -413,53 +415,95 @@ describe('guest access', () => {
     expect((await owner.guests.settings()).notes.map(({ id }) => id)).not.toContain(shared);
   });
 
-  it('requires a full seat to promote a guest and never restores old grants after member removal', async () => {
-    const owner = withTeam(db, team, admin);
-    const invite = await owner.guests.invite('guest@example.test');
-    if (!invite) throw new Error('Expected an invitation');
-    const recipient = withTeam(db, team, guest);
-    await owner.guests.shareSource(invite.id, shared);
-    await owner.guests.publishRecord(invite.id, recordId, 'Project', 'Original publication.');
-    const liveTask = crypto.randomUUID();
-    await db.insert(entities).values({
-      id: liveTask,
-      teamId: team,
-      type: 'task',
-      canonicalName: 'Live task before promotion',
-    });
-    expect(await owner.guests.shareRecord(invite.id, liveTask)).toBe(true);
-    await recipient.guests.accept(invite.token);
-    expect(await recipient.guests.listRecords()).toHaveLength(2);
-    await expect(
-      assertTeamMemberSeatCapacity({ db, teamId: team, additionalSeats: 2 }),
-    ).resolves.toBeUndefined();
-    await expect(
-      assertTeamMemberSeatCapacity({ db, teamId: team, additionalSeats: 3 }),
-    ).rejects.toThrow('Active member limit');
-    await db.transaction(async (tx) => {
-      await assertTeamMemberSeatCapacity({ db: tx as unknown as Db, teamId: team });
-      await tx.insert(teamMembers).values({ teamId: team, userId: guest, role: 'member' });
-    });
-    const promoted = withTeam(db, team, guest);
-    await expect(promoted.requireMembership()).resolves.toBe('member');
-    expect(await owner.guests.invite('GUEST@example.test')).toBeNull();
-    expect(await promoted.guests.listSources(shared)).toEqual([]);
-    await db
-      .update(teamMembers)
-      .set({ removedAt: new Date() })
-      .where(eq(teamMembers.userId, guest));
-    expect(await promoted.guests.listSources(shared)).toEqual([]);
-    expect(await promoted.guests.listRecords()).toEqual([]);
-    const removed = withTeam(db, team, guest);
-    await expect(removed.requireMembership()).rejects.toThrow('Not a member');
-    expect(await removed.guests.accept(invite.token)).toBe(false);
-    const fresh = await owner.guests.invite('guest@example.test');
-    if (!fresh) throw new Error('Expected a new invitation after demotion');
-    expect(await removed.guests.accept(fresh.token)).toBe(true);
-    expect(await removed.guests.hasAccess()).toBe(true);
-    expect(await removed.guests.listRecords()).toEqual([]);
-    expect(await removed.guests.listSources()).toEqual([]);
-  });
+  it.each(['insert', 'reactivate'] as const)(
+    'revokes guest grants on full membership %s and keeps them revoked after removal',
+    async (transition) => {
+      const membership = and(eq(teamMembers.teamId, team), eq(teamMembers.userId, guest));
+      if (transition === 'reactivate') {
+        await db.insert(teamMembers).values({
+          teamId: team,
+          userId: guest,
+          role: 'member',
+          removedAt: new Date(),
+        });
+      }
+      const owner = withTeam(db, team, admin);
+      const invite = await owner.guests.invite('guest@example.test');
+      if (!invite) throw new Error('Expected an invitation');
+      const recipient = withTeam(db, team, guest);
+      expect(await owner.guests.shareSource(invite.id, shared)).toBe(true);
+      expect(
+        await owner.guests.publishRecord(invite.id, recordId, 'Project', 'Original publication.'),
+      ).toBe(true);
+      const liveTask = crypto.randomUUID();
+      await db.insert(entities).values({
+        id: liveTask,
+        teamId: team,
+        type: 'task',
+        canonicalName: 'Live task before promotion',
+      });
+      expect(await owner.guests.shareRecord(invite.id, liveTask)).toBe(true);
+      expect(await recipient.guests.accept(invite.token)).toBe(true);
+      expect(await recipient.guests.listSources()).toHaveLength(1);
+      expect(await recipient.guests.listRecords()).toHaveLength(2);
+      await expect(
+        assertTeamMemberSeatCapacity({ db, teamId: team, additionalSeats: 2 }),
+      ).resolves.toBeUndefined();
+      await expect(
+        assertTeamMemberSeatCapacity({ db, teamId: team, additionalSeats: 3 }),
+      ).rejects.toThrow('Active member limit');
+
+      await db.transaction(async (tx) => {
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as Db,
+          teamId: team,
+          acquirePaidSeat: true,
+        });
+        if (transition === 'reactivate') {
+          await tx.update(teamMembers).set({ removedAt: null }).where(membership);
+        } else {
+          await tx.insert(teamMembers).values({ teamId: team, userId: guest, role: 'member' });
+        }
+
+        const [invitation] = await tx
+          .select({ revokedAt: guestInvitations.revokedAt })
+          .from(guestInvitations)
+          .where(eq(guestInvitations.id, invite.id));
+        expect(invitation?.revokedAt).toBeInstanceOf(Date);
+        expect(
+          await tx
+            .select()
+            .from(guestSourceGrants)
+            .where(eq(guestSourceGrants.invitationId, invite.id)),
+        ).toEqual([]);
+        expect(
+          await tx
+            .select()
+            .from(guestRecordShares)
+            .where(eq(guestRecordShares.invitationId, invite.id)),
+        ).toEqual([]);
+      });
+
+      const promoted = withTeam(db, team, guest);
+      await expect(promoted.requireMembership()).resolves.toBe('member');
+      expect(await owner.guests.invite('GUEST@example.test')).toBeNull();
+      expect(await promoted.guests.hasAccess()).toBe(false);
+      await db.update(teamMembers).set({ removedAt: new Date() }).where(membership);
+
+      const removed = withTeam(db, team, guest);
+      await expect(removed.requireMembership()).rejects.toThrow('Not a member');
+      expect(await removed.guests.hasAccess()).toBe(false);
+      expect(await removed.guests.listSources()).toEqual([]);
+      expect(await removed.guests.listRecords()).toEqual([]);
+      expect(await removed.guests.accept(invite.token)).toBe(false);
+      const fresh = await owner.guests.invite('guest@example.test');
+      if (!fresh) throw new Error('Expected a new invitation after demotion');
+      expect(await removed.guests.accept(fresh.token)).toBe(true);
+      expect(await removed.guests.hasAccess()).toBe(true);
+      expect(await removed.guests.listRecords()).toEqual([]);
+      expect(await removed.guests.listSources()).toEqual([]);
+    },
+  );
 
   it('rejects expired guest links and stops guest questions at the host workspace allowance', async () => {
     const owner = withTeam(db, team, admin);

@@ -13,7 +13,7 @@ import {
   type PolarIdentityApi,
   type PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
-import type { BillingProvider } from '#src/billing/provider.js';
+import type { BillingProvider, PendingTeamCheckout } from '#src/billing/provider.js';
 import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/index.js';
 
 export interface TeamBillingIdentity {
@@ -91,6 +91,38 @@ export function resolvePolarOwnerUserId(
 
 type TeamCheckoutPreparation =
   { status: 'ready' } | { status: 'blocked' } | { status: 'resume'; url: string };
+
+/** Read pending quotes while holding the workspace row lock shared by checkout and roster growth. */
+export async function readOutstandingTeamCheckouts(input: {
+  provider: BillingProvider;
+  customerId: string;
+  productId: string | undefined;
+  recordedIds: readonly string[];
+  matchesQuote?: (checkout: PendingTeamCheckout) => boolean;
+}): Promise<{ ids: string[]; match: PendingTeamCheckout | undefined }> {
+  const discovered = input.productId
+    ? ((await input.provider.listPendingTeamCheckouts?.({
+        customerId: input.customerId,
+        productId: input.productId,
+      })) ?? [])
+    : [];
+  const matches = input.matchesQuote ? discovered.filter(input.matchesQuote) : [];
+  const match = matches.length === 1 ? matches[0] : undefined;
+  const ids = new Set([...input.recordedIds, ...discovered.map(({ id }) => id)]);
+  const confirmed = new Set(
+    discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
+  );
+  const retained: string[] = [];
+  for (const id of ids) {
+    if (
+      id === match?.id ||
+      confirmed.has(id) ||
+      (await input.provider.expireCheckout(id)) !== 'expired'
+    )
+      retained.push(id);
+  }
+  return { ids: retained, match };
+}
 
 /** Caller authorization and session creation share the account lock with revocation. */
 export async function withTeamBillingIdentity<T>(
@@ -359,34 +391,19 @@ export async function withTeamBillingIdentity<T>(
           account,
           recordCheckout: (id) => savePendingCheckouts([...new Set([...pendingCheckoutIds, id])]),
           prepareTeamCheckout: async (quote) => {
-            const discovered =
-              (await input.provider.listPendingTeamCheckouts?.({
-                customerId: identity.customerId,
-                productId: quote.productId,
-              })) ?? [];
-            const matches = discovered.filter(
-              (row) =>
+            const { ids, match } = await readOutstandingTeamCheckouts({
+              provider: input.provider,
+              customerId: identity.customerId,
+              productId: quote.productId,
+              recordedIds: pendingCheckoutIds,
+              matchesQuote: (row) =>
                 row.status === 'open' &&
                 row.seats === quote.seats &&
                 row.discountId === (quote.discountId ?? null),
-            );
-            const match = matches.length === 1 ? matches[0] : undefined;
-            const ids = new Set([...pendingCheckoutIds, ...discovered.map(({ id }) => id)]);
-            const confirmed = new Set(
-              discovered.filter((row) => row.status === 'confirmed').map(({ id }) => id),
-            );
-            const retained: string[] = [];
-            for (const id of ids) {
-              if (
-                id === match?.id ||
-                confirmed.has(id) ||
-                (await input.provider.expireCheckout(id)) !== 'expired'
-              )
-                retained.push(id);
-            }
-            if (ids.size > 0) await savePendingCheckouts(retained);
-            if (match && retained.length === 1) return { status: 'resume', url: match.url };
-            return { status: retained.length ? 'blocked' : 'ready' };
+            });
+            if (ids.length || pendingCheckoutIds.length) await savePendingCheckouts(ids);
+            if (match && ids.length === 1) return { status: 'resume', url: match.url };
+            return { status: ids.length ? 'blocked' : 'ready' };
           },
         });
       }),

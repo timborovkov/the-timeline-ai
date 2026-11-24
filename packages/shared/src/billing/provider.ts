@@ -62,6 +62,8 @@ export interface TeamSeatSubscription {
   periodStart: Date;
   periodEnd: Date;
   modifiedAt: Date;
+  /** `null` confirms renewal. Omitted when the provider did not report cancellation state. */
+  cancelEffectiveAt?: Date | null;
 }
 
 export interface BillingProvider {

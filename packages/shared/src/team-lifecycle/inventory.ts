@@ -7,6 +7,7 @@ export const RETAINED_USAGE_METADATA_FIELDS = [
   'pricing_plan_id',
   'pricing_period_ym',
   'usage_at',
+  'usage_ended_at',
   'discount_windows',
   'period_segments',
   'presentation_comped',

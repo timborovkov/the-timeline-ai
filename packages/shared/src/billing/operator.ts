@@ -36,6 +36,7 @@ export interface BillingOperatorSnapshot {
   priceOverrideExpiresAt: string | null;
   /** Checkout-activated Enterprise platform fee. Null when Polar has no contracted fee. */
   enterprisePlatformFeeCents: number | null;
+  enterprisePlatformFeeCurrency: 'EUR' | 'USD' | null;
   pendingEnterpriseTerms: StoredPendingEnterpriseTerms | null;
   polarDiscountId: string | null;
   polarDiscountExpiresAt: string | null;
@@ -51,6 +52,7 @@ export interface BillingOperatorAccount {
   priceOverride?: TeamPriceOverride | null;
   priceOverrideExpiresAt?: Date | null;
   enterprisePlatformFeeCents?: number | null;
+  enterprisePlatformFeeCurrency?: 'EUR' | 'USD' | null;
   pendingEnterpriseTerms?: StoredPendingEnterpriseTerms | null;
   polarDiscountId?: string | null;
   polarDiscountExpiresAt?: Date | null;
@@ -59,6 +61,7 @@ export interface BillingOperatorAccount {
 export interface ResolvedCommercialTerms {
   planId: BillingPlanId;
   platformFeeCents: number | null;
+  platformFeeCurrency: 'EUR' | 'USD';
   includedActiveMembers: number | null;
   additionalMemberCents: number | null;
   includedUsageDiscountCents: number;
@@ -250,6 +253,12 @@ export function resolveTeamCommercialTerms(
   return {
     planId,
     platformFeeCents: contractedFee ?? catalog.platformFeeCents,
+    platformFeeCurrency:
+      planId === 'enterprise' && typeof account.enterprisePlatformFeeCents === 'number'
+        ? (account.enterprisePlatformFeeCurrency ?? 'EUR')
+        : planId === 'free'
+          ? 'USD'
+          : 'EUR',
     includedActiveMembers: override?.includedActiveMembers ?? catalog.includedActiveMembers,
     additionalMemberCents: override?.additionalMemberCents ?? catalog.additionalMemberCents,
     includedUsageDiscountCents: catalog.includedUsageDiscountCents,
@@ -373,6 +382,7 @@ export function billingOperatorSnapshot(account: BillingOperatorAccount): Billin
       ? account.priceOverrideExpiresAt.toISOString()
       : null,
     enterprisePlatformFeeCents: account.enterprisePlatformFeeCents ?? null,
+    enterprisePlatformFeeCurrency: account.enterprisePlatformFeeCurrency ?? null,
     pendingEnterpriseTerms: account.pendingEnterpriseTerms ?? null,
     polarDiscountId: account.polarDiscountId ?? null,
     polarDiscountExpiresAt: account.polarDiscountExpiresAt

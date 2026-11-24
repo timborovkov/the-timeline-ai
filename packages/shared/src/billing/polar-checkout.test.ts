@@ -741,6 +741,47 @@ describe('Polar managed checkout discounts', () => {
   });
 });
 
+describe('verified Team subscription snapshots', () => {
+  it('retains known cancellation state and identifies incomplete provider responses', async () => {
+    const provider = polarProvider();
+    const fixture = {
+      id: 'subscription-synthetic',
+      customer_id: 'customer-synthetic',
+      product_id: 'team-synthetic',
+      seats: 1,
+      status: 'active',
+      currency: 'usd',
+      recurring_interval: 'month',
+      recurring_interval_count: 1,
+      current_period_start: '2026-11-01T00:00:00Z',
+      current_period_end: '2026-12-01T00:00:00Z',
+      created_at: '2026-11-01T00:00:00Z',
+    };
+    const fetchMock = vi.fn(() => jsonResponse(fixture));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const read = () => {
+      if (!provider.getTeamSeatSubscription) throw new Error('Missing Team subscription reads');
+      return provider.getTeamSeatSubscription(fixture.id);
+    };
+
+    expect(await read()).not.toHaveProperty('cancelEffectiveAt');
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({ ...fixture, cancel_at_period_end: true, ends_at: null }),
+    );
+    expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(fixture.current_period_end) });
+    const endsAt = '2026-11-29T00:00:00Z';
+    fetchMock.mockImplementationOnce(() => jsonResponse({ ...fixture, ends_at: endsAt }));
+    expect(await read()).toMatchObject({ cancelEffectiveAt: new Date(endsAt) });
+    fetchMock.mockImplementationOnce(() =>
+      jsonResponse({ ...fixture, cancel_at_period_end: false, ends_at: null }),
+    );
+    expect(await read()).toMatchObject({
+      cancelEffectiveAt: null,
+      modifiedAt: new Date(fixture.created_at),
+    });
+  });
+});
+
 describe('cancelSubscriptionRenewal', () => {
   it('rejects provider failures and unconfirmed cancellation so durable work can retry', async () => {
     let outcome: 'outage' | 'unconfirmed' | 'canceled' = 'outage';

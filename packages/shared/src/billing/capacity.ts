@@ -22,8 +22,11 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
-import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
-import { BillingAdmissionError } from '#src/billing/errors.js';
+import {
+  assertStoredPolarIdentity,
+  readOutstandingTeamCheckouts,
+} from '#src/billing/customer-identity.js';
+import { BillingAdmissionError, PendingTeamCheckoutError } from '#src/billing/errors.js';
 import {
   confirmTeamSeatEntitlement,
   FULL_MEMBER_ROLES,
@@ -31,7 +34,11 @@ import {
 } from '#src/billing/membership.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
-import { createPolarBillingProvider } from '#src/billing/polar.js';
+import {
+  createPolarBillingProvider,
+  polarProductIdForPlan,
+  polarSubscriptionIdForPlanChange,
+} from '#src/billing/polar.js';
 import type { BillingProvider, TeamSeatSubscription } from '#src/billing/provider.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
@@ -140,7 +147,7 @@ export async function assertTeamWriteCapacity(input: {
     if (account.billingState === 'restricted') {
       throw new BillingAdmissionError(
         'usage_limit_reached',
-        'This extra workspace has no Free allowance. Add a payment method in Billing to write.',
+        'This extra workspace has no Free allowance. Review Team in Billing to write.',
       );
     }
     throw new BillingAdmissionError(
@@ -215,6 +222,24 @@ function assertSeatSubscription(
   }
 }
 
+/** A complete active snapshot can order status and cancellation as well as seats. */
+function seatSubscriptionSnapshot(
+  account: typeof teamBillingAccounts.$inferSelect,
+  subscription: TeamSeatSubscription,
+) {
+  if (
+    subscription.cancelEffectiveAt === undefined ||
+    subscription.periodEnd <= subscription.periodStart ||
+    (account.periodStartedAt && subscription.periodStart < account.periodStartedAt) ||
+    (account.polarEventModifiedAt && subscription.modifiedAt < account.polarEventModifiedAt)
+  )
+    return null;
+  return {
+    cancelEffectiveAt: subscription.cancelEffectiveAt,
+    polarEventModifiedAt: subscription.modifiedAt,
+  };
+}
+
 async function reconcileSeatSubscription(input: {
   db: Db;
   teamId: string;
@@ -263,8 +288,12 @@ async function reconcileSeatSubscription(input: {
     );
 
   let confirmed = subscription;
+  const initialSnapshot = seatSubscriptionSnapshot(account, subscription);
+  const cancelEffectiveAt = initialSnapshot
+    ? initialSnapshot.cancelEffectiveAt
+    : account.cancelEffectiveAt;
   const proration =
-    input.mode === 'maintenance' && account.cancelEffectiveAt
+    input.mode === 'maintenance' && cancelEffectiveAt
       ? null
       : teamSeatQuantityChange({
           desired,
@@ -302,18 +331,27 @@ async function reconcileSeatSubscription(input: {
     account.teamSeatTerms.paidSeats !== confirmed.seats ||
     account.periodStartedAt?.getTime() !== confirmed.periodStart.getTime() ||
     account.periodEndsAt?.getTime() !== confirmed.periodEnd.getTime();
-  if (!needsReconciliation) return;
-  const entitlement = confirmTeamSeatEntitlement({
-    existing: account,
-    paidSeats: confirmed.seats,
-    periodStart: confirmed.periodStart,
-    periodEnd: confirmed.periodEnd,
-    confirmedAt: entitlementAt,
-  });
-  if (!entitlement) return;
+  const entitlement = needsReconciliation
+    ? confirmTeamSeatEntitlement({
+        existing: account,
+        paidSeats: confirmed.seats,
+        periodStart: confirmed.periodStart,
+        periodEnd: confirmed.periodEnd,
+        confirmedAt: entitlementAt,
+      })
+    : null;
+  const snapshot =
+    (confirmed.modifiedAt >= subscription.modifiedAt
+      ? seatSubscriptionSnapshot(account, confirmed)
+      : null) ?? initialSnapshot;
+  const needsSnapshot =
+    snapshot &&
+    (snapshot.polarEventModifiedAt.getTime() !== account.polarEventModifiedAt?.getTime() ||
+      snapshot.cancelEffectiveAt?.getTime() !== account.cancelEffectiveAt?.getTime());
+  if (!entitlement && !needsSnapshot) return;
   await input.db
     .update(teamBillingAccounts)
-    .set({ ...entitlement, updatedAt: new Date() })
+    .set({ ...entitlement, ...snapshot, updatedAt: new Date() })
     .where(eq(teamBillingAccounts.teamId, input.teamId));
 }
 
@@ -369,8 +407,38 @@ export async function assertTeamMemberSeatCapacity(input: {
   const additionalSeats = input.additionalSeats ?? 1;
   if (additionalSeats <= 0) return;
   await input.db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 4))`);
+  // Checkout and its webhook lock the workspace before the billing account.
+  // Hold that boundary through commit without blocking foreign-key checks
+  // from membership changes that already hold the account lock.
+  const [workspace] = input.acquirePaidSeat
+    ? await input.db
+        .select({
+          disabledAt: teams.disabledAt,
+          deletionStartedAt: teams.deletionStartedAt,
+          lifecycleWork: teams.lifecycleWork,
+        })
+        .from(teams)
+        .where(eq(teams.id, input.teamId))
+        .for('no key update')
+    : [];
+  if (
+    input.acquirePaidSeat &&
+    (!workspace || workspace.disabledAt || workspace.deletionStartedAt)
+  ) {
+    throw new BillingAdmissionError('usage_limit_reached', 'This workspace cannot add members.');
+  }
   const billing = billingScopeForDb(input.db, input.teamId);
-  const account = await billing.getAccount();
+  const initialAccount = await billing.getAccount();
+  const [account] = workspace
+    ? await input.db
+        .select()
+        .from(teamBillingAccounts)
+        .where(eq(teamBillingAccounts.teamId, input.teamId))
+        .for('update')
+    : [initialAccount];
+  if (!account) {
+    throw new BillingAdmissionError('usage_limit_reached', 'Team seats could not be verified.');
+  }
   if (!billingStateAllowsReservation(account.billingState)) {
     throw new BillingAdmissionError(
       'usage_limit_reached',
@@ -413,25 +481,41 @@ export async function assertTeamMemberSeatCapacity(input: {
       'Active member limit reached for this plan',
     );
   }
-  if (input.acquirePaidSeat && account.teamSeatTerms) {
-    const [locked] = await input.db
-      .select()
-      .from(teamBillingAccounts)
-      .where(eq(teamBillingAccounts.teamId, input.teamId))
-      .limit(1)
-      .for('update');
-    if (!locked)
-      throw new BillingAdmissionError('usage_limit_reached', 'Team seats could not be verified.');
+  if (!workspace) return;
+  if (account.teamSeatTerms) {
     await reconcileSeatSubscription({
       db: input.db,
       teamId: input.teamId,
-      account: locked,
+      account,
       active: (memberRow?.n ?? 0) + additionalSeats,
       provider: createPolarBillingProvider(),
       mode: 'activate',
       additionalSeats,
     });
+    return;
   }
+  if (account.arrangement !== 'standard' || polarSubscriptionIdForPlanChange(account)) return;
+  const recordedIds = workspace.lifecycleWork.pendingCheckoutIds ?? [];
+  const productId = polarProductIdForPlan('team');
+  if (!recordedIds.length && (!productId || !account.polarCustomerId)) return;
+
+  const provider = createPolarBillingProvider();
+  if (!provider) {
+    throw new BillingAdmissionError('usage_limit_reached', 'Team checkout could not be verified.');
+  }
+  const customerId = await assertStoredPolarIdentity(input.db, input.teamId, provider);
+  const pending = await readOutstandingTeamCheckouts({
+    provider,
+    customerId,
+    productId,
+    recordedIds,
+  });
+  if (pending.ids.length) throw new PendingTeamCheckoutError();
+  if (!recordedIds.length) return;
+  await input.db
+    .update(teams)
+    .set({ lifecycleWork: { ...workspace.lifecycleWork, pendingCheckoutIds: [] } })
+    .where(eq(teams.id, input.teamId));
 }
 
 export async function assertTeamCustomMcpCapacity(input: {
@@ -607,7 +691,7 @@ export async function assertTeamConcurrentRecallCapacity(input: {
   if (account.billingState === 'restricted') {
     throw new BillingAdmissionError(
       'usage_limit_reached',
-      'This extra workspace has no Free allowance. Add a payment method in Billing to start a notetaker.',
+      'This extra workspace has no Free allowance. Review Team in Billing to start a notetaker.',
     );
   }
   const entitlementsPlanId = effectiveBillingPlanId(account);

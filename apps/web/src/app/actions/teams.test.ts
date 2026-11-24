@@ -993,7 +993,7 @@ describe('resendInviteAction', () => {
 
     await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
       error:
-        'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+        'This workspace has reached the Free full-member limit. Review Team in Billing to invite more people.',
     });
     expect(fakes.fakeSendMessage).not.toHaveBeenCalled();
   });

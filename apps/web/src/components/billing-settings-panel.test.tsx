@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { buildBillingPresentation } from '@timeline/shared/billing';
 import { FREE_ALLOWANCES } from '@timeline/shared/billing/catalog';
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import { expect, vi } from '@timeline/test-support';
@@ -158,6 +159,29 @@ describe('BillingSettingsPanel', () => {
     expect(subscribed).toContain('Manage payment');
   });
 
+  it('shows the confirmed seat price and keeps legacy Team on its monthly fee', () => {
+    const presentation = buildBillingPresentation({
+      account: {
+        planId: 'team',
+        billingState: 'team_active',
+        teamSeatTerms: { paidSeats: 3, highWaterSeats: 3, includedUsageCents: 3600 },
+        includedDiscountRemainingCents: 3600,
+        periodStartedAt: new Date('2026-11-01'),
+        periodEndsAt: new Date('2026-12-01'),
+        spendCapCents: 0,
+      },
+      now: new Date('2026-11-24'),
+      meters: {},
+      activeMembers: 3,
+      shadowBilling: false,
+      meteredSpendCents: 0,
+      settlements: [],
+    });
+    const team = { planId: 'team', planName: 'Team', billingState: 'team_active' } as const;
+    expect(panel({ ...team, presentation })).toContain('$10 per member / month');
+    expect(panel(team)).toContain('€49 / month');
+  });
+
   it('turns checkout off on a comp', () => {
     const html = panel({
       planId: 'team',
@@ -201,6 +225,7 @@ describe('BillingSettingsPanel', () => {
       billingState: 'enterprise_active',
       hasPolarSubscription: false,
       platformFeeCents: 250_000,
+      platformFeeCurrency: 'USD',
       meteredSpendCents: 0,
     });
     expect(html).toContain('data-enterprise-subscription="pending"');
@@ -211,6 +236,20 @@ describe('BillingSettingsPanel', () => {
     expect(html).not.toContain('>Pay as you go<');
     expect(html).not.toContain('Negotiated platform fee');
     expect(html).not.toContain('enterprise_active');
+  });
+
+  it('keeps legacy Enterprise fees in EUR and preserves unknown custom pricing', () => {
+    const enterprise = {
+      planId: 'enterprise',
+      planName: 'Enterprise',
+      billingState: 'enterprise_active',
+      hasPolarSubscription: true,
+    } as const;
+    expect(
+      panel({ ...enterprise, platformFeeCents: 250_050, platformFeeCurrency: 'EUR' }),
+    ).toContain('€2,500.50 / month');
+    expect(panel({ ...enterprise, platformFeeCents: 250_050 })).toContain('€2,500.50 / month');
+    expect(panel(enterprise)).toContain('>Custom</p>');
   });
 
   it('shows the past_due banner and a payment-method update', () => {

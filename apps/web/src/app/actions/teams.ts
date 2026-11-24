@@ -820,7 +820,9 @@ export async function inviteMemberAction(
       if (isBillingAdmissionError(err)) {
         return {
           error:
-            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+            err.code === 'free_allowance_reached'
+              ? 'This workspace has reached the Free full-member limit. Review Team in Billing to invite more people.'
+              : err.message,
         };
       }
       reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
@@ -913,7 +915,9 @@ export async function resendInviteAction(
       if (isBillingAdmissionError(err)) {
         return {
           error:
-            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+            err.code === 'free_allowance_reached'
+              ? 'This workspace has reached the Free full-member limit. Review Team in Billing to invite more people.'
+              : err.message,
         };
       }
       throw err;

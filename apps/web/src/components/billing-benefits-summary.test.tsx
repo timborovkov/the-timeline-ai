@@ -92,6 +92,26 @@ describe('BillingBenefitsSummary', () => {
       renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('enterprise')} />),
     ).toContain('Custom');
   });
+
+  it.each([
+    ['USD', '$2,500.50'],
+    ['EUR', '€2,500.50'],
+  ] as const)('shows the %s Enterprise fee separately from recorded usage', (currency, label) => {
+    const summary = {
+      ...fixture('enterprise'),
+      recurringFeeCents: 250_050,
+      recurringFeeCurrency: currency,
+    };
+    const fee = `<span class="font-mono">${label}</span> / month`;
+    const billing = renderToStaticMarkup(<BillingBenefitsSummary summary={summary} />);
+    const usage = renderToStaticMarkup(
+      <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
+    );
+
+    expect(billing).toContain(`Recurring plan fee: ${fee}`);
+    expect(usage).toContain(`Plan fee: ${fee}`);
+    expect(usage).toContain('<span class="font-mono">€5</span>');
+  });
 });
 
 it('shows contractual Enterprise limits without a false local pause, while retaining comp enforcement', () => {

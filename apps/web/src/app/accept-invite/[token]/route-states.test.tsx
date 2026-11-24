@@ -181,6 +181,28 @@ describe('AcceptInvite route states', () => {
     );
     expect(screen.queryByRole('link', { name: 'Decline' })).toBeNull();
   });
+
+  it('announces checkout and keeps the invitation available to retry', async () => {
+    fakes.auth.mockResolvedValue({ user: { email: 'invited@example.test' } });
+    fakes.invites.mockResolvedValue([
+      {
+        email: 'invited@example.test',
+        role: 'member',
+        teamName: 'Example',
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
+    render(
+      await AcceptInvitePage({
+        params: Promise.resolve({ token: 'example-token' }),
+        searchParams: Promise.resolve({ error: 'checkout-pending' }),
+      }),
+    );
+    expect(screen.getByRole('alert').textContent).toContain('after checkout completes or expires');
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Join team' }).disabled).toBe(
+      false,
+    );
+  });
   it('keeps account switching retryable if sign-out fails', async () => {
     fakes.auth.mockResolvedValue({ user: { email: 'wrong@example.test' } });
     fakes.invites.mockResolvedValue([

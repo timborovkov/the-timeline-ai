@@ -8,11 +8,11 @@ import {
   type Db,
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
-import { beforeEach, afterEach, describe, it } from 'bun:test';
+import { beforeEach, afterEach, describe, it, spyOn } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { reconcileTeamPaidSeats } from '#src/billing/capacity.js';
+import { assertTeamMemberSeatCapacity, reconcileTeamPaidSeats } from '#src/billing/capacity.js';
 import {
   assertStoredPolarIdentity,
   resolvePolarOwnerUserId,
@@ -22,6 +22,7 @@ import {
 } from '#src/billing/customer-identity.js';
 import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { handlePolarWebhookEvent } from '#src/billing/polar-webhook.js';
+import * as polar from '#src/billing/polar.js';
 import { createFakeBillingProvider, type TeamSeatSubscription } from '#src/billing/provider.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -144,6 +145,72 @@ describe('Polar team identity and revocation', () => {
     provider.listPendingTeamCheckouts = () => Promise.resolve([]);
     provider.expireCheckout = () => Promise.resolve('expired');
     expect(await prepare(4)).toEqual({ status: 'ready' });
+  });
+
+  it('allows invite creation but holds roster growth while a Team quote can still be paid', async () => {
+    const identity = await withTeamBillingIdentity(
+      { db, teamId: secondTeam, userId: owner, provider },
+      async (current, context) => {
+        await context.recordCheckout('one-seat-quote');
+        return current;
+      },
+    );
+    const providerMock = spyOn(polar, 'createPolarBillingProvider').mockReturnValue(provider);
+    const productMock = spyOn(polar, 'polarProductIdForPlan').mockReturnValue('team-product');
+    try {
+      const accept = () =>
+        db.transaction(async (tx) => {
+          await assertTeamMemberSeatCapacity({
+            db: tx as unknown as Db,
+            teamId: secondTeam,
+            includePendingInvites: false,
+            acquirePaidSeat: true,
+          });
+          await tx
+            .insert(teamMembers)
+            .values({ teamId: secondTeam, userId: member, role: 'member' });
+        });
+      provider.expireCheckout = () => Promise.resolve('still_open');
+      await expect(
+        assertTeamMemberSeatCapacity({ db, teamId: secondTeam }),
+      ).resolves.toBeUndefined();
+      await expect(accept()).rejects.toThrow('pending Team checkout');
+
+      provider.expireCheckout = () => Promise.resolve('already_paid');
+      await expect(accept()).rejects.toThrow('pending Team checkout');
+
+      const originalId = 'one-seat-quote';
+      const recoveredId = 'unrecorded-team-quote';
+      provider.expireCheckout = (id) =>
+        Promise.resolve(id === originalId ? 'expired' : 'still_open');
+      provider.listPendingTeamCheckouts = (input) => {
+        expect(input).toEqual({ customerId: identity.customerId, productId: 'team-product' });
+        return Promise.resolve([
+          {
+            id: recoveredId,
+            status: 'open',
+            seats: 1,
+            discountId: null,
+            url: 'https://checkout.example.test/recovered',
+          },
+        ]);
+      };
+      await expect(accept()).rejects.toThrow('pending Team checkout');
+      expect(
+        await db.select().from(teamMembers).where(eq(teamMembers.teamId, secondTeam)),
+      ).toHaveLength(1);
+
+      provider.listPendingTeamCheckouts = () => Promise.resolve([]);
+      await expect(accept()).resolves.toBeUndefined();
+      expect(
+        await db.select().from(teamMembers).where(eq(teamMembers.teamId, secondTeam)),
+      ).toHaveLength(2);
+      const [team] = await db.select().from(teams).where(eq(teams.id, secondTeam));
+      expect(team?.lifecycleWork.pendingCheckoutIds).toEqual([]);
+    } finally {
+      providerMock.mockRestore();
+      productMock.mockRestore();
+    }
   });
 
   it('reconciles verified seat drift without purchasing seats or granting allowance twice', async () => {

@@ -22,7 +22,7 @@ export async function websiteBotCommand(input: {
   await scope.requireMembership();
   const team = await scope.timeline.team();
   if (confirmation !== 'confirm')
-    return `Team: ${team?.name ?? input.teamId}. Scan up to five public pages for up to 100 source units (20 per page), plus AI and storage. By confirming, you confirm permission to submit this website. Reply: ${input.command} ${url} confirm`;
+    return `Team: ${team?.name ?? input.teamId}. Scan up to five public pages. On Free and Team, AI processing uses shared Included usage. Reply only if you have permission to submit this website. Reply: ${input.command} ${url} confirm`;
   const existing = (await scope.websites.list()).find((source) => source.url === url);
   const source =
     existing ??
@@ -45,5 +45,5 @@ export async function websiteBotCommand(input: {
   });
   return run.status === 'blocked'
     ? `Website scan is blocked by billing limits. ${link}`
-    : `Website scan queued. Up to 100 source units. Status: ${link}`;
+    : `Website scan queued. Status: ${link}`;
 }

@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { applyOwnedTeamFreeGrant, assertTeamMemberSeatCapacity } from '#src/billing/capacity.js';
+import {
+  applyOwnedTeamFreeGrant,
+  assertTeamMemberSeatCapacity,
+  reconcileTeamPaidSeats,
+} from '#src/billing/capacity.js';
 import {
   billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
@@ -20,7 +24,7 @@ import {
   shouldResetIncludedDiscount,
   spendCapCentsForPaidActivation,
 } from '#src/billing/polar-webhook.js';
-import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { createFakeBillingProvider, type TeamSeatSubscription } from '#src/billing/provider.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -284,6 +288,132 @@ describe('handlePolarWebhookEvent', () => {
     expect(await account()).toMatchObject({
       includedDiscountRemainingCents: 1200,
       teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+    });
+  });
+
+  it('uses verified seat reads to order delayed status and cancellation webhooks', async () => {
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    if (!provider.identity) throw new Error('Missing fixture identity');
+    const customer = await provider.identity.create(TEAM_ID, 'Polar Hook', {
+      userId: USER_ID,
+      email: 'owner@example.test',
+    });
+    const now = Date.now();
+    const date = (days: number) => new Date(now + days * 86_400_000);
+    const periodStart = date(-15);
+    const periodEnd = date(15);
+    let subscription: TeamSeatSubscription = {
+      id: 'sub_verified_team',
+      customerId: customer.id,
+      productId: PRODUCTS.team,
+      seats: 1,
+      pendingSeats: null,
+      status: 'active',
+      periodStart,
+      periodEnd,
+      modifiedAt: date(-5),
+    };
+    provider.getTeamSeatSubscription = () => Promise.resolve(subscription);
+    provider.updateTeamSeatSubscription = () => {
+      throw new Error('Maintenance should not update the verified seat quantity');
+    };
+    await db.insert(teamBillingAccounts).values({
+      teamId: TEAM_ID,
+      polarCustomerId: customer.id,
+      polarOrganizationId: provider.identity.organizationId,
+      polarServer: provider.identity.server,
+    });
+    const webhook = (input: {
+      status: string;
+      at: Date;
+      cancelAtPeriodEnd: boolean;
+      type?: string;
+      creationTimeOnly?: boolean;
+    }) =>
+      handlePolarWebhookEvent({
+        db,
+        provider,
+        products: PRODUCTS,
+        chargesEnabled: true,
+        payload: {
+          type: input.type ?? 'subscription.updated',
+          data: {
+            id: subscription.id,
+            status: input.status,
+            product_id: PRODUCTS.team,
+            customer: { id: customer.id, external_id: TEAM_ID },
+            seats: 1,
+            currency: 'usd',
+            recurring_interval: 'month',
+            recurring_interval_count: 1,
+            ...(input.creationTimeOnly
+              ? { created_at: input.at.toISOString() }
+              : { modified_at: input.at.toISOString() }),
+            current_period_start: periodStart.toISOString(),
+            current_period_end: periodEnd.toISOString(),
+            cancel_at_period_end: input.cancelAtPeriodEnd,
+          },
+        },
+      });
+    const account = async () =>
+      (
+        await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM_ID))
+      )[0];
+    const reconcile = () => reconcileTeamPaidSeats({ db, teamId: TEAM_ID, provider });
+
+    await webhook({ status: 'active', at: periodStart, cancelAtPeriodEnd: false });
+    await reconcile();
+    expect(await account()).toMatchObject({
+      polarEventModifiedAt: periodStart,
+      cancelEffectiveAt: null,
+    });
+
+    subscription = { ...subscription, cancelEffectiveAt: periodEnd };
+    await reconcile();
+    await webhook({
+      status: 'past_due',
+      at: date(-6),
+      cancelAtPeriodEnd: false,
+      creationTimeOnly: true,
+    });
+    expect(await account()).toMatchObject({
+      billingState: 'team_active',
+      polarEventModifiedAt: subscription.modifiedAt,
+      cancelEffectiveAt: periodEnd,
+    });
+
+    subscription = {
+      ...subscription,
+      cancelEffectiveAt: null,
+      modifiedAt: date(-3),
+    };
+    await reconcile();
+    await webhook({
+      status: 'canceled',
+      at: date(-4),
+      cancelAtPeriodEnd: true,
+      type: 'subscription.canceled',
+    });
+    expect(await account()).toMatchObject({
+      billingState: 'team_active',
+      polarEventModifiedAt: subscription.modifiedAt,
+      cancelEffectiveAt: null,
+      includedDiscountRemainingCents: 1200,
+    });
+
+    const renewalAt = subscription.modifiedAt;
+    subscription = { ...subscription, modifiedAt: date(-5), cancelEffectiveAt: periodEnd };
+    await reconcile();
+    expect(await account()).toMatchObject({
+      polarEventModifiedAt: renewalAt,
+      cancelEffectiveAt: null,
+    });
+
+    const laterEventAt = date(-2);
+    await webhook({ status: 'past_due', at: laterEventAt, cancelAtPeriodEnd: false });
+    expect(await account()).toMatchObject({
+      billingState: 'past_due',
+      polarEventModifiedAt: laterEventAt,
     });
   });
 
@@ -554,6 +684,7 @@ describe('handlePolarWebhookEvent', () => {
           id: 'sub_enterprise',
           status: 'active',
           product_id: 'prod_enterprise',
+          currency: 'usd',
           customer: { id: 'cus_enterprise', external_id: TEAM_ID },
         },
       },
@@ -565,6 +696,7 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.spendCapCents).toBe(80000);
     expect(account.pendingEnterpriseTerms).toBeNull();
     expect(account.enterprisePlatformFeeCents).toBe(250000);
+    expect(account.enterprisePlatformFeeCurrency).toBe('USD');
     expect(account.priceOverride).toEqual({
       includedActiveMembers: 12,
     });

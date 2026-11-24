@@ -139,6 +139,8 @@ const seatSubscriptionSchema = z
     status: z.string(),
     current_period_start: z.iso.datetime({ offset: true }),
     current_period_end: z.iso.datetime({ offset: true }),
+    cancel_at_period_end: z.boolean().optional(),
+    ends_at: z.iso.datetime({ offset: true }).nullish(),
     modified_at: z.iso.datetime({ offset: true }).nullish(),
     created_at: z.iso.datetime({ offset: true }),
     pending_update: z
@@ -146,17 +148,26 @@ const seatSubscriptionSchema = z
       .nullable()
       .optional(),
   })
-  .transform((row) => ({
-    id: row.id,
-    customerId: row.customer_id,
-    productId: row.product_id,
-    seats: row.seats,
-    pendingSeats: row.pending_update?.seats ?? null,
-    status: row.status,
-    periodStart: new Date(row.current_period_start),
-    periodEnd: new Date(row.current_period_end),
-    modifiedAt: new Date(row.modified_at ?? row.created_at),
-  }));
+  .transform((row) => {
+    const periodEnd = new Date(row.current_period_end);
+    const cancellation = row.ends_at
+      ? { cancelEffectiveAt: new Date(row.ends_at) }
+      : row.cancel_at_period_end === undefined
+        ? {}
+        : { cancelEffectiveAt: row.cancel_at_period_end ? periodEnd : null };
+    return {
+      id: row.id,
+      customerId: row.customer_id,
+      productId: row.product_id,
+      seats: row.seats,
+      pendingSeats: row.pending_update?.seats ?? null,
+      status: row.status,
+      periodStart: new Date(row.current_period_start),
+      periodEnd,
+      modifiedAt: new Date(row.modified_at ?? row.created_at),
+      ...cancellation,
+    };
+  });
 
 export function createPolarBillingProvider(options?: {
   accessToken?: string;

@@ -678,7 +678,9 @@ Team quote can be resumed when its quantity and terms still match.
 Usage and Billing share the same typed summary. Billing settings keep plan
 controls, recorded charges and membership visible in distinct sections. Plan
 controls wrap on narrow screens. “Charges recorded so far” comes from settled
-usage. The recurring subscription fee is separate. Team additional spending is
+usage. Show the recurring subscription fee separately in its recorded currency.
+Seat-priced Team shows its USD per-member rate. Legacy Team shows its recorded
+monthly fee. Team additional spending is
 off by default. Show the authorized cap and recorded additional charges when
 enabled. Keep financial controls available to owners and admins.
 
@@ -714,7 +716,7 @@ Connect your agent leads with client setup. Workspace reporting defaults and con
 OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
 
 Website sources are managed from the searchable Websites row directly below Email
-in Connections → Sources. Use compact source rows with one scan action, the latest scan outcome and relative time. Show “Not scanned yet” before the first run; queued and active scans name their progress and disable scan actions until completion. Changed scans link directly to their timeline evidence. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.
+in Connections → Sources. Use compact source rows with one scan action, the latest scan outcome and relative time. Show “Not scanned yet” before the first run; queued and active scans name their progress and disable scan actions until completion. Changed scans link directly to their timeline evidence. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the page limit in a quiet footer. Confirmation explains permission and how AI processing uses Included usage. Archive copy distinguishes stopping capture from erasing evidence.
 
 ### Side-panel reading layout
 

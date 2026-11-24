@@ -1,3 +1,5 @@
+import { TEAM_MONTHLY_SEAT_CENTS } from '@timeline/shared/billing/catalog';
+
 interface PublicSocialCard {
   id: string;
   path: string;
@@ -8,15 +10,17 @@ interface PublicSocialCard {
   markers: readonly [string, string, string];
 }
 
+const teamSeatPrice = `$${TEAM_MONTHLY_SEAT_CENTS / 100}`;
+
 export const PUBLIC_SOCIAL_CARDS: readonly PublicSocialCard[] = [
   {
     id: 'pricing',
     path: '/pricing',
     title: 'Pricing that starts free',
-    alt: 'The Timeline pricing preview showing Free, monthly Team seats, and custom Enterprise pricing.',
+    alt: `Free without a card, Team at ${teamSeatPrice} per member per month, and custom Enterprise pricing.`,
     label: 'Pricing options',
-    steps: ['Up to 3 members', '$10 per member / month', 'Custom pricing'],
-    markers: ['FREE', 'TEAM', 'ENT'],
+    steps: ['Free, no card required', 'Team seat / month', 'Custom Enterprise'],
+    markers: ['$0', teamSeatPrice, 'QUOTE'],
   },
   {
     id: 'product-tour',

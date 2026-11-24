@@ -1,6 +1,6 @@
 # Billing contract
 
-The local durable ledger owns admission, reservations and recorded usage. Polar is merchant of record for collection. [ADR 0018](../adr/0018-polar-native-meter-billing.md) explains the choice; [Polar setup](../setup/polar.md) owns configuration and recovery. Prices, allowances, meter identifiers and capacity limits are defined by the shared billing catalog, not copied into documentation.
+The local durable ledger owns admission, reservations and recorded usage. Polar is merchant of record for collection. [ADR 0018](../adr/0018-polar-native-meter-billing.md) explains the choice, and [Polar setup](../setup/polar.md) owns configuration and recovery. The [shared billing catalog](../../packages/shared/src/billing/catalog.ts) defines prices, allowances, meter identifiers and capacity limits.
 
 ## Admission and settlement
 
@@ -8,11 +8,15 @@ Cost-bearing work reserves capacity before execution, then settles reported work
 
 Shared inference calls settle exact reported usage under the worker billing context. Ask and Recall retain their own reservation paths to avoid double-counting. Completed Ask steps settle on interruption; unreported partial usage is marked incomplete rather than estimated from the reservation. Historical pricing, discounts and member attribution are immutable once recorded. Recovery keeps the original reservation actor, including a guest whose membership access has since ended.
 
-Free allowances and plan capacities are distinct from billed meters. Free shares one monthly allowance across AI and native meeting capture. The legacy PAYG native floor and operational capacity limits are tracked separately. Ask uses a small admission hold from the catalog rather than a worst-case turn estimate, leaving room for search near the end of the Free allowance. An admitted turn settles its full reported provider usage even when it exceeds the hold or remaining allowance; later admissions stop when the allowance is exhausted. The hold does not impose a maximum per-turn cost. Embedding admission scales its reservation with the truncated input token count and allowed attempts, using the catalog’s conservative embedding budget and preserving fractional cents at ledger precision. Search embeddings retain their own reservation alongside Ask; settlement still records reported provider cost rather than the admission estimate. Payable AI reservations round up after discounts so a positive estimate cannot bypass a paid spend cap. Free hard stops remain enforced in shadow mode. Team uses its Included usage before additional spending. An admitted operation can exceed its hold; record its actual cost and collect only within the cap that was approved at admission and still available at settlement. Extra owned workspaces cannot mint another person-level Free grant.
+Free and seat-priced Team each share one allowance across AI and native meeting capture. Free resets at the start of each UTC calendar month. Confirmed Team seats fund the shared pool for the subscription period. Additional spending starts off, and a workspace owner or admin can opt in with a monthly cap. Settlement records the actual cost of an admitted operation and collects only within the cap approved at admission and still available at settlement. A person-level Free grant can fund only one owned workspace. Free hard stops remain enforced in shadow mode.
 
-Full workspace membership uses an explicit role allowlist. Guests have no paid-seat or Free member entitlement. Authorized invite acceptance and promotion acquire paid capacity in the membership transaction. Capacity previews cannot purchase seats. Removal commits access revocation before reconciling the renewal quantity. Paid capacity stays reusable until renewal. A period’s confirmed seat high-water mark prevents churn and webhook replay from minting duplicate usage.
+Ask reserves a small hold from the catalog to leave room for search near the end of the allowance. An admitted turn settles its full reported provider usage even if the cost exceeds the hold or allowance. Later admissions stop when available usage is exhausted. Search embeddings have their own reservation alongside Ask. Embedding reservations scale with the truncated input token count and allowed attempts, preserving fractional cents at ledger precision. Payable AI reservations round up after discounts so a positive estimate cannot bypass a paid spend cap.
+
+Full workspace membership uses an explicit role allowlist. Guests have no paid-seat or Free member entitlement. Their questions draw from the host workspace's AI allowance. Authorized invite acceptance and promotion acquire paid capacity in the membership transaction. Capacity previews cannot purchase seats. While a payable Team checkout is open or awaiting verification, full-member acceptance waits and the invitation stays usable. Removal commits access revocation immediately. An already-issued quote keeps its authorized quantity, which is reconciled for renewal. Paid capacity stays reusable until renewal. A period’s confirmed seat high-water mark prevents churn and webhook replay from minting duplicate usage.
 
 ## Meter semantics
+
+Free and seat-priced Team bundle email, accepted sources and storage within plan limits. Only AI and native meeting capture use the shared allowance. On seat-priced Team those two meters can produce additional invoice charges after explicit opt-in. Enterprise pricing follows the agreement. Existing legacy subscriptions and ledger rows retain their recorded terms.
 
 | Meter | Boundary |
 | --- | --- |
@@ -23,7 +27,7 @@ Full workspace membership uses an explicit role allowlist. Guests have no paid-s
 | Storage | Original-file byte usage accumulated as GB-month; live stored bytes are the UI quantity. Local allowances must not be duplicated as provider credits. |
 | Member usage | Team uses the confirmed Polar seat quantity. Existing daily-member facts retain their historical terms and never consume Included usage. |
 
-Plan capacity (turns, bots, servers, documents, chunks, storage and membership) remains product admission policy, not extra Polar meters. Rate limits remain infrastructure admission. Sub-cent accumulation and percentage discounts use cumulative amounts before rounding; meter ingest uses units that reproduce the recorded charge.
+Plan capacity (turns, bots, servers, documents, chunks, storage and membership) and rate limits govern product admission. Sub-cent accumulation and percentage discounts use cumulative amounts before rounding. Meter ingest uses units that reproduce the recorded charge.
 
 ## Collection and provider ordering
 
@@ -53,4 +57,4 @@ Permanent erasure removes content-bearing usage metadata but retains an explicit
 
 ## Website capture
 
-[Website sources](../websites.md) use the existing accepted-source meter with 20 source units per captured page, including unchanged pages and ingestion. Legacy admissions retain their original multiplier. AI and storage are separate. No new Polar meter is required.
+[Website sources](../websites.md) count 20 accepted-source units per captured page for capacity, including unchanged pages. Free and seat-priced Team bundle capture and storage within plan limits. AI analysis uses the shared allowance. Legacy admissions retain their recorded pricing terms and source-unit multiplier.

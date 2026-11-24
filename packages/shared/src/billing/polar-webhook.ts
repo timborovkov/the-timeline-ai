@@ -54,8 +54,10 @@ export interface PolarWebhookPayload {
     endsAt?: string | number | null;
     modified_at?: string | number;
     updated_at?: string | number;
+    created_at?: string | number;
     modifiedAt?: string | number;
     updatedAt?: string | number;
+    createdAt?: string | number;
     customer?: {
       external_id?: string;
       id?: string;
@@ -349,7 +351,12 @@ export function shouldResetIncludedDiscount(input: {
 
 export function polarEventModifiedAt(data: PolarWebhookPayload['data']): Date | null {
   return parsePolarTimestamp(
-    data?.modified_at ?? data?.updated_at ?? data?.modifiedAt ?? data?.updatedAt,
+    data?.modified_at ??
+      data?.updated_at ??
+      data?.modifiedAt ??
+      data?.updatedAt ??
+      data?.created_at ??
+      data?.createdAt,
   );
 }
 
@@ -631,6 +638,13 @@ async function upsertPaidSubscription(input: {
         ? pendingEnterpriseTermsForCheckout(existing?.pendingEnterpriseTerms ?? null, checkoutId)
         : null;
     const activatedPricing = pending ? enterpriseActivationPricing(pending) : null;
+    const subscriptionCurrency =
+      typeof input.data?.currency === 'string' ? input.data.currency.toUpperCase() : null;
+    const enterpriseFeeCurrency =
+      input.plan === 'enterprise' &&
+      (subscriptionCurrency === 'EUR' || subscriptionCurrency === 'USD')
+        ? subscriptionCurrency
+        : undefined;
     const pendingAfterActivation =
       input.plan === 'enterprise' && pending
         ? pendingEnterpriseTermsAfterActivation(
@@ -763,7 +777,11 @@ async function upsertPaidSubscription(input: {
                   existing,
                   plan: input.plan,
                 })),
-          ...(input.plan === 'enterprise' ? {} : { enterprisePlatformFeeCents: null }),
+          ...(input.plan !== 'enterprise'
+            ? { enterprisePlatformFeeCents: null, enterprisePlatformFeeCurrency: null }
+            : enterpriseFeeCurrency
+              ? { enterprisePlatformFeeCurrency: enterpriseFeeCurrency }
+              : {}),
           ...(activatedPricing
             ? {
                 enterprisePlatformFeeCents: activatedPricing.platformFeeCents,
@@ -800,7 +818,16 @@ async function upsertPaidSubscription(input: {
       input.teamId,
       input.plan,
       now,
-      existing ? { planId: existing.planId, effectiveAt: existing.createdAt } : undefined,
+      existing
+        ? {
+            planId: existing.planId,
+            effectiveAt: existing.createdAt,
+            ...(existing.planId === 'team'
+              ? { teamSeatPricing: existing.teamSeatTerms !== null }
+              : {}),
+          }
+        : undefined,
+      input.plan === 'team' ? Boolean(seatValues) : undefined,
     );
     const activated =
       billingState.endsWith('_active') &&
@@ -1058,6 +1085,7 @@ async function cancelMatchingSubscription(input: {
         polarProductId: null,
         cancelEffectiveAt: null,
         enterprisePlatformFeeCents: null,
+        enterprisePlatformFeeCurrency: null,
         ...(leavingEnterprise ? { priceOverride: null, priceOverrideExpiresAt: null } : {}),
         polarEventModifiedAt:
           input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? downgradedAt,
@@ -1080,6 +1108,7 @@ async function cancelMatchingSubscription(input: {
     await recordBillingPlan(tx as unknown as Db, input.teamId, 'free', downgradedAt, {
       planId: existing.planId,
       effectiveAt: existing.createdAt,
+      ...(existing.planId === 'team' ? { teamSeatPricing: existing.teamSeatTerms !== null } : {}),
     });
     return true;
   });

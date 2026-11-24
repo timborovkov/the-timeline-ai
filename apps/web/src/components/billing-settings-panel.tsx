@@ -65,6 +65,7 @@ export interface BillingSettingsPanelProps {
   } | null;
   showOperatorLink: boolean;
   platformFeeCents?: number | null;
+  platformFeeCurrency?: 'USD' | 'EUR';
   hasActiveTeamDiscount?: boolean;
 }
 
@@ -90,18 +91,17 @@ function billingFormReducer(
 }
 
 function planPriceLabel(
-  planId: BillingPlanId,
+  { planId, platformFeeCents, platformFeeCurrency, presentation }: BillingSettingsPanelProps,
   locale: string,
-  platformFeeCents?: number | null,
 ): string {
   if (planId === 'enterprise' && (platformFeeCents === null || platformFeeCents === undefined)) {
     return 'Custom';
   }
-  if (planId === 'team')
+  if (planId === 'team' && presentation?.paidSeats !== undefined)
     return `${formatDisplayCurrency(TEAM_MONTHLY_SEAT_CENTS, 'USD', locale, true)} per member / month`;
   if (planId === 'free') return `${formatDisplayCurrency(0, 'USD', locale, true)} / month`;
   const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
-  return `${formatDisplayCurrency(cents, planId === 'enterprise' ? 'USD' : 'EUR', locale, true)} / month`;
+  return `${formatDisplayCurrency(cents, platformFeeCurrency ?? 'EUR', locale, true)} / month`;
 }
 
 function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
@@ -467,7 +467,7 @@ function BillingPlanControls({
         <p className="text-sm text-fg-muted">Current plan</p>
         <p className="mt-2 text-2xl font-semibold text-fg">{props.planName}</p>
         <p className="mt-1 font-mono text-sm text-fg" data-billing-price>
-          {planPriceLabel(props.planId, locale, props.platformFeeCents)}
+          {planPriceLabel(props, locale)}
         </p>
         {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
           <p className="mt-2 text-sm text-fg-muted" data-enterprise-subscription="pending">

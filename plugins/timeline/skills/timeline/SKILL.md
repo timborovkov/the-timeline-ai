@@ -93,4 +93,4 @@ If a Timeline-dependent request has no `timeline.*` tools available, stop and di
 
 ## Website capture
 
-Use `timeline.crawl` only when the user explicitly requests a public website scan and confirms permission and usage (20 source units per captured page, up to five pages; AI/storage additional). It requires `websites:scan`; default grants do not include it. Supply a stable idempotency key, URL, subject and `permissionConfirmed: true`. Poll `timeline.crawl_status` with the returned run ID. Never crawl automatically to answer an ordinary search question.
+Use `timeline.crawl` only when the user explicitly requests a public website scan and confirms permission and usage. A scan captures up to five pages. On Free and Team, capture and ordinary storage are included within plan limits, and AI processing draws from the workspace's shared Included usage. It requires `websites:scan`; default grants do not include it. Supply a stable idempotency key, URL, subject and `permissionConfirmed: true`. Poll `timeline.crawl_status` with the returned run ID. Never crawl automatically to answer an ordinary search question.

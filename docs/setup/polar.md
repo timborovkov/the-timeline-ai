@@ -26,13 +26,13 @@ The document-extract orchestrator remains credential-thin: it needs the applicab
 
 ## Provisioning products and meters
 
-Configure USD as the selected Polar organization's default presentment currency before provisioning. Polar requires every product to include a price in the organization's default currency, and Timeline provisions a USD-only catalog. Setup checks this through the organization read API before planning or writing any changes.
+Configure USD as the selected Polar organization's default presentment currency before provisioning. Polar requires every product to include a price in the organization's default currency, and Timeline provisions a USD-only catalog. Setup checks this through the organization read API before planning or writing any changes. For an Enterprise quote, check the amount and currency on Polar before sharing it. Billing shows the verified subscription currency for the recurring Enterprise fee and retains EUR for legacy fee records.
 
-Run `bun run billing:polar-setup` with the selected environment configured. Sandbox requires an explicit `--webhook-url` on an isolated host. Review its output before applying printed identifiers to services. It reconciles the monthly USD Team seat price, custom Enterprise offer, usage prices and selected webhook; it must not mutate unrelated products/endpoints. Do not manually create provider meters for product capacity gates.
+Preview the plan with `bun run billing:polar-setup --dry-run` in the selected environment. Sandbox requires an explicit `--webhook-url` on an isolated host. Review the proposed writes and archives before running without `--dry-run`. Production reads and writes require `--allow-production`. Apply the reported identifiers to the corresponding web and worker services.
 
-The shared catalog owns current prices, commitments, member rates and allowances. Reconcile the setup output with that catalog rather than copying a dated price list. The Team product uses one seat price starting at one seat and two metered prices for AI and native capture. The application applies Included usage and the approved cap before recording invoice usage. Local storage/free allowances must not also be credited by Polar. If historical provider credits differ, review the account and schedule an explicit correction; do not change production pricing as an incidental setup task.
+Setup reconciles the monthly USD Team seat product, the custom Enterprise product and the selected webhook. It prices AI and native capture on those products. The application applies Team Included usage and any approved cap before recording invoice usage. Check the output against the [billing contract](../architecture/billing.md). If historical provider credits differ, review the account and schedule an explicit correction.
 
-The setup flow can archive superseded Timeline offers and legacy top-ups. For end-to-end sandbox testing, dry-run against a dedicated sandbox organization before authorizing writes. Use a fixture-only HTTPS webhook and database. Verify the planned organization, product changes, and endpoint before applying the plan. There is no auto-reload or prepaid-wallet configuration to add. Configure campaigns in Polar and assign per-team discounts/overrides through the audited operator interface; do not add global discount environment variables or modify historical usage.
+Setup can archive superseded Timeline offers and legacy top-ups. Inventory active legacy subscriptions before changing the catalog. Keep the optional `POLAR_PRODUCT_ID_PAYG` and `POLAR_PRODUCT_ID_BUSINESS` values where legacy subscriptions still use them. Reconcile active legacy Team and Enterprise subscriptions before switching those plans' configured product IDs, since the incoming subscription upsert uses one configured product ID per plan. Use a dedicated sandbox organization, fixture-only HTTPS webhook and disposable database for registered-delivery tests. Configure campaigns in Polar and assign per-team discounts or overrides through the audited operator interface.
 
 ## Webhook
 
@@ -63,6 +63,8 @@ The October 2026 sandbox accepted `email: null` while retaining a legacy custome
 
 ## Verification and release
 
-Before enabling `BILLING_CHARGES_ENABLED`, retain dated evidence for the deployed revision, environment/customer mapping, real webhook delivery, member portal isolation/revocation, cancellation and recovery, and a shadow reconciliation period including invoice totals. The roadmap calls for a shadow-billing month; source tests alone do not close that operating gate. Use synthetic authorized accounts, not customer fixtures.
+The [24 November sandbox evidence](../evidence/polar-team-quotes-2026-11-24.md) covers unpaid quotes and local signed samples. Paid confirmation, invoice and tax verification, and delivery from a registered endpoint remain open.
+
+Before enabling `BILLING_CHARGES_ENABLED`, retain dated evidence for the deployed revision, environment and customer mapping, registered webhook delivery, member portal isolation and revocation, cancellation and recovery, and a shadow-billing month reconciling invoice totals. Use synthetic authorized accounts.
 
 Provider/legal readiness is tracked in [security gaps](../security-gaps.md). Account settings and invoices must be checked live before asserting they are correct; this guide is not deployment evidence.

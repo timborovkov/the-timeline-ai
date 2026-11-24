@@ -1343,6 +1343,186 @@ describe('billing runtime', () => {
     expect(reservation?.state).toBe('released');
   });
 
+  for (const {
+    admittedCap,
+    includedCents = 50,
+    settledCap = 500,
+    openRouterUsd = 1,
+    chargeCents = 400,
+    invoiceCents = admittedCap,
+  } of [
+    { admittedCap: 0 },
+    { admittedCap: 50 },
+    { admittedCap: 100 },
+    {
+      admittedCap: 1000,
+      includedCents: 0,
+      settledCap: 1000,
+      openRouterUsd: 0.125,
+      chargeCents: 50,
+      invoiceCents: 50,
+    },
+  ]) {
+    const name =
+      includedCents === 0
+        ? 'invoices 50 cents for a failed Team attempt after Included usage is exhausted'
+        : `applies the original Team cap of ${admittedCap} cents to a failed AI attempt`;
+    it(name, async () => {
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      const billing = billingScopeMod.createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      const now = new Date();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'team_active',
+          teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+          includedDiscountRemainingCents: includedCents,
+          spendCapCents: admittedCap,
+          periodStartedAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+          periodEndsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+          polarSubscriptionId: 'sub_team',
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+
+      const operationId = 'ai:failed-team-attempt';
+      await expect(
+        runWithBillingContext(
+          { db, teamId: TEAM_ID, userId: USER_ID, operationClass: 'embedding' },
+          () =>
+            withAiMetering({ operationId, reservedChargeCents: 10 }, async () => {
+              await billing.setSpendCap(settledCap);
+              throw Object.assign(new Error('provider failed'), { openRouterUsd });
+            }),
+        ),
+      ).rejects.toThrow('provider failed');
+      const [attempt] = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.operationId, `${operationId}:failed:1`));
+      const [reservation] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.operationId, operationId));
+      expect(attempt).toMatchObject({
+        actorUserId: USER_ID,
+        reservationId: reservation?.id,
+        customerChargeCents: chargeCents,
+        metadata: {
+          discount_cents: includedCents,
+          invoice_cents: invoiceCents,
+          cap_eligible_cents: invoiceCents,
+        },
+      });
+      expect(reservation?.state).toBe('released');
+      expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
+      expect(await settlePendingBillingReservations(db)).toBe(0);
+    });
+  }
+
+  it('recovers failed Team usage using its original terms after downgrade and readmission', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const now = new Date();
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'team',
+        billingState: 'team_active',
+        teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+        includedDiscountRemainingCents: 1200,
+        spendCapCents: 100,
+        periodStartedAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+        periodEndsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+        polarSubscriptionId: 'sub_team',
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await billing.settle({
+      operationId: 'ai:previous-team-usage',
+      meterId: 'ai',
+      nativeUnits: 9.2,
+      customerChargeCents: 9,
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(1190);
+    await pg.exec(`
+      CREATE FUNCTION fail_team_attempt_settlement() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'settlement unavailable'; END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_team_attempt_settlement BEFORE INSERT ON billing_usage_ledger
+      FOR EACH ROW EXECUTE FUNCTION fail_team_attempt_settlement();
+    `);
+
+    const operationId = 'ai:recover-team-failure';
+    await expect(
+      runWithBillingContext(
+        { db, teamId: TEAM_ID, userId: USER_ID, operationClass: 'embedding' },
+        () =>
+          withAiMetering({ operationId }, () =>
+            Promise.reject(Object.assign(new Error('provider failed'), { openRouterUsd: 4 })),
+          ),
+      ),
+    ).rejects.toThrow('provider failed');
+    await billing.patchReservationMetadata(operationId, {
+      pending_failed_attempts: [],
+      pending_failed_attempt_settlement: false,
+    });
+    await billing.release(operationId);
+    await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'free',
+        billingState: 'free',
+        teamSeatTerms: null,
+        includedDiscountRemainingCents: 0,
+        spendCapCents: 0,
+        polarSubscriptionId: null,
+      })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    // Reusing this operation on Free must preserve the earlier Team attempt.
+    expect(
+      await billing.reserve({
+        operationId,
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+    ).toMatchObject({ ok: true, reservation: { admittedPlanId: 'free' } });
+
+    await pg.exec('DROP TRIGGER fail_team_attempt_settlement ON billing_usage_ledger');
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    expect(await settlePendingBillingReservations(db)).toBe(0);
+    const [attempt] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `${operationId}:failed:1`));
+    expect(attempt).toMatchObject({
+      actorUserId: USER_ID,
+      customerChargeCents: 1600,
+      metadata: {
+        failed_attempt_for: operationId,
+        pricing_plan_id: 'team',
+        discount_cents: 1190,
+        invoice_cents: 0,
+        cap_eligible_cents: 0,
+      },
+    });
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
+  });
+
   // €7.36 of usage less the €2 Free allowance leaves €5.36 before the admitted discount.
   for (const scenario of [
     { name: 'expires', initial: 50, next: 50, expired: true, invoice: 268 },
@@ -2016,10 +2196,14 @@ describe('billing runtime', () => {
       ), (
         '${TEAM_ID}', '${failedOperationId}', 'ai', 1, 1,
         'reserved', NOW() + INTERVAL '1 hour',
-        '{"pending_failed_attempt_settlement":true,"pending_failed_attempts":[{"operation_id":"${failedOperationId}:failed:1","openrouter_usd":0.02,"usage_at":"2026-08-10T12:00:00.000Z","operation_class":"embedding"}]}'::jsonb
+        '{"pending_failed_attempt_settlement":true,"pending_failed_attempts":[
+          {"operation_id":"${failedOperationId}:failed:1","openrouter_usd":0.02,"usage_at":"2026-08-10T12:00:00.000Z","operation_class":"embedding"},
+          {"operation_id":"${failedOperationId}:failed:2","openrouter_usd":0}
+        ]}'::jsonb
       );
     `);
     expect(await settlePendingBillingReservations(db)).toBe(2);
+    expect(await settlePendingBillingReservations(db)).toBe(0);
     const [recallLedger] = await db
       .select()
       .from(billingUsageLedger)

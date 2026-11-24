@@ -20,7 +20,10 @@ import {
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
-import { includedDiscountRemainingForReplay } from '#src/billing/plan-history.js';
+import {
+  includedDiscountRemainingForReplay,
+  recordBillingPlan,
+} from '#src/billing/plan-history.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import {
@@ -2110,6 +2113,335 @@ describe('billing scope', () => {
     expect(provider.events).toEqual([]);
   });
 
+  it('keeps historical seat-priced Team storage bundled after downgrade', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await recordBillingPlan(db, TEAM_ID, 'team', new Date('2026-10-10T00:00:00.000Z'));
+    await recordBillingPlan(
+      db,
+      TEAM_ID,
+      'team',
+      new Date('2026-10-11T00:00:00.000Z'),
+      undefined,
+      true,
+    );
+    await recordBillingPlan(db, TEAM_ID, 'free', new Date('2026-10-18T00:00:00.000Z'));
+    const recovered = await scope.settle({
+      operationId: 'storage:historical-modern-team',
+      meterId: 'storage_gb_month',
+      nativeUnits: 1,
+      customerChargeCents: 25,
+      pricingPlanId: 'team',
+      pricingPeriodYm: '2026-10',
+      usageAt: new Date('2026-10-12T00:00:00.000Z'),
+    });
+    expect(recovered).toMatchObject({
+      ok: true,
+      duplicate: false,
+      ledger: {
+        customerChargeCents: 0,
+        metadata: { list_charge_cents: 25, invoice_cents: 0, polar_ingest_status: 'not_required' },
+      },
+    });
+    const [counter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.periodYm, '2026-10'),
+          eq(billingUsageCounters.meterId, 'storage_gb_month'),
+        ),
+      );
+    expect(Number(counter?.nativeUnits)).toBe(1);
+    expect(counter?.customerChargeCents).toBe(0);
+    expect(provider.events).toEqual([]);
+  });
+
+  it('does not use seat allowance beyond an unconfirmed meeting renewal', async () => {
+    vi.setSystemTime(new Date('2026-10-31T23:59:00.000Z'));
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active',
+        shadow_billing = false, spend_cap_cents = 0,
+        team_seat_terms = '{"paidSeats":1,"highWaterSeats":1,"includedUsageCents":1200}',
+        included_discount_remaining_cents = 1200,
+        period_started_at = '2026-10-01', period_ends_at = '2026-11-01'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const operation = {
+      operationId: 'recall:unconfirmed-renewal',
+      meterId: 'recall_minutes' as const,
+    };
+    expect(
+      (await scope.reserve({ ...operation, reservedNativeUnits: 2, reservedChargeCents: 6 })).ok,
+    ).toBe(true);
+    vi.setSystemTime(new Date('2026-11-01T00:02:00.000Z'));
+    const settled = await scope.settle({ ...operation, nativeUnits: 2, customerChargeCents: 6 });
+    expect(settled).toMatchObject({
+      ok: true,
+      duplicate: false,
+      ledger: {
+        customerChargeCents: 6,
+        metadata: {
+          discount_cents: 3,
+          invoice_cents: 0,
+          cap_eligible_cents: 0,
+          discount_windows: [
+            { discount_cents: 3, invoice_cents: 0 },
+            { discount_cents: 0, invoice_cents: 0 },
+          ],
+        },
+      },
+    });
+    expect((await scope.getAccount()).periodEndsAt?.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    expect(provider.events).toEqual([]);
+  });
+
+  it.each([
+    { start: '23:59:00', end: '2026-11-01T00:01:00Z', minutes: 2, invoice: 2 },
+    { start: '23:59:30', end: '2026-11-01T00:00:15Z', minutes: 1, invoice: 1 },
+    { start: '23:59:30', end: '2026-10-31T23:59:40Z', minutes: 1, invoice: 0 },
+  ])(
+    'uses the recorded Recall interval ending at $end for the UTC cap',
+    async ({ start, end, minutes, invoice }) => {
+      vi.setSystemTime(new Date(`2026-10-31T${start}Z`));
+      const provider = createFakeBillingProvider();
+      const scope = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+        provider,
+      });
+      await scope.getAccount();
+      enableCoveredPolar('team');
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'team_active',
+          teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+          includedDiscountRemainingCents: 2,
+          spendCapCents: 10,
+          periodStartedAt: new Date('2026-10-15T00:00:00.000Z'),
+          periodEndsAt: new Date('2026-11-15T00:00:00.000Z'),
+          polarCustomerId: 'cus_team',
+          polarSubscriptionId: 'sub_team',
+          polarProductId: POLAR_PRODUCT_IDS.team,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      const operation = {
+        operationId: 'recall:span-utc-month',
+        meterId: 'recall_minutes' as const,
+      };
+      expect(
+        await scope.reserve({
+          ...operation,
+          reservedNativeUnits: minutes,
+          reservedChargeCents: minutes * 3,
+        }),
+      ).toMatchObject({ ok: true });
+      await db
+        .update(teamBillingAccounts)
+        .set({ spendCapCents: 2 })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      await scope.patchReservationMetadata(operation.operationId, {
+        pending_meter: 'recall_minutes',
+        pending_ended_at: new Date(end).toISOString(),
+      });
+
+      vi.setSystemTime(new Date('2026-11-01T00:02:00.000Z'));
+      const usage = { ...operation, nativeUnits: minutes, customerChargeCents: minutes * 3 };
+      const result = await scope.settle(usage);
+      expect(result).toMatchObject({
+        ok: true,
+        duplicate: false,
+        ledger: {
+          customerChargeCents: minutes * 3,
+          metadata: {
+            usage_ended_at: new Date(end).toISOString(),
+            discount_cents: 2,
+            invoice_cents: invoice,
+            cap_eligible_cents: invoice,
+          },
+        },
+      });
+      if (result.duplicate) return;
+      if (invoice > 0) {
+        expect(result.ledger.metadata).toMatchObject({
+          polar_ingest_period_ym: '2026-11',
+          discount_windows:
+            minutes === 2
+              ? [
+                  { discount_cents: 2, invoice_cents: 0, native_units: 1 },
+                  { discount_cents: 0, invoice_cents: invoice, native_units: 1 },
+                ]
+              : [{ discount_cents: 2, invoice_cents: invoice, native_units: 1 }],
+        });
+      } else {
+        expect(result.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+      }
+      const counters = await db
+        .select({
+          periodYm: billingUsageCounters.periodYm,
+          customerChargeCents: billingUsageCounters.customerChargeCents,
+          capEligibleChargeCents: billingUsageCounters.capEligibleChargeCents,
+        })
+        .from(billingUsageCounters)
+        .where(
+          and(
+            eq(billingUsageCounters.teamId, TEAM_ID),
+            eq(billingUsageCounters.meterId, 'recall_minutes'),
+          ),
+        )
+        .orderBy(billingUsageCounters.periodYm);
+      expect(counters).toEqual([
+        ...(minutes === 2 || invoice === 0
+          ? [{ periodYm: '2026-10', customerChargeCents: 3, capEligibleChargeCents: 0 }]
+          : []),
+        ...(invoice > 0
+          ? [{ periodYm: '2026-11', customerChargeCents: 3, capEligibleChargeCents: invoice }]
+          : []),
+      ]);
+      expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
+      expect(await scope.settle(usage)).toEqual({ ok: true, duplicate: true });
+      expect(provider.events).toEqual(
+        invoice > 0
+          ? [
+              expect.objectContaining({
+                name: 'timeline_recall_minutes',
+                externalCustomerId: TEAM_ID,
+                metadata: { operation_id: operation.operationId, charge_cents: invoice },
+              }),
+            ]
+          : [],
+      );
+      expect(provider.events[0]?.units ?? 0).toBeCloseTo(invoice / 3, 5);
+    },
+  );
+
+  it.each([{ replaced: false }, { replaced: true }])(
+    'spends a historical seat allowance once across Recall slices (subscription replaced: $replaced)',
+    async ({ replaced }) => {
+      vi.setSystemTime(new Date('2026-10-31T23:59:00.000Z'));
+      const provider = createFakeBillingProvider();
+      const scope = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+        provider,
+      });
+      await scope.getAccount();
+      enableCoveredPolar('team');
+      const previousStart = new Date('2026-10-15T00:00:00.000Z');
+      const renewal = new Date('2026-11-15T00:00:00.000Z');
+      const aiUsageAt = new Date('2026-10-20T12:00:00.000Z');
+      await db.insert(billingUsageLedger).values({
+        teamId: TEAM_ID,
+        operationId: 'ai:spent-before-utc-month',
+        kind: 'settlement',
+        meterId: 'ai',
+        nativeUnits: '1102.16',
+        customerChargeCents: 1198,
+        metadata: { discount_cents: 1198, usage_at: aiUsageAt.toISOString() },
+        occurredAt: aiUsageAt,
+      });
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'team',
+          billingState: 'team_active',
+          teamSeatTerms: { paidSeats: 1, highWaterSeats: 1, includedUsageCents: 1200 },
+          includedDiscountRemainingCents: 2,
+          spendCapCents: 10,
+          periodStartedAt: previousStart,
+          periodEndsAt: renewal,
+          polarCustomerId: 'cus_team',
+          polarSubscriptionId: 'sub_team',
+          polarProductId: POLAR_PRODUCT_IDS.team,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      const operation = {
+        operationId: 'recall:historical-split-utc-month',
+        meterId: 'recall_minutes' as const,
+      };
+      expect(
+        await scope.reserve({ ...operation, reservedNativeUnits: 2, reservedChargeCents: 6 }),
+      ).toMatchObject({ ok: true });
+      const repeat = { ...operation, operationId: 'recall:another-historical-split-utc-month' };
+      expect(
+        await scope.reserve({ ...repeat, reservedNativeUnits: 2, reservedChargeCents: 6 }),
+      ).toMatchObject({ ok: true });
+      vi.setSystemTime(new Date('2026-11-16T12:00:00.000Z'));
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          includedDiscountRemainingCents: 1200,
+          periodStartedAt: replaced ? new Date('2026-11-16T00:00:00.000Z') : renewal,
+          periodEndsAt: new Date(
+            replaced ? '2026-12-16T00:00:00.000Z' : '2026-12-15T00:00:00.000Z',
+          ),
+          polarSubscriptionId: replaced ? 'sub_replacement' : 'sub_team',
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(
+        await scope.settle({ ...operation, nativeUnits: 2, customerChargeCents: 6 }),
+      ).toMatchObject({
+        ok: true,
+        duplicate: false,
+        ledger: {
+          customerChargeCents: 6,
+          metadata: {
+            discount_cents: 2,
+            invoice_cents: 0,
+            cap_eligible_cents: 0,
+            discount_windows: [
+              {
+                started_at: previousStart.toISOString(),
+                ends_at: renewal.toISOString(),
+                discount_cents: 2,
+              },
+              {
+                started_at: previousStart.toISOString(),
+                ends_at: renewal.toISOString(),
+                discount_cents: 0,
+              },
+            ],
+          },
+        },
+      });
+      expect(
+        await scope.settle({ ...repeat, nativeUnits: 2, customerChargeCents: 6 }),
+      ).toMatchObject({
+        ok: true,
+        duplicate: false,
+        ledger: { metadata: { discount_cents: 0, invoice_cents: 0 } },
+      });
+      expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(1200);
+      expect(provider.events).toEqual([]);
+    },
+  );
+
   it('does not infer a missing admission price or spending cap from current seat terms', async () => {
     vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
     const provider = createFakeBillingProvider();
@@ -3210,18 +3542,28 @@ describe('billing scope', () => {
       reservedChargeCents: 1,
     });
     expect(reserved.ok).toBe(true);
-    await scope.patchReservationMetadata(operationId, {
-      pending_failed_attempt_settlement: true,
-      pending_failed_attempts: [
-        {
-          operation_id: `${operationId}:failed:1`,
-          openrouter_usd: 0.02,
-          usage_at: '2026-10-05T08:15:00.000Z',
-          operation_class: 'embedding',
-          billable: true,
+    await db
+      .update(billingUsageReservations)
+      .set({
+        metadata: {
+          pending_failed_attempt_settlement: true,
+          pending_failed_attempts: [
+            {
+              operation_id: `${operationId}:failed:1`,
+              openrouter_usd: 0.02,
+              usage_at: '2026-10-05T08:15:00.000Z',
+              operation_class: 'embedding',
+              billable: true,
+            },
+          ],
         },
-      ],
-    });
+      })
+      .where(
+        and(
+          eq(billingUsageReservations.teamId, TEAM_ID),
+          eq(billingUsageReservations.operationId, operationId),
+        ),
+      );
     await scope.release(operationId);
     const again = await scope.reserve({
       operationId,

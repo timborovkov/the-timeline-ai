@@ -46,6 +46,7 @@ export interface BillingPresentation {
     amounts: RecordedCharges | null;
   };
   recurringFeeCents: number | null;
+  recurringFeeCurrency?: 'EUR' | 'USD';
   members: { current: number; included: number | null; additionalMemberCents: number | null };
   cap: {
     applicable: boolean;
@@ -130,9 +131,14 @@ export function recordedChargesForPeriod(
     const instant = settlementUsageInstant(row).getTime();
     const duration =
       row.meterId === 'recall_minutes' ? Math.max(0, Number(row.nativeUnits)) * 60000 : 0;
-    if (instant >= end || (instant < start && instant + duration <= start)) continue;
-    if (legacyUncertain || instant < start || (duration > 0 && instant + duration > end))
-      return null;
+    const actualEnd =
+      row.meterId === 'recall_minutes' && typeof row.metadata.usage_ended_at === 'string'
+        ? Date.parse(row.metadata.usage_ended_at)
+        : NaN;
+    const billedEnd =
+      actualEnd > instant ? Math.min(actualEnd, instant + duration) : instant + duration;
+    if (instant >= end || (instant < start && billedEnd <= start)) continue;
+    if (legacyUncertain || instant < start || billedEnd > end) return null;
     // A month-only backfill is ambiguous inside a subscription window.
     if (
       !row.metadata.usage_at &&
@@ -256,6 +262,7 @@ export function buildBillingPresentation(input: {
       : seatTerms
         ? seatTerms.paidSeats * TEAM_MONTHLY_SEAT_CENTS
         : terms.platformFeeCents,
+    recurringFeeCurrency: seatTerms ? 'USD' : terms.platformFeeCurrency,
     members: {
       current: input.activeMembers,
       included: terms.includedActiveMembers,

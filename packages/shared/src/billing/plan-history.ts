@@ -23,40 +23,48 @@ function isBillingPlanId(value: string): value is BillingPlanId {
 export interface BillingPlanBaseline {
   planId: BillingPlanId;
   effectiveAt: Date;
+  teamSeatPricing?: boolean;
 }
 
-/** Append a row when the commercial plan actually changes. */
+/** Append a row when the commercial plan or Team pricing generation changes. */
 export async function recordBillingPlan(
   db: Db,
   teamId: string,
   planId: BillingPlanId,
   effectiveAt = new Date(),
   openedFrom?: BillingPlanBaseline,
+  teamSeatPricing?: boolean,
 ): Promise<void> {
   const [latest] = await db
-    .select({ planId: billingPlanHistory.planId })
+    .select({
+      planId: billingPlanHistory.planId,
+      teamSeatPricing: billingPlanHistory.teamSeatPricing,
+    })
     .from(billingPlanHistory)
     .where(eq(billingPlanHistory.teamId, teamId))
     .orderBy(desc(billingPlanHistory.effectiveAt))
     .limit(1);
-  if (!latest && openedFrom && openedFrom.effectiveAt.getTime() < effectiveAt.getTime()) {
-    if (openedFrom.planId !== planId) {
-      await db.insert(billingPlanHistory).values({
-        teamId,
-        planId: openedFrom.planId,
-        effectiveAt: openedFrom.effectiveAt,
-      });
-    } else {
-      await db.insert(billingPlanHistory).values({
-        teamId,
-        planId,
-        effectiveAt: openedFrom.effectiveAt,
-      });
+  if (!latest && openedFrom && openedFrom.effectiveAt < effectiveAt) {
+    await db.insert(billingPlanHistory).values({
+      teamId,
+      planId: openedFrom.planId,
+      teamSeatPricing: openedFrom.teamSeatPricing ?? null,
+      effectiveAt: openedFrom.effectiveAt,
+    });
+    if (
+      openedFrom.planId === planId &&
+      (teamSeatPricing === undefined || openedFrom.teamSeatPricing === teamSeatPricing)
+    )
       return;
-    }
   }
-  if (latest?.planId === planId) return;
-  await db.insert(billingPlanHistory).values({ teamId, planId, effectiveAt });
+  if (
+    latest?.planId === planId &&
+    (teamSeatPricing === undefined || latest.teamSeatPricing === teamSeatPricing)
+  )
+    return;
+  await db
+    .insert(billingPlanHistory)
+    .values({ teamId, planId, teamSeatPricing: teamSeatPricing ?? null, effectiveAt });
 }
 
 /**
@@ -108,24 +116,34 @@ export async function backfillFreePlanBaselines(db: Db): Promise<number> {
   return inserted;
 }
 
-/** Plan in force at the end of a UTC day. Falls back when no history exists yet. */
-async function planIdEffectiveOnDay(input: {
+async function billingPlanHistoryOnDay(input: {
   db: Pick<Db, 'select'>;
   teamId: string;
   day: string;
-  fallback: BillingPlanId;
-}): Promise<BillingPlanId> {
+}) {
   const end = new Date(`${input.day}T23:59:59.999Z`);
   const [row] = await input.db
-    .select({ planId: billingPlanHistory.planId })
+    .select({
+      planId: billingPlanHistory.planId,
+      teamSeatPricing: billingPlanHistory.teamSeatPricing,
+    })
     .from(billingPlanHistory)
     .where(
       and(eq(billingPlanHistory.teamId, input.teamId), lte(billingPlanHistory.effectiveAt, end)),
     )
     .orderBy(desc(billingPlanHistory.effectiveAt))
     .limit(1);
-  if (row && isBillingPlanId(row.planId)) return row.planId;
-  return input.fallback;
+  return row;
+}
+
+/** Team rows recorded before the seat model retain legacy pricing. */
+export async function historicalTeamSeatPricingOnDay(input: {
+  db: Pick<Db, 'select'>;
+  teamId: string;
+  day: string;
+}): Promise<boolean | undefined> {
+  const row = await billingPlanHistoryOnDay(input);
+  return row?.planId === 'team' ? (row.teamSeatPricing ?? false) : undefined;
 }
 
 const PERIOD_YM = /^(\d{4})-(\d{2})$/u;
@@ -171,14 +189,10 @@ export async function billingPlanIdOnDay(input: {
     compExpiresAt?: Date | null | undefined;
   };
 }): Promise<BillingPlanId> {
-  const storedPlanId = await planIdEffectiveOnDay({
-    db: input.db,
-    teamId: input.teamId,
-    day: input.day,
-    fallback: input.account.planId,
-  });
+  const history = await billingPlanHistoryOnDay(input);
   return historicalPlanIdOnDay({
-    storedPlanId,
+    storedPlanId:
+      history && isBillingPlanId(history.planId) ? history.planId : input.account.planId,
     arrangement: input.account.arrangement,
     compExpiresAt: input.account.compExpiresAt,
     day: input.day,
@@ -429,9 +443,8 @@ export async function includedDiscountRemainingForReplay(input: {
 }
 
 /**
- * Discount cents this settlement spent in `window`. A duration that crosses a
- * renewal records one entry per window. Older rows keep a single `discount_cents`
- * on the usage instant.
+ * Discount cents this settlement spent in `window`. Duration slices can share
+ * a window. Older rows keep one `discount_cents` value on the usage instant.
  */
 function discountCentsAttributedToWindow(
   row: {
@@ -491,6 +504,7 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
     compExpiresAt?: Date | null | undefined;
     periodStartedAt: Date | null;
     periodEndsAt: Date | null;
+    teamSeatTerms?: { includedUsageCents: number } | null;
   };
   usageAt: Date;
   now: Date;
@@ -520,6 +534,15 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
       account: input.account,
     }));
   const livePlanId = input.livePlanId ?? input.account.planId;
+  // A calendar projection must not supply credit before Polar confirms the new seat period.
+  if (
+    planId === 'team' &&
+    livePlanId === 'team' &&
+    input.account.teamSeatTerms &&
+    (!input.account.periodEndsAt || input.usageAt >= input.account.periodEndsAt)
+  ) {
+    return 0;
+  }
   const beforeWindow = input.usageAt.getTime() < current.startedAt.getTime();
   const admitted = input.admittedSeatAllowance;
   if (!beforeWindow && planId === livePlanId && admitted?.matchesLiveSubscription !== false)

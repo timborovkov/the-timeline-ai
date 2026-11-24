@@ -145,10 +145,11 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   } | null>(),
   priceOverrideExpiresAt: timestamp('price_override_expires_at', { withTimezone: true }),
   /**
-   * Platform fee Polar charges for a paid Enterprise checkout, in euro cents.
+   * Platform fee Polar charges for a paid Enterprise checkout, in minor units.
    * Usage overrides can be cleared or replaced without dropping this fee.
    */
   enterprisePlatformFeeCents: integer('enterprise_platform_fee_cents'),
+  enterprisePlatformFeeCurrency: text('enterprise_platform_fee_currency').$type<'EUR' | 'USD'>(),
   /**
    * Enterprise checkout terms waiting for the paid subscription.
    * New rows are `{ byCheckoutId: { [checkoutId]: terms } }`. A legacy row is
@@ -194,6 +195,7 @@ export const billingPlanHistory = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
     planId: billingPlanId('plan_id').notNull(),
+    teamSeatPricing: boolean('team_seat_pricing'),
     effectiveAt: timestamp('effective_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('billing_plan_history_team_effective_idx').on(table.teamId, table.effectiveAt)],
