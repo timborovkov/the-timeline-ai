@@ -24,8 +24,7 @@ not saved with the support request.
 Use the [Enterprise enquiry form](https://thetimeline.cc/contact/enterprise) for
 procurement, security review, SSO, SLA, data residency, committed volume, a
 managed on-premise or private-cloud deployment, or a custom Enterprise plan.
-Submissions go to the same support inbox, tagged enterprise, and may include
-pricing-calculator context from the referring link. On-premise CTAs may
+Submissions go to the same support inbox and are tagged enterprise. On-premise calls to action may
 pre-select the `on_premise_deployment` topic. The public copy currently states
 that we reply within one business day.
 

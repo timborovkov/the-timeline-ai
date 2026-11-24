@@ -4,7 +4,9 @@ import type { BillingPresentation } from '@timeline/shared/billing';
 import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
+  TEAM_MONTHLY_SEAT_CENTS,
   formatEuroFromCents,
+  formatUsdFromCents,
   parseEuroAmountToCents,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
@@ -24,7 +26,6 @@ import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
 import { BillingCheckoutStatus } from '@/components/billing-checkout-status';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
-import { BillingPlanPreview } from '@/components/billing-plan-preview';
 import {
   BillingRestrictionNotice,
   type BillingRestrictionReason,
@@ -92,8 +93,10 @@ function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null)
   if (planId === 'enterprise' && (platformFeeCents === null || platformFeeCents === undefined)) {
     return 'Custom';
   }
+  if (planId === 'team') return `$${TEAM_MONTHLY_SEAT_CENTS / 100} per member / month`;
+  if (planId === 'free') return '$0 / month';
   const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
-  return `${formatEuroFromCents(cents)} / month`;
+  return `${(planId === 'enterprise' ? formatUsdFromCents : formatEuroFromCents)(cents)} / month`;
 }
 
 function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
@@ -198,9 +201,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
     let spendCapCents: number;
     try {
       spendCapCents = parseEuroAmountToCents(spendCapEuros);
-    } catch (error) {
+    } catch {
       updateForm({
-        error: error instanceof Error ? error.message : 'Enter a non-negative spend cap in euros.',
+        error: 'Enter a non-negative amount with up to two decimal places.',
       });
       return;
     }
@@ -263,10 +266,6 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         <p className="text-sm text-fg-muted">Charges recorded so far: Unavailable</p>
       )}
 
-      {props.comp ? null : (
-        <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
-      )}
-
       {props.canManage &&
       props.planId !== 'free' &&
       props.presentation?.cap.exemption !== 'enterprise_contract' ? (
@@ -322,7 +321,9 @@ function BillingSpendCapEditor({
       <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">Spend cap</summary>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="block text-sm">
-          <span className="text-fg-muted">EUR</span>
+          <span className="text-fg-muted">
+            {props.presentation?.paidSeats !== undefined ? 'USD' : 'EUR'}
+          </span>
           <input
             type="number"
             min={0}
@@ -401,6 +402,7 @@ function billingPanelState(form: BillingFormState, props: BillingSettingsPanelPr
     spendCapCents: props.spendCapCents,
     meteredSpendCents: props.meteredSpendCents,
     warnPercent: props.utilization.percent,
+    usesSeatBilling: props.presentation?.paidSeats !== undefined,
   });
   const checkoutActive =
     props.hasPolarSubscription &&
@@ -408,7 +410,7 @@ function billingPanelState(form: BillingFormState, props: BillingSettingsPanelPr
     props.billingState === `${props.planId}_active` &&
     (!props.checkoutPlan || props.checkoutPlan === props.planId);
   const checkoutPending = Boolean(props.checkoutReturned && !checkoutActive);
-  const selfServe = props.canManage && props.comp === null && props.planId !== 'enterprise';
+  const selfServe = props.canManage && props.comp === null && props.planId === 'free';
   const showPortal =
     props.canManage &&
     props.comp === null &&
@@ -474,7 +476,7 @@ function BillingPlanControls({
             id="change-plan"
             open={
               props.restrictionReason === 'free_grant_elsewhere' ||
-              ['payg', 'team', 'business'].includes(props.selectedPlan ?? '') ||
+              props.selectedPlan === 'team' ||
               undefined
             }
           >
@@ -486,10 +488,9 @@ function BillingPlanControls({
               Change plan
             </summary>
             <p className="mt-3 max-w-sm text-sm text-fg-muted">
-              Pay as you go has no platform fee and keeps your Free allowances. Usage above those
-              allowances and members beyond the first three are charged. Extra members cost €2/month
-              each. The default PAYG spending limit is €25/month; platform fees and tax are outside
-              the cap. Review your limit in Billing before starting additional work.
+              Team starts at $10 per full member each month. Your workspace shares Included usage.
+              Additional spending is off until you set a monthly cap. Taxes are calculated at
+              checkout.
             </p>
             <details className="mt-3">
               <summary className="cursor-pointer text-sm text-fg-muted">Have a promo code?</summary>
@@ -524,13 +525,7 @@ function BillingPlanControls({
               </div>
             </details>
             <div className="mt-2 flex flex-wrap justify-end gap-2">
-              {(
-                [
-                  ['payg', 'Pay as you go'],
-                  ['team', 'Team · €49/mo'],
-                  ['business', 'Business · €199/mo'],
-                ] as const
-              ).map(([plan, label]) => (
+              {([['team', 'Team · $10 per member / month']] as const).map(([plan, label]) => (
                 <button
                   key={plan}
                   aria-label={

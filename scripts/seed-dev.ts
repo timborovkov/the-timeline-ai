@@ -38,12 +38,13 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import { FULL_MEMBER_ROLES, TEAM_MONTHLY_USAGE_PER_SEAT_CENTS } from '@timeline/shared/billing';
 import { encryptJson } from '@timeline/shared/crypto';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets';
 import { hashPassword } from '@timeline/shared/passwords';
 import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
   dateAt,
@@ -470,10 +471,10 @@ async function main(): Promise<void> {
         .insert(teamBillingAccounts)
         .values({
           teamId: IDS.team,
-          planId: 'payg',
-          billingState: 'payg_active',
+          planId: 'team',
+          billingState: 'team_active',
           shadowBilling: true,
-          spendCapCents: 2_500,
+          spendCapCents: 0,
         })
         .onConflictDoUpdate({
           target: teamBillingAccounts.teamId,
@@ -2321,6 +2322,30 @@ async function main(): Promise<void> {
         .onConflictDoNothing();
 
       await insertExpandedDemoCorpus(tx);
+      const [roster] = await tx
+        .select({ size: sql<number>`count(*)::int` })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, IDS.team),
+            isNull(teamMembers.removedAt),
+            inArray(teamMembers.role, FULL_MEMBER_ROLES),
+          ),
+        );
+      const paidSeats = roster?.size ?? 2;
+      const includedUsageCents = paidSeats * TEAM_MONTHLY_USAGE_PER_SEAT_CENTS;
+      const periodStartedAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const periodEndsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      await tx
+        .update(teamBillingAccounts)
+        .set({
+          teamSeatTerms: { paidSeats, highWaterSeats: paidSeats, includedUsageCents },
+          includedDiscountRemainingCents: sql`CASE WHEN ${teamBillingAccounts.teamSeatTerms} IS NOT NULL AND ${teamBillingAccounts.periodStartedAt} = ${periodStartedAt.toISOString()}::timestamptz THEN ${teamBillingAccounts.includedDiscountRemainingCents} ELSE ${includedUsageCents} END`,
+          periodStartedAt,
+          periodEndsAt,
+        })
+        .where(eq(teamBillingAccounts.teamId, IDS.team));
+
       await seedEmptyOnboardingTeam(tx, passwordHash);
     });
 

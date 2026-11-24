@@ -249,9 +249,9 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'guide-index',
     title: 'Pricing',
     description:
-      'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Compare monthly estimates from the same usage. Prices in EUR, excluding VAT.',
+      'Free for up to three members with no card required. Team starts at $10 per member per month in USD. Contact sales for custom Enterprise pricing.',
     indexability: 'index',
-    dates: { modified: '2026-11-13', reviewed: '2026-11-13' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -270,21 +270,13 @@ const coreDocuments = definePublicDocuments('public-core', [
       order: 15,
       label: 'Pricing',
       summary:
-        'Free no-card plan, €0-base pay as you go with native meters, optional Team (€49) and Business (€199) commitments, Enterprise custom.',
+        'Free for up to three members, Team at $10 per member per month, and custom Enterprise.',
       fullSummary:
-        'Commercial catalog: Free, PAYG, Team, Business, Enterprise with native AI/meeting/email/storage meters.',
+        'AI processing and optional native meeting capture use a shared monthly allowance. Team admins can opt into capped additional usage.',
       sections: [
         {
-          title: 'Commercial journey',
-          body: 'Free → PAYG without a mandatory upgrade cliff. Team and Business are optional commitment discounts, not member-count gates.',
-        },
-        {
-          title: 'Meters',
-          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted source units (one per ordinary source; 20 per captured website page, including unchanged pages). Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
-        },
-        {
           title: 'Questions',
-          body: 'Current product boundaries for CRM, existing tools, data use, and the Free plan.',
+          body: 'Membership, Included usage, and payment management.',
           items: PRICING_FAQS.map((faq) => `${faq.question} ${faq.answer}`),
         },
       ],

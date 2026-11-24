@@ -1,11 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { OVERAGE_RATES, PLAN_CATALOG } from '#src/billing/catalog.js';
+import { OVERAGE_RATES, PLAN_CATALOG, TEAM_MONTHLY_SEAT_CENTS } from '#src/billing/catalog.js';
 import {
   DEFAULT_TIMELINE_POLAR_WEBHOOK_URL,
   TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
-  TIMELINE_METERED_EVENT_NAMES,
   TIMELINE_METERED_UNIT_AMOUNTS,
   TIMELINE_METER_SPECS,
   TIMELINE_POLAR_WEBHOOK_EVENTS,
@@ -13,6 +12,7 @@ import {
   TIMELINE_TOPUP_PRODUCT_NAME,
   assertPolarSetupServer,
   assertTimelineWebhookUrl,
+  isMonthlyUsdTeamCheckoutProduct,
   planPolarSetup,
   renderPolarSetupReport,
   runPolarSetup,
@@ -48,37 +48,36 @@ function meter(spec: (typeof TIMELINE_METER_SPECS)[number]): PolarSetupMeter {
 }
 
 function productPrices(key: TimelineProductKey): PolarSetupPrice[] {
-  const platform: PolarSetupPrice =
-    key === 'enterprise'
-      ? {
-          id: `${key}-fee`,
-          archived: false,
-          meterId: null,
-          amountType: 'custom',
-          priceAmount: null,
-          priceCurrency: 'eur',
-          minimumAmount: 0,
-          unitAmount: null,
-        }
-      : {
-          id: `${key}-fee`,
-          archived: false,
-          meterId: null,
-          amountType: 'fixed',
-          priceAmount: PLAN_CATALOG[key].platformFeeCents,
-          priceCurrency: 'eur',
-          minimumAmount: null,
-          unitAmount: null,
-        };
+  const priceTerms = {
+    archived: false,
+    priceCurrency: 'usd',
+    taxBehavior: 'exclusive',
+    priceAmount: null,
+  };
   return [
-    platform,
-    ...TIMELINE_METER_SPECS.map((spec) => ({
+    {
+      ...priceTerms,
+      id: `${key}-fee`,
+      meterId: null,
+      amountType: key === 'team' ? 'seat_based' : 'custom',
+      minimumAmount: key === 'enterprise' ? 0 : null,
+      unitAmount: null,
+      ...(key === 'team'
+        ? {
+            seatTiers: {
+              seat_tier_type: 'volume',
+              tiers: [{ min_seats: 1, max_seats: null, price_per_seat: TEAM_MONTHLY_SEAT_CENTS }],
+            },
+          }
+        : {}),
+    },
+    ...TIMELINE_METER_SPECS.filter(
+      (spec) => spec.key === 'ai' || spec.key === 'recall_minutes',
+    ).map((spec) => ({
+      ...priceTerms,
       id: `${key}-${spec.key}`,
-      archived: false,
       meterId: `meter-${spec.key}`,
-      amountType: 'metered_unit' as const,
-      priceAmount: null,
-      priceCurrency: 'eur',
+      amountType: 'metered_unit',
       minimumAmount: null,
       unitAmount: spec.unitAmount,
     })),
@@ -91,11 +90,9 @@ function product(key: TimelineProductKey): PolarSetupProduct {
     id: `product-${key}`,
     name: `Timeline ${plan.name}`,
     archived: false,
-    metadata: {
-      timeline_key: key,
-      included_active_members:
-        plan.includedActiveMembers === null ? 'unlimited' : String(plan.includedActiveMembers),
-    },
+    recurringInterval: 'month',
+    recurringIntervalCount: 1,
+    metadata: { timeline_key: key, timeline_pricing: 'usd-monthly' },
     prices: productPrices(key),
   };
 }
@@ -125,18 +122,20 @@ function emptySnapshot(): PolarSetupSnapshot {
   return { meters: [], products: [], webhooks: [] };
 }
 
-function actionsOf(
+function actionsOf<K extends ReturnType<typeof planPolarSetup>['actions'][number]['kind']>(
   plan: ReturnType<typeof planPolarSetup>,
-  kind: ReturnType<typeof planPolarSetup>['actions'][number]['kind'],
+  kind: K,
 ) {
-  return plan.actions.filter((action) => action.kind === kind);
+  return plan.actions.filter(
+    (action): action is Extract<typeof action, { kind: K }> => action.kind === kind,
+  );
 }
 
 describe('planPolarSetup', () => {
-  it('plans the six meters, four monthly products, and webhook from an empty org', () => {
+  it('plans the six meters, two monthly products, and webhook from an empty org', () => {
     const plan = planPolarSetup(emptySnapshot(), request);
     expect(actionsOf(plan, 'create_meter')).toHaveLength(TIMELINE_METER_SPECS.length);
-    expect(actionsOf(plan, 'create_product')).toHaveLength(4);
+    expect(actionsOf(plan, 'create_product')).toHaveLength(2);
     expect(actionsOf(plan, 'create_webhook')).toHaveLength(1);
     expect(plan.actions.some((action) => action.kind === 'archive_product')).toBe(false);
 
@@ -159,52 +158,73 @@ describe('planPolarSetup', () => {
     if (team?.kind !== 'create_product') return;
     expect(team.body.name).toBe('Timeline Team');
     expect(team.body.recurring_interval).toBe('month');
-    expect(team.body.metadata).toEqual({
-      timeline_key: 'team',
-      included_active_members: '25',
-    });
     expect(team.body.prices[0]).toEqual({
-      amount_type: 'fixed',
-      price_currency: 'eur',
-      price_amount: PLAN_CATALOG.team.platformFeeCents,
+      amount_type: 'seat_based',
+      price_currency: 'usd',
+      tax_behavior: 'exclusive',
+      seat_tiers: {
+        seat_tier_type: 'volume',
+        tiers: [{ min_seats: 1, max_seats: null, price_per_seat: 1000 }],
+      },
     });
-    const meterPrices = team.body.prices.slice(1);
-    expect(meterPrices).toHaveLength(TIMELINE_METERED_EVENT_NAMES.length);
-    expect(meterPrices).toEqual(
-      TIMELINE_METER_SPECS.map((spec) => ({
+    expect(team.body.prices.slice(1)).toEqual([
+      {
         amount_type: 'metered_unit',
-        price_currency: 'eur',
-        meter_id: `$meter:${spec.eventName}`,
-        unit_amount: spec.unitAmount,
-      })),
-    );
-
-    const enterprise = plan.actions.find(
-      (action) => action.kind === 'create_product' && action.productKey === 'enterprise',
-    );
-    expect(enterprise?.kind).toBe('create_product');
-    if (enterprise?.kind !== 'create_product') return;
-    expect(enterprise.body.prices[0]).toEqual({
+        price_currency: 'usd',
+        tax_behavior: 'exclusive',
+        meter_id: '$meter:timeline_ai_eur_cents',
+        unit_amount: '1',
+      },
+      {
+        amount_type: 'metered_unit',
+        price_currency: 'usd',
+        tax_behavior: 'exclusive',
+        meter_id: '$meter:timeline_recall_minutes',
+        unit_amount: '3',
+      },
+    ]);
+    expect(
+      actionsOf(plan, 'create_product').find((action) => action.productKey === 'enterprise')?.body
+        .prices[0],
+    ).toEqual({
       amount_type: 'custom',
-      price_currency: 'eur',
+      price_currency: 'usd',
+      tax_behavior: 'exclusive',
       minimum_amount: 0,
     });
-    const payg = plan.actions.find(
-      (action) => action.kind === 'create_product' && action.productKey === 'payg',
-    );
-    expect(payg?.kind).toBe('create_product');
-    if (payg?.kind !== 'create_product') return;
-    expect(payg.body.prices[0]).toMatchObject({ price_amount: 0 });
-    expect(payg.body.metadata.included_active_members).toBe('3');
-    const business = plan.actions.find(
-      (action) => action.kind === 'create_product' && action.productKey === 'business',
-    );
-    expect(business?.kind).toBe('create_product');
-    if (business?.kind !== 'create_product') return;
-    expect(business.body.prices[0]).toMatchObject({
-      price_amount: PLAN_CATALOG.business.platformFeeCents,
-    });
-    expect(business.body.metadata.included_active_members).toBe('100');
+  });
+
+  it('admits checkout only for the expected monthly USD seat price', () => {
+    const price = {
+      is_archived: false,
+      amount_type: 'seat_based',
+      price_currency: 'usd',
+      tax_behavior: 'exclusive',
+      seat_tiers: {
+        seat_tier_type: 'volume',
+        tiers: [{ min_seats: 1, max_seats: null, price_per_seat: 1000 }],
+      },
+    };
+    const product = {
+      is_archived: false,
+      recurring_interval: 'month',
+      recurring_interval_count: 1,
+      prices: [price],
+    };
+    expect(isMonthlyUsdTeamCheckoutProduct(product)).toBe(true);
+    expect(isMonthlyUsdTeamCheckoutProduct({ ...product, recurring_interval: 'year' })).toBe(false);
+    expect(
+      isMonthlyUsdTeamCheckoutProduct({
+        ...product,
+        prices: [{ ...price, price_currency: 'eur' }],
+      }),
+    ).toBe(false);
+    expect(
+      isMonthlyUsdTeamCheckoutProduct({
+        ...product,
+        prices: [price, { ...price, amount_type: 'fixed' }],
+      }),
+    ).toBe(false);
   });
 
   it('keeps catalog unit amounts aligned with the overage rates', () => {
@@ -231,70 +251,28 @@ describe('planPolarSetup', () => {
     expect(plan.actions).toEqual([]);
   });
 
-  it('replaces a wrong immutable price and keeps an unrelated seat price', () => {
+  it('replaces an annual product with a monthly one and retires tagged legacy offers', () => {
     const snapshot = readySnapshot();
     const team = snapshot.products.find((item) => item.id === 'product-team');
     if (!team) throw new Error('missing team');
-    team.prices = [
+    team.recurringInterval = 'year';
+    team.metadata = { timeline_key: 'team' };
+    snapshot.products = [
+      ...snapshot.products,
       {
-        id: 'team-fee',
+        id: 'old-business',
+        name: 'Timeline Business',
         archived: false,
-        meterId: null,
-        amountType: 'fixed',
-        priceAmount: 1_000,
-        priceCurrency: 'eur',
-        minimumAmount: null,
-        unitAmount: null,
+        metadata: { timeline_key: 'business' },
+        prices: [],
       },
-      {
-        id: 'team-seat',
-        archived: false,
-        meterId: null,
-        amountType: 'seat',
-        priceAmount: 100,
-        priceCurrency: 'eur',
-        minimumAmount: null,
-        unitAmount: null,
-      },
-      ...productPrices('team')
-        .slice(1)
-        .map((price) =>
-          price.id === 'team-recall_minutes' ? { ...price, unitAmount: '1' } : price,
-        ),
     ];
     const plan = planPolarSetup(snapshot, request);
-    const patches = plan.actions.filter((action) => action.kind === 'patch_product');
-    expect(patches).toHaveLength(1);
-    const patch = patches[0];
-    if (patch?.kind !== 'patch_product') return;
-    expect(patch.id).toBe('product-team');
-    const prices = patch.body.prices ?? [];
-    expect(prices[0]).toEqual({
-      amount_type: 'fixed',
-      price_currency: 'eur',
-      price_amount: 4_900,
-    });
-    expect(prices).toContainEqual({ id: 'team-seat' });
-    expect(prices).not.toContainEqual({ id: 'team-fee' });
-    expect(prices).not.toContainEqual({ id: 'team-recall_minutes' });
-    expect(prices).toContainEqual({
-      amount_type: 'metered_unit',
-      price_currency: 'eur',
-      meter_id: 'meter-recall_minutes',
-      unit_amount: '3',
-    });
-    expect(prices).toContainEqual({ id: 'team-ai' });
-  });
-
-  it('treats an equivalent decimal unit amount as already correct', () => {
-    const snapshot = readySnapshot();
-    const business = snapshot.products.find((item) => item.id === 'product-business');
-    if (!business) throw new Error('missing business');
-    business.prices = business.prices.map((price) =>
-      price.id === 'business-email_units' ? { ...price, unitAmount: '0.2500' } : price,
-    );
-    const plan = planPolarSetup(snapshot, request);
-    expect(plan.actions).toEqual([]);
+    expect(actionsOf(plan, 'create_product').map((action) => action.productKey)).toEqual(['team']);
+    expect(actionsOf(plan, 'archive_product').map((action) => action.id)).toEqual([
+      'product-team',
+      'old-business',
+    ]);
   });
 
   it('archives a duplicate meter price and a wrong enterprise fee', () => {
@@ -342,27 +320,12 @@ describe('planPolarSetup', () => {
     expect(teamPatch.body.prices).not.toContainEqual({ id: 'team-recall-duplicate' });
     expect(enterprisePatch.body.prices?.[0]).toEqual({
       amount_type: 'custom',
-      price_currency: 'eur',
+      price_currency: 'usd',
+      tax_behavior: 'exclusive',
       minimum_amount: 0,
     });
     expect(enterprisePatch.body.prices).not.toContainEqual({ id: 'enterprise-fixed' });
     expect(enterprisePatch.body.prices).not.toContainEqual({ id: 'enterprise-custom' });
-  });
-
-  it('stamps metadata without resending prices', () => {
-    const snapshot = readySnapshot();
-    const payg = snapshot.products.find((item) => item.id === 'product-payg');
-    if (!payg) throw new Error('missing payg');
-    payg.metadata = {};
-    const plan = planPolarSetup(snapshot, request);
-    const patch = plan.actions.find((action) => action.kind === 'patch_product');
-    expect(patch?.kind).toBe('patch_product');
-    if (patch?.kind !== 'patch_product') return;
-    expect(patch.body.metadata).toEqual({
-      timeline_key: 'payg',
-      included_active_members: '3',
-    });
-    expect(patch.body.prices).toBeUndefined();
   });
 
   it('leaves foreign products, meters, and webhooks untouched', () => {
@@ -670,7 +633,7 @@ describe('polar setup report', () => {
     expect(report).toContain('POLAR_SERVER=sandbox');
     expect(report).toContain('POLAR_ORGANIZATION_ID=org-1');
     expect(report).toContain('POLAR_PRODUCT_ID_TEAM=product-team');
-    expect(report).toContain('POLAR_PRODUCT_ID_PAYG=');
+    expect(report).not.toContain('POLAR_PRODUCT_ID_PAYG=');
     expect(report).toContain('POLAR_METER_ID_AI=meter-ai');
     expect(report).toContain('POLAR_WEBHOOK_ID=wh-timeline');
     expect(report).toContain('POLAR_WEBHOOK_SECRET=whsec_test_secret');
@@ -717,14 +680,16 @@ function rememberPrice(price: PolarPriceWrite, state: MemoryState): PolarSetupPr
   }
   const id = `price-${state.sequence}`;
   state.sequence += 1;
-  if (price.amount_type === 'fixed') {
+  if (price.amount_type === 'seat_based') {
     return {
       id,
       archived: false,
       meterId: null,
-      amountType: 'fixed',
-      priceAmount: price.price_amount,
-      priceCurrency: 'eur',
+      amountType: 'seat_based',
+      priceAmount: null,
+      priceCurrency: price.price_currency,
+      taxBehavior: price.tax_behavior,
+      seatTiers: price.seat_tiers,
       minimumAmount: null,
       unitAmount: null,
     };
@@ -736,7 +701,8 @@ function rememberPrice(price: PolarPriceWrite, state: MemoryState): PolarSetupPr
       meterId: null,
       amountType: 'custom',
       priceAmount: null,
-      priceCurrency: 'eur',
+      priceCurrency: price.price_currency,
+      taxBehavior: price.tax_behavior,
       minimumAmount: price.minimum_amount,
       unitAmount: null,
     };
@@ -747,7 +713,8 @@ function rememberPrice(price: PolarPriceWrite, state: MemoryState): PolarSetupPr
     meterId: price.meter_id,
     amountType: 'metered_unit',
     priceAmount: null,
-    priceCurrency: 'eur',
+    priceCurrency: price.price_currency,
+    taxBehavior: price.tax_behavior,
     minimumAmount: null,
     unitAmount: price.unit_amount,
   };
@@ -800,6 +767,8 @@ function memoryClient(state: MemoryState): PolarSetupClient & { mutations: strin
         name: body.name,
         archived: false,
         metadata: body.metadata,
+        recurringInterval: body.recurring_interval,
+        recurringIntervalCount: 1,
         prices: body.prices.map((price) => rememberPrice(price, state)),
       });
       return Promise.resolve({ id });

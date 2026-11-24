@@ -143,6 +143,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           teamId: invite.teamId,
           additionalSeats: 1,
           includePendingInvites: false,
+          acquirePaidSeat: true,
         });
         await acceptTeamMembership(tx, {
           teamId: invite.teamId,
@@ -319,6 +320,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
           teamId: invite.teamId,
           additionalSeats: 1,
           includePendingInvites: false,
+          acquirePaidSeat: true,
         });
 
         await acceptTeamMembership(tx, {

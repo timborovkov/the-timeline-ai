@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-test('public pricing page shows Free and PAYG plans', async ({ page }) => {
+test('public pricing page shows Free, Team, and Enterprise', async ({ page }) => {
   await page.goto('/pricing');
   await expect(page.getByRole('heading', { level: 1, name: /Start free/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Free', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Pay as you go' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Enterprise' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Team' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Public navigation' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Pricing' }).first()).toHaveAttribute(
@@ -13,14 +13,14 @@ test('public pricing page shows Free and PAYG plans', async ({ page }) => {
   );
 });
 
-test('PAYG intent survives navigation to signup without starting a purchase', async ({ page }) => {
+test('Team intent survives navigation to signup without starting a purchase', async ({ page }) => {
   await page.goto('/pricing');
   await page
-    .locator('[data-pricing-plan="payg"] a[data-public-analytics-cta="choose_payg"]')
+    .locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]')
     .click();
-  await expect(page).toHaveURL(/\/sign-up\?plan=payg/);
+  await expect(page).toHaveURL(/\/sign-up\?plan=team/);
   await expect(page.locator('input[name="callbackUrl"]').first()).toHaveValue(
-    '/app/team?section=billing&plan=payg#change-plan',
+    '/app/team?section=billing&plan=team#change-plan',
   );
 });
 
@@ -30,13 +30,11 @@ test('mobile pricing explains limits and links billing help', async ({ page }) =
   await expect(
     page.getByRole('link', { name: 'How billing, limits and cancellation work' }),
   ).toBeVisible();
-  await page.getByText('Infrastructure limits', { exact: true }).click();
-  await expect(page.getByText('Inbound emails / month', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
   await expect(
-    page.locator('[data-pricing-plan="payg"] a[data-public-analytics-cta="choose_payg"]'),
+    page.locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]'),
   ).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: '/workspace/audit-evidence/pricing-mobile.png', fullPage: true });
@@ -77,7 +75,7 @@ test('pricing text and primary-action tokens meet normal-text contrast in both t
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/pricing');
   await expect(
-    page.locator('[data-pricing-plan="payg"] a[data-public-analytics-cta="choose_payg"]'),
+    page.locator('[data-pricing-plan="team"] a[data-public-analytics-cta="choose_team"]'),
   ).toBeVisible();
   for (const dark of [false, true]) {
     const ratios = await page.evaluate((dark) => {

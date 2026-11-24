@@ -7,6 +7,7 @@ import {
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   ASK_AI_RESERVATION_TTL_MS,
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
+  OVERAGE_RATES,
   RECALL_RESERVATION_TTL_MS,
   customerAiChargeCentsFromOpenRouterUsd,
   recallChargeCents,
@@ -33,10 +34,12 @@ export interface BillingAdmissionScope {
     planId: BillingPlanId;
     billingState?: string;
     spendCapCents?: number;
+    teamSeatTerms?: { paidSeats: number } | null;
+    includedDiscountRemainingCents?: number;
     arrangement?: 'standard' | 'comped' | null;
     compExpiresAt?: Date | null;
   }>;
-  getDashboard(): Promise<{ freeRemaining: FreeAllowanceRemaining }>;
+  getDashboard(): Promise<{ freeRemaining: FreeAllowanceRemaining; meteredSpendCents?: number }>;
   reserve(input: {
     operationId: string;
     meterId: 'ai' | 'recall_minutes';
@@ -287,7 +290,11 @@ export function meetingReserveMinutesForPlan(
 ): number {
   const maxDuration = MEETING_MAX_DURATION_MINUTES_BY_PLAN[planId];
   if (planId === 'free') {
-    return Math.min(maxDuration, Math.max(0, freeRemaining.recallMinutes));
+    const minutes =
+      freeRemaining.includedUsageCents === undefined
+        ? freeRemaining.recallMinutes
+        : Math.floor(freeRemaining.includedUsageCents / OVERAGE_RATES.recallCentsPerMinute);
+    return Math.min(maxDuration, Math.max(0, minutes));
   }
   return maxDuration;
 }
@@ -305,7 +312,7 @@ export async function reserveRecallMeetingMinutes(
     billing.getDashboard(),
     billing.reservedNativeUnits('recall_minutes', operationId),
   ]);
-  const reservedMinutes = meetingReserveMinutesForPlan(
+  const maxMinutes = meetingReserveMinutesForPlan(
     effectiveBillingPlanId({
       planId: account.planId,
       billingState: account.billingState ?? 'free',
@@ -316,10 +323,31 @@ export async function reserveRecallMeetingMinutes(
     {
       ...dashboard.freeRemaining,
       recallMinutes: Math.max(0, dashboard.freeRemaining.recallMinutes - pendingRecallMinutes),
+      ...(dashboard.freeRemaining.includedUsageCents === undefined
+        ? {}
+        : {
+            includedUsageCents: Math.max(
+              0,
+              dashboard.freeRemaining.includedUsageCents -
+                pendingRecallMinutes * OVERAGE_RATES.recallCentsPerMinute,
+            ),
+          }),
     },
   );
+  const seatBilling = account.planId === 'team' && Boolean(account.teamSeatTerms);
+  const approvedRemainingCents = Math.max(
+    0,
+    (account.spendCapCents ?? 0) - (dashboard.meteredSpendCents ?? 0),
+  );
+  const sharedBudgetMinutes = Math.floor(
+    ((account.includedDiscountRemainingCents ?? 0) + approvedRemainingCents) /
+      OVERAGE_RATES.recallCentsPerMinute,
+  );
+  const reservedMinutes = seatBilling
+    ? Math.min(maxMinutes, Math.max(0, sharedBudgetMinutes - pendingRecallMinutes))
+    : maxMinutes;
   if (reservedMinutes <= 0) {
-    return { ok: false, code: 'free_allowance_reached' };
+    return { ok: false, code: seatBilling ? 'spend_cap_reached' : 'free_allowance_reached' };
   }
   const reservedChargeCents = recallChargeCents(reservedMinutes);
   const reserved = await billing.reserve({

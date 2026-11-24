@@ -196,6 +196,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
             teamId: invite.teamId,
             additionalSeats: 1,
             includePendingInvites: false,
+            acquirePaidSeat: true,
           });
           await recordCurrentLegalAcceptance(tx, {
             userId,

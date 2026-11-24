@@ -986,12 +986,6 @@
   "apps/web/src/components/marketing/integrations/works-with-public-documents.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/components/marketing/pricing-blocks.test.tsx": {
-    "group": "dom"
-  },
-  "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
-    "group": "dom"
-  },
   "apps/web/src/components/marketing/product-screenshot.test.tsx": {
     "group": "dom"
   },
@@ -1429,9 +1423,6 @@
     "group": "unit"
   },
   "apps/web/src/lib/plan-intent-prompt.test.ts": {
-    "group": "unit"
-  },
-  "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/processing-health.test.ts": {

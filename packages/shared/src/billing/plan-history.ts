@@ -350,6 +350,8 @@ export async function rollIncludedDiscountIfElapsed(
   now: Date,
   options?: { openMissingBounds?: boolean },
 ): Promise<{ account: typeof teamBillingAccounts.$inferSelect; rolled: boolean }> {
+  // Seat grants renew only after Polar confirms the next period and quantity.
+  if (account.planId === 'team' && account.teamSeatTerms) return { account, rolled: false };
   const hasBounds = Boolean(account.periodStartedAt && account.periodEndsAt);
   if (!hasBounds && options?.openMissingBounds !== true) {
     return { account, rolled: false };

@@ -391,47 +391,11 @@ Foundations and shared components: [design system](../../design.md).
 
 ### Public pricing
 
-A compact no-card introduction leads directly to four catalog-backed plans.
-Distinguish the platform fee from usage charges at the price, show included
-members and pooled usage credit, and keep Free/PAYG monthly allowances visible
-below the plans. The plan grid uses four columns on wide screens, two on tablet
-and one on phones. No repeated plan-name eyebrows or recommended-plan badge.
-The optional signup walkthrough is a disclosure; Enterprise is a quiet contact
-block that links to `/contact/enterprise` (not general support) and may mention
-managed on-premise plus self-hosting from the public source-available repository
-under Elastic License 2.0. Follow the estimator with complete comparison,
-spending boundaries, billing-focused questions and a final Start free action.
-When calculator usage exceeds every self-serve plan, the breakdown links the
-same Enterprise enquiry path with the current estimate as query-param context.
-
-Comparison tables have row/column scopes, a keyboard-focusable labelled scroll
-region, a mobile scroll hint and a sticky row-label column. Billing copy makes
-clear that spend caps exclude platform fees and tax, commitment credit is
-applied after the cap check, and capacity limits are separate.
-
-### Public pricing calculator
-
-The pricing Usage section compares PAYG, Team and Business through paired native
-sliders and exact number fields. Example starting-point presets (for example a
-five-person client team, a Slack-heavy engineering team, and a meeting-heavy
-delivery team) fill the fields and stay editable; they are labelled as examples,
-not quotes. Do not repeat those values in a separate activity breakdown panel.
-At most one short muted line states catalog unit assumptions (website pages and
-email units), with no per-question euro figure. A labelled editable example
-renders on the server. Desktop inputs sit beside a single hairline results panel;
-mobile stacks them with a compact selected-plan estimate that stays visible while
-editing. Number inputs and slider targets are at least 44px high. Reset restores
-the default usage example and Pay as you go selection. Invalid inputs suppress
-all estimates. Plan totals share one border with the selected breakdown underneath
-— no nested cards or extra plan-card chrome. PAYG shows native allowances per
-meter; Team and Business show a pooled usage-credit deduction. Capacity warnings
-exclude unsuitable plans from the lowest-estimated-cost badge. Accepted sources
-live in Advanced usage with their value visible when closed. Metadata stays at
-the 12px floor. Rates and workspace eligibility remain in the closed How this
-estimate works disclosure. Inputs stay local; the calculator neither changes
-billing nor collects telemetry.
-
-Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
+A no-card introduction leads to Free, Team and Enterprise. Show Team’s monthly
+USD price per member and link Enterprise to `/contact/enterprise`. The three
+columns stack on small screens. Explain shared Included usage and the default
+processing pause near the plans. Link to billing help for methodology and
+fair-use limits. Keep the FAQ focused on purchase and account questions.
 
 The homepage hero disclosure, `/agents` page, agent help page, and authenticated Connect
 your agent screen share AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts

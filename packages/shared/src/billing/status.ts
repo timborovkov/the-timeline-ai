@@ -1,5 +1,6 @@
 import {
   FREE_ALLOWANCES,
+  FREE_MONTHLY_USAGE_CENTS,
   PLAN_CATALOG,
   SPEND_CAP_WARN_THRESHOLDS,
   type BillingPlanId,
@@ -97,6 +98,8 @@ export function spendCapUtilization(
 }
 
 function freeAllowanceNearLimit(remaining: FreeAllowanceRemaining): boolean {
+  if (remaining.includedUsageCents !== undefined)
+    return remaining.includedUsageCents <= FREE_MONTHLY_USAGE_CENTS * 0.25;
   return (
     remaining.aiChargeCents <= FREE_ALLOWANCES.aiChargeCents * 0.25 ||
     remaining.recallMinutes <= FREE_ALLOWANCES.recallMinutes * 0.25 ||
@@ -127,16 +130,16 @@ export function deriveBillingNudge(input: {
       return {
         kind: 'free_exhausted',
         title: 'Free allowance used up',
-        body: 'Reading, export, and billing stay available. Add a payment method to continue metered work under a spend cap.',
+        body: 'Existing records stay available. New AI processing and meeting capture can resume when Included usage resets.',
         href: manage ? billingHref : usageHref,
-        ctaLabel: manage ? 'Add payment method' : 'View usage',
+        ctaLabel: manage ? 'View billing' : 'View usage',
       };
     }
     if (freeAllowanceNearLimit(input.freeRemaining)) {
       return {
         kind: 'free_near_limit',
         title: 'Approaching Free allowance',
-        body: 'Pay as you go keeps the Free monthly floor and only charges measured overage under your spend cap.',
+        body: 'AI processing and native meeting capture share your Included usage. Check Usage to see when it resets.',
         href: manage ? billingHref : usageHref,
         ctaLabel: manage ? 'Review billing' : 'View usage',
       };
@@ -236,9 +239,16 @@ export function deriveSidebarBillingSummary(input: {
       1 - input.freeRemaining.storageGb / FREE_ALLOWANCES.storageGb,
       1 - input.freeRemaining.acceptedSources / FREE_ALLOWANCES.acceptedSources,
     ];
-    const worst = Math.max(0, ...fractions);
+    const includedUsageCents = input.freeRemaining.includedUsageCents;
+    const worst =
+      includedUsageCents === undefined
+        ? Math.max(0, ...fractions)
+        : 1 - includedUsageCents / FREE_MONTHLY_USAGE_CENTS;
     const progressPercent = Math.min(100, Math.round(worst * 100));
-    const atLimit = allFreeAllowancesExhausted(input.freeRemaining);
+    const atLimit =
+      includedUsageCents === undefined
+        ? allFreeAllowancesExhausted(input.freeRemaining)
+        : includedUsageCents <= 0;
     return {
       planId: input.planId,
       planName: plan.name,
@@ -321,9 +331,25 @@ export function applyBillingPresentationToSidebar(
   if (presentation.planId !== 'free' && presentation.cap.reached)
     summary.warningLabel = 'Spend cap reached';
 
-  if (presentation.planId === 'free') {
-    summary.detailLabel = `${summary.progressPercent}% of most-used allowance`;
-    summary.secondaryLabel = 'View remaining allowances';
+  if (presentation.paidSeats !== undefined && presentation.includedUsage) {
+    const { totalCents, remainingCents, resetAt } = presentation.includedUsage;
+    summary.progressPercent =
+      remainingCents === null ? 0 : Math.round((1 - remainingCents / totalCents) * 100);
+    summary.atLimit =
+      remainingCents === 0 && presentation.cap.usedCents >= presentation.cap.limitCents;
+    summary.detailLabel =
+      remainingCents === null
+        ? 'Updating billing period'
+        : `${summary.progressPercent}% of Included usage`;
+    summary.secondaryLabel =
+      presentation.cap.limitCents > 0 ? 'Capped additional spending' : 'Additional spending off';
+    if (resetAt)
+      summary.resetLabel = `Usage resets ${new Date(resetAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`;
+  } else if (presentation.planId === 'free') {
+    summary.detailLabel = summary.atLimit
+      ? 'Included usage used up'
+      : `${summary.progressPercent}% of Included usage`;
+    summary.secondaryLabel = 'View usage';
     summary.href = '/app/usage';
   } else if (presentation.comped) {
     summary.detailLabel = 'Comped · no usage charges';

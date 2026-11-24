@@ -104,6 +104,7 @@ export async function withTeamBillingIdentity<T>(
       db: Db;
       account: typeof teamBillingAccounts.$inferSelect;
       recordCheckout: (id: string) => Promise<void>;
+      retirePendingCheckouts: () => Promise<boolean>;
     },
   ) => Promise<T>,
 ): Promise<T> {
@@ -338,7 +339,24 @@ export async function withTeamBillingIdentity<T>(
           pending.some((row) => row.pendingRole !== null)
         )
           throw new PolarIdentityError('forbidden', 'billing_member');
+        let pendingCheckoutIds = [...(lifecycle.lifecycleWork.pendingCheckoutIds ?? [])];
         return action(identity, {
+          retirePendingCheckouts: async () => {
+            const retained: string[] = [];
+            for (const id of pendingCheckoutIds) {
+              if ((await input.provider.expireCheckout(id)) !== 'expired') retained.push(id);
+            }
+            if (retained.length !== pendingCheckoutIds.length) {
+              await db
+                .update(teams)
+                .set({
+                  lifecycleWork: { ...lifecycle.lifecycleWork, pendingCheckoutIds: retained },
+                })
+                .where(eq(teams.id, input.teamId));
+            }
+            pendingCheckoutIds = retained;
+            return retained.length === 0;
+          },
           db,
           account,
           recordCheckout: async (id) => {
@@ -347,9 +365,7 @@ export async function withTeamBillingIdentity<T>(
               .set({
                 lifecycleWork: {
                   ...lifecycle.lifecycleWork,
-                  pendingCheckoutIds: [
-                    ...new Set([...(lifecycle.lifecycleWork.pendingCheckoutIds ?? []), id]),
-                  ],
+                  pendingCheckoutIds: [...new Set([...pendingCheckoutIds, id])],
                 },
               })
               .where(eq(teams.id, input.teamId));

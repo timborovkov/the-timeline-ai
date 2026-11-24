@@ -93,6 +93,26 @@ describe('Polar team identity and revocation', () => {
     await expect(resolve()).rejects.toBeInstanceOf(PolarIdentityError);
     await expect(resolve(owner, secondTeam)).resolves.toBeDefined();
   });
+  it('retains payable links and removes only confirmed expired links under the checkout lock', async () => {
+    await withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+      context.recordCheckout('closed'),
+    );
+    await withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+      context.recordCheckout('payable'),
+    );
+    provider.expireCheckout = (id) => Promise.resolve(id === 'closed' ? 'expired' : 'already_paid');
+    const retire = () =>
+      withTeamBillingIdentity({ db, teamId, userId: owner, provider }, (_identity, context) =>
+        context.retirePendingCheckouts(),
+      );
+    expect(await retire()).toBe(false);
+    const [remaining] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(remaining?.lifecycleWork.pendingCheckoutIds).toEqual(['payable']);
+    provider.expireCheckout = () => Promise.resolve('expired');
+    expect(await retire()).toBe(true);
+    const [cleared] = await db.select().from(teams).where(eq(teams.id, teamId));
+    expect(cleared?.lifecycleWork.pendingCheckoutIds).toEqual([]);
+  });
   it('gives admins their own billing manager identity and rejects ordinary members', async () => {
     const a = await resolve();
     const b = await resolve(admin);

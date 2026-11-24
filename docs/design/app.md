@@ -642,6 +642,10 @@ Foundations: [design system](../../design.md). Shared behavior: [component contr
 
 ### Billing benefits and recorded charges
 
+Free and Team use one Included usage bar for AI processing and meeting capture. Put the
+UTC reset and spending status with the bar. Show the internal calculation in a
+disclosure and retain infrastructure counters in the Usage breakdown.
+
 Usage and Billing share the same typed billing summary. Usage presents plan, members,
 and recorded charges in a compact summary, followed by responsive meter cards.
 Each allowance card shows usage against its allowance and the remaining amount;
@@ -757,7 +761,7 @@ and contents are disclosed in the [cookie notice](../../apps/web/src/app/cookies
 
 Platform directories expose copyable identifiers, lifecycle status, disabled timestamps, and URL-persisted sorting/filtering. Use “Disabled” for reversible team access suspension, “Deletion requested” for owner requests, and “Active-system data removed” only after verification. Owner deletion requests lead to a standalone confirmation with restoration contact details, reachable without an active team. It confirms the request, not completed deletion, and explains that only platform admins can restore access before permanent deletion begins. Permanent actions live in a danger disclosure with exact team-name confirmation and explicit consequences for every member. Admin deletion details show retries and external retention follow-up separately. UUIDs remain an administrative/support detail rather than ordinary workspace navigation.
 
-Website source management follows [the application patterns](../../docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.
+Website source management follows [the application patterns](../../docs/design/app.md); its internal measurement follows the [website capture contract](../websites.md).
 
 Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Trust audit redaction remains in force on every page.
 

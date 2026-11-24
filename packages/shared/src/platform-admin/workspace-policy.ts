@@ -440,6 +440,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'onboarding.refreshDocumentCapture': write,
   'billing.isExistingTeam': maintenanceRead,
   'billing.getAccount': maintenanceRead,
+  'billing.countActiveFullMembers': maintenanceRead,
   'billing.getCapacityUsage': maintenanceRead,
   'billing.getDashboard': maintenanceRead,
   'billing.setSpendCap': maintenanceWrite,

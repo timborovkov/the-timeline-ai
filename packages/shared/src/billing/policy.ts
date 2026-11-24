@@ -1,10 +1,23 @@
 import {
+  BILLING_EUR_PER_USD,
   FREE_ALLOWANCES,
+  FREE_MONTHLY_USAGE_CENTS,
+  OVERAGE_RATES,
   PLAN_CATALOG,
   storageChargeCents,
   type BillingMeterId,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
+
+export function freeIncludedUsageRemainingCents(meters: {
+  ai?: { nativeUnits?: number; customerChargeCents?: number } | null | undefined;
+  recall_minutes?: { nativeUnits: number } | null | undefined;
+}): number {
+  const aiCents = meters.ai?.nativeUnits ?? meters.ai?.customerChargeCents ?? 0;
+  const captureCents =
+    (meters.recall_minutes?.nativeUnits ?? 0) * OVERAGE_RATES.recallCentsPerMinute;
+  return Math.max(0, FREE_MONTHLY_USAGE_CENTS - aiCents / BILLING_EUR_PER_USD - captureCents);
+}
 
 export interface FreeAllowanceRemaining {
   aiChargeCents: number;
@@ -12,6 +25,7 @@ export interface FreeAllowanceRemaining {
   emailUnits: number;
   storageGb: number;
   acceptedSources: number;
+  includedUsageCents?: number;
 }
 
 export function freeAllowanceRemaining(meters: {
@@ -37,6 +51,18 @@ export function freeAllowanceRemaining(meters: {
   };
 }
 
+/** Keep infrastructure measurement independent of customer usage charges. */
+export function bundledInfrastructureMeter(
+  planId: BillingPlanId,
+  meterId: BillingMeterId,
+  seatBilling: boolean,
+): boolean {
+  return (
+    (planId === 'free' || seatBilling) &&
+    (meterId === 'accepted_sources' || meterId === 'storage_gb_month' || meterId === 'email_units')
+  );
+}
+
 const EXHAUSTED_FREE_ALLOWANCE_LABELS = [
   ['aiChargeCents', 'AI'],
   ['recallMinutes', 'Meeting'],
@@ -50,6 +76,9 @@ const EXHAUSTED_FREE_ALLOWANCE_LABELS = [
  * still has room. The workspace pause flag stays false until all five are gone.
  */
 export function exhaustedFreeAllowanceNotice(remaining: FreeAllowanceRemaining): string | null {
+  if (remaining.includedUsageCents !== undefined) {
+    return remaining.includedUsageCents <= 0 ? 'Included usage used up.' : null;
+  }
   const names = EXHAUSTED_FREE_ALLOWANCE_LABELS.filter(([key]) => remaining[key] <= 0).map(
     ([, label]) => label,
   );
@@ -61,6 +90,7 @@ export function exhaustedFreeAllowanceNotice(remaining: FreeAllowanceRemaining):
 
 /** True only when every Free native floor is gone — not a single exhausted meter. */
 export function allFreeAllowancesExhausted(remaining: FreeAllowanceRemaining): boolean {
+  if (remaining.includedUsageCents !== undefined) return remaining.includedUsageCents <= 0;
   return (
     remaining.aiChargeCents <= 0 &&
     remaining.recallMinutes <= 0 &&
@@ -140,7 +170,10 @@ export function costBearingPausedFromAccount(input: {
 }): boolean {
   if (!billingStateAllowsReservation(input.billingState)) return true;
   const allFreeGone = allFreeAllowancesExhausted(input.freeRemaining);
-  if (input.planId === 'free') return allFreeGone;
+  if (input.planId === 'free')
+    return input.freeRemaining.includedUsageCents === undefined
+      ? allFreeGone
+      : input.freeRemaining.includedUsageCents <= 0;
   if (input.shadowBilling || input.billingState === 'enterprise_active') return false;
   if (input.planId === 'payg' && !allFreeGone) return false;
   if (input.spendCapCents <= 0 || input.meteredSpendCents >= input.spendCapCents) return true;

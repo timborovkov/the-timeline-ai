@@ -82,7 +82,10 @@ export async function startBillingCheckout(input: {
     try {
       const checkoutResult = await withTeamBillingIdentity(
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
-        async (identity, { account: current, recordCheckout }) => {
+        async (
+          identity,
+          { account: current, db: checkoutDb, recordCheckout, retirePendingCheckouts },
+        ) => {
           if (compSuppressesPolarCharges(current)) {
             return {
               ok: false as const,
@@ -96,17 +99,30 @@ export async function startBillingCheckout(input: {
                 'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
             };
           }
-          const discountId = await checkoutDiscountId({
-            account: current,
-            submittedCode: input.discountCode,
-            provider,
-            productId,
-          });
+          const [discountId, seats] = await Promise.all([
+            checkoutDiscountId({
+              account: current,
+              submittedCode: input.discountCode,
+              provider,
+              productId,
+            }),
+            withTeam(checkoutDb, gate.active.teamId, gate.userId).billing.countActiveFullMembers(),
+          ]);
+          if (seats < 1)
+            return { ok: false as const, error: 'Team requires at least one full member.' };
+          if (!current.polarSubscriptionId && !(await retirePendingCheckouts())) {
+            return {
+              ok: false as const,
+              error:
+                'A previous checkout is still open or awaiting payment confirmation. Finish that checkout or wait for it to expire before creating another.',
+            };
+          }
           const checkout = await createPlanChangeSession({
             ...identity,
             provider,
             account: current,
             productId,
+            seats,
             externalCustomerId: gate.active.teamId,
             customerEmail: gate.email,
             successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success&checkoutTeam=${gate.active.teamId}&checkoutPlan=${plan}`,

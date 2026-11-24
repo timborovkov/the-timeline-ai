@@ -2,6 +2,7 @@ import type { BillingPresentation } from '@timeline/shared/billing';
 import {
   FREE_ALLOWANCES,
   formatEuroFromCents,
+  formatUsdFromCents,
   formatStorageGb,
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
@@ -100,6 +101,7 @@ export function BillingUsageSummary({
   planId,
   layout = 'table',
   allowancesOnly = false,
+  usdCharges = false,
   allowanceBalances,
   comped = false,
   spendCapCents,
@@ -113,6 +115,7 @@ export function BillingUsageSummary({
   planId: string;
   layout?: 'table' | 'cards';
   allowancesOnly?: boolean;
+  usdCharges?: boolean;
   allowanceBalances?: BillingPresentation['allowances'];
   comped?: boolean;
   spendCapCents?: number;
@@ -148,49 +151,25 @@ export function BillingUsageSummary({
         meter,
         nativeUnits,
         customerChargeCents,
-        allowance:
-          balance?.included ??
-          (planId === 'free' || planId === 'payg' ? allowanceLimit(meter) : null),
+        allowance: balance?.included ?? (planId === 'payg' ? allowanceLimit(meter) : null),
       };
     })
     .filter((row) => row !== null);
 
   return (
     <div className={cn('space-y-4', className)}>
-      {planId === 'payg' &&
-      !comped &&
-      spendCapCents !== undefined &&
-      meteredSpendCents !== undefined ? (
-        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-          <p>
-            Chargeable usage this month:{' '}
-            <span className="font-mono">{formatEuroFromCents(meteredSpendCents)}</span>
-          </p>
-          <p>
-            Monthly spend cap:{' '}
-            <span className="font-mono">{formatEuroFromCents(spendCapCents)}</span>
-          </p>
-        </div>
-      ) : null}
-      {!allowancesOnly && planId === 'payg' && !comped ? (
-        <p className="text-sm text-fg-muted">
-          Your monthly Free allowances are included. You pay for usage above each allowance and
-          extra members. Charges below exclude Free-plan usage; final invoices may include discounts
-          and tax.
-        </p>
-      ) : null}
-      {comped ? (
-        <p className="text-sm text-fg-muted">
-          This team is comped. Usage is tracked without Polar charges.
-        </p>
-      ) : planId !== 'free' && planId !== 'payg' ? (
-        <p className="text-sm text-fg-muted">
-          Metered charges shown before included plan credit, provider discounts and tax.
-        </p>
-      ) : null}
+      <MeteredUsageNotes
+        planId={planId}
+        comped={comped}
+        spendCapCents={spendCapCents}
+        meteredSpendCents={meteredSpendCents}
+        allowancesOnly={allowancesOnly}
+        usdCharges={usdCharges}
+      />
       {layout === 'cards' ? (
         <UsageMeterCards
           rows={rows}
+          usdCharges={usdCharges}
           comped={comped}
           includedActiveMembers={includedActiveMembers}
           additionalMemberCents={additionalMemberCents}
@@ -241,7 +220,9 @@ export function BillingUsageSummary({
                       ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))
                       : comped
                         ? '—'
-                        : formatEuroFromCents(row.customerChargeCents)}
+                        : (usdCharges ? formatUsdFromCents : formatEuroFromCents)(
+                            row.customerChargeCents,
+                          )}
                   </span>
                 </li>
               );
@@ -276,12 +257,66 @@ export function BillingUsageSummary({
   );
 }
 
+function MeteredUsageNotes({
+  planId,
+  comped,
+  spendCapCents,
+  meteredSpendCents,
+  allowancesOnly,
+  usdCharges,
+}: {
+  planId: string;
+  comped: boolean | undefined;
+  spendCapCents: number | undefined;
+  meteredSpendCents: number | undefined;
+  allowancesOnly: boolean;
+  usdCharges: boolean;
+}) {
+  return (
+    <>
+      {planId === 'payg' &&
+      !comped &&
+      spendCapCents !== undefined &&
+      meteredSpendCents !== undefined ? (
+        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+          <p>
+            Chargeable usage this month:{' '}
+            <span className="font-mono">{formatEuroFromCents(meteredSpendCents)}</span>
+          </p>
+          <p>
+            Monthly spend cap:{' '}
+            <span className="font-mono">{formatEuroFromCents(spendCapCents)}</span>
+          </p>
+        </div>
+      ) : null}
+      {!allowancesOnly && planId === 'payg' && !comped ? (
+        <p className="text-sm text-fg-muted">
+          Your monthly Free allowances are included. You pay for usage above each allowance and
+          extra members. Charges below exclude Free-plan usage; final invoices may include discounts
+          and tax.
+        </p>
+      ) : null}
+      {comped ? (
+        <p className="text-sm text-fg-muted">
+          This team is comped. Usage is tracked without Polar charges.
+        </p>
+      ) : !usdCharges && planId !== 'free' && planId !== 'payg' ? (
+        <p className="text-sm text-fg-muted">
+          Metered charges shown before included plan credit, provider discounts and tax.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function UsageMeterCards({
   rows,
+  usdCharges,
   comped,
   includedActiveMembers,
   additionalMemberCents,
 }: {
+  usdCharges: boolean;
   rows: {
     meter: BillingMeterId;
     nativeUnits: number;
@@ -334,7 +369,9 @@ function UsageMeterCards({
                 <p>
                   Meter charges:{' '}
                   <span className="font-mono text-fg">
-                    {formatEuroFromCents(row.customerChargeCents)}
+                    {(usdCharges ? formatUsdFromCents : formatEuroFromCents)(
+                      row.customerChargeCents,
+                    )}
                   </span>
                 </p>
               ) : null}

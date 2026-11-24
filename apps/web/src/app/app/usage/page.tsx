@@ -85,6 +85,7 @@ export default async function UsagePage() {
         <BillingUsageOverview summary={dashboard.presentation}>
           <BillingUsageSummary
             layout="cards"
+            usdCharges={dashboard.presentation.paidSeats !== undefined}
             planId={planId}
             allowanceBalances={dashboard.presentation.allowances}
             comped={dashboard.account.arrangement === 'comped'}
@@ -150,6 +151,7 @@ async function loadUsagePage() {
     spendCapCents: dashboard.account.spendCapCents,
     meteredSpendCents: dashboard.meteredSpendCents,
     warnPercent: dashboard.utilization.percent,
+    usesSeatBilling: Boolean(dashboard.account.teamSeatTerms),
   });
   const notice = state ? BILLING_NOTICE_TITLE[state] : null;
   const capacityUsage = canManage ? await scope.billing.getCapacityUsage() : [];

@@ -22,10 +22,13 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
+import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
+import { FULL_MEMBER_ROLES, teamSeatQuantityChange } from '#src/billing/membership.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
+import type { BillingProvider, TeamSeatSubscription } from '#src/billing/provider.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
 import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
@@ -195,11 +198,130 @@ export function expiredInviteNeedsSeat(expiresAt: Date, now = new Date()): boole
   return expiresAt.getTime() <= now.getTime();
 }
 
+function assertSeatSubscription(
+  subscription: TeamSeatSubscription,
+  expected: { subscriptionId: string; customerId: string; productId: string },
+) {
+  if (
+    subscription.id !== expected.subscriptionId ||
+    subscription.customerId !== expected.customerId ||
+    subscription.productId !== expected.productId
+  ) {
+    throw new Error('Polar Team seat subscription identity mismatch.');
+  }
+}
+
+async function reconcileSeatSubscription(input: {
+  db: Db;
+  teamId: string;
+  account: typeof teamBillingAccounts.$inferSelect;
+  active: number;
+  provider: BillingProvider | null;
+  mode: 'activate' | 'maintenance';
+}) {
+  const { account, provider } = input;
+  if (account.planId !== 'team' || !account.teamSeatTerms || account.arrangement !== 'standard')
+    return;
+  if (account.billingState !== 'team_active') {
+    if (input.mode === 'activate')
+      throw new BillingAdmissionError(
+        'usage_limit_reached',
+        'Team seats are unavailable while billing is paused.',
+      );
+    return;
+  }
+  const subscriptionId = account.polarSubscriptionId;
+  const productId = account.polarProductId;
+  if (
+    !provider?.getTeamSeatSubscription ||
+    !provider.updateTeamSeatSubscription ||
+    !subscriptionId ||
+    !productId
+  )
+    throw new BillingAdmissionError('usage_limit_reached', 'Team seats could not be verified.');
+  if (input.mode === 'maintenance' && account.cancelEffectiveAt) return;
+  const customerId = await assertStoredPolarIdentity(input.db, input.teamId, provider);
+  const expected = { subscriptionId, productId, customerId };
+  const subscription = await provider.getTeamSeatSubscription(subscriptionId);
+  assertSeatSubscription(subscription, expected);
+  const desired = Math.max(1, input.active);
+  if (input.mode === 'maintenance' && desired > subscription.seats) {
+    // Workspaces can change while checkout is open. The customer approved the
+    // checkout quantity, so reconciliation must not buy the difference.
+    throw new BillingAdmissionError(
+      'usage_limit_reached',
+      'The full-member roster exceeds the confirmed seat quantity.',
+    );
+  }
+  const proration = teamSeatQuantityChange({
+    desired,
+    current: subscription.seats,
+    pending: subscription.pendingSeats,
+    activating: input.mode === 'activate',
+  });
+  if (!proration) return;
+  const updated = await provider.updateTeamSeatSubscription({
+    subscriptionId,
+    seats: desired,
+    proration,
+  });
+  assertSeatSubscription(updated, expected);
+  if (input.mode === 'activate' && updated.seats < desired) {
+    throw new BillingAdmissionError(
+      'usage_limit_reached',
+      'The additional Team seat could not be confirmed.',
+    );
+  }
+}
+
+export async function reconcileTeamPaidSeats(input: {
+  db: Db;
+  teamId: string;
+  provider: BillingProvider;
+}) {
+  await input.db.transaction(async (tx) => {
+    const db = tx as unknown as Db;
+    await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 4))`);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, input.teamId))
+      .limit(1)
+      .for('update');
+    if (!account?.teamSeatTerms || account.planId !== 'team') return;
+    const [team] = await db
+      .select({ disabledAt: teams.disabledAt, deletionStartedAt: teams.deletionStartedAt })
+      .from(teams)
+      .where(eq(teams.id, input.teamId))
+      .limit(1);
+    if (!team || team.disabledAt || team.deletionStartedAt) return;
+    const [memberRow] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, input.teamId),
+          isNull(teamMembers.removedAt),
+          inArray(teamMembers.role, FULL_MEMBER_ROLES),
+        ),
+      );
+    await reconcileSeatSubscription({
+      ...input,
+      db,
+      account,
+      active: memberRow?.n ?? 0,
+      mode: 'maintenance',
+    });
+  });
+}
+
 export async function assertTeamMemberSeatCapacity(input: {
   db: Db;
   teamId: string;
   additionalSeats?: number;
   includePendingInvites?: boolean;
+  /** Authorized membership acceptance or promotion, within its transaction. */
+  acquirePaidSeat?: boolean;
 }): Promise<void> {
   const additionalSeats = input.additionalSeats ?? 1;
   if (additionalSeats <= 0) return;
@@ -218,7 +340,13 @@ export async function assertTeamMemberSeatCapacity(input: {
   const [memberRow] = await input.db
     .select({ n: sql<number>`count(*)::int` })
     .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, input.teamId), isNull(teamMembers.removedAt)));
+    .where(
+      and(
+        eq(teamMembers.teamId, input.teamId),
+        isNull(teamMembers.removedAt),
+        inArray(teamMembers.role, FULL_MEMBER_ROLES),
+      ),
+    );
   const includePendingInvites = input.includePendingInvites ?? true;
   let pendingInvites = 0;
   if (includePendingInvites) {
@@ -228,6 +356,7 @@ export async function assertTeamMemberSeatCapacity(input: {
       .where(
         and(
           eq(teamInvites.teamId, input.teamId),
+          inArray(teamInvites.role, FULL_MEMBER_ROLES),
           isNull(teamInvites.acceptedAt),
           isNull(teamInvites.revokedAt),
           sql`${teamInvites.expiresAt} > now()`,
@@ -240,6 +369,24 @@ export async function assertTeamMemberSeatCapacity(input: {
       admissionCodeForPlan(entitlementsPlanId),
       'Active member limit reached for this plan',
     );
+  }
+  if (input.acquirePaidSeat && account.teamSeatTerms) {
+    const [locked] = await input.db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, input.teamId))
+      .limit(1)
+      .for('update');
+    if (!locked)
+      throw new BillingAdmissionError('usage_limit_reached', 'Team seats could not be verified.');
+    await reconcileSeatSubscription({
+      db: input.db,
+      teamId: input.teamId,
+      account: locked,
+      active: (memberRow?.n ?? 0) + additionalSeats,
+      provider: createPolarBillingProvider(),
+      mode: 'activate',
+    });
   }
 }
 
@@ -305,7 +452,13 @@ export async function getTeamCapacityUsage(input: {
       input.db
         .select({ n: sql<number>`count(*)::int` })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, input.teamId), isNull(teamMembers.removedAt)))
+        .where(
+          and(
+            eq(teamMembers.teamId, input.teamId),
+            isNull(teamMembers.removedAt),
+            inArray(teamMembers.role, FULL_MEMBER_ROLES),
+          ),
+        )
         .then((rows) => rows[0]),
       input.db
         .select({ n: sql<number>`count(*)::int` })
@@ -313,6 +466,7 @@ export async function getTeamCapacityUsage(input: {
         .where(
           and(
             eq(teamInvites.teamId, input.teamId),
+            inArray(teamInvites.role, FULL_MEMBER_ROLES),
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
             sql`${teamInvites.expiresAt} > now()`,

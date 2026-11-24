@@ -485,6 +485,56 @@ describe('Polar managed checkout discounts', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('sends exactly the full seat quantity after validating the monthly USD product identity', async () => {
+    const checkout = vi.fn(async (_url: URL | string, init?: RequestInit) => {
+      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '{}')).toMatchObject({
+        products: [checkoutInput.productId],
+        customer_id: checkoutInput.customerId,
+        seats: 3,
+      });
+      return jsonResponse({ id: 'checkout-synthetic', url: 'https://checkout.test' });
+    });
+    const product = {
+      id: checkoutInput.productId,
+      organization_id: 'org-synthetic',
+      is_archived: false,
+      recurring_interval: 'month',
+      recurring_interval_count: 1,
+      prices: [
+        {
+          is_archived: false,
+          amount_type: 'seat_based',
+          price_currency: 'usd',
+          tax_behavior: 'exclusive',
+          seat_tiers: {
+            seat_tier_type: 'volume',
+            tiers: [{ min_seats: 1, max_seats: null, price_per_seat: 1000 }],
+          },
+        },
+      ],
+    };
+    globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+      if (String(url).includes('/customers/'))
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      if (String(url).includes('/products/')) return jsonResponse(product);
+      return checkout(url, init);
+    }) as unknown as typeof fetch;
+    const provider = discountProvider();
+    expect(await provider.createCheckoutSession({ ...checkoutInput, seats: 3 })).toMatchObject({
+      id: 'checkout-synthetic',
+    });
+    product.organization_id = 'another-organization';
+    await expect(provider.createCheckoutSession({ ...checkoutInput, seats: 3 })).rejects.toThrow(
+      'expected monthly USD seat pricing',
+    );
+    expect(checkout).toHaveBeenCalledTimes(1);
+  });
+
   it('does not need discount configuration or catalog access for no-code checkout', async () => {
     const fetchMock = vi.fn(async (_url: URL | string, init?: RequestInit) => {
       expect(

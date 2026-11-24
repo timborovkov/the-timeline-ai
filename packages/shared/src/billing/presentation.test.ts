@@ -86,24 +86,28 @@ describe('billing presentation', () => {
     expect(result.credit).toMatchObject({ totalCents: 25000, usedCents: 0, remainingCents: 25000 });
     expect(result.recurringFeeCents).toBe(12345);
   });
-  it('keeps Free/PAYG allowances separate, including zero and exhausted meters', () => {
-    for (const planId of ['free', 'payg'] as const) {
-      const result = summary({
-        account: { ...account, planId, includedDiscountRemainingCents: 0 },
-        meters: { ai: { nativeUnits: 500 }, recall_minutes: { nativeUnits: 20 } },
-        settlements: [],
-      });
-      expect(result.allowances).toHaveLength(5);
-      expect(result.allowances.find((x) => x.meter === 'ai')).toMatchObject({
-        included: 200,
-        used: 500,
-        remaining: 0,
-      });
-      expect(result.allowances.find((x) => x.meter === 'recall_minutes')?.remaining).toBe(40);
-      expect(result.allowances.find((x) => x.meter === 'email_units')?.remaining).toBe(500);
-      expect(result.credit.status).toBe('not_applicable');
-      expect(result.charges.amounts?.totalCents).toBe(0);
-    }
+  it('shows one Free pool and keeps the legacy PAYG allowances separate', () => {
+    const meters = { ai: { nativeUnits: 184 }, recall_minutes: { nativeUnits: 20 } };
+    const free = summary({
+      account: { ...account, planId: 'free', includedDiscountRemainingCents: 0 },
+      meters,
+      settlements: [],
+    });
+    expect(free.allowances).toEqual([]);
+    expect(free.includedUsage).toEqual({
+      totalCents: 400,
+      remainingCents: 140,
+      resetAt: free.calendarPeriod.end,
+    });
+
+    const payg = summary({
+      account: { ...account, planId: 'payg', includedDiscountRemainingCents: 0 },
+      meters,
+      settlements: [],
+    });
+    expect(payg.includedUsage).toBeUndefined();
+    expect(payg.allowances).toHaveLength(5);
+    expect(payg.allowances.find((row) => row.meter === 'recall_minutes')?.remaining).toBe(40);
   });
   it('marks missing and elapsed periods as updating without resetting balances', () => {
     for (const periodEndsAt of [null, new Date('2026-10-19')]) {
@@ -232,7 +236,7 @@ it('labels Free remaining allowances and keeps cap warnings separate from credit
     freeRemaining: freeAllowanceRemaining({}),
   });
   applyBillingPresentationToSidebar(base, free);
-  expect(base.detailLabel).toBe('0% of most-used allowance');
+  expect(base.detailLabel).toBe('0% of Included usage');
   expect(base.href).toBe('/app/usage');
   const capped = summary({ account: { ...account, spendCapCents: 0 } });
   applyBillingPresentationToSidebar(base, capped);

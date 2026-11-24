@@ -131,8 +131,6 @@ retention/DPA evidence and operational monitoring have been checked. Deployment
 and legal approval are separate from a source change. Material terms/privacy
 updates use the shared legal versions and require renewed presentation.
 
-The public pricing calculator reuses the multiplier and billing preview. It uses
-30 daily or five weekly scans for a 30-day estimate; manual scans are explicit.
 Crawling is counted once in source usage. See [billing](architecture/billing.md),
 [provider register](providers.md), [security gaps](security-gaps.md), and
 [manual support deletion](setup/manual-support-deletion.md).

@@ -25,6 +25,7 @@ export interface CreateCheckoutInput {
   discountId?: string;
   /** Custom-price amount in cents. Polar ignores this on a fixed price. */
   amount?: number;
+  seats?: number;
 }
 
 export interface UpdateSubscriptionInput {
@@ -42,6 +43,14 @@ export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal
  * `still_open` means the session is still payable, so a second link must wait.
  */
 export type ExpireCheckoutResult = 'expired' | 'already_paid' | 'still_open';
+
+export interface TeamSeatSubscription {
+  id: string;
+  customerId: string;
+  productId: string;
+  seats: number;
+  pendingSeats: number | null;
+}
 
 export interface BillingProvider {
   identity?: PolarIdentityApi;
@@ -69,6 +78,12 @@ export interface BillingProvider {
     externalCustomerId: string;
     returnUrl: string;
   }): Promise<{ url: string }>;
+  getTeamSeatSubscription?(subscriptionId: string): Promise<TeamSeatSubscription>;
+  updateTeamSeatSubscription?(input: {
+    subscriptionId: string;
+    seats: number;
+    proration: 'invoice' | 'next_period';
+  }): Promise<TeamSeatSubscription>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
   /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
   cancelSubscriptionRenewal(subscriptionId: string, customerId: string): Promise<void>;

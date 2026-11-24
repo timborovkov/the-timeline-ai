@@ -1,5 +1,10 @@
 import type { BillingPresentation, BillingPeriod, RecordedCharges } from '@timeline/shared/billing';
-import { formatEuroFromCents, PLAN_CATALOG } from '@timeline/shared/billing/catalog';
+import {
+  formatEuroFromCents,
+  formatUsdFromCents,
+  PLAN_CATALOG,
+  TEAM_MONTHLY_USAGE_PER_SEAT_CENTS,
+} from '@timeline/shared/billing/catalog';
 import type { ReactNode } from 'react';
 
 function billingDate(value: string): string {
@@ -18,15 +23,24 @@ function Period({ value }: { value: BillingPeriod }) {
     </p>
   );
 }
-function Money({ value }: { value: number | null }) {
+function Money({ value, usd = false }: { value: number | null; usd?: boolean }) {
   return (
-    <span className="font-mono">{value === null ? 'Custom' : formatEuroFromCents(value)}</span>
+    <span className="font-mono">
+      {value === null ? 'Custom' : usd ? formatUsdFromCents(value) : formatEuroFromCents(value)}
+    </span>
   );
 }
 export function BillingBenefitsSummary({ summary }: { summary: BillingPresentation }) {
-  const { credit, charges, cap, members } = summary;
+  const { credit, charges, cap } = summary;
   return (
     <div className="space-y-6" data-billing-benefits>
+      {summary.includedUsage ? <IncludedUsageSummary summary={summary} /> : null}
+      {summary.allowances.length > 0 ? (
+        <p className="text-sm text-fg-muted">
+          Monthly allowances reset {billingDate(summary.calendarPeriod.end)} (UTC). Each meter has
+          its own allowance.
+        </p>
+      ) : null}
       {summary.allowances.length > 0 ? (
         <p className="text-sm text-fg-muted">
           Monthly allowances reset {billingDate(summary.calendarPeriod.end)} (UTC). Each meter has
@@ -37,23 +51,7 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
       <div className="rounded-lg bg-surface p-5">
         <BillingRecordedCharges charges={charges} summary={summary} credit={credit} />
       </div>
-      <section
-        className="space-y-2 rounded-lg bg-surface p-5 text-sm"
-        aria-label="Included members"
-      >
-        <h3 className="text-sm font-medium">Members</h3>
-        <p>
-          Members: {members.current} current · {members.included ?? 'Custom'} included
-        </p>
-        {summary.planId === 'free' ? (
-          <p className="text-fg-muted">Upgrade to add members above the Free plan limit.</p>
-        ) : (
-          <p className="text-fg-muted">
-            Extra member price: <Money value={members.additionalMemberCents} />
-            {members.additionalMemberCents === null ? '' : ' per member / month, prorated'}
-          </p>
-        )}
-      </section>
+      <BillingMembersSummary summary={summary} />
       {summary.planId !== 'free' && !cap.applicable ? (
         <p className="text-sm text-fg-muted">
           {cap.exemption === 'enterprise_contract'
@@ -61,10 +59,86 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
             : 'Spending limit tracking is informational; the local cap is not currently enforced.'}
         </p>
       ) : null}
-      {summary.planId !== 'free' && cap.applicable ? (
+      {summary.planId !== 'free' && summary.paidSeats === undefined && cap.applicable ? (
         <BillingSpendCapSummary cap={cap} summary={summary} />
       ) : null}
     </div>
+  );
+}
+
+function BillingMembersSummary({ summary }: { summary: BillingPresentation }) {
+  const { members, paidSeats } = summary;
+  return (
+    <section className="space-y-2 rounded-lg bg-surface p-5 text-sm" aria-label="Included members">
+      <h3 className="text-sm font-medium">Members</h3>
+      <p>
+        {paidSeats === undefined
+          ? `Members: ${members.current} current · ${members.included ?? 'Custom'} included`
+          : `${members.current} full members · ${paidSeats} paid seats`}
+      </p>
+      {summary.planId === 'free' ? (
+        <p className="text-fg-muted">Upgrade to add members above the Free plan limit.</p>
+      ) : paidSeats === undefined ? (
+        <p className="text-fg-muted">
+          Extra member price: <Money value={members.additionalMemberCents} />
+          {members.additionalMemberCents === null ? '' : ' per member / month, prorated'}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+export function IncludedUsageSummary({ summary }: { summary: BillingPresentation }) {
+  const usage = summary.includedUsage;
+  if (!usage) return null;
+  const isTeam = summary.paidSeats !== undefined;
+  const percent =
+    usage.remainingCents === null
+      ? null
+      : Math.round((1 - usage.remainingCents / usage.totalCents) * 100);
+  const paused =
+    usage.remainingCents === 0 && (!isTeam || summary.cap.usedCents >= summary.cap.limitCents);
+  return (
+    <section className="space-y-2 rounded-lg bg-surface p-5 text-sm" aria-label="Included usage">
+      <h3 className="font-medium">Included usage</h3>
+      {percent === null ? (
+        <p>Waiting for billing renewal confirmation.</p>
+      ) : (
+        <>
+          <div
+            role="progressbar"
+            aria-label="Included usage"
+            aria-valuenow={percent}
+            className="h-1 overflow-hidden rounded-sm bg-border"
+          >
+            <div className="h-full bg-fg-muted" style={{ width: `${percent}%` }} />
+          </div>
+          <p>
+            {percent}% used{usage.resetAt ? ` · Resets ${billingDate(usage.resetAt)} (UTC)` : ''}
+          </p>
+        </>
+      )}
+      <p className="text-fg-muted">
+        {summary.cap.limitCents > 0 && isTeam
+          ? `Additional usage this month: ${formatUsdFromCents(summary.cap.usedCents)} of ${formatUsdFromCents(summary.cap.limitCents)} cap.`
+          : 'Additional spending is off.'}
+      </p>
+      {paused ? (
+        <p>
+          New AI processing and meeting capture are paused. Your existing records are available.
+        </p>
+      ) : null}
+      <details>
+        <summary className="cursor-pointer">How usage is calculated</summary>
+        <p className="mt-2 text-fg-muted">
+          {isTeam
+            ? `Each paid seat contributes ${formatUsdFromCents(TEAM_MONTHLY_USAGE_PER_SEAT_CENTS)} in monthly usage at internal rates.`
+            : `Free includes ${formatUsdFromCents(usage.totalCents)} in monthly usage at internal rates.`}{' '}
+          AI uses four times reported model cost. Native meeting capture uses three cents per
+          minute. Background analysis uses the same allowance.
+        </p>
+      </details>
+    </section>
   );
 }
 
@@ -187,7 +261,12 @@ function BillingRecordedCharges({
         invoice.
       </p>
       <p className="text-sm">
-        Recurring plan fee: <Money value={summary.recurringFeeCents} />
+        Recurring plan fee:{' '}
+        {summary.paidSeats !== undefined && summary.recurringFeeCents !== null ? (
+          formatUsdFromCents(summary.recurringFeeCents)
+        ) : (
+          <Money value={summary.recurringFeeCents} />
+        )}
         {summary.recurringFeeCents === null ? '' : ' / month'}
       </p>
     </section>
@@ -209,7 +288,7 @@ function RecordedChargeAmounts({
         <div className="flex flex-wrap justify-between gap-2">
           <dt>Usage before included credit</dt>
           <dd>
-            <Money value={amounts.usageCents} />
+            <Money usd={summary.paidSeats !== undefined} value={amounts.usageCents} />
           </dd>
         </div>
       ) : null}
@@ -217,7 +296,7 @@ function RecordedChargeAmounts({
         <div className="flex flex-wrap justify-between gap-2">
           <dt>Included credit applied</dt>
           <dd>
-            −<Money value={amounts.creditAppliedCents} />
+            −<Money usd={summary.paidSeats !== undefined} value={amounts.creditAppliedCents} />
           </dd>
         </div>
       ) : null}
@@ -230,19 +309,19 @@ function RecordedChargeAmounts({
               : 'Usage after included credit'}
         </dt>
         <dd>
-          <Money value={amounts.usageAfterCreditCents} />
+          <Money usd={summary.paidSeats !== undefined} value={amounts.usageAfterCreditCents} />
         </dd>
       </div>
       <div className="flex flex-wrap justify-between gap-2">
         <dt>Extra members</dt>
         <dd>
-          <Money value={amounts.extraMemberCents} />
+          <Money usd={summary.paidSeats !== undefined} value={amounts.extraMemberCents} />
         </dd>
       </div>
       <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-2 font-medium">
         <dt>Total recorded usage charges</dt>
         <dd>
-          <Money value={amounts.totalCents} />
+          <Money usd={summary.paidSeats !== undefined} value={amounts.totalCents} />
         </dd>
       </div>
     </dl>
@@ -259,7 +338,8 @@ export function BillingUsageOverview({
   return (
     <div className="space-y-8">
       <UsagePlanSummary summary={summary} />
-      {summary.credit.status !== 'not_applicable' ? (
+      <IncludedUsageSummary summary={summary} />
+      {summary.credit.status !== 'not_applicable' && !summary.includedUsage ? (
         <IncludedUsageCredit credit={summary.credit} />
       ) : null}
       <section aria-labelledby="usage-meters-heading" className="space-y-4">
@@ -275,7 +355,7 @@ export function BillingUsageOverview({
         </div>
         {children}
       </section>
-      {summary.planId !== 'free' && summary.cap.applicable ? (
+      {summary.planId !== 'free' && summary.paidSeats === undefined && summary.cap.applicable ? (
         <BillingSpendCapSummary cap={summary.cap} summary={summary} />
       ) : null}
       <details className="group rounded-lg bg-surface p-5">
@@ -311,29 +391,15 @@ function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
           {summary.comped ? ' · Comped' : ''}
         </dd>
         <dd className="text-xs text-fg-muted">
-          Plan fee: <Money value={summary.recurringFeeCents} />
+          Plan fee:{' '}
+          <Money
+            usd={summary.paidSeats !== undefined || summary.planId === 'free'}
+            value={summary.recurringFeeCents}
+          />
           {summary.recurringFeeCents === null ? '' : ' / month'}
         </dd>
       </div>
-      <div className="space-y-2">
-        <dt className="text-xs text-fg-muted">Members</dt>
-        <dd className="font-mono text-xl">
-          {summary.members.current}
-          <span className="ml-2 font-sans text-sm font-normal text-fg-muted">
-            / {summary.members.included ?? 'Custom'} included
-          </span>
-        </dd>
-        <dd className="text-xs text-fg-muted">
-          {summary.planId === 'free' ? (
-            'Upgrade to add more members.'
-          ) : (
-            <>
-              Extra member: <Money value={summary.members.additionalMemberCents} />
-              {summary.members.additionalMemberCents === null ? '' : ' / month, prorated'}
-            </>
-          )}
-        </dd>
-      </div>
+      <UsageMemberCount summary={summary} />
       <div className="space-y-2">
         <dt className="text-xs text-fg-muted">Recorded usage charges</dt>
         <dd
@@ -342,7 +408,10 @@ function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
           }
         >
           {summary.charges.status === 'available' && summary.charges.amounts ? (
-            <Money value={summary.charges.amounts.totalCents} />
+            <Money
+              usd={summary.paidSeats !== undefined}
+              value={summary.charges.amounts.totalCents}
+            />
           ) : summary.charges.status === 'updating' ? (
             'Updating'
           ) : (
@@ -352,5 +421,31 @@ function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
         <dd className="text-xs text-fg-muted">Excludes plan fee, adjustments and tax.</dd>
       </div>
     </dl>
+  );
+}
+
+function UsageMemberCount({ summary }: { summary: BillingPresentation }) {
+  return (
+    <div className="space-y-2">
+      <dt className="text-xs text-fg-muted">Members</dt>
+      <dd className="font-mono text-xl">
+        {summary.members.current}
+        <span className="ml-2 font-sans text-sm font-normal text-fg-muted">
+          {summary.paidSeats !== undefined
+            ? `full members · ${summary.paidSeats} paid seats`
+            : `/ ${summary.members.included ?? 'Custom'} included`}
+        </span>
+      </dd>
+      <dd className="text-xs text-fg-muted">
+        {summary.planId === 'free' ? (
+          'Upgrade to add more members.'
+        ) : summary.paidSeats !== undefined ? null : (
+          <>
+            Extra member: <Money value={summary.members.additionalMemberCents} />
+            {summary.members.additionalMemberCents === null ? '' : ' / month, prorated'}
+          </>
+        )}
+      </dd>
+    </div>
   );
 }

@@ -13,6 +13,7 @@ import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
+import { applyConfirmedSeatQuantity } from '#src/billing/membership.js';
 import {
   assertPriceOverride,
   pendingEnterpriseTermsAfterActivation,
@@ -35,6 +36,10 @@ export interface PolarWebhookPayload {
     status?: string;
     product_id?: string;
     amount?: number;
+    currency?: string;
+    seats?: number | null;
+    recurring_interval?: string;
+    recurring_interval_count?: number;
     refunded_amount?: number;
     refundedAmount?: number;
     current_period_start?: string | number;
@@ -565,6 +570,12 @@ async function upsertPaidSubscription(input: {
   compedIncoming?: CompedIncomingSubscription;
 }> {
   return input.db.transaction(async (tx) => {
+    // Checkout creation and lifecycle operations take the workspace lock first.
+    const [workspace] = await tx
+      .select({ lifecycleWork: teams.lifecycleWork })
+      .from(teams)
+      .where(eq(teams.id, input.teamId))
+      .for('update');
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
     if (existing?.arrangement === 'comped') {
       return recordCompedIncomingSubscription(tx as unknown as Db, existing, input.data);
@@ -573,6 +584,15 @@ async function upsertPaidSubscription(input: {
     const trackedSubscriptionId = liveTrackedSubscriptionId(existing, polarSubscriptionId);
     const existingEnterprise =
       existing?.planId === 'enterprise' || existing?.billingState === 'enterprise_active';
+    if (input.plan === 'team' && trackedSubscriptionId && polarSubscriptionId) {
+      return {
+        applied: false,
+        duplicate: {
+          keptSubscriptionId: trackedSubscriptionId,
+          extraSubscriptionId: polarSubscriptionId,
+        },
+      };
+    }
     if (existingEnterprise && input.plan !== 'enterprise') {
       if (trackedSubscriptionId && polarSubscriptionId) {
         return {
@@ -624,7 +644,7 @@ async function upsertPaidSubscription(input: {
       outstandingDebtCents: 0,
       preserveLocalFreeze: true,
     });
-    const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
+    const catalogIncluded = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const now = new Date();
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
@@ -641,6 +661,53 @@ async function upsertPaidSubscription(input: {
       incomingEndsAt: period.periodEndsAt,
       now,
     });
+    const isTeamSeatSubscription =
+      input.plan === 'team' &&
+      (typeof input.data?.currency === 'string' ||
+        typeof input.data?.seats === 'number' ||
+        Boolean(existing?.teamSeatTerms));
+    const seats = input.data?.seats;
+    if (
+      isTeamSeatSubscription &&
+      (input.data?.currency?.toLowerCase() !== 'usd' ||
+        input.data.recurring_interval !== 'month' ||
+        input.data.recurring_interval_count !== 1 ||
+        typeof seats !== 'number' ||
+        !Number.isSafeInteger(seats) ||
+        seats < 1 ||
+        seats > 1000 ||
+        !period.periodStartedAt ||
+        !period.periodEndsAt ||
+        period.periodEndsAt <= period.periodStartedAt)
+    )
+      return { applied: false };
+    if (
+      isTeamSeatSubscription &&
+      existing?.teamSeatTerms &&
+      existing.periodStartedAt &&
+      period.periodStartedAt &&
+      period.periodStartedAt < existing.periodStartedAt
+    ) {
+      return { applied: false };
+    }
+    const priorSeatTerms = resetDiscount ? null : (existing?.teamSeatTerms ?? null);
+    const seatGrant =
+      isTeamSeatSubscription &&
+      typeof seats === 'number' &&
+      period.periodStartedAt &&
+      period.periodEndsAt
+        ? applyConfirmedSeatQuantity({
+            prior: priorSeatTerms,
+            paidSeats: seats,
+            periodStart: period.periodStartedAt,
+            periodEnd: period.periodEndsAt,
+            confirmedAt: polarEventModifiedAt(input.data) ?? now,
+          })
+        : null;
+    const included = seatGrant
+      ? (priorSeatTerms ? (existing?.includedDiscountRemainingCents ?? 0) : 0) +
+        seatGrant.grantCents
+      : catalogIncluded;
     const polarEventModifiedAtValue =
       polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
     const scheduledCancel =
@@ -655,7 +722,8 @@ async function upsertPaidSubscription(input: {
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
-        spendCapCents: PLAN_CATALOG[input.plan].defaultSpendCapCents,
+        spendCapCents: seatGrant ? 0 : PLAN_CATALOG[input.plan].defaultSpendCapCents,
+        ...(seatGrant ? { teamSeatTerms: seatGrant.terms } : {}),
         includedDiscountRemainingCents: included,
         periodStartedAt,
         ...(periodEndsAt ? { periodEndsAt } : {}),
@@ -675,13 +743,16 @@ async function upsertPaidSubscription(input: {
           periodStartedAt,
           ...(periodEndsAt ? { periodEndsAt } : {}),
           ...scheduledCancel,
-          ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
+          ...(resetDiscount || seatGrant ? { includedDiscountRemainingCents: included } : {}),
+          teamSeatTerms: seatGrant?.terms ?? null,
           spendCapCents:
             pending?.spendCapCents ??
-            spendCapCentsForPaidActivation({
-              existing,
-              plan: input.plan,
-            }),
+            (seatGrant && !existing?.teamSeatTerms
+              ? 0
+              : spendCapCentsForPaidActivation({
+                  existing,
+                  plan: input.plan,
+                })),
           ...(input.plan === 'enterprise' ? {} : { enterprisePlatformFeeCents: null }),
           ...(activatedPricing
             ? {
@@ -697,6 +768,23 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
+    if (
+      input.plan === 'team' &&
+      checkoutId &&
+      workspace?.lifecycleWork.pendingCheckoutIds?.includes(checkoutId)
+    ) {
+      await tx
+        .update(teams)
+        .set({
+          lifecycleWork: {
+            ...workspace.lifecycleWork,
+            pendingCheckoutIds: workspace.lifecycleWork.pendingCheckoutIds.filter(
+              (id) => id !== checkoutId,
+            ),
+          },
+        })
+        .where(eq(teams.id, input.teamId));
+    }
     await recordBillingPlan(
       tx as unknown as Db,
       input.teamId,

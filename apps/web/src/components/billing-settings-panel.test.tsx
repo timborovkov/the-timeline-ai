@@ -115,7 +115,7 @@ describe('BillingSettingsPanel', () => {
     });
     const view = render(panelElement());
     fireEvent.change(view.getByLabelText('Promo code'), { target: { value: 'SYNTHETIC' } });
-    fireEvent.click(view.getByText('Team · €49/mo'));
+    fireEvent.click(view.getByText('Team · $10 per member / month'));
     await waitFor(() => {
       expect(startBillingCheckout).toHaveBeenCalledWith({
         plan: 'team',
@@ -138,7 +138,8 @@ describe('BillingSettingsPanel', () => {
   it('offers a plan change without collection essays', () => {
     const html = panel();
     expect(html).toContain('Change plan');
-    expect(html).toContain('Pay as you go');
+    expect(html).toContain('Team · $10 per member / month');
+    expect(html).not.toContain('Pay as you go');
     expect(html).toContain('Charges recorded so far');
     expect(html).not.toContain('Next invoice');
     expect(html).toContain('href="/pricing"');
@@ -150,16 +151,10 @@ describe('BillingSettingsPanel', () => {
     expect(html).not.toContain('Wallet');
   });
 
-  it('keeps checkout available for the current plan until a Polar subscription exists', () => {
-    const open = panel({ planId: 'payg', planName: 'Pay as you go', hasPolarSubscription: false });
-    expect(planButton(open, 'Pay as you go')).not.toContain('disabled=""');
-    const subscribed = panel({
-      planId: 'payg',
-      planName: 'Pay as you go',
-      hasPolarSubscription: true,
-    });
-    expect(planButton(subscribed, 'Pay as you go')).toContain('disabled=""');
-    expect(planButton(subscribed, 'Team · €49/mo')).not.toContain('disabled=""');
+  it('offers checkout from Free and payment management for an active Team subscription', () => {
+    expect(planButton(panel(), 'Team · $10 per member / month')).not.toContain('disabled=""');
+    const subscribed = panel({ planId: 'team', planName: 'Team', hasPolarSubscription: true });
+    expect(subscribed).not.toContain('Change plan');
     expect(subscribed).toContain('Manage payment');
   });
 
@@ -210,7 +205,7 @@ describe('BillingSettingsPanel', () => {
     });
     expect(html).toContain('data-enterprise-subscription="pending"');
     expect(html).toContain('Subscription pending');
-    expect(html).toContain('€2,500');
+    expect(html).toContain('$2,500');
     expect(html).toContain('Charges recorded so far');
     expect(html).not.toContain('Next invoice');
     expect(html).not.toContain('>Pay as you go<');
@@ -367,9 +362,11 @@ it('sends a verification request and shows confirmation', async () => {
 });
 
 it('does not treat a checkout return hint as activation or offer another checkout', () => {
-  const view = render(panelElement({ checkoutReturned: true, checkoutPlan: 'payg' }));
+  const view = render(panelElement({ checkoutReturned: true, checkoutPlan: 'team' }));
   expect(view.getByRole('status').textContent).toContain('Waiting for your plan');
-  expect(view.getByRole('button', { name: 'Pay as you go' }).hasAttribute('disabled')).toBe(true);
+  expect(
+    view.getByRole('button', { name: 'Team · $10 per member / month' }).hasAttribute('disabled'),
+  ).toBe(true);
 });
 
 it('confirms the requested plan only after its active subscription is persisted', () => {

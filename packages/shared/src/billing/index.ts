@@ -13,6 +13,7 @@ export * from '#src/billing/alerts.js';
 export * from '#src/billing/context.js';
 export * from '#src/billing/errors.js';
 export * from '#src/billing/capacity.js';
+export * from '#src/billing/membership.js';
 export * from '#src/billing/runtime.js';
 export * from '#src/billing/preview.js';
 export * from '#src/billing/operator.js';

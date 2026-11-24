@@ -24,9 +24,9 @@ describe('parseSignupPlan', () => {
   });
 
   it('exposes only paid self-serve plans for billing continuation', () => {
-    expect(paidSignupPlan('payg')).toBe('payg');
+    expect(paidSignupPlan('payg')).toBeUndefined();
     expect(paidSignupPlan('team')).toBe('team');
-    expect(paidSignupPlan('business')).toBe('business');
+    expect(paidSignupPlan('business')).toBeUndefined();
     expect(paidSignupPlan('free')).toBeUndefined();
     expect(paidSignupPlan('enterprise')).toBeUndefined();
   });
@@ -49,16 +49,16 @@ describe('signupPlanCopy', () => {
       expect(copy.planId).toBe(planId);
       expect(copy.name.length).toBeGreaterThan(0);
       expect(copy.subtitle.length).toBeGreaterThan(0);
-      expect(copy.includes.length).toBeGreaterThanOrEqual(3);
+      expect(copy.includes.length).toBeGreaterThanOrEqual(2);
       expect(copy.billingStarts.toLowerCase()).not.toContain('trial');
       expect(copy.billingStarts.toLowerCase()).not.toMatch(/automatically charg/);
       expect(copy.reviewWhere).toMatch(/Team settings → Billing/);
       if (planId === 'free') {
         expect(copy.subtitle).toMatch(/no card required/i);
-        expect(copy.billingStarts).toMatch(/does not charge you/i);
+        expect(copy.billingStarts).toMatch(/requires no payment method/i);
       } else {
-        expect(copy.subtitle).toMatch(/does not charge you/i);
-        expect(copy.billingStarts).toMatch(/Polar checkout/i);
+        expect(copy.subtitle).toMatch(/starting with one/i);
+        expect(copy.billingStarts).toMatch(/complete checkout/i);
         expect(copy.reviewWhere).toContain(copy.name);
       }
     },
@@ -66,12 +66,12 @@ describe('signupPlanCopy', () => {
 
   it('keeps Free and Team includes aligned with the pricing catalog', () => {
     const free = signupPlanCopy('free');
-    expect(free.includes[0]).toBe('3 included members');
-    expect(free.includes.some((line) => /Stops at your allowance/i.test(line))).toBe(true);
+    expect(free.includes[0]).toBe('Up to 3 full members');
+    expect(free.includes[1]).toContain('native meeting capture');
 
     const team = signupPlanCopy('team');
-    expect(team.includes[0]).toBe('25 included members');
-    expect(team.includes.some((line) => line.includes('€60'))).toBe(true);
-    expect(team.subtitle).toMatch(/€49/);
+    expect(team.includes[0]).toContain('shared Included usage');
+    expect(team.includes[1]).toContain('off by default');
+    expect(team.subtitle).toMatch(/\$10/);
   });
 });

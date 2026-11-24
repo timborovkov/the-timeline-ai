@@ -1,4 +1,4 @@
-import { PLAN_CATALOG, OVERAGE_RATES } from '#src/billing/catalog.js';
+import { PLAN_CATALOG, OVERAGE_RATES, TEAM_MONTHLY_SEAT_CENTS } from '#src/billing/catalog.js';
 import {
   BILLING_METERS,
   TIMELINE_METERED_EVENT_NAMES,
@@ -94,14 +94,12 @@ export const TIMELINE_METERED_UNIT_AMOUNTS: Record<TimelineMeteredEventName, str
     TIMELINE_METER_SPECS.map((spec) => [spec.eventName, spec.unitAmount]),
   ) as Record<TimelineMeteredEventName, string>;
 
-export const TIMELINE_PRODUCT_KEYS = ['payg', 'team', 'business', 'enterprise'] as const;
+export const TIMELINE_PRODUCT_KEYS = ['team', 'enterprise'] as const;
 
 export type TimelineProductKey = (typeof TIMELINE_PRODUCT_KEYS)[number];
 
 export const TIMELINE_PRODUCT_ENV_NAMES: Record<TimelineProductKey, string> = {
-  payg: 'POLAR_PRODUCT_ID_PAYG',
   team: 'POLAR_PRODUCT_ID_TEAM',
-  business: 'POLAR_PRODUCT_ID_BUSINESS',
   enterprise: 'POLAR_PRODUCT_ID_ENTERPRISE',
 };
 
@@ -176,6 +174,8 @@ export interface PolarSetupPrice {
   priceCurrency: string | null;
   minimumAmount: number | null;
   unitAmount: string | null;
+  taxBehavior?: string | null;
+  seatTiers?: unknown;
 }
 
 export interface PolarSetupProduct {
@@ -184,6 +184,8 @@ export interface PolarSetupProduct {
   archived: boolean;
   metadata: Record<string, string>;
   prices: readonly PolarSetupPrice[];
+  recurringInterval?: string | null;
+  recurringIntervalCount?: number | null;
 }
 
 export interface PolarSetupWebhook {
@@ -208,22 +210,30 @@ export interface PolarSetupRequest {
   preferredProductIds: Partial<Record<TimelineProductKey, string>>;
 }
 
+const TEAM_SEAT_TIERS = {
+  seat_tier_type: 'volume',
+  tiers: [{ min_seats: 1, max_seats: null, price_per_seat: TEAM_MONTHLY_SEAT_CENTS }],
+} as const;
+
 export type PolarPriceWrite =
   | { id: string }
   | {
-      amount_type: 'fixed';
-      price_currency: 'eur';
-      price_amount: number;
+      amount_type: 'seat_based';
+      price_currency: 'usd';
+      tax_behavior: 'exclusive';
+      seat_tiers: typeof TEAM_SEAT_TIERS;
     }
   | {
       amount_type: 'custom';
-      price_currency: 'eur';
+      price_currency: 'usd';
+      tax_behavior: 'exclusive';
       minimum_amount: number;
       maximum_amount?: number;
     }
   | {
       amount_type: 'metered_unit';
-      price_currency: 'eur';
+      price_currency: 'usd';
+      tax_behavior: 'exclusive';
       meter_id: string;
       unit_amount: string;
     };
@@ -331,37 +341,27 @@ export interface PolarSetupRunResult {
 interface ProductSpec {
   key: TimelineProductKey;
   name: string;
-  platform: 'fixed' | 'custom';
-  platformFeeCents: number | null;
-  includedActiveMembers: number | null;
+  platform: 'seat_based' | 'custom';
   description: string;
 }
 
+const CHARGEABLE_METERS = TIMELINE_METER_SPECS.filter(
+  (meter) => meter.key === 'ai' || meter.key === 'recall_minutes',
+);
+
 function timelineProductSpecs(): readonly ProductSpec[] {
-  const fixed = (['payg', 'team', 'business'] as const).map((key): ProductSpec => {
-    const plan = PLAN_CATALOG[key];
-    if (plan.platformFeeCents === null || plan.includedActiveMembers === null) {
-      throw new Error(`Catalog plan ${key} is missing a platform fee or included members`);
-    }
-    return {
-      key,
-      name: `Timeline ${plan.name}`,
-      platform: 'fixed',
-      platformFeeCents: plan.platformFeeCents,
-      includedActiveMembers: plan.includedActiveMembers,
-      description: plan.tagline,
-    };
-  });
-  const enterprise = PLAN_CATALOG.enterprise;
   return [
-    ...fixed,
+    {
+      key: 'team',
+      name: 'Timeline Team',
+      platform: 'seat_based',
+      description: 'Monthly USD pricing per full workspace member.',
+    },
     {
       key: 'enterprise',
-      name: `Timeline ${enterprise.name}`,
+      name: `Timeline ${PLAN_CATALOG.enterprise.name}`,
       platform: 'custom',
-      platformFeeCents: null,
-      includedActiveMembers: null,
-      description: enterprise.tagline,
+      description: PLAN_CATALOG.enterprise.tagline,
     },
   ];
 }
@@ -383,14 +383,10 @@ function metadataStamp(current: Record<string, string>, stamp: Record<string, st
   return { changed, metadata: { ...current, ...stamp } };
 }
 
-function includedMembersValue(spec: ProductSpec): string {
-  return spec.includedActiveMembers === null ? 'unlimited' : String(spec.includedActiveMembers);
-}
-
 function productMetadata(spec: ProductSpec): Record<string, string> {
   return {
     [TIMELINE_METADATA_KEY]: spec.key,
-    included_active_members: includedMembersValue(spec),
+    timeline_pricing: 'usd-monthly',
   };
 }
 
@@ -403,7 +399,7 @@ function sameUnitAmount(actual: string | null, expected: string): boolean {
 }
 
 function priceCurrency(price: PolarSetupPrice): string {
-  return (price.priceCurrency ?? 'eur').toLowerCase();
+  return (price.priceCurrency ?? '').toLowerCase();
 }
 
 function pendingMeterId(eventName: string): string {
@@ -429,45 +425,67 @@ function meterCreateBody(
 }
 
 function platformPrice(spec: ProductSpec): PolarPriceWrite {
-  if (spec.platform === 'custom') {
-    return { amount_type: 'custom', price_currency: 'eur', minimum_amount: 0 };
-  }
-  return {
-    amount_type: 'fixed',
-    price_currency: 'eur',
-    price_amount: spec.platformFeeCents ?? 0,
-  };
+  const terms = { price_currency: 'usd', tax_behavior: 'exclusive' } as const;
+  return spec.platform === 'custom'
+    ? { ...terms, amount_type: 'custom', minimum_amount: 0 }
+    : { ...terms, amount_type: 'seat_based', seat_tiers: TEAM_SEAT_TIERS };
+}
+
+function correctSeatTiers(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const terms = raw as Record<string, unknown>;
+  if (terms.seat_tier_type !== 'volume' || !Array.isArray(terms.tiers) || terms.tiers.length !== 1)
+    return false;
+  const tier = terms.tiers[0] as Record<string, unknown> | null;
+  return (
+    tier?.min_seats === 1 &&
+    (tier.max_seats === null || tier.max_seats === undefined) &&
+    tier.price_per_seat === TEAM_MONTHLY_SEAT_CENTS
+  );
+}
+
+/** Verify the configured product before offering a public Team checkout. */
+export function isMonthlyUsdTeamCheckoutProduct(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const row = raw as Record<string, unknown>;
+  if (
+    row.is_archived !== false ||
+    row.recurring_interval !== 'month' ||
+    row.recurring_interval_count !== 1 ||
+    !Array.isArray(row.prices)
+  )
+    return false;
+  const staticPrices = (row.prices as (Record<string, unknown> | null)[]).filter(
+    (price) => price?.is_archived === false && !price.meter_id,
+  );
+  const price = staticPrices[0];
+  return (
+    staticPrices.length === 1 &&
+    price?.amount_type === 'seat_based' &&
+    price.price_currency === 'usd' &&
+    price.tax_behavior === 'exclusive' &&
+    correctSeatTiers(price.seat_tiers)
+  );
 }
 
 function isCorrectPlatform(price: PolarSetupPrice, spec: ProductSpec): boolean {
-  if (price.archived || price.meterId || priceCurrency(price) !== 'eur') return false;
-  if (spec.platform === 'fixed') {
-    return (
-      (price.amountType === 'fixed' || price.amountType === null) &&
-      price.priceAmount === spec.platformFeeCents
-    );
-  }
-  return price.amountType === 'custom' && (price.minimumAmount ?? 0) === 0;
-}
-
-function platformShape(price: PolarSetupPrice): 'fixed' | 'custom' | 'other' {
-  if (price.meterId) return 'other';
-  if (price.amountType === 'custom') return 'custom';
-  if (price.amountType === 'fixed' || price.amountType === null) return 'fixed';
-  return 'other';
+  if (
+    price.archived ||
+    price.meterId ||
+    priceCurrency(price) !== 'usd' ||
+    price.taxBehavior !== 'exclusive' ||
+    price.amountType !== spec.platform
+  )
+    return false;
+  return spec.platform === 'seat_based'
+    ? correctSeatTiers(price.seatTiers)
+    : price.minimumAmount === 0;
 }
 
 function isCorrectMeterPrice(price: PolarSetupPrice, meterId: string, unitAmount: string): boolean {
-  if (price.archived || price.meterId !== meterId || priceCurrency(price) !== 'eur') return false;
-  if (price.amountType !== null && price.amountType !== 'metered_unit') return false;
+  if (price.archived || price.meterId !== meterId || priceCurrency(price) !== 'usd') return false;
+  if (price.amountType !== 'metered_unit' || price.taxBehavior !== 'exclusive') return false;
   return sameUnitAmount(price.unitAmount, unitAmount);
-}
-
-function formatEuroCents(cents: number): string {
-  const absolute = Math.abs(cents);
-  const major = Math.trunc(absolute / 100);
-  const minor = String(absolute % 100).padStart(2, '0');
-  return `${cents < 0 ? '-' : ''}€${major}.${minor}`;
 }
 
 function meterEventIndex(
@@ -492,7 +510,7 @@ function planPrices(
   const active = (product?.prices ?? []).filter((price) => price.id.length > 0 && !price.archived);
   const correctPlatform = active.find((price) => isCorrectPlatform(price, spec));
   const correctByEvent = new Map<TimelineMeteredEventName, string>();
-  for (const meter of TIMELINE_METER_SPECS) {
+  for (const meter of CHARGEABLE_METERS) {
     const selectedId = meterIds.get(meter.eventName);
     if (!selectedId || selectedId.startsWith(METER_ID_PREFIX)) continue;
     const match = active.find((price) => isCorrectMeterPrice(price, selectedId, meter.unitAmount));
@@ -504,17 +522,16 @@ function planPrices(
   const keptPlatform = new Set<string>();
   const keptEvents = new Set<string>();
   for (const price of active) {
-    const shape = platformShape(price);
-    if (shape === 'fixed' || shape === 'custom') {
+    if (!price.meterId) {
       if (correctPlatform?.id === price.id && !keptPlatform.has(price.id)) {
         kept.push({ id: price.id });
         keptPlatform.add(price.id);
       } else {
-        reasons.push(`archive ${shape} price ${price.id}`);
+        reasons.push(`archive ${price.amountType ?? 'platform'} price ${price.id}`);
       }
       continue;
     }
-    const eventName = price.meterId ? metersById.get(price.meterId) : undefined;
+    const eventName = metersById.get(price.meterId);
     if (eventName) {
       const correctId = correctByEvent.get(eventName);
       if (correctId === price.id && !keptEvents.has(eventName)) {
@@ -525,7 +542,7 @@ function planPrices(
       }
       continue;
     }
-    kept.push({ id: price.id });
+    reasons.push(`archive unrecognized meter price ${price.id}`);
   }
 
   const platformAdditions: PolarPriceWrite[] = [];
@@ -533,16 +550,15 @@ function planPrices(
   if (!correctPlatform) {
     platformAdditions.push(platformPrice(spec));
     reasons.push(
-      spec.platform === 'fixed'
-        ? `add fixed price ${formatEuroCents(spec.platformFeeCents ?? 0)}`
-        : 'add custom platform fee from €0',
+      spec.platform === 'seat_based' ? 'add monthly USD seat price' : 'add custom USD price',
     );
   }
-  for (const meter of TIMELINE_METER_SPECS) {
+  for (const meter of CHARGEABLE_METERS) {
     if (correctByEvent.has(meter.eventName)) continue;
     meterAdditions.push({
       amount_type: 'metered_unit',
-      price_currency: 'eur',
+      price_currency: 'usd',
+      tax_behavior: 'exclusive',
       meter_id: meterIds.get(meter.eventName) ?? pendingMeterId(meter.eventName),
       unit_amount: meter.unitAmount,
     });
@@ -552,11 +568,13 @@ function planPrices(
 }
 
 function productMatches(product: PolarSetupProduct, spec: ProductSpec): boolean {
-  if (product.archived) return false;
-  const key = product.metadata[TIMELINE_METADATA_KEY];
-  if (key === spec.key) return true;
-  if (key) return false;
-  return product.name === spec.name;
+  return (
+    !product.archived &&
+    product.recurringInterval === 'month' &&
+    product.recurringIntervalCount === 1 &&
+    product.metadata[TIMELINE_METADATA_KEY] === spec.key &&
+    product.metadata.timeline_pricing === 'usd-monthly'
+  );
 }
 
 function selectProduct(
@@ -695,7 +713,13 @@ function planProducts(
     const timelineTopup =
       product.name === TIMELINE_TOPUP_PRODUCT_NAME ||
       product.metadata[TIMELINE_METADATA_KEY] === TOPUP_METADATA_KEY;
-    if (!timelineTopup) continue;
+    const legacyKey = product.metadata[TIMELINE_METADATA_KEY];
+    const legacyOffer =
+      legacyKey === 'payg' ||
+      legacyKey === 'business' ||
+      ((legacyKey === 'team' || legacyKey === 'enterprise') &&
+        product.metadata.timeline_pricing !== 'usd-monthly');
+    if (!timelineTopup && !legacyOffer) continue;
     actions.push({
       kind: 'archive_product',
       id: product.id,
@@ -907,7 +931,7 @@ export function renderPolarSetupReport(input: {
   }
   lines.push('');
   lines.push(
-    'Railway: set POLAR_SERVER, POLAR_ORGANIZATION_ID, POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_ID_PAYG, POLAR_PRODUCT_ID_TEAM, POLAR_PRODUCT_ID_BUSINESS, POLAR_PRODUCT_ID_ENTERPRISE on the web and worker services. Leave the access token in the existing web and worker variables. document-extract-orchestrator stays credential-thin: copy BILLING_CHARGES_ENABLED there and do not copy Polar credentials onto it.',
+    'Railway: set POLAR_SERVER, POLAR_ORGANIZATION_ID, POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_ID_TEAM, POLAR_PRODUCT_ID_ENTERPRISE on the web and worker services. Leave the access token in the existing web and worker variables. document-extract-orchestrator stays credential-thin: copy BILLING_CHARGES_ENABLED there and do not copy Polar credentials onto it.',
   );
   return lines
     .filter((line) => !line.startsWith('POLAR_ACCESS_TOKEN='))
@@ -1039,12 +1063,14 @@ export async function runPolarSetup(input: {
   }
   for (const action of plan.actions) {
     if (action.kind === 'patch_meter') await input.client.patchMeter(action.id, action.body);
-    if (action.kind === 'archive_product') await input.client.archiveProduct(action.id);
   }
   for (const action of plan.actions) {
     if (action.kind !== 'create_product' && action.kind !== 'patch_product') continue;
     const id = await writeProduct(input.client, action, meterIds);
     if (id) productIds[action.productKey] = id;
+  }
+  for (const action of plan.actions) {
+    if (action.kind === 'archive_product') await input.client.archiveProduct(action.id);
   }
   for (const action of plan.actions) {
     if (action.kind === 'create_webhook') {

@@ -22,6 +22,7 @@ import {
   type BillingReserveFailureCode,
 } from '#src/billing/admission.js';
 import { scopedAiOperationId } from '#src/billing/ai-call.js';
+import { reconcileTeamPaidSeats } from '#src/billing/capacity.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
@@ -43,6 +44,7 @@ import {
   type BillingAlsContext,
 } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
+import { FULL_MEMBER_ROLES } from '#src/billing/membership.js';
 import {
   openRouterFinishFromCaughtError,
   openRouterUsdCostFromFinishEvent,
@@ -1235,7 +1237,7 @@ async function accrueMemberDays(
       priorIntervals: teamMembers.priorIntervals,
     })
     .from(teamMembers)
-    .where(eq(teamMembers.teamId, input.teamId));
+    .where(and(eq(teamMembers.teamId, input.teamId), inArray(teamMembers.role, FULL_MEMBER_ROLES)));
 
   let extraMembers = 0;
   let chargeCents = 0;
@@ -1266,6 +1268,7 @@ async function accrueMemberDays(
         additionalMemberCents: terms.additionalMemberCents,
         meteredDiscountPercent: terms.meteredDiscountPercent,
       };
+      if (terms.planId === 'team' && account?.teamSeatTerms) return null;
       for (const member of members) {
         await db
           .insert(billingMemberDayLedger)
@@ -1294,6 +1297,7 @@ async function accrueMemberDays(
         );
       return terms;
     });
+    if (!entitlement) continue;
     const result = await accrueTeamMemberDaysForDay({
       db: input.db,
       teamId: input.teamId,
@@ -1546,6 +1550,13 @@ export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number
   await applyElapsedScheduledCancellations(db);
   const rows = await db.select({ id: teams.id }).from(teams);
   for (const team of rows) {
+    if (polarProvider) {
+      try {
+        await reconcileTeamPaidSeats({ db, teamId: team.id, provider: polarProvider });
+      } catch {
+        log.warn({ teamId: team.id }, 'Team seat reconciliation failed; will retry');
+      }
+    }
     try {
       await resetIncludedDiscountIfPeriodElapsed({ db, teamId: team.id });
       await snapshotTeamStorageGbMonth({ db, teamId: team.id });

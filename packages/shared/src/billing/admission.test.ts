@@ -91,8 +91,8 @@ describe('billing admission helpers', () => {
     await billing.settle({
       operationId: 'prior-usage',
       meterId: 'ai',
-      nativeUnits: 199,
-      customerChargeCents: 199,
+      nativeUnits: 367,
+      customerChargeCents: 367,
     });
     const operationId = askOperationId('web', 'last-cent');
     expect(await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).toEqual({
@@ -116,7 +116,7 @@ describe('billing admission helpers', () => {
       openRouterUsd: 0.01,
     });
     const dashboard = await billing.getDashboard();
-    expect(dashboard.meters.ai?.nativeUnits).toBeGreaterThan(200);
+    expect(dashboard.meters.ai?.nativeUnits).toBeGreaterThan(368);
     expect(
       await reserveAskAi(billing, {
         operationId: askOperationId('web', 'exhausted'),
@@ -278,7 +278,7 @@ describe('billing admission helpers', () => {
     const reserved = await reserveRecallMeetingMinutes(billing, { meetingId });
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
-    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+    expect(reserved.reservedMinutes).toBe(120);
 
     await settleRecallMeetingMinutes(billing, { meetingId, minutes: 12 });
     const dash = await billing.getDashboard();
@@ -305,7 +305,7 @@ describe('billing admission helpers', () => {
     });
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
-    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+    expect(reserved.reservedMinutes).toBe(120);
     expect(reserved.reservedMinutes).not.toBe(360);
   });
 

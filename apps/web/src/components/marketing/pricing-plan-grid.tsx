@@ -1,113 +1,83 @@
-import {
-  type BillingPlanId,
-  FREE_ALLOWANCES,
-  PLAN_CATALOG,
-  SELF_SERVE_PLAN_ORDER,
-  formatEuroFromCents,
-  formatStorageGb,
-} from '@timeline/shared/billing/catalog';
+import { FREE_ALLOWANCES, TEAM_MONTHLY_SEAT_CENTS } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 
-import { FirstRunPath } from '@/components/marketing/first-run-path';
 import styles from '@/components/marketing/pricing-page.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 
-const PURPOSE: Partial<Record<BillingPlanId, string>> = {
-  free: 'Try it with your first source.',
-  payg: 'Keep it flexible as usage grows.',
-  team: 'More room for a working team.',
-  business: 'More included usage and members.',
-} as const;
-
-export function PricingPlanGrid({ className }: { className?: string }) {
+export function PricingPlanGrid() {
   return (
-    <div className={className}>
-      <div className={styles.planGrid}>
-        {SELF_SERVE_PLAN_ORDER.map((planId) => {
-          const plan = PLAN_CATALOG[planId];
-          return (
-            <article key={plan.id} data-pricing-plan={plan.id} className={styles.plan}>
-              <h3>{plan.name}</h3>
-              <p className={styles.planPurpose}>{PURPOSE[planId] ?? plan.tagline}</p>
-              <p className={styles.price}>
-                {formatEuroFromCents(plan.platformFeeCents ?? 0)}
-                {plan.platformFeeCents ? <span>/month</span> : null}
-              </p>
-              <p className={styles.priceNote}>
-                {planId === 'free'
-                  ? 'No card. No usage charges.'
-                  : 'Platform fee + usage beyond your allowance.'}
-              </p>
-              <ul>
-                <li>{plan.includedActiveMembers} included members</li>
-                <li>
-                  {plan.includedUsageDiscountCents > 0
-                    ? `Up to ${formatEuroFromCents(plan.includedUsageDiscountCents)} usage credit / month`
-                    : `${formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)} AI + ${FREE_ALLOWANCES.acceptedSources.toLocaleString('en-IE')} source units / month`}
-                </li>
-                <li>
-                  {planId === 'free'
-                    ? 'Stops at your allowance or capacity limit'
-                    : `${formatEuroFromCents(plan.additionalMemberCents ?? 0)} per extra member / month`}
-                </li>
-              </ul>
-              <PublicSessionBranch
-                signedOut={
-                  <Link
-                    data-public-analytics-cta={`choose_${planId}`}
-                    href={planId === 'free' ? plan.cta.href : `/sign-up?plan=${planId}`}
-                    className={styles.planAction}
-                  >
-                    {planId === 'payg' ? 'Add payment' : plan.cta.label}
-                  </Link>
-                }
-                signedIn={
-                  <Link
-                    href={`/app/team?section=billing&plan=${planId}#change-plan`}
-                    className={styles.planAction}
-                  >
-                    {planId === 'free' ? 'Open billing' : 'Manage plan'}
-                  </Link>
-                }
-              />
-            </article>
-          );
-        })}
-      </div>
-      <div className={styles.allowances}>
-        <h3>Included monthly on Free and Pay as you go</h3>
-        <dl>
-          <div>
-            <dt>AI usage</dt>
-            <dd>{formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)}</dd>
-          </div>
-          <div>
-            <dt>meeting minutes</dt>
-            <dd>{FREE_ALLOWANCES.recallMinutes}</dd>
-          </div>
-          <div>
-            <dt>email units</dt>
-            <dd>{FREE_ALLOWANCES.emailUnits}</dd>
-          </div>
-          <div>
-            <dt>file storage</dt>
-            <dd>{formatStorageGb(FREE_ALLOWANCES.storageGb)}</dd>
-          </div>
-          <div>
-            <dt>source units</dt>
-            <dd>{FREE_ALLOWANCES.acceptedSources.toLocaleString('en-IE')}</dd>
-          </div>
-        </dl>
-        <p>
-          Available on one owned workspace per verified person. Additional owned workspaces require
-          a payment method. Free also has capacity limits, including {FREE_ALLOWANCES.agentTurns}{' '}
-          Ask turns per month. Team and Business use the pooled usage credit shown above instead.
+    <div className={styles.planGrid}>
+      <article data-pricing-plan="free" className={styles.plan}>
+        <h3>Free</h3>
+        <p className={styles.price}>$0</p>
+        <p className={styles.priceNote}>No card required.</p>
+        <ul>
+          <li>Up to {FREE_ALLOWANCES.activeMembers} members</li>
+          <li>One monthly Included usage allowance per workspace</li>
+          <li>Community support</li>
+        </ul>
+        <PublicSessionBranch
+          signedOut={
+            <Link
+              data-public-analytics-cta="choose_free"
+              href="/sign-up"
+              className={styles.planAction}
+            >
+              Start free
+            </Link>
+          }
+          signedIn={
+            <Link href="/app/team?section=billing" className={styles.planAction}>
+              Open billing
+            </Link>
+          }
+        />
+      </article>
+      <article data-pricing-plan="team" className={styles.plan}>
+        <h3>Team</h3>
+        <p className={styles.price}>
+          ${TEAM_MONTHLY_SEAT_CENTS / 100}
+          <span> per member / month</span>
         </p>
-      </div>
-      <details className={styles.firstRun}>
-        <summary>What happens after signup?</summary>
-        <FirstRunPath compact />
-      </details>
+        <p className={styles.priceNote}>Starts with one member.</p>
+        <ul>
+          <li>Each paid member adds to the shared Included usage allowance</li>
+          <li>Optional extra usage with a monthly cap</li>
+          <li>Priority email support</li>
+        </ul>
+        <PublicSessionBranch
+          signedOut={
+            <Link
+              data-public-analytics-cta="choose_team"
+              href="/sign-up?plan=team"
+              className={styles.planAction}
+            >
+              Choose Team
+            </Link>
+          }
+          signedIn={
+            <Link
+              href="/app/team?section=billing&plan=team#change-plan"
+              className={styles.planAction}
+            >
+              Manage plan
+            </Link>
+          }
+        />
+      </article>
+      <article data-pricing-plan="enterprise" className={styles.plan}>
+        <h3>Enterprise</h3>
+        <p className={styles.price}>Custom</p>
+        <p className={styles.priceNote}>Quoted for your organization.</p>
+        <ul>
+          <li>Volume pricing and usage by agreement</li>
+          <li>Managed private cloud or on-premises deployment options</li>
+          <li>Setup and support by agreement</li>
+        </ul>
+        <Link href="/contact/enterprise" className={styles.planAction}>
+          Contact sales
+        </Link>
+      </article>
     </div>
   );
 }

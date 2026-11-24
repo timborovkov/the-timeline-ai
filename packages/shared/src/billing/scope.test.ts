@@ -17,6 +17,7 @@ import {
   periodYmUtc,
   polarMemberMonthUnits,
 } from '#src/billing/charge.js';
+import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
 import { includedDiscountRemainingForReplay } from '#src/billing/plan-history.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
@@ -317,7 +318,7 @@ describe('billing scope', () => {
     expect((await extraScope.getAccount()).spendCapCents).toBe(7);
   });
 
-  it('hard-stops Free AI allowance even while shadow billing is on', async () => {
+  it('hard-stops Free AI after AI and capture exhaust the pool in shadow mode', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -327,9 +328,16 @@ describe('billing scope', () => {
     await scope.settle({
       operationId: 'op-ai-fill',
       meterId: 'ai',
-      nativeUnits: 200,
-      customerChargeCents: 200,
+      nativeUnits: 230,
+      customerChargeCents: 230,
     });
+    const capture = await scope.reserve({
+      operationId: 'op-capture',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 50,
+      reservedChargeCents: 150,
+    });
+    expect(capture.ok).toBe(true);
     const blocked = await scope.reserve({
       operationId: 'op-ai-over',
       meterId: 'ai',
@@ -338,6 +346,127 @@ describe('billing scope', () => {
     });
     expect(blocked.ok).toBe(false);
     if (!blocked.ok) expect(blocked.code).toBe('free_allowance_reached');
+  });
+
+  it('resets the shared Free pool at the UTC month boundary without a payment account', async () => {
+    vi.setSystemTime(new Date('2026-10-31T23:58:00.000Z'));
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const initial = await scope.getAccount();
+    expect(initial.polarCustomerId).toBeNull();
+    expect((await scope.getDashboard()).freeRemaining.includedUsageCents).toBe(400);
+    await scope.settle({
+      operationId: 'ai:month-end-free',
+      meterId: 'ai',
+      nativeUnits: 368,
+      customerChargeCents: 368,
+    });
+    expect((await scope.getDashboard()).freeRemaining.includedUsageCents).toBe(0);
+    vi.setSystemTime(new Date('2026-11-01T00:00:00.000Z'));
+    const renewed = await scope.getDashboard();
+    expect(renewed.freeRemaining.includedUsageCents).toBe(400);
+    expect(renewed.account.polarSubscriptionId).toBeNull();
+  });
+
+  it('covers included Team usage first and never bills an overrun without approval at admission', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active',
+        team_seat_terms = '{"paidSeats":1,"highWaterSeats":1,"includedUsageCents":1200}',
+        included_discount_remaining_cents = 10, spend_cap_cents = 0,
+        period_started_at = '2026-10-01', period_ends_at = '2026-11-01'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const [one, two] = await Promise.all(
+      (['ai:one', 'ai:two'] as const).map((operationId) =>
+        scope.reserve({
+          operationId,
+          meterId: 'ai',
+          reservedNativeUnits: 6.44,
+          reservedChargeCents: 6.44,
+        }),
+      ),
+    );
+    if (!one || !two) throw new Error('Expected both reservation results');
+    expect([one.ok, two.ok].sort()).toEqual([false, true]);
+    await scope.setSpendCap(25);
+    const settlement = await scope.settle({
+      operationId: one.ok ? 'ai:one' : 'ai:two',
+      meterId: 'ai',
+      nativeUnits: 92,
+      customerChargeCents: 92,
+    });
+    if (settlement.duplicate) throw new Error('Expected a new settlement');
+    expect(settlement.ledger.metadata).toMatchObject({ discount_cents: 10, invoice_cents: 0 });
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
+
+    const optedIn = await scope.reserve({
+      operationId: 'ai:opted-in',
+      meterId: 'ai',
+      reservedNativeUnits: 9.2,
+      reservedChargeCents: 9.2,
+    });
+    expect(optedIn.ok).toBe(true);
+    const overrun = await scope.settle({
+      operationId: 'ai:opted-in',
+      meterId: 'ai',
+      nativeUnits: 92,
+      customerChargeCents: 92,
+    });
+    if (overrun.duplicate) throw new Error('Expected a new settlement');
+    expect(overrun.ledger.metadata).toMatchObject({ discount_cents: 0, invoice_cents: 25 });
+    expect((await scope.getDashboard()).costBearingPaused).toBe(true);
+  });
+
+  it('attributes recovered guest usage to the guest and debits the host workspace pool', async () => {
+    const guestId = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+    await pg.exec(`INSERT INTO users (id, email) VALUES ('${guestId}', 'guest@example.test')`);
+    const guestUsage = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: guestId,
+      // The guest surface establishes authority before constructing its private usage scope.
+      ensureMember: () => Promise.resolve('member'),
+    });
+    expect(
+      (
+        await guestUsage.reserve({
+          operationId: 'ask:guest:recovered',
+          meterId: 'ai',
+          reservedNativeUnits: 1,
+          reservedChargeCents: 1,
+        })
+      ).ok,
+    ).toBe(true);
+
+    const recovery = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: BILLING_SYSTEM_USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const settled = await recovery.settle({
+      operationId: 'ask:guest:recovered',
+      meterId: 'ai',
+      nativeUnits: 92,
+      customerChargeCents: 92,
+    });
+    if (settled.duplicate) throw new Error('Expected a new settlement');
+    expect(settled.ledger.actorUserId).toBe(guestId);
+    const dashboard = await recovery.getDashboard();
+    expect(dashboard.activeMemberCount).toBe(1);
+    expect(dashboard.freeRemaining.includedUsageCents).toBe(300);
   });
 
   it('releases unused reservations', async () => {
@@ -758,6 +887,12 @@ describe('billing scope', () => {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       createdAt: new Date(monthStart.getTime() - 30 * 60 * 1000),
       metadata: { list_charge_cents: 180, cap_eligible_reserved_cents: 180 },
+    });
+    await scope.settle({
+      operationId: 'ai:shared-pool',
+      meterId: 'ai',
+      nativeUnits: 202.4,
+      customerChargeCents: 202,
     });
     const fit = await scope.reserve({
       operationId: 'op-recall-fit',
@@ -2899,7 +3034,7 @@ describe('billing scope', () => {
     if (!second.ok) expect(second.code).toBe('spend_cap_reached');
   });
 
-  it('accumulates sub-cent email charges from locked counters', async () => {
+  it('keeps bundled infrastructure counters without Free usage charges', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -2916,7 +3051,7 @@ describe('billing scope', () => {
     }
     const dash = await scope.getDashboard();
     expect(dash.meters.email_units?.nativeUnits).toBe(4);
-    expect(dash.meters.email_units?.customerChargeCents).toBe(1);
+    expect(dash.meters.email_units?.customerChargeCents).toBe(0);
   });
 
   it('rechecks the Ask-turn cap inside the account lock', async () => {

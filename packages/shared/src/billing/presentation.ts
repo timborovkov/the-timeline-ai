@@ -1,4 +1,11 @@
-import { FREE_ALLOWANCES, type BillingMeterId, type BillingPlanId } from '#src/billing/catalog.js';
+import {
+  FREE_ALLOWANCES,
+  FREE_MONTHLY_USAGE_CENTS,
+  TEAM_MONTHLY_SEAT_CENTS,
+  type BillingMeterId,
+  type BillingPlanId,
+} from '#src/billing/catalog.js';
+import type { TeamSeatTerms } from '#src/billing/membership.js';
 import {
   contractualEnterpriseAccount,
   localChargeSpendCapApplies,
@@ -6,6 +13,7 @@ import {
   type BillingOperatorAccount,
 } from '#src/billing/operator.js';
 import { settlementUsageInstant } from '#src/billing/plan-history.js';
+import { freeIncludedUsageRemainingCents } from '#src/billing/policy.js';
 
 export interface BillingPeriod {
   start: string;
@@ -23,6 +31,8 @@ export interface BillingPresentation {
   comped: boolean;
   calendarPeriod: BillingPeriod;
   allowances: { meter: BillingMeterId; used: number; included: number; remaining: number }[];
+  includedUsage?: { totalCents: number; remainingCents: number | null; resetAt: string | null };
+  paidSeats?: number;
   credit: {
     status: 'available' | 'updating' | 'not_applicable';
     period: BillingPeriod | null;
@@ -141,8 +151,9 @@ export function buildBillingPresentation(input: {
     periodStartedAt: Date | null;
     periodEndsAt: Date | null;
     spendCapCents: number;
+    teamSeatTerms?: TeamSeatTerms | null;
   };
-  meters: Partial<Record<BillingMeterId, { nativeUnits: number }>>;
+  meters: Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents?: number }>>;
   meteredSpendCents: number;
   activeMembers: number;
   shadowBilling: boolean;
@@ -153,17 +164,20 @@ export function buildBillingPresentation(input: {
   const terms = resolveTeamCommercialTerms(input.account, now);
   const comped = input.account.arrangement === 'comped';
   const enterpriseContract = contractualEnterpriseAccount(input.account);
-  const capApplies = localChargeSpendCapApplies({
-    shadowBilling: input.shadowBilling,
-    comped,
-    enterpriseContract,
-    entitlementsPlanId: terms.planId,
-  });
+  const seatTerms = terms.planId === 'team' ? input.account.teamSeatTerms : null;
+  const capApplies =
+    Boolean(seatTerms) ||
+    localChargeSpendCapApplies({
+      shadowBilling: input.shadowBilling,
+      comped,
+      enterpriseContract,
+      entitlementsPlanId: terms.planId,
+    });
   const calendarPeriod = {
     start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(),
     end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
   };
-  const native = terms.planId === 'free' || terms.planId === 'payg';
+  const native = terms.planId === 'payg';
   const validWindow =
     input.account.periodStartedAt &&
     input.account.periodEndsAt &&
@@ -177,7 +191,7 @@ export function buildBillingPresentation(input: {
         }
       : null;
   const period = terms.planId === 'free' ? calendarPeriod : subscriptionPeriod;
-  const totalCredit = terms.includedUsageDiscountCents;
+  const totalCredit = seatTerms?.includedUsageCents ?? terms.includedUsageDiscountCents;
   const balance = input.account.includedDiscountRemainingCents;
   const validCredit = Boolean(subscriptionPeriod) && cents(balance) && balance <= totalCredit;
   let amounts = period ? recordedChargesForPeriod(input.settlements, period) : null;
@@ -201,9 +215,32 @@ export function buildBillingPresentation(input: {
           return { meter, used, included, remaining: Math.max(0, included - used) };
         })
       : [],
+    ...(terms.planId === 'free'
+      ? {
+          includedUsage: {
+            totalCents: FREE_MONTHLY_USAGE_CENTS,
+            remainingCents: freeIncludedUsageRemainingCents(input.meters),
+            resetAt: calendarPeriod.end,
+          },
+        }
+      : {}),
+    ...(seatTerms
+      ? {
+          paidSeats: seatTerms.paidSeats,
+          includedUsage: {
+            totalCents: totalCredit,
+            remainingCents: validCredit ? balance : null,
+            resetAt: subscriptionPeriod?.end ?? null,
+          },
+        }
+      : {}),
     credit: {
       status:
-        totalCredit === 0 || comped ? 'not_applicable' : validCredit ? 'available' : 'updating',
+        seatTerms || totalCredit === 0 || comped
+          ? 'not_applicable'
+          : validCredit
+            ? 'available'
+            : 'updating',
       period: subscriptionPeriod,
       totalCents: totalCredit,
       usedCents: validCredit ? totalCredit - balance : null,
@@ -214,7 +251,11 @@ export function buildBillingPresentation(input: {
       period,
       amounts,
     },
-    recurringFeeCents: comped ? 0 : terms.platformFeeCents,
+    recurringFeeCents: comped
+      ? 0
+      : seatTerms
+        ? seatTerms.paidSeats * TEAM_MONTHLY_SEAT_CENTS
+        : terms.platformFeeCents,
     members: {
       current: input.activeMembers,
       included: terms.includedActiveMembers,

@@ -214,8 +214,8 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 - Object and task previews use the same detail rail, at least 36rem (576px), growing to 55% of the content width
   on wide screens and a focus-managed bottom sheet below 1280px. Keep the title,
   pin, close, and full-width, quiet outlined “Open object” action together at the top.
-- Billing settings share Usage’s allowance cards and neutral surfaces, with clear
-  spacing between plan controls, charges, and membership. See the
+- Billing settings and Usage share the Included usage bar, its reset date,
+  and the explanation of what pauses. See the
   [billing presentation contract](docs/design/app.md#billing-benefits-and-recorded-charges).
 
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,

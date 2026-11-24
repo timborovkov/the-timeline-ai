@@ -108,6 +108,11 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   autoReloadAmountCents: integer('auto_reload_amount_cents'),
   /** Included invoice discount remaining this period (Team/Business), euro cents. */
   includedDiscountRemainingCents: integer('included_discount_remaining_cents').notNull().default(0),
+  teamSeatTerms: jsonb('team_seat_terms').$type<{
+    paidSeats: number;
+    highWaterSeats: number;
+    includedUsageCents: number;
+  } | null>(),
   periodStartedAt: timestamp('period_started_at', { withTimezone: true }),
   periodEndsAt: timestamp('period_ends_at', { withTimezone: true }),
   /**
@@ -314,6 +319,7 @@ export const billingUsageReservations = pgTable(
      * plan has changed. Null rows resolve the plan from the usage instant.
      */
     admittedPlanId: billingPlanId('admitted_plan_id'),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

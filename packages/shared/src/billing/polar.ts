@@ -3,7 +3,10 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 import { createPolarIdentityApi, PolarIdentityError } from '#src/billing/polar-identity-api.js';
-import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/polar-setup.js';
+import {
+  isMonthlyUsdTeamCheckoutProduct,
+  TIMELINE_METERED_EVENT_NAMES,
+} from '#src/billing/polar-setup.js';
 import type {
   BillingProvider,
   CreateCheckoutInput,
@@ -65,7 +68,7 @@ function polarBaseUrl(server: PolarServer): string {
 
 export function isPolarBillingConfigured(): boolean {
   const env = getEnv();
-  return Boolean(env.POLAR_ACCESS_TOKEN && env.POLAR_PRODUCT_ID_PAYG);
+  return Boolean(env.POLAR_ACCESS_TOKEN && env.POLAR_PRODUCT_ID_TEAM);
 }
 
 /** Polar's get-by-external-id route. List Customers does not filter on this id. */
@@ -89,6 +92,28 @@ export function polarCustomerIdForExternalId(
   }
   return customer.id;
 }
+
+const seatSubscriptionSchema = z
+  .object({
+    id: z.string(),
+    customer_id: z.string(),
+    product_id: z.string(),
+    currency: z.literal('usd'),
+    recurring_interval: z.literal('month'),
+    recurring_interval_count: z.literal(1),
+    seats: z.number().int().min(1).max(1000),
+    pending_update: z
+      .object({ seats: z.number().int().min(1).max(1000).nullable() })
+      .nullable()
+      .optional(),
+  })
+  .transform((row) => ({
+    id: row.id,
+    customerId: row.customer_id,
+    productId: row.product_id,
+    seats: row.seats,
+    pendingSeats: row.pending_update?.seats ?? null,
+  }));
 
 export function createPolarBillingProvider(options?: {
   accessToken?: string;
@@ -190,12 +215,33 @@ export function createPolarBillingProvider(options?: {
       const customer = await identity.customer(input.externalCustomerId, input.customerId);
       if (customer?.type !== 'team')
         throw new PolarIdentityError('identity_conflict', 'checkout_customer');
+      if (input.seats !== undefined) {
+        if (!Number.isSafeInteger(input.seats) || input.seats < 1 || input.seats > 1000) {
+          throw new Error('Invalid Team seat quantity.');
+        }
+        const response = await polarFetch(`/products/${encodeURIComponent(input.productId)}`);
+        const product: unknown = response.ok ? await response.json() : null;
+        const productIdentity = z
+          .object({ id: z.string(), organization_id: z.string() })
+          .safeParse(product);
+        if (
+          !productIdentity.success ||
+          productIdentity.data.id !== input.productId ||
+          productIdentity.data.organization_id !== organizationId ||
+          !isMonthlyUsdTeamCheckoutProduct(product)
+        ) {
+          throw new Error(
+            'Configured Team product does not have the expected monthly USD seat pricing.',
+          );
+        }
+      }
       const created = await polarFetch('/checkouts/', {
         method: 'POST',
         body: JSON.stringify({
           products: [input.productId],
           success_url: input.successUrl,
           customer_id: input.customerId,
+          ...(input.seats !== undefined ? { seats: input.seats } : {}),
           allow_discount_codes: !input.discountId,
           ...(input.discountId ? { discount_id: input.discountId } : {}),
           ...(typeof input.amount === 'number' ? { amount: input.amount } : {}),
@@ -301,6 +347,23 @@ export function createPolarBillingProvider(options?: {
         if (body.includes('AlreadyCanceled')) return;
       }
       throw new Error(`Polar subscription revoke failed: ${res.status}`);
+    },
+
+    async getTeamSeatSubscription(subscriptionId) {
+      const response = await polarFetch(`/subscriptions/${encodeURIComponent(subscriptionId)}`);
+      if (!response.ok) throw new Error(`Polar seat read failed: ${response.status}`);
+      return seatSubscriptionSchema.parse(await response.json());
+    },
+    async updateTeamSeatSubscription(input) {
+      const response = await polarFetch(
+        `/subscriptions/${encodeURIComponent(input.subscriptionId)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ seats: input.seats, proration_behavior: input.proration }),
+        },
+      );
+      if (!response.ok) throw new Error(`Polar seat update failed: ${response.status}`);
+      return seatSubscriptionSchema.parse(await response.json());
     },
 
     async updateSubscription(input: UpdateSubscriptionInput) {
@@ -433,7 +496,7 @@ export function verifyPolarWebhookSignature(input: {
   });
 }
 
-const SELF_SERVE_CHECKOUT_PLANS = ['payg', 'team', 'business'] as const;
+const SELF_SERVE_CHECKOUT_PLANS = ['team'] as const;
 
 export type SelfServeCheckoutPlan = (typeof SELF_SERVE_CHECKOUT_PLANS)[number];
 
@@ -448,15 +511,7 @@ export function selfServeCheckoutPlan(plan: string): SelfServeCheckoutPlan | und
 export function polarProductIdForPlan(plan: string): string | undefined {
   const selfServe = selfServeCheckoutPlan(plan);
   if (!selfServe) return undefined;
-  const env = getEnv();
-  switch (selfServe) {
-    case 'payg':
-      return env.POLAR_PRODUCT_ID_PAYG;
-    case 'team':
-      return env.POLAR_PRODUCT_ID_TEAM;
-    case 'business':
-      return env.POLAR_PRODUCT_ID_BUSINESS;
-  }
+  return getEnv().POLAR_PRODUCT_ID_TEAM;
 }
 
 const POLAR_PLAN_CHANGE_CANCELED_STATES = new Set(['canceled', 'deletion_scheduled']);
@@ -497,6 +552,7 @@ export async function createPlanChangeSession(input: {
   successUrl: string;
   portalReturnUrl: string;
   discountId?: string;
+  seats?: number;
 }): Promise<{ url: string; id?: string }> {
   if (input.account.planId === 'enterprise') {
     throw new Error(
@@ -504,6 +560,22 @@ export async function createPlanChangeSession(input: {
     );
   }
   const subscriptionId = polarSubscriptionIdForPlanChange(input.account);
+  if (subscriptionId && input.seats !== undefined) {
+    if (input.account.planId !== 'team')
+      throw new Error(
+        'An existing legacy subscription must be retired before moving to Team seat pricing.',
+      );
+    return {
+      url: (
+        await input.provider.createCustomerPortalSession({
+          externalCustomerId: input.externalCustomerId,
+          ...(input.customerId ? { customerId: input.customerId } : {}),
+          ...(input.memberId ? { memberId: input.memberId } : {}),
+          returnUrl: input.portalReturnUrl,
+        })
+      ).url,
+    };
+  }
   if (subscriptionId) {
     try {
       const updated = await input.provider.updateSubscription({
@@ -536,6 +608,7 @@ export async function createPlanChangeSession(input: {
     customerEmail: input.customerEmail,
     productId: input.productId,
     successUrl: input.successUrl,
+    ...(input.seats !== undefined ? { seats: input.seats } : {}),
     ...(input.discountId ? { discountId: input.discountId } : {}),
   });
 }
