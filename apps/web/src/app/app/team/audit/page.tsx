@@ -114,7 +114,9 @@ function auditMetadataDetails(metadata: Record<string, unknown>) {
 
 export default async function TrustAuditPage({
   searchParams,
-}: { searchParams?: Promise<{ page?: string }> } = {}) {
+}: {
+  searchParams?: Promise<{ page?: string }>;
+}) {
   const params = (await searchParams) ?? {};
   const requestedPage = Number(params.page ?? 1);
   const page =

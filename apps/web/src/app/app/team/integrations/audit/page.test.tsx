@@ -77,7 +77,7 @@ describe('IntegrationAuditPage', () => {
         timezone="America/Los_Angeles"
         region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
       >
-        {await IntegrationAuditPage()}
+        {await IntegrationAuditPage({})}
       </WorkspaceTimezoneProvider>,
     );
 
@@ -95,7 +95,7 @@ describe('IntegrationAuditPage', () => {
   });
 
   it('keeps technical event codes and payload values inside the disclosure', async () => {
-    const html = renderToStaticMarkup(await IntegrationAuditPage());
+    const html = renderToStaticMarkup(await IntegrationAuditPage({}));
     const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(primaryContent).toContain('Webhook setup failed');
@@ -108,7 +108,7 @@ describe('IntegrationAuditPage', () => {
   it('gives an empty integration audit a named, explanatory archive state', async () => {
     fakes.integrationAuditList.mockResolvedValueOnce([]);
 
-    const html = renderToStaticMarkup(await IntegrationAuditPage());
+    const html = renderToStaticMarkup(await IntegrationAuditPage({}));
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('aria-labelledby="integration-audit-entries"');

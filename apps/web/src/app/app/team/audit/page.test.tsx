@@ -80,7 +80,7 @@ describe('TrustAuditPage', () => {
         timezone="America/Los_Angeles"
         region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
       >
-        {await TrustAuditPage()}
+        {await TrustAuditPage({})}
       </WorkspaceTimezoneProvider>,
     );
 
@@ -100,7 +100,7 @@ describe('TrustAuditPage', () => {
   it('gives an empty audit log a named, explanatory archive state', async () => {
     fakes.auditList.mockResolvedValueOnce([]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('aria-labelledby="trust-audit-entries"');
@@ -112,7 +112,7 @@ describe('TrustAuditPage', () => {
   });
 
   it('leads with a readable audit summary while preserving event codes in technical details', async () => {
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
     const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(primaryContent).toContain('Team settings changed');
@@ -161,7 +161,7 @@ describe('TrustAuditPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
     const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(primaryContent).toContain('Team export download rejected');
@@ -233,7 +233,7 @@ describe('TrustAuditPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
 
     expect(html).toContain('Reason');
     expect(html).toContain('operation_failed');
@@ -281,7 +281,7 @@ describe('TrustAuditPage', () => {
       },
     ]);
 
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(await TrustAuditPage({}));
 
     expect(html.match(/ada@example\.com/g)).toHaveLength(1);
     expect(html).not.toContain('<dt class="sr-only">Email</dt>');

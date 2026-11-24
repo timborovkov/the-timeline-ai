@@ -25,7 +25,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function IntegrationAuditPage({
   searchParams,
-}: { searchParams?: Promise<{ page?: string }> } = {}) {
+}: {
+  searchParams?: Promise<{ page?: string }>;
+}) {
   const params = (await searchParams) ?? {};
   const requestedPage = Number(params.page ?? 1);
   const page =
