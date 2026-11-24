@@ -715,7 +715,10 @@ Request responses do not disclose whether an email has a password account. Redis
 rate limits apply before account lookup and fail closed when Redis is unavailable.
 Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
 Resend receives the reset URL to deliver the email. Recovery routes have no browser
-analytics, no-index/no-store/no-referrer policies, and sanitized error events.
+analytics, no-index/no-store policies, origin-only referrers that omit URL paths
+and query tokens, and sanitized error events. Sensitive pages retain the browser
+origin for same-origin form submissions so Server Action CSRF validation stays
+enforced.
 Open/click tracking is disclosed as currently enabled. Signed DPA on file, custom
 retention, API key scope, and support access remain G-09; this feature makes no
 new claim for those items. Infrastructure access logs must not retain reset

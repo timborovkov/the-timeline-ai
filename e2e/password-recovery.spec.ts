@@ -36,7 +36,7 @@ test('password recovery replaces credentials and revokes both browser sessions',
     }
     // Recovery remains available to a signed-in user as well as signed-out users.
     const response = await page.goto('/forgot-password');
-    expect(response?.headers()['referrer-policy']).toBe('no-referrer');
+    expect(response?.headers()['referrer-policy']).toBe('strict-origin');
     expect(response?.headers()['cache-control']).toContain('no-store');
     await page.getByLabel('Email').fill(email.toUpperCase());
     await page.getByLabel('Email').press('Tab');

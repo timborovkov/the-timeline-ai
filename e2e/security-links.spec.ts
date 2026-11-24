@@ -4,7 +4,49 @@ import { expect, test } from '@playwright/test';
 
 import { withE2eDataTransaction } from './cleanup.js';
 import { signIn } from './helpers.js';
-import { E2E_PREFIX, e2eTeam, e2eUsers } from './test-data.js';
+import { E2E_PASSWORD, E2E_PREFIX, e2eTeam, e2eUsers } from './test-data.js';
+
+test('sensitive pages preserve native form origins without leaking URL tokens', async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    javaScriptEnabled: false,
+  });
+  const page = await context.newPage();
+  const path = '/sign-in?callbackUrl=%2Fapp&token=synthetic-link-token';
+  try {
+    await page.goto(path);
+    const origin = new URL(page.url()).origin;
+    // Intercept the external navigation: no external service receives the probe.
+    await context.route('https://referrer-probe.example.test/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: 'Referrer probe' }),
+    );
+    await page.evaluate(() => {
+      const link = document.createElement('a');
+      link.href = 'https://referrer-probe.example.test/';
+      link.textContent = 'Referrer probe';
+      document.body.append(link);
+    });
+    const externalRequest = page.waitForRequest('https://referrer-probe.example.test/');
+    await page.getByRole('link', { name: 'Referrer probe' }).click();
+    expect((await (await externalRequest).allHeaders()).referer).toBe(`${origin}/`);
+
+    await page.goto(path);
+    await page.getByLabel('Email').fill(e2eUsers.owner.email);
+    await page.getByLabel('Password', { exact: true }).fill(E2E_PASSWORD);
+    const submission = page.waitForRequest(
+      (request) => request.method() === 'POST' && new URL(request.url()).pathname === '/sign-in',
+    );
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    const headers = await (await submission).allHeaders();
+    expect(headers.origin).toBe(origin);
+    expect(headers.referer).toBe(`${origin}/`);
+    await expect(page).toHaveURL(/\/app(?:\/|\?|$)/);
+  } finally {
+    await context.close();
+  }
+});
 
 // Real browsers and PostgreSQL must agree that GET/HEAD never confirm a link.
 test('email verification requires confirmation and accepts the token once', async ({
@@ -28,7 +70,7 @@ test('email verification requires confirmation and accepts the token once', asyn
     const head = await context.request.head(link);
     expect(head.status()).toBe(200);
     expect(head.headers()['cache-control']).toContain('no-store');
-    expect(head.headers()['referrer-policy']).toBe('no-referrer');
+    expect(head.headers()['referrer-policy']).toBe('strict-origin');
     const second = await context.newPage();
     const [get] = await Promise.all([page.goto(link), second.goto(link)]);
     expect(get?.headers()['x-robots-tag']).toBe('noindex, nofollow');

@@ -11,11 +11,12 @@ import { Button } from '@/components/ui/button';
 import { getRequestIdentity } from '@/lib/auth';
 import { hasCurrentLegalSession } from '@/lib/auth.config';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
+import { sensitiveLinkReferrerPolicy } from '@/lib/sensitive-links';
 
 export const metadata: Metadata = {
   title: 'Guest invitation',
   robots: { index: false, follow: false },
-  referrer: 'no-referrer',
+  referrer: sensitiveLinkReferrerPolicy,
 };
 
 export default async function GuestInvitationPage({

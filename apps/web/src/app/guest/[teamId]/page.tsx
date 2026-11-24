@@ -16,11 +16,12 @@ import { getRequestIdentity } from '@/lib/auth';
 import { hasCurrentLegalSession } from '@/lib/auth.config';
 import { db } from '@/lib/db';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
+import { sensitiveLinkReferrerPolicy } from '@/lib/sensitive-links';
 
 export const metadata: Metadata = {
   title: 'Shared work',
   robots: { index: false, follow: false },
-  referrer: 'no-referrer',
+  referrer: sensitiveLinkReferrerPolicy,
 };
 
 type SharedWorkParams = { note?: string; record?: string; q?: string };

@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 
 import { AuthShell } from '@/components/auth-shell';
 import { ForgotPasswordForm } from '@/components/password-recovery-form';
+import { sensitiveLinkReferrerPolicy } from '@/lib/sensitive-links';
 
 export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Forgot password',
   robots: { index: false, follow: false },
-  referrer: 'no-referrer',
+  referrer: sensitiveLinkReferrerPolicy,
 };
 
 export default function ForgotPasswordPage() {

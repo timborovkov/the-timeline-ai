@@ -161,7 +161,7 @@ describe('MCP OAuth consent page', () => {
     expect(sensitiveLinkHeaders).toEqual(
       expect.arrayContaining([
         { key: 'Cache-Control', value: 'no-store' },
-        { key: 'Referrer-Policy', value: 'no-referrer' },
+        { key: 'Referrer-Policy', value: 'strict-origin' },
       ]),
     );
     expect(baseContentSecurityPolicy).toEqual({
