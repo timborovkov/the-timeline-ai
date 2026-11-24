@@ -31,7 +31,12 @@ export function CopyableTextField({
       <Label htmlFor={id} size="sm">
         {label}
       </Label>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div
+        className={cn(
+          'grid min-w-0 items-center gap-x-1 gap-y-1.5',
+          configured && 'grid-cols-[minmax(0,1fr)_auto]',
+        )}
+      >
         <Input
           id={id}
           type="text"
@@ -39,14 +44,14 @@ export function CopyableTextField({
           value={displayValue}
           aria-describedby={descriptionId}
           className={cn(
-            'min-w-0 flex-1 basis-52 font-mono text-xs',
+            'h-11 truncate font-mono text-base md:h-9 md:text-xs',
             configured ? 'text-fg' : 'text-fg-muted',
           )}
           onFocus={(event) => {
             event.currentTarget.select();
           }}
         />
-        {value ? <CopyButton value={value} label={copyLabel ?? label} /> : null}
+        {value ? <CopyButton value={value} label={copyLabel ?? label} appearance="icon" /> : null}
       </div>
       {description ? (
         <p id={descriptionId} className="text-xs text-fg-muted">
