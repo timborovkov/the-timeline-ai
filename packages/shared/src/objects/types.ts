@@ -395,9 +395,15 @@ export const MAINTAINED_TASK_FIELDS = [
   'status',
 ] as const;
 export type MaintainedTaskField = (typeof MAINTAINED_TASK_FIELDS)[number];
-export function maintainedRecordFields(type: string): readonly MaintainedTaskField[] {
-  if (type === 'task') return MAINTAINED_TASK_FIELDS;
-  if (type === 'person' || type === 'company' || type === 'project')
+export const MAINTAINED_RECORD_FIELDS = [...MAINTAINED_TASK_FIELDS, 'stage'] as const;
+export type MaintainedRecordField = (typeof MAINTAINED_RECORD_FIELDS)[number];
+
+export function maintainedRecordFields(type: string): readonly MaintainedRecordField[] {
+  if (type === 'task' || type === 'follow_up') return MAINTAINED_TASK_FIELDS;
+  if (type === 'deal') return ['canonicalName', 'status', 'stage'];
+  if (
+    ['person', 'company', 'project', 'vendor', 'incident', 'decision', 'hiring_loop'].includes(type)
+  )
     return ['canonicalName', 'status'];
   return [];
 }

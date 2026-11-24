@@ -132,6 +132,7 @@ import {
 import {
   MAINTAINED_TASK_FIELDS,
   maintainedRecordFields,
+  type MaintainedRecordField,
   type MaintainedTaskField,
 } from '#src/objects/types.js';
 import type { UpdateActor } from '#src/objects/types.js';
@@ -4078,7 +4079,7 @@ export interface CreateObjectInput {
   dueAt?: Date | null;
   plannedDate?: string | null;
   plannedDateEvidence?: TaskFieldEvidence;
-  taskFieldEvidence?: Partial<Record<MaintainedTaskField, TaskFieldEvidence>>;
+  taskFieldEvidence?: Partial<Record<MaintainedRecordField, TaskFieldEvidence>>;
   aliases?: string[];
   metadata?: Record<string, unknown>;
   parentObjectId?: string | null;
@@ -4537,7 +4538,7 @@ type PostCommitEffect = () => void | Promise<void>;
 interface ObjectMutationOptions {
   expectedUpdatedAt?: string | undefined;
   plannedDateEvidence?: TaskFieldEvidence | undefined;
-  taskFieldEvidence?: Partial<Record<MaintainedTaskField, TaskFieldEvidence>>;
+  taskFieldEvidence?: Partial<Record<MaintainedRecordField, TaskFieldEvidence>>;
   taskFieldApprovalItemId?: string;
   undoTaskFieldChanges?: Partial<Record<MaintainedTaskField | 'plannedDate', string>>;
   approvalProof?: RecordApprovalProof;
@@ -4690,8 +4691,8 @@ export async function updateObject(
 
     const fieldRevisions = { ...current.recordFieldRevisions };
     const maintainedFields = maintainedRecordFields(current.type);
-    const revisedFields = new Set<MaintainedTaskField>();
-    function diffMaintainedField<K extends MaintainedTaskField>(
+    const revisedFields = new Set<MaintainedRecordField>();
+    function diffMaintainedField<K extends MaintainedRecordField>(
       field: K,
       candidate: EntityRow[K] | undefined,
     ): void {
@@ -4730,7 +4731,7 @@ export async function updateObject(
       diffMaintainedField('canonicalName', trimmed);
     }
     diffMaintainedField('status', patch.status);
-    if (patch.stage !== undefined) diff('stage', patch.stage);
+    diffMaintainedField('stage', patch.stage);
     if (patch.priority !== undefined) diff('priority', patch.priority);
     if (patch.ownerUserId !== undefined) diff('ownerUserId', patch.ownerUserId);
     diffMaintainedField('assigneeUserId', patch.assigneeUserId);

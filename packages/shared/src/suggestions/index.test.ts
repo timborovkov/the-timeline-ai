@@ -464,6 +464,115 @@ describe('suggestion scope', () => {
     expect(appliedProject?.metadata).not.toHaveProperty('task_update_undo_available');
   });
 
+  it('creates customer, deal and follow-up records and applies grounded lifecycle fields', async () => {
+    const human = withTeam(db as never, TEAM_ID, USER_ID);
+    const automation = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+      recordMaintenanceWorker: true,
+    }).suggestions;
+    async function propose(
+      quote: string,
+      items: (
+        sourceId: string,
+        assertedAt: string,
+      ) => Parameters<typeof human.suggestions.createOrMergeSuggestionBundle>[0]['items'],
+    ) {
+      const sourceId = crypto.randomUUID();
+      const occurredAt = new Date(Date.now() + 60_000);
+      await db.insert(rawEvents).values({
+        id: sourceId,
+        teamId: TEAM_ID,
+        source: 'slack',
+        visibility: 'team',
+        contentText: quote,
+        occurredAt,
+      });
+      return human.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: quote,
+        dedupeKey: sourceId,
+        confidence: 'high',
+        metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+        evidence: [{ rawEventId: sourceId, quote }],
+        items: items(sourceId, occurredAt.toISOString()).map((item) => ({
+          ...item,
+          evidenceRawEventIds: [sourceId],
+        })),
+      });
+    }
+    await propose(
+      'Northstar is our customer. Track the Northstar rollout deal and follow up with procurement.',
+      () => [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar',
+          dedupeKey: 'northstar-customer',
+          proposedPayload: { type: 'company', canonicalName: 'Northstar' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northstar rollout',
+          dedupeKey: 'northstar-deal',
+          proposedPayload: { type: 'deal', canonicalName: 'Northstar rollout' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Follow up with procurement',
+          dedupeKey: 'northstar-followup',
+          proposedPayload: { type: 'follow_up', canonicalName: 'Follow up with procurement' },
+        },
+      ],
+    );
+    expect(await automation.applyPendingRecordMaintenance()).toBe(3);
+    const rows = await db.select().from(entities);
+    expect(rows.find((row) => row.type === 'company')?.canonicalName).toBe('Northstar');
+    const deal = rows.find((row) => row.type === 'deal');
+    const followUp = rows.find((row) => row.type === 'follow_up');
+    if (!deal || !followUp) throw new Error('Expected deal and follow-up');
+    expect(deal.status).toBe('open');
+    expect(followUp.status).toBe('todo');
+
+    await propose(
+      'The offer for Northstar rollout has been sent. The stage for Northstar rollout is negotiation. Follow up with procurement is completed.',
+      (rawEventId, assertedAt) => [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: deal.id,
+          title: 'Advance Northstar',
+          dedupeKey: 'northstar-advance',
+          proposedPayload: { status: 'proposal', stage: 'negotiation' },
+          taskFieldEvidence: {
+            status: { rawEventId, assertedAt, value: 'proposal' },
+            stage: { rawEventId, assertedAt, value: 'negotiation' },
+          },
+        },
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: followUp.id,
+          title: 'Complete follow-up',
+          dedupeKey: 'northstar-complete-followup',
+          proposedPayload: { status: 'done' },
+          taskFieldEvidence: { status: { rawEventId, assertedAt, value: 'done' } },
+        },
+      ],
+    );
+    expect(await automation.applyPendingRecordMaintenance()).toBe(2);
+    expect(await human.objects.getObject(deal.id)).toMatchObject({
+      status: 'proposal',
+      stage: 'negotiation',
+    });
+    expect(await human.objects.getObject(followUp.id)).toMatchObject({
+      status: 'done',
+      plannedDate: null,
+    });
+    expect(await automation.applyPendingRecordMaintenance()).toBe(0);
+  });
+
   it('leaves a proposal pending when its evidence becomes private before automation', async () => {
     const sourceId = crypto.randomUUID();
     const text = 'The checkout page is broken.';

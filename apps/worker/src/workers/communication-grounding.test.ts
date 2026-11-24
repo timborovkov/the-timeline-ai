@@ -71,6 +71,103 @@ const run = (
     source: options.source ?? 'slack',
     timezone: options.timezone ?? 'UTC',
   });
+test('grounds deal delivery and stage against the named deal and respects a later correction', () => {
+  const name = 'Northstar rollout';
+  const offer = 'The offer for Northstar rollout has been sent.';
+  const stage = 'The stage for Northstar rollout is negotiation.';
+  const check = (quote: string, correction?: string, ambiguous = false) => {
+    const text = [quote, stage, correction].filter(Boolean).join(' ');
+    const claims: NonNullable<
+      Parameters<typeof groundCommunicationBundles>[0]['verifiedTaskClaims']
+    > = new Map();
+    groundCommunicationBundles({
+      verifiedTaskClaims: claims,
+      bundles: [
+        {
+          title: name,
+          confidence: 'high',
+          items: [
+            {
+              title: name,
+              auditId: 'deal',
+              operation: 'update',
+              targetKind: 'object',
+              targetId: event,
+              proposedPayload: { status: 'proposal', stage: 'negotiation' },
+              grounding: [
+                { field: 'status', rawEventId: event, quote, subject: name, value: 'proposal' },
+                {
+                  field: 'stage',
+                  rawEventId: event,
+                  quote: stage,
+                  subject: name,
+                  value: 'negotiation',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      source: 'slack',
+      timezone: 'UTC',
+      members: [],
+      hubs: [],
+      sources: [{ id: event, text, occurredAt: new Date('2026-06-01'), authorUserId: null }],
+      objects: [
+        { id: event, type: 'deal', name, aliases: [] },
+        ...(ambiguous ? [{ id: 'other', type: 'deal', name: 'Other deal', aliases: [name] }] : []),
+      ],
+    });
+    return claims.get('deal');
+  };
+  expect(check(offer)?.status?.value).toBe('proposal');
+  expect(check(offer)?.stage?.value).toBe('negotiation');
+  expect(
+    check(offer, 'The offer for Northstar rollout has not been sent.')?.status,
+  ).toBeUndefined();
+  expect(check('The offer has been sent.')?.status).toBeUndefined();
+  expect(check(offer, undefined, true)).toBeUndefined();
+});
+
+test('grounds completion of an existing follow-up through its own identity', () => {
+  const name = 'Update procurement contact';
+  const quote = 'Update procurement contact is completed.';
+  const claims: NonNullable<
+    Parameters<typeof groundCommunicationBundles>[0]['verifiedTaskClaims']
+  > = new Map();
+  groundCommunicationBundles({
+    verifiedTaskClaims: claims,
+    bundles: [
+      {
+        title: name,
+        confidence: 'high',
+        items: [
+          {
+            title: name,
+            auditId: 'follow-up',
+            operation: 'update',
+            targetKind: 'object',
+            targetId: event,
+            proposedPayload: { status: 'done' },
+            grounding: [
+              { field: 'status', rawEventId: event, quote, subject: name, value: 'done' },
+            ],
+          },
+        ],
+      },
+    ],
+    packet: quote,
+    source: 'slack',
+    timezone: 'UTC',
+    members: [],
+    hubs: [],
+    sources: [{ id: event, text: quote, occurredAt: new Date('2026-06-01'), authorUserId: null }],
+    objects: [{ id: event, type: 'follow_up', name, aliases: [] }],
+  });
+  expect(claims.get('follow-up')?.status?.value).toBe('done');
+});
+
 test('grounds a meeting project state from the utterance and vetoes a later correction', () => {
   const name = 'Northstar';
   const statement = 'Northstar is on hold.';

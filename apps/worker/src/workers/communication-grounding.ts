@@ -1,4 +1,5 @@
 import { splitStoredEmailContent } from '@timeline/shared/email';
+import { maintainedRecordFields, type MaintainedRecordField } from '@timeline/shared/objects/types';
 import {
   chronologicalLifecycleEvidence,
   explicitArchiveInstruction,
@@ -18,6 +19,7 @@ export const communicationGroundingSchema = z.object({
     'canonicalName',
     'dueAt',
     'plannedDate',
+    'stage',
     'status',
     'customer',
     'project',
@@ -32,12 +34,82 @@ export const communicationGroundingSchema = z.object({
 });
 type Support = z.infer<typeof communicationGroundingSchema>;
 type AssignmentRole = 'owner' | 'assignee';
-type MaintainedClaim = 'canonicalName' | 'assigneeUserId' | 'dueAt' | 'status';
 interface VerifiedClaim {
   rawEventId: string;
   contextRawEventId?: string;
   assertedAt: string;
   value: string | null;
+}
+const RECORD_STATE_TERMS: Record<string, Record<string, readonly string[]>> = {
+  project: {
+    planning: ['in planning'],
+    active: ['active', 'in progress', 'underway'],
+    on_hold: ['on hold', 'paused'],
+    shipped: ['shipped', 'completed', 'finished'],
+    cancelled: ['cancelled', 'canceled'],
+  },
+  deal: {
+    open: ['open', 'reopened'],
+    qualified: ['qualified'],
+    proposal: ['in proposal', 'at proposal', 'proposal sent', 'offer sent'],
+    won: ['won', 'closed won'],
+    lost: ['lost', 'closed lost'],
+  },
+  incident: {
+    open: ['open', 'reopened'],
+    mitigated: ['mitigated'],
+    resolved: ['resolved'],
+    postmortem: ['in postmortem'],
+  },
+  decision: {
+    draft: ['a draft'],
+    proposed: ['proposed'],
+    accepted: ['accepted'],
+    rejected: ['rejected'],
+  },
+  hiring_loop: {
+    sourcing: ['in sourcing'],
+    interviewing: ['in interviews', 'in interviewing'],
+    offer: ['at offer', 'in offer'],
+    hired: ['hired'],
+    closed: ['closed'],
+  },
+};
+
+function isWorkRecord(type: unknown): boolean {
+  return type === 'task' || type === 'follow_up';
+}
+
+function recordState(text: string, name: string, type: string, field: 'status' | 'stage') {
+  const clause = normalize(text).replace(/[.!]$/, '');
+  const identity = normalize(name);
+  const prefix = field === 'stage' ? `the stage for ${identity} is ` : `${identity} is `;
+  let value = clause.startsWith(prefix) ? clause.slice(prefix.length) : undefined;
+  if (!value && field === 'status' && type === 'deal') {
+    const offerPrefix = [
+      `the offer for ${identity} has `,
+      `the proposal for ${identity} has `,
+      `the offer for ${identity} was `,
+      `the proposal for ${identity} was `,
+      `${identity} offer has `,
+      `${identity} proposal has `,
+    ].find((prefix) => clause.startsWith(prefix));
+    const delivery = offerPrefix ? clause.slice(offerPrefix.length) : undefined;
+    if (delivery && /^(?:(?:not|never) )?(?:been )?sent$/u.test(delivery))
+      value = /^(?:not|never) /u.test(delivery) ? 'not offer sent' : 'offer sent';
+  }
+  if (!value) return undefined;
+  const denial = /^(?:not|no longer) /u.exec(value);
+  if (denial) value = value.slice(denial[0].length);
+  if (field === 'stage')
+    return /^[\p{L}\p{N}][\p{L}\p{N} -]{0,39}$/u.test(value)
+      ? { value, denied: Boolean(denial) }
+      : undefined;
+  const assertion = value;
+  const status = Object.entries(RECORD_STATE_TERMS[type] ?? {}).find(([, words]) =>
+    words.includes(assertion),
+  )?.[0];
+  return status ? { value: status, denied: Boolean(denial) } : undefined;
 }
 interface Item {
   auditId?: string | undefined;
@@ -828,7 +900,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
   calendarTargets?: { id: string; title: string }[];
   verifiedLifecycleAuditIds?: Set<string>;
   verifiedPlannedDates?: Map<string, VerifiedClaim>;
-  verifiedTaskClaims?: Map<string, Partial<Record<MaintainedClaim, VerifiedClaim>>>;
+  verifiedTaskClaims?: Map<string, Partial<Record<MaintainedRecordField, VerifiedClaim>>>;
   objects?: { id: string; type: string; name?: string; aliases?: string[] }[];
 }): Bundle<T>[] {
   const sourceIds = new Set(args.sources.map((source) => source.id));
@@ -1419,7 +1491,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           (typeof proposedName === 'string' && proposedName.trim() ? proposedName : item.title),
       ];
       if (!target && item.scopedSourceIdentity) names.unshift(item.scopedSourceIdentity.name);
-      if (target?.type !== 'task') return names;
+      if (!target || !isWorkRecord(target.type)) return names;
       return [
         ...names,
         ...(target.aliases ?? []).filter(
@@ -1449,7 +1521,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
       const scopeIsCited = scoped?.scopeLabels.some(literal) ?? false;
       const competing = objects.filter(
         (object) =>
-          object.type === 'task' &&
+          isWorkRecord(object.type) &&
           object.id !== item.targetId &&
           object.name &&
           (Boolean(item.targetId) ||
@@ -1645,8 +1717,10 @@ export function groundCommunicationBundles<T extends Item>(args: {
           if (contextValid) validContexts.add(support);
           const isTask =
             item.targetKind === 'task' ||
-            item.proposedPayload.type === 'task' ||
-            args.objects?.some((object) => object.id === item.targetId && object.type === 'task');
+            isWorkRecord(item.proposedPayload.type) ||
+            args.objects?.some(
+              (object) => object.id === item.targetId && isWorkRecord(object.type),
+            );
           const identityText =
             taskClause(support.quote, support.subject) ??
             (contextValid ? context.quote : support.quote);
@@ -1692,7 +1766,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           )
         )
           return [];
-        if (type === 'task') payload.status = 'cancelled';
+        if (isWorkRecord(type)) payload.status = 'cancelled';
       }
       if (item.targetKind === 'object_relationship') {
         const normalizedRefs = normalizeKnownRelationshipReferences(
@@ -2189,7 +2263,8 @@ export function groundCommunicationBundles<T extends Item>(args: {
           value,
         };
       }
-      const hubType = type === 'person' || type === 'company' || type === 'project';
+      const hubType =
+        typeof type === 'string' && !isWorkRecord(type) && maintainedRecordFields(type).length > 0;
       const target = args.objects?.find((object) => object.id === item.targetId);
       const hubUnambiguous =
         hubType &&
@@ -2203,7 +2278,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
         );
       let renameClaim: VerifiedClaim | undefined;
       if (
-        (hubUnambiguous || type === 'task') &&
+        (hubUnambiguous || isWorkRecord(type)) &&
         item.operation === 'update' &&
         target?.name &&
         typeof payload.canonicalName === 'string' &&
@@ -2249,65 +2324,54 @@ export function groundCommunicationBundles<T extends Item>(args: {
           !contradicted
         )
           renameClaim = verifiedClaim(rename, payload.canonicalName);
-        if (!renameClaim && (type === 'task' || contradicted)) delete payload.canonicalName;
+        if (!renameClaim && (isWorkRecord(type) || contradicted)) delete payload.canonicalName;
       }
-      if (hubUnambiguous && item.operation === 'update' && target.name && item.auditId) {
-        const state = has('status', payload.status);
-        const statuses: Record<string, string> = {
-          planning: 'in planning',
-          active: 'active|in progress|underway',
-          on_hold: 'on hold|paused',
-          shipped: 'shipped|completed|finished',
-          cancelled: 'cancelled|canceled',
-        };
-        const projectState = (text: string) => {
-          const clause = normalize(text).replace(/[.!]$/, '');
-          const name = normalize(target.name ?? '');
-          if (!clause.startsWith(name + ' is ')) return undefined;
-          const predicate = clause.slice(name.length + 4);
-          const denied = /^(?:not|no longer) /u.exec(predicate);
-          const value = denied ? predicate.slice(denied[0].length) : predicate;
-          const status = Object.entries(statuses).find(([, terms]) =>
-            terms.split('|').includes(value),
-          )?.[0];
-          return status ? { status, denied: Boolean(denied) } : undefined;
-        };
-        const enclosing = state && enclosingAssertion(state);
-        let current: string | null | undefined;
-        if (state) {
-          for (const { event, sentence, visible } of assertionsFromCitation(state)) {
+      const currentName = target?.name;
+      const createdName =
+        item.operation === 'create' && typeof payload.canonicalName === 'string'
+          ? payload.canonicalName
+          : undefined;
+      const stateName = hubUnambiguous ? currentName : createdName;
+      if (hubType && typeof type === 'string' && stateName && item.auditId) {
+        const claims: Partial<Record<MaintainedRecordField, VerifiedClaim>> = {};
+        if (renameClaim) claims.canonicalName = renameClaim;
+        for (const field of ['status', 'stage'] as const) {
+          if (!maintainedRecordFields(type).includes(field)) continue;
+          const proposed = payload[field];
+          if (typeof proposed !== 'string') continue;
+          const support = has(field, proposed);
+          if (!support) continue;
+          const wanted = field === 'stage' ? normalize(proposed) : proposed;
+          const enclosing = enclosingAssertion(support);
+          const quoted = recordState(support.quote, stateName, type, field);
+          const full = enclosing ? recordState(enclosing, stateName, type, field) : undefined;
+          let latest: string | null | undefined;
+          for (const { event, sentence, visible } of assertionsFromCitation(support)) {
             if (!visible && (!event.id || !chronologyVetoIds.has(event.id))) continue;
-            const claim = projectState(sentence);
+            const claim = recordState(sentence, stateName, type, field);
             if (!claim) continue;
-            if (!claim.denied) current = claim.status;
-            else if (
-              current === claim.status ||
-              (current === undefined && claim.status === payload.status)
-            )
-              current = null;
+            if (!claim.denied) latest = claim.value;
+            else if (latest === claim.value || (latest === undefined && claim.value === wanted))
+              latest = null;
+          }
+          if (latest !== undefined && latest !== wanted) {
+            if (field === 'status') delete payload.status;
+            else delete payload.stage;
+            continue;
+          }
+          if (
+            quoted &&
+            !quoted.denied &&
+            quoted.value === wanted &&
+            full &&
+            !full.denied &&
+            full.value === wanted
+          ) {
+            const claim = verifiedClaim(support, proposed);
+            if (claim) claims[field] = claim;
           }
         }
-        const contradictsProposedState = current !== undefined && current !== payload.status;
-        const quoteState = state && projectState(state.quote);
-        const enclosingState = enclosing ? projectState(enclosing) : undefined;
-        const statusClaim =
-          type === 'project' &&
-          state &&
-          quoteState &&
-          !quoteState.denied &&
-          quoteState.status === payload.status &&
-          enclosingState &&
-          !enclosingState.denied &&
-          enclosingState.status === payload.status &&
-          !contradictsProposedState
-            ? verifiedClaim(state, payload.status)
-            : undefined;
-        if (contradictsProposedState) delete payload.status;
-        if (renameClaim || statusClaim)
-          args.verifiedTaskClaims?.set(item.auditId, {
-            ...(renameClaim ? { canonicalName: renameClaim } : {}),
-            ...(statusClaim ? { status: statusClaim } : {}),
-          });
+        if (Object.keys(claims).length) args.verifiedTaskClaims?.set(item.auditId, claims);
       }
       if (type === 'company' || type === 'project') {
         const tentative = supports.find(
@@ -2322,7 +2386,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           if (type === 'project' && item.operation === 'create') payload.status = 'planning';
         }
       }
-      if (type === 'task' || (item.targetKind === 'task' && item.operation === 'update')) {
+      if (isWorkRecord(type)) {
         const assignmentSupports = supports.filter((support) => support.field === 'assignee');
         const assignments = assignmentSupports.flatMap((support) => {
           const member = args.members.find((member) => member.userId === support.value);
@@ -2445,21 +2509,27 @@ export function groundCommunicationBundles<T extends Item>(args: {
         const targetName =
           args.objects?.find((object) => object.id === item.targetId)?.name ??
           (typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title);
-        const verifiedStatus =
+        const supersededStatus =
           lifecycle &&
-          lifecycleVerified(lifecycle, payload.status, /^(?:mark )?send\b/i.test(targetName)) &&
-          !lifecycleSuperseded(lifecycle, taskIdentityNames(item), (identity) =>
+          lifecycleSuperseded(lifecycle, taskIdentityNames(item), (identity) =>
             taskEvidenceUnambiguous(item, identity),
           );
+        const verifiedStatus =
+          lifecycle &&
+          (type !== 'follow_up' ||
+            ['todo', 'doing', 'done', 'cancelled'].some((status) => status === payload.status)) &&
+          lifecycleVerified(lifecycle, payload.status, /^(?:mark )?send\b/i.test(targetName)) &&
+          !supersededStatus;
         if (verifiedStatus && item.auditId) args.verifiedLifecycleAuditIds?.add(item.auditId);
         if (
           payload.status !== undefined &&
           !(item.operation === 'create' && payload.status === 'todo') &&
-          !verifiedStatus
+          !verifiedStatus &&
+          (type === 'task' || supersededStatus)
         )
           delete payload.status;
-        if (type === 'task' && item.auditId && args.verifiedTaskClaims) {
-          const claims: Partial<Record<MaintainedClaim, VerifiedClaim>> = {};
+        if (item.auditId && args.verifiedTaskClaims) {
+          const claims: Partial<Record<MaintainedRecordField, VerifiedClaim>> = {};
           if (renameClaim) claims.canonicalName = renameClaim;
           const assignment = claimFor('assigneeUserId');
           if (assignment && payload.assigneeUserId !== undefined) {
@@ -2647,7 +2717,7 @@ export function groundCommunicationBundles<T extends Item>(args: {
           explicitArchiveInstruction(support.quote, support.subject),
       );
       const operation =
-        type === 'task' && payload.status === 'cancelled'
+        isWorkRecord(type) && payload.status === 'cancelled'
           ? explicitArchive
             ? 'archive_or_cancel'
             : 'update'

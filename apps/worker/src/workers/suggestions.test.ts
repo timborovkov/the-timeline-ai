@@ -464,6 +464,78 @@ describe('processSuggestionJobForTests', () => {
     resetEnvForTests();
   });
 
+  it('advances an existing deal from audited offer delivery through automatic approval', async () => {
+    const [deal] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'deal',
+        canonicalName: 'Northstar rollout',
+        status: 'open',
+      })
+      .returning();
+    if (!deal) throw new Error('Missing deal fixture');
+    const id = crypto.randomUUID();
+    const quote = 'The offer for Northstar rollout has been sent.';
+    await seedRawEvent(db as never, {
+      id,
+      source: 'meeting',
+      text: '[30s] Alex: ' + quote,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: id, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Northstar proposal delivered',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'update',
+                    targetKind: 'object',
+                    targetId: deal.id,
+                    title: 'Northstar proposal delivered',
+                    proposedPayload: { status: 'proposal' },
+                    grounding: [
+                      {
+                        field: 'status',
+                        rawEventId: id,
+                        quote,
+                        subject: 'Northstar rollout',
+                        value: 'proposal',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [applied] = await db.select().from(agentSuggestionItems);
+    expect(applied).toMatchObject({
+      status: 'accepted',
+      resultId: deal.id,
+      resolvedByUserId: null,
+    });
+    expect(applied?.metadata).toMatchObject({ approval_decision: 'automatic' });
+    const [updated] = await db
+      .select({ status: entities.status })
+      .from(entities)
+      .where(eq(entities.id, deal.id));
+    expect(updated?.status).toBe('proposal');
+  });
+
   it('audits a team meeting and automatically applies its two independent task reports', async () => {
     const id = crypto.randomUUID();
     await seedRawEvent(db as never, {

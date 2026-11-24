@@ -82,10 +82,10 @@ import type {
 } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
-  MAINTAINED_TASK_FIELDS,
+  MAINTAINED_RECORD_FIELDS,
   OBJECT_TYPES,
   maintainedRecordFields,
-  type MaintainedTaskField,
+  type MaintainedRecordField,
 } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
 import {
@@ -462,7 +462,7 @@ export interface SuggestionItemInput {
   proposedPayload: Record<string, unknown>;
   evidenceRawEventIds?: string[];
   plannedDateEvidence?: VerifiedTaskClaim;
-  taskFieldEvidence?: Partial<Record<MaintainedTaskField, VerifiedTaskClaim>>;
+  taskFieldEvidence?: Partial<Record<MaintainedRecordField, VerifiedTaskClaim>>;
 }
 
 function missingRequiredTargetReason(
@@ -5188,7 +5188,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
     if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
     if (parsed.status !== undefined) input.status = parsed.status;
-    else if (type === 'task') input.status = 'todo';
+    else if (type === 'task' || type === 'follow_up') input.status = 'todo';
     else if (type === 'project') input.status = 'planning';
     if (parsed.stage !== undefined) input.stage = parsed.stage;
     if (parsed.priority !== undefined) input.priority = parsed.priority;
@@ -6358,12 +6358,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function getTaskFieldEvidence(
     item: typeof agentSuggestionItems.$inferSelect,
-    proposed: Pick<z.infer<typeof objectUpdatePayload>, MaintainedTaskField>,
+    proposed: Pick<z.infer<typeof objectUpdatePayload>, MaintainedRecordField>,
     strict = true,
   ): Promise<NonNullable<CreateObjectInput['taskFieldEvidence']>> {
     const evidence = recordFromUnknown(recordFromUnknown(item.metadata).task_field_evidence);
     const verified: NonNullable<CreateObjectInput['taskFieldEvidence']> = {};
-    for (const field of MAINTAINED_TASK_FIELDS) {
+    for (const field of MAINTAINED_RECORD_FIELDS) {
       const claim = await getVerifiedTaskClaim(item, evidence[field], proposed[field], strict);
       if (claim) verified[field] = claim;
     }
@@ -6716,14 +6716,44 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (item.operation === 'create') {
       const type = item.targetKind === 'task' ? 'task' : payload.type;
-      if (!['task', 'company', 'project', 'person'].includes(String(type))) return null;
+      if (typeof type !== 'string' || !maintainedRecordFields(type).length) return null;
       if (payload.metadata !== undefined) return null;
+      if (['deal', 'vendor', 'incident', 'decision', 'hiring_loop', 'follow_up'].includes(type)) {
+        const proposed = objectCreatePayload.safeParse(payload);
+        if (!proposed.success || payload.plannedDate !== undefined) return null;
+        const claims = await getTaskFieldEvidence(item, proposed.data, false);
+        const defaultStatus = type === 'follow_up' ? 'todo' : 'open';
+        if (
+          proposed.data.status !== undefined &&
+          proposed.data.status !== defaultStatus &&
+          !claims.status
+        )
+          return null;
+        const allowed = [
+          'type',
+          'canonicalName',
+          'localRef',
+          'aliases',
+          ...maintainedRecordFields(type),
+        ];
+        if (Object.keys(payload).some((field) => !allowed.includes(field))) return null;
+        if (
+          MAINTAINED_RECORD_FIELDS.some(
+            (field) =>
+              field !== 'canonicalName' &&
+              field !== 'status' &&
+              proposed.data[field] !== undefined &&
+              !claims[field],
+          )
+        )
+          return null;
+      }
     } else if (item.operation === 'update') {
       const fields = Object.keys(payload);
       if (
         !item.targetId ||
         !fields.length ||
-        fields.some((field) => !['plannedDate', ...MAINTAINED_TASK_FIELDS].includes(field))
+        fields.some((field) => !['plannedDate', ...MAINTAINED_RECORD_FIELDS].includes(field))
       )
         return null;
       const parsed = objectUpdatePayload.safeParse(payload);
@@ -6731,7 +6761,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const date = parsed.data.plannedDate;
       if (date !== undefined && !(await getPlannedDateEvidence(item, date, false))) return null;
       const claims = await getTaskFieldEvidence(item, parsed.data, false);
-      if (MAINTAINED_TASK_FIELDS.some((field) => fields.includes(field) && !claims[field]))
+      if (MAINTAINED_RECORD_FIELDS.some((field) => fields.includes(field) && !claims[field]))
         return null;
       const [target] = await db
         .select({
@@ -6744,6 +6774,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           assigneeUserId: entities.assigneeUserId,
           dueAt: entities.dueAt,
           status: entities.status,
+          stage: entities.stage,
         })
         .from(entities)
         .where(
@@ -6782,7 +6813,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         )
           return null;
         if (
-          MAINTAINED_TASK_FIELDS.some((field) => {
+          MAINTAINED_RECORD_FIELDS.some((field) => {
             const current = target[field];
             const value = current instanceof Date ? current.toISOString() : current;
             return (
