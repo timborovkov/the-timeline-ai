@@ -17,6 +17,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
+import { generateDailyDigest, listDailyDigestRecipients } from '#src/messaging/digest.js';
 import { withTeam } from '#src/team-scope.js';
 import type * as TelegramApiModule from '#src/telegram/api.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -435,4 +436,40 @@ it('offers and sends configured email only for the member’s current verified a
       .set({ payload: digest.payload })
       .where(eq(dailyDigests.id, digestId));
   }
+});
+
+it('isolates the workspace recipient lookup and skips a stale Helsinki job after a Tokyo change', async () => {
+  const otherTeamId = '55555555-5555-4555-8555-555555555555';
+  await db.insert(teams).values({ id: otherTeamId, slug: 'digest-other-team', name: 'Other team' });
+  await db.insert(teamMembers).values({ teamId: otherTeamId, userId, role: 'member' });
+  const changes = { timezone: 'Asia/Tokyo', updatedAt: new Date('2026-11-22T18:00:00Z') };
+  await db.insert(messagePreferences).values({
+    teamId: otherTeamId,
+    userId,
+    ...changes,
+    dailyDigestEnabled: true,
+    dailyDigestHour: 12,
+    updateOptions: {
+      cadence: 'weekly',
+      scope: 'saved_views',
+      focus: 'balanced',
+      destination: 'app',
+    },
+  });
+  expect(await listDailyDigestRecipients(db, { teamId: otherTeamId })).toEqual([
+    expect.objectContaining({ teamId: otherTeamId, userId }),
+  ]);
+  await expect(
+    generateDailyDigest({
+      db,
+      teamId: otherTeamId,
+      userId,
+      windowStart: new Date('2026-11-16T10:00:00Z'),
+      windowEnd: new Date('2026-11-23T10:00:00Z'),
+      now: new Date('2026-11-23T10:00:00Z'),
+    }),
+  ).resolves.toMatchObject({ skipped: true, digestId: '' });
+  expect(await db.select().from(dailyDigests).where(eq(dailyDigests.teamId, otherTeamId))).toEqual(
+    [],
+  );
 });

@@ -53,6 +53,7 @@ import {
 export {
   defaultDigestWindow,
   isDigestWindowExpired,
+  nextScheduledUpdateRecipientJob,
   nextScheduledUpdateWindow,
   scheduledUpdateWindow,
 } from '#src/messaging/digest-window.js';
@@ -852,7 +853,10 @@ async function getTeamDigestTimezone(db: Db, teamId: string): Promise<string> {
   return rows[0]?.defaultTimezone ?? DEFAULT_WORKSPACE_TIMEZONE;
 }
 
-export async function listDailyDigestRecipients(db: Db): Promise<DigestRecipient[]> {
+export async function listDailyDigestRecipients(
+  db: Db,
+  workspace?: { teamId: string },
+): Promise<DigestRecipient[]> {
   return db
     .select({
       teamId: teamMembers.teamId,
@@ -866,6 +870,7 @@ export async function listDailyDigestRecipients(db: Db): Promise<DigestRecipient
     .innerJoin(users, eq(users.id, teamMembers.userId))
     .where(
       and(
+        workspace ? eq(teamMembers.teamId, workspace.teamId) : undefined,
         activeWorkspaceCondition(teamMembers.teamId),
         isNull(teamMembers.removedAt),
         inArray(teamMembers.role, ['owner', 'admin', 'member']),

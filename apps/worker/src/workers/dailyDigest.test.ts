@@ -1,3 +1,4 @@
+import { nextScheduledUpdateRecipientJob } from '@timeline/shared/messaging';
 import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
@@ -30,6 +31,7 @@ await vi.mock(
       defaultDigestWindow: fakes.defaultDigestWindow,
       scheduledUpdateWindow: fakes.scheduledUpdateWindow,
       nextScheduledUpdateWindow: fakes.nextScheduledUpdateWindow,
+      nextScheduledUpdateRecipientJob,
       getDigestPreference: fakes.getDigestPreference,
       listDailyDigestRecipients: fakes.listDailyDigestRecipients,
       generateDailyDigest: fakes.generateDailyDigest,
@@ -121,6 +123,52 @@ describe('daily digest worker', () => {
       expect.any(Number),
     );
     expect(fakes.enqueueDailyDigestRecipientJob.mock.calls[0]?.[1]).toBeGreaterThan(0);
+  });
+
+  it('replaces the Helsinki window with Tokyo Monday noon for the requested workspace only', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-22T18:00:00.000Z'));
+    const eligible = { teamId: 'team-1', userId: 'user-1', email: 'eligible@example.test' };
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      eligible,
+      { teamId: 'team-1', userId: 'paused', email: 'paused@example.test' },
+      { teamId: 'team-1', userId: 'legacy', email: 'legacy@example.test' },
+    ]);
+    const selected = {
+      enabled: true,
+      hour: 12,
+      timezone: 'Asia/Tokyo',
+      options: { cadence: 'weekly' },
+    };
+    fakes.getDigestPreference
+      .mockResolvedValueOnce(selected)
+      .mockResolvedValueOnce({ ...selected, enabled: false })
+      .mockResolvedValueOnce({ ...selected, options: undefined });
+
+    try {
+      const db = {} as never;
+      await processDailyDigestJob({ db }, { kind: 'workspace-reschedule', teamId: 'team-1' });
+      expect(fakes.listDailyDigestRecipients).toHaveBeenCalledOnce();
+      expect(fakes.listDailyDigestRecipients).toHaveBeenCalledWith(db, {
+        teamId: 'team-1',
+      });
+      expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledOnce();
+      expect(fakes.enqueueDailyDigestRecipientJob).toHaveBeenCalledWith(
+        {
+          kind: 'recipient',
+          ...eligible,
+          windowStart: '2026-11-16T03:00:00.000Z',
+          windowEnd: '2026-11-23T03:00:00.000Z',
+        },
+        32_400_000,
+      );
+      expect(fakes.listWorkspaceDigestTeamIds).not.toHaveBeenCalled();
+      expect(fakes.generateDailyDigest).not.toHaveBeenCalled();
+      expect(fakes.enqueueDailyDigestSendJob).not.toHaveBeenCalled();
+      expect(fakes.sendWorkspaceDailyDigest).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fans out one recipient job per active member using their digest timezone', async () => {

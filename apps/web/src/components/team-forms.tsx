@@ -192,7 +192,10 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
 }
 
 export function TeamTimezoneForm({ timezone, options }: { timezone: string; options: string[] }) {
-  const [state, action] = useActionState<TeamTimezoneState, FormData>(updateTeamTimezoneAction, {});
+  const [state, action, pending] = useActionState<TeamTimezoneState, FormData>(
+    updateTeamTimezoneAction,
+    {},
+  );
   const timezoneError = state.error === 'Choose a valid timezone' ? state.error : undefined;
   return (
     <form action={action} className="space-y-3">
@@ -225,6 +228,23 @@ export function TeamTimezoneForm({ timezone, options }: { timezone: string; opti
           workspace-relative dates in chat.
         </p>
       </div>
+      {state.retryScheduleTeamId ? (
+        <div className="space-y-2">
+          <p role="status" className="text-xs text-fg-dim">
+            Timezone saved. The next Updates could not be queued.
+          </p>
+          <Button
+            type="submit"
+            name="intent"
+            value="retry-scheduling"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+          >
+            Retry scheduling
+          </Button>
+        </div>
+      ) : null}
       <FormFeedback
         toastId="team-timezone"
         error={state.error}
@@ -354,7 +374,7 @@ export function InboundEmailWhitelistForm({
 }
 
 export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
-  const [state, action] = useActionState<DigestPreferenceState, FormData>(
+  const [state, action, pending] = useActionState<DigestPreferenceState, FormData>(
     updateDigestPreferenceAction,
     {},
   );
@@ -378,6 +398,23 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
           </span>
         </span>
       </label>
+      {state.retryScheduleTeamId ? (
+        <div className="space-y-2">
+          <p role="status" className="text-xs text-fg-dim">
+            Digest preference saved. The next update could not be queued.
+          </p>
+          <Button
+            type="submit"
+            name="intent"
+            value="retry-scheduling"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+          >
+            Retry scheduling
+          </Button>
+        </div>
+      ) : null}
       <FormFeedback
         toastId="digest-preference"
         error={state.error}

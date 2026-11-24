@@ -12,6 +12,10 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
+  fakeRequestIdentity: vi.fn(),
+  fakeGetDigestPreference: vi.fn(),
+  fakeEnqueueRecipient: vi.fn(),
+  fakeEnqueueWorkspaceReschedule: vi.fn(),
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
   fakeTransaction: vi.fn(),
@@ -33,7 +37,7 @@ const fakes = vi.hoisted(() => ({
 
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.fakeAuth }),
+  () => ({ auth: fakes.fakeAuth, getRequestIdentity: fakes.fakeRequestIdentity }),
   () => import('@/lib/auth'),
 );
 await vi.mock(
@@ -127,6 +131,17 @@ await vi.mock(
   () => import('@timeline/shared/team-scope'),
 );
 await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: () =>
+      Promise.resolve({
+        enqueueDailyDigestRecipientJob: fakes.fakeEnqueueRecipient,
+        enqueueWorkspaceUpdateReschedule: fakes.fakeEnqueueWorkspaceReschedule,
+      }),
+  }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
   import.meta.resolve('@/lib/onboarding'),
   () => ({
     safeMarkOnboardingStep: vi.fn().mockResolvedValue(false),
@@ -138,6 +153,7 @@ await vi.mock(
   async () => ({
     ...(await import('@timeline/shared/messaging')),
     sendMessage: fakes.fakeSendMessage,
+    getDigestPreference: fakes.fakeGetDigestPreference,
     insertDefaultDigestDestination: vi.fn().mockResolvedValue(undefined),
   }),
   () => import('@timeline/shared/messaging'),
@@ -320,6 +336,12 @@ beforeEach(() => {
   fakes.fakeAuth.mockResolvedValue({
     user: { id: USER_ID, name: 'Taylor', email: 'taylor@example.test' },
   });
+  fakes.fakeRequestIdentity.mockResolvedValue({
+    session: { user: { id: USER_ID, email: 'taylor@example.test' } },
+    impersonation: null,
+  });
+  fakes.fakeEnqueueRecipient.mockResolvedValue(undefined);
+  fakes.fakeEnqueueWorkspaceReschedule.mockResolvedValue(undefined);
   fakes.fakeResolveActiveTeam.mockResolvedValue({
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
   });
@@ -591,6 +613,79 @@ describe('updateDigestPreferenceAction', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
+
+  it('re-enables and queues an already configured update for this member only', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-22T18:00:00.000Z'));
+    const updateOptions = { cadence: 'weekly' };
+    fakes.fakeDbSelect.mockReturnValueOnce(
+      selectChain([{ id: 'preference', dailyDigestEnabled: false, updateOptions }]),
+    );
+    fakes.fakeGetDigestPreference.mockResolvedValue({
+      enabled: true,
+      hour: 12,
+      timezone: 'Asia/Tokyo',
+      options: updateOptions,
+    });
+    try {
+      await expect(
+        updateDigestPreferenceAction({}, form({ dailyDigestEnabled: 'on' })),
+      ).resolves.toEqual({ ok: true });
+      expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
+      expect(fakes.fakeEnqueueRecipient).toHaveBeenCalledOnce();
+      expect(fakes.fakeEnqueueRecipient).toHaveBeenCalledWith(
+        {
+          kind: 'recipient',
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          email: 'taylor@example.test',
+          windowStart: '2026-11-16T03:00:00.000Z',
+          windowEnd: '2026-11-23T03:00:00.000Z',
+        },
+        32_400_000,
+      );
+      expect(fakes.fakeEnqueueWorkspaceReschedule).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a saved digest schedule without rewriting or enabling a now-paused preference', async () => {
+    const updateOptions = { cadence: 'weekly' };
+    const retry = { ok: true, retryScheduleTeamId: TEAM_ID };
+    fakes.fakeDbSelect.mockReturnValueOnce(
+      selectChain([{ id: 'preference', dailyDigestEnabled: true, updateOptions }]),
+    );
+    fakes.fakeGetDigestPreference.mockResolvedValue({
+      enabled: true,
+      hour: 12,
+      timezone: 'Asia/Tokyo',
+      options: updateOptions,
+    });
+    fakes.fakeEnqueueRecipient.mockRejectedValueOnce(new Error('Redis unavailable'));
+    await expect(
+      updateDigestPreferenceAction({}, form({ dailyDigestEnabled: 'on' })),
+    ).resolves.toEqual(retry);
+
+    fakes.fakeDbSelect.mockReturnValueOnce(
+      selectChain([{ id: 'preference', dailyDigestEnabled: true, updateOptions }]),
+    );
+    await expect(
+      updateDigestPreferenceAction(retry, form({ intent: 'retry-scheduling' })),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeEnqueueRecipient).toHaveBeenCalledTimes(2);
+
+    fakes.fakeDbSelect.mockReturnValueOnce(
+      selectChain([{ id: 'preference', dailyDigestEnabled: false, updateOptions }]),
+    );
+    await expect(
+      updateDigestPreferenceAction(retry, form({ intent: 'retry-scheduling' })),
+    ).resolves.toEqual({
+      error: 'There is no active update schedule to retry.',
+    });
+    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueRecipient).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('updateTeamTimezoneAction', () => {
@@ -609,6 +704,18 @@ describe('updateTeamTimezoneAction', () => {
     await expect(
       updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
     ).resolves.toEqual({ error: 'Only admins can update team timezone' });
+  });
+
+  it('denies an impersonated administrator before any timezone write or enqueue', async () => {
+    fakes.fakeRequestIdentity.mockResolvedValue({
+      session: { user: { id: USER_ID } },
+      impersonation: { readOnly: false },
+    });
+    await expect(updateTeamTimezoneAction({}, form({ timezone: 'Asia/Tokyo' }))).resolves.toEqual({
+      error: 'Exit impersonation to update the team timezone.',
+    });
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueWorkspaceReschedule).not.toHaveBeenCalled();
   });
 
   it('validates IANA timezone names before writing', async () => {
@@ -664,6 +771,8 @@ describe('updateTeamTimezoneAction', () => {
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.fakeEnqueueWorkspaceReschedule).toHaveBeenCalledOnce();
+    expect(fakes.fakeEnqueueWorkspaceReschedule).toHaveBeenCalledWith(TEAM_ID);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/meetings');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
@@ -687,6 +796,46 @@ describe('updateTeamTimezoneAction', () => {
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
     expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('keeps the saved timezone when the queue is unavailable and retries without a second write', async () => {
+    const tx = makeTx([]);
+    let committed = false;
+    fakes.fakeTransaction.mockImplementation(async (apply: (tx: unknown) => Promise<void>) => {
+      await apply(tx.tx);
+      committed = true;
+    });
+    fakes.fakeEnqueueWorkspaceReschedule.mockImplementationOnce(() => {
+      expect(committed).toBe(true);
+      return Promise.reject(new Error('Redis unavailable'));
+    });
+    const state = await updateTeamTimezoneAction({}, form({ timezone: 'Asia/Tokyo' }));
+    expect(state).toEqual({ ok: true, retryScheduleTeamId: TEAM_ID });
+    expect(fakes.fakeTransaction).toHaveBeenCalledOnce();
+
+    await expect(
+      updateTeamTimezoneAction(
+        state,
+        form({
+          timezone: 'Asia/Tokyo',
+          intent: 'retry-scheduling',
+        }),
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeTransaction).toHaveBeenCalledOnce();
+    expect(fakes.fakeEnqueueWorkspaceReschedule.mock.calls).toEqual([[TEAM_ID], [TEAM_ID]]);
+
+    fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: 'other-team' } });
+    await expect(
+      updateTeamTimezoneAction(
+        state,
+        form({
+          timezone: 'Asia/Tokyo',
+          intent: 'retry-scheduling',
+        }),
+      ),
+    ).resolves.toEqual({ error: 'Reopen the team timezone settings to retry scheduling.' });
+    expect(fakes.fakeEnqueueWorkspaceReschedule).toHaveBeenCalledTimes(2);
   });
 
   it('reports write failures without masking them as permission failures', async () => {

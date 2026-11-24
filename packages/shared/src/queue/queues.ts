@@ -1191,6 +1191,7 @@ export async function closeTeamExportQueue(): Promise<void> {
 
 export type DailyDigestJobData =
   | { kind: 'tick'; windowStart?: string; windowEnd?: string; reason?: 'scheduled' | 'catchup' }
+  | { kind: 'workspace-reschedule'; teamId: string }
   | {
       kind: 'recipient';
       teamId: string;
@@ -1257,6 +1258,10 @@ export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Prom
       ]),
     },
   );
+}
+
+export async function enqueueWorkspaceUpdateReschedule(teamId: string): Promise<void> {
+  await getDailyDigestQueue().add('workspace-reschedule', { kind: 'workspace-reschedule', teamId });
 }
 
 export async function enqueueDailyDigestRecipientJob(
