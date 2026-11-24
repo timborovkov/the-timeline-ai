@@ -8,6 +8,23 @@ import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-conte
 const dueDate = '2026-07-15T00:30:00.000Z';
 
 describe('guest record deadlines', () => {
+  it('keeps a date-only deadline on the same calendar day in disparate zones', () => {
+    const record = {
+      live: true,
+      body: null,
+      status: null,
+      dueDate: '2026-12-01T00:00:00.000Z',
+    };
+    for (const timezone of ['America/Los_Angeles', 'Asia/Tokyo']) {
+      const html = renderToStaticMarkup(
+        <WorkspaceTimezoneProvider timezone="UTC" region={{ locale: 'de-DE', timezone }}>
+          <SharedRecordDetails record={record} />
+        </WorkspaceTimezoneProvider>,
+      );
+      expect(html).toContain('<time dateTime="2026-12-01">01.12.2026</time>');
+    }
+  });
+
   for (const [locale, timezone] of [
     ['en-US', 'America/Los_Angeles'],
     ['ja-JP', 'Asia/Tokyo'],

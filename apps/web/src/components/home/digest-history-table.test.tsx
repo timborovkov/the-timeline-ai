@@ -101,6 +101,79 @@ describe('DigestHistoryTable', () => {
     expect(times.every((time) => time.textContent.includes('17:00'))).toBe(true);
   });
 
+  it('localizes timed events and due dates while keeping calendar-only and legacy days', () => {
+    const href = '/app/calendar?date=2026-12-01';
+    const allDay = {
+      id: 'day',
+      title: 'Offsite',
+      startAt: '2026-11-30T22:00:00.000Z',
+      endAt: '2026-12-01T22:00:00.000Z',
+      href,
+      allDay: true,
+      eventTimezone: 'Europe/Helsinki',
+    };
+    const legacy = {
+      id: 'legacy',
+      title: 'Old calendar row',
+      startAt: '2026-12-01T00:15:00.000Z',
+      endAt: '2026-12-01T01:15:00.000Z',
+      href,
+    };
+    const timed = {
+      ...legacy,
+      id: 'timed',
+      title: 'Timed review',
+      allDay: false,
+      eventTimezone: 'Europe/Helsinki',
+    };
+    const payload: DailyDigestPayload = {
+      ...PAYLOAD,
+      timezone: 'Europe/Helsinki',
+      windowCalendar: [allDay],
+      upcomingCalendar: [timed, legacy],
+      tasks: [
+        {
+          id: 'task',
+          title: 'Briefing deadline',
+          dueAt: legacy.startAt,
+          status: 'open',
+          href: '/app/objects/task',
+        },
+      ],
+    };
+    render(
+      <WorkspaceTimezoneProvider
+        timezone="Europe/Helsinki"
+        region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+      >
+        <DigestHistoryTable
+          selectedId="digest"
+          digests={[
+            {
+              id: 'digest',
+              status: 'generated',
+              summary: payload.summary,
+              windowEnd: payload.windowEnd,
+              payload,
+            },
+          ]}
+        />
+      </WorkspaceTimezoneProvider>,
+    );
+
+    const timeFor = (name: string) =>
+      screen.getByRole('link', { name }).closest('li')?.querySelector('time');
+    expect(timeFor('Offsite')?.textContent).toBe('01.12.2026');
+    expect(timeFor('Offsite')?.getAttribute('datetime')).toBe('2026-12-01');
+    expect(timeFor('Timed review')?.textContent).toContain('16:15');
+    expect(timeFor('Timed review')?.getAttribute('datetime')).toBe(legacy.startAt);
+    expect(timeFor('Old calendar row')?.textContent).toContain('02:15');
+    expect(screen.getByRole('link', { name: 'Offsite' }).getAttribute('href')).toBe(href);
+    expect(
+      screen.getByRole('link', { name: 'Briefing deadline' }).closest('li')?.textContent,
+    ).toContain('01.12.2026');
+  });
+
   it('lets a teammate open another day without a selected query', async () => {
     const user = userEvent.setup();
     const { container } = render(

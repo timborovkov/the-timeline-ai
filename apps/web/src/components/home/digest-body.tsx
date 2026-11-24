@@ -6,14 +6,16 @@ import {
   digestSummaryParagraphs,
   formatDigestActivityItems,
   formatDigestObjectType,
-  formatDigestTaskDetail,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
+import { localDateFromInstant } from '@timeline/shared/time';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { DigestTaskDetail } from '@/components/home/digest-task-detail';
 import { RegionalDate } from '@/components/regional-date';
 import { RegionalNumber } from '@/components/regional-number';
+import { parseDisplayDate } from '@/lib/display-dates';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +39,7 @@ export function DigestBody({
   const sections = digestContentSections(digest);
   const activityItems = formatDigestActivityItems(digestActivityStats(digest));
   const completedTasks = digest.completedTasks ?? [];
+  const dueStatusAt = new Date();
   const newObjects = digest.newObjects ?? [];
   const windowCalendar = digest.windowCalendar ?? [];
   const memberItems = digest.newTeamMembers.map((member) => ({
@@ -100,7 +103,7 @@ export function DigestBody({
             key: task.id,
             href: digestAppHref(task.href) ?? undefined,
             label: task.title,
-            detail: formatDigestTaskDetail(task, digest.timezone),
+            detail: <DigestTaskDetail task={task} timezone={digest.timezone} now={dueStatusAt} />,
           }))}
         />
         <DigestList
@@ -109,7 +112,7 @@ export function DigestBody({
             key: task.id,
             href: digestAppHref(task.href) ?? undefined,
             label: task.title,
-            detail: formatDigestTaskDetail(task, digest.timezone),
+            detail: <DigestTaskDetail task={task} timezone={digest.timezone} now={dueStatusAt} />,
           }))}
         />
         <DigestList
@@ -121,10 +124,13 @@ export function DigestBody({
             detail: `(${formatDigestObjectType(object.type)})`,
           }))}
         />
-        <DigestList label="Calendar this window" items={digestCalendarItems(windowCalendar)} />
+        <DigestList
+          label="Calendar this window"
+          items={digestCalendarItems(windowCalendar, digest.timezone)}
+        />
         <DigestList
           label="Upcoming calendar"
-          items={digestCalendarItems(digest.upcomingCalendar)}
+          items={digestCalendarItems(digest.upcomingCalendar, digest.timezone)}
         />
         <DigestList label="New team members" items={memberItems} />
       </div>
@@ -151,18 +157,42 @@ export function DigestBody({
   );
 }
 
-function digestCalendarItems(events: DailyDigestPayload['upcomingCalendar']) {
-  return events.map((event) => ({
-    key: event.id,
-    href: digestAppHref(event.href) ?? undefined,
-    label: event.title,
-    detail: (
-      <>
-        ({event.repeating ? 'repeating · next ' : null}
-        <RegionalDate value={event.startAt} parts={rangeEndParts} />)
-      </>
-    ),
-  }));
+function digestCalendarItems(
+  events: DailyDigestPayload['upcomingCalendar'],
+  digestTimezone = 'UTC',
+) {
+  return events.map((event) => {
+    const allDay = 'allDay' in event ? event.allDay : undefined;
+    const eventTimezone =
+      'eventTimezone' in event && typeof event.eventTimezone === 'string'
+        ? event.eventTimezone
+        : digestTimezone;
+    const start = parseDisplayDate(event.startAt);
+    const day =
+      allDay === true && start
+        ? localDateFromInstant(start.toISOString(), eventTimezone)
+        : undefined;
+    return {
+      key: event.id,
+      href: digestAppHref(event.href) ?? undefined,
+      label: event.title,
+      detail: (
+        <>
+          ({event.repeating ? 'repeating · next ' : null}
+          {day ? (
+            <RegionalDate value={day} />
+          ) : (
+            <RegionalDate
+              value={event.startAt}
+              parts={rangeEndParts}
+              timezone={allDay === false ? undefined : digestTimezone}
+            />
+          )}
+          )
+        </>
+      ),
+    };
+  });
 }
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Digest linked lists share the briefing payload renderer.

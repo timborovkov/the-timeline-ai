@@ -11,7 +11,10 @@ import { db } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const requestSchema = z.object({ ref: artifactRefSchema });
+const requestSchema = z.object({
+  ref: artifactRefSchema,
+  region: z.object({ locale: z.string().max(80), timezone: z.string().max(80) }).optional(),
+});
 function notFound(): Response {
   return Response.json({ error: 'not_found' }, { status: 404 });
 }
@@ -29,7 +32,13 @@ export async function POST(req: Request): Promise<Response> {
   let preview: ArtifactPreview | null = null;
   try {
     const timezone = (await scope.calendar.getCalendarSettings()).defaultTimezone;
-    preview = await hydrateArtifactPreview(scope, active.teamId, parsed.data.ref, timezone);
+    preview = await hydrateArtifactPreview(
+      scope,
+      active.teamId,
+      parsed.data.ref,
+      timezone,
+      parsed.data.region,
+    );
   } catch {
     preview = null;
   }

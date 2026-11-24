@@ -36,6 +36,27 @@ describe('meeting transcript export', () => {
     expect(exported).toContain('- 01:02 Unattributed utterance still exports.');
   });
 
+  it('formats the captured instant in the viewer region while keeping elapsed offsets', () => {
+    const input = {
+      title: 'Midnight review',
+      platform: 'meet',
+      status: 'completed',
+      createdAt: new Date('2026-12-01T00:15:00Z'),
+      meetingUrl: 'https://meet.google.com/example',
+      summary: null,
+      chunks: [{ speaker: null, text: 'First line', startMs: 7_000 }],
+    };
+    const losAngeles = formatTranscriptExport(input, {
+      locale: 'en-US',
+      timezone: 'America/Los_Angeles',
+    });
+    const tokyo = formatTranscriptExport(input, { locale: 'de-DE', timezone: 'Asia/Tokyo' });
+    expect(losAngeles).toMatch(/Captured: Nov 30, 2026(?:,| at) 4:15:00 PM PST/);
+    expect(tokyo).toMatch(/Captured: 1\. Dez\. 2026, 0?9:15:00 GMT\+9/);
+    expect(losAngeles).toContain('- 00:07 First line');
+    expect(tokyo).toContain('- 00:07 First line');
+  });
+
   it('keeps empty transcripts explicit', () => {
     expect(
       formatTranscriptExport({

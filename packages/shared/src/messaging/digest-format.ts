@@ -259,8 +259,13 @@ export function formatDigestTaskDetail(
   task: DailyDigestPayload['tasks'][number],
   timezone?: string,
   now?: Date,
+  locale?: string,
 ): string {
-  const due = presentDueDate(task.dueAt, { timezone: timezone ?? 'UTC', ...(now ? { now } : {}) });
+  const due = presentDueDate(task.dueAt, {
+    timezone: timezone ?? 'UTC',
+    ...(now ? { now } : {}),
+    ...(locale ? { locale } : {}),
+  });
   const dueText =
     due.status === 'invalid'
       ? due.compactText

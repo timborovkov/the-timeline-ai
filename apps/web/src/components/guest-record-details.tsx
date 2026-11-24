@@ -1,3 +1,5 @@
+import { dateOnlyDueDateKey } from '@timeline/shared/time';
+
 import { RegionalDate } from '@/components/regional-date';
 
 export function SharedRecordDetails({
@@ -6,6 +8,7 @@ export function SharedRecordDetails({
   record: { live: boolean; body: string | null; status: string | null; dueDate: string | null };
 }) {
   if (!record.live) return <p className="whitespace-pre-wrap break-words">{record.body}</p>;
+  const dueDate = record.dueDate && (dateOnlyDueDateKey(record.dueDate) ?? record.dueDate);
   return (
     <dl className="space-y-2 text-sm">
       {record.status ? (
@@ -14,11 +17,11 @@ export function SharedRecordDetails({
           <dd>{record.status}</dd>
         </div>
       ) : null}
-      {record.dueDate ? (
+      {dueDate ? (
         <div className="flex gap-2">
           <dt>Due</dt>
           <dd>
-            <RegionalDate value={record.dueDate} variant="datetime" />
+            <RegionalDate value={dueDate} variant="datetime" />
           </dd>
         </div>
       ) : null}

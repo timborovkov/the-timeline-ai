@@ -109,7 +109,11 @@ lists them, and discards that draft if the rewrite fails. Narrative sections
 use Highlights, Status, Completed, In progress, Decisions, Risks, and
 Follow-ups; Status is the current state of work, not a product-specific label.
 Empty sections and empty task, object, or calendar groups are omitted. The
-header shows the digest date, and the covering time range stays footer metadata. App timestamps use the viewer’s display preferences. Updates still run in the configured time zone and keep their original coverage window.
+header shows the digest date, and the covering time range stays footer metadata.
+App timestamps use the viewer’s display preferences. Calendar entries keep an
+all-day event’s original calendar date. Older briefings without event metadata
+retain their briefing time zone for calendar rows. Updates keep their configured
+schedule and original coverage window.
 Activity is a compact count strip using the same mono lime numbers as Home
 Attention, and is hidden when every count is zero. Task, object, and
 calendar blocks are ordinary linked lists: newly created or completed tasks,
@@ -295,9 +299,10 @@ first page after sign-in. Where no choice is saved, the first render uses the
 browser's requested language and the workspace timezone. It follows the
 browser language and timezone once the page is interactive. Calendar grid
 placement, due-date status and date filters still follow their workspace or
-event time contracts. Billing periods retain their UTC boundaries. Old
-Preferences links resolve to General. Evaluation tracing
-and conversation report sharing appear as descriptive navigation rows under
+event time contracts. Billing periods retain their UTC boundaries. The
+[cookie notice](../../apps/web/src/app/cookies/page.tsx) owns display preference
+storage and reset details. Old Preferences links resolve to General.
+Evaluation tracing and conversation report sharing appear as descriptive navigation rows under
 Quality and support within General, never above the page header. Solo signup
 defers workspace creation until first-run Welcome: the chosen name mints the
 slug and inbound email then (prefill `${name}'s team`). Invite-only signup
@@ -877,4 +882,4 @@ a dated snapshot header and a separate link to the current project.
 
 Team owners and admins create an invitation link for the guest’s email address. The invited account must verify that address before accepting and can resend verification from the invitation. Eligible notes are team-visible text captured in the app. They can grant live access to an active task or project, or publish a fixed title and text for that guest. Live views show the current title, status and due date where those values have team-visible evidence from a direct edit or an applied proposal. Supporting notes are selected separately. Published snapshots show the title and text entered for the guest and carry a Published snapshot label in Shared work. Updating the original task or project does not update the snapshot. Settings let admins search for work to share and show existing publications and note grants beside the invited guest, with controls to remove either or revoke the invitation.
 
-Shared work gives a guest a list and search over their shares. They can ask a question about an open item or recent shared work from the list. Answers link to the excerpts they cite. Guests reopen Shared work from its direct link or an accepted invitation. Promotion uses the full-member invitation flow. To give a former full member guest access, remove their full membership and issue a fresh guest invitation. Share the work again after a role transition. Guest questions use the host workspace’s shared usage allowance. The view stays readable when questions are paused. Deadline instants use the guest’s display locale and time zone, retaining the time of day. Browser-local preferences saved in a workspace also apply in Shared work for that signed-in account.
+Shared work gives a guest a list and search over their shares. They can ask a question about an open item or recent shared work from the list. Answers link to the excerpts they cite. Guests reopen Shared work from its direct link or an accepted invitation. Promotion uses the full-member invitation flow. To give a former full member guest access, remove their full membership and issue a fresh guest invitation. Share the work again after a role transition. Guest questions use the host workspace’s shared usage allowance. The view stays readable when questions are paused. Deadline instants use the guest’s display locale and time zone, including the time of day. Date-only deadlines keep their original calendar day. Browser-local preferences saved in a workspace also apply in Shared work for that signed-in account.

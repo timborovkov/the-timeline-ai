@@ -7,6 +7,8 @@ import {
 } from '@timeline/shared/citation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
+
 interface PreviewState {
   loading: boolean;
   error: string | null;
@@ -27,7 +29,11 @@ export function useArtifactPreview(
     fetched: false,
   });
   const requestRef = useRef<AbortController | null>(null);
-  const cacheKey = useMemo(() => JSON.stringify(refValue), [refValue]);
+  const { locale, timezone } = useRegionalFormat();
+  const cacheKey = useMemo(
+    () => JSON.stringify({ ref: refValue, region: { locale, timezone } }),
+    [refValue, locale, timezone],
+  );
   const fallbackPreview = useMemo<ArtifactPreview | null>(
     () => (initialPreview ? ({ ...initialPreview, ref: refValue } as ArtifactPreview) : null),
     [initialPreview, refValue],
@@ -48,7 +54,7 @@ export function useArtifactPreview(
       fetched: false,
     });
     fetch('/api/artifacts/preview', {
-      body: JSON.stringify({ ref: refValue }),
+      body: cacheKey,
       headers: { 'content-type': 'application/json' },
       method: 'POST',
       signal: controller.signal,
@@ -90,7 +96,7 @@ export function useArtifactPreview(
           fetched: true,
         });
       });
-  }, [cacheKey, fallbackPreview, preview, refValue, state.cacheKey, state.fetched, state.loading]);
+  }, [cacheKey, fallbackPreview, preview, state.cacheKey, state.fetched, state.loading]);
 
   return {
     error: isForCurrentRef ? state.error : null,

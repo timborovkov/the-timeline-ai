@@ -97,6 +97,19 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
+              <strong>timeline-display-*</strong> on <strong>/app</strong> and{' '}
+              <strong>timeline-display-guest-*</strong> on <strong>/guest</strong>. These are
+              host-only, HTTP-only, SameSite=Lax cookies. They last up to one year and are Secure in
+              production.
+            </td>
+            <td>
+              Store the display locale and time zone you choose for this account in this browser.
+              The cookies stay after sign-out. Choosing browser defaults in Team settings clears
+              your saved choices. You can also clear them in your browser.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <strong>timeline_sidebar_expanded</strong>, a cookie lasting up to one year, and{' '}
               <strong>timeline.sidebar.expanded</strong> in local storage until it is replaced or
               browser data is cleared. The cookie is scoped to <strong>/app</strong>, and Timeline

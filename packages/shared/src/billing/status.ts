@@ -316,11 +316,6 @@ export function applyBillingPresentationToSidebar(
   presentation: BillingPresentation,
 ): void {
   summary.presentation = presentation;
-  const capLabel = presentation.cap.applicable
-    ? `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`
-    : presentation.cap.exemption === 'enterprise_contract'
-      ? 'Contract spending limits'
-      : 'No enforced spend cap';
   if (presentation.planId !== 'free') summary.atLimit = presentation.cap.reached;
   delete summary.warningLabel;
   const reset =
@@ -344,40 +339,72 @@ export function applyBillingPresentationToSidebar(
     if (summary.atLimit && presentation.cap.limitCents === 0)
       summary.warningLabel = 'Included usage used up';
     else if (!summary.atLimit) delete summary.warningLabel;
-    summary.detailLabel =
-      remainingCents === null
-        ? 'Updating billing period'
-        : `${summary.progressPercent}% of Included usage`;
-    summary.secondaryLabel =
-      presentation.cap.limitCents > 0 ? 'Capped additional spending' : 'Additional spending off';
     if (resetAt) {
       summary.reset = { label: 'Usage resets', at: resetAt };
       summary.resetLabel = `Usage resets ${new Date(resetAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`;
     }
   } else if (presentation.planId === 'free') {
-    summary.detailLabel = summary.atLimit
-      ? 'Included usage used up'
-      : `${summary.progressPercent}% of Included usage`;
-    summary.secondaryLabel = 'View usage';
     summary.href = '/app/usage';
-  } else if (presentation.comped) {
-    summary.detailLabel = 'Comped · no usage charges';
-    summary.secondaryLabel = capLabel;
-  } else if (presentation.credit.status !== 'not_applicable') {
-    summary.detailLabel =
-      presentation.credit.status === 'available' && presentation.credit.remainingCents !== null
-        ? `${formatEuroFromCents(presentation.credit.remainingCents)} credit remaining`
-        : 'Updating billing period';
+  } else if (!presentation.comped && presentation.credit.status !== 'not_applicable') {
     summary.progressPercent =
       presentation.credit.status === 'available' &&
       presentation.credit.usedCents !== null &&
       presentation.credit.totalCents > 0
         ? Math.round((presentation.credit.usedCents / presentation.credit.totalCents) * 100)
         : 0;
-    summary.secondaryLabel = capLabel;
-  } else {
-    summary.detailLabel = capLabel;
-    if (!presentation.cap.applicable) summary.progressPercent = 0;
-    summary.secondaryLabel = presentation.planId === 'payg' ? 'View remaining allowances' : null;
+  } else if (!presentation.comped && !presentation.cap.applicable) {
+    summary.progressPercent = 0;
   }
+  Object.assign(summary, formatSidebarBillingLabels(summary));
+}
+
+export function formatSidebarBillingLabels(
+  summary: SidebarBillingSummary,
+  format = {
+    percent: (value: number) => `${value}%`,
+    euros: formatEuroFromCents,
+  },
+): { detailLabel: string; secondaryLabel?: string | null } {
+  const { presentation } = summary;
+  if (!presentation) {
+    return summary.secondaryLabel === undefined
+      ? { detailLabel: summary.detailLabel }
+      : { detailLabel: summary.detailLabel, secondaryLabel: summary.secondaryLabel };
+  }
+  const usage = `${format.percent(summary.progressPercent)} of Included usage`;
+  if (presentation.paidSeats !== undefined && presentation.includedUsage) {
+    return {
+      detailLabel:
+        presentation.includedUsage.remainingCents === null ? 'Updating billing period' : usage,
+      secondaryLabel:
+        presentation.cap.limitCents > 0 ? 'Capped additional spending' : 'Additional spending off',
+    };
+  }
+  if (presentation.planId === 'free') {
+    return {
+      detailLabel: summary.atLimit ? 'Included usage used up' : usage,
+      secondaryLabel: 'View usage',
+    };
+  }
+  const capLabel = presentation.cap.applicable
+    ? `${format.euros(presentation.cap.usedCents)} of ${format.euros(presentation.cap.limitCents)} monthly cap`
+    : presentation.cap.exemption === 'enterprise_contract'
+      ? 'Contract spending limits'
+      : 'No enforced spend cap';
+  if (presentation.comped) {
+    return { detailLabel: 'Comped · no usage charges', secondaryLabel: capLabel };
+  }
+  if (presentation.credit.status !== 'not_applicable') {
+    return {
+      detailLabel:
+        presentation.credit.status === 'available' && presentation.credit.remainingCents !== null
+          ? `${format.euros(presentation.credit.remainingCents)} credit remaining`
+          : 'Updating billing period',
+      secondaryLabel: capLabel,
+    };
+  }
+  return {
+    detailLabel: capLabel,
+    secondaryLabel: presentation.planId === 'payg' ? 'View remaining allowances' : null,
+  };
 }

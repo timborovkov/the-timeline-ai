@@ -1,6 +1,11 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
+import {
+  formatTranscriptExport,
+  type MeetingTranscriptExportInput,
+} from '@/lib/meeting-transcript-export';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -43,8 +48,8 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/components/meeting-export-buttons'),
   () => ({
-    MeetingExportButtons: ({ transcriptText }: { transcriptText: string }) => (
-      <output aria-label="transcript export">{transcriptText}</output>
+    MeetingExportButtons: ({ transcript }: { transcript: MeetingTranscriptExportInput }) => (
+      <output aria-label="transcript export">{formatTranscriptExport(transcript)}</output>
     ),
   }),
   () => import('@/components/meeting-export-buttons'),

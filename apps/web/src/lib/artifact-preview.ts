@@ -29,6 +29,16 @@ import { z } from 'zod';
 import { getArtifactRoutePreview } from '@/lib/artifact-routes';
 import { citationAuthorHint, citationLogoSrc, citationSourceLabel } from '@/lib/citation-source';
 import { db } from '@/lib/db';
+import {
+  formatAllDayCalendarDate,
+  formatDisplayDateTime,
+  parseDisplayDate,
+} from '@/lib/display-dates';
+import {
+  formatDisplayNumber,
+  resolveRegionalFormat,
+  type RegionalFormat,
+} from '@/lib/regional-format';
 import { hasSourceOriginal, sourceOriginalFromEvent } from '@/lib/source-original';
 
 const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -63,7 +73,7 @@ function compact(value: string | null | undefined, max = 900): string | null {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-function citationCard(input: {
+interface CitationCardInput {
   kind: ArtifactKind;
   source?: string | null;
   metadata?: Record<string, unknown>;
@@ -71,7 +81,12 @@ function citationCard(input: {
   author?: string | null;
   date?: Date | string | null;
   quote?: string | null;
-}): ArtifactCitationCard {
+}
+
+function citationCard(
+  input: CitationCardInput,
+  dateLabel: PreviewFormatting['dateLabel'],
+): ArtifactCitationCard {
   const metadata = input.metadata ?? {};
   return {
     sourceKey: input.source ?? input.kind,
@@ -92,36 +107,40 @@ function citationCard(input: {
   };
 }
 
-function isoDate(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function dateLabel(value: Date | string | null | undefined): string | null {
-  const iso = isoDate(value);
-  if (!iso) return null;
-  return new Date(iso).toLocaleString('en', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-}
-
-function stringValue(value: unknown): string | null {
-  if (value === null || value === undefined || value === '') return null;
-  if (value instanceof Date) return dateLabel(value);
-  if (typeof value === 'object') return JSON.stringify(value);
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    typeof value === 'bigint'
-  ) {
-    return value.toString();
+function previewFormatting(timezone: string, preference?: Partial<RegionalFormat>) {
+  const region = resolveRegionalFormat(preference, {}, timezone);
+  const dateLabel = (value: Date | string | null | undefined): string | null =>
+    value && parseDisplayDate(value) ? formatDisplayDateTime(value, region) : null;
+  const number = (value: number, options?: Intl.NumberFormatOptions) =>
+    formatDisplayNumber(value, region.locale, options ?? { maximumSignificantDigits: 21 });
+  function stringValue(value: unknown): string | null {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date) return dateLabel(value);
+    if (typeof value === 'number') return number(value);
+    if (typeof value === 'object') return JSON.stringify(value);
+    if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return value.toString();
+    }
+    if (typeof value === 'symbol') return value.description ?? null;
+    return null;
   }
-  if (typeof value === 'symbol') return value.description ?? null;
-  return null;
+  const items = (entries: [string, unknown][]) =>
+    entries.flatMap(([label, value]) => {
+      const rendered = stringValue(value);
+      return rendered === null ? [] : [{ label, value: rendered }];
+    });
+  return {
+    region,
+    dateLabel,
+    number,
+    stringValue,
+    items,
+    dueLabel: (value: Date | string | null | undefined) => dueLabel(value, timezone, region.locale),
+    citationCard: (input: CitationCardInput) => citationCard(input, dateLabel),
+  };
 }
+
+type PreviewFormatting = ReturnType<typeof previewFormatting>;
 
 function metadataObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -209,17 +228,12 @@ function badges(values: (string | null | undefined | false)[]): string[] {
   return values.filter((value): value is string => typeof value === 'string' && value.length > 0);
 }
 
-function items(entries: [string, unknown][]): { label: string; value: string }[] {
-  return entries
-    .map(([label, value]) => {
-      const rendered = stringValue(value);
-      return rendered ? { label, value: rendered } : null;
-    })
-    .filter((entry): entry is { label: string; value: string } => entry !== null);
-}
-
-function dueLabel(value: Date | string | null | undefined, timezone: string): string {
-  const due = presentDueDate(value, { timezone });
+function dueLabel(
+  value: Date | string | null | undefined,
+  timezone: string,
+  locale: string,
+): string {
+  const due = presentDueDate(value, { timezone, locale });
   if (due.status === 'invalid') return due.compactText;
   return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
 }
@@ -242,6 +256,7 @@ async function timelineEventPreview(
   scope: TeamScope,
   ref: ArtifactRef,
   timezone: string,
+  { dateLabel, items, citationCard }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'timeline_event') return null;
   const event = (await scope.timeline.getEventsByIds([ref.id]))[0];
@@ -317,7 +332,7 @@ async function timelineEventPreview(
 async function objectPreview(
   scope: TeamScope,
   ref: ArtifactRef,
-  timezone: string,
+  { dateLabel, items, dueLabel, citationCard }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'object' && ref.kind !== 'task') return null;
   const object = await scope.objects.getObject(ref.id);
@@ -332,7 +347,7 @@ async function objectPreview(
         ['Stage', object.stage],
         ['Priority', object.priority],
         ...(schedulableObjectType(object.type)
-          ? ([['Due', dueLabel(object.dueAt, timezone)]] as [string, unknown][])
+          ? ([['Due', dueLabel(object.dueAt)]] as [string, unknown][])
           : []),
         ['Aliases', object.aliases.join(', ')],
       ]),
@@ -352,7 +367,7 @@ async function objectPreview(
       title: 'Open Tasks',
       items: object.openTasks.slice(0, 6).map((task) => ({
         label: task.status,
-        value: `${task.canonicalName} · ${dueLabel(task.dueAt, timezone)}`,
+        value: `${task.canonicalName} · ${dueLabel(task.dueAt)}`,
       })),
     });
   }
@@ -385,7 +400,11 @@ async function objectPreview(
   );
 }
 
-async function notePreview(scope: TeamScope, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+async function notePreview(
+  scope: TeamScope,
+  ref: ArtifactRef,
+  { dateLabel, items, citationCard }: PreviewFormatting,
+): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'object_note') return null;
   const note = await scope.objects.getObjectNotePreview(ref.id);
   if (!note) return null;
@@ -418,7 +437,11 @@ async function notePreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifact
   );
 }
 
-async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPreview | null> {
+async function factPreview(
+  teamId: string,
+  ref: ArtifactRef,
+  { dateLabel, items, number, citationCard }: PreviewFormatting,
+): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'fact') return null;
   const rows = await db
     .select({
@@ -459,7 +482,11 @@ async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPr
       title: 'Fact',
       subtitle: [row.entityName, row.source, dateLabel(row.occurredAt)].filter(Boolean).join(' · '),
       body: row.fact.statement,
-      badges: badges(['fact', row.entityType, `confidence ${row.fact.confidence.toFixed(2)}`]),
+      badges: badges([
+        'fact',
+        row.entityType,
+        `confidence ${number(row.fact.confidence, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ]),
       card: citationCard({
         kind: ref.kind,
         source: row.source,
@@ -497,6 +524,7 @@ async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPr
 async function relationshipPreview(
   teamId: string,
   ref: ArtifactRef,
+  { dateLabel, citationCard }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'relationship') return null;
   const rows = await db
@@ -559,6 +587,7 @@ async function relationshipPreview(
 async function objectChangePreview(
   teamId: string,
   ref: ArtifactRef,
+  { dateLabel, items, stringValue, citationCard }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'object_change') return null;
   const rows = await db
@@ -618,6 +647,7 @@ async function objectChangePreview(
 async function documentChunkPreview(
   scope: TeamScope,
   ref: ArtifactRef,
+  { items, citationCard }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'document_chunk') return null;
   if (ref.id !== ref.chunkId) return null;
@@ -690,11 +720,22 @@ async function documentChunkPreview(
 async function calendarEventPreview(
   scope: TeamScope,
   ref: ArtifactRef,
+  { dateLabel, items, citationCard, region }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'calendar_event') return null;
   const event = await scope.calendar.getCalendarEvent(ref.id);
   if (!event || event.redacted) return null;
   const href = calendarEventFocusHref(event.id, event.startAt, event.timezone);
+  const start = event.allDay
+    ? localDateFromInstant(event.startAt.toISOString(), event.timezone)
+    : event.startAt;
+  const end = event.allDay
+    ? formatAllDayCalendarDate(
+        localDateFromInstant(event.endAt.toISOString(), event.timezone),
+        region,
+        true,
+      )
+    : event.endAt;
   const plan = timelineMomentLookupPlan(`moment:calendar:${event.id}`);
   const related = plan ? await scope.timeline.listEventsForMomentLookup(plan) : [];
   const rawEvent = related[0];
@@ -706,7 +747,9 @@ async function calendarEventPreview(
     {
       ref,
       title: event.title,
-      subtitle: [dateLabel(event.startAt), event.timezone].filter(Boolean).join(' · '),
+      subtitle: [dateLabel(start), event.allDay ? null : region.timezone]
+        .filter(Boolean)
+        .join(' · '),
       body: compact(event.description),
       badges: badges([
         event.showAs,
@@ -719,7 +762,7 @@ async function calendarEventPreview(
         metadata: rawEvent ? metadataObject(rawEvent.sourceMetadata) : {},
         sourceLabel: 'Calendar',
         author: event.title,
-        date: event.startAt,
+        date: start,
         quote: event.description ?? event.location,
       }),
       original: rawEvent
@@ -729,8 +772,8 @@ async function calendarEventPreview(
         {
           title: 'Calendar',
           items: items([
-            ['Start', event.startAt],
-            ['End', event.endAt],
+            ['Start', event.allDay ? dateLabel(start) : start],
+            ['End', end],
             ['Location', event.location],
             ['Visibility', event.visibility],
           ]),
@@ -744,7 +787,7 @@ async function calendarEventPreview(
 async function boardPreview(
   scope: TeamScope,
   ref: ArtifactRef,
-  timezone: string,
+  { dueLabel, citationCard, number }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'board') return null;
   const board = await scope.boards.getBoard(ref.id, { itemLimit: 12 });
@@ -753,7 +796,7 @@ async function boardPreview(
     {
       ref,
       title: board.name,
-      subtitle: `${board.templateKind} · ${String(board.itemCount)} items`,
+      subtitle: `${board.templateKind} · ${number(board.itemCount)} items`,
       body: compact(board.purpose),
       badges: badges([
         board.templateKind,
@@ -778,7 +821,7 @@ async function boardPreview(
           title: 'Items',
           items: board.items.slice(0, 8).map((item) => ({
             label: item.object.type,
-            value: `${item.object.canonicalName} · ${dueLabel(item.dueAt, timezone)}`,
+            value: `${item.object.canonicalName} · ${dueLabel(item.dueAt)}`,
           })),
         },
       ],
@@ -790,7 +833,7 @@ async function boardPreview(
 async function boardItemPreview(
   scope: TeamScope,
   ref: ArtifactRef,
-  timezone: string,
+  { items, dueLabel, citationCard }: PreviewFormatting,
 ): Promise<ArtifactPreview | null> {
   if (ref.kind !== 'board_item') return null;
   const item = await scope.boards.getBoardItem(ref.id);
@@ -823,7 +866,7 @@ async function boardItemPreview(
             ['Board', board.name],
             ['Lane', lane?.name],
             ['Next step', item.nextStep],
-            ['Due', dueLabel(item.dueAt, timezone)],
+            ['Due', dueLabel(item.dueAt)],
             ['Responsible', item.responsibleUserId],
           ]),
         },
@@ -833,7 +876,10 @@ async function boardItemPreview(
   );
 }
 
-function routePreview(ref: ArtifactRef): ArtifactPreview | null {
+function routePreview(
+  ref: ArtifactRef,
+  { citationCard }: PreviewFormatting,
+): ArtifactPreview | null {
   if (ref.kind !== 'route') return null;
   const route = getArtifactRoutePreview(ref.id);
   if (!route) return null;
@@ -860,30 +906,32 @@ export async function hydrateArtifactPreview(
   teamId: string,
   ref: ArtifactRef,
   timezone: string,
+  preference?: Partial<RegionalFormat>,
 ): Promise<ArtifactPreview | null> {
+  const formatting = previewFormatting(timezone, preference);
   switch (ref.kind) {
     case 'timeline_event':
-      return timelineEventPreview(scope, ref, timezone);
+      return timelineEventPreview(scope, ref, timezone, formatting);
     case 'object':
     case 'task':
-      return objectPreview(scope, ref, timezone);
+      return objectPreview(scope, ref, formatting);
     case 'object_note':
-      return notePreview(scope, ref);
+      return notePreview(scope, ref, formatting);
     case 'fact':
-      return factPreview(teamId, ref);
+      return factPreview(teamId, ref, formatting);
     case 'relationship':
-      return relationshipPreview(teamId, ref);
+      return relationshipPreview(teamId, ref, formatting);
     case 'object_change':
-      return objectChangePreview(teamId, ref);
+      return objectChangePreview(teamId, ref, formatting);
     case 'document_chunk':
-      return documentChunkPreview(scope, ref);
+      return documentChunkPreview(scope, ref, formatting);
     case 'calendar_event':
-      return calendarEventPreview(scope, ref);
+      return calendarEventPreview(scope, ref, formatting);
     case 'board':
-      return boardPreview(scope, ref, timezone);
+      return boardPreview(scope, ref, formatting);
     case 'board_item':
-      return boardItemPreview(scope, ref, timezone);
+      return boardItemPreview(scope, ref, formatting);
     case 'route':
-      return routePreview(ref);
+      return routePreview(ref, formatting);
   }
 }
