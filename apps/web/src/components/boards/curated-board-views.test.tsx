@@ -287,7 +287,7 @@ describe('CuratedBoardList', () => {
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 
-  it('prefills the board due date in the workspace zone and retains the original instant', async () => {
+  it('prefills the board due date in the workspace zone and skips an unchanged deadline', async () => {
     const user = userEvent.setup();
     const dueAt = new Date('2026-11-30T22:15:00.000Z');
     render(
@@ -310,7 +310,7 @@ describe('CuratedBoardList', () => {
     await user.click(trigger);
     expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
-    expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { dueAt });
+    expect(fakes.updateItem).not.toHaveBeenCalled();
   });
 
   it('uses the same date-only due timestamp as the detail panel', async () => {

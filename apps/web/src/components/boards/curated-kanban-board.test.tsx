@@ -171,7 +171,7 @@ describe('CuratedKanbanBoard', () => {
     expect(container.textContent).not.toContain('Overdue');
   });
 
-  it('keeps the workspace day and original deadline in an inline card editor', async () => {
+  it('shows the workspace day and skips an unchanged inline card deadline', async () => {
     const user = userEvent.setup();
     const dueAt = new Date('2026-11-30T22:15:00.000Z');
     render(
@@ -189,10 +189,7 @@ describe('CuratedKanbanBoard', () => {
     await user.click(screen.getByRole('button', { name: 'Due date for Board card' }));
     expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
-    expect(fakes.updateBoardItemAction).toHaveBeenCalledWith({
-      id: 'item-1',
-      dueAt: dueAt.toISOString(),
-    });
+    expect(fakes.updateBoardItemAction).not.toHaveBeenCalled();
   });
 
   it('groups the scrollable board columns with uniquely named duplicate lane regions', () => {

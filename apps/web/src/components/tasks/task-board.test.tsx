@@ -1011,7 +1011,7 @@ describe('TaskBoard', () => {
     ['list', null, 'list', 'Due date for Send proposal'],
     ['kanban', null, 'kanban', 'Due date for Send proposal'],
   ] as const)(
-    'keeps the workspace day and original deadline in the %s editor',
+    'shows the workspace day and skips an unchanged deadline in the %s editor',
     async (_surface, selected, view, label) => {
       const user = userEvent.setup();
       const dueAt = new Date('2026-11-30T22:15:00.000Z');
@@ -1023,10 +1023,7 @@ describe('TaskBoard', () => {
       await user.click(screen.getByRole('button', { name: label }));
       expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
       await user.click(screen.getByRole('button', { name: 'Apply' }));
-      expect(fakes.updateObjectAction).toHaveBeenCalledWith({
-        id: 'task-1',
-        dueAt: dueAt.toISOString(),
-      });
+      expect(fakes.updateObjectAction).not.toHaveBeenCalled();
     },
   );
 
