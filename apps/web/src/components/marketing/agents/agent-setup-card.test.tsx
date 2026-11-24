@@ -49,8 +49,8 @@ describe('AgentSetupCard', () => {
   it('keeps the visible Copy label and specific accessible name in both card variants', () => {
     for (const compact of [false, true]) {
       const html = renderToStaticMarkup(<AgentSetupCard compact={compact} />);
-      const button = html.match(
-        /<button\b[^>]*aria-label="Copy setup command"[^>]*>.*?<\/button>/,
+      const button = /<button\b[^>]*aria-label="Copy setup command"[^>]*>.*?<\/button>/.exec(
+        html,
       )?.[0];
       expect(button).toContain('<span>Copy</span>');
     }
