@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { expect } from '@timeline/test-support';
 import { it } from 'bun:test';
 
-import { copyBunSentryRuntime } from './standalone-runtime.ts';
+import { copyBunSentryRuntime } from './standalone-runtime';
 
 it('loads the Bun Sentry runtime from an isolated artifact without repository dependencies', async () => {
   const artifact = mkdtempSync(resolve(tmpdir(), 'timeline-sentry-runtime-'));
