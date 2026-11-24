@@ -11,6 +11,7 @@ import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-cont
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 import type { PublicDocument } from '@/lib/public-site/types';
+import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
 
 export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-24' as const;
 
@@ -44,7 +45,14 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
         title: 'Provider record sync',
         body: CONNECTORS.map((connector) => connector.name).join(', '),
       },
-      ...INTEGRATION_CAPABILITY_ANSWERS,
+      ...INTEGRATION_CAPABILITY_ANSWERS.map(({ title, body, links }) => ({
+        title,
+        body,
+        links: links.map(({ label, href }) => ({
+          label,
+          href: new URL(href, CANONICAL_PUBLIC_ORIGIN).href,
+        })),
+      })),
       {
         title: 'Planned integrations',
         body: 'Planned native integrations cannot be connected yet.',

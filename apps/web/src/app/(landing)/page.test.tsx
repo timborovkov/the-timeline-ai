@@ -9,6 +9,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 const { getSiteUrl } = await import('@/lib/site-url');
+const { TIMELINE_AGENT_SETUP_COMMAND } = await import('@/components/marketing/copy');
 const { PUBLIC_DEMO_STORY } = await import('@/components/marketing/public-demo-story');
 const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
 
@@ -83,11 +84,23 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('href="/compare"');
     expect(html).toContain('href="/agents"');
-    expect(html).not.toContain('data-agent-setup');
+    expect(html.match(/data-agent-setup/g)).toHaveLength(1);
+    expect(html).toContain('Get started with your agent');
+    expect(html).toContain(TIMELINE_AGENT_SETUP_COMMAND);
+    expect(html).toContain('aria-label="Copy setup command"');
     expect(html).not.toContain('>AI assistants<');
     expect(html).toContain('Your agents work from the same record.');
-    expect(html).toContain('Agent progress note');
-    expect(html).toContain('Later answer');
+    expect(html).toContain('Login issue · Illustrative handoff');
+    expect(html).toContain('What should I check before telling the customer?');
+    expect(html).toContain('href="#login-agent-note"');
+    expect(html).toContain('id="login-agent-note"');
+    for (const entry of PUBLIC_DEMO_STORY.landing.events) {
+      expect(html).toContain(`href="#login-source-${entry.id}"`);
+      expect(html).toContain(`id="login-source-${entry.id}"`);
+    }
+    expect(html.indexOf('data-agent-setup')).toBeGreaterThan(
+      html.indexOf('Login issue · Illustrative handoff'),
+    );
     expect(html.indexOf('data-use-case-overview')).toBeGreaterThan(
       html.indexOf('data-scene="05-organised"'),
     );
