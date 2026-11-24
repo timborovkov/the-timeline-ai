@@ -4,7 +4,6 @@ import { describe, it } from 'bun:test';
 import { OVERAGE_RATES, PLAN_CATALOG, TEAM_MONTHLY_SEAT_CENTS } from '#src/billing/catalog.js';
 import {
   DEFAULT_TIMELINE_POLAR_WEBHOOK_URL,
-  TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
   TIMELINE_METERED_UNIT_AMOUNTS,
   TIMELINE_METER_SPECS,
   TIMELINE_POLAR_WEBHOOK_EVENTS,
@@ -621,6 +620,9 @@ describe('runPolarSetup', () => {
       if (custom && !('maximum_amount' in custom)) {
         throw new Error('Polar create product failed: maximum_amount is required');
       }
+      if (custom?.maximum_amount !== undefined && custom.maximum_amount > 99_999_999) {
+        throw new Error('Polar create product failed: maximum_amount must be at most 99999999');
+      }
       return memoryClient(state).createProduct(body);
     };
     await runPolarSetup({ client, request, dryRun: false });
@@ -628,9 +630,10 @@ describe('runPolarSetup', () => {
       (body) => body.metadata.timeline_key === 'enterprise',
     );
     expect(enterpriseAttempts).toHaveLength(2);
+    expect(enterpriseAttempts[0]?.prices[0]).not.toHaveProperty('maximum_amount');
     expect(enterpriseAttempts[1]?.prices[0]).toMatchObject({
       amount_type: 'custom',
-      maximum_amount: TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
+      maximum_amount: 99_999_999,
     });
   });
 });
