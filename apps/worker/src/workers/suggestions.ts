@@ -4876,7 +4876,6 @@ async function runSuggestionExtraction(
               entry.rawEventId,
               ...(entry.context ? [entry.context.rawEventId] : []),
             ]),
-            ...(item.evidenceRawEventIds ?? []),
           ]),
         ],
       })),
@@ -5545,7 +5544,7 @@ async function runSuggestionExtraction(
                   ]),
                 ],
               }
-            : item.evidenceRawEventIds
+            : (evidencePackEnforced || (auditedSource && item.auditId)) && item.evidenceRawEventIds
               ? { evidenceRawEventIds: item.evidenceRawEventIds }
               : {}),
         };

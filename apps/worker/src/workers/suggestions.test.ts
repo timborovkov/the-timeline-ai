@@ -33,7 +33,10 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import { controlledCommunicationAudit } from '#src/test/communication-audit.js';
+import {
+  controlledCommunicationAudit,
+  controlledCommunicationAuditForSource,
+} from '#src/test/communication-audit.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   assembleSuggestionPrompt,
@@ -9082,7 +9085,12 @@ describe('processSuggestionJobForTests', () => {
     await processSuggestionJobForTests(
       { db: db as never },
       { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
-      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+        auditCommunication: controlledCommunicationAuditForSource(promiseId),
+      },
     );
 
     const call = chat.mock.calls[0]?.[0] as { prompt: string; instructions: string };
@@ -9112,7 +9120,7 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
-  it('ignores conversation-review item citations that lexical bundle evidence omitted', async () => {
+  it('uses audited coverage instead of unrelated model item citations', async () => {
     const citedId = '10000000-0000-4000-8000-0000000000a1';
     const anchorId = '10000000-0000-4000-8000-0000000000a2';
     const reviewId = '20000000-0000-4000-8000-0000000000a1';
@@ -9197,17 +9205,15 @@ describe('processSuggestionJobForTests', () => {
       OWNER_ID,
     ).suggestions.listPendingSuggestions();
     expect(bundle?.evidence).toEqual([expect.objectContaining({ rawEventId: anchorId })]);
-    expect(bundle?.items[0]).toMatchObject({
-      evidenceStatus: 'legacy',
-      evidence: [],
-    });
+    expect(bundle?.items[0]?.evidenceStatus).toBe('current');
+    expect(bundle?.items[0]?.evidence.map((entry) => entry.rawEventId)).toEqual([anchorId]);
     const [item] = await db
       .select({ metadata: agentSuggestionItems.metadata })
       .from(agentSuggestionItems)
       .limit(1);
     expect(
       (item?.metadata as { evidence_raw_event_ids?: string[] } | null)?.evidence_raw_event_ids,
-    ).toBeUndefined();
+    ).toEqual([anchorId]);
   });
 
   it('drops event-local item citations that are not the current raw event', async () => {
@@ -10843,7 +10849,7 @@ describe('processSuggestionJobForTests', () => {
       suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
       suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
-    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
   });
 
   it('is idempotent when the same model version reruns', async () => {
@@ -10866,8 +10872,17 @@ describe('processSuggestionJobForTests', () => {
     );
 
     expect(chat).toHaveBeenCalledOnce();
-    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
     const rows = await db.select().from(agentSuggestionItems);
-    expect(new Set(rows.map((row) => row.dedupeKey)).size).toBe(2);
+    expect(new Set(rows.map((row) => row.dedupeKey)).size).toBe(1);
+    expect(rows[0]).toMatchObject({
+      targetKind: 'task',
+      proposedPayload: {
+        canonicalName: 'Send the proposal',
+        plannedDate: '2026-06-02',
+        ownerUserId: OWNER_ID,
+      },
+    });
+    expect(rows[0]?.proposedPayload).not.toHaveProperty('dueAt');
   });
 });
