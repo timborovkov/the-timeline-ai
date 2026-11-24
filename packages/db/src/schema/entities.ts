@@ -83,11 +83,12 @@ export const entities = pgTable(
         Record<
           string,
           {
-            assertedAt: string;
-            rawEventId: string | null;
             changeId?: string;
             writeEventId?: string;
-          }
+          } & (
+            | { assertedAt: string; rawEventId: string | null }
+            | { assertedAt?: never; rawEventId?: never }
+          )
         >
       >()
       .notNull()

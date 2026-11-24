@@ -74,12 +74,13 @@ import { verifyNativeTrackerCompletion } from '#src/integrations/github-task-pro
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { isObjectNotFoundError, StaleWorkspaceStateError } from '#src/mutation-errors.js';
-import type {
-  CreateObjectInput,
-  IdentityFacetInput,
-  ObjectPatch,
-  ObjectScope,
-  ObjectType,
+import {
+  readRecordFieldProvenance,
+  type CreateObjectInput,
+  type IdentityFacetInput,
+  type ObjectPatch,
+  type ObjectScope,
+  type ObjectType,
 } from '#src/objects/index.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
@@ -4328,6 +4329,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
       .limit(1);
     if (!target) return false;
+    const revisions = await readRecordFieldProvenance(db, teamId, item.targetId, target.revisions);
     const evidenceFields = fields.filter(
       (field) =>
         field !== 'canonicalName' ||
@@ -4344,7 +4346,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 assertedAt: target.plannedDateRevisionAt?.toISOString(),
                 rawEventId: target.plannedDateEvidenceId,
               }
-            : target.revisions[field];
+            : revisions[field];
         return (
           targetRevision?.assertedAt &&
           typeof claim.assertedAt === 'string' &&
@@ -6965,12 +6967,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .from(entities)
         .where(and(eq(entities.teamId, teamId), eq(entities.id, item.targetId)))
         .limit(1);
-      const latest = task?.revisions.status;
+      if (!task) return null;
+      const { status: latest } = await readRecordFieldProvenance(
+        db,
+        teamId,
+        item.targetId,
+        task.revisions,
+      );
       if (
-        !task ||
-        (latest &&
-          (latest.rawEventId === source.id ||
-            Date.parse(latest.assertedAt) >= source.occurredAt.getTime()))
+        latest?.rawEventId === source.id ||
+        (latest?.assertedAt && Date.parse(latest.assertedAt) >= source.occurredAt.getTime())
       )
         return null;
       if (
@@ -7195,15 +7201,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           !target.evidenceId
         )
           return null;
+        const revisions = await readRecordFieldProvenance(
+          db,
+          teamId,
+          item.targetId,
+          target.revisions,
+        );
         if (
           MAINTAINED_RECORD_FIELDS.some((field) => {
             const current = target[field];
             const value = current instanceof Date ? current.toISOString() : current;
             return (
-              claims[field] &&
-              target.revisions[field] &&
-              !target.revisions[field].rawEventId &&
-              parsed.data[field] !== value
+              claims[field] && revisions[field]?.rawEventId === null && parsed.data[field] !== value
             );
           })
         )

@@ -883,6 +883,131 @@ describe('suggestion scope', () => {
     expect(await db.select().from(entities)).toHaveLength(0);
   });
 
+  for (const legacy of [false, true]) {
+    it(`does not require manual-value review for agent task defaults${legacy ? ' with legacy proof' : ''}`, async () => {
+      const human = withTeam(db as never, TEAM_ID, USER_ID);
+      const automation = withTeam(db as never, TEAM_ID, PSEUDO_USER, {
+        skipMembershipCheck: true,
+        recordMaintenanceWorker: true,
+      }).suggestions;
+      await human.suggestions.setRecordMaintenancePolicy({
+        reviewManualValues: true,
+        approveRemovals: false,
+        approveMerges: false,
+      });
+      const name = 'Check navigation rollout';
+      const now = Date.now();
+      async function propose(
+        occurredAt: Date,
+        text: string,
+        update?: { targetId: string; status: string; dueAt: string },
+      ) {
+        const rawEventId = crypto.randomUUID();
+        await db.insert(rawEvents).values({
+          id: rawEventId,
+          teamId: TEAM_ID,
+          source: 'slack',
+          contentText: text,
+          visibility: 'team',
+          occurredAt,
+        });
+        const assertedAt = occurredAt.toISOString();
+        const proposal = await human.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: text,
+          dedupeKey: rawEventId,
+          confidence: 'high',
+          metadata: { suggestion_model_version: 'test-communication-completeness-v91' },
+          evidence: [{ rawEventId, quote: text }],
+          items: [
+            {
+              operation: update ? 'update' : 'create',
+              targetKind: 'task',
+              title: name,
+              dedupeKey: rawEventId,
+              evidenceRawEventIds: [rawEventId],
+              ...(update ? { targetId: update.targetId } : {}),
+              proposedPayload: update
+                ? { status: update.status, dueAt: update.dueAt }
+                : { canonicalName: name },
+              ...(update
+                ? {
+                    taskFieldEvidence: {
+                      status: { rawEventId, assertedAt, value: update.status },
+                      dueAt: { rawEventId, assertedAt, value: update.dueAt },
+                    },
+                  }
+                : {}),
+            },
+          ],
+        });
+        const [item] = proposal.items;
+        if (!item) throw new Error('Missing task proposal');
+        return item.id;
+      }
+      const create = await propose(new Date(now - 120_000), 'Please check the navigation rollout.');
+      expect(await automation.applyPendingRecordMaintenance([create])).toBe(1);
+      const [task] = await db.select().from(entities);
+      if (!task) throw new Error('Missing task');
+      expect(task).toMatchObject({ canonicalName: name, status: 'todo', dueAt: null });
+      expect(task.recordFieldRevisions.status?.writeEventId).toEqual(expect.any(String));
+      expect(task.recordFieldRevisions.dueAt?.writeEventId).toEqual(expect.any(String));
+      if (legacy) {
+        const previousProof = { assertedAt: task.createdAt.toISOString(), rawEventId: null };
+        await db
+          .update(entities)
+          .set({
+            recordFieldRevisions: {
+              ...task.recordFieldRevisions,
+              status: { ...task.recordFieldRevisions.status, ...previousProof },
+              dueAt: { ...task.recordFieldRevisions.dueAt, ...previousProof },
+            },
+          })
+          .where(eq(entities.id, task.id));
+      }
+      const dueAt = '2026-12-08T00:00:00.000Z';
+      const first = await propose(
+        new Date(now - 60_000),
+        'Check navigation rollout is in progress, due by December 8.',
+        {
+          targetId: task.id,
+          status: 'doing',
+          dueAt,
+        },
+      );
+      expect(await automation.applyPendingRecordMaintenance([first])).toBe(1);
+      expect(await human.objects.getObject(task.id)).toMatchObject({
+        status: 'doing',
+        dueAt: new Date(dueAt),
+      });
+      const manualDueAt = new Date('2026-12-09T00:00:00.000Z');
+      await human.objects.updateObject(
+        task.id,
+        { status: 'blocked', dueAt: manualDueAt },
+        { kind: 'user', userId: USER_ID },
+      );
+      const second = await propose(
+        new Date(Date.now() + 60_000),
+        'Check navigation rollout is complete, due by December 10.',
+        {
+          targetId: task.id,
+          status: 'done',
+          dueAt: '2026-12-10T00:00:00.000Z',
+        },
+      );
+      expect(await automation.applyPendingRecordMaintenance([second])).toBe(0);
+      const [pending] = await db
+        .select()
+        .from(agentSuggestionItems)
+        .where(eq(agentSuggestionItems.id, second));
+      expect(pending?.status).toBe('pending');
+      expect(await human.objects.getObject(task.id)).toMatchObject({
+        status: 'blocked',
+        dueAt: manualDueAt,
+      });
+    });
+  }
+
   it('reviews a manual plan when configured and only undoes the latest automatic edit', async () => {
     const human = withTeam(db as never, TEAM_ID, USER_ID);
     const actor = { kind: 'user', userId: USER_ID } as const;

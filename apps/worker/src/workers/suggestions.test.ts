@@ -590,6 +590,104 @@ describe('processSuggestionJobForTests', () => {
     expect(link?.metadata).toMatchObject({ approval_decision: 'automatic' });
   });
 
+  it('automatically applies a grounded link when a sibling reference resolves to an existing record', async () => {
+    const sourceId = crypto.randomUUID();
+    const companyId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const projectId = '11111111-1111-4111-8111-111111111111';
+    await db.insert(entities).values([
+      { id: companyId, teamId: TEAM_ID, type: 'company', canonicalName: 'Cedar Labs' },
+      {
+        id: projectId,
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar rollout',
+        status: 'planning',
+      },
+    ]);
+    const state = 'Northstar rollout is underway.';
+    const link = 'Link Cedar Labs to Northstar rollout.';
+    await seedRawEvent(db as never, {
+      id: sourceId,
+      source: 'meeting',
+      text: `[15s] Alex: ${state} ${link}`,
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: sourceId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Cedar Labs rollout',
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'object',
+                    title: 'Northstar rollout',
+                    proposedPayload: {
+                      type: 'project',
+                      canonicalName: 'Northstar rollout',
+                      localRef: 'northstar',
+                      status: 'active',
+                    },
+                    grounding: [
+                      {
+                        field: 'status',
+                        rawEventId: sourceId,
+                        quote: state,
+                        subject: 'Northstar rollout',
+                        value: 'active',
+                      },
+                    ],
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'object_relationship',
+                    title: 'Link Cedar Labs to Northstar rollout',
+                    proposedPayload: {
+                      kind: 'related',
+                      fromEntityId: companyId,
+                      toRef: 'northstar',
+                    },
+                    grounding: [
+                      {
+                        field: 'relationship',
+                        rawEventId: sourceId,
+                        quote: link,
+                        subject: 'Cedar Labs',
+                        value: 'northstar',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const [approval] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(approval).toMatchObject({ status: 'accepted', resolvedByUserId: null });
+    const [edge] = await db.select().from(entityRelationships);
+    expect(edge).toMatchObject({
+      id: approval?.resultId,
+      kind: 'related',
+      fromEntityId: projectId,
+      toEntityId: companyId,
+    });
+  });
+
   it('advances an existing deal from audited offer delivery through automatic approval', async () => {
     const [deal] = await db
       .insert(entities)
@@ -8603,6 +8701,89 @@ describe('processSuggestionJobForTests', () => {
     expect(review?.status).toBe('completed');
     expect(review?.reviewedThroughRawEventId).toBe(rawEventId);
     expect(review?.metadata).toMatchObject({ review_outcome: 'identity_missing' });
+  });
+
+  it('keeps an independent Slack task report when a merge request ends the review window', async () => {
+    const reportId = crypto.randomUUID();
+    const mergeId = crypto.randomUUID();
+    const reviewId = crypto.randomUUID();
+    const rootTimestamp = '1716810300.000100';
+    const channel = { slack_workspace_id: 'T1', slack_channel_id: 'C2' };
+    const report = 'The login page is broken.';
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'First import' },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Second import' },
+    ]);
+    await seedRawEvent(db as never, {
+      id: reportId,
+      source: 'slack',
+      text: report,
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { ...channel, slack_message_ts: rootTimestamp },
+    });
+    await seedRawEvent(db as never, {
+      id: mergeId,
+      source: 'slack',
+      text: 'Merge Second import into First import.',
+      occurredAt: new Date('2026-05-27T10:07:00.000Z'),
+      sourceMetadata: {
+        ...channel,
+        slack_message_ts: '1716810420.000200',
+        slack_thread_ts: rootTimestamp,
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey: `slack:${TEAM_ID}:T1:C2:thread:${rootTimestamp}`,
+      lastRawEventId: mergeId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: vi.fn().mockResolvedValue({
+          model: MODEL_ID,
+          object: {
+            bundles: [
+              {
+                title: 'Fix broken login page',
+                quote: report,
+                evidenceRawEventIds: [reportId],
+                confidence: 'high',
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: 'Fix broken login page',
+                    proposedPayload: { canonicalName: 'Fix broken login page' },
+                    grounding: [],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'record_maintenance', teamId: TEAM_ID },
+    );
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(2);
+    expect(items.find(({ operation }) => operation === 'merge')).toMatchObject({
+      status: 'pending',
+      resultId: null,
+    });
+    expect(items.find(({ targetKind }) => targetKind === 'task')).toMatchObject({
+      status: 'accepted',
+      resolvedByUserId: null,
+    });
+    const [task] = await db.select().from(entities).where(eq(entities.type, 'task'));
+    expect(task?.canonicalName).toBe('Fix broken login page');
   });
 
   it('includes the Slack thread root and follow-up in the thread evidence window', async () => {

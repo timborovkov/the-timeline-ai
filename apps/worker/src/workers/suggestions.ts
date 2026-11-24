@@ -2835,7 +2835,7 @@ function normalizeBundleAgainstExistingObjects(
           return { ...item, proposedPayload: payload };
         }
       }
-      if (item.targetKind !== 'object_relationship' || resolvedRefs.size === 0) return item;
+      if (item.targetKind !== 'object_relationship') return item;
       const payload = { ...item.proposedPayload };
       const fromRef = typeof payload.fromRef === 'string' ? payload.fromRef : null;
       const toRef = typeof payload.toRef === 'string' ? payload.toRef : null;
@@ -2849,7 +2849,11 @@ function normalizeBundleAgainstExistingObjects(
         payload.toEntityId = resolvedRefs.get(toRefKey);
         delete payload.toRef;
       }
-      return { ...item, proposedPayload: payload };
+      // Ground names against the same endpoint order used when saving the proposal.
+      return {
+        ...item,
+        proposedPayload: normalizeSuggestionItemPayload({ ...item, proposedPayload: payload }),
+      };
     })
     .map((item) => remapGrounding(item, resolvedRefs))
     .filter((item) => {
@@ -4102,6 +4106,7 @@ async function runSuggestionExtraction(
   const scope = withTeam(deps.db, teamId, PSEUDO_USER, {
     skipMembershipCheck: true,
   });
+  let proposalsCreated = 0;
   const merge =
     row.source === 'slack' &&
     activeAuthorUserId &&
@@ -4149,7 +4154,8 @@ async function runSuggestionExtraction(
       for (const item of proposal.items) {
         if (item.status === 'pending') io.recordMaintenanceCandidates?.add(item.id);
       }
-      return 1;
+      if (!args.conversation || args.conversation.window.length === 1) return 1;
+      proposalsCreated = 1;
     }
   }
 
@@ -5429,7 +5435,6 @@ async function runSuggestionExtraction(
     )
       throw new Error('Pending communication amendment changed during inference');
   }
-  let proposalsCreated = 0;
   for (const [bundleIndex, bundle] of bundles.entries()) {
     if (bundle.items.length === 0) continue;
     if (

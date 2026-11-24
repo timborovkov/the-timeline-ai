@@ -266,8 +266,7 @@ async function attachRecordWriteProof(
   for (const { field, id } of fields) {
     const stamp = JSON.stringify({ changeId: id, writeEventId });
     revisions = sql`jsonb_set(${revisions}, ARRAY[${field}::text],
-      jsonb_build_object('assertedAt', clock_timestamp(), 'rawEventId', NULL)
-      || COALESCE(${entities.recordFieldRevisions} -> ${field}::text, '{}'::jsonb)
+      COALESCE(${entities.recordFieldRevisions} -> ${field}::text, '{}'::jsonb)
       || ${stamp}::jsonb)`;
   }
 
@@ -275,6 +274,43 @@ async function attachRecordWriteProof(
     .update(entities)
     .set({ recordFieldRevisions: revisions })
     .where(and(eq(entities.teamId, record.teamId), eq(entities.id, record.id)));
+}
+
+export async function readRecordFieldProvenance(
+  db: DbOrTx,
+  teamId: string,
+  entityId: string,
+  revisions: EntityRow['recordFieldRevisions'],
+): Promise<EntityRow['recordFieldRevisions']> {
+  const legacyProofs = Object.entries(revisions).flatMap(([field, revision]) =>
+    revision.rawEventId === null && revision.changeId && revision.writeEventId
+      ? [{ field, changeId: revision.changeId, writeEventId: revision.writeEventId }]
+      : [],
+  );
+  if (!legacyProofs.length) return revisions;
+
+  // Older guest proof stamps synthesized source-less clocks on agent defaults.
+  // The creation audit distinguishes those defaults from an actual manual write.
+  const creations = await db
+    .select({ id: objectChanges.id })
+    .from(objectChanges)
+    .where(
+      and(
+        eq(objectChanges.teamId, teamId),
+        eq(objectChanges.entityId, entityId),
+        eq(objectChanges.field, '__create__'),
+        eq(objectChanges.status, 'applied'),
+        ne(objectChanges.actorKind, 'user'),
+        inArray(objectChanges.id, [...new Set(legacyProofs.map(({ changeId }) => changeId))]),
+      ),
+    );
+  if (!creations.length) return revisions;
+  const creationIds = new Set(creations.map(({ id }) => id));
+  const normalized = { ...revisions };
+  for (const { field, changeId, writeEventId } of legacyProofs) {
+    if (creationIds.has(changeId)) normalized[field] = { changeId, writeEventId };
+  }
+  return normalized;
 }
 
 interface RecordApprovalProof {
@@ -4689,7 +4725,11 @@ export async function updateObject(
       next[field] = candidate;
     }
 
-    const fieldRevisions = { ...current.recordFieldRevisions };
+    const fieldRevisions = {
+      ...(options?.taskFieldEvidence && Object.keys(options.taskFieldEvidence).length
+        ? await readRecordFieldProvenance(tx, scope.teamId, entityId, current.recordFieldRevisions)
+        : current.recordFieldRevisions),
+    };
     const maintainedFields = maintainedRecordFields(current.type);
     const revisedFields = new Set<MaintainedRecordField>();
     function diffMaintainedField<K extends MaintainedRecordField>(
@@ -4703,7 +4743,7 @@ export async function updateObject(
       }
       const asserted = options?.taskFieldEvidence?.[field];
       const prior = fieldRevisions[field];
-      const latest = prior ? Date.parse(prior.assertedAt) : 0;
+      const latest = prior?.assertedAt ? Date.parse(prior.assertedAt) : 0;
       if (
         asserted &&
         prior &&
