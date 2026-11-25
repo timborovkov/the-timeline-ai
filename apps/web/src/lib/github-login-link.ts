@@ -19,13 +19,23 @@ function intentCookie(secure: boolean) {
   return secure ? `__Host-${INTENT_NAME}` : INTENT_NAME;
 }
 
-export async function createGitHubLinkCookie(destination: URL, userId: string) {
-  const state = destination.searchParams.get('state');
-  const callback = destination.searchParams.get('redirect_uri');
-  const secret = authConfig.secret;
-  if (destination.origin !== 'https://github.com' || !state || !callback || !secret) return null;
+function configuredAuthUrl() {
+  return nonEmptyEnv(process.env.AUTH_URL ?? process.env.NEXTAUTH_URL);
+}
 
-  const secure = new URL(callback).protocol === 'https:';
+export async function createGitHubLinkCookie(
+  destination: URL,
+  userId: string,
+  requestHeaders: Headers,
+) {
+  const state = destination.searchParams.get('state');
+  const secret = authConfig.secret;
+  if (destination.origin !== 'https://github.com' || !state || !secret) return null;
+
+  const configured = configuredAuthUrl();
+  const secure = configured
+    ? new URL(configured).protocol === 'https:'
+    : /^https:?$/i.test(requestHeaders.get('x-forwarded-proto') ?? 'https');
   const name = intentCookie(secure);
   const value = await encode({
     token: { sub: userId, state },
@@ -45,8 +55,7 @@ export async function createGitHubLinkCookie(destination: URL, userId: string) {
 }
 
 export function githubAuthUrl(request: NextRequest): URL {
-  const configured = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
-  return new URL(nonEmptyEnv(configured) ?? request.url);
+  return new URL(configuredAuthUrl() ?? request.url);
 }
 
 export function isGitHubCallback(request: NextRequest): boolean {

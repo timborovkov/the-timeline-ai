@@ -1,6 +1,6 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AuthError } from 'next-auth';
 
@@ -33,7 +33,7 @@ export async function linkGitHubAction(): Promise<void> {
       if (error instanceof AuthError) redirect(GITHUB_LINK_FAILED);
       throw error;
     }
-    const intent = await createGitHubLinkCookie(destination, session.user.id);
+    const intent = await createGitHubLinkCookie(destination, session.user.id, await headers());
     if (!intent) redirect(GITHUB_LINK_FAILED);
 
     (await cookies()).set(intent);
