@@ -700,6 +700,16 @@ removed.
 
 Deferred Slack/Telegram command delivery stores an AES-256-GCM encrypted payload in the existing Redis queue infrastructure, including the credential needed to complete that authorized send. Successful jobs are removed immediately; failed jobs expire after 24 hours. Pending quota-delayed sends remain until eligible. Delivery logs contain job IDs, never message contents or credentials. Agent answers retain their existing conversation-turn delivery path.
 
+## GitHub sign-in linking
+
+GitHub sign-in resolves a linked account by its stable GitHub user ID. An
+existing Timeline account can add that identity from Account settings after
+signing in. The callback requires the initiating account, the OAuth state, and
+a current session for the same active Timeline account. The write checks current
+legal acceptance and session revocation under the account lock. Linking stores
+the GitHub user ID and keeps the Timeline email and verification status intact.
+Each GitHub identity can belong to one Timeline account.
+
 ## Password recovery
 
 Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,

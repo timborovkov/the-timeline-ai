@@ -356,7 +356,7 @@ describe('authenticationMethod', () => {
 
 describe('oauthSignInErrorMessage', () => {
   it('explains linking denials without confirming whether an account exists', () => {
-    expect(oauthSignInErrorMessage('OAuthAccountNotLinked')).toMatch(/verify/i);
+    expect(oauthSignInErrorMessage('OAuthAccountNotLinked')).toMatch(/original sign-in method/i);
     expect(oauthSignInErrorMessage('AccessDenied')).toMatch(/never linked automatically/i);
     expect(oauthSignInErrorMessage('OAuthCallback')).toMatch(/cancelled/i);
     expect(oauthSignInErrorMessage(undefined)).toBeNull();
