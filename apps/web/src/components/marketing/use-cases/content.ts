@@ -152,7 +152,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       },
       {
         question: 'Can I see past days?',
-        answer: 'Yes. Work → Digests keeps every daily update.',
+        answer: 'Yes. Open Work → Updates to find your update history.',
       },
     ],
     screenshots: [
@@ -176,8 +176,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         file: '44-work-dark.png',
         alt: 'Work surface listing past daily updates next to tasks, boards and approvals.',
-        caption:
-          'Every past daily update stays under Work → Digests, next to tasks, boards and approvals.',
+        caption: 'Past deliveries appear in Update history under Work → Updates.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-how-it-works',
       },

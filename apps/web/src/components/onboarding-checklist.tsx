@@ -498,9 +498,9 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'daily_digest':
       return {
-        href: '/app/team?section=general',
-        cta: 'Open settings',
-        description: 'Choose whether the morning summary should arrive, and at what hour.',
+        href: '/app/updates',
+        cta: 'Manage updates',
+        description: 'Choose when your updates arrive and what they cover.',
       };
     case 'first_integration':
       return {

@@ -20,8 +20,8 @@ utilities support them in the secondary column. Email capture stays visible with
 stacked notice with explicit review actions; job counts remain admin-only. Healthy
 processing adds no notice. Capture and Ask can be used while secondary panels and source guidance load.
 Compact activity titles wrap above time and source on mobile. Recent activity excludes future events and shows at most
-four moments; the full timeline remains one click away. The latest digest follows
-activity with a bounded summary preview and an expandable full body.
+four moments. The Workspace brief leads the primary column and points to the
+full timeline.
 
 The team setup checklist is Home onboarding. For a member who
 has not hidden it, the list sits open directly under Ask with the same small
@@ -86,32 +86,36 @@ Free teams see the specific verification or grant issue with its resolution acti
 Home’s **Your work** section shows non-zero pending approvals, overdue work,
 open tasks, and open objects, using singular labels for one item. Overdue work
 links to the work queue; tasks and objects link to their respective indexes.
-“You’re caught up” replaces an empty work summary. Recent activity and the digest follow in the primary column. A supporting column
+“You’re caught up” replaces an empty work summary. Recent activity follows in the primary column. A supporting column
 holds three personal pins, team inbound email (`#team-email`), agent connection onboarding, and
 **Connections & processing** issues. Actual billing restrictions remain prominent;
 upgrade nudges and optional Pay as you go promotion come last in the supporting column. These columns stack on
 smaller screens. No synthetic records or empty metric cards fill spare space.
 
-The latest digest shows a short summary preview; its full body stays folded until opened.
-Its summary and section bodies are
-readable prose, not inventories of pull requests or IDs. The generator bans
-pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
-UUIDs: it scrubs them from the briefing packet, retries a draft that still
-lists them, and discards that draft if the rewrite fails. Narrative sections
-use Highlights, Status, Completed, In progress, Decisions, Risks, and
-Follow-ups; Status is the current state of work, not a product-specific label.
-Empty sections and empty task, object, or calendar groups are omitted. The
-header shows the digest date; the covering time range stays footer metadata.
-Activity is a compact count strip using the same mono lime numbers as Home
-Attention, and is hidden when every count is zero. Task, object, and
-calendar blocks are ordinary linked lists: newly created or completed tasks,
-new non-task objects, calendar events that fell in the digest window, and
-upcoming events. Titles use the same underlined Home treatment in the app and
-the same lime underlined links as other mail. Repeating calendar series
-collapse to one upcoming entry. Titles open the object or the specific calendar
-event on the dashboard. Work → Digests lists generated days as collapsed rows
-so a teammate can open a specific day. Quiet windows stay skipped and are not
-emailed; upcoming calendar alone does not make an inactive team look busy.
+The **Workspace brief** refreshes daily in the workspace timezone and covers the
+previous 72 hours. It leads with up to three distinct developments in linked
+timeline activity. The narrower upcoming column shows approaching task dates
+and meetings when present. The columns stack on smaller screens. If a generated
+brief is unavailable, Home shows the latest linked activity from the same
+window. Work that needs attention still appears under **Your work**.
+
+**Work → Updates** lists delivery schedules. New members inherit the workspace
+default automatically. Members can edit, pause or reset their inherited
+schedule and add separate personal email or linked DM schedules. Admins can
+change the workspace default. Daily check-in and Weekly recap offer starting
+settings. Each schedule has a send time in the workspace timezone, daily or
+weekly frequency, included sections, adjustable windows of up to 14 days, and a
+choice between **Quick scan** and **More context**. The default can include new
+matches from followed saved views. **Update history** shows delivery dates and
+channels, with a link to open each record. Previous daily digests remain
+readable at their original URLs.
+
+Update stories use one short headline and optional context with links to
+supporting timeline moments. Tasks, calendar events and saved views link to
+their records. Empty sections are omitted. Email uses grouped rows and chat
+uses short linked lists. Personal deliveries and Home require current visibility
+for supporting evidence. A quiet personal update is skipped when none of its
+selected sections has content.
 
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
@@ -233,8 +237,8 @@ side effects, and human-reviewed proposals.
 
 ### Work and settings
 
-Work pages share one shell-owned subnavigation directly below the top bar, outside the page scroller. Overview, Objects, Tasks, Boards, Calendar, Digests, and Approvals keep the same tab position and horizontal gutters across route changes, loading, errors, and nested creation views. Page headers sit below the tabs. Tasks exposes a compact New task toolbar action, returning to Tasks after creation. Work pages lead with the task at hand, not a grid of
-links. Work → Digests is the day-by-day archive of those briefings. Work overview
+Work pages share one shell-owned subnavigation directly below the top bar, outside the page scroller. Overview, Objects, Tasks, Boards, Calendar, Updates, and Approvals keep the same tab position and horizontal gutters across route changes, loading, errors, and nested creation views. Page headers sit below the tabs. Tasks exposes a compact New task toolbar action, returning to Tasks after creation. Work pages lead with the task at hand, not a grid of
+links. Work → Updates opens schedules and their delivery history. Work overview
 leads with the work queue, with mixed personal pins (same rows as Home) and team boards in the supporting column. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
@@ -279,7 +283,7 @@ Team → General is the default Team settings section and keeps identity as a
 form (rename for admins) plus two readonly copyable support fields — team id
 and slug — with spacing between sections and no nested cards. Renaming updates
 the display name only; slug and inbound email stay put. General also contains
-work style, messaging, digest destinations and timezone; there is no separate
+work style, workspace delivery destinations and timezone; there is no separate
 Preferences tab. Old Preferences links resolve to General. Evaluation tracing
 and conversation report sharing appear as descriptive navigation rows under
 Quality and support within General, never above the page header. Solo signup
@@ -862,5 +866,5 @@ the OCR budget from Captured files.
 
 Approvals, Tasks, Objects, and individual Boards offer Save view for their
 current filters. Work links to personal saved views, where each member can
-opt in to new-match updates through their daily digest. Project handoffs use
+opt in to new-match notifications in their default update. Project handoffs use
 a dated snapshot header and a separate link to the current project.

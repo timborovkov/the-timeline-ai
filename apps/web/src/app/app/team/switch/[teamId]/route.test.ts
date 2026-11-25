@@ -68,6 +68,24 @@ describe('team switch route', () => {
     expect(response.headers.get('location')).toBe('https://thetimeline.cc/app');
   });
 
+  it('allows a same-origin update destination only after membership is verified', async () => {
+    const request = (target: string) =>
+      new Request(`${internalRequest().url}?${new URLSearchParams({ update: target })}`, {
+        method: 'POST',
+      });
+    const params = { params: Promise.resolve({ teamId: TEAM_ID }) };
+    const allowed = await POST(request('/app/timeline?event=launch#ev-launch'), params);
+    expect(allowed.status).toBe(303);
+    expect(allowed.headers.get('location')).toBe(
+      'https://thetimeline.cc/app/timeline?event=launch#ev-launch',
+    );
+    const blocked = await POST(request('https://other.example/app/timeline'), params);
+    expect(blocked.headers.get('location')).toBe('https://thetimeline.cc/app');
+    fakes.fakeVerifyMembership.mockResolvedValue(false);
+    const denied = await POST(request('/app/timeline?event=launch'), params);
+    expect(denied.headers.get('location')).toBe('https://thetimeline.cc/app');
+  });
+
   it('does not inherit the internal request origin for auth redirects', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
 

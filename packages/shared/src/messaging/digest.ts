@@ -844,6 +844,7 @@ export async function latestDailyDigest(input: {
         eq(dailyDigests.teamId, input.teamId),
         eq(dailyDigests.userId, input.userId),
         inArray(dailyDigests.status, ['generated', 'sent']),
+        eq(dailyDigests.scheduleKey, ''),
       ),
     )
     .orderBy(desc(dailyDigests.generatedAt))
@@ -866,6 +867,7 @@ export async function listDailyDigests(input: {
         eq(dailyDigests.teamId, input.teamId),
         eq(dailyDigests.userId, input.userId),
         inArray(dailyDigests.status, ['generated', 'sent']),
+        eq(dailyDigests.scheduleKey, ''),
       ),
     )
     .orderBy(desc(dailyDigests.windowEnd), desc(dailyDigests.generatedAt))
@@ -907,6 +909,7 @@ async function persistQuietDailyDigest(input: {
             eq(dailyDigests.userId, input.request.userId),
             eq(dailyDigests.windowStart, input.request.windowStart),
             eq(dailyDigests.windowEnd, input.request.windowEnd),
+            eq(dailyDigests.scheduleKey, ''),
           ),
         )
         .limit(1)
@@ -943,6 +946,7 @@ async function persistQuietDailyDigest(input: {
           eq(dailyDigests.userId, input.request.userId),
           eq(dailyDigests.windowStart, input.request.windowStart),
           eq(dailyDigests.windowEnd, input.request.windowEnd),
+          eq(dailyDigests.scheduleKey, ''),
         ),
       )
       .limit(1);
@@ -1002,6 +1006,7 @@ export async function generateDailyDigest(
           eq(dailyDigests.userId, input.userId),
           eq(dailyDigests.windowStart, input.windowStart),
           eq(dailyDigests.windowEnd, input.windowEnd),
+          eq(dailyDigests.scheduleKey, ''),
         ),
       )
       .limit(1);
@@ -1041,6 +1046,7 @@ export async function generateDailyDigest(
           eq(dailyDigests.userId, input.userId),
           eq(dailyDigests.windowStart, input.windowStart),
           eq(dailyDigests.windowEnd, input.windowEnd),
+          eq(dailyDigests.scheduleKey, ''),
         ),
       )
       .limit(1);
@@ -1079,6 +1085,7 @@ export async function generateDailyDigest(
             eq(dailyDigests.userId, input.userId),
             eq(dailyDigests.windowStart, input.windowStart),
             eq(dailyDigests.windowEnd, input.windowEnd),
+            eq(dailyDigests.scheduleKey, ''),
           ),
         )
         .limit(1)
@@ -1455,6 +1462,7 @@ export async function generateDailyDigest(
             eq(dailyDigests.userId, input.userId),
             eq(dailyDigests.windowStart, input.windowStart),
             eq(dailyDigests.windowEnd, input.windowEnd),
+            eq(dailyDigests.scheduleKey, ''),
           ),
         )
         .limit(1);
@@ -1484,6 +1492,7 @@ export async function generateDailyDigest(
           eq(dailyDigests.userId, input.userId),
           eq(dailyDigests.windowStart, input.windowStart),
           eq(dailyDigests.windowEnd, input.windowEnd),
+          eq(dailyDigests.scheduleKey, ''),
         ),
       )
       .limit(1);

@@ -43,6 +43,7 @@ describe('generateDailyDigest conflict handling', () => {
     vi.clearAllMocks();
     fakes.withTeam.mockReturnValue({
       requireMembership: vi.fn().mockResolvedValue('member'),
+      savedViews: { evaluate: vi.fn().mockResolvedValue([]) },
       timeline: {
         team: vi.fn().mockResolvedValue({ name: 'AuditAI' }),
         listAllEventsInWindow: vi.fn().mockResolvedValue([
@@ -223,6 +224,7 @@ describe('generateDailyDigest conflict handling', () => {
       });
     fakes.withTeam.mockReturnValue({
       requireMembership: vi.fn().mockResolvedValue('member'),
+      savedViews: { evaluate: vi.fn().mockResolvedValue([]) },
       timeline: {
         team: vi.fn().mockResolvedValue({ name: 'AuditAI' }),
         listAllEventsInWindow: vi.fn().mockResolvedValue([]),

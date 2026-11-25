@@ -1,8 +1,11 @@
-'use client';
-
-import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
+import {
+  formatDigestDateTime,
+  UPDATE_CHANNEL_LABELS,
+  type DailyDigestPayload,
+  type DeliveredUpdateChannel,
+} from '@timeline/shared/messaging/format';
 import { ChevronDown, Newspaper } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import { DigestBody } from '@/components/home/digest-body';
@@ -10,11 +13,12 @@ import { cn } from '@/lib/utils';
 
 export interface DigestHistoryRow {
   id: string;
+  name: string;
   status: string;
-  summary: string;
-  windowEnd: string;
+  date: string;
   timezone?: string;
-  payload: DailyDigestPayload;
+  channels: DeliveredUpdateChannel[];
+  payload?: DailyDigestPayload;
 }
 
 export function DigestHistoryTable({
@@ -24,79 +28,66 @@ export function DigestHistoryTable({
   digests: DigestHistoryRow[];
   selectedId?: string;
 }) {
-  const [override, setOverride] = useState<{
-    forSelectedId: string | undefined;
-    openId: string | null;
-  } | null>(null);
-  const openId =
-    override && override.forSelectedId === selectedId ? override.openId : (selectedId ?? null);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    document.getElementById(selectedId)?.scrollIntoView({ block: 'start' });
-  }, [selectedId]);
-
   if (digests.length === 0) {
     return (
       <EmptyState
         icon={Newspaper}
         size="inset"
-        title="No digests yet"
-        body="Daily digests will appear here after Timeline has a window of team activity to summarize."
+        title="No updates yet"
+        body="Your sent updates will appear here after the first delivery."
       />
     );
   }
 
   return (
-    <div>
-      <div className="hidden md:grid grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 border-b border-border text-xs text-fg-dim">
-        <div className="py-2 font-medium">Day</div>
-        <div className="py-2 font-medium">Summary</div>
-        <div className="py-2 font-medium">Status</div>
-      </div>
+    <ol className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface">
       {digests.map((digest) => {
-        const open = openId === digest.id;
-        const timezone = digest.timezone ?? digest.payload.timezone;
+        const open = digest.id === selectedId && Boolean(digest.payload);
+        const date = formatDigestDateTime(digest.date, digest.timezone);
+        const channels = digest.channels
+          .map((channel) => UPDATE_CHANNEL_LABELS[channel])
+          .join(', ');
         return (
-          <details
-            key={digest.id}
-            id={digest.id}
-            className="group border-b border-border"
-            open={open || undefined}
-            onToggle={(event) => {
-              const nextOpen = event.currentTarget.open;
-              setOverride({
-                forSelectedId: selectedId,
-                openId: nextOpen ? digest.id : null,
-              });
-            }}
-          >
-            <summary
+          <li key={digest.id} id={`update-${digest.id}`} className="scroll-mt-6">
+            <Link
+              href={
+                open
+                  ? '/app/digests'
+                  : `/app/digests?digest=${encodeURIComponent(digest.id)}#update-${digest.id}`
+              }
+              scroll={!open}
               aria-expanded={open}
-              className="grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[8rem_minmax(0,1fr)_6rem] items-center gap-x-4 gap-y-2 py-3 text-sm [&::-webkit-details-marker]:hidden"
+              className={cn(
+                'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 hover:bg-surface-2 sm:grid-cols-[minmax(0,1fr)_13rem_8rem_auto] sm:gap-4 sm:px-5',
+                open && 'bg-surface-2',
+              )}
             >
-              <span className="font-mono text-xs text-fg-dim">
-                {formatDigestDate(digest.windowEnd, timezone)}
-              </span>
-              <span className="col-span-2 row-start-2 min-w-0 text-fg md:col-span-1 md:row-start-auto md:truncate">
-                {digest.summary || 'No summary'}
-              </span>
-              <span
-                className={cn(
-                  'col-start-2 row-start-1 inline-flex items-center justify-end gap-2 font-mono text-xs capitalize text-fg-dim md:col-start-3',
-                  digest.status === 'sent' && 'text-signal',
-                )}
+              <span className="font-medium text-fg [overflow-wrap:anywhere]">{digest.name}</span>
+              <time
+                dateTime={digest.date}
+                className="col-start-1 row-start-2 text-xs text-fg-muted sm:col-start-2 sm:row-start-1"
               >
-                {digest.status}
-                <ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" />
+                {date}
+              </time>
+              <span className="col-start-2 row-start-2 text-right text-xs text-fg-muted sm:col-start-3 sm:row-start-1 sm:text-left">
+                {channels || (digest.status === 'sent' ? 'Sent' : 'In app')}
               </span>
-            </summary>
-            <div id={`digest-panel-${digest.id}`} className="px-1 pb-5 pt-1">
-              <DigestBody digest={digest.payload} />
-            </div>
-          </details>
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  'col-start-2 row-start-1 size-4 justify-self-end text-fg-muted sm:col-start-4',
+                  open && 'rotate-180',
+                )}
+              />
+            </Link>
+            {open && digest.payload && (
+              <div className="border-t border-border px-4 py-5 sm:px-5">
+                <DigestBody digest={digest.payload} />
+              </div>
+            )}
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }

@@ -10,10 +10,12 @@ import {
   formatDigestObjectType,
   formatDigestTaskDetail,
   formatDigestWindowRange,
+  updateCoveringRange,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging/format';
 import Link from 'next/link';
 
+import { UpdateReportGroupList } from '@/components/home/update-report-group';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +26,19 @@ export function DigestBody({
   digest: DailyDigestPayload;
   className?: string;
 }) {
+  if (digest.update) {
+    return (
+      <div className={cn('space-y-4', className)}>
+        {digest.update.groups.length === 0 && (
+          <p className="text-sm text-fg-muted">No sources are currently visible.</p>
+        )}
+        {digest.update.groups.map((group) => (
+          <UpdateReportGroupList key={group.section} group={group} />
+        ))}
+        <p className="font-mono text-xs text-fg-dim">Covering {updateCoveringRange(digest)}</p>
+      </div>
+    );
+  }
   const summary = digestSummaryParagraphs(digest.summary);
   const sections = digestContentSections(digest);
   const activityItems = formatDigestActivityItems(digestActivityStats(digest));

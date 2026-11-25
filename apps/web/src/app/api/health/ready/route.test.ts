@@ -28,6 +28,7 @@ beforeEach(() => {
     getSuggestionQueue: queue,
     getReconciliationQueue: queue,
     getDailyDigestQueue: queue,
+    getScheduledUpdatesQueue: queue,
     getDocumentExtractQueue: queue,
   });
 });
@@ -48,7 +49,7 @@ it('reports required worker presence', async () => {
   const ready = await GET(request());
   expect(ready.status).toBe(200);
   const body = (await ready.json()) as { queues: unknown[] };
-  expect(body.queues).toHaveLength(9);
+  expect(body.queues).toHaveLength(10);
   fakes.workers.mockResolvedValue([]);
   expect((await GET(request())).status).toBe(503);
 });

@@ -31,6 +31,12 @@ import type {
   TeamDeletionMessageInput,
   WelcomeMessageInput,
 } from '#src/messaging/types.js';
+import {
+  updateCoveringRange,
+  updateSectionLabel,
+  updateSubject,
+  updateWorkspaceUrl,
+} from '#src/messaging/update-format.js';
 
 type TemplateName =
   | 'base'
@@ -393,7 +399,84 @@ function renderPasswordReset(input: PasswordResetMessageInput): RenderedMessage 
   };
 }
 
+function renderScheduledUpdate(input: DailyDigestMessageInput): RenderedMessage {
+  const { payload, digestUrl, teamId } = input;
+  const subject = updateSubject(payload);
+  const date = formatDigestDate(payload.windowEnd, payload.timezone);
+  const previewText = payload.summary;
+  const groups = (payload.update?.groups ?? []).map((group) => ({
+    title: updateSectionLabel(group.section),
+    items: group.items.map((item) => ({
+      ...item,
+      links: item.links.flatMap((source) => {
+        const href = teamId
+          ? updateWorkspaceUrl(digestUrl, source.href, teamId)
+          : absoluteDigestAppUrl(digestUrl, source.href);
+        return href ? [{ label: source.label, href }] : [];
+      }),
+    })),
+  }));
+  const textBody = [
+    subject,
+    date,
+    '',
+    ...groups.flatMap((group) => [
+      group.title,
+      ...group.items.flatMap((item) => [
+        `- ${item.title}${item.detail ? ` · ${item.detail}` : ''}`,
+        ...item.links.map((source) => `  ${source.label} ${source.href}`),
+      ]),
+      '',
+    ]),
+    `Covering ${updateCoveringRange(payload)}`,
+    `Open update ${digestUrl}`,
+  ].join('\n');
+  const body = [
+    htmlDateBlock(date),
+    ...groups.map((group) =>
+      [
+        `<h2 style="font-size: 15px; margin: 26px 0 4px;">${escapeHtml(group.title)}</h2>`,
+        ...group.items.map((item) => {
+          const links = item.links
+            .map(
+              (source) =>
+                `<a href="${escapeHtml(source.href)}" style="color: #436b08; text-decoration: underline;">${escapeHtml(source.label)}</a>`,
+            )
+            .join(' · ');
+          return [
+            '<div style="border-top: 1px solid #e1e5de; padding: 12px 0;">',
+            `<p style="font-size: 15px; font-weight: 600; line-height: 1.45; margin: 0;">${escapeHtml(item.title)}</p>`,
+            item.detail
+              ? `<p style="font-size: 14px; line-height: 1.5; margin: 4px 0 0;">${escapeHtml(item.detail)}</p>`
+              : '',
+            links
+              ? `<p style="font-size: 13px; line-height: 1.5; margin: 4px 0 0;">${links}</p>`
+              : '',
+            '</div>',
+          ].join('');
+        }),
+      ].join('\n'),
+    ),
+    htmlWindowBlock(updateCoveringRange(payload)),
+  ].join('\n');
+  return {
+    intent: 'daily_digest',
+    to: input.to,
+    subject,
+    textBody,
+    htmlBody: htmlLayout({
+      preview: previewText,
+      title: subject,
+      body,
+      cta: { href: digestUrl, label: 'Open update' },
+    }),
+    previewText,
+    metadata: { message_intent: 'daily_digest' },
+  };
+}
+
 function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
+  if (input.payload.update) return renderScheduledUpdate(input);
   const p = input.payload;
   const subject = `Daily digest for ${p.teamName}`;
   const timezone = p.timezone;

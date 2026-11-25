@@ -10,13 +10,14 @@ import {
 } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { getSiteUrl } from '@/lib/site-url';
+import { updateDestinationPath } from '@/lib/update-links';
 
 function appRedirect(path: '/app' | '/sign-in'): NextResponse {
   return NextResponse.redirect(new URL(path, getSiteUrl()));
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ teamId: string }> },
 ): Promise<NextResponse> {
   const session = await auth();
@@ -39,5 +40,10 @@ export async function POST(
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TEAM_COOKIE, serializeActiveTeamCookie(teamId), activeTeamCookieOptions());
-  return appRedirect('/app');
+  const destination = updateDestinationPath(
+    new URL(req.url).searchParams.get('update') ?? undefined,
+  );
+  return destination
+    ? NextResponse.redirect(new URL(destination, getSiteUrl()), 303)
+    : appRedirect('/app');
 }

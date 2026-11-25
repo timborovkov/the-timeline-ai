@@ -774,8 +774,11 @@ Live Google Cloud configuration and scope verification remain open. See
 [calendar import](calendar.md#google-calendar-import).
 
 Handoff snapshots and saved views follow workspace deletion. Handoff reads
-recheck the project, sources and commitments. Saved-view digests reevaluate
-matches for the recipient and use personal destinations. Source-health counts
+recheck the project, sources and commitments. Personal updates reevaluate
+saved-view matches and source visibility before delivery and when opened. Linked chat retries revisit the
+schedule and source checks through the update job. Home uses the signed-in
+member’s scope. A workspace default sets delivery preferences for inheriting
+members. Member visibility governs access to all linked records. Source-health counts
 apply source visibility before aggregation. OCR correction history retains
 earlier derived text subject to the source document's access and deletion
 policy.

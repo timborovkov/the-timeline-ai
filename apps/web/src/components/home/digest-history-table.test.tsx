@@ -1,10 +1,9 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import { DigestHistoryTable } from '@/components/home/digest-history-table';
+import { DigestHistoryTable, type DigestHistoryRow } from '@/components/home/digest-history-table';
 // Test environment: happy-dom
 
 const PAYLOAD: DailyDigestPayload = {
@@ -14,16 +13,8 @@ const PAYLOAD: DailyDigestPayload = {
   windowStart: '2026-07-15T00:00:00.000Z',
   windowEnd: '2026-07-16T00:00:00.000Z',
   summary: 'The launch moved forward.',
-  sections: [
-    {
-      title: 'Highlights',
-      body: 'The invite flow is ready for the next review.',
-      items: [],
-    },
-  ],
   pendingApprovals: 0,
-  eventCount: 4,
-  momentCount: 3,
+  eventCount: 0,
   sourceDistribution: {},
   objectChangesByType: {},
   newTeamMembers: [],
@@ -31,81 +22,50 @@ const PAYLOAD: DailyDigestPayload = {
   upcomingCalendar: [],
   links: [],
 };
+const rows = [
+  {
+    id: 'first',
+    name: 'Daily check-in',
+    status: 'sent',
+    date: PAYLOAD.windowEnd,
+    timezone: 'UTC',
+    channels: ['telegram'],
+  },
+  {
+    id: 'second',
+    name: 'Weekly recap',
+    status: 'sent',
+    date: PAYLOAD.windowEnd,
+    timezone: 'UTC',
+    channels: ['email'],
+  },
+] as const satisfies readonly DigestHistoryRow[];
 
-describe('DigestHistoryTable', () => {
-  afterEach(() => {
-    cleanup();
+describe('Update history', () => {
+  afterEach(cleanup);
+
+  it('shows each schedule name and actual delivery channel in the collapsed archive', () => {
+    render(<DigestHistoryTable digests={[...rows]} />);
+    const daily = screen.getByRole('link', { name: /Daily check-in.*Telegram DM/ });
+    expect(daily.getAttribute('href')).toBe('/app/digests?digest=first#update-first');
+    expect(daily.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('link', { name: /Weekly recap.*Email/ })).toBeTruthy();
+    expect(screen.queryByText(PAYLOAD.summary)).toBeNull();
   });
 
-  it('opens the selected digest row so a day can be inspected', () => {
-    const { container } = render(
+  it('opens only the requested record and still reads older stored reports', () => {
+    render(
       <DigestHistoryTable
-        selectedId="digest-2"
-        digests={[
-          {
-            id: 'digest-1',
-            status: 'sent',
-            summary: 'Earlier quiet day.',
-            windowEnd: '2026-07-15T00:00:00.000Z',
-            timezone: 'UTC',
-            payload: { ...PAYLOAD, summary: 'Earlier quiet day.' },
-          },
-          {
-            id: 'digest-2',
-            status: 'generated',
-            summary: 'The launch moved forward.',
-            windowEnd: '2026-07-16T00:00:00.000Z',
-            timezone: 'UTC',
-            payload: PAYLOAD,
-          },
-        ]}
+        selectedId="second"
+        digests={[rows[0], { ...rows[1], payload: PAYLOAD }]}
       />,
     );
-
-    const selected = container.querySelector('#digest-2');
-    const other = container.querySelector('#digest-1');
-    expect(selected).toBeInstanceOf(HTMLDetailsElement);
-    expect(other).toBeInstanceOf(HTMLDetailsElement);
-    expect((selected as HTMLDetailsElement | null)?.open).toBe(true);
-    expect((other as HTMLDetailsElement | null)?.open).toBe(false);
-    expect(selected?.querySelector('summary')?.getAttribute('aria-expanded')).toBe('true');
-    expect(other?.querySelector('summary')?.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByText('Jul 16, 2026')).toBeTruthy();
-  });
-
-  it('lets a teammate open another day without a selected query', async () => {
-    const user = userEvent.setup();
-    const { container } = render(
-      <DigestHistoryTable
-        digests={[
-          {
-            id: 'digest-1',
-            status: 'sent',
-            summary: 'Earlier quiet day.',
-            windowEnd: '2026-07-15T00:00:00.000Z',
-            timezone: 'UTC',
-            payload: { ...PAYLOAD, summary: 'Earlier quiet day.' },
-          },
-          {
-            id: 'digest-2',
-            status: 'generated',
-            summary: 'The launch moved forward.',
-            windowEnd: '2026-07-16T00:00:00.000Z',
-            timezone: 'UTC',
-            payload: PAYLOAD,
-          },
-        ]}
-      />,
+    expect(screen.getByRole('link', { name: /Weekly recap/ }).getAttribute('aria-expanded')).toBe(
+      'true',
     );
-
-    const details = container.querySelector('#digest-2');
-    const summary = details?.querySelector('summary');
-    expect(details).toBeInstanceOf(HTMLDetailsElement);
-    expect((details as HTMLDetailsElement | null)?.open).toBe(false);
-    expect(summary).toBeTruthy();
-    if (!summary) return;
-    await user.click(summary);
-    expect((details as HTMLDetailsElement | null)?.open).toBe(true);
-    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('link', { name: /Daily check-in/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(screen.getByText(PAYLOAD.summary)).toBeTruthy();
   });
 });

@@ -6,3 +6,7 @@ export * from '#src/messaging/digest.js';
 export * from '#src/messaging/destinations.js';
 export * from '#src/messaging/digest-delivery.js';
 export { presentSavedViewDigest } from '#src/messaging/saved-view-digest.js';
+export * from '#src/messaging/update-settings.js';
+export * from '#src/messaging/update-timing.js';
+export { listUpdateDispatchCandidates } from '#src/messaging/update-scope.js';
+export * from '#src/messaging/update-report.js';

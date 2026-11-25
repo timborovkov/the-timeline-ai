@@ -79,13 +79,8 @@ await vi.mock(
 
 const { cleanup, render, screen, within } = await import('@testing-library/react');
 
-const {
-  DigestPreferenceForm,
-  InboundEmailWhitelistForm,
-  InviteMemberForm,
-  TeamExportPanel,
-  TeamTimezoneForm,
-} = await import('./team-forms.js');
+const { InboundEmailWhitelistForm, InviteMemberForm, TeamExportPanel, TeamTimezoneForm } =
+  await import('./team-forms.js');
 
 beforeEach(() => {
   cleanup();
@@ -210,17 +205,6 @@ describe('TeamTimezoneForm', () => {
 
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-  });
-});
-
-describe('DigestPreferenceForm', () => {
-  it('gives the digest checkbox a 36px labelled target with a visible focus ring', () => {
-    render(<DigestPreferenceForm enabled />);
-
-    const checkbox = screen.getByRole('checkbox', { name: /Send me a personal daily digest/ });
-    expect(checkbox.className).toContain('focus-visible:ring-2');
-    expect(checkbox.className).toContain('hover:border-border-strong');
-    expect(checkbox.closest('label')?.className).toContain('min-h-9');
   });
 });
 

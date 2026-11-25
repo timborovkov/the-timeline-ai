@@ -62,6 +62,7 @@ export const QUEUE_NAMES = {
   // Daily team digest. Tick fans out per-member generate/send plus workspace
   // bot posts for shared Slack/Telegram destinations.
   dailyDigest: 'daily-digest',
+  scheduledUpdates: 'scheduled-updates',
   // Generated object briefs. Produced by canonical object-memory writes and
   // manual object-page requests; consumed by the object-summary worker.
   objectSummary: 'object-summary',
@@ -1192,6 +1193,16 @@ export type DailyDigestJobData =
       windowEnd: string;
     }
   | { kind: 'send'; digestId: string; email: string }
+  | { kind: 'update-send'; digestId: string; teamId: string; userId: string }
+  | { kind: 'updates-tick'; catchup?: boolean }
+  | {
+      kind: 'update';
+      teamId: string;
+      userId: string;
+      scheduleKey: string;
+      revision: string;
+      windowEnd: string;
+    }
   | {
       kind: 'workspace-send';
       teamId: string;
@@ -1212,16 +1223,44 @@ export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
   return _dailyDigestQueue;
 }
 
+let scheduledUpdatesQueue: TimelineQueue<DailyDigestJobData> | undefined;
+
+export function getScheduledUpdatesQueue(): TimelineQueue<DailyDigestJobData> {
+  scheduledUpdatesQueue ??= createTimelineQueue<DailyDigestJobData>(QUEUE_NAMES.scheduledUpdates, {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 60_000 },
+    removeOnComplete: { age: 24 * 3600, count: 1000 },
+    removeOnFail: { age: 7 * 24 * 3600 },
+  });
+  return scheduledUpdatesQueue;
+}
+
+export async function closeScheduledUpdatesQueue(): Promise<void> {
+  await closeQueue(scheduledUpdatesQueue, () => {
+    scheduledUpdatesQueue = undefined;
+  });
+}
+
 export const DAILY_DIGEST_TICK_HEARTBEAT = 'timeline:daily-digest:last-scheduled-tick';
 
-export async function recordDailyDigestTick(scheduledAt: number): Promise<void> {
+export const UPDATES_TICK_HEARTBEAT = 'timeline:personal-updates:last-scheduled-tick';
+
+async function recordDigestHeartbeat(key: string, scheduledAt: number): Promise<void> {
   // A delayed retry of an older tick must not overwrite a newer heartbeat.
   await getRedisConnection().eval(
     "local last = tonumber(redis.call('GET', KEYS[1]) or '0'); if tonumber(ARGV[1]) > last then redis.call('SET', KEYS[1], ARGV[1], 'EX', 604800) end",
     1,
-    DAILY_DIGEST_TICK_HEARTBEAT,
+    key,
     scheduledAt,
   );
+}
+
+export function recordDailyDigestTick(scheduledAt: number): Promise<void> {
+  return recordDigestHeartbeat(DAILY_DIGEST_TICK_HEARTBEAT, scheduledAt);
+}
+
+export function recordScheduledUpdatesTick(scheduledAt: number): Promise<void> {
+  return recordDigestHeartbeat(UPDATES_TICK_HEARTBEAT, scheduledAt);
 }
 
 export async function scheduleDailyDigest(): Promise<void> {
@@ -1231,6 +1270,23 @@ export async function scheduleDailyDigest(): Promise<void> {
     { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
   );
   await enqueueDailyDigestCatchupJob();
+}
+
+export async function schedulePersonalUpdates(): Promise<void> {
+  const queue = getScheduledUpdatesQueue();
+  await queue.upsertJobScheduler(
+    'personal-updates-every-five-minutes',
+    { pattern: '*/5 * * * *', tz: 'UTC' },
+    { name: 'updates-tick', data: { kind: 'updates-tick' }, opts: { priority: 1 } },
+  );
+  await queue.add(
+    'updates-tick',
+    { kind: 'updates-tick', catchup: true },
+    {
+      priority: 1,
+      jobId: bullmqCustomJobId(['updates-catchup', String(Math.floor(Date.now() / 300_000))]),
+    },
+  );
 }
 
 export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Promise<void> {
@@ -1262,6 +1318,30 @@ export async function enqueueDailyDigestRecipientJob(
       data.windowStart,
       data.windowEnd,
     ]),
+  });
+}
+
+export async function enqueueScheduledUpdateJob(
+  data: Extract<DailyDigestJobData, { kind: 'update' }>,
+): Promise<void> {
+  await getScheduledUpdatesQueue().add('update', data, {
+    priority: 10,
+    jobId: bullmqCustomJobId([
+      'personal-update',
+      data.teamId,
+      data.userId,
+      data.scheduleKey,
+      data.windowEnd,
+    ]),
+  });
+}
+
+export async function enqueueScheduledUpdateSendJob(
+  data: Extract<DailyDigestJobData, { kind: 'update-send' }>,
+): Promise<void> {
+  await getScheduledUpdatesQueue().add('update-send', data, {
+    priority: 10,
+    jobId: bullmqCustomJobId(['scheduled-update-send', data.digestId]),
   });
 }
 

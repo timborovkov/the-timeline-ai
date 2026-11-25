@@ -139,6 +139,7 @@ export const PURGED_TEAM_TABLES = [
   'telegram_link_tokens',
   'telegram_user_teams',
   'timeline_moment_presentations',
+  'update_schedules',
   'user_onboarding_dismissals',
   'user_pins',
   'website_notifications',

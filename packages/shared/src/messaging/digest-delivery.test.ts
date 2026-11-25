@@ -5,6 +5,8 @@ import {
   users,
   teamMembers,
   dailyDigests,
+  entities,
+  teamCalendarSettings,
   messagePreferences,
   teamDigestDestinations,
   telegramUsers,
@@ -17,10 +19,17 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
+import { generateScheduledUpdate } from '#src/messaging/update-report.js';
+import { DEFAULT_UPDATE_SETTINGS } from '#src/messaging/update-settings.js';
+import { withTeam } from '#src/team-scope.js';
 import type * as TelegramApiModule from '#src/telegram/api.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
-const send = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const send = vi.hoisted(() =>
+  vi.fn((_input: Parameters<typeof TelegramApiModule.sendTelegramBotMessage>[0]) =>
+    Promise.resolve(),
+  ),
+);
 await vi.mock(
   import.meta.resolve('#src/telegram/api.js'),
   async (original) => ({
@@ -160,4 +169,57 @@ it('leaves an inactive workspace digest untouched even after the recipient leave
     await db.update(teams).set({ disabledAt: null }).where(eq(teams.id, teamId));
     await db.update(teamMembers).set({ removedAt: null }).where(eq(teamMembers.teamId, teamId));
   }
+});
+
+it('sends an explicitly scheduled Telegram update once and cancels a queued send after a pause', async () => {
+  await db.insert(teamCalendarSettings).values({ teamId, defaultTimezone: 'UTC' });
+  await db.insert(entities).values({
+    teamId,
+    type: 'task',
+    canonicalName: 'Send the offer',
+    status: 'todo',
+    dueAt: new Date('2026-06-16T00:00:00Z'),
+  });
+  await db
+    .update(teamDigestDestinations)
+    .set({ kind: 'email_members' })
+    .where(eq(teamDigestDestinations.teamId, teamId));
+  const scope = withTeam(db, teamId, userId);
+  const key = '77777777-7777-4777-8777-777777777777';
+  const settings = {
+    ...DEFAULT_UPDATE_SETTINGS,
+    channel: 'telegram' as const,
+    sections: ['due' as const],
+    name: 'Daily check-in',
+  };
+  await scope.updates.save(key, settings);
+  const { schedule } = await scope.updates.current(key);
+  if (!schedule) throw new Error('Missing test schedule');
+  const generate = (windowEnd: Date) =>
+    generateScheduledUpdate({
+      scope,
+      key,
+      revision: schedule.revision,
+      windowEnd,
+      now: windowEnd,
+    });
+
+  const generated = await generate(new Date('2026-06-14T12:00:00Z'));
+  if (!generated) throw new Error('Missing generated update');
+  const input = { db, digestId: generated, digestUrl: 'https://example.test/app/digests', now };
+  expect(await sendDailyDigest(input)).toMatchObject({ ok: true });
+  expect(send.mock.calls[0]?.[0]).toMatchObject({ chatId: 7, scheduledUpdate: true });
+  expect(send.mock.calls[0]?.[0]?.text).toContain('Send the offer');
+  expect(await sendDailyDigest(input)).toMatchObject({ ok: true, skippedStatus: 'sent' });
+  expect(send).toHaveBeenCalledTimes(1);
+
+  const nextEnd = new Date('2026-06-15T12:00:00Z');
+  const next = await generate(nextEnd);
+  if (!next) throw new Error('Missing next run');
+  await scope.updates.save(key, { ...settings, enabled: false });
+  expect(await sendDailyDigest({ ...input, digestId: next, now: nextEnd })).toMatchObject({
+    ok: true,
+    skipped: true,
+  });
+  expect(send).toHaveBeenCalledTimes(1);
 });

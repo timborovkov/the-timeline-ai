@@ -122,6 +122,7 @@ await vi.mock(
         this.options = options;
         fakes.redisInstances.push(this);
       }
+      on = vi.fn();
       quit = vi.fn(() => Promise.resolve());
     },
   }),
@@ -1540,6 +1541,7 @@ describe('queue wrappers', () => {
     await queues.scheduleJanitorSweep();
     await queues.scheduleMcpHealthPing();
     await queues.scheduleDailyDigest();
+    await queues.schedulePersonalUpdates();
 
     expect(fakes.queues[0]?.schedulerCalls[0]).toMatchObject({
       id: 'overdue-scan-hourly',
@@ -1566,6 +1568,15 @@ describe('queue wrappers', () => {
       repeatOpts: { pattern: '0 12 * * *' },
       template: { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
     });
+    expect(fakes.queues[5]?.schedulerCalls[0]).toMatchObject({
+      id: 'personal-updates-every-five-minutes',
+      repeatOpts: { pattern: '*/5 * * * *' },
+      template: { name: 'updates-tick', data: { kind: 'updates-tick' } },
+    });
+    expect(fakes.queues[5]?.addCalls[0]).toMatchObject({
+      name: 'updates-tick',
+      data: { kind: 'updates-tick', catchup: true },
+    });
     expect(fakes.queues[4]?.addCalls[0]).toMatchObject({
       name: 'tick',
       data: { kind: 'tick', reason: 'catchup' },
@@ -1581,10 +1592,29 @@ describe('queue wrappers', () => {
     await queues.closeJanitorQueue();
     await queues.closeMcpHealthQueue();
     await queues.closeDailyDigestQueue();
+    await queues.closeScheduledUpdatesQueue();
     expect(fakes.queues.every((queue) => queue.close.mock.calls.length === 1)).toBe(true);
 
     await queues.scheduleOverdueScan();
     expect(fakes.queues.filter((queue) => queue.name === 'overdue-scan')).toHaveLength(2);
+  });
+
+  it('uses a distinct stable job id for each schedule in the same slot', async () => {
+    const queues = await importQueues();
+    const job = {
+      kind: 'update' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      userId: '33333333-3333-4333-8333-333333333333',
+      revision: 'current',
+      windowEnd: '2026-06-14T12:00:00.000Z',
+    };
+    for (const scheduleKey of ['home', 'default', 'home']) {
+      await queues.enqueueScheduledUpdateJob({ ...job, scheduleKey });
+    }
+    const queue = fakes.queues[0];
+    expect(queue?.name).toBe('scheduled-updates');
+    expect(queue?.jobs.size).toBe(2);
+    expect(queue?.addCalls[0]?.opts).toEqual(queue?.addCalls[2]?.opts);
   });
 
   it('uses BullMQ-safe ids for daily digest recipient and send jobs', async () => {

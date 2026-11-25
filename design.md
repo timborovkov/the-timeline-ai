@@ -28,8 +28,8 @@ by exposing database implementation details in ordinary product views.
 
 - **Event history** is the immutable sequence of captured source events.
 - **Evidence** is source material backing a generated claim or proposed change.
-- **Updates** are cited answers or progress summaries generated on demand.
-- **Digests** are recurring summaries of change and attention.
+- **Updates** are scheduled briefings delivered to a member’s email or DMs.
+- **Workspace brief** is the daily report of recent timeline activity on Home.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.
 - **Signal classes** (internal) split events into communication, captured
@@ -55,7 +55,7 @@ by exposing database implementation details in ordinary product views.
   How events become that state is
   [`docs/relational-memory.md`](docs/relational-memory.md).
 
-Count chrome: Moments mode and digest headlines count **moments**; All events,
+Count chrome: Moments mode counts **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows
 do not show competing signal chips; the inspector uses **evidence items** for
 conversations and an **Activity** log for pulses. Do not show competing moment
@@ -202,7 +202,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   secondary descriptions wrap and row metadata stacks inside panels. Focus is
   contained, Escape dismisses, and closing restores focus without scrolling.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
-  Calendar, Digests, Approvals. Collection tabs sit flush against the following
+  Calendar, Updates, Approvals. Collection tabs sit flush against the following
   toolbar or group; Calendar uses 24px below tabs before its standalone controls,
   and creation and merge forms retain breathing room. Loading states mirror the
   same header alignment, tab spacing, toolbars, and row geometry.

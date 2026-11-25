@@ -10,11 +10,9 @@ import {
 } from '@/app/actions/team-exports';
 import {
   createTeamAction,
-  type DigestPreferenceState,
   inviteMemberAction,
   renameTeamAction,
   type TeamTimezoneState,
-  updateDigestPreferenceAction,
   updateInboundEmailWhitelistAction,
   updateTeamTimezoneAction,
   type CreateTeamState,
@@ -349,40 +347,6 @@ export function InboundEmailWhitelistForm({
           fieldError={Boolean(sendersError)}
         />
       </div>
-    </form>
-  );
-}
-
-export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
-  const [state, action] = useActionState<DigestPreferenceState, FormData>(
-    updateDigestPreferenceAction,
-    {},
-  );
-  return (
-    <form action={action} className="space-y-3">
-      <label className="flex min-h-9 items-start gap-3 text-sm">
-        <input
-          type="checkbox"
-          name="dailyDigestEnabled"
-          defaultChecked={enabled}
-          className="mt-0.5 size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          onChange={(event) => {
-            event.currentTarget.form?.requestSubmit();
-          }}
-        />
-        <span>
-          <span className="block font-medium">Send me a personal daily digest</span>
-          <span className="mt-0.5 block text-xs text-fg-dim">
-            Email or bot DMs configured for this workspace. Shared Slack or Telegram chats still
-            receive the team digest. Individual inbox notifications are not emailed.
-          </span>
-        </span>
-      </label>
-      <FormFeedback
-        toastId="digest-preference"
-        error={state.error}
-        success={state.ok ? 'Digest setting updated' : undefined}
-      />
     </form>
   );
 }

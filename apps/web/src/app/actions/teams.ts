@@ -24,6 +24,7 @@ import {
   sendMessage,
   type AddDigestDestinationInput,
 } from '@timeline/shared/messaging';
+import { DEFAULT_UPDATE_KEY } from '@timeline/shared/messaging/format';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { randomToken } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -301,39 +302,10 @@ export async function updateDigestPreferenceAction(
     }
 
     const enabled = formData.get('dailyDigestEnabled') === 'on';
-    const existing = await db
-      .select({
-        id: messagePreferences.id,
-        dailyDigestEnabled: messagePreferences.dailyDigestEnabled,
-      })
-      .from(messagePreferences)
-      .where(
-        and(
-          eq(messagePreferences.teamId, active.teamId),
-          eq(messagePreferences.userId, session.user.id),
-        ),
-      )
-      .limit(1);
-
-    const preference = existing[0];
-    const changed = preference ? preference.dailyDigestEnabled !== enabled : !enabled;
-    if (!changed) return { ok: true };
-
-    if (preference) {
-      await db
-        .update(messagePreferences)
-        .set({ dailyDigestEnabled: enabled, updatedAt: new Date() })
-        .where(eq(messagePreferences.id, preference.id));
-    } else {
-      const calendarSettings = await scope.calendar.getCalendarSettings();
-      await db.insert(messagePreferences).values({
-        teamId: active.teamId,
-        userId: session.user.id,
-        dailyDigestEnabled: enabled,
-        dailyDigestHour: 12,
-        timezone: calendarSettings.defaultTimezone,
-      });
-    }
+    const { schedule } = await scope.updates.current(DEFAULT_UPDATE_KEY);
+    if (!schedule) return { error: 'No default update schedule' };
+    if (schedule.settings.enabled === enabled) return { ok: true };
+    await scope.updates.save(DEFAULT_UPDATE_KEY, { ...schedule.settings, enabled });
 
     await safeMarkOnboardingStep(scope, 'daily_digest');
     trackProductEventBestEffort(
@@ -342,7 +314,7 @@ export async function updateDigestPreferenceAction(
       { action: 'settings_update' },
     );
     revalidatePath('/app');
-    revalidatePath('/app/team');
+    revalidatePath('/app/updates');
     return { ok: true };
   });
 }

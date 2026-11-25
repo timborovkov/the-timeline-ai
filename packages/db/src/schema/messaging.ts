@@ -100,6 +100,7 @@ export const dailyDigests = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
     windowEnd: timestamp('window_end', { withTimezone: true }).notNull(),
+    scheduleKey: text('schedule_key').notNull().default(''),
     summary: text('summary').notNull(),
     payload: jsonb('payload').notNull().default({}),
     status: dailyDigestStatus('status').notNull().default('generated'),
@@ -116,11 +117,37 @@ export const dailyDigests = pgTable(
       table.userId,
       table.generatedAt,
     ),
-    uniqueIndex('daily_digests_team_user_window_unq').on(
+    uniqueIndex('daily_digests_scheduled_window_unq').on(
       table.teamId,
       table.userId,
-      table.windowStart,
+      table.scheduleKey,
       table.windowEnd,
+      table.windowStart,
+    ),
+  ],
+);
+
+export const updateSchedules = pgTable(
+  'update_schedules',
+  {
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    scheduleKey: text('schedule_key').notNull(),
+    settings: jsonb('settings').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('update_schedules_member_unq')
+      .on(table.teamId, table.userId, table.scheduleKey)
+      .where(sql`${table.userId} IS NOT NULL`),
+    uniqueIndex('update_schedules_workspace_unq')
+      .on(table.teamId)
+      .where(sql`${table.userId} IS NULL`),
+    check(
+      'update_schedules_workspace_default_chk',
+      sql`${table.userId} IS NOT NULL OR ${table.scheduleKey} = 'default'`,
     ),
   ],
 );

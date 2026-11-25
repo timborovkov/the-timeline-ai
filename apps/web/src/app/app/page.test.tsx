@@ -105,6 +105,10 @@ await vi.mock(
         getChecklistState: vi.fn(),
         getFirstRun: fakes.getFirstRun,
       },
+      updates: {
+        latestHome: () => Promise.resolve(null),
+        current: () => Promise.resolve({ schedule: undefined }),
+      },
       pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
       timeline: {
         listArtifactClusters: fakes.listArtifactClusters,

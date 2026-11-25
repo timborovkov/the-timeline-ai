@@ -14,12 +14,12 @@ export default function DigestsError({
     <div className="space-y-6">
       <PageHeader
         variant="collection"
-        title="Digests"
-        subtitle="Browse every daily digest and open a specific day."
+        title="Update history"
+        subtitle="Open an update to see what it covered."
       />
       <ErrorState
-        title="Unable to load digests"
-        description="Saved daily digests have not changed. Check your connection, then try again."
+        title="Unable to load update history"
+        description="Check your connection, then try again."
         error={error}
         reset={reset}
       />

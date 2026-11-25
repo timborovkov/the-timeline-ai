@@ -27,7 +27,7 @@ Schedule `POST /api/health/operations` every five minutes from an external sched
 | Capture latency | In the last day, any eligible capture over 30 minutes without its index receipt, or the completed capture-to-index p95 reaches 30 minutes. |
 | Document extraction | A finalized upload over 30 minutes in pending or extracting state, a stalled extraction queue, or five recent failures. |
 | Proposal jobs | Suggestions or reconciliation jobs waiting or running for 30 minutes, or five terminal failures in the last day. |
-| Missed digests | The scheduled noon UTC tick hasn't finished fan-out by 13:00 UTC, a delivery stays pending for an hour, or five recent deliveries or queue jobs fail. |
+| Missed digests | The five-minute personal update tick is more than 20 minutes behind, the shared digest tick has missed its 13:00 UTC grace period, a delivery stays pending for an hour, or five recent deliveries or queue jobs fail. |
 | Integration sync and webhook delivery | Waiting or running for 30 minutes, or five terminal failures in the last day. |
 | Index freshness | Eligible text events or chunked website pages are 30 minutes behind, embed jobs stall or accumulate failures, or Qdrant collection metadata is unavailable. |
 

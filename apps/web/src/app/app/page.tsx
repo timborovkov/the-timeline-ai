@@ -1,7 +1,8 @@
 import { teams, users } from '@timeline/db';
 import {
-  latestDailyDigest,
-  presentSavedViewDigest,
+  buildUpdateReport,
+  HOME_UPDATE_KEY,
+  presentUpdateReport,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging';
 import {
@@ -410,14 +411,20 @@ async function HomeRecentActivity({
 }
 
 async function HomeDigest({ scope }: { scope: TeamScope }) {
-  const digest = await loadHomePanel('home_digest', () =>
-    latestDailyDigest({ db, teamId: scope.teamId, userId: scope.userId }),
-  );
-  const payload = digest?.payload as DailyDigestPayload | undefined;
-  const rendered = payload?.savedViewChanges
-    ? (await presentSavedViewDigest(scope, payload)).payload
-    : payload;
-  return <DailyDigestBlock digest={rendered} />;
+  const digest = await loadHomePanel('home_digest', async () => {
+    const now = new Date();
+    const row = await scope.updates.latestHome();
+    const payload = row?.payload as DailyDigestPayload | undefined;
+    if (row && payload?.update && now.getTime() - row.windowEnd.getTime() < 36 * 60 * 60 * 1000) {
+      const report = await presentUpdateReport(scope, payload, now);
+      if (report.update?.groups.some((group) => group.section === 'activity')) return report;
+    }
+    const { schedule, timezone } = await scope.updates.current(HOME_UPDATE_KEY);
+    return schedule
+      ? buildUpdateReport({ scope, schedule, timezone, windowEnd: now, synthesize: false })
+      : undefined;
+  });
+  return <DailyDigestBlock digest={digest ?? undefined} />;
 }
 
 async function HomePins({ scope }: { scope: TeamScope }) {
@@ -585,14 +592,14 @@ export default async function HomeDashboardPage() {
 
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-8">
+          <Suspense fallback={null}>
+            <HomeDigest scope={scope} />
+          </Suspense>
           <Suspense fallback={<HomePanelFallback />}>
             <HomeWork scope={scope} now={now} calendar={calendar} />
           </Suspense>
           <Suspense fallback={<HomePanelFallback />}>
             <HomeRecentActivity scope={scope} eventsPage={eventsPage} calendar={calendar} />
-          </Suspense>
-          <Suspense fallback={null}>
-            <HomeDigest scope={scope} />
           </Suspense>
         </div>
         <aside

@@ -2260,6 +2260,9 @@
   "packages/shared/src/messaging/templates.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/messaging/updates.integration.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/monitoring/sentry-runtime.test.ts": {
     "group": "unit"
   },

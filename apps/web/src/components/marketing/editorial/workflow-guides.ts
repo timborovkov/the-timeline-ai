@@ -48,7 +48,7 @@ export const WORKFLOW_GUIDES = [
       {
         index: '04',
         title: 'Inspect the first daily update',
-        body: 'Open Work → Digests after the scheduled run. Review highlights, follow-ups and linked work. Open a source you already know and check that the wording preserves its meaning. An empty section can mean missing capture, not an absence of work.',
+        body: 'Open Update history under Work → Updates after the scheduled run. Review highlights, follow-ups and linked work. Open a source you already know and check that the wording preserves its meaning. An empty section can mean missing capture, not an absence of work.',
         output: 'A checked first update.',
       },
       {
