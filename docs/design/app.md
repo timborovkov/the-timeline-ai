@@ -706,6 +706,14 @@ Light-mode signal controls use `oklch(0.51 0.15 130)` with near-white foreground
 Dark-theme dim text uses OKLCH lightness 0.64 (rather than 0.48). Browser sRGB measurement puts it above 5:1 on the secondary dark surface; dim is a hierarchy treatment, not permission for unreadable body text. The pricing browser regression checks both themes’ dim-text surfaces and primary-button pair at 4.5:1 or better.
 
 
+### Account sign-in methods
+
+Account → Account settings opens the personal settings page. Under Sign-in
+methods, use **Link GitHub** to confirm a GitHub identity for future sign-ins.
+The page shows when GitHub is linked and is available to signed-in users before
+workspace setup. The sign-in linking error directs users to use their original
+method and then open Account settings.
+
 ### Password recovery
 
 Sign-in places “Forgot password?” beside the password label. `/forgot-password`

@@ -38,6 +38,7 @@ describe('Cookies and similar technologies page', () => {
     expect(html).toContain('authjs.csrf-token');
     expect(html).toContain('authjs.pkce.code_verifier');
     expect(html).toContain('15-minute');
+    expect(html).toContain('timeline.github-login-link');
     expect(html).toContain('pending_invite');
     expect(html).toContain('tl_pricing_plan_intent');
     expect(html).toContain('tl_active_team');
