@@ -326,6 +326,7 @@ const createObjectSchema = z.object({
   ownerUserId: uuidSchema.nullable().optional(),
   assigneeUserId: uuidSchema.nullable().optional(),
   dueAt: z.iso.datetime().nullable().optional(),
+  plannedDate: z.iso.date().nullable().optional(),
   parentObjectId: uuidSchema.nullable().optional(),
 });
 
@@ -344,6 +345,7 @@ export async function createObjectAction(input: unknown): Promise<ObjectActionSt
         ownerUserId: parsed.data.ownerUserId ?? null,
         assigneeUserId: parsed.data.assigneeUserId ?? null,
         dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : null,
+        ...(parsed.data.plannedDate !== undefined ? { plannedDate: parsed.data.plannedDate } : {}),
         parentObjectId: parsed.data.parentObjectId ?? null,
         actor: { kind: 'user', userId: r.userId },
       });
@@ -375,6 +377,7 @@ const updateObjectSchema = z.object({
   ownerUserId: uuidSchema.nullable().optional(),
   assigneeUserId: uuidSchema.nullable().optional(),
   dueAt: z.iso.datetime().nullable().optional(),
+  plannedDate: z.iso.date().nullable().optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 });
 

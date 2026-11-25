@@ -42,10 +42,11 @@ beforeEach(() => {
   mocks.list.mockResolvedValue([{ id: 'source', url: 'https://example.com/' }]);
   mocks.start.mockResolvedValue({ id: 'run', status: 'queued' });
 });
-it('shows team, price and permission before creating or enqueueing anything', async () => {
+it('shows team, Included usage and permission before creating or enqueueing anything', async () => {
   const result = await websiteBotCommand({ ...input, arg: 'https://example.com' });
   expect(result).toContain('Bound team');
-  expect(result).toContain('20 per page');
+  expect(result).toContain('AI processing uses shared Included usage');
+  expect(result).toContain('up to five public pages');
   expect(result).toContain('permission');
   expect(mocks.add).not.toHaveBeenCalled();
   expect(mocks.start).not.toHaveBeenCalled();

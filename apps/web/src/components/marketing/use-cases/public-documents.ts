@@ -7,8 +7,8 @@ import {
 import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-12' as const;
-const PRODUCT_TOUR_REVIEW_DATE = '2026-11-12' as const;
+const REVIEW_DATE = '2026-11-24' as const;
+const PRODUCT_TOUR_REVIEW_DATE = '2026-11-24' as const;
 
 function useCaseLlmsSections(useCase: UseCaseContent): readonly PublicLlmsContentSection[] {
   return [
@@ -39,7 +39,7 @@ export const USE_CASE_PUBLIC_DOCUMENTS = definePublicDocuments('use-cases', [
     title: USE_CASE_HUB.seoTitle,
     description: USE_CASE_HUB.seoDescription,
     indexability: 'index',
-    dates: { modified: '2026-11-12', reviewed: '2026-11-12' },
+    dates: { modified: '2026-11-24', reviewed: '2026-11-24' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -60,7 +60,7 @@ export const USE_CASE_PUBLIC_DOCUMENTS = definePublicDocuments('use-cases', [
       fullSummary: USE_CASE_HUB.summary,
       sections: [
         {
-          title: 'Six jobs from one record',
+          title: 'Ways to keep up with work',
           body: USE_CASE_HUB.summary,
           items: USE_CASES.map((useCase) => `${useCase.cardTitle}: ${useCase.cardBody}`),
           links: USE_CASES.map((useCase) => ({

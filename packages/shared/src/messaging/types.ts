@@ -88,6 +88,7 @@ export type DailyDigestSectionTitle =
   | 'Risks'
   | 'Follow-ups'
   | 'Saved views'
+  | 'Still blocked'
   /** @deprecated Stored on older payloads; renderers remap this to Status. */
   | 'Product status';
 
@@ -123,6 +124,8 @@ export interface DailyDigestCalendarEvent {
   startAt: string;
   endAt: string;
   href: string;
+  allDay?: boolean;
+  eventTimezone?: string;
   repeating?: boolean;
   occurrenceCount?: number;
 }
@@ -145,6 +148,11 @@ export interface DailyDigestPayload {
   sections?: DailyDigestSection[];
   savedViewChanges?: SavedWorkViewChange[];
   savedViewsOnly?: boolean;
+  savedViewObservedAt?: string;
+  updateRevision?: string;
+  workspaceSummaryOnHold?: true;
+  evidenceIds?: string[];
+  blockerIds?: string[];
   pendingApprovals: number;
   eventCount: number;
   momentCount?: number;

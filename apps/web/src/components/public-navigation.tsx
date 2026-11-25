@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUpRight, ChevronDown, Menu } from 'lucide-react';
+import { ChevronDown, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
@@ -14,29 +14,42 @@ import {
 import styles from '@/components/public-navigation.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { GITHUB_SELF_HOSTING_URL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
 
 const HEADER_NAVIGATION_ITEMS = [
-  { section: 'product', href: '/', label: 'Product' },
   {
-    section: 'use-cases',
-    href: '/use-cases',
-    label: 'Use cases',
-    analyticsCta: 'view_use_cases',
-    overviewLabel: 'All use cases',
-    children: USE_CASE_NAV_ITEMS,
+    section: 'product',
+    label: 'Product',
+    children: [
+      { href: '/how-it-works', label: 'How it works', analyticsCta: 'view_how_it_works' },
+      { href: '/product-tour', label: 'Product tour' },
+      { href: '/features', label: 'Features' },
+      { href: '/agents', label: 'For AI agents', analyticsCta: 'view_agents' },
+    ],
   },
   {
     section: 'integrations',
     href: '/integrations',
     label: 'Integrations',
     analyticsCta: 'view_integrations',
-    overviewLabel: 'Integrations hub',
-    children: INTEGRATION_NAV_ITEMS,
   },
-  { section: 'agents', href: '/agents', label: 'Agents', analyticsCta: 'view_agents' },
   { section: 'pricing', href: '/pricing', label: 'Pricing', analyticsCta: 'view_pricing' },
+  {
+    section: 'resources',
+    label: 'Resources',
+    children: [
+      { href: '/docs', label: 'Documentation' },
+      { href: '/guides', label: 'Guides' },
+      { href: '/trust', label: 'Security & privacy' },
+    ],
+  },
 ] as const;
+
+const DROPDOWN_SECTIONS: Readonly<Record<string, readonly PublicNavigationSection[]>> = {
+  product: ['product', 'how-it-works', 'features', 'agents', 'use-cases'],
+  resources: ['docs', 'guides', 'trust', 'help'],
+};
 
 const FOOTER_PRODUCT_ITEMS = [
   { href: '/', label: 'Product', section: 'product' as const },
@@ -54,26 +67,23 @@ const FOOTER_PRODUCT_ITEMS = [
   },
   {
     href: '/agents',
-    label: 'Agents',
+    label: 'For AI agents',
     section: 'agents' as const,
     analyticsCta: 'view_agents',
   },
-  { href: '/product-tour', label: 'Product tour', section: 'help' as const },
+  { href: '/product-tour', label: 'Product tour', section: 'product' as const },
+  { href: '/features', label: 'Features', section: 'features' as const },
 ] as const;
 
 export type PublicNavigationSection =
   | (typeof HEADER_NAVIGATION_ITEMS)[number]['section']
   | (typeof FOOTER_PRODUCT_ITEMS)[number]['section']
+  | 'help'
+  | 'docs'
+  | 'use-cases'
   | 'compare'
   | 'trust'
   | 'guides';
-
-interface NavChild {
-  href: string;
-  label: string;
-  statusLabel?: string;
-  group?: 'agent-tools';
-}
 
 interface PublicNavigationItemsProps {
   currentSection?: PublicNavigationSection;
@@ -90,23 +100,24 @@ export function PublicNavigationItems({
   activeItemClassName,
   onNavigate,
 }: PublicNavigationItemsProps) {
+  const pathname = usePathname();
   return (
     <ul className={listClassName}>
       {HEADER_NAVIGATION_ITEMS.map((item) => {
-        const active = currentSection === item.section;
+        const active =
+          currentSection === item.section ||
+          (currentSection !== undefined &&
+            DROPDOWN_SECTIONS[item.section]?.includes(currentSection) === true);
         const analyticsCta = 'analyticsCta' in item ? item.analyticsCta : undefined;
         if ('children' in item) {
           return (
             <NavDropdown
               key={item.section}
-              href={item.href}
               label={item.label}
-              overviewLabel={item.overviewLabel}
               childrenItems={item.children}
               active={active}
               itemClassName={itemClassName}
               activeItemClassName={activeItemClassName}
-              analyticsCta={analyticsCta}
               onNavigate={onNavigate}
             />
           );
@@ -116,7 +127,7 @@ export function PublicNavigationItems({
           <li key={item.section}>
             <Link
               href={item.href}
-              aria-current={active ? 'page' : undefined}
+              aria-current={pathname === item.href ? 'page' : undefined}
               className={cn(itemClassName, active && activeItemClassName)}
               data-public-analytics-cta={analyticsCta}
               onClick={onNavigate}
@@ -131,25 +142,19 @@ export function PublicNavigationItems({
 }
 
 function NavDropdown({
-  href,
   label,
-  overviewLabel,
   childrenItems,
   active,
   itemClassName,
   activeItemClassName,
-  analyticsCta,
   onNavigate,
   nested = false,
 }: {
-  href: string;
   label: string;
-  overviewLabel: string;
-  childrenItems: readonly NavChild[];
+  childrenItems: readonly { href: string; label: string; analyticsCta?: string }[];
   active: boolean;
   itemClassName?: string;
   activeItemClassName?: string;
-  analyticsCta?: string;
   onNavigate?: () => void;
   nested?: boolean;
 }) {
@@ -210,47 +215,23 @@ function NavDropdown({
         </summary>
         <div className={styles.dropdownPanel}>
           <ul className={styles.dropdownList}>
-            <li className={styles.overviewRow}>
-              <Link
-                href={href}
-                aria-current={pathname === href ? 'page' : undefined}
-                className={cn(styles.dropdownLink, styles.dropdownOverview, itemClassName)}
-                data-public-analytics-cta={analyticsCta}
-                onClick={closeDropdown}
-              >
-                {overviewLabel}
-                <ArrowUpRight aria-hidden="true" size={16} />
-              </Link>
-            </li>
-            <li role="separator" className={styles.dropdownRule} />
-            {childrenItems.flatMap((child, index) => {
-              const previous = childrenItems[index - 1];
-              const items = [];
-              if (child.group && child.group !== previous?.group) {
-                items.push(
-                  <li key={`${child.href}-rule`} className={styles.groupLabel}>
-                    Agent tools
-                  </li>,
-                );
-              }
-              items.push(
-                <li key={child.href}>
-                  <Link
-                    href={child.href}
-                    aria-current={pathname === child.href ? 'page' : undefined}
-                    className={cn(
-                      styles.dropdownLink,
-                      itemClassName,
-                      pathname === child.href && activeItemClassName,
-                    )}
-                    onClick={closeDropdown}
-                  >
-                    {publicNavItemLabel(child)}
-                  </Link>
-                </li>,
-              );
-              return items;
-            })}
+            {childrenItems.map((child) => (
+              <li key={child.href}>
+                <Link
+                  href={child.href}
+                  aria-current={pathname === child.href ? 'page' : undefined}
+                  className={cn(
+                    styles.dropdownLink,
+                    itemClassName,
+                    pathname === child.href && activeItemClassName,
+                  )}
+                  data-public-analytics-cta={child.analyticsCta}
+                  onClick={closeDropdown}
+                >
+                  {child.label}
+                </Link>
+              </li>
+            ))}
           </ul>
         </div>
       </details>
@@ -303,7 +284,7 @@ export function PublicFooterColumns({
               analyticsCta="view_use_cases"
             />
           </li>
-          {USE_CASE_NAV_ITEMS.filter((item) => item.href !== '/product-tour').map((item) => (
+          {USE_CASE_NAV_ITEMS.map((item) => (
             <li key={item.href}>
               <FooterNavLink
                 href={item.href}
@@ -344,8 +325,11 @@ export function PublicFooterColumns({
         <p className={cn(styles.footerColumnTitle, headingClassName)}>Resources</p>
         <ul className={styles.footerColumnList}>
           {[
+            { href: '/docs', label: 'Documentation' },
             { href: '/guides', label: 'Guides' },
             { href: '/help', label: 'Help' },
+            { href: '/contact/enterprise', label: 'Enterprise contact' },
+            { href: GITHUB_SELF_HOSTING_URL, label: 'Self-hosting' },
             { href: '/help/support', label: 'Contact and support' },
             { href: '/trust', label: 'Trust' },
             { href: '/compare', label: 'Compare' },
@@ -503,24 +487,25 @@ function MobileNavigationItems({
   currentSection?: PublicNavigationSection;
   onNavigate: () => void;
 }) {
+  const pathname = usePathname();
   const linkClass =
     'flex min-h-11 items-center rounded-sm px-3 text-sm font-medium text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
 
   return (
     <ul className="grid gap-1">
       {HEADER_NAVIGATION_ITEMS.map((item) => {
-        const active = currentSection === item.section;
+        const active =
+          currentSection === item.section ||
+          (currentSection !== undefined &&
+            DROPDOWN_SECTIONS[item.section]?.includes(currentSection) === true);
         if ('children' in item) {
           return (
             <NavDropdown
               key={item.section}
-              href={item.href}
               label={item.label}
-              overviewLabel={item.overviewLabel}
               childrenItems={item.children}
               active={active}
               itemClassName={cn(linkClass, active && 'bg-surface-2 text-fg')}
-              analyticsCta={'analyticsCta' in item ? item.analyticsCta : undefined}
               onNavigate={onNavigate}
               nested
             />
@@ -531,7 +516,7 @@ function MobileNavigationItems({
           <li key={item.section}>
             <Link
               href={item.href}
-              aria-current={active ? 'page' : undefined}
+              aria-current={pathname === item.href ? 'page' : undefined}
               className={cn(linkClass, active && 'bg-surface-2 text-fg')}
               data-public-analytics-cta={'analyticsCta' in item ? item.analyticsCta : undefined}
               onClick={onNavigate}

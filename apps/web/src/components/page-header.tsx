@@ -5,6 +5,7 @@ import {
   createCollectionSlot,
   readCollectionSlots,
 } from '@/components/collections/collection-slot';
+import { RegionalNumber } from '@/components/regional-number';
 import { cn } from '@/lib/utils';
 
 const PageHeaderLeading = createCollectionSlot('leading');
@@ -204,6 +205,7 @@ function HeaderMetadata({
   segment: PageHeaderMetadata;
   compact?: boolean;
 }) {
+  const value = typeof seg.value === 'number' ? <RegionalNumber value={seg.value} /> : seg.value;
   return (
     <div
       className={cn(
@@ -232,10 +234,10 @@ function HeaderMetadata({
               compact ? 'min-h-8' : 'min-h-10 min-w-10',
             )}
           >
-            {seg.value}
+            {value}
           </Link>
         ) : (
-          seg.value
+          value
         )}
       </dd>
     </div>

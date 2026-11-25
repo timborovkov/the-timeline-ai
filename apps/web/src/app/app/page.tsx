@@ -2,6 +2,8 @@ import { teams, users } from '@timeline/db';
 import {
   buildUpdateReport,
   HOME_UPDATE_KEY,
+  getDigestPreference,
+  hasScheduledUpdateBillingHold,
   presentUpdateReport,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging';
@@ -24,18 +26,18 @@ import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { CaptureForm } from '@/components/capture-form';
 import { ConnectAgentOnboardingCard } from '@/components/connect-agent/connect-agent-onboarding';
 import { CaptureDialog } from '@/components/home/capture-dialog';
-import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { HomeProcessingAttention } from '@/components/home/home-processing-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
+import { WorkspaceBrief } from '@/components/home/workspace-brief';
 import { FirstRunHomeCapture } from '@/components/onboarding/first-run-home-capture';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { PaygValueNudge } from '@/components/payg-value-nudge';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
-import { auth } from '@/lib/auth';
+import { auth, getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import {
@@ -410,8 +412,21 @@ async function HomeRecentActivity({
   );
 }
 
-async function HomeDigest({ scope }: { scope: TeamScope }) {
-  const digest = await loadHomePanel('home_digest', async () => {
+type HomeConnections = Promise<Awaited<
+  ReturnType<TeamScope['integrations']['listConnectionAttention']>
+> | null>;
+
+async function HomeDigest({
+  scope,
+  connections,
+  billing,
+}: {
+  scope: TeamScope;
+  connections: HomeConnections;
+  billing: HomeBillingData;
+}) {
+  const identity = { db, teamId: scope.teamId, userId: scope.userId };
+  const digestPromise = loadHomePanel('home_digest', async () => {
     const now = new Date();
     const row = await scope.updates.latestHome();
     const payload = row?.payload as DailyDigestPayload | undefined;
@@ -424,7 +439,22 @@ async function HomeDigest({ scope }: { scope: TeamScope }) {
       ? buildUpdateReport({ scope, schedule, timezone, windowEnd: now, synthesize: false })
       : undefined;
   });
-  return <DailyDigestBlock digest={digest ?? undefined} />;
+  const holdPromise = loadHomePanel('home_update_billing_hold', async () =>
+    hasScheduledUpdateBillingHold({ ...identity, preference: await getDigestPreference(identity) }),
+  );
+  const [digest, issues, dashboard, held] = await Promise.all([
+    digestPromise,
+    connections,
+    billing,
+    holdPromise,
+  ]);
+  return (
+    <WorkspaceBrief
+      digest={digest ?? undefined}
+      sourcesNeedAttention={Boolean(issues?.length)}
+      billingPaused={held === true || dashboard?.costBearingPaused === true}
+    />
+  );
 }
 
 async function HomePins({ scope }: { scope: TeamScope }) {
@@ -444,18 +474,26 @@ async function HomeEmail({ teamId }: { teamId: string }) {
   return <HomeTeamEmail inboundEmail={displayInboundEmail(team)} />;
 }
 
-async function HomeProcessing({ scope, isAdmin }: { scope: TeamScope; isAdmin: boolean }) {
-  const [jobs, connections] = await Promise.all([
+async function HomeProcessing({
+  scope,
+  isAdmin,
+  connections,
+}: {
+  scope: TeamScope;
+  isAdmin: boolean;
+  connections: HomeConnections;
+}) {
+  const [jobs, connectionIssues] = await Promise.all([
     isAdmin
       ? loadHomePanel('home_recoverable_jobs', () => scope.jobRecovery.listRecoverableJobs())
       : null,
-    loadHomePanel('home_connections', () => scope.integrations.listConnectionAttention()),
+    connections,
   ]);
   return (
     <HomeProcessingAttention
       isAdmin={isAdmin}
       recoverableJobs={jobs?.length ?? 0}
-      connectionIssues={connections?.length ?? 0}
+      connectionIssues={connectionIssues?.length ?? 0}
     />
   );
 }
@@ -508,7 +546,7 @@ async function HomeChecklist({ data, agent }: { data: HomeChecklistData; agent?:
 }
 
 export default async function HomeDashboardPage() {
-  const session = await auth();
+  const [session, { impersonation }] = await Promise.all([auth(), getRequestIdentity()]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
@@ -536,6 +574,9 @@ export default async function HomeDashboardPage() {
     });
   const billing = loadHomePanel('billing_dashboard', () =>
     scope.billing.getDashboard({ canManageBilling: isAdmin }),
+  );
+  const connections = loadHomePanel('home_connections', () =>
+    scope.integrations.listConnectionAttention(),
   );
   const checklist = loadHomePanel('onboarding_checklist', () =>
     loadOnboardingChecklistView({
@@ -592,9 +633,11 @@ export default async function HomeDashboardPage() {
 
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-8">
-          <Suspense fallback={null}>
-            <HomeDigest scope={scope} />
-          </Suspense>
+          {!impersonation && ['owner', 'admin', 'member'].includes(role) ? (
+            <Suspense fallback={null}>
+              <HomeDigest scope={scope} connections={connections} billing={billing} />
+            </Suspense>
+          ) : null}
           <Suspense fallback={<HomePanelFallback />}>
             <HomeWork scope={scope} now={now} calendar={calendar} />
           </Suspense>
@@ -616,7 +659,7 @@ export default async function HomeDashboardPage() {
             <HomeEmail teamId={active.teamId} />
           </Suspense>
           <Suspense fallback={null}>
-            <HomeProcessing scope={scope} isAdmin={isAdmin} />
+            <HomeProcessing scope={scope} isAdmin={isAdmin} connections={connections} />
           </Suspense>
           <Suspense fallback={null}>
             <HomeBillingNudges scope={scope} billing={billing} isAdmin={isAdmin} />

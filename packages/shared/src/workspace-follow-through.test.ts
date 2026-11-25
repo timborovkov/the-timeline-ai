@@ -326,6 +326,8 @@ describe('workspace follow-through', () => {
     if (!added) throw new Error('Missing task');
     const firstWindow = new Date(Date.now() + 60_000);
     const laterWindow = new Date(firstWindow.getTime() + 60_000);
+    expect(await owner.preview(firstWindow)).toMatchObject([{ count: 1 }]);
+    expect(await owner.preview(firstWindow)).toMatchObject([{ count: 1 }]);
     const result = await owner.evaluate(firstWindow, firstWindow);
     expect(result).toEqual([{ viewId: id, itemIds: [added.id] }]);
     expect(await owner.evaluate(firstWindow, firstWindow)).toEqual(result);

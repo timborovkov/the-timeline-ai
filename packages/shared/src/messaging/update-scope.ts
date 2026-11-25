@@ -1,5 +1,6 @@
 import {
   dailyDigests,
+  updateRuns,
   messageDeliveries,
   messagePreferences,
   teamBillingAccounts,
@@ -55,7 +56,11 @@ function inheritedDefault(identity: {
   legacyEnabled: boolean | null;
 }) {
   const settings = parseSettings(identity.workspaceSettings) ?? legacyDefault(identity.legacyHour);
-  return { ...settings, enabled: settings.enabled && identity.legacyEnabled !== false };
+  return {
+    ...settings,
+    includeContent: false,
+    enabled: settings.enabled && identity.legacyEnabled !== false,
+  };
 }
 
 export function createUpdateScope({
@@ -70,7 +75,7 @@ export function createUpdateScope({
   ensureMember: (role?: 'admin') => Promise<unknown>;
 }) {
   const own = and(eq(updateSchedules.teamId, teamId), eq(updateSchedules.userId, userId));
-  const digestOwner = and(eq(dailyDigests.teamId, teamId), eq(dailyDigests.userId, userId));
+  const digestOwner = and(eq(updateRuns.teamId, teamId), eq(updateRuns.userId, userId));
 
   async function identity() {
     await ensureMember();
@@ -78,6 +83,7 @@ export function createUpdateScope({
       .select({
         epoch: teamMembers.authorizationEpoch,
         timezone: teamCalendarSettings.defaultTimezone,
+        legacyOptions: messagePreferences.updateOptions,
         legacyHour: messagePreferences.dailyDigestHour,
         legacyEnabled: messagePreferences.dailyDigestEnabled,
         workspaceSettings: workspaceSchedule.settings,
@@ -101,6 +107,7 @@ export function createUpdateScope({
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, userId),
           isNull(teamMembers.removedAt),
+          inArray(teamMembers.role, ['owner', 'admin', 'member']),
         ),
       )
       .limit(1);
@@ -131,7 +138,10 @@ export function createUpdateScope({
           ]
         : [];
     });
-    if (!schedules.some((schedule) => schedule.key === DEFAULT_UPDATE_KEY)) {
+    if (
+      !principal.legacyOptions &&
+      !schedules.some((schedule) => schedule.key === DEFAULT_UPDATE_KEY)
+    ) {
       schedules.unshift({
         key: DEFAULT_UPDATE_KEY,
         settings: inheritedDefault(principal),
@@ -145,6 +155,7 @@ export function createUpdateScope({
     }
     return {
       timezone: principal.timezone,
+      hasLegacySchedule: Boolean(principal.legacyOptions),
       schedules,
       workspaceDefault: parseSettings(principal.workspaceSettings) ?? DEFAULT_UPDATE_SETTINGS,
     };
@@ -170,7 +181,9 @@ export function createUpdateScope({
     },
     async save(key: string, input: UpdateSettings, forWorkspace = false) {
       await ensureMember(forWorkspace ? 'admin' : undefined);
-      const settings = updateSettingsSchema.parse(input);
+      const settings = updateSettingsSchema.parse(
+        forWorkspace ? { ...input, includeContent: false } : input,
+      );
       validateScheduleKey(key);
       if (forWorkspace && key !== DEFAULT_UPDATE_KEY)
         throw new Error('Choose the workspace default');
@@ -210,15 +223,15 @@ export function createUpdateScope({
       await ensureMember();
       const [row] = await db
         .select()
-        .from(dailyDigests)
+        .from(updateRuns)
         .where(
           and(
             digestOwner,
-            eq(dailyDigests.scheduleKey, HOME_UPDATE_KEY),
-            eq(dailyDigests.status, 'generated'),
+            eq(updateRuns.scheduleKey, HOME_UPDATE_KEY),
+            eq(updateRuns.status, 'generated'),
           ),
         )
-        .orderBy(desc(dailyDigests.windowEnd))
+        .orderBy(desc(updateRuns.windowEnd))
         .limit(1);
       return row ?? null;
     },
@@ -226,23 +239,58 @@ export function createUpdateScope({
       await ensureMember();
       const [row] = await db
         .select()
-        .from(dailyDigests)
-        .where(and(digestOwner, eq(dailyDigests.scheduleKey, key), eq(dailyDigests.windowEnd, end)))
+        .from(updateRuns)
+        .where(and(digestOwner, eq(updateRuns.scheduleKey, key), eq(updateRuns.windowEnd, end)))
         .limit(1);
       return row;
     },
+    async hasSentLegacyRun(end: Date) {
+      await ensureMember();
+      const [row] = await db
+        .select({ id: dailyDigests.id })
+        .from(dailyDigests)
+        .where(
+          and(
+            eq(dailyDigests.teamId, teamId),
+            eq(dailyDigests.userId, userId),
+            eq(dailyDigests.windowEnd, end),
+            eq(dailyDigests.status, 'sent'),
+          ),
+        )
+        .limit(1);
+      return Boolean(row);
+    },
+    async findDeliveryRun(id: string) {
+      await ensureMember();
+      const [run] = await db
+        .select()
+        .from(updateRuns)
+        .where(and(digestOwner, eq(updateRuns.id, id)))
+        .limit(1);
+      return run;
+    },
+    async recordDelivery(
+      id: string,
+      result: Pick<typeof updateRuns.$inferInsert, 'status' | 'sentAt' | 'error' | 'deliveryId'>,
+    ) {
+      await ensureMember();
+      await db
+        .update(updateRuns)
+        .set(result)
+        .where(and(digestOwner, eq(updateRuns.id, id), sql`${updateRuns.status} <> 'sent'`));
+    },
     async storeRun(
       values: Pick<
-        typeof dailyDigests.$inferInsert,
+        typeof updateRuns.$inferInsert,
         'scheduleKey' | 'windowStart' | 'windowEnd' | 'summary' | 'payload' | 'status'
       >,
     ) {
       await ensureMember();
       const [row] = await db
-        .insert(dailyDigests)
+        .insert(updateRuns)
         .values({ ...values, teamId, userId })
         .onConflictDoNothing()
-        .returning({ id: dailyDigests.id });
+        .returning({ id: updateRuns.id });
       return row?.id;
     },
     async history(selectedId?: string) {
@@ -259,7 +307,7 @@ export function createUpdateScope({
               inArray(
                 sql<string>`${messageDeliveries.dedupeKey}`,
                 PERSONAL_DELIVERY_SUFFIXES.map(
-                  (suffix) => sql`'daily_digest:' || ${dailyDigests.id}::text || ${suffix}`,
+                  (suffix) => sql`'daily_digest:' || ${updateRuns.id}::text || ${suffix}`,
                 ),
               ),
             ),
@@ -268,28 +316,25 @@ export function createUpdateScope({
       const [rows, selected] = await Promise.all([
         db
           .select()
-          .from(dailyDigests)
+          .from(updateRuns)
           .where(
             and(
               digestOwner,
-              or(
-                and(eq(dailyDigests.scheduleKey, ''), eq(dailyDigests.status, 'generated')),
-                eq(dailyDigests.status, 'sent'),
-                hasDelivery,
-              ),
+              sql`${updateRuns.scheduleKey} <> ${HOME_UPDATE_KEY}`,
+              or(eq(updateRuns.status, 'sent'), hasDelivery),
             ),
           )
-          .orderBy(desc(dailyDigests.windowEnd), desc(dailyDigests.generatedAt))
+          .orderBy(desc(updateRuns.windowEnd), desc(updateRuns.generatedAt))
           .limit(90),
         selectedId && isUuid(selectedId)
           ? db
               .select()
-              .from(dailyDigests)
+              .from(updateRuns)
               .where(
                 and(
                   digestOwner,
-                  eq(dailyDigests.id, selectedId),
-                  or(inArray(dailyDigests.status, ['sent', 'generated']), hasDelivery),
+                  eq(updateRuns.id, selectedId),
+                  or(inArray(updateRuns.status, ['sent', 'generated']), hasDelivery),
                 ),
               )
               .limit(1)
@@ -355,6 +400,7 @@ export async function listUpdateDispatchCandidates(db: Db) {
       epoch: teamMembers.authorizationEpoch,
       joinedAt: teamMembers.createdAt,
       timezone: teamCalendarSettings.defaultTimezone,
+      legacyOptions: messagePreferences.updateOptions,
       legacyHour: messagePreferences.dailyDigestHour,
       legacyEnabled: messagePreferences.dailyDigestEnabled,
       workspaceSettings: workspaceSchedule.settings,
@@ -397,6 +443,7 @@ export async function listUpdateDispatchCandidates(db: Db) {
       and(
         activeWorkspaceCondition(teamMembers.teamId),
         isNull(teamMembers.removedAt),
+        inArray(teamMembers.role, ['owner', 'admin', 'member']),
         isNull(users.suspendedAt),
         notExists(
           db
@@ -443,7 +490,7 @@ export async function listUpdateDispatchCandidates(db: Db) {
         revision: profileRevision(epoch, timezone),
       });
       const settings = inheritedDefault(row);
-      if (!row.hasMemberDefault && settings.enabled)
+      if (!row.hasMemberDefault && !row.legacyOptions && settings.enabled)
         result.push({
           ...base,
           key: DEFAULT_UPDATE_KEY,

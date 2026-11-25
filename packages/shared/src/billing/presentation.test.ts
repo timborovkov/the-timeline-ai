@@ -64,6 +64,8 @@ describe('billing presentation', () => {
     });
     expect(result.calendarPeriod.start).toBe('2026-10-01T00:00:00.000Z');
     expect(result.charges.amounts).toEqual({
+      currency: 'EUR',
+      invoiceCentsByMeter: { ai: 500, member_days: 100 },
       usageCents: 2000,
       creditAppliedCents: 1500,
       usageAfterCreditCents: 500,
@@ -86,24 +88,47 @@ describe('billing presentation', () => {
     expect(result.credit).toMatchObject({ totalCents: 25000, usedCents: 0, remainingCents: 25000 });
     expect(result.recurringFeeCents).toBe(12345);
   });
-  it('keeps Free/PAYG allowances separate, including zero and exhausted meters', () => {
-    for (const planId of ['free', 'payg'] as const) {
-      const result = summary({
-        account: { ...account, planId, includedDiscountRemainingCents: 0 },
-        meters: { ai: { nativeUnits: 500 }, recall_minutes: { nativeUnits: 20 } },
-        settlements: [],
-      });
-      expect(result.allowances).toHaveLength(5);
-      expect(result.allowances.find((x) => x.meter === 'ai')).toMatchObject({
-        included: 200,
-        used: 500,
-        remaining: 0,
-      });
-      expect(result.allowances.find((x) => x.meter === 'recall_minutes')?.remaining).toBe(40);
-      expect(result.allowances.find((x) => x.meter === 'email_units')?.remaining).toBe(500);
-      expect(result.credit.status).toBe('not_applicable');
-      expect(result.charges.amounts?.totalCents).toBe(0);
-    }
+  it('preserves the denomination of legacy and provider-verified Enterprise fees', () => {
+    const legacy = {
+      ...account,
+      planId: 'enterprise' as const,
+      billingState: 'enterprise_active',
+      enterprisePlatformFeeCents: 12345,
+    };
+    expect(summary({ account: legacy })).toMatchObject({
+      recurringFeeCents: 12345,
+      recurringFeeCurrency: 'EUR',
+    });
+    expect(summary({ account: { ...legacy, enterprisePlatformFeeCurrency: 'USD' } })).toMatchObject(
+      {
+        recurringFeeCents: 12345,
+        recurringFeeCurrency: 'USD',
+      },
+    );
+  });
+
+  it('shows one Free pool and keeps the legacy PAYG allowances separate', () => {
+    const meters = { ai: { nativeUnits: 184 }, recall_minutes: { nativeUnits: 20 } };
+    const free = summary({
+      account: { ...account, planId: 'free', includedDiscountRemainingCents: 0 },
+      meters,
+      settlements: [],
+    });
+    expect(free.allowances).toEqual([]);
+    expect(free.includedUsage).toEqual({
+      totalCents: 400,
+      remainingCents: 140,
+      resetAt: free.calendarPeriod.end,
+    });
+
+    const payg = summary({
+      account: { ...account, planId: 'payg', includedDiscountRemainingCents: 0 },
+      meters,
+      settlements: [],
+    });
+    expect(payg.includedUsage).toBeUndefined();
+    expect(payg.allowances).toHaveLength(5);
+    expect(payg.allowances.find((row) => row.meter === 'recall_minutes')?.remaining).toBe(40);
   });
   it('marks missing and elapsed periods as updating without resetting balances', () => {
     for (const periodEndsAt of [null, new Date('2026-10-19')]) {
@@ -138,6 +163,23 @@ describe('billing presentation', () => {
       )?.totalCents,
     ).toBe(500);
   });
+  it('does not attribute a rounded Recall minute past its recorded end', () => {
+    const settlement = row({
+      meterId: 'recall_minutes',
+      nativeUnits: '1',
+      metadata: {
+        usage_at: '2026-10-14T23:59:30Z',
+        usage_ended_at: '2026-10-14T23:59:50Z',
+        discount_cents: 0,
+        invoice_cents: 3,
+      },
+    });
+    const previousPeriod = { start: '2026-09-15T00:00:00Z', end: period.start };
+
+    expect(recordedChargesForPeriod([settlement], period)?.totalCents).toBe(0);
+    expect(recordedChargesForPeriod([settlement], previousPeriod)?.totalCents).toBe(3);
+  });
+
   it('uses explicit renewal splits and refuses ambiguous legacy splits', () => {
     const windows = [
       {
@@ -200,6 +242,7 @@ describe('billing presentation', () => {
     expect(sidebar.detailLabel).toBe('€45 credit remaining');
     expect(sidebar.secondaryLabel).toBe('€21 of €100 monthly cap');
     expect(sidebar.progressPercent).toBe(25);
+    expect(sidebar.reset).toEqual({ label: 'Credit renews', at: period.end });
   });
 });
 
@@ -209,6 +252,96 @@ it('preserves recorded paid charges after moving to Free or a comp', () => {
     const result = summary({ account: { ...account, ...next }, settlements: [paid] });
     expect(result.charges.amounts?.totalCents).toBe(500);
   }
+});
+
+it('uses admitted USD seat pricing for earlier usage after a downgrade to Free', () => {
+  const paid = row({
+    reservationMetadata: {
+      team_seat_pricing_at_admission: { includedUsageCents: 3600, subscriptionId: 'seat' },
+    },
+  });
+  const result = summary({
+    account: { ...account, planId: 'free', includedDiscountRemainingCents: 0 },
+    settlements: [
+      paid,
+      row({
+        metadata: { usage_at: now.toISOString(), discount_cents: 0, invoice_cents: 0 },
+      }),
+    ],
+  });
+  expect(result.charges.amounts).toMatchObject({
+    currency: 'USD',
+    invoiceCentsByMeter: { ai: 500 },
+    totalCents: 500,
+  });
+});
+
+it('refuses to add recorded charges in different currencies', () => {
+  const seatCharge = row({
+    metadata: {
+      usage_at: now.toISOString(),
+      discount_cents: 0,
+      invoice_cents: 500,
+      presentation_currency: 'USD',
+    },
+  });
+  const result = summary({
+    account: { ...account, planId: 'free', includedDiscountRemainingCents: 0 },
+    settlements: [row(), seatCharge],
+  });
+  expect(result.charges).toMatchObject({ status: 'unavailable', amounts: null });
+});
+
+it('does not use a retryable parent reservation to price an older failed attempt', () => {
+  const olderAttempt = row({
+    metadata: { ...row().metadata, failed_attempt_for: 'parent' },
+    reservationMetadata: { team_seat_pricing_at_admission: { subscriptionId: 'new-seat' } },
+  });
+  expect(recordedChargesForPeriod([olderAttempt], period)).toBeNull();
+  expect(
+    recordedChargesForPeriod(
+      [
+        row({
+          ...olderAttempt,
+          metadata: { ...olderAttempt.metadata, presentation_currency: 'EUR' },
+        }),
+      ],
+      period,
+    )?.currency,
+  ).toBe('EUR');
+});
+
+it('shows only verified Enterprise usage currency after a plan change', () => {
+  const metadata = { ...row().metadata, pricing_plan_id: 'enterprise' };
+  const accountAfterDowngrade = { ...account, planId: 'free' as const };
+  for (const unverified of [metadata, { ...metadata, presentation_currency: null }]) {
+    expect(
+      summary({ account: accountAfterDowngrade, settlements: [row({ metadata: unverified })] })
+        .charges.amounts,
+    ).toBeNull();
+  }
+  const verified = row({ metadata: { ...metadata, presentation_currency: 'USD' } });
+  expect(
+    summary({ account: accountAfterDowngrade, settlements: [verified] }).charges.amounts,
+  ).toMatchObject({ currency: 'USD', totalCents: 500 });
+});
+
+it('does not infer EUR when only an older reservation records the Enterprise plan', () => {
+  const raw = row();
+  const admittedEnterprise = { ...raw, reservationAdmittedPlanId: 'enterprise' as const };
+  expect(recordedChargesForPeriod([admittedEnterprise], period)).toBeNull();
+  expect(
+    recordedChargesForPeriod(
+      [{ ...admittedEnterprise, metadata: { ...raw.metadata, presentation_currency: 'USD' } }],
+      period,
+    ),
+  ).toMatchObject({ currency: 'USD', totalCents: 500 });
+});
+
+it('leaves historical charges unavailable if their unstamped reservation is gone', () => {
+  expect(
+    recordedChargesForPeriod([row({ reservationId: 'missing-reservation' })], period),
+  ).toBeNull();
 });
 
 it('marks incomplete recorded history unavailable instead of contradicting consumed credit', () => {
@@ -232,13 +365,36 @@ it('labels Free remaining allowances and keeps cap warnings separate from credit
     freeRemaining: freeAllowanceRemaining({}),
   });
   applyBillingPresentationToSidebar(base, free);
-  expect(base.detailLabel).toBe('0% of most-used allowance');
+  expect(base.detailLabel).toBe('0% of Included usage');
   expect(base.href).toBe('/app/usage');
+  expect(base.reset).toEqual({ label: 'Month resets', at: free.calendarPeriod.end });
   const capped = summary({ account: { ...account, spendCapCents: 0 } });
   applyBillingPresentationToSidebar(base, capped);
   expect(base.detailLabel).toBe('€45 credit remaining');
   expect(base.warningLabel).toBe('Spend cap reached');
   expect(base.resetLabel).toContain('Credit renews 15 Nov');
+});
+
+it('supplies the confirmed seat renewal instant to the sidebar', () => {
+  const seat = summary({
+    account: {
+      ...account,
+      teamSeatTerms: { paidSeats: 3, highWaterSeats: 3, includedUsageCents: 3000 },
+    },
+  });
+  const sidebar = deriveSidebarBillingSummary({
+    planId: 'team',
+    canManageBilling: true,
+    meteredSpendCents: 0,
+    spendCapCents: 0,
+    includedDiscountRemainingCents: 0,
+    freeRemaining: freeAllowanceRemaining({}),
+  });
+
+  applyBillingPresentationToSidebar(sidebar, seat);
+
+  expect(sidebar.reset).toEqual({ label: 'Usage resets', at: period.end });
+  expect(sidebar.resetLabel).toBe('Usage resets Nov 15 (UTC)');
 });
 
 it('uses existing cap exemptions for contracts and shadow billing, but enforces comped Enterprise caps', () => {

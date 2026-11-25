@@ -1,3 +1,5 @@
+import { RegionalNumber } from '@/components/regional-number';
+
 export function CountList({
   empty = 'None yet.',
   items,
@@ -18,7 +20,8 @@ export function CountList({
     <ul>
       {items.map((item) => {
         const numericZero = typeof item.value === 'number' && item.value === 0;
-        const display = typeof item.value === 'number' ? item.value.toLocaleString() : item.value;
+        const display =
+          typeof item.value === 'number' ? <RegionalNumber value={item.value} /> : item.value;
         return (
           <li
             key={item.key}

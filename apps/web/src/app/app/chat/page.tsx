@@ -1,5 +1,15 @@
 import { entities, type Db } from '@timeline/db';
-import { parseChatContextTrail, type ChatContextRef } from '@timeline/shared/chat-context';
+import {
+  CHAT_CONTEXT_TRAIL_MAX,
+  isSavedWorkViewContextHref,
+  parseChatContextTrail,
+  type ChatContextRef,
+} from '@timeline/shared/chat-context';
+import {
+  listDailyDigests,
+  presentSavedViewDigest,
+  type DailyDigestPayload,
+} from '@timeline/shared/messaging';
 import {
   TRY_ASKING_PROMPTS,
   guidedAskEmptyHint,
@@ -12,6 +22,7 @@ import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
 
 import { AskHeader } from '@/components/chat/ask-header';
 import { ChatPane } from '@/components/chat/chat-pane';
@@ -50,7 +61,7 @@ async function loadPinnedEntity(
 export default async function ChatPage({
   searchParams,
 }: {
-  searchParams: Promise<{ session?: string }>;
+  searchParams: Promise<{ session?: string; update?: string }>;
 }) {
   const {
     activeSessionId,
@@ -63,6 +74,7 @@ export default async function ChatPage({
     pinnedEntityId,
     pinnedEntityName,
     contextTrail,
+    updateQuestion,
     guidedAsk,
   } = await loadChatPage({ searchParams });
   return (
@@ -88,7 +100,7 @@ export default async function ChatPage({
             // the underlying useChat's Chat instance (created once via
             // useRef) keeps session A's messages alive — new messages get
             // sent against the wrong session id even though props change.
-            key={activeSessionId ?? 'new'}
+            key={activeSessionId ?? updateQuestion ?? 'new'}
             teamId={active.teamId}
             teamName={team?.name ?? active.teamName}
             sessionId={activeSessionId}
@@ -96,7 +108,7 @@ export default async function ChatPage({
             pinnedEntityId={pinnedEntityId}
             pinnedEntityName={pinnedEntityName}
             contextTrail={contextTrail}
-            initialPrompt={guidedAsk?.question ?? null}
+            initialPrompt={updateQuestion ?? guidedAsk?.question ?? null}
             suggestionPrompts={guidedAsk ? TRY_ASKING_PROMPTS : undefined}
             emptyTitle={guidedAsk ? 'Ask about what you just brought' : null}
             emptyHint={guidedAsk ? guidedAskEmptyHint(guidedAsk.path) : null}
@@ -115,7 +127,11 @@ export default async function ChatPage({
   );
 }
 
-async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?: string }> }) {
+async function loadChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ session?: string; update?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
@@ -179,8 +195,30 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
       : null,
     updatedAt: chatSession.updatedAt.toISOString(),
   }));
-  const guidedAsk = activeSessionId ? null : await loadGuidedAsk(scope);
-  if (guidedAsk) contextTrail = guidedAsk.contextTrail;
+  const updateId = requestedSessionId ? undefined : z.uuid().safeParse(params.update).data;
+  const [update] = updateId
+    ? await listDailyDigests({
+        db,
+        teamId: active.teamId,
+        userId: session.user.id,
+        id: updateId,
+        limit: 1,
+      })
+    : [];
+  const presentedUpdate = update
+    ? await presentSavedViewDigest(scope, update.payload as DailyDigestPayload)
+    : null;
+  const updatePayload = presentedUpdate?.payload;
+  const updateQuestion = updatePayload
+    ? `What still needs attention from the work between ${updatePayload.windowStart} and ${updatePayload.windowEnd}?`
+    : null;
+  const guidedAsk = activeSessionId || updateQuestion ? null : await loadGuidedAsk(scope);
+  if (presentedUpdate) {
+    contextTrail = updateContextTrail(
+      presentedUpdate.payload.links,
+      presentedUpdate.visibleSavedViewLinks,
+    );
+  } else if (guidedAsk) contextTrail = guidedAsk.contextTrail;
 
   const listedActive = sessionEntries.find((entry) => entry.id === activeSessionId);
   const activeTitle = listedActive
@@ -204,8 +242,36 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
     pinnedEntityId,
     pinnedEntityName,
     contextTrail,
+    updateQuestion,
     guidedAsk,
   };
+}
+
+function updateContextTrail(
+  links: DailyDigestPayload['links'],
+  visibleSavedViewLinks: DailyDigestPayload['links'] = [],
+): ChatContextRef[] {
+  const views = parseChatContextTrail(
+    visibleSavedViewLinks
+      .filter(({ href }) => isSavedWorkViewContextHref(href))
+      .map(({ href, label }) => ({ kind: 'page', href, label })),
+  );
+  const sources: ChatContextRef[] = [];
+  for (const { href, label } of links) {
+    const timelineEventId = /^\/app\/timeline\?event=([^&#]+)/.exec(href)?.[1];
+    const objectId = /^\/app\/objects\/([^/?#]+)$/.exec(href)?.[1];
+    if (timelineEventId) sources.push({ kind: 'timeline-event', timelineEventId, href, label });
+    else if (objectId) sources.push({ kind: 'object', objectId, href, label });
+    else if (href.startsWith('/app/work/')) sources.push({ kind: 'page', href, label });
+  }
+
+  // A full set of timeline links should leave room for filtered saved views.
+  const viewSlots = Math.floor(CHAT_CONTEXT_TRAIL_MAX / 2);
+  return parseChatContextTrail([
+    ...views.slice(0, viewSlots),
+    ...sources,
+    ...views.slice(viewSlots),
+  ]);
 }
 
 function starterContextTrail(sources: FirstRunSource[]): ChatContextRef[] {

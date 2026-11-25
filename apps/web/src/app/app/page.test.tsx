@@ -85,6 +85,8 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/messaging'),
   () => ({
     latestDailyDigest: fakes.latestDailyDigest,
+    getDigestPreference: () => Promise.resolve({ enabled: true }),
+    hasScheduledUpdateBillingHold: () => Promise.resolve(false),
     presentSavedViewDigest: (_scope: unknown, payload: unknown) =>
       Promise.resolve({ payload, hasVisibleChanges: false }),
   }),
@@ -139,9 +141,9 @@ await vi.mock(
   () => import('@/components/home/capture-dialog'),
 );
 await vi.mock(
-  import.meta.resolve('@/components/home/daily-digest-block'),
-  () => ({ DailyDigestBlock: () => null }),
-  () => import('@/components/home/daily-digest-block'),
+  import.meta.resolve('@/components/home/workspace-brief'),
+  () => ({ WorkspaceBrief: () => null }),
+  () => import('@/components/home/workspace-brief'),
 );
 await vi.mock(
   import.meta.resolve('@/components/home/home-ask-composer'),
@@ -208,7 +210,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
+  () => ({
+    auth: fakes.auth,
+    getRequestIdentity: () => Promise.resolve({ session: null, impersonation: null }),
+  }),
   () => import('@/lib/auth'),
 );
 await vi.mock(

@@ -1,9 +1,10 @@
 // Personal schedules inherit workspace defaults and stored reports honor the recipient's current access.
 import {
   calendarEvents,
-  dailyDigests,
+  updateRuns,
   entities,
   messageDeliveries,
+  messagePreferences,
   rawEvents,
   teamCalendarSettings,
   teamMembers,
@@ -106,6 +107,27 @@ it('lets an admin configure a default and keeps personal changes scoped to the m
   });
 });
 
+it('keeps a configured Home-only briefing and skips the inherited outbound schedule', async () => {
+  await db.insert(messagePreferences).values({
+    teamId,
+    userId: member,
+    updateOptions: {
+      cadence: 'weekly',
+      scope: 'saved_views',
+      focus: 'blockers',
+      destination: 'app',
+    },
+  });
+  const scope = withTeam(db, teamId, member);
+  const listed = await scope.updates.list();
+  expect(listed.hasLegacySchedule).toBe(true);
+  expect(listed.schedules).toEqual([]);
+  const keys = (await listUpdateDispatchCandidates(db))
+    .filter((row) => row.userId === member)
+    .map((row) => row.key);
+  expect(keys).toEqual([HOME_UPDATE_KEY]);
+});
+
 it('persists separate runs for an overlapping slot and keeps unsent and Home reports out of history', async () => {
   const scope = withTeam(db, teamId, member);
   const prefs = {
@@ -171,7 +193,7 @@ it('persists separate runs for an overlapping slot and keeps unsent and Home rep
     sentAt: exampleTime,
   });
   expect(await withTeam(db, teamId, owner).updates.history(weekly)).toEqual([]);
-  expect(await db.select().from(dailyDigests)).toHaveLength(3);
+  expect(await db.select().from(updateRuns)).toHaveLength(3);
 
   const previous = (await scope.updates.current(emailKey)).schedule;
   if (!previous) throw new Error('Missing test schedule');

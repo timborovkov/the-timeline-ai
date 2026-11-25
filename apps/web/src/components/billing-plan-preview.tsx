@@ -1,8 +1,9 @@
-import { formatEuroFromCents } from '@timeline/shared/billing/catalog';
 import {
   shouldShowPlanRecommendation,
   type CheapestPlanPreview,
 } from '@timeline/shared/billing/preview';
+
+import { RegionalNumber } from '@/components/regional-number';
 
 const PLAN_LABEL: Record<CheapestPlanPreview['recommended'], string> = {
   payg: 'Pay as you go',
@@ -29,7 +30,8 @@ export function BillingPlanPreview({
 
   return (
     <p className="text-sm text-fg-muted" data-billing-plan-hint>
-      Plan comparison: {recommended} would save {formatEuroFromCents(savingCents)} this month.
+      Plan comparison: {recommended} would save{' '}
+      <RegionalNumber value={savingCents} currency="EUR" compactCurrency /> this month.
     </p>
   );
 }

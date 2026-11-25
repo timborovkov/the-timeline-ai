@@ -346,10 +346,12 @@ export async function generateScheduledUpdate(input: {
   )
     return;
   // A rollout or restart can overlap the old member scheduler's final slot.
-  if (schedule.inherited && key === DEFAULT_UPDATE_KEY) {
-    const legacy = await scope.updates.findRun('', windowEnd);
-    if (legacy?.status === 'sent') return;
-  }
+  if (
+    schedule.inherited &&
+    key === DEFAULT_UPDATE_KEY &&
+    (await scope.updates.hasSentLegacyRun(windowEnd))
+  )
+    return;
   const existing = await scope.updates.findRun(key, windowEnd);
   if (existing) return existing.status === 'generated' ? existing.id : undefined;
   const payload = await buildUpdateReport({
@@ -361,7 +363,7 @@ export async function generateScheduledUpdate(input: {
     now,
   });
   const hasContent = Boolean(payload.summary);
-  // Older web instances display this column and the legacy payload summary directly.
+  // The scoped presentation rebuilds the summary from currently accessible evidence.
   const summary = hasContent ? 'Update available.' : '';
   return scope.updates
     .storeRun({

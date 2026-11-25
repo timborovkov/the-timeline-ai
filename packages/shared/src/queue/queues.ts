@@ -217,7 +217,8 @@ export type SuggestionJobData =
   | SuggestionConversationReviewJobData
   | SuggestionDocumentJobData
   | SuggestionObjectCleanupJobData
-  | SuggestionGithubTaskProposalJobData;
+  | SuggestionGithubTaskProposalJobData
+  | { scope: 'record_maintenance'; teamId: string };
 
 export interface SuggestionRawEventJobData {
   rawEventId: string;
@@ -270,6 +271,13 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
       return bullmqCustomJobId([
         'conversation-review',
         data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
+    }
+    if (data.scope === 'record_maintenance') {
+      return bullmqCustomJobId([
+        'record-maintenance',
+        data.teamId,
         ...(jobIdSuffix ? [jobIdSuffix] : []),
       ]);
     }
@@ -1184,6 +1192,7 @@ export async function closeTeamExportQueue(): Promise<void> {
 
 export type DailyDigestJobData =
   | { kind: 'tick'; windowStart?: string; windowEnd?: string; reason?: 'scheduled' | 'catchup' }
+  | { kind: 'workspace-reschedule'; teamId: string }
   | {
       kind: 'recipient';
       teamId: string;
@@ -1307,10 +1316,16 @@ export async function enqueueDailyDigestCatchupJob(now: Date = new Date()): Prom
   );
 }
 
+export async function enqueueWorkspaceUpdateReschedule(teamId: string): Promise<void> {
+  await getDailyDigestQueue().add('workspace-reschedule', { kind: 'workspace-reschedule', teamId });
+}
+
 export async function enqueueDailyDigestRecipientJob(
   data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
+  delayMs?: number,
 ): Promise<void> {
   await getDailyDigestQueue().add('recipient', data, {
+    ...(delayMs ? { delay: delayMs } : {}),
     jobId: bullmqCustomJobId([
       'daily-digest',
       data.teamId,

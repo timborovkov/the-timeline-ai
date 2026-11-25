@@ -19,6 +19,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
+import { generateDailyDigest, listDailyDigestRecipients } from '#src/messaging/digest.js';
 import { generateScheduledUpdate } from '#src/messaging/update-report.js';
 import { DEFAULT_UPDATE_SETTINGS } from '#src/messaging/update-settings.js';
 import { withTeam } from '#src/team-scope.js';
@@ -26,7 +27,7 @@ import type * as TelegramApiModule from '#src/telegram/api.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const send = vi.hoisted(() =>
-  vi.fn((_input: Parameters<typeof TelegramApiModule.sendTelegramBotMessage>[0]) =>
+  vi.fn((..._args: Parameters<typeof TelegramApiModule.sendTelegramBotMessage>) =>
     Promise.resolve(),
   ),
 );
@@ -38,7 +39,7 @@ await vi.mock(
   }),
   () => import('#src/telegram/api.js'),
 );
-const { sendDailyDigest } = await import('#src/messaging/digest-delivery.js');
+const { sendDailyDigest, sendScheduledUpdate } = await import('#src/messaging/digest-delivery.js');
 const pg = new PGlite();
 const db = drizzle(pg) as unknown as Db;
 const teamId = '11111111-1111-4111-8111-111111111111';
@@ -74,6 +75,8 @@ beforeAll(async () => {
     payload: {
       teamName: 'Team',
       userName: 'User',
+      windowStart: '2026-06-13T12:00:00Z',
+      windowEnd: '2026-06-14T12:00:00Z',
       summary: 'Summary',
       pendingApprovals: 0,
       eventCount: 0,
@@ -171,6 +174,314 @@ it('leaves an inactive workspace digest untouched even after the recipient leave
   }
 });
 
+it('sends configured updates as link-only notices and preserves the archive if paused', async () => {
+  const revision = new Date('2026-06-12T09:00:00.000Z');
+  const [digest] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  if (!digest) throw new Error('Missing test digest');
+  await db
+    .update(messagePreferences)
+    .set({
+      dailyDigestEnabled: false,
+      updateOptions: {
+        cadence: 'daily',
+        scope: 'workspace',
+        focus: 'balanced',
+        destination: 'personal',
+      },
+      updatedAt: revision,
+    })
+    .where(eq(messagePreferences.teamId, teamId));
+  await db
+    .update(dailyDigests)
+    .set({
+      payload: {
+        ...(digest.payload as Record<string, unknown>),
+        updateRevision: revision.toISOString(),
+        windowStart: digest.windowStart.toISOString(),
+        windowEnd: digest.windowEnd.toISOString(),
+        summary: 'Private project details',
+        links: [{ label: 'Sensitive source title', href: '/app/timeline' }],
+      },
+    })
+    .where(eq(dailyDigests.id, digestId));
+  try {
+    expect(await deliver()).toMatchObject({ ok: true, skipped: true });
+    expect(send).not.toHaveBeenCalled();
+    const [archived] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+    expect(archived?.status).toBe('generated');
+
+    await db
+      .update(messagePreferences)
+      .set({ dailyDigestEnabled: true })
+      .where(eq(messagePreferences.teamId, teamId));
+    expect(await deliver()).toMatchObject({ ok: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    const sent = JSON.stringify(send.mock.calls);
+    expect(sent).toContain('example.test/digest');
+    expect(sent).not.toContain('Private project details');
+    expect(sent).not.toContain('Sensitive source title');
+
+    expect(await deliver()).toMatchObject({ ok: true, skipped: true });
+    expect(send).toHaveBeenCalledTimes(1);
+  } finally {
+    await db
+      .update(messagePreferences)
+      .set({ dailyDigestEnabled: true, updateOptions: null })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({ payload: digest.payload })
+      .where(eq(dailyDigests.id, digestId));
+  }
+});
+
+it('keeps configured updates in the archive when every workspace destination is disabled', async () => {
+  const revision = new Date('2026-06-12T09:00:00.000Z');
+  const [digest] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  if (!digest) throw new Error('Missing test digest');
+  await db
+    .update(messagePreferences)
+    .set({
+      updateOptions: {
+        cadence: 'daily',
+        scope: 'workspace',
+        focus: 'balanced',
+        destination: 'personal',
+      },
+      updatedAt: revision,
+    })
+    .where(eq(messagePreferences.teamId, teamId));
+  await db
+    .update(dailyDigests)
+    .set({
+      payload: {
+        ...(digest.payload as Record<string, unknown>),
+        updateRevision: revision.toISOString(),
+      },
+    })
+    .where(eq(dailyDigests.id, digestId));
+  await db
+    .update(teamDigestDestinations)
+    .set({ enabled: false })
+    .where(eq(teamDigestDestinations.teamId, teamId));
+  const interceptedEmail = vi.fn(() => Promise.resolve(Response.json({ id: 'fixture-email' })));
+  const previousKey = process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = 're_updates_fixture';
+  resetEnvForTests();
+  try {
+    expect(
+      await sendDailyDigest({
+        db,
+        digestId,
+        to: 'digest@example.test',
+        digestUrl: 'https://example.test/digest',
+        now,
+        fetch: interceptedEmail,
+      }),
+    ).toMatchObject({ ok: true, skipped: true });
+    expect(interceptedEmail).toHaveBeenCalledTimes(0);
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(await db.select().from(messageDeliveries)).toHaveLength(0);
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    resetEnvForTests();
+    await db
+      .update(messagePreferences)
+      .set({ updateOptions: null })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({ payload: digest.payload })
+      .where(eq(dailyDigests.id, digestId));
+    await db
+      .update(teamDigestDestinations)
+      .set({ enabled: true })
+      .where(eq(teamDigestDestinations.teamId, teamId));
+  }
+});
+
+it('keeps a transient destination retryable when another destination fails permanently', async () => {
+  const [email] = await db
+    .insert(teamDigestDestinations)
+    .values({
+      teamId,
+      kind: 'email_members',
+      createdAt: new Date('2099-01-01T00:00:00Z'),
+    })
+    .returning({ id: teamDigestDestinations.id });
+  if (!email) throw new Error('Missing test destination');
+  const previousKey = process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = 're_updates_fixture';
+  resetEnvForTests();
+  const interceptedEmail = vi.fn(() =>
+    Promise.resolve(Response.json({ name: 'validation_error' }, { status: 422 })),
+  );
+  send.mockRejectedValueOnce(new Error('Temporary Telegram provider outage'));
+  try {
+    expect(
+      await sendDailyDigest({
+        db,
+        digestId,
+        to: 'digest@example.test',
+        digestUrl: 'https://example.test/digest',
+        now,
+        fetch: interceptedEmail,
+      }),
+    ).toMatchObject({ ok: false, retryable: true });
+    expect(send).toHaveBeenCalledOnce();
+    const rows = await db.select().from(messageDeliveries);
+    expect(
+      rows
+        .filter((row) => row.status === 'failed')
+        .map((row) => row.channel)
+        .sort(),
+    ).toEqual(['email', 'telegram']);
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    resetEnvForTests();
+    await db.delete(teamDigestDestinations).where(eq(teamDigestDestinations.id, email.id));
+  }
+});
+
+it('offers and sends configured email only for the member’s current verified address', async () => {
+  const oldApiKey = process.env.RESEND_API_KEY;
+  const oldFrom = process.env.TRANSACTIONAL_EMAIL_FROM;
+  const revision = new Date('2026-06-12T09:00:00.000Z');
+  const [digest] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  if (!digest) throw new Error('Missing test digest');
+  const [emailDestination] = await db
+    .insert(teamDigestDestinations)
+    .values({ teamId, kind: 'email_members' })
+    .returning({ id: teamDigestDestinations.id });
+  if (!emailDestination) throw new Error('Missing test destination');
+  const fetch = vi.fn((..._args: Parameters<typeof globalThis.fetch>) =>
+    Promise.resolve(Response.json({ id: 'fixture-accepted' })),
+  );
+  const scope = withTeam(db, teamId, userId);
+  try {
+    process.env.RESEND_API_KEY = 're_synthetic_digest_test';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'timeline@example.test';
+    resetEnvForTests();
+    await db
+      .update(teamDigestDestinations)
+      .set({ enabled: false })
+      .where(eq(teamDigestDestinations.kind, 'telegram_dm_members'));
+    await db
+      .update(messagePreferences)
+      .set({
+        updateOptions: {
+          cadence: 'daily',
+          scope: 'workspace',
+          focus: 'balanced',
+          destination: 'personal',
+        },
+        updatedAt: revision,
+      })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({
+        payload: {
+          ...(digest.payload as Record<string, unknown>),
+          updateRevision: revision.toISOString(),
+        },
+      })
+      .where(eq(dailyDigests.id, digestId));
+    const sendEmail = () =>
+      sendDailyDigest({
+        db,
+        digestId,
+        to: 'stale@example.test',
+        digestUrl: 'https://example.test/digest',
+        now,
+        fetch,
+      });
+
+    expect(await scope.updatePreferences.availablePersonalDestinations()).toEqual([]);
+    expect(await sendEmail()).toMatchObject({ ok: true, skipped: true });
+    expect(fetch).not.toHaveBeenCalled();
+
+    await db
+      .update(users)
+      .set({ email: 'current@example.test', emailVerified: now })
+      .where(eq(users.id, userId));
+    expect(await scope.updatePreferences.availablePersonalDestinations()).toEqual([
+      'email_members',
+    ]);
+    expect(await sendEmail()).toMatchObject({ ok: true });
+    expect(fetch).toHaveBeenCalledOnce();
+    const body = fetch.mock.calls[0]?.[1]?.body;
+    if (typeof body !== 'string') throw new Error('Missing intercepted delivery body');
+    expect(JSON.parse(body)).toMatchObject({
+      to: ['current@example.test'],
+      subject: 'Your Timeline update is ready',
+    });
+  } finally {
+    if (oldApiKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = oldApiKey;
+    if (oldFrom === undefined) delete process.env.TRANSACTIONAL_EMAIL_FROM;
+    else process.env.TRANSACTIONAL_EMAIL_FROM = oldFrom;
+    resetEnvForTests();
+    await db
+      .update(users)
+      .set({ email: 'digest@example.test', emailVerified: null })
+      .where(eq(users.id, userId));
+    await db
+      .delete(teamDigestDestinations)
+      .where(eq(teamDigestDestinations.id, emailDestination.id));
+    await db
+      .update(teamDigestDestinations)
+      .set({ enabled: true })
+      .where(eq(teamDigestDestinations.kind, 'telegram_dm_members'));
+    await db
+      .update(messagePreferences)
+      .set({ updateOptions: null })
+      .where(eq(messagePreferences.teamId, teamId));
+    await db
+      .update(dailyDigests)
+      .set({ payload: digest.payload })
+      .where(eq(dailyDigests.id, digestId));
+  }
+});
+
+it('isolates the workspace recipient lookup and skips a stale Helsinki job after a Tokyo change', async () => {
+  const otherTeamId = '55555555-5555-4555-8555-555555555555';
+  await db.insert(teams).values({ id: otherTeamId, slug: 'digest-other-team', name: 'Other team' });
+  await db.insert(teamMembers).values({ teamId: otherTeamId, userId, role: 'member' });
+  const changes = { timezone: 'Asia/Tokyo', updatedAt: new Date('2026-11-22T18:00:00Z') };
+  await db.insert(messagePreferences).values({
+    teamId: otherTeamId,
+    userId,
+    ...changes,
+    dailyDigestEnabled: true,
+    dailyDigestHour: 12,
+    updateOptions: {
+      cadence: 'weekly',
+      scope: 'saved_views',
+      focus: 'balanced',
+      destination: 'app',
+    },
+  });
+  expect(await listDailyDigestRecipients(db, { teamId: otherTeamId })).toEqual([
+    expect.objectContaining({ teamId: otherTeamId, userId }),
+  ]);
+  await expect(
+    generateDailyDigest({
+      db,
+      teamId: otherTeamId,
+      userId,
+      windowStart: new Date('2026-11-16T10:00:00Z'),
+      windowEnd: new Date('2026-11-23T10:00:00Z'),
+      now: new Date('2026-11-23T10:00:00Z'),
+    }),
+  ).resolves.toMatchObject({ skipped: true, digestId: '' });
+  expect(await db.select().from(dailyDigests).where(eq(dailyDigests.teamId, otherTeamId))).toEqual(
+    [],
+  );
+});
+
 it('sends an explicitly scheduled Telegram update once and cancels a queued send after a pause', async () => {
   await db.insert(teamCalendarSettings).values({ teamId, defaultTimezone: 'UTC' });
   await db.insert(entities).values({
@@ -182,13 +493,14 @@ it('sends an explicitly scheduled Telegram update once and cancels a queued send
   });
   await db
     .update(teamDigestDestinations)
-    .set({ kind: 'email_members' })
+    .set({ enabled: false })
     .where(eq(teamDigestDestinations.teamId, teamId));
   const scope = withTeam(db, teamId, userId);
   const key = '77777777-7777-4777-8777-777777777777';
   const settings = {
     ...DEFAULT_UPDATE_SETTINGS,
     channel: 'telegram' as const,
+    includeContent: true,
     sections: ['due' as const],
     name: 'Daily check-in',
   };
@@ -206,18 +518,31 @@ it('sends an explicitly scheduled Telegram update once and cancels a queued send
 
   const generated = await generate(new Date('2026-06-14T12:00:00Z'));
   if (!generated) throw new Error('Missing generated update');
-  const input = { db, digestId: generated, digestUrl: 'https://example.test/app/digests', now };
-  expect(await sendDailyDigest(input)).toMatchObject({ ok: true });
+  const input = {
+    db,
+    teamId,
+    userId,
+    runId: generated,
+    digestUrl: 'https://example.test/app/digests',
+    now,
+  };
+  expect(await sendScheduledUpdate(input)).toMatchObject({ ok: true, skipped: true });
+  expect(send).not.toHaveBeenCalled();
+  await db
+    .update(teamDigestDestinations)
+    .set({ enabled: true })
+    .where(eq(teamDigestDestinations.teamId, teamId));
+  expect(await sendScheduledUpdate(input)).toMatchObject({ ok: true });
   expect(send.mock.calls[0]?.[0]).toMatchObject({ chatId: 7, scheduledUpdate: true });
   expect(send.mock.calls[0]?.[0]?.text).toContain('Send the offer');
-  expect(await sendDailyDigest(input)).toMatchObject({ ok: true, skippedStatus: 'sent' });
+  expect(await sendScheduledUpdate(input)).toMatchObject({ ok: true, skippedStatus: 'sent' });
   expect(send).toHaveBeenCalledTimes(1);
 
   const nextEnd = new Date('2026-06-15T12:00:00Z');
   const next = await generate(nextEnd);
   if (!next) throw new Error('Missing next run');
   await scope.updates.save(key, { ...settings, enabled: false });
-  expect(await sendDailyDigest({ ...input, digestId: next, now: nextEnd })).toMatchObject({
+  expect(await sendScheduledUpdate({ ...input, runId: next, now: nextEnd })).toMatchObject({
     ok: true,
     skipped: true,
   });

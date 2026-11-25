@@ -11,7 +11,7 @@ const alice = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const bob = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const title = 'Review retention policy';
 const support = (
-  field: 'assignee' | 'dueAt' | 'customer' | 'project' | 'prospect' | 'status' | 'relationship',
+  field: ReturnType<typeof communicationGroundingSchema.parse>['field'],
   quote: string,
   value: string,
   subject = title,
@@ -57,7 +57,8 @@ const run = (
       {
         id: event,
         text,
-        authorUserId: alice,
+        source: options.source ?? 'slack',
+        authorUserId: options.source === 'meeting' ? null : alice,
         occurredAt: options.occurredAt ?? new Date('2026-06-01T10:00:00.000Z'),
         ...(options.speakerContext ? { speakerContext: options.speakerContext } : {}),
       },
@@ -70,6 +71,304 @@ const run = (
     source: options.source ?? 'slack',
     timezone: options.timezone ?? 'UTC',
   });
+test('grounds deal delivery and stage against the named deal and respects a later correction', () => {
+  const name = 'Northstar rollout';
+  const offer = 'The offer for Northstar rollout has been sent.';
+  const stage = 'The stage for Northstar rollout is negotiation.';
+  const check = (quote: string, correction?: string, ambiguous = false) => {
+    const text = [quote, stage, correction].filter(Boolean).join(' ');
+    const claims: NonNullable<
+      Parameters<typeof groundCommunicationBundles>[0]['verifiedTaskClaims']
+    > = new Map();
+    groundCommunicationBundles({
+      verifiedTaskClaims: claims,
+      bundles: [
+        {
+          title: name,
+          confidence: 'high',
+          items: [
+            {
+              title: name,
+              auditId: 'deal',
+              operation: 'update',
+              targetKind: 'object',
+              targetId: event,
+              proposedPayload: { status: 'proposal', stage: 'negotiation' },
+              grounding: [
+                { field: 'status', rawEventId: event, quote, subject: name, value: 'proposal' },
+                {
+                  field: 'stage',
+                  rawEventId: event,
+                  quote: stage,
+                  subject: name,
+                  value: 'negotiation',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      source: 'slack',
+      timezone: 'UTC',
+      members: [],
+      hubs: [],
+      sources: [{ id: event, text, occurredAt: new Date('2026-06-01'), authorUserId: null }],
+      objects: [
+        { id: event, type: 'deal', name, aliases: [] },
+        ...(ambiguous ? [{ id: 'other', type: 'deal', name: 'Other deal', aliases: [name] }] : []),
+      ],
+    });
+    return claims.get('deal');
+  };
+  expect(check(offer)?.status?.value).toBe('proposal');
+  expect(check(offer)?.stage?.value).toBe('negotiation');
+  expect(
+    check(offer, 'The offer for Northstar rollout has not been sent.')?.status,
+  ).toBeUndefined();
+  expect(check('The offer has been sent.')?.status).toBeUndefined();
+  expect(check(offer, undefined, true)).toBeUndefined();
+});
+
+test('grounds completion of an existing follow-up through its own identity', () => {
+  const name = 'Update procurement contact';
+  const quote = 'Update procurement contact is completed.';
+  const claims: NonNullable<
+    Parameters<typeof groundCommunicationBundles>[0]['verifiedTaskClaims']
+  > = new Map();
+  groundCommunicationBundles({
+    verifiedTaskClaims: claims,
+    bundles: [
+      {
+        title: name,
+        confidence: 'high',
+        items: [
+          {
+            title: name,
+            auditId: 'follow-up',
+            operation: 'update',
+            targetKind: 'object',
+            targetId: event,
+            proposedPayload: { status: 'done' },
+            grounding: [
+              { field: 'status', rawEventId: event, quote, subject: name, value: 'done' },
+            ],
+          },
+        ],
+      },
+    ],
+    packet: quote,
+    source: 'slack',
+    timezone: 'UTC',
+    members: [],
+    hubs: [],
+    sources: [{ id: event, text: quote, occurredAt: new Date('2026-06-01'), authorUserId: null }],
+    objects: [{ id: event, type: 'follow_up', name, aliases: [] }],
+  });
+  expect(claims.get('follow-up')?.status?.value).toBe('done');
+});
+
+test('grounds a meeting project state from the utterance and vetoes a later correction', () => {
+  const name = 'Northstar';
+  const statement = 'Northstar is on hold.';
+  const check = (later = '') => {
+    const text = '[30s] Alex: ' + statement + later;
+    const claims: NonNullable<
+      Parameters<typeof groundCommunicationBundles>[0]['verifiedTaskClaims']
+    > = new Map();
+    const result = groundCommunicationBundles({
+      verifiedTaskClaims: claims,
+      bundles: [
+        {
+          title: 'Project state',
+          confidence: 'high',
+          items: [
+            {
+              title: 'Project state',
+              auditId: 'proposal-1',
+              operation: 'update',
+              targetKind: 'object',
+              targetId: event,
+              proposedPayload: { status: 'on_hold' },
+              grounding: [
+                {
+                  field: 'status',
+                  rawEventId: event,
+                  quote: statement,
+                  subject: name,
+                  value: 'on_hold',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      sources: [
+        {
+          id: event,
+          source: 'meeting',
+          text,
+          authorUserId: null,
+          occurredAt: new Date('2026-06-01T10:00:00Z'),
+        },
+      ],
+      source: 'meeting',
+      timezone: 'UTC',
+      members: [],
+      hubs: [],
+      objects: [{ id: event, type: 'project', name, aliases: [] }],
+    });
+    return { claim: claims.get('proposal-1'), items: result[0]?.items };
+  };
+  expect(check().claim?.status?.value).toBe('on_hold');
+  for (const later of ['Northstar is underway.', 'Northstar is not on hold.']) {
+    expect(check('\n[60s] Lee: ' + later)).toEqual({ claim: undefined, items: [] });
+  }
+});
+
+test('meeting label and capturer supply no assignment, while a named assignment does', () => {
+  const self = "I'll Review retention policy.";
+  const named = 'Bob will Review retention policy.';
+  for (const [quote, id, expected] of [
+    [self, alice, undefined],
+    [named, bob, bob],
+  ] as const) {
+    const text = '[50s] Alice: ' + quote;
+    const result = run(text, { assigneeUserId: id }, [support('assignee', quote, id)], {
+      source: 'meeting',
+    });
+    expect(result[0]?.items[0]?.proposedPayload.assigneeUserId).toBe(expected);
+  }
+});
+
+test('grounds a work plan from the source day without inventing a deadline', () => {
+  const text = "I'll Review retention policy on Friday.";
+  const result = run(text, { plannedDate: '2026-06-05', dueAt: '2026-06-05T00:00:00.000Z' }, [
+    support('plannedDate', text, '2026-06-05'),
+    support('dueAt', text, '2026-06-05T00:00:00.000Z'),
+  ]);
+  expect(result[0]?.items[0]?.proposedPayload).toEqual({ plannedDate: '2026-06-05' });
+});
+
+test('grounds an adjacent correction only when the prior message establishes a unique work plan', () => {
+  const later = '22222222-2222-4222-8222-222222222222';
+  const check = (
+    earlier: string,
+    correction = 'Actually, Monday.',
+    value = '2026-06-08',
+    citeEarlier = false,
+  ) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              title,
+              targetKind: 'task',
+              targetId: event,
+              operation: 'update',
+              proposedPayload: { plannedDate: value },
+              grounding: [
+                {
+                  ...support('plannedDate', citeEarlier ? earlier : correction, value),
+                  rawEventId: citeEarlier ? event : later,
+                  ...(citeEarlier ? {} : { context: { rawEventId: event, quote: earlier } }),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      packet: `${earlier}\n${correction}`,
+      source: 'slack',
+      members: [],
+      hubs: [],
+      sources: [
+        {
+          id: event,
+          text: earlier,
+          authorUserId: alice,
+          occurredAt: new Date('2026-06-01T10:00:00Z'),
+        },
+        {
+          id: later,
+          text: correction,
+          authorUserId: alice,
+          occurredAt: new Date('2026-06-02T10:00:00Z'),
+        },
+      ],
+      objects: [{ id: event, type: 'task', name: title }],
+    })[0]?.items;
+  expect(check("I'll Review retention policy on Friday.")?.[0]?.proposedPayload).toEqual({
+    plannedDate: '2026-06-08',
+  });
+  expect(check('Review retention policy is due Friday.')).toEqual([]);
+  const friday = "I'll Review retention policy on Friday.";
+  expect(check(friday, 'Actually, Monday.', '2026-06-05', true)).toEqual([]);
+  expect(check(friday, 'Actually, Monday is the deadline.')).toEqual([]);
+  expect(check(friday, "Actually, Monday doesn't work.")).toEqual([]);
+  expect(
+    check(
+      'Review retention policy is still open.',
+      "I'll investigate it on Friday.",
+      '2026-06-05',
+    )?.[0]?.proposedPayload,
+  ).toEqual({ plannedDate: '2026-06-05' });
+});
+
+test('requires a verified fix before treating a generic PR merge as completion', () => {
+  const subject = 'Login problem';
+  const claims = [
+    ['Login problem was verified fixed.', { status: 'done' }],
+    ['Login problem PR merged.', {}],
+    ['Login problem will be verified fixed.', {}],
+  ] as const;
+  for (const [text, expected] of claims) {
+    const bundles = run(text, { status: 'done' }, [support('status', text, 'done', subject)], {
+      taskTitle: subject,
+    });
+    expect(bundles[0]?.items[0]?.proposedPayload).toEqual(expected);
+  }
+});
+
+test('limits a task title edit to an exact evidenced rename of the existing task', () => {
+  const replacement = 'Review the policy retention schedule';
+  const check = (text: string) =>
+    groundCommunicationBundles({
+      bundles: [
+        {
+          title,
+          confidence: 'high',
+          items: [
+            {
+              auditId: 'rename',
+              title,
+              targetKind: 'task',
+              targetId: event,
+              operation: 'update',
+              proposedPayload: { canonicalName: replacement },
+              grounding: [support('canonicalName', text, replacement)],
+            },
+          ],
+        },
+      ],
+      packet: text,
+      source: 'slack',
+      members: [],
+      hubs: [],
+      sources: [{ id: event, text, occurredAt: new Date('2026-06-01T10:00:00Z') }],
+      objects: [{ id: event, type: 'task', name: title }],
+      verifiedTaskClaims: new Map(),
+    })[0]?.items;
+  expect(check(`Rename ${title} to "${replacement}".`)?.[0]?.proposedPayload).toEqual({
+    canonicalName: replacement,
+  });
+  expect(check(`The team may rename ${title} to "${replacement}".`)).toEqual([]);
+});
+
 test('requester names cannot support owner or invented date', () => {
   const text = 'Alice requested that the team review retention policy.';
   const result = run(text, { assigneeUserId: alice, dueAt: '2026-06-01T00:00:00.000Z' }, [
@@ -2176,6 +2475,24 @@ test('grounded task cancellation updates its lifecycle rather than archiving the
   }
 });
 
+test('retains archive intent in explicit paraphrases while rejecting qualified examples', () => {
+  for (const quote of [
+    'Please move Review retention policy to the archive.',
+    'Mark Review retention policy as archived.',
+    'We decided to archive Review retention policy.',
+  ]) {
+    const result = run(quote, {}, [support('status', quote, 'cancelled')], {
+      operation: 'archive_or_cancel',
+    });
+    expect(result[0]?.items[0]?.operation).toBe('archive_or_cancel');
+  }
+  const quote = 'Please move Review retention policy to the archive.';
+  const hypothetical = run('Example only: ' + quote, {}, [support('status', quote, 'cancelled')], {
+    operation: 'archive_or_cancel',
+  });
+  expect(hypothetical[0]?.items).toEqual([]);
+});
+
 test('owner confirmation needs adjacent visible task context and explicit ownership', () => {
   const first = 'Move Review retention policy to June 18, 2026.';
   const quote = 'Bob remains owner and has not started.';
@@ -2598,6 +2915,8 @@ const generalRelationship = (
     type?: string;
     packet?: string;
     sourceText?: string;
+    later?: string[];
+    chronologyVeto?: boolean;
     kind?: string;
     foreign?: boolean;
     ambiguous?: boolean;
@@ -2607,6 +2926,12 @@ const generalRelationship = (
   const names = options.names ?? ['Deployment checklist', 'Release checklist'];
   const first = '66666666-6666-4666-8666-666666666666';
   const second = '77777777-7777-4777-8777-777777777777';
+  const sourceText = options.sourceText ?? quote;
+  const laterSources = (options.later ?? []).map((text, index) => ({
+    id: `88888888-8888-4888-8888-88888888888${String(index)}`,
+    text,
+    occurredAt: new Date(Date.UTC(2026, 5, 1, 11 + index)),
+  }));
   return (
     groundCommunicationBundles({
       bundles: [
@@ -2641,8 +2966,14 @@ const generalRelationship = (
           ],
         },
       ],
-      packet: options.packet ?? options.sourceText ?? quote,
-      sources: [{ id: event, text: options.sourceText ?? quote }],
+      packet: options.packet ?? [sourceText, ...(options.later ?? [])].join('\n'),
+      sources: [
+        { id: event, text: sourceText, occurredAt: new Date('2026-06-01T10:00:00Z') },
+        ...laterSources,
+      ],
+      ...(options.chronologyVeto
+        ? { reviewedLaterEmailIds: new Set(laterSources.map(({ id }) => id)) }
+        : {}),
       members: [],
       hubs: [],
       source: 'slack',
@@ -2690,6 +3021,29 @@ test('explicit related links support authorized non-hub endpoints', () => {
     expect(generalRelationship(quote, options)).toHaveLength(0);
 });
 
+test('a later related link retraction must be visible and name the same endpoints', () => {
+  const quote = 'Link Deployment checklist to Release checklist.';
+  const retraction = 'Do not link the Release checklist to the Deployment checklist.';
+  const reaffirmation = 'Please connect Deployment checklist with Release checklist.';
+  for (const later of [retraction, 'Unlink Deployment checklist from Release checklist.']) {
+    expect(generalRelationship(quote, { later: [later] })).toHaveLength(0);
+  }
+  expect(
+    generalRelationship(quote, {
+      later: ['Do not link Deployment checklist to the security report.'],
+    }),
+  ).toHaveLength(1);
+  expect(generalRelationship(quote, { later: [retraction], packet: quote })).toHaveLength(1);
+  expect(generalRelationship(quote, { later: [retraction, reaffirmation] })).toHaveLength(1);
+  expect(
+    generalRelationship(quote, {
+      later: [retraction, reaffirmation],
+      packet: `${quote}\n${retraction}`,
+      chronologyVeto: true,
+    }),
+  ).toHaveLength(0);
+});
+
 test('a forwarded self assignment survives a citation containing adjacent deadline context', () => {
   const quote = 'I will review retention policy. Its deadline is June 12, 2026.';
   const text = `From: Alice <alice@example.test>\n${quote}`;
@@ -2718,6 +3072,144 @@ test('month-name deadlines preserve explicit time and timezone', () => {
         timezone: 'Europe/Helsinki',
       })[0]?.items[0]?.proposedPayload,
     ).toEqual({});
+  }
+});
+
+test('named-zone deadlines use the stated zone without accepting the workspace instant', () => {
+  const timezone = 'Europe/Helsinki';
+  const base = 'Review retention policy is due June 12, 2026 at 09:00';
+  const local = '2026-06-12T06:00:00.000Z';
+  const pacific = '2026-06-12T16:00:00.000Z';
+  for (const zone of [
+    'in America/Los_Angeles',
+    'America/Los_Angeles',
+    'time zone America/Los_Angeles',
+  ]) {
+    const quote = `${base} ${zone} for legal approval.`;
+    expect(
+      run(quote, { dueAt: pacific }, [support('dueAt', quote, pacific)], { timezone })[0]?.items[0]
+        ?.proposedPayload.dueAt,
+    ).toBe(pacific);
+    for (const citation of [quote, base]) {
+      expect(
+        run(quote, { dueAt: local }, [support('dueAt', citation, local)], { timezone })[0]?.items[0]
+          ?.proposedPayload.dueAt,
+      ).toBeUndefined();
+    }
+  }
+  const invalid = `${base} in America/Atlantis for legal approval.`;
+  expect(
+    run(invalid, { dueAt: local }, [support('dueAt', invalid, local)], { timezone })[0]?.items[0]
+      ?.proposedPayload.dueAt,
+  ).toBeUndefined();
+  const prose = `${base} in the next sprint.`;
+  expect(
+    run(prose, { dueAt: local }, [support('dueAt', prose, local)], { timezone })[0]?.items[0]
+      ?.proposedPayload.dueAt,
+  ).toBe(local);
+});
+
+for (const [suffix, dueAt] of [
+  ['in UTC', '2026-06-12T09:00:00.000Z'],
+  ['in GMT', '2026-06-12T09:00:00.000Z'],
+  ['time zone UTC', '2026-06-12T09:00:00.000Z'],
+  ['(America/Los_Angeles)', '2026-06-12T16:00:00.000Z'],
+  ['(America/Los_Angeles) (QA signoff comes next)', '2026-06-12T16:00:00.000Z'],
+  ['in +02:00', '2026-06-12T07:00:00.000Z'],
+  ['time zone +02:00', '2026-06-12T07:00:00.000Z'],
+  ['(+02:00)', '2026-06-12T07:00:00.000Z'],
+] as const) {
+  test(`deadline retains the explicit zone in "${suffix}"`, () => {
+    const timezone = 'Europe/Helsinki';
+    const local = '2026-06-12T06:00:00.000Z';
+    const base = 'Review retention policy is due June 12, 2026 at 09:00';
+    const quote = `${base} ${suffix} for legal approval.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone })[0]?.items[0]
+        ?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+    for (const citation of [quote, base]) {
+      expect(
+        run(quote, { dueAt: local }, [support('dueAt', citation, local)], { timezone })[0]?.items[0]
+          ?.proposedPayload.dueAt,
+      ).toBeUndefined();
+    }
+    expect(
+      run(quote, { dueAt }, [support('dueAt', base, dueAt)], { timezone, packet: base })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBeUndefined();
+  });
+}
+
+for (const [suffix, dueAt] of [
+  ...[
+    'time zone Atlantis',
+    'time zone: Atlantis',
+    'time zone',
+    'in PST',
+    'in PST for QA signoff',
+    'in pst',
+    '(America/Atlantis)',
+    '(America/Los_Angeles',
+    'in +2:00',
+    'in +25:00',
+    '(+02:00',
+  ].map((suffix) => [suffix, '2026-06-12T06:00:00.000Z'] as const),
+  ['+02:00 in UTC', '2026-06-12T07:00:00.000Z'],
+  ['UTC (+02:00)', '2026-06-12T09:00:00.000Z'],
+  ['(America/Los_Angeles) in UTC', '2026-06-12T16:00:00.000Z'],
+] as const) {
+  test(`deadline rejects the unsupported zone in "${suffix}"`, () => {
+    const quote = `Review retention policy is due June 12, 2026 at 09:00 ${suffix}.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBeUndefined();
+  });
+}
+
+for (const suffix of ['(QA signoff comes next)', 'in QA before launch']) {
+  test(`deadline preserves ordinary trailing prose in "${suffix}"`, () => {
+    const dueAt = '2026-06-12T06:00:00.000Z';
+    const quote = `Review retention policy is due June 12, 2026 at 09:00 ${suffix}.`;
+    expect(
+      run(quote, { dueAt }, [support('dueAt', quote, dueAt)], { timezone: 'Europe/Helsinki' })[0]
+        ?.items[0]?.proposedPayload.dueAt,
+    ).toBe(dueAt);
+  });
+}
+
+test('relative and yearless deadlines select the source day in the stated zone', () => {
+  const options = { timezone: 'Europe/Helsinki', occurredAt: new Date('2026-06-12T01:00:00Z') };
+  const dueAt = '2026-06-11T16:00:00.000Z';
+  for (const date of ['today', 'Thursday', 'June 11']) {
+    for (const zone of ['in America/Los_Angeles', '(America/Los_Angeles)']) {
+      const quote = `Review retention policy is due ${date} at 09:00 ${zone}.`;
+      expect(
+        run(quote, { dueAt }, [support('dueAt', quote, dueAt)], options)[0]?.items[0]
+          ?.proposedPayload.dueAt,
+        quote,
+      ).toBe(dueAt);
+    }
+  }
+});
+
+test('a zoned work plan remains a calendar date while a zoned deadline retains its instant', () => {
+  const plannedDate = '2026-06-12';
+  const dueAt = '2026-06-13T06:00:00.000Z';
+  const timing = 'June 12, 2026 at 23:00 (America/Los_Angeles).';
+  for (const [quote, expected] of [
+    [`I'll Review retention policy on ${timing}`, { plannedDate }],
+    [`Review retention policy is due ${timing}`, { dueAt }],
+  ] as const) {
+    expect(
+      run(
+        quote,
+        { plannedDate, dueAt },
+        [support('plannedDate', quote, plannedDate), support('dueAt', quote, dueAt)],
+        { timezone: 'Europe/Helsinki' },
+      )[0]?.items[0]?.proposedPayload,
+    ).toEqual(expected);
   }
 });
 
@@ -3429,4 +3921,196 @@ test('same-task pronoun deadline continuations survive a conjunction', () => {
   expect(
     run(other, { dueAt }, [support('dueAt', other, dueAt)])[0]?.items[0]?.proposedPayload.dueAt,
   ).toBeUndefined();
+});
+
+const problemReportId = '22222222-2222-4222-8222-222222222222';
+const rescheduleId = '33333333-3333-4333-8333-333333333333';
+const loginTaskId = '44444444-4444-4444-8444-444444444444';
+const otherTaskId = '55555555-5555-4555-8555-555555555555';
+const problemReport = 'The login page is broken.';
+const loginTask = { id: loginTaskId, type: 'task', name: 'Fix broken login page' };
+const fridayCommitment = "I'll investigate the login page on Friday.";
+const shortFridayCommitment = "I'll investigate it on Friday.";
+
+function groundLoginPlan(input: {
+  friday?: string;
+  correction?: string;
+  correctionQuote?: string;
+  omitContext?: boolean;
+  date?: string;
+  otherTask?: { id: string; type: string; name: string };
+  reportTaskId?: string;
+  priorPlanTaskIds?: string[];
+  targetId?: string;
+}) {
+  const friday = input.friday ?? fridayCommitment;
+  const targetId = input.targetId ?? loginTaskId;
+  const reportTaskId = input.reportTaskId ?? loginTaskId;
+  const alternate = input.correction;
+  const date = input.date ?? (alternate ? '2026-11-30' : '2026-11-27');
+  const sources = [
+    { id: problemReportId, text: problemReport, occurredAt: new Date('2026-11-23T15:00:00Z') },
+    { id: event, text: friday, occurredAt: new Date('2026-11-23T15:10:00Z'), authorUserId: alice },
+    ...(alternate
+      ? [
+          {
+            id: rescheduleId,
+            text: alternate,
+            occurredAt: new Date('2026-11-24T03:00:00Z'),
+            authorUserId: alice,
+          },
+        ]
+      : []),
+  ];
+  const context = input.omitContext
+    ? undefined
+    : alternate
+      ? { rawEventId: event, quote: friday }
+      : input.friday
+        ? { rawEventId: problemReportId, quote: problemReport }
+        : undefined;
+  const quote = input.correctionQuote ?? alternate ?? friday;
+  const currentId = alternate ? rescheduleId : event;
+  const plans: NonNullable<
+    Parameters<typeof groundCommunicationBundles>[0]['verifiedPlannedDates']
+  > = new Map();
+  const [result] = groundCommunicationBundles({
+    bundles: [
+      {
+        title: loginTask.name,
+        confidence: 'high',
+        items: [
+          {
+            title: loginTask.name,
+            auditId: 'login-plan',
+            targetKind: 'task',
+            operation: 'update',
+            targetId,
+            proposedPayload: {
+              ...(!alternate ? { assigneeUserId: alice } : {}),
+              plannedDate: date,
+            },
+            grounding: [
+              ...(!alternate
+                ? [
+                    {
+                      ...support('assignee', quote, alice, loginTask.name),
+                      rawEventId: currentId,
+                      context,
+                    },
+                  ]
+                : []),
+              {
+                ...support('plannedDate', quote, date, loginTask.name),
+                rawEventId: currentId,
+                context,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    packet: sources.map(({ text }) => text).join('\n'),
+    sources,
+    source: 'slack',
+    timezone: 'UTC',
+    members: [{ userId: alice, name: 'Alice', email: 'alice@example.test' }],
+    hubs: [],
+    objects: [loginTask, ...(input.otherTask ? [input.otherTask] : [])],
+    conversationEventIds: sources.map(({ id }) => id),
+    conversationTaskEvidence: {
+      reports: [{ taskId: reportTaskId, rawEventId: problemReportId }],
+      plans: (input.priorPlanTaskIds ?? (alternate ? [loginTaskId] : [])).map((taskId) => ({
+        taskId,
+        rawEventId: event,
+      })),
+    },
+    verifiedPlannedDates: plans,
+  });
+  return { items: result?.items, proof: plans.get('login-plan') };
+}
+
+test('grounds short and contextual work plans against the uniquely accepted problem report', () => {
+  for (const friday of [undefined, shortFridayCommitment]) {
+    const { items, proof } = groundLoginPlan({ ...(friday ? { friday } : {}) });
+    expect(items?.[0]?.proposedPayload).toEqual({
+      assigneeUserId: alice,
+      plannedDate: '2026-11-27',
+    });
+    expect(proof).toMatchObject({ rawEventId: event, identityRawEventId: problemReportId });
+  }
+  for (const friday of [fridayCommitment, shortFridayCommitment]) {
+    const correction = groundLoginPlan({ friday, correction: 'Actually, Monday.' });
+    expect(correction.items?.[0]?.proposedPayload).toEqual({ plannedDate: '2026-11-30' });
+    expect(correction.proof).toMatchObject({
+      rawEventId: rescheduleId,
+      contextRawEventId: event,
+      identityRawEventId: problemReportId,
+    });
+  }
+});
+
+test('recovers omitted correction context from the immediately preceding accepted plan', () => {
+  for (const friday of [fridayCommitment, shortFridayCommitment]) {
+    const correction = groundLoginPlan({
+      friday,
+      correction: 'Actually, Monday.',
+      correctionQuote: 'Monday',
+      omitContext: true,
+    });
+    expect(correction.items?.[0]?.proposedPayload).toEqual({ plannedDate: '2026-11-30' });
+    expect(correction.proof).toMatchObject({
+      rawEventId: rescheduleId,
+      contextRawEventId: event,
+      identityRawEventId: problemReportId,
+    });
+  }
+});
+
+test('rejects an elliptical correction without a uniquely accepted prior plan for that task', () => {
+  for (const priorPlanTaskIds of [[], [otherTaskId], [loginTaskId, otherTaskId]]) {
+    for (const omitContext of [true, false]) {
+      expect(
+        groundLoginPlan({ correction: 'Actually, Monday.', priorPlanTaskIds, omitContext }),
+      ).toEqual({ items: [], proof: undefined });
+    }
+  }
+});
+
+test('keeps a short report reference unresolved when two task identities are plausible', () => {
+  expect(
+    groundLoginPlan({
+      otherTask: { id: otherTaskId, type: 'task', name: 'Fix broken customer login page' },
+    }),
+  ).toEqual({ items: [], proof: undefined });
+});
+
+test('cannot ground a short reference using an unrelated or unrecognized target ID', () => {
+  const unrelated = { id: otherTaskId, type: 'task', name: 'Prepare quarterly audit' };
+  for (const targetId of [unrelated.id, rescheduleId]) {
+    expect(groundLoginPlan({ otherTask: unrelated, targetId })).toEqual({
+      items: [],
+      proof: undefined,
+    });
+  }
+  expect(groundLoginPlan({ reportTaskId: unrelated.id, otherTask: unrelated })).toEqual({
+    items: [],
+    proof: undefined,
+  });
+});
+
+test('grounds the written date in a reschedule and rejects a contradicted weekday', () => {
+  const day = '2026-12-02';
+  expect(
+    groundLoginPlan({
+      correction: 'I am moving my investigation of the login page to Wednesday, December 2.',
+      date: day,
+    }).items?.[0]?.proposedPayload,
+  ).toEqual({ plannedDate: day });
+  expect(
+    groundLoginPlan({
+      correction: 'I am moving my investigation of the login page to Friday, December 2.',
+      date: day,
+    }),
+  ).toEqual({ items: [], proof: undefined });
 });

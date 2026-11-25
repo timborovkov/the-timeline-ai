@@ -7,12 +7,13 @@ import {
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   ASK_AI_RESERVATION_TTL_MS,
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
+  OVERAGE_RATES,
   RECALL_RESERVATION_TTL_MS,
   customerAiChargeCentsFromOpenRouterUsd,
   recallChargeCents,
+  type BillingMeterId,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
-import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import type { FreeAllowanceRemaining } from '#src/billing/status.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -27,25 +28,34 @@ export type BillingReserveFailureCode =
 
 export type AskBillingError = BillingReserveFailureCode;
 
+export type BillingReservationInput = {
+  operationId: string;
+  ttlMs?: number;
+  metadata?: Record<string, unknown>;
+} & (
+  | {
+      meterId: BillingMeterId;
+      reservedNativeUnits: number;
+      reservedChargeCents: number;
+      fitRecallToBudget?: never;
+    }
+  | {
+      meterId: 'recall_minutes';
+      fitRecallToBudget: true;
+      reservedNativeUnits?: never;
+      reservedChargeCents?: never;
+    }
+);
+
 /** Minimal billing surface used by Ask / Recall admission helpers. */
 export interface BillingAdmissionScope {
-  getAccount(): Promise<{
-    planId: BillingPlanId;
-    billingState?: string;
-    spendCapCents?: number;
-    arrangement?: 'standard' | 'comped' | null;
-    compExpiresAt?: Date | null;
-  }>;
-  getDashboard(): Promise<{ freeRemaining: FreeAllowanceRemaining }>;
-  reserve(input: {
-    operationId: string;
-    meterId: 'ai' | 'recall_minutes';
-    reservedNativeUnits: number;
-    reservedChargeCents: number;
-    ttlMs?: number;
-    metadata?: Record<string, unknown>;
-  }): Promise<
-    | { ok: true; reservation: unknown; reused: boolean; alreadySettled?: boolean }
+  reserve(input: BillingReservationInput): Promise<
+    | {
+        ok: true;
+        reservation: { reservedNativeUnits: string };
+        reused: boolean;
+        alreadySettled?: boolean;
+      }
     | { ok: false; code: BillingReserveFailureCode }
   >;
   settle(input: {
@@ -60,6 +70,8 @@ export interface BillingAdmissionScope {
     source?: string;
     deliverySurface?: string;
     metadata?: Record<string, unknown>;
+    usageAt?: Date;
+    recallEndedAt?: Date;
   }): Promise<{ ok: true; duplicate: boolean; ledger?: unknown }>;
   release(operationId: string): Promise<{
     ok: true;
@@ -67,11 +79,6 @@ export interface BillingAdmissionScope {
     alreadyFinal?: boolean;
   }>;
   patchReservationMetadata(operationId: string, metadata: Record<string, unknown>): Promise<void>;
-  /** In-flight reserved units for one meter. `exceptOperationId` is this call's own lock. */
-  reservedNativeUnits(
-    meterId: 'ai' | 'recall_minutes',
-    exceptOperationId?: string,
-  ): Promise<number>;
 }
 
 export function askOperationId(deliverySurface: string, turnId: string = randomUUID()): string {
@@ -102,6 +109,7 @@ export function recallAttemptOperationId(meetingId: string, attemptKey: string):
 export function pendingRecallSettlementPatch(input: {
   meetingId: string;
   minutes: number;
+  startedAt?: Date | null;
   endedAt: Date;
   source: string;
 }): Record<string, unknown> {
@@ -109,6 +117,7 @@ export function pendingRecallSettlementPatch(input: {
     pending_settlement: true,
     pending_meter: 'recall_minutes',
     pending_recall_minutes: input.minutes,
+    ...(input.startedAt ? { pending_started_at: input.startedAt.toISOString() } : {}),
     pending_ended_at: input.endedAt.toISOString(),
     pending_source: input.source,
     meeting_id: input.meetingId,
@@ -124,11 +133,11 @@ export function askBillingUserMessage(error: AskBillingError): string {
     case 'security_blocked':
       return 'This workspace cannot run paid AI right now. Contact support if that looks wrong.';
     case 'free_allowance_reached':
-      return 'There is not enough unreserved Free AI allowance to start this Ask. Other jobs may temporarily reserve allowance. Retry after they finish, check Usage for the reset date, or ask an admin to enable pay as you go in Billing.';
+      return 'There is not enough Free Included usage to answer this question. AI processing and meeting capture share the allowance. Retry after other work finishes or the allowance resets, or ask a workspace admin about upgrading to Team.';
     case 'usage_limit_reached':
-      return 'Usage balance is too low for this Ask. Top up or raise the spend cap in Billing.';
+      return 'This workspace cannot start another answer right now. Ask a workspace admin to check Included usage and billing status.';
     case 'spend_cap_reached':
-      return 'This workspace hit its spend cap. Raise the cap in Billing to continue Ask.';
+      return 'This workspace has insufficient Included usage for another answer within its additional-spending limit. Retry after the allowance resets, or ask a workspace admin about enabling capped additional spending or raising the cap.';
     case 'costly_worker_busy':
       return 'This workspace is running other billed jobs. Retry shortly.';
   }
@@ -139,11 +148,11 @@ export function recallBillingUserMessage(code: BillingReserveFailureCode): strin
     case 'security_blocked':
       return 'This workspace cannot start meeting notetakers right now.';
     case 'free_allowance_reached':
-      return 'Free meeting minutes are used up for this period. Add a payment method in Billing (or ask an admin) to continue.';
+      return 'There is not enough Free Included usage to start a meeting notetaker. Meeting capture and AI processing share the allowance. Retry after other work finishes or the allowance resets, or ask a workspace admin about upgrading to Team.';
     case 'usage_limit_reached':
-      return 'Usage balance is too low to start a meeting notetaker. Top up or raise the spend cap in Billing.';
+      return 'This workspace cannot start a meeting notetaker right now. Ask a workspace admin to check Included usage and billing status.';
     case 'spend_cap_reached':
-      return 'This workspace hit its spend cap. Raise the cap in Billing before inviting a notetaker.';
+      return 'This workspace has insufficient Included usage to start a meeting notetaker within its additional-spending limit. Retry after the allowance resets, or ask a workspace admin about enabling capped additional spending or raising the cap.';
     case 'costly_worker_busy':
       return 'This workspace is running other billed jobs. Retry shortly.';
   }
@@ -265,9 +274,7 @@ export function recallBillableMinutes(input: {
   chunkEndMs?: number | null;
   reservedMinutes?: number | null;
 }): number {
-  const joinStartedAt =
-    input.joinStartedAt instanceof Date ? input.joinStartedAt : parseIsoDate(input.joinStartedAt);
-  const start = joinStartedAt ?? input.startedAt ?? null;
+  const start = recallBillingStart(input);
   const end = input.endedAt ?? null;
   let minutes = 0;
   if (start && end && end.getTime() > start.getTime()) {
@@ -287,7 +294,11 @@ export function meetingReserveMinutesForPlan(
 ): number {
   const maxDuration = MEETING_MAX_DURATION_MINUTES_BY_PLAN[planId];
   if (planId === 'free') {
-    return Math.min(maxDuration, Math.max(0, freeRemaining.recallMinutes));
+    const minutes =
+      freeRemaining.includedUsageCents === undefined
+        ? freeRemaining.recallMinutes
+        : Math.floor(freeRemaining.includedUsageCents / OVERAGE_RATES.recallCentsPerMinute);
+    return Math.min(maxDuration, Math.max(0, minutes));
   }
   return maxDuration;
 }
@@ -300,49 +311,35 @@ export async function reserveRecallMeetingMinutes(
   | { ok: false; code: BillingReserveFailureCode }
 > {
   const operationId = recallOperationId(input.meetingId);
-  const [account, dashboard, pendingRecallMinutes] = await Promise.all([
-    billing.getAccount(),
-    billing.getDashboard(),
-    billing.reservedNativeUnits('recall_minutes', operationId),
-  ]);
-  const reservedMinutes = meetingReserveMinutesForPlan(
-    effectiveBillingPlanId({
-      planId: account.planId,
-      billingState: account.billingState ?? 'free',
-      spendCapCents: account.spendCapCents ?? 0,
-      ...(account.arrangement !== undefined ? { arrangement: account.arrangement } : {}),
-      ...(account.compExpiresAt !== undefined ? { compExpiresAt: account.compExpiresAt } : {}),
-    }),
-    {
-      ...dashboard.freeRemaining,
-      recallMinutes: Math.max(0, dashboard.freeRemaining.recallMinutes - pendingRecallMinutes),
-    },
-  );
-  if (reservedMinutes <= 0) {
-    return { ok: false, code: 'free_allowance_reached' };
-  }
-  const reservedChargeCents = recallChargeCents(reservedMinutes);
   const reserved = await billing.reserve({
     operationId,
     meterId: 'recall_minutes',
-    reservedNativeUnits: reservedMinutes,
-    reservedChargeCents,
+    fitRecallToBudget: true,
     ttlMs: RECALL_RESERVATION_TTL_MS,
     metadata: {
       operation_class: 'meeting_bot',
       meeting_id: input.meetingId,
-      reserved_minutes: reservedMinutes,
     },
   });
   if (!reserved.ok) return reserved;
+  const reservedMinutes = Number(reserved.reservation.reservedNativeUnits);
   return { ok: true, operationId, reservedMinutes };
 }
 
 export async function settleRecallMeetingMinutes(
   billing: BillingAdmissionScope,
-  input: { meetingId: string; minutes: number; source?: string; operationId?: string },
+  input: {
+    meetingId: string;
+    minutes: number;
+    source?: string;
+    operationId?: string;
+    startedAt?: Date | null;
+    endedAt?: Date | null;
+    metadata?: unknown;
+  },
 ): Promise<void> {
   const minutes = Math.max(0, Math.trunc(input.minutes));
+  const startedAt = recallBillingStart(input);
   const customerChargeCents = recallChargeCents(minutes);
   await billing.settle({
     operationId: input.operationId ?? recallOperationId(input.meetingId),
@@ -353,6 +350,8 @@ export async function settleRecallMeetingMinutes(
     provider: 'recall',
     source: input.source ?? 'meeting_finalize',
     metadata: { meeting_id: input.meetingId },
+    ...(startedAt ? { usageAt: startedAt } : {}),
+    ...(input.endedAt ? { recallEndedAt: input.endedAt } : {}),
   });
 }
 
@@ -373,6 +372,19 @@ function joinStartedAtFromMetadata(metadata: unknown): string | null {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : null;
 }
 
+function recallBillingStart(input: {
+  joinStartedAt?: Date | string | null;
+  startedAt?: Date | null;
+  metadata?: unknown;
+}): Date | null {
+  const joinStartedAt = input.joinStartedAt ?? joinStartedAtFromMetadata(input.metadata);
+  return (
+    (joinStartedAt instanceof Date ? joinStartedAt : parseIsoDate(joinStartedAt)) ??
+    input.startedAt ??
+    null
+  );
+}
+
 export function recallBillableMinutesFromRecord(input: {
   startedAt?: Date | null;
   endedAt?: Date | null;
@@ -381,8 +393,7 @@ export function recallBillableMinutesFromRecord(input: {
   reservedMinutes?: number | null;
 }): number {
   return recallBillableMinutes({
-    joinStartedAt: input.joinStartedAt ?? joinStartedAtFromMetadata(input.metadata),
-    startedAt: input.startedAt ?? null,
+    startedAt: recallBillingStart(input),
     endedAt: input.endedAt ?? null,
     reservedMinutes: input.reservedMinutes ?? reservedMinutesFromMetadata(input.metadata),
   });
@@ -417,6 +428,7 @@ export async function stampPendingRecallSettlement(
     pendingRecallSettlementPatch({
       meetingId: input.meetingId,
       minutes,
+      startedAt: recallBillingStart(input),
       endedAt,
       source: input.source,
     }),
@@ -432,7 +444,9 @@ export async function stampReservedRecallSettlement(
     operationId: string;
     meetingId: string;
     minutes: number;
+    startedAt?: Date | null;
     endedAt: Date;
+    metadata?: unknown;
     source: string;
   },
 ): Promise<boolean> {
@@ -441,6 +455,7 @@ export async function stampReservedRecallSettlement(
     pendingRecallSettlementPatch({
       meetingId: input.meetingId,
       minutes: input.minutes,
+      startedAt: recallBillingStart(input),
       endedAt: input.endedAt,
       source: input.source,
     }),
@@ -473,7 +488,9 @@ export async function reassignReservedRecallAttempt(
     meetingId: string;
     attemptKey: string;
     minutes: number;
+    startedAt?: Date | null;
     endedAt: Date;
+    metadata?: unknown;
     source: string;
   },
 ): Promise<{ operationId: string; reassigned: boolean }> {
@@ -516,6 +533,7 @@ export async function reassignReservedRecallAttempt(
     ...pendingRecallSettlementPatch({
       meetingId: input.meetingId,
       minutes: input.minutes,
+      startedAt: recallBillingStart(input),
       endedAt: input.endedAt,
       source: input.source,
     }),
@@ -569,19 +587,24 @@ export async function settleElapsedRecallMeetingMinutes(
   }
   const endedAt = input.endedAt ?? new Date();
   const operationId = input.operationId ?? recallOperationId(input.meetingId);
+  const startedAt = recallBillingStart(input);
+  const source = input.source ?? 'meeting_no_show';
   await billing.patchReservationMetadata(
     operationId,
     pendingRecallSettlementPatch({
       meetingId: input.meetingId,
       minutes,
+      startedAt,
       endedAt,
-      source: input.source ?? 'meeting_no_show',
+      source,
     }),
   );
   await settleRecallMeetingMinutes(billing, {
     meetingId: input.meetingId,
     minutes,
-    source: input.source ?? 'meeting_no_show',
+    startedAt,
+    endedAt,
+    source,
     operationId,
   });
 }

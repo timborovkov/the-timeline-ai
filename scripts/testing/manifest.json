@@ -1,4 +1,10 @@
 {
+  "apps/web/scripts/standalone-runtime.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/guest-access/scope.test.ts": {
+    "group": "integration"
+  },
   "apps/web/scripts/check-public-origin.test.ts": {
     "group": "unit"
   },
@@ -536,6 +542,9 @@
   "apps/web/src/app/app/timeline/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/app/updates/actions.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/app/work/page.test.tsx": {
     "group": "unit"
   },
@@ -601,6 +610,9 @@
   },
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/sign-in/continue/route.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/app/sign-in/page.test.tsx": {
     "group": "unit"
@@ -839,7 +851,7 @@
   "apps/web/src/components/home/capture-dialog.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/components/home/daily-digest-block.test.tsx": {
+  "apps/web/src/components/home/workspace-brief.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/home/digest-history-table.test.tsx": {
@@ -982,12 +994,6 @@
   },
   "apps/web/src/components/marketing/integrations/works-with-public-documents.test.ts": {
     "group": "unit"
-  },
-  "apps/web/src/components/marketing/pricing-blocks.test.tsx": {
-    "group": "dom"
-  },
-  "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
-    "group": "dom"
   },
   "apps/web/src/components/marketing/product-screenshot.test.tsx": {
     "group": "dom"
@@ -1260,10 +1266,16 @@
   "apps/web/src/lib/app-metadata.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/app-region.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/app-scroll.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/approval-preview.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/guest-access-errors.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/auth-continuation.test.ts": {
@@ -1347,6 +1359,9 @@
   "apps/web/src/lib/form-action-toast.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/lib/github-login-link.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/google-drive-limited-use.test.ts": {
     "group": "unit"
   },
@@ -1426,9 +1441,6 @@
     "group": "unit"
   },
   "apps/web/src/lib/plan-intent-prompt.test.ts": {
-    "group": "unit"
-  },
-  "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/processing-health.test.ts": {
@@ -2245,6 +2257,9 @@
   "packages/shared/src/messaging/digest.generate.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/messaging/digest-window.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/messaging/digest.integration.test.ts": {
     "group": "integration"
   },
@@ -2608,5 +2623,11 @@
   },
   "apps/worker/src/workers/communication-audit.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/billing/guest-membership.test.ts": {
+    "group": "integration"
+  },
+  "apps/web/src/components/guest-record-details.test.tsx": {
+    "group": "dom"
   }
 }

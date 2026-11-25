@@ -45,11 +45,17 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { chatViewLabel } from '@/lib/chat-view';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import {
+  displayText,
+  formatDisplayDateParts,
+  formatDisplayDateTime,
+  formatDisplayTime,
+} from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber, type RegionalFormat } from '@/lib/regional-format';
 import { authoredCaptureFromEvent } from '@/lib/source-original';
 import { statusLabel } from '@/lib/status-labels';
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
@@ -133,10 +139,6 @@ function eventDate(input: Date | string): Date {
   return new Date(input);
 }
 
-function formatTimestamp(input: string, timezone: string): string {
-  return formatDisplayDateTime(eventDate(input), { timezone });
-}
-
 function formatMetadataValue(value: unknown, timezone: string): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return displayText(value, { timezone });
@@ -167,14 +169,16 @@ function friendlyMeta(meta: Record<string, unknown>, key: string, timezone: stri
   return value.length > 0 ? value : null;
 }
 
-function formatVisibilitySummary(events: TimelineEvent[]): string {
+function formatVisibilitySummary(events: TimelineEvent[], locale: string): string {
   const counts = new Map<string, number>();
   for (const event of events) {
     counts.set(event.visibility, (counts.get(event.visibility) ?? 0) + 1);
   }
   return [...counts.entries()]
     .map(([visibility, count]) =>
-      count === events.length ? visibility : `${visibility} x ${count}`,
+      count === events.length
+        ? visibility
+        : `${visibility} x ${formatDisplayNumber(count, locale)}`,
     )
     .join(' · ');
 }
@@ -352,10 +356,6 @@ function evidenceStrengthLabel(
 ): string {
   if (evidence.authoritative) return 'status source';
   return titleCase(evidence.strength);
-}
-
-function evidenceCountLabel(count: number): string {
-  return `${count} signal${count === 1 ? '' : 's'}`;
 }
 
 function shouldCapSourceEvidenceBody(body: string): boolean {
@@ -603,11 +603,23 @@ function subscribeToDayChanges(checkLabel: () => void): () => void {
 }
 
 function TimelineDayLabel({ moment, timezone }: { moment: TimelineMoment; timezone: string }) {
+  const { locale } = useRegionalFormat();
   const occurredAt = moment.rawEvents[0]?.occurredAt;
-  return useSyncExternalStore(
+  const label = useSyncExternalStore(
     subscribeToDayChanges,
     () => (occurredAt ? formatDateSection(occurredAt, new Date(), timezone) : moment.dateLabel),
     () => moment.dateLabel,
+  );
+  if (locale === 'en-US' || label === 'Today' || label === 'Yesterday') return label;
+  return formatDisplayDateParts(
+    moment.dateKey,
+    { timezone, locale },
+    {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: /\b\d{4}\b/.test(label) ? 'numeric' : undefined,
+    },
   );
 }
 
@@ -771,6 +783,7 @@ function InspectorAttachments({
   hiddenRawEventCount: number;
   setVisibleRawEventCount: Dispatch<SetStateAction<number>>;
 }) {
+  const region = useRegionalFormat();
   return (
     <section>
       <h3 className="mb-2 text-sm font-semibold text-fg">
@@ -785,7 +798,7 @@ function InspectorAttachments({
                   dateTime={event.occurredAt}
                   className="shrink-0 font-mono text-xs text-fg-dim"
                 >
-                  {formatTimestamp(event.occurredAt, timezone)}
+                  {formatDisplayDateTime(event.occurredAt, region)}
                 </time>
                 <span className="min-w-0 truncate text-fg-muted">
                   {rawEventBody(event, timezone)}
@@ -828,7 +841,7 @@ function InspectorAttachments({
             setVisibleRawEventCount((count) => count + INSPECTOR_RAW_EVENT_LIMIT);
           }}
         >
-          Show {hiddenRawEventCount} older evidence item
+          Show {formatDisplayNumber(hiddenRawEventCount, region.locale)} older evidence item
           {hiddenRawEventCount === 1 ? '' : 's'}
         </Button>
       ) : null}
@@ -842,6 +855,7 @@ function InspectorTechnicalDetails({
   moment: TimelineMoment;
   timezone: string;
 }) {
+  const { locale } = useRegionalFormat();
   const metadata = inspectorSourceDetailEntries(moment, timezone);
   const evidenceIds = moment.rawEvents.map((event) => event.id).join(', ');
   return (
@@ -850,7 +864,7 @@ function InspectorTechnicalDetails({
         { label: 'Moment ID', value: moment.id, copyValue: moment.id },
         { label: 'Event class', value: moment.eventClass },
         { label: 'Evidence IDs', value: evidenceIds, copyValue: evidenceIds },
-        { label: 'Visibility', value: formatVisibilitySummary(moment.rawEvents) },
+        { label: 'Visibility', value: formatVisibilitySummary(moment.rawEvents, locale) },
         ...metadata.map(([label, value]) => ({ label, value, copyValue: value })),
       ]}
     />
@@ -864,7 +878,10 @@ function ArtifactEvidenceBundle({
   cluster: TimelineArtifactCluster;
   timezone: string;
 }) {
+  const region = useRegionalFormat();
   const statusSources = cluster.relatedEvidence.filter((evidence) => evidence.authoritative).length;
+  const evidenceCount = cluster.relatedEvidence.length;
+  const evidenceCountLabel = formatDisplayNumber(evidenceCount, region.locale);
   return (
     <div className="space-y-3 py-2">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -873,20 +890,20 @@ function ArtifactEvidenceBundle({
             {cluster.canonicalName}
           </p>
           <p className="mt-1 text-xs text-fg-dim">
-            {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} ·{' '}
-            {evidenceCountLabel(cluster.relatedEvidence.length)}
+            {titleCase(cluster.artifactType)} · {titleCase(cluster.status)} · {evidenceCountLabel}{' '}
+            signal{evidenceCount === 1 ? '' : 's'}
           </p>
         </div>
         {statusSources > 0 ? (
           <span className="shrink-0 rounded-sm border border-signal/30 bg-signal-soft px-1.5 py-0.5 text-xs text-signal">
-            {statusSources} status source{statusSources === 1 ? '' : 's'}
+            {formatDisplayNumber(statusSources, region.locale)} status source
+            {statusSources === 1 ? '' : 's'}
           </span>
         ) : null}
       </div>
       <details>
         <summary className="cursor-pointer text-xs font-medium text-fg-muted">
-          {cluster.relatedEvidence.length} related source
-          {cluster.relatedEvidence.length === 1 ? '' : 's'}
+          {evidenceCountLabel} related source{evidenceCount === 1 ? '' : 's'}
         </summary>
         <ol className="mt-3 space-y-3">
           {cluster.relatedEvidence.map((evidence, index) => {
@@ -915,7 +932,7 @@ function ArtifactEvidenceBundle({
                   <span>{evidenceStrengthLabel(evidence)}</span>
                   {evidence.occurredAt ? (
                     <time data-visual-dynamic="timeline-timestamp" dateTime={evidence.occurredAt}>
-                      {formatTimestamp(evidence.occurredAt, timezone)}
+                      {formatDisplayDateTime(evidence.occurredAt, region)}
                     </time>
                   ) : null}
                 </div>
@@ -952,6 +969,7 @@ function SourceEvidenceCard({
   capturedFiles: TimelineCapturedFile[];
   timezone: string;
 }) {
+  const region = useRegionalFormat();
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const [savedVisibility, setSavedVisibility] = useState<SavedEventVisibility>({
     visibility: event.visibility,
@@ -967,7 +985,7 @@ function SourceEvidenceCard({
     actorLabel,
     formatSourceLabel(event.source),
     context,
-    formatTimestamp(event.occurredAt, timezone),
+    formatDisplayDateTime(event.occurredAt, region),
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
@@ -985,7 +1003,7 @@ function SourceEvidenceCard({
             dateTime={event.occurredAt}
             className="font-mono text-[11px]"
           >
-            {formatTimestamp(event.occurredAt, timezone)}
+            {formatDisplayDateTime(event.occurredAt, region)}
           </time>
           {event.visibility === 'private' ? <span>Private</span> : null}
         </div>
@@ -1074,25 +1092,29 @@ function SourceEvidenceCard({
         canRemove={canRemove}
         members={members}
         onVisibilitySaved={setSavedVisibility}
-        timezone={timezone}
+        region={region}
       />
     </li>
   );
 }
 
-function visibilityLabel(value: SavedEventVisibility): string {
+function visibilityLabel(value: SavedEventVisibility, locale: string): string {
   if (value.visibility === 'private') return 'Private';
   if (value.visibility === 'specific_users') {
-    return `Specific people · ${value.visibilityUserIds.length}`;
+    return `Specific people · ${formatDisplayNumber(value.visibilityUserIds.length, locale)}`;
   }
   return 'Team visibility';
 }
 
-function evidenceTargetLabel(event: TimelineEvent, actorLabel: string, timezone: string): string {
+function evidenceTargetLabel(
+  event: TimelineEvent,
+  actorLabel: string,
+  region: RegionalFormat,
+): string {
   const firstLine = event.contentText?.split(/\r?\n/, 1)[0]?.trim();
   const subject = firstLine?.length ? firstLine : 'Evidence item';
   const compactSubject = subject.length > 60 ? `${subject.slice(0, 57)}…` : subject;
-  return `${formatSourceLabel(event.source)} evidence “${compactSubject}” from ${actorLabel} at ${formatTimestamp(event.occurredAt, timezone)}`;
+  return `${formatSourceLabel(event.source)} evidence “${compactSubject}” from ${actorLabel} at ${formatDisplayDateTime(event.occurredAt, region)}`;
 }
 
 function SourceEvidenceActions({
@@ -1104,7 +1126,7 @@ function SourceEvidenceActions({
   canRemove,
   members,
   onVisibilitySaved,
-  timezone,
+  region,
 }: {
   event: TimelineEvent;
   actorLabel: string;
@@ -1114,9 +1136,9 @@ function SourceEvidenceActions({
   canRemove: boolean;
   members: { id: string; label: string }[];
   onVisibilitySaved: (value: SavedEventVisibility) => void;
-  timezone: string;
+  region: RegionalFormat;
 }) {
-  const targetLabel = evidenceTargetLabel(event, actorLabel, timezone);
+  const targetLabel = evidenceTargetLabel(event, actorLabel, region);
   const hasActions = [Boolean(event.contentAudioUrl), visibilityEditable, canRemove].some(Boolean);
   if (!hasActions) return null;
 
@@ -1146,7 +1168,7 @@ function SourceEvidenceActions({
       {visibilityEditable ? (
         <details className="min-w-0 basis-full text-xs">
           <summary className="w-fit cursor-pointer rounded-sm px-1 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/30">
-            {visibilityLabel(visibility)}
+            {visibilityLabel(visibility, region.locale)}
           </summary>
           <EventVisibilityForm
             eventId={event.id}
@@ -1327,6 +1349,33 @@ function compactTimelineMomentHref(moment: TimelineMoment): string {
   return `/app/timeline?${params.toString()}#${moment.anchorId}`;
 }
 
+function timelineMomentTimeLabel(moment: TimelineMoment, region: RegionalFormat): string {
+  const firstTime = moment.rawEvents.at(-1)?.occurredAt;
+  const lastTime = moment.rawEvents[0]?.occurredAt;
+  const formatTime = (value: string) => {
+    const localDay = formatDisplayDateParts(
+      value,
+      { ...region, locale: 'sv-SE' },
+      {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      },
+    );
+    return localDay === moment.dateKey
+      ? formatDisplayTime(value, region)
+      : formatDisplayDateParts(value, region, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+  };
+  const startTime = firstTime ? formatTime(firstTime) : '';
+  const endTime = lastTime === firstTime ? startTime : lastTime ? formatTime(lastTime) : startTime;
+  return startTime === endTime ? startTime : `${startTime}–${endTime}`;
+}
+
 function TimelineMomentRow({
   moment,
   audioUrlMap,
@@ -1350,6 +1399,9 @@ function TimelineMomentRow({
   pinned: boolean;
   timezone: string;
 }) {
+  const region = useRegionalFormat();
+  const regionalTimeLabel = timelineMomentTimeLabel(moment, region);
+
   const inspector = useInspector();
   const {
     selected,
@@ -1381,9 +1433,9 @@ function TimelineMomentRow({
         >
           <span
             data-visual-dynamic="timeline-time"
-            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:w-[4.75rem] sm:text-[11px]"
+            className="shrink-0 font-mono text-xs tabular-nums text-fg-dim sm:min-w-[4.75rem] sm:text-[11px]"
           >
-            {moment.timeLabel}
+            {regionalTimeLabel}
           </span>
           <span className="max-w-[8rem] shrink-0 truncate text-[11px] text-fg-muted">
             {moment.sourceLabel}
@@ -1436,7 +1488,7 @@ function TimelineMomentRow({
           data-visual-dynamic="timeline-time"
           className="pt-0.5 font-mono text-[11px] tabular-nums leading-5 text-fg-dim"
         >
-          {moment.timeLabel}
+          {regionalTimeLabel}
         </time>
         <KindIcon
           aria-hidden="true"
@@ -1445,7 +1497,7 @@ function TimelineMomentRow({
         <div className="min-w-0 pr-8">
           <button
             type="button"
-            aria-label={[title, previewText, moment.timeLabel, cue].filter(Boolean).join(' · ')}
+            aria-label={[title, previewText, regionalTimeLabel, cue].filter(Boolean).join(' · ')}
             onClick={() => {
               inspector.show(
                 momentInspectorContent({

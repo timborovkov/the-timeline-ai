@@ -432,7 +432,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
         href: '/app/team?section=billing#change-plan',
         cta: 'Set up billing',
         description:
-          'An owner or admin can add a payment method with Pay as you go, or choose another plan. Eligible teams can continue on Free.',
+          'Eligible workspaces can continue on Free without a card. An owner or admin can upgrade to Team in Billing.',
       };
     case 'connect_agent':
       return {

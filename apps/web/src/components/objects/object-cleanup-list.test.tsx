@@ -182,6 +182,7 @@ await vi.mock(
 const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
 
@@ -240,6 +241,25 @@ describe('ObjectCleanupList', () => {
     );
 
     expect(screen.getAllByText('No due date')).toHaveLength(1);
+  });
+
+  it('prefills the workspace day on object list deadlines', async () => {
+    const user = userEvent.setup();
+    const dueAt = new Date('2026-11-30T22:15:00.000Z');
+    render(
+      <WorkspaceTimezoneProvider timezone="Europe/Helsinki">
+        <ObjectCleanupList
+          rows={[object({ canonicalName: 'Cross-midnight task', status: 'doing', dueAt })]}
+          typeLabels={{ task: 'Task' }}
+        />
+      </WorkspaceTimezoneProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Due date for Cross-midnight task' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(fakes.updateObjectAction).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Due date')).toBeNull();
   });
 
   it('opens a row preview without losing filters and exposes a shareable title link', async () => {

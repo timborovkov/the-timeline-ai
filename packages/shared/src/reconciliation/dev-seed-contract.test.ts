@@ -45,6 +45,8 @@ function shouldScanSourceFile(path: string): boolean {
     '/packages/shared/src/evals/',
     // Disposable erasure fixtures are not production event writers.
     '/scripts/testing/team-deletion-rehearsal.ts',
+    // Restore drills seed newly created local containers, never application stores.
+    '/scripts/restore-drill.ts',
   ].some((excluded) => path.includes(excluded));
 }
 

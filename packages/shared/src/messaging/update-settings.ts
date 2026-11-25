@@ -49,6 +49,7 @@ export const updateSettingsSchema = z
     time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     channel: z.enum(['workspace', 'email', 'telegram', 'slack']),
     detail: z.enum(['brief', 'detailed']),
+    includeContent: z.boolean().default(false),
     lookbackDays: z.number().int().min(1).max(14),
     upcomingDays: z.number().int().min(1).max(14),
     sections: z
@@ -71,6 +72,7 @@ export const DEFAULT_UPDATE_SETTINGS: UpdateSettings = {
   time: '12:00',
   channel: 'workspace',
   detail: 'brief',
+  includeContent: false,
   lookbackDays: 1,
   upcomingDays: 7,
   sections: ['activity', 'due', 'savedViews'],

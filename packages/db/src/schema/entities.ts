@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -76,6 +77,27 @@ export const entities = pgTable(
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     assigneeUserId: uuid('assignee_user_id').references(() => users.id, { onDelete: 'set null' }),
     dueAt: timestamp('due_at', { withTimezone: true }),
+    plannedDate: date('planned_date'),
+    recordFieldRevisions: jsonb('task_field_revisions')
+      .$type<
+        Record<
+          string,
+          {
+            changeId?: string;
+            writeEventId?: string;
+          } & (
+            | { assertedAt: string; rawEventId: string | null }
+            | { assertedAt?: never; rawEventId?: never }
+          )
+        >
+      >()
+      .notNull()
+      .default({}),
+    plannedDateChangeId: uuid('planned_date_change_id'),
+    plannedDateRevisionAt: timestamp('planned_date_revision_at', { withTimezone: true }),
+    plannedDateEvidenceId: uuid('planned_date_evidence_id').references(() => rawEvents.id, {
+      onDelete: 'set null',
+    }),
     taskCategory: text('task_category'),
     taskCategoryMode: text('task_category_mode'),
     taskCategorySource: text('task_category_source'),
@@ -100,6 +122,10 @@ export const entities = pgTable(
     index('entities_team_type_status_idx').on(table.teamId, table.type, table.status),
     index('entities_team_owner_idx').on(table.teamId, table.ownerUserId),
     index('entities_team_assignee_idx').on(table.teamId, table.assigneeUserId),
+    check(
+      'entities_planned_date_task_only',
+      sql`${table.plannedDate} IS NULL OR ${table.type} = 'task'`,
+    ),
     index('entities_team_due_idx').on(table.teamId, table.dueAt),
     index('entities_team_task_category_active_updated_id_idx')
       .on(table.teamId, table.type, table.taskCategory, table.updatedAt, table.id)

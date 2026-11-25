@@ -8,7 +8,7 @@ Read these core rules, then the reference sections relevant to your change:
 
 - [Component contracts](docs/design/components.md): shared controls, collections, feedback, citations, and toasts.
 - [App screens](docs/design/app.md): workspace screens, installed-app behavior, and administrative controls.
-- [Public pages](docs/design/public.md): marketing and public-site patterns.
+- [Public pages](docs/design/public.md): public navigation, feature discovery, and walkthrough patterns.
 - [Decision history](docs/design/decisions.md): archived rationale, including superseded choices; not required reading for routine UI work.
 
 Keep universal rules here and specialized requirements in their owning reference.
@@ -51,8 +51,9 @@ by exposing database implementation details in ordinary product views.
   second importance slider; `priority` 1–4 stays urgency on goals and work.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
-- **Approval-backed state** is durable work state that passed human review.
-  How events become that state is
+- **Approval-backed state** is durable work state accepted through authorized
+  human review or the workspace’s automatic approval policy. How events become
+  that state is
   [`docs/relational-memory.md`](docs/relational-memory.md).
 
 Count chrome: Moments mode counts **moments**; All events,
@@ -169,6 +170,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   uses `Bot`. Its page pairs a compact grant form with a grants/activity column
   on wide screens, stacking on mobile. Empty collections use `EmptyState`;
   grants use `CollectionRow` with readable expiry dates and explicit status.
+- Guest access lives under Team members for workspace owners and admins. Guests open a separate Shared work view with explicitly shared notes and live tasks and projects or published snapshots. Guests can search or ask about shared work. See [guest access](docs/design/app.md#guest-access).
 - The shell owns consistent page gutters: 16px on mobile and 32px on desktop,
   with a centered `max-w-6xl` content container. Collection indexes (Work tabs, Timeline, Documents, Meetings) mark their frame with
   `data-app-width="collection"`. Their section bands and row separators extend
@@ -213,8 +215,8 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 - Object and task previews use the same detail rail, at least 36rem (576px), growing to 55% of the content width
   on wide screens and a focus-managed bottom sheet below 1280px. Keep the title,
   pin, close, and full-width, quiet outlined “Open object” action together at the top.
-- Billing settings share Usage’s allowance cards and neutral surfaces, with clear
-  spacing between plan controls, charges, and membership. See the
+- Billing settings and Usage share the Included usage bar, its reset date,
+  and the explanation of what pauses. See the
   [billing presentation contract](docs/design/app.md#billing-benefits-and-recorded-charges).
 
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,

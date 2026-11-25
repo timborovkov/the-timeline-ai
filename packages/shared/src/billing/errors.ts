@@ -25,6 +25,16 @@ export class BillingAdmissionError extends Error {
   }
 }
 
+export const PENDING_TEAM_CHECKOUT_RETRY_MESSAGE =
+  'This workspace has a pending Team checkout. Try accepting the invitation again after checkout completes or expires.';
+
+export class PendingTeamCheckoutError extends BillingAdmissionError {
+  constructor() {
+    super('usage_limit_reached', PENDING_TEAM_CHECKOUT_RETRY_MESSAGE);
+    this.name = 'PendingTeamCheckoutError';
+  }
+}
+
 export function isBillingAdmissionError(err: unknown): err is BillingAdmissionError {
   return err instanceof BillingAdmissionError;
 }

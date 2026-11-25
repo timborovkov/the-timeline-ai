@@ -88,93 +88,37 @@ describe('PublicNavigationDisclosure', () => {
 });
 
 describe('Header navigation', () => {
-  it('keeps Product, Agents, and Pricing as top-level links', () => {
+  it('shares Product and Resources groups and direct links across desktop and mobile', async () => {
     const { container } = render(<PublicNavigationItems currentSection="agents" />);
-    expect(screen.getByRole('link', { name: 'Product' }).getAttribute('href')).toBe('/');
-    expect(screen.getByRole('link', { name: 'Agents' }).getAttribute('href')).toBe('/agents');
-    expect(screen.getByRole('link', { name: 'Agents' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: 'Pricing' }).getAttribute('href')).toBe('/pricing');
-    expect(container.querySelectorAll(':scope > ul > li > details > summary').length).toBe(2);
-    expect(
-      [...container.querySelectorAll(':scope > ul > li > details > summary')].map(
-        (node) => node.textContent,
-      ),
-    ).toEqual(['Use cases', 'Integrations']);
-  });
-
-  it('opens Use cases and Integrations dropdowns, including on the mobile menu', async () => {
-    const user = userEvent.setup();
-    const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
-    await user.click(screen.getByLabelText('Menu'));
-
-    const useCases = container.querySelector<HTMLDetailsElement>('nav details');
-    expect(useCases?.open).toBe(false);
-    await user.click(screen.getByText('Use cases'));
-    expect(useCases?.open).toBe(true);
-    expect(screen.getByRole('link', { name: 'All use cases' }).getAttribute('href')).toBe(
-      '/use-cases',
-    );
-    expect(screen.getByRole('link', { name: 'Work record' }).getAttribute('href')).toBe(
-      '/use-cases/work-record',
-    );
-
-    await user.click(screen.getByText('Integrations'));
-    expect(screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
       '/integrations',
     );
-    expect(screen.getByRole('link', { name: 'Slack · Native sync' }).getAttribute('href')).toBe(
-      '/integrations/slack',
-    );
-    expect(screen.getByRole('link', { name: 'Telegram · Capture' }).getAttribute('href')).toBe(
-      '/integrations/telegram',
-    );
-    expect(screen.getByRole('link', { name: 'Google Drive' }).getAttribute('href')).toBe(
-      '/integrations/google-drive',
-    );
-    expect(screen.getByRole('link', { name: 'GitHub' }).getAttribute('href')).toBe(
-      '/integrations/github',
-    );
-    expect(screen.getByRole('link', { name: 'Linear' }).getAttribute('href')).toBe(
-      '/integrations/linear',
-    );
-    expect(screen.getByRole('link', { name: 'Monday.com' }).getAttribute('href')).toBe(
-      '/integrations/monday',
-    );
-    expect(screen.getByRole('link', { name: 'Sentry' }).getAttribute('href')).toBe(
-      '/integrations/sentry',
-    );
-    expect(screen.getByRole('link', { name: 'Connect MCP tools' }).getAttribute('href')).toBe(
-      '/integrations/mcp',
-    );
-    const slack = screen.getByRole('link', { name: 'Slack · Native sync' });
-    const telegram = screen.getByRole('link', { name: 'Telegram · Capture' });
-    const linear = screen.getByRole('link', { name: 'Linear' });
-    expect(slack.compareDocumentPosition(telegram) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(telegram.compareDocumentPosition(linear) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(screen.queryByRole('link', { name: 'Jira · MCP lookup' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Notion · MCP lookup' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Jira' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Notion' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'HubSpot · Coming soon' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Attio · Coming soon' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Pipedrive · Coming soon' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'The Timeline vs Day AI' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'The Timeline vs Suda' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'The Timeline vs MemoryCrow' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'The Timeline vs Achiral' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Compare hub' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Pricing' }).getAttribute('href')).toBe('/pricing');
+    expect(
+      [...container.querySelectorAll('li > details > summary')].map((node) => node.textContent),
+    ).toEqual(['Product', 'Resources']);
+    cleanup();
 
-    const menu = container.querySelector('details');
-    const pricing = screen.getByRole('link', { name: 'Pricing' });
-    pricing.addEventListener('click', (event) => {
-      event.preventDefault();
-    });
-    await user.click(pricing);
-    expect(menu?.open).toBe(false);
+    const user = userEvent.setup();
+    render(<PublicNavigationDisclosure currentSection="product" />);
+    await user.click(screen.getByLabelText('Menu'));
+    await user.click(screen.getByText('Product'));
+    for (const [name, href] of [
+      ['How it works', '/how-it-works'],
+      ['Product tour', '/product-tour'],
+      ['Features', '/features'],
+      ['For AI agents', '/agents'],
+    ]) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(href);
+    }
+    await user.click(screen.getByText('Resources'));
+    for (const [name, href] of [
+      ['Documentation', '/docs'],
+      ['Guides', '/guides'],
+      ['Security & privacy', '/trust'],
+    ]) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(href);
+    }
   });
 
   it('flips expandable mobile-nav chevrons from down when collapsed to up when expanded', async () => {
@@ -204,7 +148,7 @@ describe('Header navigation', () => {
       const dropdowns = [...container.querySelectorAll<HTMLDetailsElement>('nav details')];
       expect(
         dropdowns.map((dropdown) => dropdown.querySelector('summary')?.childNodes[0]?.textContent),
-      ).toEqual(['Use cases', 'Integrations']);
+      ).toEqual(['Product', 'Resources']);
 
       for (const dropdown of dropdowns) {
         expect(dropdown.open).toBe(false);
@@ -216,27 +160,27 @@ describe('Header navigation', () => {
         expect(chevronTransform(dropdown)).not.toContain('180');
       }
 
-      for (const name of ['Product', 'Agents', 'Pricing', 'Sign in'] as const) {
+      for (const name of ['Integrations', 'Pricing', 'Sign in'] as const) {
         const row = screen.getByRole('link', { name });
         expect(row.querySelector('svg.lucide-chevron-down') ?? null).toBeNull();
         expect(row.querySelector(`svg.${DROPDOWN_CHEVRON_CLASS}`) ?? null).toBeNull();
       }
 
       expect(dropdowns).toHaveLength(2);
-      const useCases = dropdowns[0];
+      const product = dropdowns[0];
       const integrations = dropdowns[1];
-      await user.click(screen.getByText('Use cases'));
-      expect(useCases?.open).toBe(true);
+      await user.click(screen.getByText('Product'));
+      expect(product?.open).toBe(true);
       expect(integrations?.open).toBe(false);
-      expect(chevronTransform(useCases)).toContain('rotate(180deg)');
+      expect(chevronTransform(product)).toContain('rotate(180deg)');
       expect(chevronTransform(integrations)).not.toContain('180');
-      expect(
-        useCases?.querySelector('summary svg')?.classList.contains('lucide-chevron-down'),
-      ).toBe(true);
+      expect(product?.querySelector('summary svg')?.classList.contains('lucide-chevron-down')).toBe(
+        true,
+      );
 
-      await user.click(screen.getByText('Use cases'));
-      expect(useCases?.open).toBe(false);
-      expect(chevronTransform(useCases)).not.toContain('180');
+      await user.click(screen.getByText('Product'));
+      expect(product?.open).toBe(false);
+      expect(chevronTransform(product)).not.toContain('180');
     } finally {
       sheet.remove();
     }
@@ -253,10 +197,9 @@ describe('Header navigation', () => {
     const dropdowns = [...container.querySelectorAll<HTMLDetailsElement>('li details')];
     const integrations = dropdowns[1];
     expect(integrations).toBeTruthy();
-    await user.click(screen.getByText('Integrations'));
+    await user.click(screen.getByText('Resources'));
     expect(integrations?.open).toBe(true);
-    expect(integrations?.querySelectorAll('[role="separator"]').length).toBe(1);
-    expect(screen.getByRole('link', { name: 'Connect MCP tools' }).className).toContain(
+    expect(screen.getByRole('link', { name: 'Documentation' }).className).toContain(
       navStyles.dropdownLink,
     );
 
@@ -322,15 +265,16 @@ it('dismisses the mobile menu on outside click and focus departure', async () =>
   expect(container.querySelector('details')?.open).toBe(false);
 });
 it('marks the exact child route and closes same-route dropdown links', async () => {
-  route.pathname = '/integrations/slack';
+  route.pathname = '/features';
   const user = userEvent.setup();
-  const { container } = render(<PublicNavigationItems currentSection="integrations" />);
-  await user.click(screen.getByText('Integrations'));
-  const link = screen.getByRole('link', { name: 'Slack · Native sync' });
+  const { container } = render(<PublicNavigationItems currentSection="features" />);
+  await user.click(screen.getByText('Product'));
+  const link = screen.getByRole('link', { name: 'Features' });
   expect(link.getAttribute('aria-current')).toBe('page');
   await user.click(link);
   expect(container.querySelector('details[open]')).toBeNull();
   cleanup();
+  route.pathname = '/integrations/slack';
   render(<PublicFooterColumns currentSection="integrations" />);
   expect(
     screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('aria-current'),

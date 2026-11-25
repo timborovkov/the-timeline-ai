@@ -28,7 +28,9 @@ describe('product tour route', () => {
     expect(html).toContain('/sign-up?source=telegram');
     expect(html).toContain('Or start with Telegram');
     expect(html).toContain('See pricing');
-    expect(html).toContain('Lasting record changes wait for your approval.');
+    expect(html).toContain('Review proposed record changes.');
+    expect(html).toContain('Change linked to the login issue merges');
+    expect(html).toContain('Release and customer verification are still open.');
     expect(html).not.toContain('Nothing changes until you approve it.');
     expect(html).toContain('data-first-run="compact"');
     expect(PRODUCT_TOUR.steps).toHaveLength(8);

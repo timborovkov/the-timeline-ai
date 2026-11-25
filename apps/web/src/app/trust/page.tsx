@@ -355,8 +355,9 @@ export default function TrustPage() {
                 </dl>
                 <p className="mt-6 text-base leading-7 text-fg-muted">
                   Timeline preserves source content, checks access at retrieval, and keeps citations
-                  attached to the answer. If evidence suggests a lasting workspace change, Timeline
-                  proposes it for human review instead of applying it on its own.
+                  attached to the answer. Eligible routine changes can apply automatically under
+                  workspace policy and appear in the record history with their sources. Changes that
+                  require a decision go to authorized reviewers.
                 </p>
               </div>
             </div>

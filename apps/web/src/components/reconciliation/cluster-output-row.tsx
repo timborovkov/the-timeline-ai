@@ -6,6 +6,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { outputStatusLabel } from '@/components/reconciliation/presentation';
 import { reconciliationOutputTone } from '@/components/reconciliation/row-status';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 
@@ -13,7 +14,6 @@ export function ClusterOutputRow({
   context,
   createdAtIso,
   payloadJson,
-  relativeAge,
   status,
   title,
   titleHint,
@@ -21,7 +21,6 @@ export function ClusterOutputRow({
   context: string;
   createdAtIso: string;
   payloadJson: string;
-  relativeAge: string;
   status: string;
   title: string;
   titleHint: string;
@@ -68,13 +67,7 @@ export function ClusterOutputRow({
         <CollectionRow.Title title={titleHint}>{title}</CollectionRow.Title>
         <CollectionRow.Context title={titleHint}>{context}</CollectionRow.Context>
         <CollectionRow.Metadata>
-          <time
-            dateTime={createdAtIso}
-            title={titleHint}
-            className="text-xs tabular-nums text-fg-dim"
-          >
-            {relativeAge}
-          </time>
+          <RelativeTimestamp value={createdAtIso} />
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>

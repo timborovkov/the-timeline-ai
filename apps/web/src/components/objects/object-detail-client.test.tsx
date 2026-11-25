@@ -296,32 +296,152 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('border-border');
   });
 
-  it('formats string-backed due-date changes in the workspace timezone', () => {
+  it('shows a planned calendar day in its own task field', () => {
+    const html = renderObjectDetail({
+      detail: { ...detail, type: 'task', plannedDate: '2026-11-30', dueAt: null },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Planned date');
+    expect(html).toContain('Nov 30, 2026');
+    expect(html).toContain('No due date');
+  });
+
+  it('uses the saved display locale for planned dates without shifting the day', () => {
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'America/Los_Angeles',
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles', browserLocale: 'en-US' },
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            type: 'task',
+            plannedDate: '2026-11-30',
+            recentChanges: [
+              {
+                id: 'change-planned-date',
+                field: 'plannedDate',
+                previousValue: '2026-11-29',
+                newValue: '2026-11-30',
+                actorKind: 'user',
+                actorUserId: 'user-1',
+                status: 'applied',
+                note: null,
+                changedAt: new Date('2026-11-24T10:00:00Z'),
+              },
+            ],
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Planned date for Send proposal' }).textContent).toBe(
+      '30.11.2026',
+    );
+    expect(screen.getByText('29.11.2026 → 30.11.2026')).toBeTruthy();
+  });
+
+  it('labels the editable planned date separately from the due date', async () => {
+    const user = userEvent.setup();
     render(
       objectDetailElement({
-        detail: {
-          ...detail,
-          recentChanges: [
-            {
-              id: 'change-due-at',
-              field: 'dueAt',
-              previousValue: null,
-              newValue: '2026-07-01T00:00:00.000Z',
-              actorKind: 'user',
-              actorUserId: 'user-1',
-              status: 'applied',
-              note: null,
-              changedAt: new Date('2026-06-30T12:00:00.000Z'),
-            },
-          ],
-        },
+        detail: { ...detail, type: 'task', plannedDate: '2026-11-30', dueAt: null },
         userId: 'user-1',
         suggestions: [],
       }),
     );
 
-    expect(document.body.textContent).toContain('Jul 1, 2026');
-    expect(document.body.textContent).not.toContain('2026-07-01T00:00:00.000Z');
+    await user.click(screen.getByRole('button', { name: 'Planned date for Send proposal' }));
+    expect(screen.getByLabelText('Planned date')).toHaveProperty('value', '2026-11-30');
+    expect(screen.queryByLabelText('Due date')).toBeNull();
+  });
+
+  it('keeps calendar days and timed deadline edits distinct in recent changes', () => {
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'Europe/Helsinki',
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles' },
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            recentChanges: [
+              {
+                id: 'change-due-at',
+                field: 'dueAt',
+                previousValue: null,
+                newValue: '2026-12-01T00:00:00.000Z',
+                actorKind: 'user',
+                actorUserId: 'user-1',
+                status: 'applied',
+                note: null,
+                changedAt: new Date('2026-11-27T12:00:00.000Z'),
+              },
+              {
+                id: 'change-due-time',
+                field: 'dueAt',
+                previousValue: '2026-12-01T08:15:00.000Z',
+                newValue: '2026-12-01T16:15:00.000Z',
+                actorKind: 'user',
+                actorUserId: 'user-1',
+                status: 'applied',
+                note: null,
+                changedAt: new Date('2026-11-27T13:00:00.000Z'),
+              },
+            ],
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByText('∅ → 01.12.2026')).toBeTruthy();
+    expect(screen.getByText('01.12.2026, 00:15 → 01.12.2026, 08:15')).toBeTruthy();
+  });
+
+  it('keeps connected calendar links on the grid day and localizes the visible date', () => {
+    const allDay = {
+      id: 'offsite',
+      title: 'All-day offsite',
+      startAt: new Date('2026-11-30T15:00:00.000Z'),
+      endAt: new Date('2026-12-01T15:00:00.000Z'),
+      showAs: 'busy',
+      allDay: true,
+      timezone: 'Asia/Tokyo',
+    };
+    const timed = { ...allDay, id: 'review', title: 'Timed review', allDay: false };
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'Europe/Helsinki',
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles' },
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            type: 'company',
+            connectedWork: {
+              ...detail.connectedWork,
+              openTaskCount: 1200,
+              calendarEvents: [allDay, timed],
+            },
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByText('Open 1.200 · Done 0')).toBeTruthy();
+    const offsite = screen.getByRole('link', { name: 'All-day offsite' });
+    expect(offsite.getAttribute('href')).toBe(
+      '/app/calendar?event=offsite&date=2026-12-01&view=day',
+    );
+    expect(offsite.parentElement?.querySelector('time')?.textContent).toBe('01.12.2026');
+    const review = screen.getByRole('link', { name: 'Timed review' });
+    expect(review.getAttribute('href')).toBe('/app/calendar?event=review&date=2026-11-30&view=day');
+    expect(review.parentElement?.querySelector('time')?.textContent).toBe('30.11.2026, 07:00');
   });
 
   it('renders task category snapshots as readable recent changes', () => {

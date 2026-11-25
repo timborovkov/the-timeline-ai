@@ -88,29 +88,53 @@ export async function processDailyDigestJob(
       job.reason !== 'catchup' && job.windowStart && job.windowEnd
         ? { start: job.windowStart, end: job.windowEnd }
         : null;
-    // Older explicit jobs still run. Recurring member delivery uses the
-    // personal scheduler so a workspace receives only one inherited default.
-    const recipients = job.reason ? [] : await messaging.listDailyDigestRecipients(deps.db);
-    await Promise.all(
+    // Existing configured profiles keep their settings and delivery path.
+    const recipients = await messaging.listDailyDigestRecipients(deps.db);
+    const eligible = await Promise.all(
       recipients.map(async (recipient) => {
-        const preference = explicitWindow
-          ? null
-          : await messaging.getDigestPreference({
-              db: deps.db,
-              teamId: recipient.teamId,
-              userId: recipient.userId,
-            });
-        const window = explicitWindow
-          ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
-          : messaging.defaultDigestWindow(new Date(), preference?.timezone, preference?.hour);
-        await queue.enqueueDailyDigestRecipientJob({
-          kind: 'recipient',
+        const preference = await messaging.getDigestPreference({
+          db: deps.db,
           teamId: recipient.teamId,
           userId: recipient.userId,
-          email: recipient.email,
-          windowStart: window.start.toISOString(),
-          windowEnd: window.end.toISOString(),
         });
+        if (!preference.enabled || (job.reason && !preference.options)) return false;
+        const now = new Date();
+        const enqueue = (window: { start: Date; end: Date }, delayMs?: number) => {
+          if (preference.revision && window.end <= new Date(preference.revision)) return;
+          const data = {
+            kind: 'recipient' as const,
+            teamId: recipient.teamId,
+            userId: recipient.userId,
+            email: recipient.email,
+            windowStart: window.start.toISOString(),
+            windowEnd: window.end.toISOString(),
+          };
+          return delayMs
+            ? queue.enqueueDailyDigestRecipientJob(data, delayMs)
+            : queue.enqueueDailyDigestRecipientJob(data);
+        };
+        if (preference.options) {
+          const { timezone, hour, options } = preference;
+          const window = messaging.scheduledUpdateWindow(now, timezone, hour, options.cadence);
+          const next = messaging.nextScheduledUpdateWindow(
+            window.end,
+            timezone,
+            hour,
+            options.cadence,
+          );
+          const delay = next.end.getTime() - now.getTime();
+          await Promise.all([
+            enqueue(window),
+            delay > 0 && delay <= 24 * 60 * 60 * 1000 ? enqueue(next, delay) : undefined,
+          ]);
+          return true;
+        }
+        await enqueue(
+          explicitWindow
+            ? { start: new Date(explicitWindow.start), end: new Date(explicitWindow.end) }
+            : messaging.defaultDigestWindow(now, preference.timezone, preference.hour),
+        );
+        return true;
       }),
     );
     const sharedTeamIds = await messaging.listWorkspaceDigestTeamIds(deps.db);
@@ -126,6 +150,22 @@ export async function processDailyDigestJob(
           windowStart: window.start.toISOString(),
           windowEnd: window.end.toISOString(),
         });
+      }),
+    );
+    return { recipients: eligible.filter(Boolean).length };
+  }
+
+  if (job.kind === 'workspace-reschedule') {
+    const recipients = await messaging.listDailyDigestRecipients(deps.db, { teamId: job.teamId });
+    await Promise.all(
+      recipients.map(async (recipient) => {
+        const preference = await messaging.getDigestPreference({
+          db: deps.db,
+          teamId: job.teamId,
+          userId: recipient.userId,
+        });
+        const next = messaging.nextScheduledUpdateRecipientJob(recipient, preference);
+        if (next) await queue.enqueueDailyDigestRecipientJob(next.data, next.delayMs);
       }),
     );
     return { recipients: recipients.length };
@@ -168,12 +208,22 @@ export async function processDailyDigestJob(
     };
   }
 
-  const result = await messaging.sendDailyDigest({
-    db: deps.db,
-    digestId: job.digestId,
-    ...(job.kind === 'send' ? { to: job.email } : {}),
-    digestUrl: `${siteUrl()}/app/digests?digest=${job.digestId}`,
-  });
+  const digestUrl = `${siteUrl()}/app/digests?digest=${job.digestId}`;
+  const result =
+    job.kind === 'update-send'
+      ? await messaging.sendScheduledUpdate({
+          db: deps.db,
+          runId: job.digestId,
+          teamId: job.teamId,
+          userId: job.userId,
+          digestUrl,
+        })
+      : await messaging.sendDailyDigest({
+          db: deps.db,
+          digestId: job.digestId,
+          to: job.email,
+          digestUrl,
+        });
   // Permanent provider failures (e.g. Resend inactive recipient) are already
   // recorded on the digest/delivery rows — retrying only burns attempts + Sentry.
   if (!result.ok && !result.skipped && result.retryable !== false) {

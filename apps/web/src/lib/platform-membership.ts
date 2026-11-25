@@ -24,6 +24,7 @@ import {
   synchronizePolarBillingUser,
   preparePolarMembershipChange,
   createPolarBillingProvider,
+  reconcileTeamPaidSeats,
 } from '@timeline/shared/billing';
 import { releaseFreeGrantIfOwnerLeaves } from '@timeline/shared/billing';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
@@ -667,6 +668,18 @@ export async function removeMember(
         return { error: 'The team needs at least one owner' };
       }
       throw e;
+    }
+    const billingProvider = createPolarBillingProvider();
+    if (billingProvider) {
+      try {
+        await reconcileTeamPaidSeats({ db, teamId: active.teamId, provider: billingProvider });
+      } catch (error) {
+        // Membership and visibility are already committed. Billing maintenance retries.
+        reportCaughtError(error, {
+          surface: 'server_action',
+          operation: 'schedule_team_seat_reduction',
+        });
+      }
     }
     await Promise.all(
       ownerLeftAttention.map(async (item) => {

@@ -229,7 +229,10 @@ describe('DocumentDetail', () => {
     });
     const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
     expect(init?.body).toBe(
-      JSON.stringify({ ref: { kind: 'timeline_event', id: PARENT_EVENT_ID } }),
+      JSON.stringify({
+        ref: { kind: 'timeline_event', id: PARENT_EVENT_ID },
+        region: { locale: 'en-US', timezone: 'Europe/Helsinki' },
+      }),
     );
     expect(
       (await screen.findByRole('link', { name: /Open on Timeline/ })).getAttribute('href'),

@@ -12,15 +12,21 @@ import {
   users,
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { z } from 'zod';
 
 import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
+import type { BillingReservationInput } from '#src/billing/admission.js';
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
   type BillingMeterId,
   type BillingPlanId,
   CAPACITY_BY_PLAN,
+  BILLING_EUR_PER_USD,
   FREE_ALLOWANCES,
+  MEETING_MAX_DURATION_MINUTES_BY_PLAN,
+  OVERAGE_RATES,
+  recallChargeCents,
   PLAN_CATALOG,
   polarEventNameForMeter,
   storageGbFromBytes,
@@ -54,6 +60,7 @@ import {
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
+import { FULL_MEMBER_ROLES } from '#src/billing/membership.js';
 import {
   applyMeteredDiscountCents,
   compCostBearingPaused,
@@ -65,10 +72,16 @@ import {
 } from '#src/billing/operator.js';
 import {
   billingPlanIdForSettlement,
+  historicalEnterpriseStorageBundledOnDay,
+  historicalTeamSeatPricingOnDay,
   includedDiscountCentsBeforeCurrentWindow,
   recordBillingPlan,
   rollIncludedDiscountIfElapsed,
 } from '#src/billing/plan-history.js';
+import {
+  bundledInfrastructureMeter,
+  freeIncludedUsageRemainingCents,
+} from '#src/billing/policy.js';
 import { buildBillingPresentation } from '#src/billing/presentation.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
 import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
@@ -80,7 +93,6 @@ import {
 import { accountUsesShadowBilling } from '#src/billing/shadow.js';
 import {
   applyBillingPresentationToSidebar,
-  allFreeAllowancesExhausted,
   billingStateAllowsReservation,
   costBearingPausedFromAccount,
   deriveBillingNudge,
@@ -108,6 +120,61 @@ export interface BillingScopeDeps {
   userId: string;
   ensureMember: EnsureMember;
   provider?: BillingProvider;
+}
+
+const admittedTeamSeatPricingSchema = z
+  .object({
+    includedUsageCents: z.number().int().nonnegative(),
+    periodStartedAt: z.iso.datetime().nullable(),
+    periodEndsAt: z.iso.datetime().nullable(),
+    subscriptionId: z.string().nullable(),
+  })
+  .nullable();
+
+const enterpriseUsageTargetSchema = z.object({
+  productId: z.string().min(1),
+  subscriptionId: z.string().min(1),
+});
+
+function confirmedUsdEnterpriseUsageTarget(account: typeof teamBillingAccounts.$inferSelect) {
+  const { polarProductId, polarSubscriptionId } = account;
+  return account.planId === 'enterprise' &&
+    account.billingState === 'enterprise_active' &&
+    contractualEnterpriseAccount(account) &&
+    account.enterprisePlatformFeeCurrency === 'USD' &&
+    polarProductId &&
+    polarSubscriptionId
+    ? { productId: polarProductId, subscriptionId: polarSubscriptionId }
+    : null;
+}
+
+const failedAiAdmissionSchema = z.object({
+  planId: z
+    .custom<BillingPlanId>(
+      (value) => typeof value === 'string' && Object.hasOwn(PLAN_CATALOG, value),
+    )
+    .nullable(),
+  actorUserId: z.uuid().nullable(),
+  meteredDiscountPercent: z.number().min(0).max(100).optional(),
+  seatPricing: admittedTeamSeatPricingSchema.optional(),
+  enterpriseUsageTarget: enterpriseUsageTargetSchema.optional(),
+  overageCapCents: z.number().int().nonnegative().optional(),
+});
+
+const recallTimestamp = z.iso.datetime().transform((value) => new Date(value));
+
+const legacyFailedAiDiscountSchema = z
+  .union([z.number(), z.string().trim().min(1).transform(Number)])
+  .pipe(z.number().min(0).max(100));
+
+function pendingFailedAiAttempts(metadata: Record<string, unknown>): Record<string, unknown>[] {
+  const attempts = metadata.pending_failed_attempts;
+  return Array.isArray(attempts)
+    ? attempts.filter(
+        (attempt): attempt is Record<string, unknown> =>
+          attempt !== null && typeof attempt === 'object' && !Array.isArray(attempt),
+      )
+    : [];
 }
 
 function polarPlanProductsFromEnv(): PolarPlanProductIds {
@@ -354,10 +421,36 @@ function cachedCoverageForPayableSettlement(
   return { names: cached };
 }
 
+function isSeatPricedTeamAccount(account: typeof teamBillingAccounts.$inferSelect): boolean {
+  return effectiveBillingPlanId(account) === 'team' && account.teamSeatTerms !== null;
+}
+
+function countsTowardSpendCap(meterId: BillingMeterId, seatPricedTeam: boolean): boolean {
+  // Legacy member-days stay in the monthly history, in EUR. Paid seats
+  // replace that meter and the USD cap must not inherit those charges.
+  return !seatPricedTeam || meterId !== 'member_days';
+}
+
+function countedSpendCents(
+  counters: readonly Pick<
+    typeof billingUsageCounters.$inferSelect,
+    'meterId' | 'capEligibleChargeCents'
+  >[],
+  seatPricedTeam: boolean,
+): number {
+  return counters.reduce(
+    (sum, row) =>
+      sum + (countsTowardSpendCap(row.meterId, seatPricedTeam) ? row.capEligibleChargeCents : 0),
+    0,
+  );
+}
+
 async function dispositionForLiveAccount(
+  db: Db,
   account: typeof teamBillingAccounts.$inferSelect,
   event: PolarUsageEvent,
   provider: BillingProvider | undefined,
+  metadata: Record<string, unknown>,
 ): Promise<PolarIngestDisposition> {
   const chargeCents = event.metadata?.charge_cents;
   const invoiceCents = typeof chargeCents === 'number' ? chargeCents : 0;
@@ -371,6 +464,40 @@ async function dispositionForLiveAccount(
     invoiceCents,
   });
   if (early) return early;
+  const target = enterpriseUsageTargetSchema.safeParse(
+    metadata.polar_ingest_enterprise_target,
+  ).data;
+  const liveEnterpriseTarget = confirmedUsdEnterpriseUsageTarget(account);
+  if (
+    target
+      ? target.subscriptionId !== liveEnterpriseTarget?.subscriptionId ||
+        target.productId !== liveEnterpriseTarget.productId
+      : liveEnterpriseTarget !== null ||
+        (metadata.pricing_plan_id === 'enterprise' && account.planId !== 'enterprise')
+  )
+    return 'hold';
+  if (isSeatPricedTeamAccount(account)) {
+    // A replacement USD product can share meter names with a prior contract.
+    if (
+      billingMeterIdForPolarEvent(event.name) === 'member_days' ||
+      metadata.presentation_currency === 'EUR'
+    )
+      return 'hold';
+    if (metadata.pricing_plan_id === undefined) {
+      const usageAt = recallTimestamp.safeParse(metadata.usage_at).data;
+      if (
+        usageAt &&
+        (await billingPlanIdForSettlement({
+          db,
+          teamId: account.teamId,
+          usageAt,
+          livePlanId: 'team',
+          account,
+        })) === 'enterprise'
+      )
+        return 'hold';
+    }
+  }
   const pricedEventNames = await pricedEventNamesForProduct(provider, account.polarProductId);
   return polarIngestDisposition({
     eventName: event.name,
@@ -407,7 +534,7 @@ async function ingestPolarUsageIfPending(input: {
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
   const disposition = account
-    ? await dispositionForLiveAccount(account, event, input.provider)
+    ? await dispositionForLiveAccount(input.db, account, event, input.provider, input.metadata)
     : 'hold';
   // Shadow and comps are not billed. Leave the row pending so a later live
   // period can still invoice a charge that was payable when it was recorded.
@@ -560,12 +687,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
               capEligibleChargeCents: storageMeter?.capEligibleChargeCents ?? 0,
             },
           };
-          const meteredSpendCents = counters.reduce(
-            (sum, row) => sum + row.capEligibleChargeCents,
-            0,
-          );
+          const meteredSpendCents = countedSpendCents(counters, isSeatPricedTeamAccount(account));
           const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
-          const freeRemaining = freeAllowanceRemaining(displayMeters);
+          const freeRemaining = {
+            ...freeAllowanceRemaining(displayMeters),
+            ...(account.planId === 'free' || effectiveBillingPlanId(account) === 'free'
+              ? {
+                  includedUsageCents: freeIncludedUsageRemainingCents(displayMeters),
+                }
+              : {}),
+          };
           const canManageBilling = Boolean(
             options?.canManageBilling && (dashboardRole === 'owner' || dashboardRole === 'admin'),
           );
@@ -613,7 +744,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
               activeMemberCount: sql<number>`count(*)::int`,
             })
             .from(teamMembers)
-            .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
+            .where(
+              and(
+                eq(teamMembers.teamId, teamId),
+                isNull(teamMembers.removedAt),
+                inArray(teamMembers.role, FULL_MEMBER_ROLES),
+              ),
+            );
           const activeMemberCount = memberCountRow?.activeMemberCount ?? 0;
           const [memberDayRow] = await tx
             .select({
@@ -655,7 +792,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             utilization,
             freeRemaining,
             meteredSpendCents,
-            planPreview,
           });
           const chargeWindowStart =
             (commercial.planId === 'free' ? null : account.periodStartedAt) ??
@@ -670,8 +806,19 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   occurredAt: billingUsageLedger.occurredAt,
                   billable: billingUsageLedger.billable,
                   metadata: billingUsageLedger.metadata,
+                  reservationId: billingUsageLedger.reservationId,
+                  reservationMetadata: billingUsageReservations.metadata,
+                  reservationAdmittedPlanId: billingUsageReservations.admittedPlanId,
                 })
                 .from(billingUsageLedger)
+                .leftJoin(
+                  billingUsageReservations,
+                  and(
+                    eq(billingUsageReservations.id, billingUsageLedger.reservationId),
+                    eq(billingUsageReservations.teamId, billingUsageLedger.teamId),
+                    eq(billingUsageReservations.meterId, billingUsageLedger.meterId),
+                  ),
+                )
                 .where(
                   and(
                     eq(billingUsageLedger.teamId, teamId),
@@ -720,20 +867,41 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   entitlementsPlanId: commercial.planId,
                   spendCapCents: account.spendCapCents,
                   meteredSpendCents,
-                  freeAllowanceExhausted: allFreeAllowancesExhausted(freeRemaining),
+                  freeAllowanceExhausted: (freeRemaining.includedUsageCents ?? Infinity) <= 0,
                 })
-              : costBearingPausedFromAccount({
-                  planId: commercial.planId,
-                  billingState: account.billingState,
-                  shadowBilling,
-                  spendCapCents: account.spendCapCents,
-                  meteredSpendCents,
-                  freeRemaining,
-                }),
+              : account.planId === 'team' && account.teamSeatTerms
+                ? !billingStateAllowsReservation(account.billingState) ||
+                  !account.periodEndsAt ||
+                  account.periodEndsAt <= now ||
+                  (account.includedDiscountRemainingCents <= 0 &&
+                    meteredSpendCents >= account.spendCapCents)
+                : costBearingPausedFromAccount({
+                    planId: commercial.planId,
+                    billingState: account.billingState,
+                    shadowBilling,
+                    spendCapCents: account.spendCapCents,
+                    meteredSpendCents,
+                    freeRemaining,
+                  }),
           };
         },
         { isolationLevel: 'repeatable read', accessMode: 'read only' },
       );
+    },
+
+    async countActiveFullMembers(): Promise<number> {
+      await ensureMember();
+      const [row] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            isNull(teamMembers.removedAt),
+            inArray(teamMembers.role, FULL_MEMBER_ROLES),
+          ),
+        );
+      return row?.count ?? 0;
     },
 
     async setSpendCap(spendCapCents: number) {
@@ -892,14 +1060,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         .where(eq(teamBillingAccounts.teamId, teamId));
     },
 
-    async reserve(input: {
-      operationId: string;
-      meterId: BillingMeterId;
-      reservedNativeUnits: number;
-      reservedChargeCents: number;
-      ttlMs?: number;
-      metadata?: Record<string, unknown>;
-    }) {
+    async reserve(input: BillingReservationInput) {
       await ensureMember();
       await expireStaleBillingReservations({ db, teamId });
       const account = await ensureAccount();
@@ -909,7 +1070,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const isAskTurn =
         input.operationId.startsWith('ask:') || input.metadata?.operation_class === 'agent_ask';
       const expiresAt = new Date(Date.now() + (input.ttlMs ?? 15 * 60_000));
-      const ym = periodYm();
 
       const outcome = await db.transaction(async (tx) => {
         const [lockedRow] = await tx
@@ -1011,6 +1171,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
         }
 
+        const admissionStartedAt = new Date();
+        const ym = periodYm(admissionStartedAt);
         const countersTx = await tx
           .select()
           .from(billingUsageCounters)
@@ -1054,16 +1216,103 @@ export function createBillingScope(deps: BillingScopeDeps) {
           ]),
         ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
         const metersForAdmission = metersPlusPendingReservations(byMeter, pending, ym);
+        const seatTerms = entitlementsPlanId === 'team' ? locked.teamSeatTerms : null;
+        const seatBilling = seatTerms !== null;
+        const enterpriseUsageTarget = confirmedUsdEnterpriseUsageTarget(locked);
+        const usdUsage = seatBilling || enterpriseUsageTarget !== null;
+        const bundledInfrastructure =
+          (enterpriseUsageTarget !== null || !enterpriseContract) &&
+          bundledInfrastructureMeter(entitlementsPlanId, input.meterId, usdUsage);
+        if (
+          seatBilling &&
+          (input.meterId === 'ai' || input.meterId === 'recall_minutes') &&
+          (!locked.periodEndsAt || locked.periodEndsAt <= admissionStartedAt)
+        ) {
+          return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
+        }
+        const priceAdmission = (nativeUnits: number, listChargeCents: number) => {
+          if (bundledInfrastructure) return 0;
+          if (input.meterId === 'ai') {
+            // Keep fractional allowance units, but round payable holds up only
+            // after discounts so small calls cannot bypass a paid spend cap.
+            const billableUnits = paygOverageNativeUnits({
+              planId: entitlementsPlanId,
+              meterId: input.meterId,
+              nativeUnits: Math.max(nativeUnits, listChargeCents),
+              meters: metersForAdmission,
+            });
+            const discount = commercial.meteredDiscountPercent ?? 0;
+            return Math.ceil(
+              (billableUnits * (100 - discount)) / (usdUsage ? 100 * BILLING_EUR_PER_USD : 100),
+            );
+          }
+          return applyMeteredDiscountCents(
+            paygOverageCustomerChargeCents({
+              planId: entitlementsPlanId,
+              meterId: input.meterId,
+              nativeUnits,
+              listChargeCents,
+              meters: metersForAdmission,
+            }),
+            commercial.meteredDiscountPercent,
+          );
+        };
+        const pendingDiscount = pending.reduce(
+          (sum, row) => sum + pendingDiscountReservedCentsInWindow(row, locked.periodStartedAt),
+          0,
+        );
+        const remainingDiscount = Math.max(
+          0,
+          locked.includedDiscountRemainingCents - pendingDiscount,
+        );
+        const spendBeforeAdmission =
+          countedSpendCents(countersTx, seatBilling) +
+          pending.reduce(
+            (sum, row) =>
+              sum +
+              (countsTowardSpendCap(row.meterId, seatBilling)
+                ? pendingCapEligibleChargeCentsInPeriod(row, ym)
+                : 0),
+            0,
+          );
+        const inFreeNativeAllowance = entitlementsPlanId === 'free' && !enterpriseContract;
+        let requestedUnits: number;
+        let listChargeCents: number;
+        if (input.fitRecallToBudget) {
+          let minutes = MEETING_MAX_DURATION_MINUTES_BY_PLAN[entitlementsPlanId];
+          if (inFreeNativeAllowance) {
+            const available = freeIncludedUsageRemainingCents(metersForAdmission);
+            minutes = Math.min(minutes, Math.floor(available / OVERAGE_RATES.recallCentsPerMinute));
+          }
+          if (seatBilling) {
+            const available =
+              remainingDiscount + Math.max(0, locked.spendCapCents - spendBeforeAdmission);
+            while (minutes > 0 && priceAdmission(minutes, recallChargeCents(minutes)) > available) {
+              minutes -= 1;
+            }
+          }
+          if (minutes === 0) {
+            return {
+              kind: 'reject' as const,
+              code: seatBilling
+                ? ('spend_cap_reached' as const)
+                : ('free_allowance_reached' as const),
+            };
+          }
+          requestedUnits = minutes;
+          listChargeCents = recallChargeCents(minutes);
+        } else {
+          requestedUnits = input.reservedNativeUnits;
+          listChargeCents = input.reservedChargeCents;
+        }
         const sourceCapacity = CAPACITY_BY_PLAN[entitlementsPlanId].acceptedSourcesPerMonth;
         if (
           input.meterId === 'accepted_sources' &&
           sourceCapacity !== null &&
-          (metersForAdmission.accepted_sources?.nativeUnits ?? 0) + input.reservedNativeUnits >
-            sourceCapacity
+          (metersForAdmission.accepted_sources?.nativeUnits ?? 0) + requestedUnits > sourceCapacity
         )
           return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
-        const admissionStartedAt = new Date();
-        const reservedUnits = Math.max(0, input.reservedNativeUnits);
+        const reservedUnits = Math.max(0, requestedUnits);
         const unitsThisMonth = pendingNativeUnitsInPeriod(
           {
             meterId: input.meterId,
@@ -1076,11 +1325,24 @@ export function createBillingScope(deps: BillingScopeDeps) {
         // that precision here; payable holds are rounded in priceAdmission.
         const listThisMonth =
           input.meterId === 'ai' || reservedUnits <= 0
-            ? Math.max(0, input.reservedChargeCents)
-            : scaleChargeCents(input.reservedChargeCents, unitsThisMonth, reservedUnits);
+            ? Math.max(0, listChargeCents)
+            : scaleChargeCents(listChargeCents, unitsThisMonth, reservedUnits);
 
-        if (entitlementsPlanId === 'free' && !enterpriseContract) {
-          const allowance = freeAllowanceConsumedForMeter(input.meterId, metersForAdmission);
+        if (inFreeNativeAllowance) {
+          const pooledMeter = input.meterId === 'ai' || input.meterId === 'recall_minutes';
+          const pooledRequestCents =
+            input.meterId === 'ai'
+              ? Math.max(listThisMonth, unitsThisMonth) / BILLING_EUR_PER_USD
+              : recallChargeCents(unitsThisMonth);
+          if (
+            pooledMeter &&
+            pooledRequestCents > freeIncludedUsageRemainingCents(metersForAdmission)
+          ) {
+            return { kind: 'reject' as const, code: 'free_allowance_reached' as const };
+          }
+          const allowance = pooledMeter
+            ? null
+            : freeAllowanceConsumedForMeter(input.meterId, metersForAdmission);
           if (allowance) {
             const next =
               allowance.unit === 'cents'
@@ -1094,44 +1356,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
         }
 
-        const priceAdmission = (nativeUnits: number, listChargeCents: number) => {
-          if (input.meterId === 'ai') {
-            // Keep fractional allowance units, but round payable holds up only
-            // after discounts so small calls cannot bypass a paid spend cap.
-            const billableUnits = paygOverageNativeUnits({
-              planId: entitlementsPlanId,
-              meterId: input.meterId,
-              nativeUnits: Math.max(nativeUnits, listChargeCents),
-              meters: metersForAdmission,
-            });
-            const discount = commercial.meteredDiscountPercent ?? 0;
-            return Math.ceil((billableUnits * (100 - discount)) / 100);
-          }
-          return applyMeteredDiscountCents(
-            paygOverageCustomerChargeCents({
-              planId: entitlementsPlanId,
-              meterId: input.meterId,
-              nativeUnits,
-              listChargeCents,
-              meters: metersForAdmission,
-            }),
-            commercial.meteredDiscountPercent,
-          );
-        };
-        const billableChargeCents = priceAdmission(reservedUnits, input.reservedChargeCents);
+        const billableChargeCents = priceAdmission(reservedUnits, listChargeCents);
         const billableThisMonth =
           unitsThisMonth >= reservedUnits
             ? billableChargeCents
             : priceAdmission(unitsThisMonth, listThisMonth);
-        const pendingDiscount = pending.reduce(
-          (sum, row) => sum + pendingDiscountReservedCentsInWindow(row, locked.periodStartedAt),
-          0,
-        );
-        const remainingDiscount = Math.max(
-          0,
-          locked.includedDiscountRemainingCents - pendingDiscount,
-        );
-        const inFreeNativeAllowance = entitlementsPlanId === 'free' && !enterpriseContract;
         const invoiceBillableChargeCents = inFreeNativeAllowance ? 0 : billableChargeCents;
         const { invoiceCents, discountCents } = splitDiscountAndWallet({
           chargeCents: invoiceBillableChargeCents,
@@ -1139,10 +1368,26 @@ export function createBillingScope(deps: BillingScopeDeps) {
           meterId: input.meterId,
         });
         const walletLockCents = 0;
+        const actorUserId =
+          userId === BILLING_SYSTEM_USER_ID ? (existingReservation?.actorUserId ?? null) : userId;
         const reservationMetadata = {
           ...(input.metadata ?? {}),
+          ...(input.fitRecallToBudget ? { reserved_minutes: requestedUnits } : {}),
+          pending_failed_attempts: undefined,
+          pending_failed_attempt_settlement: undefined,
           admitted_metered_discount_percent: commercial.meteredDiscountPercent ?? 0,
-          list_charge_cents: input.reservedChargeCents,
+          bundled_infrastructure_at_admission: bundledInfrastructure,
+          enterprise_usage_target_at_admission: enterpriseUsageTarget,
+          team_seat_pricing_at_admission: seatTerms
+            ? {
+                includedUsageCents: seatTerms.includedUsageCents,
+                periodStartedAt: locked.periodStartedAt?.toISOString() ?? null,
+                periodEndsAt: locked.periodEndsAt?.toISOString() ?? null,
+                subscriptionId: locked.polarSubscriptionId,
+              }
+            : null,
+          team_overage_cap_at_admission: seatBilling ? locked.spendCapCents : 0,
+          list_charge_cents: listChargeCents,
           metered_charge_cents: billableChargeCents,
           billable_charge_cents: invoiceBillableChargeCents,
           discount_reserved_cents: discountCents,
@@ -1152,30 +1397,30 @@ export function createBillingScope(deps: BillingScopeDeps) {
             entitlementsPlanId,
             comped,
             enterpriseContract,
-            chargeCents: billableChargeCents,
+            chargeCents: enterpriseUsageTarget
+              ? 0
+              : seatBilling
+                ? invoiceCents
+                : billableChargeCents,
           }),
         };
 
-        const enforceSpendCap =
-          localChargeSpendCapApplies({
-            shadowBilling: accountUsesShadowBilling(locked),
-            comped,
-            enterpriseContract,
-            entitlementsPlanId,
-          }) && billableChargeCents > 0;
+        const enforceSpendCap = seatBilling
+          ? invoiceCents > 0
+          : localChargeSpendCapApplies({
+              shadowBilling: accountUsesShadowBilling(locked),
+              comped,
+              enterpriseContract,
+              entitlementsPlanId,
+            }) && billableChargeCents > 0;
         if (enforceSpendCap) {
-          const pendingMetered = pending.reduce(
-            (sum, row) => sum + pendingCapEligibleChargeCentsInPeriod(row, ym),
-            0,
-          );
           const periodSpend =
-            countersTx.reduce((sum, row) => sum + row.capEligibleChargeCents, 0) +
-            pendingMetered +
+            spendBeforeAdmission +
             capEligibleCustomerChargeCents({
               entitlementsPlanId,
               comped,
               enterpriseContract,
-              chargeCents: billableThisMonth,
+              chargeCents: seatBilling ? invoiceCents : billableThisMonth,
             });
           if (periodSpend > locked.spendCapCents) {
             return { kind: 'reject' as const, code: 'spend_cap_reached' as const };
@@ -1188,9 +1433,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
             teamId,
             operationId: input.operationId,
             meterId: input.meterId,
-            reservedNativeUnits: String(input.reservedNativeUnits),
+            reservedNativeUnits: String(requestedUnits),
             reservedChargeCents: invoiceCents,
             admittedPlanId: entitlementsPlanId,
+            actorUserId,
             expiresAt,
             metadata: reservationMetadata,
           })
@@ -1252,9 +1498,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .update(billingUsageReservations)
           .set({
             meterId: input.meterId,
-            reservedNativeUnits: String(input.reservedNativeUnits),
+            reservedNativeUnits: String(requestedUnits),
             reservedChargeCents: invoiceCents,
             admittedPlanId: entitlementsPlanId,
+            actorUserId,
             state: 'reserved',
             expiresAt,
             metadata: preservedFailedAttempts
@@ -1291,19 +1538,91 @@ export function createBillingScope(deps: BillingScopeDeps) {
       if (outcome.kind === 'reject') {
         return { ok: false as const, code: outcome.code };
       }
-      if (outcome.kind === 'already_settled') {
-        return {
-          ok: true as const,
-          reservation: outcome.row,
-          reused: true as const,
-          alreadySettled: true as const,
-        };
-      }
-      if (outcome.kind === 'reused') {
-        return { ok: true as const, reservation: outcome.row, reused: true as const };
-      }
-
-      return { ok: true as const, reservation: outcome.row, reused: false as const };
+      const row = outcome.row;
+      const failedAdmission = failedAiAdmissionSchema.safeParse({
+        planId: row.admittedPlanId,
+        actorUserId: row.actorUserId,
+        meteredDiscountPercent: row.metadata.admitted_metered_discount_percent,
+        seatPricing: row.metadata.team_seat_pricing_at_admission,
+        enterpriseUsageTarget: row.metadata.enterprise_usage_target_at_admission ?? undefined,
+        overageCapCents: row.metadata.team_overage_cap_at_admission,
+      }).data;
+      const usageAt = row.createdAt.toISOString();
+      const result = {
+        ok: true as const,
+        reservation: row,
+        // Capture the admission by value before the provider runs. A renewed
+        // reservation under the same operation id may carry different terms.
+        async recordFailedAiAttempt(input: {
+          openRouterUsd: number;
+          operationClass: string;
+          billable: boolean;
+          model?: string;
+          source?: string;
+          deliverySurface?: string;
+        }) {
+          if (row.meterId !== 'ai') throw new Error('Failed AI attempt requires an AI reservation');
+          await db.transaction(async (tx) => {
+            const [parent] = await tx
+              .select({ metadata: billingUsageReservations.metadata })
+              .from(billingUsageReservations)
+              .where(
+                and(
+                  eq(billingUsageReservations.id, row.id),
+                  eq(billingUsageReservations.teamId, teamId),
+                ),
+              )
+              .limit(1)
+              .for('update');
+            if (!parent) throw new Error('Missing failed AI attempt reservation');
+            const attempts = pendingFailedAiAttempts(parent.metadata);
+            const prefix = `${row.operationId}:failed:`;
+            const prior = await tx
+              .select({ operationId: billingUsageLedger.operationId })
+              .from(billingUsageLedger)
+              .where(
+                and(
+                  eq(billingUsageLedger.teamId, teamId),
+                  sql`starts_with(${billingUsageLedger.operationId}, ${prefix})`,
+                ),
+              );
+            const issued = new Set([
+              ...prior.map((attempt) => attempt.operationId),
+              ...attempts.map((attempt) => attempt.operation_id),
+            ]);
+            const patch = JSON.stringify({
+              pending_failed_attempt_settlement: true,
+              pending_failed_attempts: [
+                ...attempts,
+                {
+                  operation_id: `${prefix}${issued.size + 1}`,
+                  openrouter_usd: input.openRouterUsd,
+                  usage_at: usageAt,
+                  operation_class: input.operationClass,
+                  billable: input.billable,
+                  model: input.model,
+                  source: input.source,
+                  delivery_surface: input.deliverySurface,
+                  admitted_metered_discount_percent: failedAdmission?.meteredDiscountPercent,
+                  billing_admission: failedAdmission,
+                },
+              ],
+            });
+            await tx
+              .update(billingUsageReservations)
+              .set({
+                metadata: sql`${billingUsageReservations.metadata} || ${patch}::jsonb`,
+                updatedAt: new Date(),
+              })
+              .where(eq(billingUsageReservations.id, row.id));
+          });
+        },
+      };
+      return {
+        ...result,
+        reused: outcome.kind !== 'created',
+        ...(outcome.kind === 'already_settled' ? { alreadySettled: true as const } : {}),
+      };
     },
 
     async settle(input: {
@@ -1333,11 +1652,12 @@ export function createBillingScope(deps: BillingScopeDeps) {
       pricingAdditionalMemberCents?: number | null;
       /** Historical member-day discount, resolved by the server from operator history. */
       pricingMemberDiscountPercent?: number | null;
-      /** Server-saved admission percentage for failed AI attempts without their own reservation. */
-      pricingAiDiscountPercent?: number;
+      /** The server resolves the failed attempt from its owning AI reservation. */
+      failedAiAttemptFor?: string;
       pricingPeriodYm?: string;
       /** When the usage happened. Backfills use this instead of reservation time. */
       usageAt?: Date;
+      recallEndedAt?: Date;
     }) {
       await ensureMember();
       await ensureAccount();
@@ -1348,11 +1668,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
             ledger: typeof billingUsageLedger.$inferSelect | null;
             planId: BillingPlanId;
             spendCapCents: number;
+            usd?: boolean;
           }
         | undefined;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const written = await db.transaction(async (tx) => {
-          const now = new Date();
           const [lockedAccount] = await tx
             .select()
             .from(teamBillingAccounts)
@@ -1360,6 +1680,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .limit(1)
             .for('update');
           if (!lockedAccount) throw new Error('Missing billing account');
+          const now = new Date();
           const rolled = await rollIncludedDiscountIfElapsed(tx, lockedAccount, now);
           const account = rolled.account;
           const reservation = await tx
@@ -1368,13 +1689,68 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .where(
               and(
                 eq(billingUsageReservations.teamId, teamId),
-                eq(billingUsageReservations.operationId, input.operationId),
+                eq(
+                  billingUsageReservations.operationId,
+                  input.failedAiAttemptFor ?? input.operationId,
+                ),
               ),
             )
             .limit(1)
             .for('update');
-
-          const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? now;
+          const [linkedReservation] = reservation;
+          const failedAttempt =
+            input.failedAiAttemptFor &&
+            input.meterId === 'ai' &&
+            linkedReservation?.meterId === 'ai'
+              ? pendingFailedAiAttempts(linkedReservation.metadata).find(
+                  (attempt) => attempt.operation_id === input.operationId,
+                )
+              : undefined;
+          if (input.failedAiAttemptFor && !failedAttempt) {
+            const [existing] = await tx
+              .select()
+              .from(billingUsageLedger)
+              .where(
+                and(
+                  eq(billingUsageLedger.teamId, teamId),
+                  eq(billingUsageLedger.operationId, input.operationId),
+                ),
+              )
+              .limit(1);
+            if (existing?.metadata.failed_attempt_for !== input.failedAiAttemptFor) {
+              throw new Error('Missing stored failed AI attempt');
+            }
+            return {
+              kind: 'done' as const,
+              duplicate: true,
+              ledger: existing,
+              planId: effectiveBillingPlanId(account),
+              spendCapCents: account.spendCapCents,
+            };
+          }
+          const failedAdmission = failedAiAdmissionSchema.safeParse(
+            failedAttempt?.billing_admission,
+          ).data;
+          const admission = input.failedAiAttemptFor ? undefined : linkedReservation;
+          const admittedPlanId = failedAdmission?.planId ?? admission?.admittedPlanId;
+          const pendingRecall =
+            input.meterId === 'recall_minutes' &&
+            admission?.meterId === 'recall_minutes' &&
+            admission.metadata.pending_meter === 'recall_minutes'
+              ? admission.metadata
+              : undefined;
+          const startedAt =
+            input.usageAt ??
+            (pendingRecall
+              ? recallTimestamp.safeParse(pendingRecall.pending_started_at).data
+              : undefined) ??
+            admission?.createdAt ??
+            now;
+          const endedAt =
+            input.recallEndedAt ??
+            (pendingRecall
+              ? recallTimestamp.safeParse(pendingRecall.pending_ended_at).data
+              : undefined);
           const segments =
             input.pricingPeriodYm && input.meterId !== 'recall_minutes'
               ? [{ periodYm: input.pricingPeriodYm, nativeUnits: Math.max(0, input.nativeUnits) }]
@@ -1382,6 +1758,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   meterId: input.meterId,
                   nativeUnits: input.nativeUnits,
                   startedAt,
+                  ...(endedAt ? { endedAt } : {}),
                 });
           const primaryYm = segments[0]?.periodYm ?? periodYm(startedAt);
           const uniquePeriods = [...new Set(segments.map((row) => row.periodYm))];
@@ -1413,18 +1790,19 @@ export function createBillingScope(deps: BillingScopeDeps) {
             usageAt: startedAt,
             livePlanId,
             account,
-            ...(input.pricingPlanId ? { explicitPlanId: input.pricingPlanId } : {}),
-            ...(reservation[0]?.admittedPlanId
-              ? { admittedPlanId: reservation[0].admittedPlanId }
+            ...(!failedAttempt && input.pricingPlanId
+              ? { explicitPlanId: input.pricingPlanId }
               : {}),
+            ...(admittedPlanId ? { admittedPlanId } : {}),
           });
           const commercial = resolveTeamCommercialTerms(account);
           // Admission stamps this after caller metadata under the account lock.
           // Explicit zero prevents a later promotion from repricing completed work.
           const admittedDiscount =
-            input.meterId === 'ai' && input.pricingAiDiscountPercent !== undefined
-              ? input.pricingAiDiscountPercent
-              : reservation[0]?.metadata.admitted_metered_discount_percent;
+            failedAdmission?.meteredDiscountPercent ??
+            legacyFailedAiDiscountSchema.safeParse(failedAttempt?.admitted_metered_discount_percent)
+              .data ??
+            admission?.metadata.admitted_metered_discount_percent;
           const meteredDiscountPercent =
             input.meterId === 'member_days' && input.pricingMemberDiscountPercent !== undefined
               ? input.pricingMemberDiscountPercent
@@ -1435,6 +1813,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   : commercial.meteredDiscountPercent;
           const comped = compSuppressesPolarCharges(account);
           const enterpriseContract = contractualEnterpriseAccount(account);
+          const retiredEnterpriseCharge =
+            entitlementsPlanId === 'enterprise' && livePlanId !== 'enterprise';
           // member_days ignore the caller's customerChargeCents and recompute from
           // the commercial extra-member price so a custom rate cannot be bypassed.
           // A replay passes the historical plan's rate instead of the live price.
@@ -1444,6 +1824,106 @@ export function createBillingScope(deps: BillingScopeDeps) {
               : entitlementsPlanId !== livePlanId
                 ? (PLAN_CATALOG[entitlementsPlanId].additionalMemberCents ?? 0)
                 : (commercial.additionalMemberCents ?? 0);
+          const admittedPricing = failedAdmission
+            ? {
+                bundled_infrastructure_at_admission: false,
+                team_seat_pricing_at_admission: failedAdmission.seatPricing,
+                enterprise_usage_target_at_admission: failedAdmission.enterpriseUsageTarget,
+                team_overage_cap_at_admission: failedAdmission.overageCapCents,
+              }
+            : admission?.meterId === input.meterId &&
+                (admission.admittedPlanId === entitlementsPlanId ||
+                  (admission.admittedPlanId === null && !input.pricingPlanId))
+              ? admission.metadata
+              : undefined;
+          const parsedSeatPricing = admittedTeamSeatPricingSchema.safeParse(
+            admittedPricing?.team_seat_pricing_at_admission,
+          );
+          const seatPricing = parsedSeatPricing.data;
+          const admittedBundle = admittedPricing?.bundled_infrastructure_at_admission;
+          const admittedCap = admittedPricing?.team_overage_cap_at_admission;
+          const liveSeatBilling = isSeatPricedTeamAccount(account);
+          const legacyMemberDayOnSeatPlan = input.meterId === 'member_days' && liveSeatBilling;
+          // Older rows can prove seat pricing through a positive seat-only cap or
+          // bundled Team infrastructure. A zero cap alone identifies neither pricing mode.
+          const admittedSeatBilling = parsedSeatPricing.success
+            ? seatPricing !== null
+            : admittedBundle === true || (typeof admittedCap === 'number' && admittedCap > 0);
+          const historicalStorageSeatPricing =
+            !admission &&
+            input.meterId === 'storage_gb_month' &&
+            input.pricingPeriodYm &&
+            entitlementsPlanId === 'team'
+              ? await historicalTeamSeatPricingOnDay({
+                  db: tx,
+                  teamId,
+                  day: startedAt.toISOString().slice(0, 10),
+                })
+              : undefined;
+          // Confirmed USD seats do not accrue daily member usage. Preserve
+          // the legacy rate on replayed member-day facts.
+          const seatBilling =
+            input.meterId !== 'member_days' &&
+            entitlementsPlanId === 'team' &&
+            (admission || failedAdmission
+              ? admittedSeatBilling
+              : (historicalStorageSeatPricing ?? liveSeatBilling));
+          const usesLiveEnterpriseTerms =
+            entitlementsPlanId === 'enterprise' &&
+            livePlanId === 'enterprise' &&
+            enterpriseContract &&
+            account.periodStartedAt &&
+            startedAt >= account.periodStartedAt &&
+            (!account.periodEndsAt || startedAt < account.periodEndsAt);
+          const enterpriseUsageTarget =
+            entitlementsPlanId !== 'enterprise'
+              ? null
+              : admission || failedAdmission
+                ? (enterpriseUsageTargetSchema.safeParse(
+                    admittedPricing?.enterprise_usage_target_at_admission,
+                  ).data ?? null)
+                : usesLiveEnterpriseTerms
+                  ? confirmedUsdEnterpriseUsageTarget(account)
+                  : null;
+          const usdUsage = seatBilling || enterpriseUsageTarget !== null;
+          const presentationCurrency = usdUsage
+            ? 'USD'
+            : entitlementsPlanId !== 'enterprise'
+              ? 'EUR'
+              : usesLiveEnterpriseTerms
+                ? account.enterprisePlatformFeeCurrency
+                : null;
+          const needsAdmissionCap =
+            seatBilling ||
+            (entitlementsPlanId === 'team' && !parsedSeatPricing.success && admittedCap === 0);
+          const matchesLiveSubscription =
+            !seatPricing || seatPricing.subscriptionId === account.polarSubscriptionId;
+          const admittedSeatAllowance =
+            seatBilling && seatPricing?.periodStartedAt && seatPricing.periodEndsAt
+              ? {
+                  budgetCents: seatPricing.includedUsageCents,
+                  periodStartedAt: new Date(seatPricing.periodStartedAt),
+                  periodEndsAt: new Date(seatPricing.periodEndsAt),
+                  matchesLiveSubscription,
+                }
+              : needsAdmissionCap && admittedPricing
+                ? null
+                : undefined;
+          const historicalStorageBundled =
+            !admission &&
+            input.meterId === 'storage_gb_month' &&
+            entitlementsPlanId === 'enterprise' &&
+            (await historicalEnterpriseStorageBundledOnDay({
+              db: tx,
+              teamId,
+              day: startedAt.toISOString().slice(0, 10),
+            }));
+          const bundledInfrastructure =
+            typeof admittedBundle === 'boolean'
+              ? admittedBundle
+              : historicalStorageBundled === true ||
+                ((enterpriseUsageTarget !== null || !enterpriseContract) &&
+                  bundledInfrastructureMeter(entitlementsPlanId, input.meterId, usdUsage));
           const segmentCharges = segments.map((segment) => {
             const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
             const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
@@ -1467,24 +1947,34 @@ export function createBillingScope(deps: BillingScopeDeps) {
               centsPerMemberMonth: memberRateCents,
               daysInMonth: daysInPeriodYm(segment.periodYm),
             };
-            const previousBillableCents = cumulativeBillableChargeCents({
-              ...billableInput,
-              nativeUnits: previousNative,
-            });
-            const nextBillableCents = cumulativeBillableChargeCents({
-              ...billableInput,
-              nativeUnits: nextNative,
-            });
-            const actualChargeCents = Math.max(
-              0,
-              applyMeteredDiscountCents(nextBillableCents, meteredDiscountPercent) -
-                applyMeteredDiscountCents(previousBillableCents, meteredDiscountPercent),
-            );
+            const billableAt = (nativeUnits: number) =>
+              cumulativeBillableChargeCents({
+                ...billableInput,
+                nativeUnits:
+                  usdUsage && input.meterId === 'ai'
+                    ? nativeUnits / BILLING_EUR_PER_USD
+                    : nativeUnits,
+              });
+            const previousBillableCents = billableAt(previousNative);
+            const nextBillableCents = billableAt(nextNative);
+            const actualChargeCents = bundledInfrastructure
+              ? 0
+              : Math.max(
+                  0,
+                  applyMeteredDiscountCents(nextBillableCents, meteredDiscountPercent) -
+                    applyMeteredDiscountCents(previousBillableCents, meteredDiscountPercent),
+                );
             const capEligibleChargeCents = capEligibleCustomerChargeCents({
               entitlementsPlanId,
               comped,
               enterpriseContract,
-              chargeCents: actualChargeCents,
+              chargeCents:
+                needsAdmissionCap ||
+                retiredEnterpriseCharge ||
+                enterpriseUsageTarget !== null ||
+                (legacyMemberDayOnSeatPlan && segment.periodYm === periodYm(now))
+                  ? 0
+                  : actualChargeCents,
             });
             return {
               ...segment,
@@ -1500,13 +1990,18 @@ export function createBillingScope(deps: BillingScopeDeps) {
             0,
           );
           const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
+          const recallWindow =
+            admittedSeatAllowance?.matchesLiveSubscription === false
+              ? admittedSeatAllowance
+              : account;
           const windowShares =
             input.meterId === 'recall_minutes'
               ? recallDiscountWindowShares({
                   startedAt,
+                  ...(endedAt ? { endedAt } : {}),
                   nativeUnits: Math.max(0, input.nativeUnits),
-                  periodStartedAt: account.periodStartedAt,
-                  periodEndsAt: account.periodEndsAt,
+                  periodStartedAt: recallWindow.periodStartedAt,
+                  periodEndsAt: recallWindow.periodEndsAt,
                   segments: segmentCharges.map((row) => ({
                     periodYm: row.periodYm,
                     nativeUnits: row.nativeUnits,
@@ -1514,7 +2009,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   })),
                 })
               : [];
-          const discountAcrossWindows = windowShares.length > 1;
+          const splitRecallDiscount =
+            windowShares.length > 1 ||
+            (windowShares[0] && windowShares[0].usageAt.getTime() !== startedAt.getTime());
           let discountCents = 0;
           let invoiceCents = 0;
           let currentWindowDiscountCents = 0;
@@ -1527,19 +2024,24 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 native_units: number;
               }[]
             | undefined;
-          if (discountAcrossWindows) {
+          if (splitRecallDiscount) {
             discountWindows = [];
             let liveRemaining = account.includedDiscountRemainingCents;
+            const historicalRemainingByWindow = new Map<number, number>();
             for (const share of windowShares) {
-              const historicalDiscount = await includedDiscountCentsBeforeCurrentWindow({
-                db: tx,
-                teamId,
-                account,
-                usageAt: share.usageAt,
-                now,
-                pricingPlanId: entitlementsPlanId,
-                livePlanId,
-              });
+              const windowStart = share.windowStartedAt.getTime();
+              const historicalDiscount =
+                historicalRemainingByWindow.get(windowStart) ??
+                (await includedDiscountCentsBeforeCurrentWindow({
+                  db: tx,
+                  teamId,
+                  account,
+                  usageAt: share.usageAt,
+                  now,
+                  pricingPlanId: entitlementsPlanId,
+                  livePlanId,
+                  ...(admittedSeatAllowance !== undefined ? { admittedSeatAllowance } : {}),
+                }));
               const split = splitDiscountAndWallet({
                 chargeCents: freeAllowanceSettlement ? 0 : share.chargeCents,
                 includedDiscountRemainingCents: historicalDiscount ?? liveRemaining,
@@ -1550,6 +2052,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
               if (historicalDiscount === undefined) {
                 currentWindowDiscountCents += split.discountCents;
                 liveRemaining -= split.discountCents;
+              } else {
+                historicalRemainingByWindow.set(
+                  windowStart,
+                  historicalDiscount - split.discountCents,
+                );
               }
               discountWindows.push({
                 started_at: share.windowStartedAt.toISOString(),
@@ -1568,6 +2075,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               now,
               pricingPlanId: entitlementsPlanId,
               livePlanId,
+              ...(admittedSeatAllowance !== undefined ? { admittedSeatAllowance } : {}),
             });
             const split = splitDiscountAndWallet({
               chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
@@ -1578,6 +2086,51 @@ export function createBillingScope(deps: BillingScopeDeps) {
             discountCents = split.discountCents;
             invoiceCents = split.invoiceCents;
             if (historicalDiscount === undefined) currentWindowDiscountCents = discountCents;
+          }
+          const capCountersBefore = countersBeforeRows.filter((row) =>
+            countsTowardSpendCap(row.meterId, liveSeatBilling),
+          );
+          const invoicePeriodYm = needsAdmissionCap ? periodYm(now) : primaryYm;
+          if (needsAdmissionCap) {
+            const spent = capCountersBefore.reduce(
+              (total, row) =>
+                total + (row.periodYm === invoicePeriodYm ? row.capEligibleChargeCents : 0),
+              0,
+            );
+            let room =
+              seatBilling &&
+              liveSeatBilling &&
+              seatPricing &&
+              matchesLiveSubscription &&
+              input.billable !== false &&
+              typeof admittedCap === 'number'
+                ? Math.max(0, Math.min(admittedCap, account.spendCapCents) - spent)
+                : 0;
+            const collect = (usageAt: Date, candidate: number) => {
+              if (
+                periodYm(usageAt) !== invoicePeriodYm ||
+                !account.periodStartedAt ||
+                !account.periodEndsAt ||
+                usageAt < account.periodStartedAt ||
+                usageAt >= account.periodEndsAt
+              )
+                return 0;
+              const charged = Math.min(room, candidate);
+              room -= charged;
+              return charged;
+            };
+            if (discountWindows && discountWindows.length > 0) {
+              invoiceCents = 0;
+              for (const [index, split] of discountWindows.entries()) {
+                const share = windowShares[index];
+                split.invoice_cents = share ? collect(share.usageAt, split.invoice_cents) : 0;
+                invoiceCents += split.invoice_cents;
+              }
+            } else {
+              invoiceCents = collect(startedAt, invoiceCents);
+            }
+            const current = segmentCharges.find((row) => row.periodYm === invoicePeriodYm);
+            if (current) current.capEligibleChargeCents = invoiceCents;
           }
           const eventName = polarEventNameForMeter(input.meterId);
           const unitsToInvoice = polarCatalogUnitsForInvoiceCents(input.meterId, invoiceCents);
@@ -1591,8 +2144,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
             invoiceCents,
           };
           const earlyDisposition = polarIngestDispositionBeforeCoverage(coverageInput);
+          const liveEnterpriseTarget = confirmedUsdEnterpriseUsageTarget(account);
+          const matchesEnterpriseTarget = enterpriseUsageTarget
+            ? enterpriseUsageTarget.productId === liveEnterpriseTarget?.productId &&
+              enterpriseUsageTarget.subscriptionId === liveEnterpriseTarget.subscriptionId
+            : liveEnterpriseTarget === null &&
+              (entitlementsPlanId !== 'enterprise' || livePlanId === 'enterprise');
           const coverage =
-            earlyDisposition === null
+            earlyDisposition === null && !legacyMemberDayOnSeatPlan && matchesEnterpriseTarget
               ? cachedCoverageForPayableSettlement(provider, account.polarProductId)
               : { names: null as readonly string[] | null };
           if ('productId' in coverage) {
@@ -1602,15 +2161,18 @@ export function createBillingScope(deps: BillingScopeDeps) {
             earlyDisposition ??
             polarIngestDisposition({
               ...coverageInput,
-              subscriptionCoversMeter: polarSubscriptionCoversMeter({
-                planId: effectiveBillingPlanId(account),
-                billingState: account.billingState,
-                polarSubscriptionId: account.polarSubscriptionId,
-                polarProductId: account.polarProductId,
-                eventName,
-                products: polarPlanProductsFromEnv(),
-                pricedEventNames: coverage.names,
-              }),
+              subscriptionCoversMeter:
+                !legacyMemberDayOnSeatPlan &&
+                matchesEnterpriseTarget &&
+                polarSubscriptionCoversMeter({
+                  planId: effectiveBillingPlanId(account),
+                  billingState: account.billingState,
+                  polarSubscriptionId: account.polarSubscriptionId,
+                  polarProductId: account.polarProductId,
+                  eventName,
+                  products: polarPlanProductsFromEnv(),
+                  pricedEventNames: coverage.names,
+                }),
             });
           const polarIngestMetadata =
             disposition === 'not_required' || !eventName
@@ -1623,7 +2185,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   polar_ingest_operation_id: input.operationId,
                   polar_ingest_charge_cents: invoiceCents,
                   polar_ingest_meter: input.meterId,
-                  polar_ingest_period_ym: primaryYm,
+                  polar_ingest_period_ym: invoicePeriodYm,
                   ...(disposition === 'hold'
                     ? { polar_ingest_block: POLAR_INGEST_BLOCK_MISSING_PRICE }
                     : {}),
@@ -1631,7 +2193,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
 
           const applyCharges = !accountUsesShadowBilling(account);
           const collectDiscount =
-            currentWindowDiscountCents > 0 && applyCharges && !enterpriseContract && !comped;
+            currentWindowDiscountCents > 0 &&
+            (applyCharges || seatBilling) &&
+            !enterpriseContract &&
+            !comped;
           const spendCapExceeded =
             localChargeSpendCapApplies({
               shadowBilling: !applyCharges,
@@ -1640,19 +2205,27 @@ export function createBillingScope(deps: BillingScopeDeps) {
               entitlementsPlanId,
             }) &&
             currentPeriodSpendCapExceeded({
-              currentPeriodYm: periodYm(),
+              currentPeriodYm: periodYm(now),
               spendCapCents: account.spendCapCents,
               segments: segmentCharges.map((row) => ({
                 periodYm: row.periodYm,
                 chargeCents: row.capEligibleChargeCents,
               })),
-              counterChargeCents: countersBeforeRows.map((row) => ({
+              counterChargeCents: capCountersBefore.map((row) => ({
                 periodYm: row.periodYm,
                 chargeCents: row.capEligibleChargeCents,
               })),
             });
           const freezeAccount = spendCapExceeded;
 
+          const admittedActorUserId = failedAdmission?.actorUserId;
+          const [failedActor] = admittedActorUserId
+            ? await tx
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.id, admittedActorUserId))
+                .for('key share')
+            : [];
           const [ledgerRow] = await tx
             .insert(billingUsageLedger)
             .values({
@@ -1668,20 +2241,36 @@ export function createBillingScope(deps: BillingScopeDeps) {
               operationClass: input.operationClass ?? null,
               provider: input.provider ?? null,
               model: input.model ?? null,
-              actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
+              actorUserId: failedAdmission
+                ? (failedActor?.id ?? null)
+                : (linkedReservation?.actorUserId ??
+                  (userId === BILLING_SYSTEM_USER_ID ? null : userId)),
               source: input.source ?? null,
               deliverySurface: input.deliverySurface ?? null,
-              reservationId: reservation[0]?.id ?? null,
+              reservationId: linkedReservation?.id ?? null,
               metadata: {
                 ...(input.metadata ?? {}),
-                ...(input.pricingPlanId || entitlementsPlanId !== livePlanId
+                ...(input.failedAiAttemptFor
+                  ? { failed_attempt_for: input.failedAiAttemptFor }
+                  : {}),
+                ...(input.pricingPlanId ||
+                entitlementsPlanId !== livePlanId ||
+                entitlementsPlanId === 'enterprise' ||
+                seatBilling
                   ? { pricing_plan_id: entitlementsPlanId }
                   : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
                 presentation_comped: comped,
+                presentation_currency: presentationCurrency,
+                polar_ingest_enterprise_target: enterpriseUsageTarget ?? undefined,
                 presentation_chargeable:
                   !comped && !accountUsesShadowBilling(account) && input.billable !== false,
                 usage_at: startedAt.toISOString(),
+                ...(input.meterId === 'recall_minutes'
+                  ? {
+                      usage_ended_at: endedAt && endedAt > startedAt ? endedAt.toISOString() : null,
+                    }
+                  : {}),
                 list_charge_cents: listChargeCents,
                 discount_cents: discountCents,
                 invoice_cents: invoiceCents,
@@ -1752,16 +2341,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
 
           const walletLockCents =
-            reservation[0]?.state === 'reserved'
-              ? walletLockCentsFromMetadata(reservation[0].metadata)
-              : 0;
-          if (reservation[0]?.state === 'reserved') {
+            admission?.state === 'reserved' ? walletLockCentsFromMetadata(admission.metadata) : 0;
+          if (admission?.state === 'reserved') {
             await tx
               .update(billingUsageReservations)
               .set({ state: 'settled', updatedAt: new Date() })
               .where(
                 and(
-                  eq(billingUsageReservations.id, reservation[0].id),
+                  eq(billingUsageReservations.id, admission.id),
                   eq(billingUsageReservations.state, 'reserved'),
                 ),
               );
@@ -1791,7 +2378,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             await recordMissingSubscriptionPriceAlert(tx as unknown as Db, {
               teamId,
               meterId: input.meterId,
-              periodYm: primaryYm,
+              periodYm: invoicePeriodYm,
               detail: `${eventName} has no matching active subscription price`,
             });
           }
@@ -1802,6 +2389,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             ledger: ledgerRow,
             planId: effectiveBillingPlanId(account),
             spendCapCents: freezeAccount ? 0 : account.spendCapCents,
+            usd: liveSeatBilling,
           };
         });
         if (written.kind === 'lookup') {
@@ -1859,15 +2447,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
             },
           ]),
         );
-        const meteredSpendCents = countersAfter.reduce(
-          (sum, row) => sum + row.capEligibleChargeCents,
-          0,
-        );
+        const meteredSpendCents = countedSpendCents(countersAfter, settled.usd ?? false);
         await notifyBillingUsageAlerts({
           db,
           teamId,
           planId: settled.planId,
           spendCapCents: settled.spendCapCents,
+          usd: settled.usd ?? false,
           meteredSpendCents,
           meters: byMeter,
         });
@@ -1939,7 +2525,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
     async patchReservationMetadata(operationId: string, metadata: Record<string, unknown>) {
       await ensureMember();
       await ensureAccount();
-      const patch = JSON.stringify(metadata);
+      const patch = JSON.stringify({
+        ...metadata,
+        pending_failed_attempts: undefined,
+        pending_failed_attempt_settlement: undefined,
+        admitted_metered_discount_percent: undefined,
+        bundled_infrastructure_at_admission: undefined,
+        enterprise_usage_target_at_admission: undefined,
+        team_seat_pricing_at_admission: undefined,
+        team_overage_cap_at_admission: undefined,
+      });
       await db
         .update(billingUsageReservations)
         .set({

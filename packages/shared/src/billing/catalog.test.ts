@@ -51,10 +51,10 @@ describe('euro amount parsing', () => {
 });
 
 describe('billing catalog', () => {
-  it('exposes the v1 commercial journey in public order', () => {
+  it('exposes the three launch offers in public order', () => {
     expect(BILLING_ENTITLEMENTS_VERSION).toBe('v1');
-    expect(PUBLIC_PLAN_ORDER).toEqual(['free', 'payg', 'team', 'business', 'enterprise']);
-    expect(SELF_SERVE_PLAN_ORDER).toEqual(['free', 'payg', 'team', 'business']);
+    expect(PUBLIC_PLAN_ORDER).toEqual(['free', 'team', 'enterprise']);
+    expect(SELF_SERVE_PLAN_ORDER).toEqual(['free', 'team']);
     expect(PLAN_CATALOG.free.platformFeeCents).toBe(0);
     expect(PLAN_CATALOG.payg.platformFeeCents).toBe(0);
     expect(PLAN_CATALOG.team.platformFeeCents).toBe(4_900);
@@ -228,12 +228,12 @@ describe('paid plan change', () => {
     process.env.POLAR_PRODUCT_ID_ENTERPRISE = 'prod_enterprise';
     resetEnvForTests();
     try {
-      expect(selfServeCheckoutPlan('payg')).toBe('payg');
+      expect(selfServeCheckoutPlan('payg')).toBeUndefined();
       expect(selfServeCheckoutPlan('team')).toBe('team');
-      expect(selfServeCheckoutPlan('business')).toBe('business');
+      expect(selfServeCheckoutPlan('business')).toBeUndefined();
       expect(selfServeCheckoutPlan('enterprise')).toBeUndefined();
       expect(selfServeCheckoutPlan('free')).toBeUndefined();
-      expect(polarProductIdForPlan('business')).toBe('prod_business');
+      expect(polarProductIdForPlan('business')).toBeUndefined();
       expect(polarProductIdForPlan('enterprise')).toBeUndefined();
     } finally {
       delete process.env.POLAR_PRODUCT_ID_PAYG;

@@ -77,6 +77,7 @@ const {
 } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { createElement } = await import('react');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 
 const { CuratedKanbanBoard } = await import('./curated-kanban-board.js');
 
@@ -168,6 +169,27 @@ describe('CuratedKanbanBoard', () => {
     );
     expect(container.textContent).toContain('2000');
     expect(container.textContent).not.toContain('Overdue');
+  });
+
+  it('shows the workspace day and skips an unchanged inline card deadline', async () => {
+    const user = userEvent.setup();
+    const dueAt = new Date('2026-11-30T22:15:00.000Z');
+    render(
+      <WorkspaceTimezoneProvider timezone="Europe/Helsinki">
+        <CuratedKanbanBoard
+          boardId="board-1"
+          lanes={[lane()]}
+          items={[{ ...boardItem('Board card'), dueAt }]}
+          selectedItemId={null}
+          members={[]}
+        />
+      </WorkspaceTimezoneProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Due date for Board card' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(fakes.updateBoardItemAction).not.toHaveBeenCalled();
   });
 
   it('groups the scrollable board columns with uniquely named duplicate lane regions', () => {

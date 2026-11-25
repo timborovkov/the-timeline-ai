@@ -33,6 +33,7 @@ import {
   DigestDestinationsForm,
   type DigestDestinationOption,
 } from '@/components/digest-destinations';
+import { DisplayRegionForm } from '@/components/display-region-form';
 import { WorkStylePreference } from '@/components/onboarding/work-style-preference';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
@@ -55,6 +56,7 @@ import { displayMemberLabel } from '@/lib/display-labels';
 import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
 import { paidSignupPlan } from '@/lib/signup-plan';
 import { readSignupPlanIntent } from '@/lib/signup-plan-intent';
+import { timezoneOptions } from '@/lib/timezones';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -62,7 +64,7 @@ export const metadata: Metadata = {
 };
 
 type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
-type TeamTimezoneSettings = ComponentProps<typeof TeamTimezoneForm>;
+type TeamTimezoneSettings = Pick<ComponentProps<typeof TeamTimezoneForm>, 'timezone'>;
 
 const SETTINGS_ITEMS = [
   { value: 'general', label: 'General' },
@@ -128,6 +130,11 @@ export default async function TeamSettingsPage({
           { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
+      {isAdmin && section === 'members' ? (
+        <Link href="/app/team/guests" className="text-sm underline">
+          Guest access
+        </Link>
+      ) : null}
       {
         <TeamSettingsSections
           section={section}
@@ -213,6 +220,9 @@ function TeamSettingsSections({
           <>
             <TeamIdentitySettings isAdmin={isAdmin} active={active} />
             <TeamQualitySettings />
+            <SettingsSection title="Your display preferences">
+              <DisplayRegionForm timezones={timezoneOptions('')} />
+            </SettingsSection>
             <TeamPreferencesSettings
               isAdmin={isAdmin}
               digestDestinations={digestDestinations}
@@ -269,6 +279,11 @@ function TeamSettingsSections({
         {section === 'advanced' && isAdmin ? (
           <>
             <AdminShortcuts isAdmin />
+            <SettingsSection title="Record maintenance">
+              <Link href="/app/team/record-maintenance" className="text-sm text-signal underline">
+                Configure automatic changes
+              </Link>
+            </SettingsSection>
             {isOwner && <TeamDeletionForm teamId={active.teamId} teamName={active.teamName} />}
           </>
         ) : null}
@@ -358,22 +373,18 @@ function TeamPreferencesSettings({
       <SettingsSection title="How the team works">
         <WorkStylePreference initialWorkStyle={workStyle} />
       </SettingsSection>
-      <SettingsSection title="Updates">
-        <Link
-          href="/app/updates"
-          className="text-sm font-medium text-fg underline underline-offset-4 hover:decoration-signal"
-        >
-          Manage update schedules
-        </Link>
-      </SettingsSection>
+      <MessagingPreferencesCard />
       {isAdmin ? (
-        <SettingsSection title="Workspace delivery destinations">
+        <SettingsSection title="Digest destinations">
           <DigestDestinationsForm destinations={digestDestinations} options={destinationOptions} />
         </SettingsSection>
       ) : null}
       {isAdmin ? (
         <SettingsSection title="Team timezone">
-          <TeamTimezoneForm {...timezoneSettings} />
+          <TeamTimezoneForm
+            {...timezoneSettings}
+            options={timezoneOptions(timezoneSettings.timezone)}
+          />
         </SettingsSection>
       ) : null}
     </>
@@ -472,9 +483,20 @@ function TeamBillingSettings({
       comp={comp}
       showOperatorLink={showOperatorLink}
       platformFeeCents={commercial?.platformFeeCents}
+      platformFeeCurrency={commercial?.platformFeeCurrency}
     />
   );
 }
+function MessagingPreferencesCard() {
+  return (
+    <SettingsSection title="Messaging">
+      <Link href="/app/updates" className="underline underline-offset-4">
+        Customize updates
+      </Link>
+    </SettingsSection>
+  );
+}
+
 function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (

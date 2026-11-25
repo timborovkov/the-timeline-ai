@@ -36,7 +36,7 @@ import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { Button } from '@/components/ui/button';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { consumeChatHandoffEntry, type ChatHandoff } from '@/lib/chat-handoff';
 import { chatRequestMessages } from '@/lib/chat-session';
 import type { ChatSaveResult } from '@/lib/chat-turn-save';
@@ -954,7 +954,7 @@ function ChatMessage({
 }
 
 function AnswerEvidence({ metadata }: { metadata: unknown }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const parsed = answerEvidenceSchema.safeParse(
     (metadata as { answerEvidence?: unknown } | null | undefined)?.answerEvidence,
   );
@@ -979,7 +979,7 @@ function AnswerEvidence({ metadata }: { metadata: unknown }) {
                     : latest.basis === 'uploaded'
                       ? 'Latest relevant upload'
                       : 'Latest relevant evidence'}
-                  {latest.date ? ` · ${formatDisplayDate(latest.date, { timezone })}` : ''}
+                  {latest.date ? ` · ${formatDisplayDate(latest.date, region)}` : ''}
                   {latest.version ? ` · Document v${String(latest.version)}` : ''}
                 </span>
                 {latest.citation ? <CitationText text={latest.citation} /> : null}

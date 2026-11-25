@@ -1,7 +1,11 @@
 import { ArrowRight, Globe, Mail, Video, Webhook } from 'lucide-react';
 import Link from 'next/link';
 
-import { INTEGRATION_CAPABILITY_ANSWERS } from '@/components/marketing/integrations/capability-answers';
+import {
+  INTEGRATION_CONNECTION_DETAILS,
+  INTEGRATION_CONNECTION_MODES,
+  MEETING_CAPTURE_FAQ,
+} from '@/components/marketing/integrations/capability-answers';
 import {
   CAPTURE_SURFACES,
   type CaptureSurfaceContent,
@@ -44,8 +48,9 @@ export function IntegrationDirectory() {
             <div>
               <h1 className={styles.title}>Your tools. One work record.</h1>
               <p>
-                Bring selected sources into a shared work record. Connect the tools you use, send
-                work in, or give Timeline access to live tools when you need them.
+                Connect the channels and tools you want included. Supported activity arrives
+                automatically within each connection’s scope. Add a note or document whenever it
+                helps.
               </p>
               <PublicSessionBranch
                 signedOut={
@@ -82,40 +87,13 @@ export function IntegrationDirectory() {
                 <span>Current information through MCP, without importing history.</span>
                 <ArrowRight aria-hidden="true" size={20} />
               </a>
-              <a href="#planned" className={styles.plannedLink}>
-                See what’s planned <ArrowRight aria-hidden="true" size={16} />
-              </a>
+              <Link href="/help/contact" className={styles.plannedLink}>
+                Request an integration <ArrowRight aria-hidden="true" size={16} />
+              </Link>
             </nav>
           </header>
 
-          <section className={styles.section} aria-labelledby="capabilities">
-            <h2 id="capabilities">What each connection can do</h2>
-            <table className={styles.capabilities} aria-labelledby="capabilities">
-              <thead className="sr-only">
-                <tr>
-                  <th scope="col">Capability</th>
-                  <th scope="col">Coverage and limits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {INTEGRATION_CAPABILITY_ANSWERS.map(({ title, body }) => (
-                  <tr key={title}>
-                    <th scope="row">{title}</th>
-                    <td>{body}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-          <section className={styles.section} aria-labelledby="capture-surfaces">
-            <h2 id="capture-surfaces">Send work in. Keep the context.</h2>
-            <p>Send work in deliberately. Each route explains what is saved and who can see it.</p>
-            <div className={styles.rows}>
-              {surfaces.map((surface) => (
-                <CaptureSurfaceRow key={surface.id} surface={surface} />
-              ))}
-            </div>
-          </section>
+          <ConnectionCapabilities />
           <section className={styles.section} aria-labelledby="native">
             <h2 id="native">Bring selected tool history into Timeline.</h2>
             <p>
@@ -141,11 +119,31 @@ export function IntegrationDirectory() {
               ))}
             </div>
           </section>
+          <section className={styles.section} aria-labelledby="capture-surfaces">
+            <h2 id="capture-surfaces">Capture work from conversations and files.</h2>
+            <p>
+              Linked Telegram groups and configured Slack channels capture subsequent activity
+              within their scope. Direct-chat notes, uploaded files and meeting capture are
+              optional.
+            </p>
+            <div className={styles.rows}>
+              {surfaces.map((surface) => (
+                <CaptureSurfaceRow key={surface.id} surface={surface} />
+              ))}
+            </div>
+          </section>
           <section className={styles.section} aria-labelledby="live-lookup">
             <h2 id="live-lookup">Look up live tools</h2>
             <p>
               Enabled MCP tools answer questions from the source. They do not import or sync tool
               history into Timeline.
+            </p>
+            <p>
+              To let an external AI agent read or contribute to your workspace, see{' '}
+              <Link href="/agents" className={styles.textLink}>
+                For AI agents
+              </Link>
+              .
             </p>
             <Link href="/integrations/mcp" className={styles.textLink}>
               Connect MCP tools
@@ -166,6 +164,13 @@ export function IntegrationDirectory() {
               </p>
             </details>
           </section>
+          <section className={styles.section} aria-labelledby="meeting-capture">
+            <h2 id="meeting-capture">{MEETING_CAPTURE_FAQ.question}</h2>
+            <p>{MEETING_CAPTURE_FAQ.answer}</p>
+            <Link href="/help/contact" className={styles.textLink}>
+              Request an integration
+            </Link>
+          </section>
           <section className={styles.section} aria-labelledby="planned">
             <h2 id="planned">Coming later</h2>
             <p>
@@ -185,6 +190,46 @@ export function IntegrationDirectory() {
         </MarketingContainer>
       </main>
     </PublicShell>
+  );
+}
+
+function ConnectionCapabilities() {
+  return (
+    <section className={styles.capabilitySection} aria-labelledby="capabilities">
+      <h2 id="capabilities">What each connection can do</h2>
+      <ul className={styles.connectionModes}>
+        {INTEGRATION_CONNECTION_MODES.map(({ title, body, links }) => (
+          <li key={title}>
+            <h3>{title}</h3>
+            <p>{body}</p>
+            <CapabilityLinks links={links} />
+          </li>
+        ))}
+      </ul>
+      <dl className={styles.connectionDetails}>
+        {INTEGRATION_CONNECTION_DETAILS.map(({ title, body, links }) => (
+          <div key={title}>
+            <dt>{title}</dt>
+            <dd>
+              <p>{body}</p>
+              <CapabilityLinks links={links} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function CapabilityLinks({ links }: { links: readonly { label: string; href: string }[] }) {
+  return (
+    <ul className={styles.capabilityLinks}>
+      {links.map(({ href, label }) => (
+        <li key={href}>
+          <Link href={href}>{label}</Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

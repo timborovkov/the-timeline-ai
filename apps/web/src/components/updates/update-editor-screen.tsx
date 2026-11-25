@@ -1,3 +1,4 @@
+import type { DigestDestinationKind } from '@timeline/shared/messaging';
 import {
   DEFAULT_UPDATE_SETTINGS,
   type UpdateSchedule,
@@ -13,6 +14,7 @@ const presets: Record<'daily' | 'weekly', UpdateSettings> = {
   daily: {
     ...DEFAULT_UPDATE_SETTINGS,
     name: 'Daily check-in',
+    includeContent: true,
     time: '09:00',
     channel: 'telegram',
     upcomingDays: 3,
@@ -21,6 +23,7 @@ const presets: Record<'daily' | 'weekly', UpdateSettings> = {
   weekly: {
     ...DEFAULT_UPDATE_SETTINGS,
     name: 'Weekly recap',
+    includeContent: true,
     cadence: 'weekly',
     time: '09:00',
     channel: 'email',
@@ -39,12 +42,14 @@ const headings = {
 export function UpdateEditorScreen({
   teamId,
   timezone,
+  personalDestinations,
   mode,
   preset,
   schedule,
 }: {
   teamId: string;
   timezone: string;
+  personalDestinations: DigestDestinationKind[];
   mode: keyof typeof headings;
   preset: keyof typeof presets;
   schedule?: Pick<UpdateSchedule, 'key' | 'inherited' | 'settings'>;
@@ -89,6 +94,7 @@ export function UpdateEditorScreen({
         creating={creating}
         initial={initial}
         timezone={timezone}
+        personalDestinations={personalDestinations}
         workspace={mode === 'workspace'}
         inherited={schedule?.inherited ?? false}
       />

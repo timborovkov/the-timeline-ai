@@ -1,10 +1,77 @@
-import { schema, teams, type Db } from '@timeline/db';
-import { eq, is, sql, Table } from 'drizzle-orm';
+import { billingUsageLedger, billingUsageReservations, schema, teams, type Db } from '@timeline/db';
+import { and, eq, inArray, is, sql, Table } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 
+import { recordedSettlementCurrency } from '#src/billing/presentation.js';
 import { pruneEvaluationTraces } from '#src/evaluation-tracing/runtime.js';
 import { PURGED_TEAM_TABLES } from '#src/team-lifecycle/inventory.js';
 import { lifecycleRows } from '#src/team-lifecycle/result.js';
+
+async function purgeBillingReservationBatch(
+  tx: Pick<Db, 'select' | 'update' | 'delete'>,
+  teamId: string,
+): Promise<boolean> {
+  const reservations = await tx
+    .select({ id: billingUsageReservations.id })
+    .from(billingUsageReservations)
+    .where(eq(billingUsageReservations.teamId, teamId))
+    .orderBy(billingUsageReservations.id)
+    .limit(500)
+    .for('update');
+  if (!reservations.length) return false;
+  const reservationIds = reservations.map(({ id }) => id);
+  const unstamped = sql`NOT (${billingUsageLedger.metadata} ? 'presentation_currency')`;
+  const settlements = await tx
+    .select({
+      id: billingUsageLedger.id,
+      meterId: billingUsageLedger.meterId,
+      metadata: billingUsageLedger.metadata,
+      reservationMetadata: billingUsageReservations.metadata,
+      reservationAdmittedPlanId: billingUsageReservations.admittedPlanId,
+    })
+    .from(billingUsageLedger)
+    .innerJoin(
+      billingUsageReservations,
+      and(
+        eq(billingUsageReservations.id, billingUsageLedger.reservationId),
+        eq(billingUsageReservations.teamId, billingUsageLedger.teamId),
+        eq(billingUsageReservations.meterId, billingUsageLedger.meterId),
+      ),
+    )
+    .where(
+      and(
+        eq(billingUsageLedger.teamId, teamId),
+        eq(billingUsageLedger.kind, 'settlement'),
+        inArray(billingUsageReservations.id, reservationIds),
+        unstamped,
+      ),
+    )
+    .for('update', { of: billingUsageLedger });
+  const ledgerIdsByCurrency = new Map<ReturnType<typeof recordedSettlementCurrency>, string[]>();
+  for (const settlement of settlements) {
+    const currency = recordedSettlementCurrency(settlement);
+    const ids = ledgerIdsByCurrency.get(currency) ?? [];
+    ids.push(settlement.id);
+    ledgerIdsByCurrency.set(currency, ids);
+  }
+  // Preserve only the denomination before deleting the supporting reservation.
+  for (const [currency, ids] of ledgerIdsByCurrency) {
+    const stamp = JSON.stringify({ presentation_currency: currency });
+    await tx
+      .update(billingUsageLedger)
+      .set({ metadata: sql`${billingUsageLedger.metadata} || ${stamp}::jsonb` })
+      .where(and(eq(billingUsageLedger.teamId, teamId), inArray(billingUsageLedger.id, ids)));
+  }
+  await tx
+    .delete(billingUsageReservations)
+    .where(
+      and(
+        eq(billingUsageReservations.teamId, teamId),
+        inArray(billingUsageReservations.id, reservationIds),
+      ),
+    );
+  return true;
+}
 
 /** Only invoked by the explicit maintenance scope. Never use a client-supplied table name. */
 export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
@@ -34,6 +101,10 @@ export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
   for (const tableName of PURGED_TEAM_TABLES) {
     await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
+      if (tableName === 'billing_usage_reservations') {
+        if (await purgeBillingReservationBatch(tx, teamId)) remaining = true;
+        return;
+      }
       // Nullable cross-links can otherwise form cycles between purge-owned rows.
       const table = Object.values(schema).find(
         (value) => is(value, Table) && getTableConfig(value).name === tableName,

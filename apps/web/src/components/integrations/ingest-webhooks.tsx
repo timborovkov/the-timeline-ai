@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
-import { CopyButton } from '@/components/copy-button';
+import { CopyableCodeValue } from '@/components/copyable-code-value';
 import { EmptyState } from '@/components/empty-state';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -314,12 +314,11 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
             <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
             <p className="text-sm text-fg-muted">This is the only time the secret URL is shown.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-              {endpointFor(minted.plaintext)}
-            </code>
-            <CopyButton value={endpointFor(minted.plaintext)} />
-          </div>
+          <CopyableCodeValue
+            value={endpointFor(minted.plaintext)}
+            copyLabel="Copy webhook URL"
+            valueClassName="rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5"
+          />
           <Button
             size="sm"
             variant="ghost"

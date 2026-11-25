@@ -8,6 +8,7 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   acceptAllSuggestionAction: vi.fn(),
   acceptSuggestionItemAction: vi.fn(),
+  undoAutomaticTaskUpdateAction: vi.fn(),
   acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
   rejectVisibleSuggestionsAction: vi.fn(),
@@ -32,6 +33,7 @@ await vi.mock(
   () => ({
     acceptAllSuggestionAction: fakes.acceptAllSuggestionAction,
     acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
+    undoAutomaticTaskUpdateAction: fakes.undoAutomaticTaskUpdateAction,
     acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
     rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
     rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
@@ -110,6 +112,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.acceptAllSuggestionAction.mockResolvedValue({ ok: true });
   fakes.acceptSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.undoAutomaticTaskUpdateAction.mockResolvedValue({ ok: true });
   fakes.acceptVisibleSuggestionsAction.mockResolvedValue({ ok: true });
   fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.rejectVisibleSuggestionsAction.mockResolvedValue({ ok: true });
@@ -206,6 +209,41 @@ describe('ApprovalsClient', () => {
       expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'inbox-item' });
     });
   });
+  it('offers Undo only in resolved history for a supported automatic task change', async () => {
+    const bundle = inboxBundle('accepted');
+    const item = bundle.items[0];
+    if (!item) throw new Error('Missing test approval');
+    render(
+      <ApprovalsClient
+        layout="inbox"
+        suggestions={[
+          {
+            ...bundle,
+            items: [
+              {
+                ...item,
+                operation: 'update',
+                targetKind: 'task',
+                metadata: {
+                  approval_decision: 'automatic',
+                  approval_policy_revision: 'revision-1',
+                  task_update_undo_available: true,
+                },
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    const review = screen.getByRole('region', { name: 'Review proposal' });
+    expect(within(review).getByText(/workspace policy revision revision-1/i)).toBeTruthy();
+    expect(within(review).queryByRole('button', { name: 'Accept' })).toBeNull();
+    fireEvent.click(within(review).getByRole('button', { name: 'Undo task change' }));
+    await waitFor(() => {
+      expect(fakes.undoAutomaticTaskUpdateAction).toHaveBeenCalledWith({ itemId: item.id });
+    });
+  });
+
   it('renders the empty approval state', () => {
     const html = renderToStaticMarkup(createElement(ApprovalsClient, { suggestions: [] }));
 
@@ -1112,6 +1150,7 @@ describe('ApprovalsClient', () => {
     expect(url).toBe('/api/artifacts/preview');
     expect(JSON.parse(init.body)).toEqual({
       ref: { kind: 'timeline_event', id: EVENT_ID },
+      region: { locale: 'en-US', timezone: 'Europe/Helsinki' },
     });
     const fullPage = await screen.findByRole('link', { name: /Open on Timeline/ });
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);

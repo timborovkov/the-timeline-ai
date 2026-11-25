@@ -29,7 +29,7 @@ import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { ApiResponseError } from '@/lib/api-response';
 import { chatViewLabel } from '@/lib/chat-view';
 import { formatDisplayDate } from '@/lib/display-dates';
@@ -39,6 +39,7 @@ import { fetchGlobalSearch } from '@/lib/global-search';
 import { globalSearchCoverageText } from '@/lib/global-search-coverage';
 import { searchDateErrors, searchDateOnly } from '@/lib/global-search-dates';
 import { GLOBAL_SEARCH_SOURCE_OPTIONS } from '@/lib/global-search-sources';
+import type { RegionalFormat } from '@/lib/regional-format';
 import { searchErrorMessage } from '@/lib/ux-errors';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -183,14 +184,14 @@ function searchResultStatus(state: SearchViewState): string {
   return label;
 }
 
-function resultDate(result: GlobalSearchResult, timezone: string): string | null {
+function resultDate(result: GlobalSearchResult, region: RegionalFormat): string | null {
   const value = result.startAt ?? result.occurredAt ?? result.updatedAt;
   if (!value) return null;
   const allDayDate = result.metadata?.allDayDate;
   if (typeof allDayDate === 'string') {
-    return formatDisplayDate(allDayDate + 'T00:00:00Z', { timezone: 'UTC' });
+    return formatDisplayDate(allDayDate, region);
   }
-  return formatDisplayDate(value, { timezone });
+  return formatDisplayDate(value, region);
 }
 
 function relatedEvidenceLabel(result: GlobalSearchResult): string | null {
@@ -280,9 +281,9 @@ function DateFilterInput({
 }
 
 function SearchResultRow({ result }: { result: GlobalSearchResult }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const Icon = iconFor(result.kind);
-  const date = resultDate(result, timezone);
+  const date = resultDate(result, region);
   const relatedEvidence = relatedEvidenceLabel(result);
   const objectType = typeof result.metadata?.type === 'string' ? result.metadata.type : '';
   const dueAt = typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
@@ -671,7 +672,7 @@ function SearchControls({
               />
             </div>
             <p id="search-date-scope" className="mt-2 text-xs text-fg-dim">
-              Content dates use {timezone}. Page shortcuts have no date.
+              Date filters use {timezone}. Page shortcuts have no date.
             </p>
           </CollectionToolbar.Filters>
           <CollectionToolbar.Actions>

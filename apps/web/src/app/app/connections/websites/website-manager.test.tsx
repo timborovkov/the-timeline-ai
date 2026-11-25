@@ -18,7 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-it('shows weighted usage and keeps schedule/removal controls admin-only', async () => {
+it('shows the scan page limit and keeps schedule/removal controls admin-only', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn(() =>
@@ -50,7 +50,8 @@ it('shows weighted usage and keeps schedule/removal controls admin-only', async 
   await screen.findByText('example.com');
   expect(screen.queryByRole('button', { name: 'Remove website' })).toBeNull();
   expect(screen.queryByText('Schedule & settings')).toBeNull();
-  expect(screen.getByText(/20 source/)).toBeTruthy();
+  expect(screen.getByText('Up to five public pages per scan')).toBeTruthy();
+  expect(screen.queryByText(/source units/)).toBeNull();
 });
 it('creates a website with explicit permission without automatically starting a scan', async () => {
   const user = userEvent.setup();
@@ -172,7 +173,11 @@ it.each(['scan', 'remove'] as const)(
     );
     expect(mutations()).toHaveLength(0);
     expect(
-      dialog.getByText(action === 'scan' ? /100 source units/ : /Captured history will remain/),
+      dialog.getByText(
+        action === 'scan'
+          ? /AI processing uses shared Included usage/
+          : /Captured history will remain/,
+      ),
     ).toBeTruthy();
     await user.click(dialog.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();

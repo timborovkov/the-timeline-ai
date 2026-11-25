@@ -27,18 +27,22 @@ import {
   outputKindLabel,
   outputStatusLabel,
 } from '@/components/reconciliation/presentation';
-import { repairFailureCopy } from '@/components/reconciliation/repair-copy';
+import { RepairAttention } from '@/components/reconciliation/repair-attention';
 import {
   reconciliationClusterRowHint,
   reconciliationOutputRowHint,
 } from '@/components/reconciliation/row-hint';
 import { reconciliationOutputTone } from '@/components/reconciliation/row-status';
-import { ReconciliationRowTime } from '@/components/reconciliation/row-time';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
+import { RegionalDate } from '@/components/regional-date';
+import { RegionalNumber } from '@/components/regional-number';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
+import { readAppRegion } from '@/lib/app-region';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatDisplayNumber } from '@/lib/regional-format';
 
 export const metadata: Metadata = {
   title: 'Reconciliation',
@@ -77,17 +81,19 @@ export default async function ReconciliationDashboardPage({
     dashboard = null;
   }
   if (!dashboard) redirect('/app/team');
-  const calendarSettings = await scope.calendar.getCalendarSettings();
-  const timezone = calendarSettings.defaultTimezone;
 
   const coverage = dashboard.evidenceCoverage;
-  const cleanupRuns = await scope.engineMaintenance.latestRuns();
+  const [cleanupRuns, region] = await Promise.all([
+    scope.engineMaintenance.latestRuns(),
+    readAppRegion(),
+  ]);
+  const locale = region.locale ?? region.browserLocale;
 
   return (
     <div className="space-y-8">
       <ReconciliationPageHeader
         teamName={active.teamName}
-        srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair. Times in ${timezone}.`}
+        srLabel={`Reconciliation for ${active.teamName}. Admins only. ${formatDisplayNumber(coverage.totalRawEvents, locale)} captured items checked; ${formatDisplayNumber(coverage.missingRawEvents + coverage.degradedReplayEvidence, locale)} need repair.`}
       />
       {notice ? (
         <RedirectActionToast
@@ -110,13 +116,29 @@ export default async function ReconciliationDashboardPage({
                 : run.kind === 'development_reset'
                   ? 'Development replay'
                   : 'Object cleanup'}
-              : {run.status} · {run.examined}
-              {typeof (run.metadata as Record<string, unknown>).totalObjects === 'number'
-                ? ` / ${(run.metadata as Record<string, unknown>).totalObjects as number}`
-                : ''}{' '}
-              examined · {Number((run.metadata as Record<string, unknown>).proposalCount ?? 0)}{' '}
-              proposals · updated {run.updatedAt.toISOString()}
-              {run.completedAt ? ` · completed ${run.completedAt.toISOString()}` : ''}
+              : {run.status} · <RegionalNumber value={run.examined} />
+              {typeof (run.metadata as Record<string, unknown>).totalObjects === 'number' ? (
+                <>
+                  {' '}
+                  /{' '}
+                  <RegionalNumber
+                    value={(run.metadata as Record<string, unknown>).totalObjects as number}
+                  />
+                </>
+              ) : (
+                ''
+              )}{' '}
+              examined ·{' '}
+              <RegionalNumber
+                value={Number((run.metadata as Record<string, unknown>).proposalCount ?? 0)}
+              />{' '}
+              proposals · updated <RegionalDate value={run.updatedAt} variant="datetime" />
+              {run.completedAt ? (
+                <>
+                  {' '}
+                  · completed <RegionalDate value={run.completedAt} variant="datetime" />
+                </>
+              ) : null}
               {typeof (run.metadata as Record<string, unknown>).reason === 'string'
                 ? ` · ${(run.metadata as Record<string, unknown>).reason as string}`
                 : ''}
@@ -135,11 +157,11 @@ export default async function ReconciliationDashboardPage({
       />
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <RecentClusters rows={dashboard.clusters.recent} timeZone={timezone} />
-        <RecentOutputs rows={dashboard.outputs.recent} timeZone={timezone} />
+        <RecentClusters rows={dashboard.clusters.recent} />
+        <RecentOutputs rows={dashboard.outputs.recent} />
       </div>
 
-      <ReconciliationAdvancedTools dashboard={dashboard} />
+      <ReconciliationAdvancedTools dashboard={dashboard} locale={locale} />
     </div>
   );
 }
@@ -164,41 +186,6 @@ function CoverageSection({
   );
 }
 
-function RepairAttention({
-  failures,
-}: {
-  failures: {
-    source: string;
-    code: string;
-    rawEventCount: number;
-    message: string;
-  }[];
-}) {
-  if (failures.length === 0) return null;
-  return (
-    <div aria-label="Evidence that needs repair">
-      {failures.map((failure) => {
-        const copy = repairFailureCopy({
-          code: failure.code,
-          message: failure.message,
-          rawEventCount: failure.rawEventCount,
-        });
-        return (
-          <CollectionRow key={`${failure.source}:${failure.code}`}>
-            <CollectionRow.Leading>
-              <CollectionStatus value="failed" label={copy.status} tone="danger" />
-            </CollectionRow.Leading>
-            <CollectionRow.Title title={copy.hint}>{copy.detail}</CollectionRow.Title>
-            <CollectionRow.Context title={copy.hint}>
-              {eventSourceLabel(failure.source)}
-            </CollectionRow.Context>
-          </CollectionRow>
-        );
-      })}
-    </div>
-  );
-}
-
 function CoverageToolbar({
   coverageLimit,
   hasRepairRows,
@@ -206,13 +193,14 @@ function CoverageToolbar({
   coverageLimit: number;
   hasRepairRows: boolean;
 }) {
-  const windowHint = `Looks at up to ${coverageLimit.toLocaleString()} recent captures.`;
   return (
     <form
       action={queueReconciliationJobFormAction}
       className={`flex flex-col gap-2 px-2 py-2 sm:px-3 md:flex-row md:items-center md:justify-end${hasRepairRows ? ' border-t border-border' : ''}`}
     >
-      <p className="text-xs text-fg-muted md:mr-auto">{windowHint}</p>
+      <p className="text-xs text-fg-muted md:mr-auto">
+        Looks at up to <RegionalNumber value={coverageLimit} /> recent captures.
+      </p>
       <label className="sr-only" htmlFor="reconciliation-source">
         Source
       </label>
@@ -257,13 +245,7 @@ function CoverageToolbar({
   );
 }
 
-function RecentClusters({
-  rows,
-  timeZone,
-}: {
-  rows: ReconciliationDashboardCluster[];
-  timeZone: string;
-}) {
+function RecentClusters({ rows }: { rows: ReconciliationDashboardCluster[] }) {
   return (
     <section className="space-y-3">
       <SectionHeading>Recent clusters</SectionHeading>
@@ -282,8 +264,6 @@ function RecentClusters({
               artifactType: row.artifactType,
               clusterId: row.id,
               status: row.status,
-              timeZone,
-              updatedAt: row.updatedAt,
             });
             return (
               <li key={row.id}>
@@ -303,7 +283,7 @@ function RecentClusters({
                     {`${artifactClusterKindLabel(row.artifactClusterKind)} · ${artifactTypeLabel(row.artifactType)}`}
                   </CollectionRow.Context>
                   <CollectionRow.Metadata>
-                    <ReconciliationRowTime value={row.updatedAt} hint={hint} />
+                    <RelativeTimestamp value={row.updatedAt} />
                   </CollectionRow.Metadata>
                 </CollectionRow>
               </li>
@@ -315,13 +295,7 @@ function RecentClusters({
   );
 }
 
-function RecentOutputs({
-  rows,
-  timeZone,
-}: {
-  rows: ReconciliationDashboardOutput[];
-  timeZone: string;
-}) {
+function RecentOutputs({ rows }: { rows: ReconciliationDashboardOutput[] }) {
   return (
     <section className="space-y-3">
       <SectionHeading>Recent outputs</SectionHeading>
@@ -338,12 +312,10 @@ function RecentOutputs({
             const hint = reconciliationOutputRowHint({
               clusterId: row.clusterId,
               confidence: row.confidence,
-              createdAt: row.createdAt,
               outputId: row.id,
               outputKind: row.outputKind,
               status: row.status,
               targetKind: row.targetKind,
-              timeZone,
             });
             const action = outputActionLabel(row);
             const contextParts = [
@@ -377,7 +349,7 @@ function RecentOutputs({
                     {contextParts.join(' · ')}
                   </CollectionRow.Context>
                   <CollectionRow.Metadata>
-                    <ReconciliationRowTime value={row.createdAt} hint={hint} />
+                    <RelativeTimestamp value={row.createdAt} />
                   </CollectionRow.Metadata>
                 </CollectionRow>
               </li>

@@ -8,7 +8,7 @@ import { USE_CASE_ROUTES } from '@/components/marketing/use-cases/content';
 
 const SOLUTION_REDIRECTS = {
   'weekly-project-updates': USE_CASE_ROUTES.teamDailyLog,
-  'crm-context-from-team-activity': USE_CASE_ROUTES.crm,
+  'crm-context-from-team-activity': USE_CASE_ROUTES.customerContext,
 } as const;
 
 interface SolutionRoutePageProps {

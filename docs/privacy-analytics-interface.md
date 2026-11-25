@@ -297,7 +297,7 @@ page views/page leave, heatmaps, replay, and unreviewed feature flags.
 
 ## Acquisition event contract
 
-Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use only fixed `choose_free`, `choose_payg`, `choose_team` and `choose_business` CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.
+Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use the fixed Free and Team CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.
 
 ## Lifecycle event contract
 
@@ -316,7 +316,7 @@ occur only after authorization and successful hydration and do not count cached
 reopenings. Private pages still load no browser analytics and forward no click events.
 Production delivery and provider settings are not verified by source tests.
 
-The optional PAYG suggestion uses a per-user/team local-storage dismissal preference.
+The optional Team upgrade suggestion uses a per-user/team local-storage dismissal preference.
 It stays on the device, is not exported to analytics, and does not hide billing
 restrictions or spend-cap warnings. Clearing browser storage resets the preference.
 

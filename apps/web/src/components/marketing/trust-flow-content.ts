@@ -16,8 +16,8 @@ export const TRUST_FLOW_STEPS = [
   },
   {
     index: '04',
-    title: 'Suggested changes wait',
-    detail: 'Human approval required',
+    title: 'Changes stay traceable',
+    detail: 'Applied history and review queue',
   },
 ] as const;
 
@@ -26,5 +26,5 @@ export const TRUST_FLOW_CHIPS = [
   'Team isolation',
   'Per-event privacy',
   'Inspectable citations',
-  'Approval-backed suggestions',
+  'Evidence-linked changes',
 ] as const;

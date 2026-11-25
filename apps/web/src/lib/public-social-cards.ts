@@ -1,3 +1,5 @@
+import { TEAM_MONTHLY_SEAT_CENTS } from '@timeline/shared/billing/catalog';
+
 interface PublicSocialCard {
   id: string;
   path: string;
@@ -8,23 +10,25 @@ interface PublicSocialCard {
   markers: readonly [string, string, string];
 }
 
+const teamSeatPrice = `$${TEAM_MONTHLY_SEAT_CENTS / 100}`;
+
 export const PUBLIC_SOCIAL_CARDS: readonly PublicSocialCard[] = [
   {
     id: 'pricing',
     path: '/pricing',
     title: 'Pricing that starts free',
-    alt: 'The Timeline pricing preview showing how to start free and choose a plan.',
+    alt: `Free without a card, Team at ${teamSeatPrice} per member per month, and custom Enterprise pricing.`,
     label: 'Pricing options',
-    steps: ['Start free', 'Pay as you go', 'Team or Business'],
-    markers: ['FREE', 'USAGE', 'PLAN'],
+    steps: ['Free, no card required', 'Team seat / month', 'Custom Enterprise'],
+    markers: ['$0', teamSeatPrice, 'QUOTE'],
   },
   {
     id: 'product-tour',
     path: '/product-tour',
-    title: 'See your work become a record',
-    alt: 'The Timeline product tour preview showing capture, cited answers, and approvals.',
+    title: 'Follow work from source to answer',
+    alt: 'The Timeline product tour preview showing how to follow a login issue from its first report to a cited answer.',
     label: 'Product tour',
-    steps: ['Capture selected work', 'Ask with citations', 'Approve record changes'],
+    steps: ['Login issue reported', 'Linked change merged', 'Check what’s still open'],
     markers: ['08:40', '10:15', '11:04'],
   },
   {

@@ -45,6 +45,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.setSystemTime();
   await pg.close();
 });
 
@@ -91,8 +92,8 @@ describe('billing admission helpers', () => {
     await billing.settle({
       operationId: 'prior-usage',
       meterId: 'ai',
-      nativeUnits: 199,
-      customerChargeCents: 199,
+      nativeUnits: 367,
+      customerChargeCents: 367,
     });
     const operationId = askOperationId('web', 'last-cent');
     expect(await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).toEqual({
@@ -116,7 +117,7 @@ describe('billing admission helpers', () => {
       openRouterUsd: 0.01,
     });
     const dashboard = await billing.getDashboard();
-    expect(dashboard.meters.ai?.nativeUnits).toBeGreaterThan(200);
+    expect(dashboard.meters.ai?.nativeUnits).toBeGreaterThan(368);
     expect(
       await reserveAskAi(billing, {
         operationId: askOperationId('web', 'exhausted'),
@@ -278,13 +279,111 @@ describe('billing admission helpers', () => {
     const reserved = await reserveRecallMeetingMinutes(billing, { meetingId });
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
-    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+    expect(reserved.reservedMinutes).toBe(120);
 
     await settleRecallMeetingMinutes(billing, { meetingId, minutes: 12 });
     const dash = await billing.getDashboard();
     expect(dash.meters.recall_minutes?.nativeUnits).toBe(12);
     expect(dash.meters.recall_minutes?.customerChargeCents).toBe(36);
   });
+
+  it('fits Free capture to the pool left by pending AI and prevents competing reservations', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'ai:prior-usage',
+      meterId: 'ai',
+      nativeUnits: 92,
+      customerChargeCents: 92,
+    });
+    expect(
+      await billing.reserve({
+        operationId: 'ai:pending',
+        meterId: 'ai',
+        reservedNativeUnits: 27.6,
+        reservedChargeCents: 27.6,
+      }),
+    ).toMatchObject({ ok: true });
+
+    const meetingIds = [
+      'cccccccc-dddd-4eee-8fff-000000000001',
+      'cccccccc-dddd-4eee-8fff-000000000002',
+    ];
+    const results = await Promise.all(
+      meetingIds.map((meetingId) => reserveRecallMeetingMinutes(billing, { meetingId })),
+    );
+    const meetingId = meetingIds[results.findIndex((result) => result.ok)];
+    if (!meetingId) throw new Error('No meeting was admitted');
+    expect(results.filter((result) => result.ok)).toEqual([
+      { ok: true, operationId: recallOperationId(meetingId), reservedMinutes: 90 },
+    ]);
+    expect(results.filter((result) => !result.ok)).toEqual([
+      { ok: false, code: 'free_allowance_reached' },
+    ]);
+
+    await billing.release('ai:pending');
+    expect(await reserveRecallMeetingMinutes(billing, { meetingId })).toEqual({
+      ok: true,
+      operationId: recallOperationId(meetingId),
+      reservedMinutes: 90,
+    });
+  });
+
+  for (const { includedCents, capCents } of [
+    { includedCents: 300, capCents: 0 },
+    { includedCents: 20, capCents: 280 },
+  ]) {
+    it(`fits Team capture around pending AI with a ${capCents}-cent cap`, async () => {
+      const billing = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      await pg.exec(`
+        UPDATE team_billing_accounts
+        SET plan_id = 'team', billing_state = 'team_active',
+            team_seat_terms = '{"paidSeats":1,"highWaterSeats":1,"includedUsageCents":1200}',
+            included_discount_remaining_cents = ${includedCents}, spend_cap_cents = ${capCents},
+            period_started_at = date_trunc('month', now()),
+            period_ends_at = date_trunc('month', now()) + interval '1 month'
+        WHERE team_id = '${TEAM_ID}';
+      `);
+      expect(
+        await billing.reserve({
+          operationId: 'ai:pending',
+          meterId: 'ai',
+          reservedNativeUnits: 27.6,
+          reservedChargeCents: 27.6,
+        }),
+      ).toMatchObject({ ok: true });
+      const meetingId = 'cccccccc-dddd-4eee-8fff-000000000001';
+      expect(await reserveRecallMeetingMinutes(billing, { meetingId })).toEqual({
+        ok: true,
+        operationId: recallOperationId(meetingId),
+        reservedMinutes: 90,
+      });
+      const [reservation] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.operationId, recallOperationId(meetingId)));
+      expect(reservation?.metadata).toMatchObject({
+        reserved_minutes: 90,
+        discount_reserved_cents: capCents ? 0 : 270,
+        invoice_reserved_cents: capCents ? 270 : 0,
+      });
+      expect(
+        await reserveRecallMeetingMinutes(billing, {
+          meetingId: 'cccccccc-dddd-4eee-8fff-000000000002',
+        }),
+      ).toEqual({ ok: false, code: 'spend_cap_reached' });
+    });
+  }
 
   it('reserves Free minutes after a Team comp expires', async () => {
     const billing = createBillingScope({
@@ -305,11 +404,12 @@ describe('billing admission helpers', () => {
     });
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
-    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+    expect(reserved.reservedMinutes).toBe(120);
     expect(reserved.reservedMinutes).not.toBe(360);
   });
 
   it('settles elapsed waiting-room minutes and releases when none elapsed', async () => {
+    vi.setSystemTime(new Date('2026-08-26T12:04:00.000Z'));
     const billing = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -397,6 +497,8 @@ describe('billing admission helpers', () => {
       pending_settlement: true,
       pending_meter: 'recall_minutes',
       pending_recall_minutes: 4,
+      pending_started_at: '2026-08-26T12:00:00.000Z',
+      pending_ended_at: '2026-08-26T12:04:00.000Z',
       pending_source: 'meeting_cancel',
       meeting_id: meetingId,
     });
@@ -422,6 +524,7 @@ describe('billing admission helpers', () => {
       .from(billingUsageLedger)
       .where(eq(billingUsageLedger.operationId, recallOperationId(meetingId)));
     expect(Number(ledger?.nativeUnits)).toBe(4);
+    expect(ledger?.metadata.usage_at).toBe('2026-08-26T12:00:00.000Z');
   });
 
   it('builds an attempt operation id that leaves the canonical Recall id free', () => {

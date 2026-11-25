@@ -72,8 +72,8 @@ async function loadGuidedApprovals(scope: ReturnType<typeof withTeam>): Promise<
 
 function approvalsSubtitle(guided: boolean): string {
   return guided
-    ? 'Nothing becomes a lasting record until you accept it. Rejecting removes the suggestion; the source stays in your event history either way.'
-    : 'Review evidence-backed changes before they become team memory.';
+    ? 'Eligible changes apply automatically under workspace policy. Review any pending changes here. Rejecting a suggestion keeps its source in your event history.'
+    : 'Review pending changes and see past decisions.';
 }
 
 function GuidedApprovalsChrome({ enabled }: { enabled: boolean }) {

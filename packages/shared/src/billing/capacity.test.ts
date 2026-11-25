@@ -23,6 +23,12 @@ import {
   storageChargeCents,
 } from '#src/billing/catalog.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
+import {
+  applyConfirmedSeatQuantity,
+  fullMemberSeatsToAcquire,
+  teamSeatQuantityChange,
+  type TeamSeatTerms,
+} from '#src/billing/membership.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -361,9 +367,7 @@ describe('billing capacity (not Polar meters)', () => {
     });
     const dash = await billing.getDashboard({ canManageBilling: true });
     expect(dash.meters.storage_gb_month.nativeUnits).toBeCloseTo(storage?.used ?? 0, 8);
-    expect(
-      dash.presentation?.allowances.find((row) => row.meter === 'storage_gb_month')?.used,
-    ).toBe(dash.meters.storage_gb_month.nativeUnits);
+    expect(dash.presentation?.allowances).toEqual([]);
   });
 
   it('does not price live stored GiB as a full GB-month in the plan preview', async () => {
@@ -588,5 +592,56 @@ describe('billing capacity (not Polar meters)', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     expect((await remaining.getAccount()).billingState).toBe('free');
+  });
+});
+
+describe('full-member seat terms', () => {
+  it('acquires seats only for promotions into the full-member roster', () => {
+    expect(fullMemberSeatsToAcquire('guest', 'member')).toBe(1);
+    expect(fullMemberSeatsToAcquire('member', 'guest')).toBe(0);
+    expect(fullMemberSeatsToAcquire(null, 'guest')).toBe(0);
+    expect(fullMemberSeatsToAcquire('member', 'admin')).toBe(0);
+  });
+
+  it('purchases new capacity, schedules renewal decreases and cancels a drop on reassignment', () => {
+    expect(
+      teamSeatQuantityChange({ current: 2, pending: null, desired: 3, activating: true }),
+    ).toBe('invoice');
+    expect(
+      teamSeatQuantityChange({ current: 2, pending: null, desired: 1, activating: false }),
+    ).toBe('next_period');
+    expect(teamSeatQuantityChange({ current: 2, pending: 1, desired: 2, activating: true })).toBe(
+      'next_period',
+    );
+    expect(
+      teamSeatQuantityChange({ current: 2, pending: null, desired: 2, activating: true }),
+    ).toBeNull();
+    expect(
+      teamSeatQuantityChange({ current: 2, pending: 1, desired: 1, activating: false }),
+    ).toBeNull();
+  });
+
+  it('does not turn roster drift into a discretionary catch-up invoice', () => {
+    expect(
+      teamSeatQuantityChange({ current: 2, pending: null, desired: 3, activating: false }),
+    ).toBeNull();
+  });
+
+  it('prorates confirmed additions once, reuses capacity, and resets on renewal', () => {
+    const periodStart = new Date('2026-11-01T00:00:00Z');
+    const periodEnd = new Date('2026-12-01T00:00:00Z');
+    const confirmedAt = new Date('2026-11-16T00:00:00Z');
+    const apply = (prior: TeamSeatTerms | null, paidSeats: number) =>
+      applyConfirmedSeatQuantity({ periodStart, periodEnd, confirmedAt, prior, paidSeats });
+    const initial = apply(null, 1);
+    expect(initial.grantCents).toBe(1200);
+    const addition = apply(initial.terms, 2);
+    expect(addition.grantCents).toBe(600);
+    expect(apply(addition.terms, 2).grantCents).toBe(0);
+    const reduced = apply(addition.terms, 1);
+    const reused = apply(reduced.terms, 2);
+    expect(reused.grantCents).toBe(0);
+    expect(reused.terms.includedUsageCents).toBe(1800);
+    expect(apply(null, 1).terms.includedUsageCents).toBe(1200);
   });
 });

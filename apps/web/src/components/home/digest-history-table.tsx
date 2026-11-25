@@ -1,5 +1,4 @@
 import {
-  formatDigestDateTime,
   UPDATE_CHANNEL_LABELS,
   type DailyDigestPayload,
   type DeliveredUpdateChannel,
@@ -9,6 +8,8 @@ import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import { DigestBody } from '@/components/home/digest-body';
+import { UpdateFollowUp } from '@/components/home/update-follow-up';
+import { RegionalDate } from '@/components/regional-date';
 import { cn } from '@/lib/utils';
 
 export interface DigestHistoryRow {
@@ -43,7 +44,6 @@ export function DigestHistoryTable({
     <ol className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface">
       {digests.map((digest) => {
         const open = digest.id === selectedId && Boolean(digest.payload);
-        const date = formatDigestDateTime(digest.date, digest.timezone);
         const channels = digest.channels
           .map((channel) => UPDATE_CHANNEL_LABELS[channel])
           .join(', ');
@@ -63,12 +63,9 @@ export function DigestHistoryTable({
               )}
             >
               <span className="font-medium text-fg [overflow-wrap:anywhere]">{digest.name}</span>
-              <time
-                dateTime={digest.date}
-                className="col-start-1 row-start-2 text-xs text-fg-muted sm:col-start-2 sm:row-start-1"
-              >
-                {date}
-              </time>
+              <span className="col-start-1 row-start-2 text-xs text-fg-muted sm:col-start-2 sm:row-start-1">
+                <RegionalDate value={digest.date} variant="datetime" />
+              </span>
               <span className="col-start-2 row-start-2 text-right text-xs text-fg-muted sm:col-start-3 sm:row-start-1 sm:text-left">
                 {channels || (digest.status === 'sent' ? 'Sent' : 'In app')}
               </span>
@@ -83,6 +80,7 @@ export function DigestHistoryTable({
             {open && digest.payload && (
               <div className="border-t border-border px-4 py-5 sm:px-5">
                 <DigestBody digest={digest.payload} />
+                {!digest.payload.update && <UpdateFollowUp digestId={digest.id} />}
               </div>
             )}
           </li>

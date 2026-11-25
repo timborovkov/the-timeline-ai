@@ -392,6 +392,7 @@ describe('DocumentDrive', () => {
     expect(url).toBe('/api/artifacts/preview');
     expect(JSON.parse(init.body)).toEqual({
       ref: { kind: 'timeline_event', id: EVENT_ID },
+      region: { locale: 'en-US', timezone: 'Europe/Helsinki' },
     });
     const fullPage = await screen.findByRole('link', { name: /Open on Timeline/ });
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);

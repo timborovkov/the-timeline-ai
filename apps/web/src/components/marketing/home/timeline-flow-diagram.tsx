@@ -314,11 +314,8 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
         <HeroRecordMesh />
       </svg>
 
-      <div
-        className={styles.heroOutcome}
-        aria-label="Decisions, promises and next steps with sources attached"
-      >
-        <strong>Decisions, promises &amp; next steps</strong>
+      <div className={styles.heroOutcome} aria-label="Work record with sources attached">
+        <strong>What changed &amp; what’s next</strong>
         <small>
           <Link2 size={12} aria-hidden="true" /> Sources attached
         </small>
@@ -408,7 +405,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
             ))}
           </ul>
           <p className={styles.flowMoreSources}>
-            + Any source via a pre-built integration or webhook
+            More sources are available through supported integrations and webhooks.
           </p>
           <p className={styles.flowStageBoundary}>Only sources your team selects or sends enter.</p>
         </article>
@@ -425,11 +422,13 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
           <div className={styles.flowTimelineViewport}>
             <FlowPacketTrack direction="vertical" kind="timeline" />
             <ol className={styles.flowMiniTimeline}>
-              {FLOW_STORY.timelineEvents.map((event) => (
+              {PUBLIC_DEMO_STORY.landing.events.map((event) => (
                 <li key={event.id} data-flow-item>
                   <div className={styles.flowTimelineMeta}>
                     <span>[{event.id}]</span>
-                    <time dateTime={event.dateTime}>{event.stamp}</time>
+                    <time dateTime={event.dateTime}>
+                      {event.day.slice(0, 3)} {event.time}
+                    </time>
                     <em>{event.source}</em>
                   </div>
                   <strong>{event.title}</strong>
@@ -446,8 +445,8 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
           <FlowStageHeading
             index="03"
             label="Workspace"
-            title="Approve"
-            subtitle="History becomes records your team can run."
+            title="Connect related work"
+            subtitle="A task keeps its links to the sources behind it."
           />
           <ul className={styles.flowRecordGrid} aria-label="Example Timeline working context">
             {FLOW_STORY.workspaceRecords.map((record) => (
@@ -464,8 +463,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
             <p>{FLOW_STORY.workspaceViews.join(' · ')}</p>
           </div>
           <p className={styles.flowStageBoundary}>
-            When a conversation points to a lasting change, such as a new task, owner or deal stage,
-            The Timeline proposes it and a person approves it.
+            Review suggested changes and open the sources behind them.
           </p>
         </article>
 
@@ -502,15 +500,15 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
             </div>
           </div>
           <p className={styles.flowAgentContext} data-flow-agent-step="context">
-            Live CRM via MCP · {FLOW_STORY.agent.clients.join(' · ')}
+            Compatible agent clients · {FLOW_STORY.agent.clients.join(' · ')}
           </p>
         </article>
       </div>
 
       <div className={styles.flowExplainerFooter}>
         <span>Sources stay attached.</span>
-        <span>Timeline record changes need approval.</span>
-        <span>Enabled MCP tools can read or update connected systems such as your CRM.</span>
+        <span>History records applied changes. Exceptions go to review.</span>
+        <span>Enabled external tools have their own permissions.</span>
       </div>
     </section>
   );

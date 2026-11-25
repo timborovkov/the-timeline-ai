@@ -74,9 +74,11 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
-import { formatCollectionCount } from '@/lib/collection-count';
+import { formatDisplayDateParts } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { formatDisplayNumber } from '@/lib/regional-format';
 import { statusLabel } from '@/lib/status-labels';
 import type { SaveState } from '@/lib/utils';
 
@@ -145,15 +147,6 @@ interface CalendarUiState {
 
 type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => CalendarUiState);
 
-const WEEKDAYS = [
-  { short: 'Mon', label: 'Monday' },
-  { short: 'Tue', label: 'Tuesday' },
-  { short: 'Wed', label: 'Wednesday' },
-  { short: 'Thu', label: 'Thursday' },
-  { short: 'Fri', label: 'Friday' },
-  { short: 'Sat', label: 'Saturday' },
-  { short: 'Sun', label: 'Sunday' },
-] as const;
 const TITLE_REQUIRED_ERROR = 'Enter a title for this event.';
 type EventListScope = 'future' | 'past' | 'all';
 interface EventListParams {
@@ -253,29 +246,20 @@ function weekGrid(anchor: Temporal.PlainDate): Temporal.PlainDate[] {
   return Array.from({ length: 7 }, (_, i) => start.add({ days: i }));
 }
 
-function titleFor(mode: CalendarViewMode, anchor: Temporal.PlainDate): string {
+function titleFor(mode: CalendarViewMode, anchor: Temporal.PlainDate, locale: string): string {
   if (mode === 'day') {
-    return anchor.toLocaleString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+    return anchor.toLocaleString(locale, { month: 'long', day: 'numeric', year: 'numeric' });
   }
-  if (mode === 'week') return `Week ${String(anchor.weekOfYear)}, ${String(isoWeekYear(anchor))}`;
-  return anchor.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  if (mode === 'week')
+    return `Week ${formatDisplayNumber(anchor.weekOfYear ?? 0, locale)}, ${String(isoWeekYear(anchor))}`;
+  return anchor.toLocaleString(locale, { month: 'long', year: 'numeric' });
 }
 
-function formatTime(event: CalendarEvent, timezone: string): string {
-  const start = Temporal.Instant.from(event.startAt).toZonedDateTimeISO(timezone);
-  return start.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatEventDateTime(value: string, timezone: string): string {
-  return Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatEventRange(event: CalendarEvent, timezone: string): string {
+function formatEventRange(
+  event: CalendarEvent,
+  region: ReturnType<typeof useRegionalFormat>,
+): string {
+  const { locale } = region;
   if (event.allDay) {
     const start = Temporal.Instant.from(event.startAt)
       .toZonedDateTimeISO(assertValidTimezone(event.timezone))
@@ -285,10 +269,11 @@ function formatEventRange(event: CalendarEvent, timezone: string): string {
       .toPlainDate()
       .subtract({ days: 1 });
     return Temporal.PlainDate.compare(start, end) === 0
-      ? start.toLocaleString(undefined, { month: 'short', day: 'numeric' })
-      : `${start.toLocaleString(undefined, { month: 'short', day: 'numeric' })} - ${end.toLocaleString(undefined, { month: 'short', day: 'numeric' })}`;
+      ? start.toLocaleString(locale, { month: 'short', day: 'numeric' })
+      : `${start.toLocaleString(locale, { month: 'short', day: 'numeric' })} - ${end.toLocaleString(locale, { month: 'short', day: 'numeric' })}`;
   }
-  return `${formatEventDateTime(event.startAt, timezone)} - ${formatEventDateTime(event.endAt, timezone)}`;
+  const parts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' } as const;
+  return `${formatDisplayDateParts(event.startAt, region, parts)} - ${formatDisplayDateParts(event.endAt, region, parts)}`;
 }
 
 function eventTouchesDate(
@@ -814,6 +799,7 @@ function useCalendarViewModel({
 }
 
 function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarViewModel> }) {
+  const { locale } = useRegionalFormat();
   const focusedEvent =
     model.open && model.editing && !model.editing.redacted
       ? model.editing
@@ -843,7 +829,7 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         mode={model.safeMode}
         anchor={model.anchor}
         timezone={model.timezone}
-        title={titleFor(model.safeMode, model.anchor)}
+        title={titleFor(model.safeMode, model.anchor, locale)}
         today={model.currentToday}
         onPush={model.push}
         onMove={model.move}
@@ -870,7 +856,6 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         events={model.displayEventListEvents}
         total={model.eventListTotal}
         nextOffset={model.eventListNextOffset}
-        timezone={model.timezone}
         query={model.eventListQuery}
         scope={model.eventListScope}
         onQueryChange={(query) => {
@@ -915,7 +900,6 @@ interface CalendarEventListProps {
   events: CalendarEvent[];
   total: number;
   nextOffset: number | null;
-  timezone: string;
   query: string;
   scope: 'future' | 'past' | 'all';
   onQueryChange: (query: string) => void;
@@ -930,7 +914,6 @@ function CalendarEventList({
   events,
   total,
   nextOffset,
-  timezone,
   query,
   scope,
   onQueryChange,
@@ -943,11 +926,8 @@ function CalendarEventList({
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedSearchRef = useRef(query);
   const hasActiveFilters = Boolean(query) || scope !== 'future';
-  const eventCountLabel = formatCollectionCount({
-    matching: total,
-    total,
-    filtered: false,
-  });
+  const { locale } = useRegionalFormat();
+  const eventCountLabel = formatDisplayNumber(total, locale);
 
   useEffect(() => {
     if (query === committedSearchRef.current) return;
@@ -1043,7 +1023,6 @@ function CalendarEventList({
         key={JSON.stringify([scope, query, total, nextOffset, events])}
         events={events}
         nextOffset={nextOffset}
-        timezone={timezone}
         query={query}
         scope={scope}
         hasActiveFilters={hasActiveFilters}
@@ -1058,7 +1037,6 @@ function CalendarEventList({
 interface CalendarEventListPagesProps {
   events: CalendarEvent[];
   nextOffset: number | null;
-  timezone: string;
   query: string;
   scope: 'future' | 'past' | 'all';
   hasActiveFilters: boolean;
@@ -1071,7 +1049,6 @@ interface CalendarEventListPagesProps {
 function CalendarEventListPages({
   events,
   nextOffset,
-  timezone,
   query,
   scope,
   hasActiveFilters,
@@ -1079,6 +1056,7 @@ function CalendarEventListPages({
   onClearFilters,
   onEdit,
 }: CalendarEventListPagesProps) {
+  const region = useRegionalFormat();
   const [extraEvents, setExtraEvents] = useState<CalendarEvent[]>([]);
   const [extraOffset, setExtraOffset] = useState<number | null>(null);
   const [paged, setPaged] = useState(false);
@@ -1118,7 +1096,7 @@ function CalendarEventListPages({
                 </CollectionRow.Context>
                 <CollectionRow.Metadata>
                   <>
-                    <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
+                    <span className="text-xs text-fg-dim">{formatEventRange(event, region)}</span>
                     <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
                     <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
                   </>
@@ -1312,7 +1290,8 @@ function CalendarBody({
   onEdit: (event: CalendarEvent) => void;
   onOpenDay: (day: Temporal.PlainDate) => void;
 }) {
-  const calendarLabel = `Calendar for ${titleFor(mode, anchor)}`;
+  const { locale } = useRegionalFormat();
+  const calendarLabel = `Calendar for ${titleFor(mode, anchor, locale)}`;
   if (mode === 'day') {
     return (
       <section className="rounded-sm border bg-background" aria-label={calendarLabel}>
@@ -1340,13 +1319,13 @@ function CalendarBody({
         <span aria-hidden="true">Wk</span>
         <span className="sr-only">Week number</span>
       </div>
-      {WEEKDAYS.map((day) => (
+      {visibleDays.slice(0, 7).map((day) => (
         <div
-          key={day.short}
+          key={day.toString()}
           className={`min-w-0 bg-muted/40 p-1 text-center text-xs font-medium text-muted-foreground sm:p-2 ${mode === 'week' ? 'hidden sm:block' : ''}`}
         >
-          <abbr title={day.label} className="no-underline">
-            {day.short}
+          <abbr title={day.toLocaleString(locale, { weekday: 'long' })} className="no-underline">
+            {day.toLocaleString(locale, { weekday: 'short' })}
           </abbr>
         </div>
       ))}
@@ -1925,9 +1904,10 @@ function DayCell({
   onEdit: (event: CalendarEvent) => void;
   onOpenDay: (day: Temporal.PlainDate) => void;
 }) {
+  const { locale } = useRegionalFormat();
   const muted = mode === 'month' && day.month !== anchor.month;
   const isToday = Temporal.PlainDate.compare(day, today) === 0;
-  const dayLabel = day.toLocaleString(undefined, {
+  const dayLabel = day.toLocaleString(locale, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -2012,7 +1992,11 @@ function DayCell({
                 )}
                 {event.allDay ? null : (
                   <span className="shrink-0 font-mono text-[10px] tabular-nums text-fg-dim">
-                    {formatTime(event, timezone)}
+                    {formatDisplayDateParts(
+                      event.startAt,
+                      { locale, timezone },
+                      { hour: '2-digit', minute: '2-digit' },
+                    )}
                   </span>
                 )}
                 <span className="order-first line-clamp-2 w-full min-w-0 font-medium">{title}</span>
@@ -2037,13 +2021,15 @@ function DayCell({
 }
 
 function CalendarDateLabel({ day, mode }: { day: Temporal.PlainDate; mode: CalendarViewMode }) {
-  if (mode !== 'week') return day.day;
+  const { locale } = useRegionalFormat();
+  const dayNumber = formatDisplayNumber(day.day, locale);
+  if (mode !== 'week') return dayNumber;
   return (
     <>
       <span className="sm:hidden">
-        {day.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+        {day.toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric' })}
       </span>
-      <span className="hidden sm:inline">{day.day}</span>
+      <span className="hidden sm:inline">{dayNumber}</span>
     </>
   );
 }

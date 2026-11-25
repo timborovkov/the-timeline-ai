@@ -57,6 +57,7 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
 
 const additionalPublicPages = new Set([
   '/docs',
+  '/features',
   '/guides',
   '/guides/automate-daily-team-updates-in-slack',
   '/guides/software-project-handover-checklist-template',

@@ -3,7 +3,7 @@
 import { presentDueDate } from '@timeline/shared/time';
 import type { DueDatePresentation } from '@timeline/shared/time';
 
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat, useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { cn } from '@/lib/utils';
 
 type DueDateDisplayVariant = 'stacked' | 'compact' | 'inline' | 'field-hint';
@@ -44,12 +44,13 @@ export function DueDateDisplay({
   completedAt = null,
 }: DueDateDisplayProps) {
   const workspaceTimezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const terminal =
     completed || ['done', 'completed', 'cancelled', 'canceled'].includes(workStatus ?? '');
   const due = presentDueDate(value, {
     timezone: timezone ?? workspaceTimezone,
     ...(now ? { now } : {}),
-    ...(locale ? { locale } : {}),
+    locale: locale ?? region.locale,
     ...(terminal ? { completed: true, completedAt } : {}),
   });
   const tone = TONE_CLASS[due.tone];

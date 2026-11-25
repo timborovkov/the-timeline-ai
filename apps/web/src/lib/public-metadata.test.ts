@@ -2,6 +2,8 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import { publicMetadata } from '@/lib/public-metadata';
+import { PUBLIC_SOCIAL_CARDS } from '@/lib/public-social-cards';
+
 describe('publicMetadata', () => {
   it('sets page-specific canonical, OpenGraph, and Twitter metadata', () => {
     const metadata = publicMetadata({
@@ -40,5 +42,21 @@ describe('publicMetadata', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.openGraph).toMatchObject({ title: 'Contact', url: '/help/support' });
+  });
+
+  it('shares the current Free, Team, and Enterprise plans in the pricing image', () => {
+    const metadata = publicMetadata({
+      title: 'Pricing',
+      description: 'Pricing for The Timeline.',
+      path: '/pricing',
+    });
+    const image = { url: '/social/pricing' };
+
+    expect(metadata.openGraph).toMatchObject({ images: [image] });
+    expect(metadata.twitter).toMatchObject({ images: [image] });
+    expect(PUBLIC_SOCIAL_CARDS.find((card) => card.id === 'pricing')).toMatchObject({
+      steps: ['Free, no card required', 'Team seat / month', 'Custom Enterprise'],
+      markers: ['$0', '$10', 'QUOTE'],
+    });
   });
 });

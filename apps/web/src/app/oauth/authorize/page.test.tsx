@@ -1,3 +1,4 @@
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -118,8 +119,8 @@ beforeEach(() => {
   vi.stubEnv('AUTH_URL', 'https://timeline.example');
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.getUserLegalAcceptance.mockResolvedValue({
-    legalTermsVersion: '2026-06-02',
-    legalPrivacyVersion: '2026-08-26',
+    legalTermsVersion: TERMS_VERSION,
+    legalPrivacyVersion: PRIVACY_VERSION,
     legalAcceptedAt: new Date(),
   });
   fakes.hasCurrentLegalAcceptance.mockReturnValue(true);
@@ -161,7 +162,7 @@ describe('MCP OAuth consent page', () => {
     expect(sensitiveLinkHeaders).toEqual(
       expect.arrayContaining([
         { key: 'Cache-Control', value: 'no-store' },
-        { key: 'Referrer-Policy', value: 'no-referrer' },
+        { key: 'Referrer-Policy', value: 'strict-origin' },
       ]),
     );
     expect(baseContentSecurityPolicy).toEqual({

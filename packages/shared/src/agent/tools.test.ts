@@ -317,7 +317,7 @@ describe('buildAgentTools — team isolation', () => {
   it('accepts every stored event source and rejects unknown sources in timeline tools', () => {
     const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope);
     for (const name of ['search_timeline', 'search_timeline_moments', 'list_events']) {
-      const schema = tools[name]?.inputSchema as {
+      const schema = tools[name]?.inputSchema as unknown as {
         safeParse: (input: unknown) => { success: boolean };
       };
       for (const source of eventSource.enumValues) {

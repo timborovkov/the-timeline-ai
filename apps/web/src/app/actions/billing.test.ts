@@ -19,12 +19,14 @@ let lockedAccount: unknown;
 const withTeam = vi.fn(() => ({
   requireMembership,
   billing: {
+    countActiveFullMembers: () => Promise.resolve(2),
     getAccount: async () => {
       preflightAccount = await getAccount();
       return preflightAccount;
     },
   },
 }));
+const prepareTeamCheckout = vi.fn();
 const resolveDiscount = vi.fn();
 provider.resolveDiscount = resolveDiscount;
 await vi.mock(
@@ -64,7 +66,12 @@ await vi.mock(
           memberId: string;
           externalCustomerId: string;
         },
-        context: { account: unknown; recordCheckout: (id: string) => Promise<void> },
+        context: {
+          account: unknown;
+          db: unknown;
+          recordCheckout: (id: string) => Promise<void>;
+          prepareTeamCheckout: () => Promise<{ status: string; url?: string }>;
+        },
       ) => Promise<unknown>,
     ) =>
       action(
@@ -73,7 +80,12 @@ await vi.mock(
           memberId: 'member-synthetic',
           externalCustomerId: input.teamId,
         },
-        { account: lockedAccount ?? preflightAccount, recordCheckout: () => Promise.resolve() },
+        {
+          account: lockedAccount ?? preflightAccount,
+          db: {},
+          recordCheckout: () => Promise.resolve(),
+          prepareTeamCheckout,
+        },
       ),
     createPolarBillingProvider: () => provider,
     isPolarBillingConfigured: () => true,
@@ -102,6 +114,7 @@ beforeEach(() => {
   });
   requireMembership.mockResolvedValue('owner');
   getAccount.mockResolvedValue(account);
+  prepareTeamCheckout.mockResolvedValue({ status: 'ready' });
   resolveDiscount.mockResolvedValue('discount-synthetic');
 });
 
@@ -121,6 +134,7 @@ describe('promo checkout action', () => {
     expect(provider.checkouts[0]).toMatchObject({
       externalCustomerId: 'team-synthetic',
       discountId: 'discount-synthetic',
+      seats: 2,
     });
     expect(provider.checkouts[0]?.amount).toBeUndefined();
     expect(trackProduct).toHaveBeenCalledWith(
@@ -128,6 +142,22 @@ describe('promo checkout action', () => {
       'billing_checkout_created',
       { plan: 'team' },
     );
+  });
+
+  it('does not create a replacement while a previous checkout may still take payment', async () => {
+    prepareTeamCheckout.mockResolvedValueOnce({ status: 'blocked' });
+    expect((await startBillingCheckout({ plan: 'team' })).ok).toBe(false);
+    expect(provider.checkouts).toHaveLength(0);
+    expect((await startBillingCheckout({ plan: 'team' })).ok).toBe(true);
+    expect(provider.checkouts).toHaveLength(1);
+  });
+
+  it('returns the recovered checkout without opening another link', async () => {
+    const url = 'https://checkout.example.test/recovered';
+    prepareTeamCheckout.mockResolvedValueOnce({ status: 'resume', url });
+    expect(await startBillingCheckout({ plan: 'team' })).toEqual({ ok: true, url });
+    expect(prepareTeamCheckout).toHaveBeenCalledWith({ productId: 'product-synthetic', seats: 2 });
+    expect(provider.checkouts).toHaveLength(0);
   });
 
   it('returns distinct eligibility and provider errors without creating a checkout', async () => {
@@ -166,10 +196,10 @@ describe('promo checkout action', () => {
       billingState: 'team_active',
       polarSubscriptionId: 'sub-activated',
     };
-    expect((await startBillingCheckout({ plan: 'business' })).ok).toBe(true);
+    expect((await startBillingCheckout({ plan: 'team' })).ok).toBe(true);
     expect(provider.checkouts).toHaveLength(0);
-    expect(provider.subscriptionUpdates).toHaveLength(1);
-    expect(provider.subscriptionUpdates[0]).toMatchObject({ subscriptionId: 'sub-activated' });
+    expect(provider.subscriptionUpdates).toHaveLength(0);
+    expect((await startBillingCheckout({ plan: 'business' })).ok).toBe(false);
   });
   it('rechecks comp, Enterprise and assigned discount terms under the final lock', async () => {
     for (const change of [{ arrangement: 'comped' }, { planId: 'enterprise' }]) {

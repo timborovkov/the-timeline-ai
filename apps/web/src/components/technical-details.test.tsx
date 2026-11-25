@@ -40,7 +40,7 @@ describe('TechnicalDetails', () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('evt_123');
       expect(screen.getByRole('status').textContent).toBe('Copied Event ID.');
-      expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toContain('Copied');
+      expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toBe('');
     });
   });
 
@@ -55,7 +55,6 @@ describe('TechnicalDetails', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy Event ID' }));
 
-    expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toContain('Copy');
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toBe(
         'Could not copy. Try again or select the text and copy it manually.',
@@ -83,6 +82,5 @@ describe('TechnicalDetails', () => {
         'Could not copy. Try again or select the text and copy it manually.',
       );
     });
-    expect(screen.getByRole('button', { name: 'Copy Event ID' }).textContent).toContain('Copy');
   });
 });

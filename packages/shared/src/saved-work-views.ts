@@ -13,11 +13,14 @@ import type { ObjectScope } from '#src/objects/index.js';
 import { encodeCursor } from '#src/pagination.js';
 import type { createSuggestionScope, SuggestionListStatus } from '#src/suggestions/index.js';
 import {
+  SAVED_WORK_VIEW_FILTER_VALUE_MAX,
+  savedWorkViewFilterKeys,
+} from '#src/work-filter-params.js';
+import {
   boardItemFilterFromWorkFilters,
   objectListFilterFromWorkFilters,
   parseWorkFilters,
   taskObjectFilterFromWorkFilters,
-  WORK_FILTER_PARAM_KEYS,
 } from '#src/work-filters.js';
 
 export const SAVED_WORK_COLLECTIONS = ['approvals', 'tasks', 'objects', 'boards'] as const;
@@ -39,14 +42,10 @@ export function savedApprovalStatus(status: string | undefined): SuggestionListS
 }
 
 function normalizeFilters(collection: Collection, filters: Record<string, string>) {
-  const keys =
-    collection === 'approvals'
-      ? ['status', 'boardId', 'project', 'decision']
-      : [...WORK_FILTER_PARAM_KEYS, ...(['tasks', 'boards'].includes(collection) ? ['view'] : [])];
   return Object.fromEntries(
-    keys.flatMap((key) => {
+    savedWorkViewFilterKeys(collection).flatMap((key) => {
       const value = filters[key]?.trim();
-      return value ? [[key, value.slice(0, 500)]] : [];
+      return value ? [[key, value.slice(0, SAVED_WORK_VIEW_FILTER_VALUE_MAX)]] : [];
     }),
   );
 }
@@ -256,6 +255,26 @@ export function createSavedWorkViewScope(input: {
         }
         return true;
       });
+    },
+    async preview(now: Date) {
+      await ensureMember();
+      const eligible = await db
+        .select()
+        .from(savedWorkViews)
+        .where(and(ownerCondition, eq(savedWorkViews.notify, true)))
+        .orderBy(asc(savedWorkViews.createdAt));
+      const results: { id: string; title: string; href: string; count: number | null }[] = [];
+      for (const view of eligible) {
+        const matches = await getMatches(view, now);
+        const baseline = new Set(view.baseline);
+        results.push({
+          id: view.id,
+          title: view.title,
+          href: savedWorkViewHref(view),
+          count: matches?.filter((id) => !baseline.has(id)).length ?? null,
+        });
+      }
+      return results;
     },
     async evaluate(windowEnd: Date, now: Date) {
       await ensureMember();

@@ -174,16 +174,18 @@ describe('llms text files', () => {
     }
   });
 
-  it('uses the selected-work, cited-answer, and human-approval positioning hierarchy', () => {
+  it('uses the the shared work record, scoped capture and review queue positioning', () => {
     const compact = buildLlmsTxt({ siteUrl: 'https://thetimeline.cc' });
     const full = buildLlmsFullTxt({ siteUrl: 'https://thetimeline.cc' });
 
     for (const text of [compact, full]) {
-      expect(text).toContain('auto-updating work record');
-      expect(text).toContain('Slack, Telegram, email and calls');
-      expect(text).toContain('current work record');
+      expect(text).toContain('shared work record for teams and their AI agents');
+      expect(text).toContain('within each configured source’s scope');
+      expect(text).toContain('read a daily update');
       expect(text).toMatch(/citation|cite the source/iu);
-      expect(text).toContain('human approval');
+      expect(text).toContain(
+        'Eligible routine changes can apply automatically and appear in history',
+      );
       expect(text).not.toContain('operations log your team can talk to');
       expect(text).not.toContain('captures messy real-world work');
     }

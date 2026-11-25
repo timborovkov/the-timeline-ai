@@ -25,10 +25,6 @@ export function AgentsHubPage() {
           <div>
             <h1>{AGENTS_HUB.title}</h1>
             <p className={styles.summary}>{AGENTS_HUB.summary}</p>
-            <AgentSetupCard compact className={styles.setup} />
-            <p className={styles.setupNote}>
-              Sign in or create an account, choose your team, and approve access in the browser.
-            </p>
             <a href="#agent-access" className={styles.textLink}>
               How access works
             </a>
@@ -41,7 +37,9 @@ export function AgentsHubPage() {
             <h2 id="agent-proof-title">The context is already there.</h2>
             <p>
               Your agent can find decisions, owners and commitments in the same record your team
-              uses. The sources come with it.
+              uses. Before investigating the login issue, an agent can find the original report and
+              see who took ownership. After a staging check, it can record what it tried and leave
+              customer verification open.
             </p>
             <p>
               This illustrative Claude exchange follows a customer commitment back to its email and
@@ -67,7 +65,8 @@ export function AgentsHubPage() {
           <aside className={styles.note} aria-label={AGENTS_HUB.example.label}>
             <h3>{AGENTS_HUB.example.title}</h3>
             <blockquote>
-              “The migration callback is ready for review. I’ve left the checklist with Priya.”
+              “I checked the login flow in staging. Can someone verify it in the customer’s
+              environment after release?”
             </blockquote>
             <p>{AGENTS_HUB.example.body}</p>
             <p className={styles.boundary}>{AGENTS_HUB.example.boundary}</p>
@@ -89,6 +88,10 @@ export function AgentsHubPage() {
               </p>
             </div>
           </div>
+          <AgentSetupCard compact className={styles.setup} />
+          <p className={styles.setupNote}>
+            Sign in or create an account, choose your team, and approve access in the browser.
+          </p>
           <MarketingProductScreenshot
             file={AGENTS_HUB.screenshot.file}
             alt={AGENTS_HUB.screenshot.alt}

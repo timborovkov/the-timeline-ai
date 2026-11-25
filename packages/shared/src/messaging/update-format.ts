@@ -12,6 +12,7 @@ export function updateSectionLabel(section: UpdateReportGroup['section']): strin
 }
 
 export function updateSubject(payload: DailyDigestPayload): string {
+  if (!payload.update && payload.updateRevision) return 'Timeline update';
   return `${payload.update?.name ?? 'Update'} · ${payload.teamName}`.replace(/[\r\n]/g, ' ');
 }
 

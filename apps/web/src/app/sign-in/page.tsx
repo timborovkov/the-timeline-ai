@@ -1,11 +1,16 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { SignInForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
-import { signUpHrefFromAuthCallback, signedInAuthRedirect } from '@/lib/auth-redirect';
+import {
+  ACCOUNT_SETTINGS_PATH,
+  signUpHrefFromAuthCallback,
+  signedInAuthRedirect,
+} from '@/lib/auth-redirect';
 import { readLastLoginMethod } from '@/lib/last-login-method';
 import { oauthSignInErrorMessage } from '@/lib/oauth-sign-in';
 import { readPendingInvite } from '@/lib/pending-invite';
@@ -42,6 +47,18 @@ export default async function SignInPage({ searchParams }: Props) {
       {oauthError ? (
         <p role="alert" className="text-sm text-destructive">
           {oauthError}
+          {error === 'OAuthAccountNotLinked' && hasGitHubAuth ? (
+            <>
+              {' Then open '}
+              <Link
+                href={ACCOUNT_SETTINGS_PATH}
+                className="font-medium underline underline-offset-4"
+              >
+                Account settings
+              </Link>
+              {' and choose Link GitHub.'}
+            </>
+          ) : null}
         </p>
       ) : null}
       <OAuthSignInButtons

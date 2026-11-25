@@ -29,9 +29,11 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
 import {
   buildApprovalPreviewFields,
+  automaticApprovalOutcome,
   type ApprovalPreviewField,
   type ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
@@ -65,6 +67,7 @@ export function ApprovalPreviewDialog({
   pending,
   mergeHref,
   onAccept,
+  onUndo,
   onReject,
 }: {
   returnFocusTo?: HTMLElement | null;
@@ -91,6 +94,7 @@ export function ApprovalPreviewDialog({
   pending: boolean;
   mergeHref?: string | null;
   onAccept: () => void;
+  onUndo?: (() => void) | undefined;
   onReject: (reason?: SuggestionRejectionReason) => void;
 }) {
   const requestKey = `${item.id}:${item.targetKind}:${item.targetId ?? ''}:${open ? 'open' : 'closed'}`;
@@ -129,6 +133,7 @@ export function ApprovalPreviewDialog({
   const members = loaded?.key === requestKey ? loaded.members : {};
   const loadingSnapshot = open && loaded?.key !== requestKey;
 
+  const region = useRegionalFormat();
   const { fields, timestamps } = buildApprovalPreviewFields({
     operation: item.operation,
     targetKind: item.targetKind,
@@ -137,6 +142,7 @@ export function ApprovalPreviewDialog({
     snapshot,
     members,
     timezone,
+    locale: region.locale,
   });
   const evidence = item.evidence ?? [];
 
@@ -149,26 +155,24 @@ export function ApprovalPreviewDialog({
       acceptDisabled={acceptDisabled}
       presentation={presentation}
       onAccept={onAccept}
+      onUndo={onUndo}
       onReject={onReject}
     />
   );
   const content = (
     <>
       <div className="space-y-3">
-        {acceptDisabled ? (
-          <StaleEvidence key={item.id} itemId={item.id} timezone={timezone} />
-        ) : null}
+        {acceptDisabled ? <StaleEvidence key={item.id} itemId={item.id} /> : null}
         <RejectionReason
           metadata={item.metadata}
           status={item.status}
           className="text-sm text-fg-muted"
         />
+        <AutomaticApprovalAttribution item={item} />
         {reason ? (
           <section>
             <h3 className="text-sm font-semibold">Why this change</h3>
-            <p className="mt-2 text-sm leading-6 text-fg-muted">
-              {displayText(reason, { timezone })}
-            </p>
+            <p className="mt-2 text-sm leading-6 text-fg-muted">{displayText(reason, region)}</p>
           </section>
         ) : null}
         <ApprovalPreviewContent
@@ -199,9 +203,7 @@ export function ApprovalPreviewDialog({
       >
         <header className="border-b border-border p-5">
           <p className="mb-2 text-xs text-fg-muted">{description}</p>
-          <h2 className="text-xl font-semibold leading-7">
-            {displayText(item.title, { timezone })}
-          </h2>
+          <h2 className="text-xl font-semibold leading-7">{displayText(item.title, region)}</h2>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">{content}</div>
         <footer className="border-t border-border bg-surface p-4">{actions}</footer>
@@ -212,7 +214,7 @@ export function ApprovalPreviewDialog({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent onCloseAutoFocus={restoreFocus} className="max-w-xl">
           <SheetHeader>
-            <SheetTitle className="pr-8">{displayText(item.title, { timezone })}</SheetTitle>
+            <SheetTitle className="pr-8">{displayText(item.title, region)}</SheetTitle>
             <SheetDescription>{description}</SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-5">{content}</div>
@@ -224,13 +226,37 @@ export function ApprovalPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-bg sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
         <DialogHeader>
-          <DialogTitle className="pr-8">{displayText(item.title, { timezone })}</DialogTitle>
+          <DialogTitle className="pr-8">{displayText(item.title, region)}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {content}
         <DialogFooter className="sm:justify-between">{actions}</DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function AutomaticApprovalAttribution({
+  item,
+}: Pick<ComponentProps<typeof ApprovalPreviewDialog>, 'item'>) {
+  const revision = item.metadata?.approval_policy_revision;
+  if (item.metadata?.approval_decision !== 'automatic' || typeof revision !== 'string') return null;
+  return (
+    <p className="text-xs text-fg-muted">
+      {item.status === 'accepted'
+        ? automaticApprovalOutcome(item.metadata)
+        : 'Automatic application attempted'}
+      {' · Workspace policy revision '}
+      {revision}
+      {Array.isArray(item.metadata.skipped_task_fields) && item.metadata.skipped_task_fields.length
+        ? ` · Skipped ${item.metadata.skipped_task_fields
+            .map((field) => {
+              const label = String(field).replace(/([a-z])([A-Z])/g, '$1 $2');
+              return label === 'assignee User Id' ? 'assignee' : label.toLowerCase();
+            })
+            .join(', ')}`
+        : null}
+    </p>
   );
 }
 
@@ -242,6 +268,7 @@ function PreviewDecisionActions({
   acceptDisabled,
   presentation,
   onAccept,
+  onUndo,
   onReject,
 }: Pick<
   ComponentProps<typeof ApprovalPreviewDialog>,
@@ -252,6 +279,7 @@ function PreviewDecisionActions({
   | 'acceptDisabled'
   | 'presentation'
   | 'onAccept'
+  | 'onUndo'
   | 'onReject'
 >) {
   return isActionableSuggestionStatus(item.status) ? (
@@ -284,6 +312,10 @@ function PreviewDecisionActions({
       )}
       <RejectProposal key={item.id} disabled={pending || busy} onReject={onReject} />
     </ItemActionGroup>
+  ) : onUndo ? (
+    <Button type="button" variant="outline" size="sm" disabled={pending || busy} onClick={onUndo}>
+      Undo task change
+    </Button>
   ) : (
     <p className="text-sm capitalize text-fg-muted">
       {item.status.replaceAll('_', ' ')} · Read-only
@@ -320,6 +352,7 @@ function ApprovalPreviewContent({
   evidence: PreviewEvidence[];
   currentEvidence: PreviewEvidence[];
 }) {
+  const { locale } = useRegionalFormat();
   return (
     <div
       className={bounded ? 'max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1' : 'space-y-4'}
@@ -332,7 +365,9 @@ function ApprovalPreviewContent({
       </dl>
       <PreviewTimestamps timestamps={timestamps} />
       {item.description ? (
-        <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
+        <p className="text-sm text-fg-muted">
+          {displayText(item.description, { timezone, locale })}
+        </p>
       ) : null}
       {currentEvidence.length > 0 ? (
         <section className="space-y-2 border-t border-border pt-3">
@@ -393,7 +428,7 @@ function ApprovalPreviewContent({
               </span>
               {entry.quote ? (
                 <span className="line-clamp-3 text-fg-muted">
-                  {displayText(entry.quote, { timezone })}
+                  {displayText(entry.quote, { timezone, locale })}
                 </span>
               ) : null}
             </EvidenceLink>

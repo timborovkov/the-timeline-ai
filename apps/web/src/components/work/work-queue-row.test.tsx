@@ -231,6 +231,18 @@ describe('WorkQueueRow', () => {
     });
   });
 
+  it('prefills the same workspace day that the work queue shows', async () => {
+    const user = userEvent.setup();
+    const dueAt = new Date('2026-11-30T22:15:00.000Z');
+    render(<WorkQueueRow item={item({ dueAt })} members={[]} timezone="Europe/Helsinki" />);
+
+    await user.click(screen.getByRole('button', { name: /Due date for/ }));
+    expect(screen.getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(fakes.updateObjectAction).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Due date')).toBeNull();
+  });
+
   it('does not expose field editors on approval rows', () => {
     render(
       <WorkQueueRow

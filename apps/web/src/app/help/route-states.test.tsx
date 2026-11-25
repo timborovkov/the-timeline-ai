@@ -228,6 +228,20 @@ describe('Help route states', () => {
     }
   });
 
+  it('explains Calendar at the destination linked from Features', async () => {
+    fakes.pathname = '/help/work';
+    setPublicSessionCache({ status: 'signed-in' });
+    render(await HelpTopicPage({ params: Promise.resolve({ slug: 'work' }) }));
+
+    expect(screen.getByRole('heading', { name: 'See scheduled work in Calendar' })).toBeTruthy();
+    expect(
+      screen.getByText(/planned work day.*does not put an event on the calendar/),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Calendar' }).getAttribute('href')).toBe(
+      '/app/calendar',
+    );
+  });
+
   it('routes readers to private support, public bugs, security, and contributions', async () => {
     render(<HelpIndexPage />);
 

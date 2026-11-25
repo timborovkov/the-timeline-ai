@@ -1,3 +1,7 @@
+import {
+  PENDING_TEAM_CHECKOUT_RETRY_MESSAGE,
+  PendingTeamCheckoutError,
+} from '@timeline/shared/billing/errors';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -13,6 +17,7 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const TEAM_ID = '22222222-2222-4222-8222-222222222222';
 
 const fakes = vi.hoisted(() => ({
+  assertTeamMemberSeatCapacity: vi.fn(),
   checkRateLimit: vi.fn(),
   cookieSet: vi.fn(),
   dbSelect: vi.fn(),
@@ -56,7 +61,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
   () => ({
-    assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+    assertTeamMemberSeatCapacity: fakes.assertTeamMemberSeatCapacity,
     isBillingAdmissionError: () => false,
   }),
   () => import('@timeline/shared/billing'),
@@ -195,7 +200,7 @@ await vi.mock(
 );
 
 const { PRIVACY_VERSION, TERMS_VERSION } = await import('@timeline/shared/legal-versions');
-const { signUpAction } = await import('@/app/actions/auth');
+const { signInAction, signUpAction } = await import('@/app/actions/auth');
 
 function form(includeAcceptance = true): FormData {
   const result = new FormData();
@@ -268,6 +273,7 @@ function createSignupTransaction() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.assertTeamMemberSeatCapacity.mockResolvedValue(undefined);
   fakes.headers.mockResolvedValue(
     new Headers({ 'cf-connecting-ip': '203.0.113.10', 'user-agent': 'Signup browser' }),
   );
@@ -392,7 +398,10 @@ describe('signUpAction legal acceptance', () => {
     expect(fakes.signIn).not.toHaveBeenCalled();
   });
 
-  it('invite signup creates zero owned teams and joins only the inviting team', async () => {
+  it.each([
+    ['joins only the inviting team', false],
+    ['keeps the invitation usable while checkout is pending', true],
+  ])('invite signup %s', async (_title, checkoutPending) => {
     const INVITE_TEAM_ID = '33333333-3333-4333-8333-333333333333';
     const INVITE_ID = '44444444-4444-4444-8444-444444444444';
     const inviteForm = form();
@@ -443,6 +452,17 @@ describe('signUpAction legal acceptance', () => {
       const rows = selectIndex++ === 0 ? [] : [{ name: 'Inviting Co' }];
       return selectChain(rows);
     });
+    if (checkoutPending) {
+      fakes.assertTeamMemberSeatCapacity.mockRejectedValueOnce(new PendingTeamCheckoutError());
+      await expect(signUpAction({}, inviteForm)).resolves.toEqual({
+        error: PENDING_TEAM_CHECKOUT_RETRY_MESSAGE,
+      });
+      expect(tx.update).not.toHaveBeenCalled();
+      expect(insertedValues).toHaveLength(1);
+      expect(fakes.recordCurrentLegalAcceptance).not.toHaveBeenCalled();
+      expect(fakes.signIn).not.toHaveBeenCalled();
+      return;
+    }
 
     await expect(signUpAction({}, inviteForm)).rejects.toThrow('NEXT_REDIRECT:/app');
 
@@ -544,5 +564,30 @@ describe('signUpAction legal acceptance', () => {
       'team_created',
       expect.anything(),
     );
+  });
+});
+
+describe('credential sign-in destination', () => {
+  it.each([
+    ['/legal/accept?callbackUrl=%2Fapp%2Fteam', '/legal/accept?callbackUrl=%2Fapp%2Fteam'],
+    ['https://outside.example.test/', '/app'],
+  ])('uses the validated destination returned by Auth.js (%s)', async (returned, destination) => {
+    const submitted = '/app/team?section=billing&plan=team#change-plan';
+    const data = new FormData();
+    data.set('email', 'person@example.test');
+    data.set('password', 'fixture-password');
+    data.set('callbackUrl', submitted);
+    fakes.signIn.mockResolvedValueOnce(returned);
+
+    const query = new URLSearchParams({ callbackUrl: destination });
+    await expect(signInAction({}, data)).rejects.toThrow(
+      `NEXT_REDIRECT:/sign-in/continue?${query}`,
+    );
+    expect(fakes.signIn).toHaveBeenCalledWith('credentials', {
+      email: 'person@example.test',
+      password: 'fixture-password',
+      redirect: false,
+      redirectTo: submitted,
+    });
   });
 });

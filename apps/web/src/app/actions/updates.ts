@@ -5,7 +5,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
 import { resolveActiveTeam } from '@/lib/active-team';
-import { auth } from '@/lib/auth';
+import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -18,8 +18,9 @@ export async function saveUpdateAction(
   _state: UpdateActionState,
   form: FormData,
 ): Promise<UpdateActionState> {
-  const session = await auth();
+  const { session, impersonation } = await getRequestIdentity();
   if (!session?.user) return { error: 'Sign in to manage updates.' };
+  if (impersonation) return { error: 'Exit impersonation to manage updates.' };
   const { active } = await resolveActiveTeam(session.user.id);
   const teamId = form.get('team');
   if (typeof teamId !== 'string' || active?.teamId !== teamId) {
@@ -31,6 +32,9 @@ export async function saveUpdateAction(
   const intent = form.get('intent');
   const scope = withTeam(db, active.teamId, session.user.id);
   try {
+    const role = await scope.requireMembership();
+    if (!['owner', 'admin', 'member'].includes(role))
+      return { error: 'Update schedules require full workspace membership.' };
     if ((intent === 'delete' || intent === 'reset') && !workspace) {
       await scope.updates.remove(key, intent === 'reset');
     } else if (intent === 'save') {
@@ -42,6 +46,7 @@ export async function saveUpdateAction(
         time: form.get('time'),
         channel: form.get('channel'),
         detail: form.get('detail'),
+        includeContent: !workspace && form.get('includeContent') === 'on',
         lookbackDays: Number(form.get('lookbackDays')),
         upcomingDays: Number(form.get('upcomingDays')),
         sections: form.getAll('sections'),

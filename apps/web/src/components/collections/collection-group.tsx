@@ -5,6 +5,7 @@ import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { statusToneClass, type StatusTone } from '@/components/collections/collection-status-tone';
+import { RegionalNumber } from '@/components/regional-number';
 import { cn } from '@/lib/utils';
 
 export function CollectionGroup({
@@ -55,7 +56,7 @@ export function CollectionGroup({
           <span className={statusToneClass(tone)}>{icon}</span>
           <span className="min-w-0 whitespace-normal py-2 [overflow-wrap:anywhere]">{title}</span>
           <span className="font-mono tabular-nums text-fg-dim">
-            {count}
+            <RegionalNumber value={count} />
             {countLabel ? ` ${countLabel}` : ''}
           </span>
         </button>

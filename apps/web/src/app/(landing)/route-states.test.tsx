@@ -34,12 +34,18 @@ describe('Landing route states', () => {
     expect(screen.getByText('Evidence interrupted')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'The Timeline home' }).getAttribute('href')).toBe('/');
     const navigation = screen.getByRole('navigation', { name: 'Public navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Product' }).getAttribute('href')).toBe(
-      '/',
+    const product = within(navigation).getByText('Product', { selector: 'summary' });
+    product.focus();
+    await user.keyboard('{Enter}');
+    expect(
+      within(navigation).getByRole('link', { name: 'For AI agents' }).getAttribute('href'),
+    ).toBe('/agents');
+    expect(within(navigation).getByRole('link', { name: 'Features' }).getAttribute('href')).toBe(
+      '/features',
     );
-    expect(within(navigation).getByRole('link', { name: 'Agents' }).getAttribute('href')).toBe(
-      '/agents',
-    );
+    expect(
+      within(navigation).getByRole('link', { name: 'Integrations' }).getAttribute('href'),
+    ).toBe('/integrations');
     expect(within(navigation).getByRole('link', { name: 'Pricing' }).getAttribute('href')).toBe(
       '/pricing',
     );
@@ -91,13 +97,14 @@ describe('Landing route states', () => {
     );
 
     expect(html).toContain('focus:z-[90]');
-    expect(html).toContain('>Product</a>');
-    expect(html).toContain('>Agents</a>');
+    expect(html).toMatch(/<summary[^>]*>Product/);
+    expect(html).toMatch(/<summary[^>]*>Resources/);
+    expect(html).toContain('>For AI agents</a>');
+    expect(html).toContain('href="/features"');
     expect(html).toContain('>Pricing</a>');
     expect(html).toContain('>Help</a>');
-    expect(html).not.toContain('>Integrations</a>');
-    expect(html).not.toContain('>How it works</a>');
-    expect(html).toContain('href="/use-cases"');
+    expect(html).toContain('>Integrations</a>');
+    expect(html).toContain('>How it works</a>');
     expect(html).toContain('href="/integrations"');
     expect(html).not.toContain('href="/compare"');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');

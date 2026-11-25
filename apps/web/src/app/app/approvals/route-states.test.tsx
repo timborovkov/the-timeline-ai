@@ -28,9 +28,7 @@ describe('Approvals route states', () => {
       render(<ApprovalsError error={new Error('route failed')} reset={reset} />);
 
       expect(screen.getAllByRole('heading', { level: 1, name: 'Approvals' })).toHaveLength(1);
-      expect(
-        screen.getByText('Review evidence-backed changes before they become team memory.'),
-      ).toBeTruthy();
+      expect(screen.getByText('Review pending changes and see past decisions.')).toBeTruthy();
       expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
       expect(screen.getByRole('link', { name: 'Approvals' }).getAttribute('aria-current')).toBe(
         'page',

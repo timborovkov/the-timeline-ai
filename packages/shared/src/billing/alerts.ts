@@ -3,11 +3,14 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import {
   FREE_ALLOWANCES,
+  FREE_MONTHLY_USAGE_CENTS,
   PLAN_CATALOG,
   formatEuroFromCents,
+  formatUsdFromCents,
   formatStorageGb,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
+import { freeIncludedUsageRemainingCents } from '#src/billing/policy.js';
 import {
   freeAllowanceRemaining,
   spendCapUtilization,
@@ -31,6 +34,8 @@ function periodYm(date = new Date()): string {
 }
 
 function freeNearLimit(remaining: FreeAllowanceRemaining): boolean {
+  if (remaining.includedUsageCents !== undefined)
+    return remaining.includedUsageCents <= FREE_MONTHLY_USAGE_CENTS / 4;
   return (
     remaining.aiChargeCents <= FREE_ALLOWANCES.aiChargeCents * 0.25 ||
     remaining.recallMinutes <= FREE_ALLOWANCES.recallMinutes * 0.25 ||
@@ -41,6 +46,7 @@ function freeNearLimit(remaining: FreeAllowanceRemaining): boolean {
 }
 
 function freeExhausted(remaining: FreeAllowanceRemaining): boolean {
+  if (remaining.includedUsageCents !== undefined) return remaining.includedUsageCents <= 0;
   return (
     remaining.aiChargeCents <= 0 ||
     remaining.recallMinutes <= 0 ||
@@ -82,16 +88,20 @@ function detailLineForKind(
     meteredSpendCents: number;
     spendCapCents: number;
     freeRemaining: FreeAllowanceRemaining;
+    usd?: boolean;
   },
 ): string {
+  const format = input.usd ? formatUsdFromCents : formatEuroFromCents;
   switch (kind) {
     case 'spend_cap_50':
     case 'spend_cap_75':
     case 'spend_cap_90':
     case 'spend_cap_100':
-      return `Metered this period: ${formatEuroFromCents(input.meteredSpendCents)} of ${formatEuroFromCents(input.spendCapCents)}.`;
+      return `Metered this period: ${format(input.meteredSpendCents)} of ${format(input.spendCapCents)}.`;
     case 'free_near_limit':
     case 'free_exhausted':
+      if (input.freeRemaining.includedUsageCents !== undefined)
+        return 'AI processing and native meeting capture share one allowance. Check Usage for its balance and reset date.';
       return `Remaining Free floor — AI ${formatEuroFromCents(input.freeRemaining.aiChargeCents)}, meetings ${String(input.freeRemaining.recallMinutes)} min, email ${String(input.freeRemaining.emailUnits)}, storage ${formatStorageGb(input.freeRemaining.storageGb)}, sources ${String(input.freeRemaining.acceptedSources)}.`;
     case 'subscription_past_due':
       return 'The subscription payment failed. New cost-bearing work is paused until the card on file succeeds.';
@@ -108,6 +118,7 @@ export async function notifyBillingUsageAlerts(input: {
   planId: BillingPlanId;
   spendCapCents: number;
   meteredSpendCents: number;
+  usd?: boolean;
   meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number } | undefined>>;
 }): Promise<{ sent: number; skipped: number }> {
   const freeRemaining = freeAllowanceRemaining({
@@ -117,6 +128,9 @@ export async function notifyBillingUsageAlerts(input: {
     storage_gb_month: input.meters.storage_gb_month ?? null,
     accepted_sources: input.meters.accepted_sources ?? null,
   });
+  if (input.planId === 'free') {
+    freeRemaining.includedUsageCents = freeIncludedUsageRemainingCents(input.meters);
+  }
   const kinds = billingUsageAlertKindsForState({
     planId: input.planId,
     spendCapCents: input.spendCapCents,
@@ -160,6 +174,7 @@ export async function notifyBillingUsageAlerts(input: {
       meteredSpendCents: input.meteredSpendCents,
       spendCapCents: input.spendCapCents,
       freeRemaining,
+      usd: input.usd ?? false,
     });
     for (const owner of owners) {
       if (!owner.email) {

@@ -1,12 +1,14 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { ClipboardList } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { AuditPagination } from '@/components/audit-pagination';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { EmptyState } from '@/components/empty-state';
 import { IndexStrip } from '@/components/index-strip';
+import { RegionalNumber } from '@/components/regional-number';
+import { RegionalTimezone } from '@/components/regional-timezone';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
@@ -112,7 +114,9 @@ function auditMetadataDetails(metadata: Record<string, unknown>) {
 
 export default async function TrustAuditPage({
   searchParams,
-}: { searchParams?: Promise<{ page?: string }> } = {}) {
+}: {
+  searchParams?: Promise<{ page?: string }>;
+}) {
   const params = (await searchParams) ?? {};
   const requestedPage = Number(params.page ?? 1);
   const page =
@@ -134,54 +138,36 @@ export default async function TrustAuditPage({
   }
   if (!canViewAudit) redirect('/app/team');
 
-  const [pageRows, calendarSettings] = await Promise.all([
-    scope.audit.list(201, offset),
-    scope.calendar.getCalendarSettings(),
-  ]);
+  const pageRows = await scope.audit.list(201, offset);
   const rows = pageRows.slice(0, 200);
   const hasMore = pageRows.length > 200;
-  const timezone = calendarSettings.defaultTimezone;
 
   return (
     <div className="space-y-8">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Trust audit' }]} />
       <IndexStrip
-        srLabel={`Trust audit · ${String(rows.length)} rows · times in ${timezone}`}
+        srLabel={`Trust audit · ${String(rows.length)} rows · timestamps use your display time zone`}
         segments={[
           { value: 'TRUST AUDIT' },
           { label: 'team', value: active.teamName, signal: true },
-          { label: 'rows', value: rows.length },
+          { label: 'rows', value: <RegionalNumber value={rows.length} /> },
           {
             label: 'time zone',
-            value: <span className="normal-case tracking-normal">{timezone}</span>,
+            value: (
+              <span className="normal-case tracking-normal">
+                <RegionalTimezone />
+              </span>
+            ),
           },
         ]}
       />
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-        <p className="text-fg-muted">
-          Page {page} ·{' '}
-          {rows.length ? `Entries ${offset + 1}–${offset + rows.length}` : 'No entries'} · Up to 200
-          per page, newest first
-        </p>
-        <nav aria-label="Audit pagination" className="flex gap-4">
-          {page > 1 ? (
-            <Link
-              className="inline-flex min-h-11 items-center underline"
-              href={`/app/team/audit?page=${page - 1}`}
-            >
-              Newer entries
-            </Link>
-          ) : null}
-          {hasMore ? (
-            <Link
-              className="inline-flex min-h-11 items-center underline"
-              href={`/app/team/audit?page=${page + 1}`}
-            >
-              Older entries
-            </Link>
-          ) : null}
-        </nav>
-      </div>
+      <AuditPagination
+        pathname="/app/team/audit"
+        page={page}
+        offset={offset}
+        rowCount={rows.length}
+        hasMore={hasMore}
+      />
       <section aria-labelledby="trust-audit-entries">
         <h2 id="trust-audit-entries" className="sr-only">
           Audit entries

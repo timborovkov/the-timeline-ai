@@ -3,7 +3,6 @@ import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
-  getCalendarSettings: vi.fn(),
   integrationAuditList: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -25,7 +24,6 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
-      calendar: { getCalendarSettings: fakes.getCalendarSettings },
       integrations: { listAudit: fakes.integrationAuditList },
       requireMembership: fakes.requireMembership,
     }),
@@ -62,7 +60,6 @@ beforeEach(() => {
     active: { teamId: 'team-1', teamName: 'Acme Labs' },
   });
   fakes.requireMembership.mockResolvedValue('admin');
-  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
   fakes.integrationAuditList.mockResolvedValue([
     {
       id: 'audit-1',
@@ -74,30 +71,31 @@ beforeEach(() => {
 });
 
 describe('IntegrationAuditPage', () => {
-  it('presents audit times in the team timezone with clear timezone context', async () => {
+  it('presents audit times in the selected timezone with clear timezone context', async () => {
     const html = renderToStaticMarkup(
-      <WorkspaceTimezoneProvider timezone="America/Los_Angeles">
-        {await IntegrationAuditPage()}
+      <WorkspaceTimezoneProvider
+        timezone="America/Los_Angeles"
+        region={{ locale: 'de-DE', timezone: 'Asia/Tokyo' }}
+      >
+        {await IntegrationAuditPage({})}
       </WorkspaceTimezoneProvider>,
     );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.integrationAuditList).toHaveBeenCalledWith(null, 201, 0);
-    expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
     expect(html).toContain(
-      new Intl.DateTimeFormat('en-US', {
+      new Intl.DateTimeFormat('de-DE', {
         dateStyle: 'medium',
         timeStyle: 'short',
-        timeZone: 'UTC',
-      }).format(new Date('2026-07-14T17:30:00.000Z')),
+        timeZone: 'Asia/Tokyo',
+      }).format(new Date('2026-07-15T00:30:00.000Z')),
     );
-    expect(html).toContain('America/Los_Angeles');
-    expect(html).toContain('times in America/Los_Angeles');
+    expect(html).toContain('Asia/Tokyo');
     expect(html).toContain('dateTime="2026-07-15T00:30:00.000Z"');
   });
 
   it('keeps technical event codes and payload values inside the disclosure', async () => {
-    const html = renderToStaticMarkup(await IntegrationAuditPage());
+    const html = renderToStaticMarkup(await IntegrationAuditPage({}));
     const primaryContent = html.replace(/<details[\s\S]*?<\/details>/g, '');
 
     expect(primaryContent).toContain('Webhook setup failed');
@@ -110,7 +108,7 @@ describe('IntegrationAuditPage', () => {
   it('gives an empty integration audit a named, explanatory archive state', async () => {
     fakes.integrationAuditList.mockResolvedValueOnce([]);
 
-    const html = renderToStaticMarkup(await IntegrationAuditPage());
+    const html = renderToStaticMarkup(await IntegrationAuditPage({}));
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('aria-labelledby="integration-audit-entries"');

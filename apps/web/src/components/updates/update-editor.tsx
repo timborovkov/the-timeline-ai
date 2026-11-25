@@ -1,5 +1,6 @@
 'use client';
 
+import type { DigestDestinationKind } from '@timeline/shared/messaging';
 import {
   DEFAULT_UPDATE_KEY,
   UPDATE_CHANNELS,
@@ -24,6 +25,7 @@ export function UpdateEditor({
   scheduleKey,
   initial,
   timezone,
+  personalDestinations,
   workspace,
   inherited,
   creating,
@@ -32,6 +34,7 @@ export function UpdateEditor({
   scheduleKey: string;
   initial: UpdateSettings;
   timezone: string;
+  personalDestinations: DigestDestinationKind[];
   workspace: boolean;
   inherited: boolean;
   creating: boolean;
@@ -79,21 +82,44 @@ export function UpdateEditor({
               ))}
             </NativeSelect>
           </label>
-          {draft.channel !== 'email' && (
-            <p className={`${hint} sm:col-span-2`}>
-              {draft.channel === 'workspace' ? (
-                'Uses the personal destinations configured in Team settings.'
-              ) : (
-                <>
-                  DMs start after you link your account in{' '}
-                  <Link href="/app/connections" className="underline underline-offset-3">
-                    Connections
-                  </Link>
-                  .
-                </>
-              )}
+          {workspace ? (
+            <p className="text-xs text-fg-muted sm:col-span-2">
+              Members receive a link to read the update in Timeline.
             </p>
+          ) : (
+            <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2">
+              <input
+                name="includeContent"
+                type="checkbox"
+                className={box}
+                checked={draft.includeContent}
+                onChange={(event) => {
+                  change('includeContent', event.currentTarget.checked);
+                }}
+              />
+              <span>
+                Include content in the message
+                <span className="block text-xs text-fg-muted">
+                  Turn this off to receive only a link to the update.
+                </span>
+              </span>
+            </label>
           )}
+          {!workspace &&
+            !personalDestinations.some(
+              (kind) =>
+                draft.channel === 'workspace' ||
+                (draft.channel === 'email' && kind === 'email_members') ||
+                (draft.channel === 'telegram' && kind === 'telegram_dm_members') ||
+                (draft.channel === 'slack' && kind === 'slack_dm_members'),
+            ) && (
+              <p className="text-xs text-fg-muted">
+                Delivery requires verified email or a linked chat enabled for updates.{' '}
+                <Link href="/app/connections" className="underline underline-offset-4">
+                  Manage connections
+                </Link>
+              </p>
+            )}
         </div>
 
         <fieldset className="space-y-3 border-t border-border pt-4">

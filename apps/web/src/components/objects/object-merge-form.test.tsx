@@ -3,6 +3,8 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+
 const fakes = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),
@@ -86,41 +88,48 @@ describe('ObjectMergeForm', () => {
   });
 
   it('renders foldable related facts for each merge candidate', () => {
-    const html = renderToStaticMarkup(
-      createElement(ObjectMergeForm, {
-        objects: [
-          { ...baseObject, id: 'object-a', canonicalName: 'Becca The Other Line' },
-          { ...baseObject, id: 'object-b', canonicalName: 'Becca Builder' },
+    const form = createElement(ObjectMergeForm, {
+      objects: [
+        { ...baseObject, id: 'object-a', canonicalName: 'Becca The Other Line' },
+        { ...baseObject, id: 'object-b', canonicalName: 'Becca Builder' },
+      ],
+      initialSurvivorId: 'object-a',
+      countsBySurvivorId: {
+        'object-a': { facts: 1234, notes: 0, relationships: 0, openTasks: 0 },
+        'object-b': { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
+      },
+      factSamplesByObjectId: {
+        'object-a': [
+          {
+            id: 'fact-a',
+            statement: 'Becca The Other Line owns payroll follow-up.',
+            confidence: 0.91,
+            rawEventId: 'event-a',
+            extractedAt: new Date('2026-06-01T10:00:00.000Z'),
+          },
         ],
-        initialSurvivorId: 'object-a',
-        countsBySurvivorId: {
-          'object-a': { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
-          'object-b': { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
-        },
-        factSamplesByObjectId: {
-          'object-a': [
-            {
-              id: 'fact-a',
-              statement: 'Becca The Other Line owns payroll follow-up.',
-              confidence: 0.91,
-              rawEventId: 'event-a',
-              extractedAt: new Date('2026-06-01T10:00:00.000Z'),
-            },
-          ],
-          'object-b': [
-            {
-              id: 'fact-b',
-              statement: 'Becca Builder works with vendor onboarding.',
-              confidence: 0.84,
-              rawEventId: 'event-b',
-              extractedAt: new Date('2026-06-01T10:00:00.000Z'),
-            },
-          ],
-        },
+        'object-b': [
+          {
+            id: 'fact-b',
+            statement: 'Becca Builder works with vendor onboarding.',
+            confidence: 0.84,
+            rawEventId: 'event-b',
+            extractedAt: new Date('2026-06-01T10:00:00.000Z'),
+          },
+        ],
+      },
+    });
+    const html = renderToStaticMarkup(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'Europe/Helsinki',
+        region: { locale: 'de-DE' },
+        children: form,
       }),
     );
 
     expect(html).toContain('Related facts (1)');
+    expect(html).toContain('>1.234</div>');
+    expect(html).toContain('91\u00a0%');
     expect(html).toContain('Becca The Other Line owns payroll follow-up.');
     expect(html).toContain('Becca Builder works with vendor onboarding.');
   });

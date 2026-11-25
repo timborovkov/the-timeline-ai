@@ -5,7 +5,7 @@ import {
 import type { PublicCapabilityState, PublicDocument } from '@/lib/public-site';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-12' as const;
+const REVIEW_DATE = '2026-11-24' as const;
 
 function worksWithCapability(tool: WorksWithTool): PublicCapabilityState {
   if (tool.status === 'coming-soon') return { kind: 'planned', provider: tool.slug };
@@ -45,7 +45,7 @@ export const WORKS_WITH_PUBLIC_DOCUMENTS = definePublicDocuments(
             sections: [
               { title: 'How it plugs in', body: tool.howItPlugsIn },
               { title: 'What works today', body: tool.today },
-              { title: 'What is planned', body: tool.later },
+              { title: 'Native capture', body: tool.later },
               { title: 'Just getting started', body: tool.gettingStarted },
               { title: `When ${tool.name} alone is the better pick`, body: tool.whenAloneBetter },
             ],

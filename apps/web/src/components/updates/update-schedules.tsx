@@ -62,10 +62,12 @@ function ScheduleRow({ schedule }: { schedule: UpdateSchedule }) {
 export function UpdateSchedules({
   schedules,
   workspaceDefault,
+  hasLegacySchedule,
   timezone,
 }: {
   schedules: UpdateSchedule[];
   workspaceDefault: UpdateSettings | undefined;
+  hasLegacySchedule: boolean;
   timezone: string;
 }) {
   return (
@@ -106,6 +108,14 @@ export function UpdateSchedules({
           </Button>
         </header>
         <ul className="divide-y divide-border px-4 sm:px-5">
+          {hasLegacySchedule && (
+            <li className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <h3 className="font-medium text-fg">Previous schedule</h3>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/app/updates?legacy=1">Edit previous schedule</Link>
+              </Button>
+            </li>
+          )}
           {schedules.map((schedule) => (
             <ScheduleRow key={schedule.key} schedule={schedule} />
           ))}

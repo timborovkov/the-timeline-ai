@@ -11,7 +11,7 @@ import { CopyButton } from '@/components/copy-button';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { GenerateGroupTokenForm } from '@/components/telegram-forms';
 import { Button } from '@/components/ui/button';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime } from '@/lib/display-dates';
 import { isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
 import { cn } from '@/lib/utils';
@@ -57,7 +57,9 @@ export function ProcessingScreen({
       <Button type="button" variant="ghost" onClick={onSwitch}>
         Choose another way
       </Button>
-      {captureUrl ? <CopyButton value={captureUrl} label="Copy capture link" /> : null}
+      {captureUrl ? (
+        <CopyButton value={captureUrl} label="Copy capture link" manualCopy={false} />
+      ) : null}
     </div>
   );
 
@@ -180,14 +182,14 @@ export function CaptureStartedTime({
   value: Date | string;
   waiting?: boolean;
 }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   const date = toDateOrNull(value);
   const iso = isoTimestamp(value);
   if (!date || !iso) return null;
   return (
     <p className="mt-2 text-xs text-fg-dim">
       {waiting ? 'Waiting since' : 'Started'}{' '}
-      <time dateTime={iso}>{formatDisplayDateTime(date, { timezone })}</time>
+      <time dateTime={iso}>{formatDisplayDateTime(date, region)}</time>
     </p>
   );
 }

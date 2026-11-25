@@ -10,6 +10,7 @@ import {
   createPolarBillingProvider,
   isPolarBillingConfigured,
   polarProductIdForPlan,
+  polarSubscriptionIdForPlanChange,
   selfServeCheckoutPlan,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
@@ -48,8 +49,7 @@ export async function startBillingCheckout(input: {
     if (!plan) {
       return {
         ok: false,
-        error:
-          'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
+        error: 'Team is the only plan available for self-serve checkout.',
       };
     }
     if (!isPolarBillingConfigured()) {
@@ -82,7 +82,10 @@ export async function startBillingCheckout(input: {
     try {
       const checkoutResult = await withTeamBillingIdentity(
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
-        async (identity, { account: current, recordCheckout }) => {
+        async (
+          identity,
+          { account: current, db: checkoutDb, recordCheckout, prepareTeamCheckout },
+        ) => {
           if (compSuppressesPolarCharges(current)) {
             return {
               ok: false as const,
@@ -96,17 +99,37 @@ export async function startBillingCheckout(input: {
                 'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
             };
           }
-          const discountId = await checkoutDiscountId({
-            account: current,
-            submittedCode: input.discountCode,
-            provider,
-            productId,
-          });
+          const [discountId, seats] = await Promise.all([
+            checkoutDiscountId({
+              account: current,
+              submittedCode: input.discountCode,
+              provider,
+              productId,
+            }),
+            withTeam(checkoutDb, gate.active.teamId, gate.userId).billing.countActiveFullMembers(),
+          ]);
+          if (seats < 1)
+            return { ok: false as const, error: 'Team requires at least one full member.' };
+          if (!polarSubscriptionIdForPlanChange(current)) {
+            const pending = await prepareTeamCheckout({
+              productId,
+              seats,
+              ...(discountId ? { discountId } : {}),
+            });
+            if (pending.status === 'resume') return { ok: true as const, url: pending.url };
+            if (pending.status === 'blocked')
+              return {
+                ok: false as const,
+                error:
+                  'A previous checkout is still open or awaiting payment confirmation. Finish that checkout or wait for it to expire before creating another.',
+              };
+          }
           const checkout = await createPlanChangeSession({
             ...identity,
             provider,
             account: current,
             productId,
+            seats,
             externalCustomerId: gate.active.teamId,
             customerEmail: gate.email,
             successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success&checkoutTeam=${gate.active.teamId}&checkoutPlan=${plan}`,
@@ -114,10 +137,10 @@ export async function startBillingCheckout(input: {
             ...(discountId ? { discountId } : {}),
           });
           if (checkout.id) await recordCheckout(checkout.id);
-          return { ok: true as const, url: checkout.url };
+          return { ok: true as const, url: checkout.url, created: Boolean(checkout.id) };
         },
       );
-      if (checkoutResult.ok) {
+      if (checkoutResult.ok && checkoutResult.created) {
         // Keep plan intent until Polar confirms payment (or the user dismisses).
         // Creating a checkout session is not confirmation — abandoned checkout
         // must leave Free and keep the finish-setup reminder available.
@@ -127,7 +150,7 @@ export async function startBillingCheckout(input: {
           { plan },
         );
       }
-      return checkoutResult;
+      return checkoutResult.ok ? { ok: true, url: checkoutResult.url } : checkoutResult;
     } catch (error) {
       return {
         ok: false,

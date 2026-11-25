@@ -1,16 +1,31 @@
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import * as ai from 'ai';
+import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
-import {
+const tracedStream = vi.fn();
+await vi.mock(
+  import.meta.resolve('langsmith/experimental/vercel'),
+  async () => {
+    const original = await import('langsmith/experimental/vercel');
+    const wrap = original.wrapAISDK;
+    return {
+      ...original,
+      wrapAISDK: (sdk: typeof ai) => ({ ...wrap(sdk), streamText: tracedStream }),
+    };
+  },
+  () => import('langsmith/experimental/vercel'),
+);
+
+const {
   generateObject,
   generateText,
   sanitizeAiSdkInputs,
   sanitizeTranscribeInputs,
   streamText,
   withLangSmithProviderOptions,
-} from '#src/llm/tracing.js';
+} = await import('#src/llm/tracing.js');
 const ENV_BACKUP = { ...process.env };
 
 beforeEach(() => {
@@ -21,6 +36,8 @@ beforeEach(() => {
     NODE_ENV: 'test',
   };
   delete process.env.LANGSMITH_PROJECT;
+  delete process.env.LANGSMITH_TRACING;
+  tracedStream.mockReset();
   resetEnvForTests();
 });
 
@@ -35,6 +52,56 @@ describe('llm LangSmith tracing', () => {
     // eslint-disable-next-line @typescript-eslint/no-deprecated
     expect(generateObject).not.toBe(ai.generateObject);
     expect(streamText).not.toBe(ai.streamText);
+  });
+
+  it('keeps disabled streams cancellable without entering the tracing wrapper', async () => {
+    const controller = new AbortController();
+    const onAbort = vi.fn();
+    const model = new MockLanguageModelV3({
+      doStream: () =>
+        Promise.resolve({
+          stream: new ReadableStream({
+            start(stream) {
+              stream.enqueue({ type: 'text-start', id: 'text' });
+              stream.enqueue({ type: 'text-delta', id: 'text', delta: 'Partial' });
+              setTimeout(() => {
+                controller.abort();
+              }, 0);
+            },
+          }),
+        }),
+    });
+
+    await streamText({
+      model,
+      prompt: 'Synthetic prompt',
+      abortSignal: controller.signal,
+      onAbort,
+    }).consumeStream();
+
+    expect(tracedStream).not.toHaveBeenCalled();
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onAbort).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+  });
+
+  it('keeps enabled streams on the tracing wrapper with their original options', () => {
+    process.env.LANGSMITH_TRACING = 'true';
+    process.env.LANGSMITH_API_KEY = 'lsv2_test_key';
+    resetEnvForTests();
+    const params = {
+      model: new MockLanguageModelV3(),
+      prompt: 'Synthetic prompt',
+      providerOptions: withLangSmithProviderOptions(undefined, {
+        name: 'llm.test',
+        model: 'synthetic-model',
+      }),
+    };
+    const result = { synthetic: true };
+    tracedStream.mockReturnValue(result);
+
+    expect(streamText(params)).toBe(result);
+    expect(tracedStream).toHaveBeenCalledTimes(1);
+    expect(tracedStream).toHaveBeenCalledWith(params);
   });
 
   it('adds disabled LangSmith provider options by default and preserves existing options', () => {

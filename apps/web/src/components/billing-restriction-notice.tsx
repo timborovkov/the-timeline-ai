@@ -25,12 +25,12 @@ export function BillingRestrictionNotice({ reason }: { reason: BillingRestrictio
   }
   if (reason === 'free_grant_elsewhere') {
     return (
-      <BillingStateBanner title="Your Free allowance is assigned to another team. Choose Pay as you go or another plan to enable metered work here.">
+      <BillingStateBanner title="Your Free allowance is assigned to another team. Upgrade this workspace to Team to enable AI processing and meeting capture.">
         <Link
           href="/app/team?section=billing#change-plan"
           className="text-sm underline underline-offset-4"
         >
-          Choose a plan
+          View Team
         </Link>
       </BillingStateBanner>
     );

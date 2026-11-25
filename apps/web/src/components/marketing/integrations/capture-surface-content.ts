@@ -33,7 +33,7 @@ export const CAPTURE_SURFACES = [
     captured:
       'Up to five public same-origin pages per scan, stored as cited evidence and document snapshots.',
     boundary:
-      'Public pages only, with permission confirmation. Each captured page uses 20 source units, even when unchanged; AI and storage are separate. Daily and weekly schedules are available when enabled by the service administrator. Removing a source stops future scans but retains history.',
+      'Public pages only, with permission confirmation. Daily and weekly schedules are available when enabled by the service administrator. Removing a source stops future scans but retains history.',
     setupHref: '/app/connections/websites',
     setupLabel: 'Add a website',
     publicHref: '/integrations/websites',
@@ -45,7 +45,7 @@ export const CAPTURE_SURFACES = [
     category: 'Conversation and capture',
     icon: 'telegram',
     summary:
-      'Talk to Timeline in a linked DM or group, capture an explicit note, or send a file or voice memo into the same evidence pipeline.',
+      'Capture new messages automatically from linked groups. Ask in a direct chat or explicitly add notes and supported media.',
     captured: 'Explicit notes, linked group messages, files, images, audio, and voice memos.',
     boundary:
       'Plain text in a direct chat asks the agent; it does not silently become team evidence. Use /note for an explicit note. Telegram is not a passive account-history sync.',
@@ -60,7 +60,7 @@ export const CAPTURE_SURFACES = [
     category: 'Conversation and capture',
     icon: 'slack',
     summary:
-      'Ask Timeline from Slack, capture deliberate notes, and route linked conversations, files, and voice memos into the record.',
+      'Capture supported activity from configured channels. Ask Timeline from Slack and explicitly add notes when useful.',
     captured:
       'Direct agent chats, /ask, @Timeline replies, explicit notes, files, and voice memos.',
     boundary:

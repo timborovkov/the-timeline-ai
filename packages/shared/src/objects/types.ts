@@ -74,6 +74,7 @@ export interface ObjectRow {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: Date | null;
+  plannedDate?: string | null;
   taskCategory: TaskCategory | null;
   taskCategoryMode: TaskCategoryMode | null;
   taskCategorySource: TaskCategorySource | null;
@@ -239,6 +240,8 @@ export interface ObjectDetail extends ObjectRow {
       title: string;
       startAt: Date;
       endAt: Date;
+      allDay?: boolean;
+      timezone?: string;
       showAs: string;
     }[];
     timelineEvents: {
@@ -385,4 +388,24 @@ export interface ObjectChangeRow {
 export interface UpdateActor {
   kind: ActorKind;
   userId: string | null;
+}
+
+export const MAINTAINED_TASK_FIELDS = [
+  'canonicalName',
+  'assigneeUserId',
+  'dueAt',
+  'status',
+] as const;
+export type MaintainedTaskField = (typeof MAINTAINED_TASK_FIELDS)[number];
+export const MAINTAINED_RECORD_FIELDS = [...MAINTAINED_TASK_FIELDS, 'stage'] as const;
+export type MaintainedRecordField = (typeof MAINTAINED_RECORD_FIELDS)[number];
+
+export function maintainedRecordFields(type: string): readonly MaintainedRecordField[] {
+  if (type === 'task' || type === 'follow_up') return MAINTAINED_TASK_FIELDS;
+  if (type === 'deal') return ['canonicalName', 'status', 'stage'];
+  if (
+    ['person', 'company', 'project', 'vendor', 'incident', 'decision', 'hiring_loop'].includes(type)
+  )
+    return ['canonicalName', 'status'];
+  return [];
 }

@@ -23,7 +23,7 @@ import {
   telegramUserTeams,
   userOnboardingDismissals,
 } from '@timeline/db';
-import { and, count, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import { isActiveComp } from '#src/billing/operator.js';
 import { createFirstRunHandlers } from '#src/onboarding/first-run-scope.js';
@@ -295,15 +295,7 @@ export function createOnboardingScope({
               inArray(agentSuggestions.status, REVIEWED_PROPOSAL_STATUSES),
             ),
           ),
-        db
-          .select({ total: count() })
-          .from(dailyDigests)
-          .where(
-            and(
-              eq(dailyDigests.teamId, teamId),
-              or(eq(dailyDigests.scheduleKey, ''), eq(dailyDigests.status, 'sent')),
-            ),
-          ),
+        db.select({ total: count() }).from(dailyDigests).where(eq(dailyDigests.teamId, teamId)),
         db
           .select({ total: count() })
           .from(ingestWebhooks)

@@ -75,19 +75,6 @@ details[open] > summary .dropdownChevron {
   background: var(--surface-2);
 }
 
-.dropdownOverview {
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.dropdownRule {
-  height: 1px;
-  margin: 0.3rem 0.55rem;
-  padding: 0;
-  list-style: none;
-  background: var(--border);
-}
-
 .mobileDropdown .dropdownSummary {
   width: 100%;
   justify-content: space-between;
@@ -169,32 +156,14 @@ details[open] > summary .dropdownChevron {
   }
 }
 
-/* The overview anchors the menu; destinations share a readable two-column rhythm. */
+/* Keep short destination lists close to their trigger. */
 .dropdownPanel {
   left: 50%;
   transform: translateX(-50%);
-  width: 32rem;
-  padding: 0.75rem;
-}
-.dropdownList {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.25rem;
-}
-.overviewRow,
-.dropdownRule,
-.groupLabel {
-  grid-column: 1 / -1;
-}
-.dropdownOverview {
-  justify-content: space-between;
+  width: 15rem;
+  padding: 0.5rem;
 }
 
-.groupLabel {
-  padding: 0.75rem 0.7rem 0.25rem;
-  border-top: 1px solid var(--border);
-  color: var(--fg-muted);
-  font-size: 0.75rem;
-}
 .menuTrigger {
   display: inline-flex;
   min-width: 2.75rem;

@@ -19,12 +19,13 @@ import {
 import { getEnv } from '@timeline/shared/env';
 import {
   addTeamDigestDestination,
+  DEFAULT_UPDATE_KEY,
+  getDigestPreference,
   parseAddDigestDestinationInput,
   removeTeamDigestDestination,
   sendMessage,
   type AddDigestDestinationInput,
 } from '@timeline/shared/messaging';
-import { DEFAULT_UPDATE_KEY } from '@timeline/shared/messaging/format';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { randomToken } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -41,17 +42,19 @@ import {
   serializeActiveTeamCookie,
 } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
-import { auth } from '@/lib/auth';
+import { auth, getRequestIdentity } from '@/lib/auth';
 import { CONNECTIONS_HREF, CONNECTIONS_LEGACY_HREF } from '@/lib/connections';
 import { db } from '@/lib/db';
 import { hashInviteToken } from '@/lib/invite-token';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { changeMemberRole, removeMember } from '@/lib/platform-membership';
+import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { getSiteUrl } from '@/lib/site-url';
 import { applyTeamRename, teamDisplayNameSchema } from '@/lib/team-rename';
 import { normalizeTimezone } from '@/lib/timezones';
+import { enqueueNextConfiguredUpdate } from '@/lib/update-scheduling';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -164,6 +167,7 @@ export interface InboundEmailWhitelistState {
 export interface DigestPreferenceState {
   error?: string;
   ok?: boolean;
+  retryScheduleTeamId?: string;
 }
 
 export interface DigestDestinationState {
@@ -174,6 +178,7 @@ export interface DigestDestinationState {
 export interface TeamTimezoneState {
   error?: string;
   ok?: boolean;
+  retryScheduleTeamId?: string;
 }
 
 function parseSenderWhitelist(raw: FormDataEntryValue | null): string[] | null {
@@ -284,37 +289,109 @@ export async function updateInboundEmailWhitelistAction(
 }
 
 export async function updateDigestPreferenceAction(
-  _prev: DigestPreferenceState,
+  previous: DigestPreferenceState,
   formData: FormData,
 ): Promise<DigestPreferenceState> {
   return runSentryServerAction('update_digest_preference', async () => {
-    const session = await auth();
+    const { session, impersonation } = await getRequestIdentity();
+    if (impersonation) return { error: 'Exit impersonation to manage updates.' };
     if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
     if (!active) return { error: 'No active team' };
 
     const scope = withTeam(db, active.teamId, session.user.id);
+    let role: string;
     try {
-      await scope.requireMembership();
+      role = await scope.requireMembership();
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'digest_preference_auth' });
       return { error: 'You are not a member of this team' };
     }
 
-    const enabled = formData.get('dailyDigestEnabled') === 'on';
-    const { schedule } = await scope.updates.current(DEFAULT_UPDATE_KEY);
-    if (!schedule) return { error: 'No default update schedule' };
-    if (schedule.settings.enabled === enabled) return { ok: true };
-    await scope.updates.save(DEFAULT_UPDATE_KEY, { ...schedule.settings, enabled });
+    const retry = formData.get('intent') === 'retry-scheduling';
+    if (retry && previous.retryScheduleTeamId !== active.teamId)
+      return { error: 'Reopen the digest settings to retry scheduling.' };
+    const enabled = retry || formData.get('dailyDigestEnabled') === 'on';
+    if (!retry && ['owner', 'admin', 'member'].includes(role)) {
+      const { schedule } = await scope.updates.current(DEFAULT_UPDATE_KEY);
+      if (schedule) {
+        if (schedule.settings.enabled === enabled) return { ok: true };
+        await scope.updates.save(DEFAULT_UPDATE_KEY, { ...schedule.settings, enabled });
+        await safeMarkOnboardingStep(scope, 'daily_digest');
+        trackProductEventBestEffort(
+          { kind: 'user', userId: session.user.id, teamId: active.teamId },
+          'team_management_action_completed',
+          { action: 'settings_update' },
+        );
+        revalidatePath('/app');
+        revalidatePath('/app/updates');
+        return { ok: true };
+      }
+    }
+    const existing = await db
+      .select({
+        id: messagePreferences.id,
+        dailyDigestEnabled: messagePreferences.dailyDigestEnabled,
+        updateOptions: messagePreferences.updateOptions,
+      })
+      .from(messagePreferences)
+      .where(
+        and(
+          eq(messagePreferences.teamId, active.teamId),
+          eq(messagePreferences.userId, session.user.id),
+        ),
+      )
+      .limit(1);
 
-    await safeMarkOnboardingStep(scope, 'daily_digest');
-    trackProductEventBestEffort(
-      { kind: 'user', userId: session.user.id, teamId: active.teamId },
-      'team_management_action_completed',
-      { action: 'settings_update' },
-    );
-    revalidatePath('/app');
-    revalidatePath('/app/updates');
+    const preference = existing[0];
+    const configured =
+      Boolean(preference?.updateOptions) && ['owner', 'admin', 'member'].includes(role);
+    if (retry && (!preference?.dailyDigestEnabled || !configured))
+      return { error: 'There is no active update schedule to retry.' };
+    const changed = !retry && (preference ? preference.dailyDigestEnabled !== enabled : !enabled);
+
+    if (changed) {
+      if (preference) {
+        await db
+          .update(messagePreferences)
+          .set({ dailyDigestEnabled: enabled, updatedAt: new Date() })
+          .where(eq(messagePreferences.id, preference.id));
+      } else {
+        const calendarSettings = await scope.calendar.getCalendarSettings();
+        await db.insert(messagePreferences).values({
+          teamId: active.teamId,
+          userId: session.user.id,
+          dailyDigestEnabled: enabled,
+          dailyDigestHour: 12,
+          timezone: calendarSettings.defaultTimezone,
+        });
+      }
+
+      await safeMarkOnboardingStep(scope, 'daily_digest');
+      trackProductEventBestEffort(
+        { kind: 'user', userId: session.user.id, teamId: active.teamId },
+        'team_management_action_completed',
+        { action: 'settings_update' },
+      );
+      revalidatePath('/app');
+      revalidatePath('/app/team');
+    }
+
+    if (enabled && configured) {
+      try {
+        const recipient = { teamId: active.teamId, userId: session.user.id };
+        await enqueueNextConfiguredUpdate(
+          { ...recipient, email: session.user.email ?? '' },
+          await getDigestPreference({ db, ...recipient }),
+        );
+      } catch (error) {
+        reportCaughtError(error, {
+          surface: 'server_action',
+          operation: 'queue_digest_preference',
+        });
+        return { ok: true, retryScheduleTeamId: active.teamId };
+      }
+    }
     return { ok: true };
   });
 }
@@ -499,13 +576,28 @@ export async function removeDigestDestinationAction(
   });
 }
 
+async function queueWorkspaceUpdates(teamId: string): Promise<TeamTimezoneState> {
+  try {
+    const queue = await requireRedisQueue();
+    await queue.enqueueWorkspaceUpdateReschedule(teamId);
+  } catch (error) {
+    reportCaughtError(error, {
+      surface: 'server_action',
+      operation: 'queue_updates_after_timezone_change',
+    });
+    return { ok: true, retryScheduleTeamId: teamId };
+  }
+  return { ok: true };
+}
+
 export async function updateTeamTimezoneAction(
-  _prev: TeamTimezoneState,
+  previous: TeamTimezoneState,
   formData: FormData,
 ): Promise<TeamTimezoneState> {
   return runSentryServerAction('update_team_timezone', async () => {
-    const session = await auth();
+    const { session, impersonation } = await getRequestIdentity();
     if (!session?.user) return { error: 'Not signed in' };
+    if (impersonation) return { error: 'Exit impersonation to update the team timezone.' };
     const { active } = await resolveActiveTeam(session.user.id);
     if (!active) return { error: 'No active team' };
 
@@ -523,6 +615,11 @@ export async function updateTeamTimezoneAction(
       reportCaughtError(err, { surface: 'server_action', operation: 'update_team_timezone_auth' });
       return { error: 'Only admins can update team timezone' };
     }
+
+    const retry = formData.get('intent') === 'retry-scheduling';
+    if (retry && previous.retryScheduleTeamId !== active.teamId)
+      return { error: 'Reopen the team timezone settings to retry scheduling.' };
+    if (retry) return queueWorkspaceUpdates(active.teamId);
 
     try {
       const current = await scope.calendar.getCalendarSettings();
@@ -574,7 +671,7 @@ export async function updateTeamTimezoneAction(
     revalidatePath('/app/meetings');
     revalidatePath('/app/timeline');
     revalidatePath('/app/approvals');
-    return { ok: true };
+    return queueWorkspaceUpdates(active.teamId);
   });
 }
 
@@ -792,7 +889,9 @@ export async function inviteMemberAction(
       if (isBillingAdmissionError(err)) {
         return {
           error:
-            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+            err.code === 'free_allowance_reached'
+              ? 'This workspace has reached the Free full-member limit. Review Team in Billing to invite more people.'
+              : err.message,
         };
       }
       reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
@@ -885,7 +984,9 @@ export async function resendInviteAction(
       if (isBillingAdmissionError(err)) {
         return {
           error:
-            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+            err.code === 'free_allowance_reached'
+              ? 'This workspace has reached the Free full-member limit. Review Team in Billing to invite more people.'
+              : err.message,
         };
       }
       throw err;

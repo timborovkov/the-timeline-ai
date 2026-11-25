@@ -9,7 +9,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { MetadataDueDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -17,7 +17,7 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
-import { dateInputValue, isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
+import { isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
 import { notifyAction } from '@/lib/notify';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
@@ -315,10 +315,11 @@ function WorkQueueEditableMetadata({
             <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>
-            <MetadataDateEditor
-              defaultValue={dateInputValue(dueAt)}
+            <MetadataDueDateEditor
+              value={dueAt}
+              timezone={timezone}
               onApply={(value) => {
-                save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
+                save('dueAt', value);
               }}
             />
           </EditableMetadata.Editor>

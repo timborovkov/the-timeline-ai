@@ -3,6 +3,7 @@ const sensitiveRoutePatterns = [
   '/reset-password',
   '/verify-email',
   '/accept-invite',
+  '/guest',
   '/sign-in',
   '/sign-up',
   '/legal/accept',
@@ -24,9 +25,14 @@ export const sensitiveLinkHeaderSources = [
   integrationCallback,
 ];
 
+// Native form POSTs from no-referrer documents send Origin: null in Chromium,
+// which correctly fails Server Action CSRF checks. Send only the origin so URL
+// paths and query tokens remain private without weakening origin validation.
+export const sensitiveLinkReferrerPolicy = 'strict-origin';
+
 export const sensitiveLinkHeaders = [
   { key: 'Cache-Control', value: 'no-store' },
-  { key: 'Referrer-Policy', value: 'no-referrer' },
+  { key: 'Referrer-Policy', value: sensitiveLinkReferrerPolicy },
   { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
 ] as const;
 

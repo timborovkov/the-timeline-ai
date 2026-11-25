@@ -127,6 +127,7 @@ export function createTimelineReadScope({
   async function listAllEventsInWindow(filters: {
     from: Date;
     to: Date;
+    limit?: number;
   }): Promise<(typeof rawEvents.$inferSelect)[]> {
     const all: (typeof rawEvents.$inferSelect)[] = [];
     let cursor: string | null = null;
@@ -144,8 +145,8 @@ export function createTimelineReadScope({
         rows.length > 100 && last
           ? encodeCursor({ at: last.occurredAt.toISOString(), id: last.id })
           : null;
-    } while (cursor);
-    return all;
+    } while (cursor && (filters.limit === undefined || all.length < filters.limit));
+    return filters.limit === undefined ? all : all.slice(0, filters.limit);
   }
 
   async function getEvent(id: string) {
@@ -180,6 +181,8 @@ export function createTimelineReadScope({
     if (senderCondition) conditions.push(senderCondition);
     if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
     if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
+    if (filters.capturedFrom) conditions.push(gte(rawEvents.createdAt, filters.capturedFrom));
+    if (filters.capturedBefore) conditions.push(lt(rawEvents.createdAt, filters.capturedBefore));
     if (Array.isArray(filters.source) && filters.source.length > 0) {
       conditions.push(
         inArray(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number][]),

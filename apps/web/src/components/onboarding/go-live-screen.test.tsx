@@ -95,13 +95,23 @@ it('does not navigate when setup completion fails', async () => {
 });
 
 it('rolls back a rejected work-style save and exposes retryable failure', async () => {
+  fakes.workStyle.mockClear();
   fakes.workStyle.mockRejectedValueOnce(new Error('Offline'));
   render(<WorkStylePreference initialWorkStyle={null} />);
   const option = screen.getAllByRole('button')[0] as HTMLButtonElement;
   fireEvent.click(option);
   await screen.findByRole('alert');
-  expect(option.getAttribute('aria-pressed')).toBe('false');
-  expect(option.disabled).toBe(false);
+  await waitFor(() => {
+    expect(option.getAttribute('aria-pressed')).toBe('false');
+    expect(option.disabled).toBe(false);
+  });
+  fireEvent.click(option);
+  await waitFor(() => {
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    expect(option.disabled).toBe(false);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  expect(fakes.workStyle).toHaveBeenCalledTimes(2);
 });
 
 it('keeps guided navigation on its current step when saving rejects', async () => {

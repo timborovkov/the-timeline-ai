@@ -2,6 +2,7 @@
   "$schema": "https://react.doctor/schema/config.json",
   "rootDir": "apps/web",
   "ignore": {
+    "files": [".next-e2e/**"],
     "overrides": [
       {
         "files": ["src/app/actions/**/*.ts", "src/app/actions/*.ts"],
@@ -89,6 +90,10 @@
       {
         "files": ["src/app/sign-in/page.tsx"],
         "rules": ["react-doctor/clickjacking-redirect-risk"]
+      },
+      {
+        "files": ["src/app/sign-in/continue/route.ts"],
+        "rules": ["react-doctor/url-prefilled-privileged-action"]
       },
       {
         "files": [

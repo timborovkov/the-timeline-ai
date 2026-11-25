@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { reserveAskAi } from '#src/billing/admission.js';
+import { BILLING_EUR_PER_USD, FREE_MONTHLY_USAGE_CENTS } from '#src/billing/catalog.js';
 import { runWorkerBilling } from '#src/billing/runtime.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { resetEnvForTests } from '#src/env.js';
@@ -17,6 +18,10 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const USER_ID = '11111111-2222-4333-8444-555555555555';
+
+// AI counters retain their existing native units. Free converts them to USD in the shared pool.
+const FREE_AI_NATIVE_LIMIT = FREE_MONTHLY_USAGE_CENTS * BILLING_EUR_PER_USD;
+const USAGE_BEFORE_ASK = FREE_AI_NATIVE_LIMIT - 100.6;
 
 function vector(marker: number): number[] {
   return Array.from({ length: TIMELINE_MODELS.embedding.embeddingDimensions }, (_, index) =>
@@ -62,7 +67,7 @@ describe('embedding billing operation ids', () => {
   });
 
   // Preserve the original search regression even with an explicitly larger Ask hold.
-  it('admits a search embedding with 99.4 cents used and an active Ask reservation', async () => {
+  it('admits a search embedding with sub-cent headroom after an active Ask reservation', async () => {
     const billing = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -72,8 +77,8 @@ describe('embedding billing operation ids', () => {
     await billing.settle({
       operationId: 'prior-usage',
       meterId: 'ai',
-      nativeUnits: 99.4,
-      customerChargeCents: 99,
+      nativeUnits: USAGE_BEFORE_ASK,
+      customerChargeCents: Math.floor(USAGE_BEFORE_ASK),
     });
     expect(
       (
@@ -102,8 +107,8 @@ describe('embedding billing operation ids', () => {
     await billing.settle({
       operationId: 'prior-usage',
       meterId: 'ai',
-      nativeUnits: 99.4,
-      customerChargeCents: 99,
+      nativeUnits: USAGE_BEFORE_ASK,
+      customerChargeCents: Math.floor(USAGE_BEFORE_ASK),
     });
     await reserveAskAi(billing, {
       operationId: 'ask:web:batch',
@@ -134,11 +139,15 @@ describe('embedding billing operation ids', () => {
   });
 
   for (const scenario of [
-    { name: 'exhausted allowance', used: 200, texts: ['alpha'] },
-    { name: 'insufficient sub-cent allowance', used: 199.999999, texts: ['alpha'] },
+    { name: 'exhausted allowance', used: FREE_AI_NATIVE_LIMIT, texts: ['alpha'] },
+    {
+      name: 'insufficient sub-cent allowance',
+      used: FREE_AI_NATIVE_LIMIT - 0.000001,
+      texts: ['alpha'],
+    },
     {
       name: 'batch exceeding the remaining budget',
-      used: 199,
+      used: FREE_AI_NATIVE_LIMIT - 1,
       texts: Array.from({ length: 10 }, () => 'word '.repeat(6000)),
     },
   ]) {
@@ -172,11 +181,12 @@ describe('embedding billing operation ids', () => {
       userId: USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    const used = FREE_AI_NATIVE_LIMIT - 0.6;
     await billing.settle({
       operationId: 'prior-usage',
       meterId: 'ai',
-      nativeUnits: 199.4,
-      customerChargeCents: 199,
+      nativeUnits: used,
+      customerChargeCents: Math.floor(used),
     });
     const { model, calls } = modelForTexts();
     const text = 'word '.repeat(100_000);
@@ -198,11 +208,12 @@ describe('embedding billing operation ids', () => {
       userId: USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    const used = FREE_AI_NATIVE_LIMIT - 0.8;
     await billing.settle({
       operationId: 'prior-usage',
       meterId: 'ai',
-      nativeUnits: 199.2,
-      customerChargeCents: 199,
+      nativeUnits: used,
+      customerChargeCents: Math.floor(used),
     });
     const { model } = modelForTexts();
     await expect(

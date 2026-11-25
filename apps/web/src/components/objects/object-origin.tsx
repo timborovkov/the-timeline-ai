@@ -11,7 +11,7 @@ import {
   OBJECT_ROW_TITLE_CLASS,
   OBJECT_SECTION_CLASS,
 } from '@/components/objects/object-detail-type';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { useRegionalFormat } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
@@ -189,7 +189,7 @@ function ProvenanceSourceLinks({ evidence }: { evidence: ProvenanceEntry['eviden
 }
 
 function ProvenanceSourceLink({ source }: { source: ProvenanceEntry['evidence'][number] }) {
-  const timezone = useWorkspaceTimezone();
+  const region = useRegionalFormat();
   return (
     <Link
       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
@@ -200,7 +200,7 @@ function ProvenanceSourceLink({ source }: { source: ProvenanceEntry['evidence'][
     >
       {displayText(source.source)} ·{' '}
       <span className={OBJECT_MONO_META_CLASS}>
-        {formatDisplayDateTime(source.occurredAt, { timezone })}
+        {formatDisplayDateTime(source.occurredAt, region)}
       </span>
     </Link>
   );

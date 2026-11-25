@@ -67,12 +67,12 @@ function TermsFormationSections() {
         MCP servers. A team may add a public website as a source and request manual or scheduled
         scans. Timeline uses Firecrawl (SideGuide Technologies, Inc.) to fetch up to five public
         pages of that site. By submitting a website, you confirm that you may submit it for this
-        processing, including any public information about other people. Website crawling uses 20
-        accepted-source units per successfully captured page, including unchanged pages; AI
-        processing and storage are charged separately. Scheduled scans continue until paused,
-        removed, or blocked by applicable limits. Removing a website source stops future scans and
-        retains captured history. Only public pages are read; we do not access pages behind a login.
-        Features and supported providers may change over time.
+        processing, including any public information about other people. Website scans count toward
+        source fair-use limits. Ordinary capture and storage are included subject to plan and
+        fair-use limits. AI processing of captured pages draws from Included usage. Scheduled scans
+        continue until paused, removed, or blocked by applicable limits. Removing a website source
+        stops future scans and retains captured history. Only public pages are read; we do not
+        access pages behind a login. Features and supported providers may change over time.
       </p>
 
       <h2>4. Accounts and credentials</h2>
@@ -326,18 +326,22 @@ function TermsProductAndLifecycleSections() {
       <p>
         Prices, included usage, member allowances and capacity limits are described on our{' '}
         <Link href="/pricing">pricing page</Link> and in Billing. Paid subscriptions renew on the
-        billing cycle shown at checkout until canceled. You authorize charges for the selected plan,
-        additional members and metered usage. Pay as you go has no platform fee; it is not a promise
-        of unlimited free use. AI is metered in euros according to the model and work performed,
-        including background processing. Usage records show the resulting charges.
+        billing cycle shown at checkout until canceled. You authorize charges for the selected plan
+        and paid seats as shown at checkout or in Billing. AI processing, including background
+        processing, and native meeting capture draw from one shared Included usage allowance. On
+        plans that support additional usage, an authorized owner or administrator may enable it and
+        set a monthly spending limit. Additional spending is off by default. When Included usage
+        runs out and no additional usage is available, new billable processing pauses. Existing
+        records remain accessible subject to the other terms of this agreement.
       </p>
       <p>
         Polar acts as merchant of record for supported checkout purchases and handles payment
         collection, invoices and applicable transaction taxes. Its buyer terms also apply to the
         purchase. You must provide accurate billing details and a valid payment method. Failed
         payments can pause cost-bearing work while outstanding charges remain payable. Spending
-        limits apply to metered usage, not platform fees or taxes; work already incurred or still
-        being reconciled can appear later. Included allowances are not cash and are not refundable.
+        limits apply to additional metered usage. Subscription charges and taxes are outside that
+        limit. Usage already incurred or still being reconciled can appear later. Included
+        allowances are not cash and are not refundable.
       </p>
       <p>
         A workspace owner or admin can cancel through Team settings → Billing → Manage payment.

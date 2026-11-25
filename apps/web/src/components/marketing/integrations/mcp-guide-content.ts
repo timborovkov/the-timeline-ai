@@ -3,17 +3,16 @@ import { getConnectorCapabilityTiers } from '@/components/marketing/integrations
 export const MCP_GUIDE_ROUTE = '/integrations/mcp' as const;
 export const MCP_GUIDE_NAV_LABEL = 'Connect MCP tools';
 
-const REVIEW_DATE = '2026-11-12' as const;
+const REVIEW_DATE = '2026-11-24' as const;
+const CATALOG_NAMES_FORMATTER = new Intl.ListFormat('en-US');
 
-/** Hosted Agent-tools catalog labels; keep in lockstep with listCatalog `mcp_available`. */
-export const MCP_GUIDE_HOSTED_TOOL_NAMES = ['Notion', 'Jira', 'Confluence', 'Stripe'] as const;
+/** Hosted catalog presets currently available for lookup. */
+export const MCP_GUIDE_HOSTED_TOOL_NAMES = ['Notion', 'Stripe'] as const;
 /** Local-desktop catalog labels; keep in lockstep with listCatalog `mcp_local`. */
 export const MCP_GUIDE_LOCAL_TOOL_NAMES = ['Figma'] as const;
 
 export function catalogNames(list: readonly string[]): string {
-  if (list.length === 0) return '';
-  if (list.length === 1) return list[0] ?? '';
-  return `${list.slice(0, -1).join(', ')}, and ${list.at(-1)}`;
+  return CATALOG_NAMES_FORMATTER.format(list);
 }
 
 export function getMcpGuideCatalog() {
@@ -73,6 +72,8 @@ export const MCP_GUIDE_PAGE = {
     title: 'Catalog tools are live lookups',
     intro:
       'Some products appear in the Agent tools catalog as shortcuts to that vendor’s hosted MCP server. Connecting them still uses the MCP path above. Timeline does not ingest those products into the work record by default.',
+    unavailable:
+      'The Jira and Confluence presets need an update after Atlassian retired their endpoint.',
     localTitle: 'Local desktop MCP',
     localBody:
       'Local-only catalog entries require Timeline and the MCP server on the same computer. They are not connectable from hosted Timeline.',

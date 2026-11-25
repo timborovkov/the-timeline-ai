@@ -6,6 +6,7 @@ import {
   BillingBenefitsSummary,
   BillingUsageOverview,
 } from '@/components/billing-benefits-summary';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 
 function fixture(
   planId: 'free' | 'payg' | 'team' | 'business' | 'enterprise' = 'team',
@@ -45,20 +46,29 @@ describe('BillingBenefitsSummary', () => {
       'Included usage credit',
       '€60',
       '€45',
-      '15 Oct 2026',
-      '14 Nov 2026',
+      'Oct 15, 2026',
+      'Nov 14, 2026',
       'Charges recorded so far',
       '€5',
       'Recurring plan fee',
       '€49',
       'Members: 12 current',
       'before included credit',
-      '1 Oct 2026',
-      '31 Oct 2026',
+      'Oct 1, 2026',
+      'Oct 31, 2026',
     ])
       expect(html).toContain(text);
     expect(html).not.toContain('Next invoice');
     expect(html).toContain('sm:grid-cols-3');
+  });
+  it('explains when confirmed paid seats fall short of the full-member roster', () => {
+    const summary = { ...fixture(), paidSeats: 10 };
+    const html = renderToStaticMarkup(<BillingBenefitsSummary summary={summary} />);
+    expect(html).toContain('12 full members · 10 paid seats');
+    expect(html).toContain('The full-member count exceeds confirmed paid seats.');
+    expect(
+      renderToStaticMarkup(<BillingBenefitsSummary summary={{ ...summary, paidSeats: 12 }} />),
+    ).not.toContain('The full-member count exceeds confirmed paid seats.');
   });
   it('shows updating or unavailable rather than invented charges', () => {
     const summary = fixture();
@@ -71,7 +81,8 @@ describe('BillingBenefitsSummary', () => {
   });
   it('explains PAYG resets and keeps comp and Enterprise fees honest', () => {
     const payg = renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('payg')} />);
-    expect(payg).toContain('Monthly allowances reset 1 Nov 2026');
+    expect(payg).toContain('Monthly allowances reset');
+    expect(payg).toContain('>Nov 1, 2026</time> (UTC)');
     expect(payg).toContain('Usage above Free allowances');
     expect(payg).toContain('not credit or an upfront charge');
     const comp = renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('team', true)} />);
@@ -80,6 +91,41 @@ describe('BillingBenefitsSummary', () => {
     expect(
       renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('enterprise')} />),
     ).toContain('Custom');
+  });
+
+  it.each([
+    ['USD', '$2,500.50'],
+    ['EUR', '€2,500.50'],
+  ] as const)('shows the %s Enterprise fee separately from recorded usage', (currency, label) => {
+    const summary = {
+      ...fixture('enterprise'),
+      recurringFeeCents: 250_050,
+      recurringFeeCurrency: currency,
+    };
+    const fee = `<span class="font-mono">${label}</span> / month`;
+    const billing = renderToStaticMarkup(<BillingBenefitsSummary summary={summary} />);
+    const usage = renderToStaticMarkup(
+      <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
+    );
+
+    expect(billing).toContain(`Recurring plan fee: ${fee}`);
+    expect(usage).toContain(`Plan fee: ${fee}`);
+    expect(usage).toContain('<span class="font-mono">€5</span>');
+  });
+
+  it('shows prior USD usage on Free in both Billing and Usage', () => {
+    const summary = fixture('free');
+    if (!summary.charges.amounts) throw new Error('Expected recorded charges');
+    summary.charges.amounts.currency = 'USD';
+    const billing = renderToStaticMarkup(<BillingBenefitsSummary summary={summary} />);
+    const usage = renderToStaticMarkup(
+      <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
+    );
+
+    for (const html of [billing, usage]) {
+      expect(html).toContain('<span class="font-mono">$5</span>');
+      expect(html).not.toContain('<span class="font-mono">€5</span>');
+    }
   });
 });
 
@@ -105,7 +151,7 @@ it('keeps credit and cap visible while charge details are collapsed on Usage', (
   );
   const beforeDetails = html.split('<details')[0];
   expect(beforeDetails).toContain('Included usage credit');
-  expect(beforeDetails).toContain('15 Oct 2026');
+  expect(beforeDetails).toContain('Oct 15, 2026');
   expect(beforeDetails).toContain('€5');
   expect(html).toContain('Billing details');
   expect(html).not.toMatch(/<details[^>]*\sopen/);
@@ -118,4 +164,16 @@ it('does not turn unavailable recorded charges into zero in the Usage overview',
     <BillingUsageOverview summary={summary}>Meters</BillingUsageOverview>,
   );
   expect(html.split('<details')[0]).toContain('Unavailable');
+});
+
+it('localizes UTC billing dates without moving reset boundaries into the viewer time zone', () => {
+  const html = renderToStaticMarkup(
+    <WorkspaceTimezoneProvider
+      timezone="Asia/Tokyo"
+      region={{ locale: 'de-DE', timezone: 'America/Los_Angeles' }}
+    >
+      <BillingBenefitsSummary summary={fixture('payg')} />
+    </WorkspaceTimezoneProvider>,
+  );
+  expect(html).toContain('<time dateTime="2026-11-01T00:00:00.000Z">01.11.2026</time> (UTC)');
 });

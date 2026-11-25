@@ -58,19 +58,18 @@ describe('PublicShell', () => {
       </PublicShell>,
     );
 
-    for (const href of [
-      '/',
-      '/use-cases',
-      '/integrations',
-      '/agents',
-      '/pricing',
-      '/product-tour',
-    ]) {
+    for (const href of ['/features', '/integrations', '/agents', '/pricing', '/product-tour']) {
       expect(
         html.match(new RegExp(`href="${href.replace('/', '\\/')}"`, 'gu'))?.length,
       ).toBeGreaterThanOrEqual(3);
     }
-    for (const href of ['/compare', '/how-it-works', '/help']) {
+    for (const href of [
+      '/compare',
+      '/how-it-works',
+      '/help',
+      '/use-cases',
+      '/contact/enterprise',
+    ]) {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).toContain('aria-label="Public navigation"');
@@ -169,7 +168,7 @@ describe('public dropdown keyboard dismissal', () => {
       </PublicShell>,
     );
     const summary = Array.from(container.querySelectorAll('summary')).find(
-      (node) => node.textContent === 'Integrations',
+      (node) => node.textContent === 'Resources',
     );
     const details = summary?.closest('details');
     if (!details) throw new Error('Missing desktop dropdown');

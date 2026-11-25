@@ -12,17 +12,29 @@ function request(path: string, headers?: Record<string, string>): NextRequest {
 }
 
 describe('applySignupPlanIntentFromRequest', () => {
-  it('stores paid plan intent from sign-up and team billing URLs', () => {
+  it('stores Team intent from sign-up and team billing URLs', () => {
     const response = NextResponse.next();
     applySignupPlanIntentFromRequest(request('/sign-up?plan=team'), response);
     expect(response.cookies.get(PLAN_INTENT_COOKIE)?.value).toBe('team');
 
     const billing = NextResponse.next();
     applySignupPlanIntentFromRequest(
-      request('/app/team?section=billing&plan=business#change-plan'),
+      request('/app/team?section=billing&plan=team#change-plan'),
       billing,
     );
-    expect(billing.cookies.get(PLAN_INTENT_COOKIE)?.value).toBe('business');
+    expect(billing.cookies.get(PLAN_INTENT_COOKIE)?.value).toBe('team');
+  });
+
+  it('ignores retired self-serve offers on sign-up and team billing URLs', () => {
+    for (const plan of ['business', 'payg']) {
+      const signUp = NextResponse.next();
+      const billing = NextResponse.next();
+      signUp.cookies.set(PLAN_INTENT_COOKIE, 'team');
+      applySignupPlanIntentFromRequest(request(`/sign-up?plan=${plan}`), signUp);
+      applySignupPlanIntentFromRequest(request(`/app/team?section=billing&plan=${plan}`), billing);
+      expect(paidSignupPlan(signUp.cookies.get(PLAN_INTENT_COOKIE)?.value)).toBeUndefined();
+      expect(billing.cookies.get(PLAN_INTENT_COOKIE)).toBeUndefined();
+    }
   });
 
   it('clears intent on free/missing/unknown sign-up plans and ignores unrelated routes', () => {

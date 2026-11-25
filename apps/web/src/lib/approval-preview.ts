@@ -1,6 +1,22 @@
 import { presentDueDate } from '@timeline/shared/time';
 
-import { formatDisplayDateTime } from '@/lib/display-dates';
+import {
+  formatAllDayCalendarDate,
+  formatDisplayDate,
+  formatDisplayDateTime,
+  parseDisplayDate,
+} from '@/lib/display-dates';
+import { formatDisplayNumber } from '@/lib/regional-format';
+export function automaticApprovalOutcome(metadata: Record<string, unknown> | undefined): string {
+  const applied = Array.isArray(metadata?.applied_task_fields)
+    ? metadata.applied_task_fields
+    : null;
+  const skipped = Array.isArray(metadata?.skipped_task_fields) ? metadata.skipped_task_fields : [];
+  if (metadata?.task_update_undone === true) return 'Applied automatically, then undone';
+  if (skipped.length)
+    return applied?.length ? 'Applied with some fields skipped' : 'No field changes applied';
+  return applied?.length === 0 ? 'Confirmed automatically' : 'Applied automatically';
+}
 
 export interface ApprovalObjectSnapshot {
   id: string;
@@ -12,6 +28,7 @@ export interface ApprovalObjectSnapshot {
   ownerUserId: string | null;
   assigneeUserId: string | null;
   dueAt: string | null;
+  plannedDate?: string | null;
   aliases: string[];
   content: string | null;
   createdAt: string;
@@ -64,6 +81,7 @@ const FIELD_LABELS: Record<string, string> = {
   content: 'Content',
   description: 'Details',
   dueAt: 'Due',
+  plannedDate: 'Planned date',
   endAt: 'Ends',
   entityName: 'Item',
   fromDisplayName: 'From',
@@ -151,8 +169,8 @@ function previewFieldLabel(key: string): string {
   return FIELD_LABELS[key] ?? humanizeToken(key);
 }
 
-function formatDue(value: string | null, timezone: string): string {
-  const due = presentDueDate(value, { timezone });
+function formatDue(value: string | null, timezone: string, locale?: string): string {
+  const due = presentDueDate(value, { timezone, locale });
   if (due.status === 'invalid') return due.compactText;
   return due.dateLabel ? `${due.label} · ${due.dateLabel}` : due.compactText;
 }
@@ -160,7 +178,7 @@ function formatDue(value: string | null, timezone: string): string {
 function formatValue(
   key: string,
   value: unknown,
-  timezone: string,
+  options: { timezone: string; locale?: string; values: Record<string, unknown> },
   members: Record<string, string>,
 ): string | null {
   if (value === undefined) return null;
@@ -169,9 +187,17 @@ function formatValue(
     if (key === 'assigneeUserId' || key === 'ownerUserId') return 'Unassigned';
     return 'None';
   }
-  if (key === 'dueAt' && typeof value === 'string') return formatDue(value, timezone);
+  if (key === 'dueAt' && typeof value === 'string')
+    return formatDue(value, options.timezone, options.locale);
+  if (key === 'plannedDate' && typeof value === 'string')
+    return formatDisplayDate(value, { timezone: 'UTC', locale: options.locale });
   if ((key === 'startAt' || key === 'endAt') && typeof value === 'string') {
-    return formatDisplayDateTime(value, { timezone });
+    const configuredZone = options.values.timezone;
+    const timezone = typeof configuredZone === 'string' ? configuredZone : options.timezone;
+    const dateOptions = { timezone, locale: options.locale };
+    return options.values.allDay === true
+      ? formatAllDayCalendarDate(value, dateOptions, key === 'endAt')
+      : formatDisplayDateTime(value, dateOptions);
   }
   if ((key === 'assigneeUserId' || key === 'ownerUserId') && typeof value === 'string') {
     return members[value] ?? 'Selected team member';
@@ -183,7 +209,8 @@ function formatValue(
     const trimmed = value.trim();
     return trimmed ? trimmed : null;
   }
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'number') return formatDisplayNumber(value, options.locale);
+  if (typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
     if (value.length === 0) return 'None';
     const joined = value
@@ -206,6 +233,7 @@ function objectCurrentValues(snapshot: ApprovalObjectSnapshot): Record<string, u
     assigneeUserId: snapshot.assigneeUserId,
     ownerUserId: snapshot.ownerUserId,
     dueAt: snapshot.dueAt,
+    plannedDate: snapshot.plannedDate,
     aliases: snapshot.aliases,
     content: snapshot.content,
   };
@@ -283,6 +311,14 @@ function valuesEqual(left: string | null, right: string | null): boolean {
   return (left ?? '') === (right ?? '');
 }
 
+function sameBoundary(current: string, proposed: string): boolean {
+  if (current === proposed) return true;
+  if (!current.includes('T') || !proposed.includes('T')) return false;
+  const currentInstant = parseDisplayDate(current);
+  const proposedInstant = parseDisplayDate(proposed);
+  return currentInstant !== undefined && currentInstant.getTime() === proposedInstant?.getTime();
+}
+
 export function buildApprovalPreviewFields(input: {
   operation: string;
   targetKind: string;
@@ -291,6 +327,7 @@ export function buildApprovalPreviewFields(input: {
   snapshot: ApprovalTargetSnapshot | null;
   members: Record<string, string>;
   timezone: string;
+  locale?: string;
 }): { fields: ApprovalPreviewField[]; timestamps: ApprovalPreviewTimestamps } {
   const proposed = proposedValues(input.proposedPayload, input.title);
   const objectSnapshot = input.snapshot?.kind === 'object' ? input.snapshot.object : null;
@@ -307,19 +344,27 @@ export function buildApprovalPreviewFields(input: {
       : OBJECT_FIELD_ORDER;
   const isCreate =
     input.operation === 'create' || input.snapshot?.kind === 'none' || !input.snapshot;
+  const currentOptions = { timezone: input.timezone, locale: input.locale, values: current };
+  const proposedOptions = { ...currentOptions, values: { ...current, ...proposed } };
   const fields = mergeFieldKeys(order, current, proposed).flatMap((key) => {
-    const currentText = formatValue(key, current[key], input.timezone, input.members);
+    const currentRaw = current[key];
+    const currentText = formatValue(key, currentRaw, currentOptions, input.members);
     const proposedRaw = proposed[key];
     const proposedText =
       proposedRaw === undefined
         ? isCreate
           ? currentText
           : null
-        : formatValue(key, proposedRaw, input.timezone, input.members);
+        : formatValue(key, proposedRaw, proposedOptions, input.members);
     if (!currentText && !proposedText) return [];
     const changed = isCreate
       ? Boolean(proposedText)
-      : proposedRaw !== undefined && !valuesEqual(currentText, proposedText);
+      : proposedRaw !== undefined &&
+        ((key === 'startAt' || key === 'endAt') &&
+        typeof currentRaw === 'string' &&
+        typeof proposedRaw === 'string'
+          ? !sameBoundary(currentRaw, proposedRaw)
+          : !valuesEqual(currentText, proposedText));
     return [
       {
         key,

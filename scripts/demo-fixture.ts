@@ -231,6 +231,18 @@ export function hydrateDemoSeedClock(
   return adoptDemoSeedClock(events, stamped);
 }
 
+export function demoBillingPeriod(seedRunAt: Date): {
+  periodStartedAt: Date;
+  periodEndsAt: Date;
+} {
+  const year = seedRunAt.getUTCFullYear();
+  const month = seedRunAt.getUTCMonth();
+  return {
+    periodStartedAt: new Date(Date.UTC(year, month, 1)),
+    periodEndsAt: new Date(Date.UTC(year, month + 1, 1)),
+  };
+}
+
 export const DEMO_ENTITIES = [
   {
     id: DEMO_IDS.objectPilot,

@@ -99,11 +99,11 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
-  () => ({
+  async () => ({
     assertTeamConcurrentRecallCapacity: vi.fn().mockResolvedValue(undefined),
     claimMeetingJoinUnderRecallCap: fakes.fakeClaimMeetingJoinUnderRecallCap,
     isBillingAdmissionError: () => false,
-    recallBillingUserMessage: (code: string) => code,
+    recallBillingUserMessage: (await import('@timeline/shared/billing')).recallBillingUserMessage,
     abortRecallJoinAfterProviderAccept: vi.fn().mockResolvedValue(undefined),
     reserveRecallMeetingMinutes: vi.fn().mockResolvedValue({
       ok: true,
@@ -166,6 +166,24 @@ beforeEach(() => {
 });
 
 describe('scheduleMeetingBotAction', () => {
+  it.each([
+    ['free_allowance_reached', /Free Included usage.*share the allowance.*upgrading to Team/],
+    ['spend_cap_reached', /Included usage.*capped additional spending/],
+  ] as const)('shows shared allowance guidance without joining for %s', async (code, message) => {
+    const { reserveRecallMeetingMinutes } = await import('@timeline/shared/billing');
+    vi.mocked(reserveRecallMeetingMinutes).mockResolvedValueOnce({ ok: false, code });
+
+    const result = await scheduleMeetingBotAction({
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      title: 'Paused capture',
+      consentGiven: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? undefined : result.error).toMatch(message);
+    expect(fakes.fakeJoinMeeting).not.toHaveBeenCalled();
+  });
+
   it('forwards specific_users visibility user ids to the meetings scope', async () => {
     const result = await scheduleMeetingBotAction({
       meetingUrl: 'https://meet.google.com/abc-defg-hij',

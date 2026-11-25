@@ -1,3 +1,4 @@
+import type { ArtifactPreview } from '@timeline/shared/citation';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -265,6 +266,46 @@ beforeEach(() => {
 });
 
 describe('POST /api/artifacts/preview', () => {
+  it('formats scoped citation and inspector timestamps from viewer region', async () => {
+    const response = await POST(
+      request({
+        ref: { kind: 'timeline_event', id: IDS.event },
+        region: { locale: 'de-DE', timezone: 'Asia/Tokyo' },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const { preview } = (await response.json()) as { preview: ArtifactPreview };
+    expect(preview.card?.dateLabel).toBe('14.06.2026, 21:00');
+    expect(preview.subtitle).toContain('14.06.2026, 21:00');
+    expect(preview.sections?.[0]?.items).toContainEqual({
+      label: 'Occurred',
+      value: '14.06.2026, 21:00',
+    });
+  });
+
+  it('keeps a calendar preview day and link in the all-day event’s calendar', async () => {
+    fakes.getCalendarEvent.mockResolvedValue({
+      id: IDS.calendar,
+      title: 'All-day review',
+      startAt: new Date('2026-11-30T22:00:00.000Z'),
+      endAt: new Date('2026-12-01T22:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      allDay: true,
+    });
+    const response = await POST(
+      request({
+        ref: { kind: 'calendar_event', id: IDS.calendar },
+        region: { locale: 'de-DE', timezone: 'America/Los_Angeles' },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const { preview } = (await response.json()) as { preview: ArtifactPreview };
+    expect(preview.card?.dateLabel).toBe('01.12.2026');
+    expect(preview.href).toBe(`/app/calendar?date=2026-12-01&view=day&event=${IDS.calendar}`);
+    expect(preview.sections?.[0]?.items).toContainEqual({ label: 'Start', value: '01.12.2026' });
+    expect(preview.sections?.[0]?.items).toContainEqual({ label: 'End', value: '01.12.2026' });
+  });
+
   it('requires authentication and active team context', async () => {
     fakes.auth.mockResolvedValueOnce(null);
     expect((await POST(request({ ref: { kind: 'route', id: 'team' } }))).status).toBe(401);
