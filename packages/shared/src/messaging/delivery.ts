@@ -37,6 +37,7 @@ export interface SendMessageOptions {
   userId?: string | null;
   dedupeKey?: string;
   metadata?: Record<string, unknown>;
+  requireCurrentEmailPayload?: boolean;
   fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
@@ -246,7 +247,24 @@ export async function sendMessage<TIntent extends MessageIntent>(
     const existing = claim.previous;
 
     try {
-      payload = readPersistedEmailPayload(intent, existing.metadata);
+      const previous = readPersistedEmailPayload(intent, existing.metadata);
+      if (
+        options.requireCurrentEmailPayload &&
+        (payload.to.join(',') !== previous.to.join(',') ||
+          payload.subject !== previous.subject ||
+          payload.html !== previous.html ||
+          payload.text !== previous.text)
+      ) {
+        const error = 'Update content or recipient changed before email retry';
+        await markDeliveryResult({
+          db: options.db,
+          deliveryId: existing.id,
+          status: 'skipped',
+          error,
+        });
+        return { ok: false, deliveryId: existing.id, error, retryable: false };
+      }
+      payload = previous;
     } catch {
       await markDeliveryResult({
         db: options.db,

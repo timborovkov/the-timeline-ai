@@ -130,11 +130,13 @@ export async function processingHealth(now = Date.now()) {
     queue.getSuggestionQueue(),
     queue.getReconciliationQueue(),
     queue.getDailyDigestQueue(),
+    queue.getScheduledUpdatesQueue(),
     ...(env.DOCUMENT_EXTRACT_ENABLED ? [queue.getDocumentExtractQueue()] : []),
   ];
-  const [durable, tick, index, ...queueProbes] = await Promise.allSettled([
+  const [durable, tick, updatesTick, index, ...queueProbes] = await Promise.allSettled([
     boundedProbe(() => durableProgress(now)),
     boundedProbe(() => redis.get(queue.DAILY_DIGEST_TICK_HEARTBEAT)),
+    boundedProbe(() => redis.get(queue.UPDATES_TICK_HEARTBEAT)),
     boundedProbe(() => getQdrantClient({ requireExisting: true }).collectionInfo()),
     ...watched.map((source) => boundedProbe(() => inspectQueue(source, now))),
   ] as const);
@@ -144,6 +146,8 @@ export async function processingHealth(now = Date.now()) {
   );
   const digestMissed =
     tick.status === 'fulfilled' && Number(tick.value) < lastExpectedDigestTick(now);
+  const updatesMissed =
+    updatesTick.status === 'fulfilled' && Number(updatesTick.value) < now - 20 * 60_000;
   function queueAlert(names: string[]) {
     const watched = new Set(names);
     return queues.some((item) => watched.has(item.queue) && queueNeedsAttention(item));
@@ -160,16 +164,21 @@ export async function processingHealth(now = Date.now()) {
     proposal_jobs: queueAlert([names.suggestions, names.reconciliation]),
     missed_digests:
       digestMissed ||
+      updatesMissed ||
       (progress?.digest_pending ?? 0) > 0 ||
       (progress?.digest_failed ?? 0) >= FAILURE_THRESHOLD ||
-      queueAlert([names.dailyDigest]),
+      queueAlert([names.dailyDigest, names.scheduledUpdates]),
     index_freshness:
       index.status === 'rejected' ||
       (progress?.index_overdue ?? 0) > 0 ||
       queueAlert([names.embed]),
     integration_sync: queueAlert([names.integrationSync]),
     webhook_delivery: queueAlert([names.webhookDelivery]),
-    processing_probe: !progress || tick.status === 'rejected' || queues.length !== watched.length,
+    processing_probe:
+      !progress ||
+      tick.status === 'rejected' ||
+      updatesTick.status === 'rejected' ||
+      queues.length !== watched.length,
   };
   const activeSignals = Object.entries(signals).flatMap(([signal, active]) =>
     active ? [signal] : [],

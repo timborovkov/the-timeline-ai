@@ -27,6 +27,7 @@ export async function GET(req: Request): Promise<Response> {
         queue.getSuggestionQueue(),
         queue.getReconciliationQueue(),
         queue.getDailyDigestQueue(),
+        queue.getScheduledUpdatesQueue(),
         ...(env.DOCUMENT_EXTRACT_ENABLED ? [queue.getDocumentExtractQueue()] : []),
       ];
       return Promise.all(
