@@ -793,7 +793,11 @@ recheck the project, sources and commitments. Saved-view digests reevaluate
 matches for the recipient and use personal destinations. Configurable briefings
 recheck their sources in the archive. Their personal email and chat notices
 contain an authenticated archive link. Dispatch rechecks the recipient’s verified
-email or workspace chat link. Shared channel delivery uses team-visible content.
+email or workspace chat link and the currently enabled workspace delivery
+destination. New team defaults also send a link. Members can opt in to including the selected content in a personally
+configured schedule. The worker checks the current schedule, membership, and source access
+before delivery. Archive views check access again. Shared channel delivery uses
+team-visible content.
 Preview and generation use the host workspace’s existing inference budget. Source-health
 counts apply source visibility before aggregation. OCR correction history retains
 earlier derived text subject to the source document's access and deletion

@@ -231,6 +231,12 @@ async function main(): Promise<void> {
       schedule: queue.scheduleDailyDigest,
     },
     {
+      name: queue.QUEUE_NAMES.scheduledUpdates,
+      start: () => startDailyDigestWorker({ db }, queue.QUEUE_NAMES.scheduledUpdates),
+      closeQueue: queue.closeScheduledUpdatesQueue,
+      schedule: queue.schedulePersonalUpdates,
+    },
+    {
       name: queue.QUEUE_NAMES.reconciliation,
       start: () => startReconciliationWorker({ db }),
       closeQueue: queue.closeReconciliationQueue,

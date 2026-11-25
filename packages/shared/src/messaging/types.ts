@@ -1,6 +1,8 @@
 import type { SavedWorkViewChange } from '@timeline/db';
 import type { dailyDigests, messageDeliveries } from '@timeline/db';
 
+import type { UpdateReport } from '#src/messaging/update-report-types.js';
+
 export type MessageIntent =
   | 'team_deletion'
   | 'team_invite'
@@ -137,6 +139,7 @@ export interface DailyDigestObject {
 
 export interface DailyDigestPayload {
   teamName: string;
+  update?: UpdateReport;
   userName: string | null;
   timezone?: string;
   windowStart: string;
@@ -171,6 +174,7 @@ export interface DailyDigestPayload {
 
 export interface DailyDigestMessageInput {
   to: string;
+  teamId?: string;
   digestUrl: string;
   payload: DailyDigestPayload;
 }

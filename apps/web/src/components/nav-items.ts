@@ -67,6 +67,7 @@ const NAV_ITEMS: readonly NavItem[] = [
       '/app/boards',
       '/app/calendar',
       '/app/digests',
+      '/app/updates',
       '/app/approvals',
     ],
   },

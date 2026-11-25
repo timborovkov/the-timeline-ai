@@ -13,7 +13,7 @@ import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq } from 'drizzle-orm';
 
-import { newSignedInPage } from './helpers.js';
+import { newSignedInPage, signIn } from './helpers.js';
 import { e2eOtherTeam, e2eTeam, e2eUsers } from './test-data.js';
 
 function screenshot(page: Page, path: string) {
@@ -41,12 +41,15 @@ test('previews, saves and pauses followed-view updates on mobile and desktop', a
     expect(await scope.savedViews.manage(id, { type: 'notify', enabled: true })).toBe(true);
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto('/app');
-    const settings = page.getByRole('link', { name: 'Customize updates' });
+    const settings = page
+      .getByRole('region', { name: 'Workspace brief' })
+      .getByRole('link', { name: 'Manage updates' });
     await expect(settings).toBeVisible();
     const screenshots = process.env.UPDATE_SCREENSHOTS_DIR;
     await expect(settings).toHaveAttribute('href', '/app/updates');
     await settings.click();
-    await expect(page).toHaveURL(/\/app\/updates$/);
+    await expect(page.getByRole('heading', { name: 'Your schedules' })).toBeVisible();
+    await page.goto('/app/updates?legacy=1');
     await expect(page.getByRole('heading', { name: 'Customize updates' })).toBeVisible();
     await page.getByLabel('What to follow').selectOption('saved_views');
     await page.getByLabel('Cadence').selectOption('weekly');
@@ -255,7 +258,7 @@ test('explains exhausted workspace previews while preserving update history', as
     await page.goto(`/app/digests?digest=${archiveId}&team=${teamId}`);
     await page.getByRole('button', { name: 'Switch workspace and open update' }).click();
     await expect(page.getByText(summary).first()).toBeVisible();
-    await page.goto('/app/updates');
+    await page.goto('/app/updates?legacy=1');
     await page.getByLabel('What to follow').selectOption('workspace');
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     await expect(page.getByRole('main').getByRole('alert')).toHaveText(
@@ -275,4 +278,51 @@ test('explains exhausted workspace previews while preserving update history', as
     await page.context().close();
     await closeDb();
   }
+});
+
+test('a member creates independent weekly email and daily Telegram schedules from Home', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await signIn(page, e2eUsers.member.email, 100_000);
+  await page.goto('/app');
+  const brief = page.getByRole('region', { name: 'Workspace brief' });
+  await expect(brief.getByText('Past 3 days')).toBeVisible();
+  await brief.getByRole('link', { name: 'Manage updates' }).click();
+  await expect(page.getByRole('heading', { name: 'Your schedules' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Daily update' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Edit default' })).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'New update' }).click();
+  await page.getByRole('link', { name: 'Weekly recap' }).click();
+  await expect(page.getByRole('combobox', { name: 'Frequency' })).toHaveValue('weekly');
+  await page.getByLabel('Name', { exact: true }).fill('Friday recap');
+  await page.getByRole('combobox', { name: 'Day', exact: true }).selectOption('5');
+  await page.getByLabel('Send time').fill('16:30');
+  await expect(page.getByLabel('Look back')).toHaveValue('7');
+  await expect(page.getByLabel('Deliver to')).toHaveValue('email');
+  await expect(page.getByLabel('Level of detail')).toHaveValue('detailed');
+  await expect(
+    page.getByRole('checkbox', { name: /Include content in the message/ }),
+  ).toBeChecked();
+  await page.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(page.getByText('Every Friday at 16:30 · Email · More context')).toBeVisible();
+
+  await page.getByRole('link', { name: 'New update' }).click();
+  await expect(page.getByLabel('Deliver to')).toHaveValue('telegram');
+  await page.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(page.getByText('Every day at 09:00 · Telegram DM · Quick scan')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Friday recap' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Edit Daily check-in' }).click();
+  await page.getByLabel('Send this update').uncheck();
+  await page.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(page.getByText('Paused', { exact: true })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Update history' }).click();
+  await expect(page.getByRole('heading', { name: 'Update history' })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app');
+  await expect(brief.getByRole('link', { name: 'View timeline' })).toBeVisible();
 });

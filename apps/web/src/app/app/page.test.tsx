@@ -107,6 +107,10 @@ await vi.mock(
         getChecklistState: vi.fn(),
         getFirstRun: fakes.getFirstRun,
       },
+      updates: {
+        latestHome: () => Promise.resolve(null),
+        current: () => Promise.resolve({ schedule: undefined }),
+      },
       pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
       timeline: {
         listArtifactClusters: fakes.listArtifactClusters,
@@ -137,9 +141,9 @@ await vi.mock(
   () => import('@/components/home/capture-dialog'),
 );
 await vi.mock(
-  import.meta.resolve('@/components/home/daily-digest-block'),
-  () => ({ DailyDigestBlock: () => null, DailyDigestContent: () => null }),
-  () => import('@/components/home/daily-digest-block'),
+  import.meta.resolve('@/components/home/workspace-brief'),
+  () => ({ WorkspaceBrief: () => null }),
+  () => import('@/components/home/workspace-brief'),
 );
 await vi.mock(
   import.meta.resolve('@/components/home/home-ask-composer'),
@@ -206,7 +210,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
+  () => ({
+    auth: fakes.auth,
+    getRequestIdentity: () => Promise.resolve({ session: null, impersonation: null }),
+  }),
   () => import('@/lib/auth'),
 );
 await vi.mock(

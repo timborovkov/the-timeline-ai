@@ -45,6 +45,7 @@ export interface TelegramApi {
     chat_id: number;
     text: string;
     parse_mode?: 'HTML' | 'MarkdownV2';
+    link_preview_options?: { is_disabled: boolean };
     reply_to_message_id?: number;
     reply_parameters?: {
       message_id: number;
@@ -458,11 +459,18 @@ export async function sendTelegramBotMessage(input: {
   token: string;
   api?: TelegramApi;
   teamId?: string;
+  scheduledUpdate?: boolean;
 }): Promise<void> {
   const api =
     input.api ??
-    new HttpTelegramApi(input.token, 10_000, true, {
+    new HttpTelegramApi(input.token, 10_000, !input.scheduledUpdate, {
       ...(input.teamId ? { sendingTeamId: input.teamId } : {}),
     });
-  await api.sendMessage({ chat_id: input.chatId, text: input.text });
+  await api.sendMessage({
+    chat_id: input.chatId,
+    text: input.text,
+    ...(input.scheduledUpdate
+      ? { parse_mode: 'HTML', link_preview_options: { is_disabled: true } }
+      : {}),
+  });
 }

@@ -31,10 +31,12 @@ describe('Digests route states', () => {
 
     render(<DigestsError error={new Error('route failed')} reset={reset} />);
 
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Digests' })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Update history' })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Digests' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('heading', { level: 2, name: 'Unable to load digests' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Updates' }).getAttribute('aria-current')).toBe('page');
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Unable to load update history' }),
+    ).toBeTruthy();
 
     const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
@@ -44,8 +46,8 @@ describe('Digests route states', () => {
 
   it('announces a row-shaped loading state', () => {
     render(<DigestsLoading />);
-    expect(screen.getByLabelText('Loading digests').getAttribute('aria-busy')).toBe('true');
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Digests' })).toHaveLength(1);
+    expect(screen.getByLabelText('Loading update history').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Update history' })).toHaveLength(1);
   });
 });
 

@@ -69,6 +69,7 @@ import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createUpdatePreferencesScope } from '#src/messaging/update-preferences.js';
+import { createUpdateScope } from '#src/messaging/update-scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
@@ -597,6 +598,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     listEvents,
     listEventsPage,
     listAllEventsInWindow,
+    listEventsArrivedInWindow,
     getEvent,
     getEventsByIds: getEventsByIdsImpl,
     listIntegrationSearchEventIds: listIntegrationSearchEventIdsImpl,
@@ -2477,6 +2479,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       listEventsPage,
       listAllEventsInWindow,
+      listEventsArrivedInWindow,
       getEvent,
 
       /**
@@ -3655,6 +3658,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     handoffs: createHandoffScope(db, teamId, userId, ensureMember),
+    updates: createUpdateScope({ db, teamId, userId, ensureMember }),
     updatePreferences: createUpdatePreferencesScope(db, teamId, userId, ensureMember),
     savedViews: createSavedWorkViewScope({
       db,

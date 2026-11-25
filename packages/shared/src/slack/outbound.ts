@@ -20,13 +20,24 @@ export async function sendTeamSlackDirectMessage(input: {
   teamId: string;
   slackUserId: string;
   text: string;
+  scheduledUpdate?: boolean;
 }): Promise<void> {
   const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
   if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
+  const api = new SlackApi(
+    decryptWorkspaceToken(install).accessToken,
+    install.slackTeamId,
+    !input.scheduledUpdate,
+  );
   try {
     await api.postMessage({ channel: input.slackUserId, text: input.text });
-  } catch {
+  } catch (error) {
+    if (
+      input.scheduledUpdate &&
+      (!(error instanceof Error) || !error.message.includes('channel_not_found'))
+    ) {
+      throw error;
+    }
     const opened = await api.conversationsOpen(input.slackUserId);
     await api.postMessage({ channel: opened.id, text: input.text });
   }

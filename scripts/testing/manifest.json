@@ -851,7 +851,7 @@
   "apps/web/src/components/home/capture-dialog.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/components/home/daily-digest-block.test.tsx": {
+  "apps/web/src/components/home/workspace-brief.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/home/digest-history-table.test.tsx": {
@@ -2274,6 +2274,9 @@
   },
   "packages/shared/src/messaging/templates.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/messaging/updates.integration.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/monitoring/sentry-runtime.test.ts": {
     "group": "unit"

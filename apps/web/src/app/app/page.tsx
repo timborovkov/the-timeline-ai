@@ -1,9 +1,10 @@
 import { teams, users } from '@timeline/db';
 import {
-  latestDailyDigest,
+  buildUpdateReport,
+  HOME_UPDATE_KEY,
   getDigestPreference,
   hasScheduledUpdateBillingHold,
-  presentSavedViewDigest,
+  presentUpdateReport,
   type DailyDigestPayload,
 } from '@timeline/shared/messaging';
 import {
@@ -25,18 +26,18 @@ import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { CaptureForm } from '@/components/capture-form';
 import { ConnectAgentOnboardingCard } from '@/components/connect-agent/connect-agent-onboarding';
 import { CaptureDialog } from '@/components/home/capture-dialog';
-import { DailyDigestBlock, DailyDigestContent } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { HomeProcessingAttention } from '@/components/home/home-processing-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
+import { WorkspaceBrief } from '@/components/home/workspace-brief';
 import { FirstRunHomeCapture } from '@/components/onboarding/first-run-home-capture';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { PaygValueNudge } from '@/components/payg-value-nudge';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
-import { auth } from '@/lib/auth';
+import { auth, getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import {
@@ -425,29 +426,33 @@ async function HomeDigest({
   billing: HomeBillingData;
 }) {
   const identity = { db, teamId: scope.teamId, userId: scope.userId };
-  const [digest, preference, connectionIssues, billingDashboard] = await Promise.all([
-    loadHomePanel('home_digest', () => latestDailyDigest(identity)),
-    loadHomePanel('home_update_schedule', () => getDigestPreference(identity)),
+  const digestPromise = loadHomePanel('home_digest', async () => {
+    const now = new Date();
+    const row = await scope.updates.latestHome();
+    const payload = row?.payload as DailyDigestPayload | undefined;
+    if (row && payload?.update && now.getTime() - row.windowEnd.getTime() < 36 * 60 * 60 * 1000) {
+      const report = await presentUpdateReport(scope, payload, now);
+      if (report.update?.groups.some((group) => group.section === 'activity')) return report;
+    }
+    const { schedule, timezone } = await scope.updates.current(HOME_UPDATE_KEY);
+    return schedule
+      ? buildUpdateReport({ scope, schedule, timezone, windowEnd: now, synthesize: false })
+      : undefined;
+  });
+  const holdPromise = loadHomePanel('home_update_billing_hold', async () =>
+    hasScheduledUpdateBillingHold({ ...identity, preference: await getDigestPreference(identity) }),
+  );
+  const [digest, issues, dashboard, held] = await Promise.all([
+    digestPromise,
     connections,
     billing,
+    holdPromise,
   ]);
-  const held = preference
-    ? await loadHomePanel('home_update_billing_hold', () =>
-        hasScheduledUpdateBillingHold({ ...identity, preference }),
-      )
-    : false;
-  const payload = digest?.payload as DailyDigestPayload | undefined;
-  const rendered =
-    payload && (payload.savedViewChanges || payload.evidenceIds || payload.blockerIds)
-      ? (await presentSavedViewDigest(scope, payload)).payload
-      : payload;
   return (
-    <DailyDigestContent
-      digest={rendered}
-      {...(digest?.id ? { digestId: digest.id } : {})}
-      paused={preference?.enabled === false}
-      sourcesNeedAttention={Boolean(connectionIssues?.length)}
-      billingPaused={held === true || billingDashboard?.costBearingPaused === true}
+    <WorkspaceBrief
+      digest={digest ?? undefined}
+      sourcesNeedAttention={Boolean(issues?.length)}
+      billingPaused={held === true || dashboard?.costBearingPaused === true}
     />
   );
 }
@@ -541,7 +546,7 @@ async function HomeChecklist({ data, agent }: { data: HomeChecklistData; agent?:
 }
 
 export default async function HomeDashboardPage() {
-  const session = await auth();
+  const [session, { impersonation }] = await Promise.all([auth(), getRequestIdentity()]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
@@ -628,12 +633,10 @@ export default async function HomeDashboardPage() {
 
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-8">
-          {['owner', 'admin', 'member'].includes(role) ? (
-            <DailyDigestBlock>
-              <Suspense fallback={null}>
-                <HomeDigest scope={scope} connections={connections} billing={billing} />
-              </Suspense>
-            </DailyDigestBlock>
+          {!impersonation && ['owner', 'admin', 'member'].includes(role) ? (
+            <Suspense fallback={null}>
+              <HomeDigest scope={scope} connections={connections} billing={billing} />
+            </Suspense>
           ) : null}
           <Suspense fallback={<HomePanelFallback />}>
             <HomeWork scope={scope} now={now} calendar={calendar} />
