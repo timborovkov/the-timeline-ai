@@ -55,10 +55,11 @@ Secondary-page closing CTAs are open, compact copy-and-action rows, side by side
 stacked on phones. Keep the action near the headline without repeated nested
 panels, decorative labels or first-run walkthroughs. The product tour and pricing signup disclosure own the first-run path: create a team, connect one capture source,
 then inspect a source-linked record or ask a question. Pricing leads with Start free and no card.
-The homepage closing action follows its heading and supporting paragraph in one
-left-aligned column. Keep the signed-in “Open your Timeline” button and the
-signed-out “Start free” button in the same position, with account and pricing
-notes below. Do not float the action in a separate right-hand column.
+The homepage closing panel pairs the heading and supporting paragraph on the
+left with a right-hand action column on wider screens. On phones, the action
+follows the copy in a single column. “Start free” and “Open your Timeline”
+share the same full-width button placement, with pricing and sign-in links
+below “Start free.”
 
 ## Evidence and motion
 
