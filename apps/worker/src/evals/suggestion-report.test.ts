@@ -262,7 +262,8 @@ test('publication requires stored completed roots and matching remote feedback',
     verifySuggestionPublication(
       {
         awaitPendingTraceBatches: () => Promise.resolve(),
-        listRuns: () => publishedRows(roots),
+        readProject: () => Promise.resolve({ id: 'project-a' }),
+        runs: { query: () => publishedRows(roots) },
         listFeedback: () => publishedRows(scores),
       },
       'synthetic',
@@ -282,7 +283,8 @@ test('publication requires stored completed roots and matching remote feedback',
 test('publication errors and empty expectations cannot report completion', async () => {
   const client = {
     awaitPendingTraceBatches: () => Promise.resolve(),
-    listRuns: () => publishedRows([]),
+    readProject: () => Promise.resolve({ id: 'project-a' }),
+    runs: { query: () => publishedRows([]) },
     listFeedback: () => publishedRows([]),
   };
   expect((await verifySuggestionPublication(client, 'synthetic', [])).complete).toBe(false);

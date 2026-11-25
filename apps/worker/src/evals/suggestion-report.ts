@@ -201,15 +201,23 @@ export function suggestionRunComplete(
   );
 }
 
+/** v2 runs.query defaults to the last 24h when omitted; keep experiment history in scope. */
+const SUGGESTION_PUBLICATION_MIN_START_TIME = '2000-01-01T00:00:00.000Z';
+
 /** Verify durable root runs and evaluator scores, not only local evaluator output. */
 export async function verifySuggestionPublication(
   client: {
     awaitPendingTraceBatches(): Promise<void>;
-    listRuns(options: {
-      projectName: string;
-      isRoot: boolean;
-      id: string[];
-    }): AsyncIterable<{ id: string; end_time?: string | number | null | undefined }>;
+    readProject(options: { projectName: string }): Promise<{ id: string }>;
+    runs: {
+      query(options: {
+        project_ids: string[];
+        ids: string[];
+        is_root: boolean;
+        selects: ('ID' | 'END_TIME')[];
+        min_start_time: string;
+      }): AsyncIterable<{ id?: string; end_time?: string | null | undefined }>;
+    };
     listFeedback(options: {
       runIds: string[];
     }): AsyncIterable<{ run_id: string; key: string; score?: number | boolean | null | undefined }>;
@@ -228,10 +236,17 @@ export async function verifySuggestionPublication(
   let error: string | null = null;
   try {
     await client.awaitPendingTraceBatches();
+    const project = await client.readProject({ projectName });
     for (let offset = 0; offset < expected.length; offset += 50) {
       const ids = expected.slice(offset, offset + 50).map((row) => row.runId);
-      for await (const run of client.listRuns({ projectName, isRoot: true, id: ids }))
-        if (run.end_time !== undefined && run.end_time !== null) roots.add(run.id);
+      for await (const run of client.runs.query({
+        project_ids: [project.id],
+        ids,
+        is_root: true,
+        selects: ['ID', 'END_TIME'],
+        min_start_time: SUGGESTION_PUBLICATION_MIN_START_TIME,
+      }))
+        if (run.id && run.end_time !== undefined && run.end_time !== null) roots.add(run.id);
       for await (const item of client.listFeedback({ runIds: ids })) {
         const entries = feedback.get(item.run_id) ?? [];
         entries.push(item);
