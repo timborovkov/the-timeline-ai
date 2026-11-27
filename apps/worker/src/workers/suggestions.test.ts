@@ -415,6 +415,7 @@ describe('fallbackBundles', () => {
     'I will send the offer tomorrow. Actually, I will not send it.',
     'I will send the offer tomorrow. The offer was cancelled.',
     'I will send the report tomorrow. Actually, scratch that.',
+    'I will send the report tomorrow. Actually, scratch that — the numbers are wrong.',
     'I will send the report tomorrow, actually, scratch that.',
     'I will send the report tomorrow. I will not do it after all.',
     'I will schedule the meeting tomorrow. Cancel that meeting.',
@@ -426,6 +427,7 @@ describe('fallbackBundles', () => {
     'For reference only: ENG-42. It was closed last week. No action is requested.',
     'ENG-42 is in the archive.',
     'Training example: "I will send the contract tomorrow." No one has agreed to send it.',
+    'Training example:\nScratch that, I will send the estimate tomorrow instead.',
     'Training example: We decided to use "Cedar" as the shipping provider.',
     'Mira wrote “I will send the Quarterly Report tomorrow.”',
     'I will send “Notes for tomorrow” to the team.',
@@ -465,6 +467,10 @@ describe('fallbackBundles', () => {
     ],
     [
       'I will send the estimate tomorrow. I will send the invoice tomorrow, scratch that.',
+      ['Send the estimate'],
+    ],
+    [
+      'I will send the report tomorrow. Scratch that, I will send the estimate tomorrow instead.',
       ['Send the estimate'],
     ],
     ['Cancel that meeting. I will send the estimate tomorrow.', ['Send the estimate']],
@@ -3291,11 +3297,7 @@ describe('processSuggestionJobForTests', () => {
       const rawEventId = crypto.randomUUID();
       const quote = 'Casey Lane is leading the Juniper rollout project.';
       const inventory = 'Archive inventory: Juniper rollout.xlsx.';
-      const text =
-        inventory +
-        ' Filed.'.repeat(1600) +
-        quote +
-        (cited ? ' Filed.'.repeat(1600) + inventory : '');
+      const text = inventory + ' Filed.'.repeat(1600) + quote + ' Filed.'.repeat(1600) + inventory;
       await seedRawEvent(db as never, {
         id: rawEventId,
         text,

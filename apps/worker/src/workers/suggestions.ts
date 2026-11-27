@@ -1221,22 +1221,31 @@ export function fallbackBundles(args: {
     });
   const restoreTitles = (value: string) =>
     value.replace(/\uE000(\d+)\uE001/g, (_, index: string) => titles[Number(index)] ?? '');
-  const clauses = unquoted.trim().split(/(?<=[.!?;])\s+(?!(?:and|then|also)\s)|\n+/i);
-  const bundles: SuggestionBundleOutput[] = [];
   const retraction =
-    /(?:^|[,;–—]\s*)(?:actually[, ]+)?(?:scratch that|cancel that|never mind|i (?:won['’]t|will not) (?:after all|do (?:it|that)(?: after all)?))[.!;]?\s*$/i;
-  for (const [index, clause] of clauses.entries()) {
-    const text = clause.trim();
-    if (
-      !text ||
-      retraction.test(text) ||
-      retraction.exec(clauses[index + 1]?.trim() ?? '')?.index === 0 ||
-      /\uFFFC|^>|\b(?:example|template)\s*:|\b(?:hypothetical|for reference only|no action)\b/i.test(
-        text,
-      ) ||
-      /(?:example|template|said|wrote|for reference only):\s*$/i.test(clauses[index - 1] ?? '')
-    )
-      continue;
+    /(?:^|[,;–—]\s*)(?:actually[, ]+)?(?:scratch that|cancel that|never mind|i (?:won['’]t|will not) (?:after all|do (?:it|that)(?: after all)?))(?=\s*(?:$|[.,;:!?–—-]))/i;
+  const clauses = unquoted
+    .trim()
+    .split(/(?<=[.!?;])\s+(?!(?:and|then|also)\s)|\n+/i)
+    .flatMap((clause, index, original): (string | null)[] => {
+      const text = clause.trim();
+      if (
+        /\uFFFC|^>|\b(?:example|template)\s*:|\b(?:hypothetical|for reference only|no action)\b/i.test(
+          text,
+        ) ||
+        /(?:example|template|said|wrote|for reference only):\s*$/i.test(original[index - 1] ?? '')
+      )
+        return [''];
+      const match = retraction.exec(text);
+      if (!match) return [text];
+      // Keep the replacement as its own assertion. A null entry retracts only
+      // the assertion immediately before it.
+      const before = text.slice(0, match.index).trim();
+      const after = text.slice(match.index + match[0].length).replace(/^[\s.,;:!?–—-]+/, '');
+      return [...(before ? [before] : []), null, ...(after ? [after] : [])];
+    });
+  const bundles: SuggestionBundleOutput[] = [];
+  for (const [index, text] of clauses.entries()) {
+    if (!text || clauses[index + 1] === null) continue;
     const confirmedHeading =
       /^(?:the (?:vote|decision) is final|(?:it was |we )?(?:approved|confirmed)(?: it)?)\s*[.!]?$/i.test(
         clauses[index + 1]?.trim() ?? '',
@@ -1265,6 +1274,7 @@ export function fallbackBundles(args: {
     if (action) {
       const [verb = '', ...object] = action.toLowerCase().split(/\s+/);
       const cancelled = clauses.slice(index + 1).some((later, distance) => {
+        if (!later) return false;
         const negation =
           /^(?:actually[, ]+)?(?:i will not|i won['’]t|do not|don['’]t) ([^.!?;]+)/i.exec(
             later.trim(),

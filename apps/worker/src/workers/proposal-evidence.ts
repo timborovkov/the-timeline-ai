@@ -51,10 +51,21 @@ export function repairEvidencePassages(
     let firstFocus: number | undefined;
     let lastFocus = first;
     const focus = pair ?? pattern;
+    // Retain separated occurrences when they fit the budget. For dense sources
+    // sample across the length of the source instead of taking only early hits.
+    const capacity = Math.floor(budget / 1000);
+    const occurrences: number[] = [];
+    const regions = new Map<number, number>();
+    let lastOccurrence = -Infinity;
     focus.lastIndex = 0;
     for (const match of text.matchAll(focus)) {
       lastFocus = pair ? match.index + Math.floor(match[0].length / 2) : match.index;
       firstFocus ??= lastFocus;
+      if (lastFocus - lastOccurrence >= 1000) {
+        if (occurrences.length <= capacity) occurrences.push(lastFocus);
+        regions.set(Math.floor((lastFocus / text.length) * capacity), lastFocus);
+        lastOccurrence = lastFocus;
+      }
     }
     const positions = new Set<number>();
     for (const statement of factStatements ?? []) {
@@ -65,6 +76,10 @@ export function repairEvidencePassages(
     }
     positions.add(firstFocus ?? first);
     positions.add(lastFocus);
+    for (const index of occurrences.length <= capacity ? occurrences : regions.values()) {
+      if (positions.size >= capacity) break;
+      positions.add(index);
+    }
     const sorted = [...positions].sort((a, b) => a - b);
     // Nearby matches share a passage. Allocate the source's budget across
     // distinct locations, retaining the original bytes even at the boundaries.
