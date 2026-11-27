@@ -1,6 +1,7 @@
 import { type Db } from '@timeline/db';
 import { llm, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import * as taskCategories from '@timeline/shared/task-categories';
 import { withTeam } from '@timeline/shared/team-scope';
 import { DelayedError, Worker, type Job } from 'bullmq';
@@ -8,8 +9,6 @@ import { DelayedError, Worker, type Job } from 'bullmq';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 export interface TaskCategoryWorkerDeps {
   db: Db;
@@ -55,7 +54,7 @@ export async function processTaskCategoryJobForTests(
     return { status: 'skipped' as const, reason: 'disabled' as const };
   }
   if (data.kind === 'project_fanout') {
-    const scope = withTeam(deps.db, data.teamId, ZERO_UUID, { skipMembershipCheck: true });
+    const scope = withTeam(deps.db, data.teamId, NIL_UUID, { skipMembershipCheck: true });
     const result = await scope.objects.invalidateTaskCategoriesForProject({
       projectId: data.projectId,
       projectVersion: data.projectVersion,
@@ -74,7 +73,7 @@ export async function processTaskCategoryJobForTests(
     }
     return { status: 'fanout' as const, count: result.jobs.length };
   }
-  const scope = withTeam(deps.db, data.teamId, ZERO_UUID, { skipMembershipCheck: true });
+  const scope = withTeam(deps.db, data.teamId, NIL_UUID, { skipMembershipCheck: true });
   const input = await scope.objects.getTaskCategoryClassificationInput(data.taskId);
   if (!input) return { status: 'skipped' as const, reason: 'not_pending' as const };
   if (input.requestedInputHash !== data.inputHash) {
@@ -147,7 +146,7 @@ export function startTaskCategoryWorker(
         if (error instanceof DelayedError) throw error;
         const attempts = job.opts.attempts ?? 1;
         if (job.data.kind !== 'project_fanout' && job.attemptsMade + 1 >= attempts) {
-          const scope = withTeam(deps.db, job.data.teamId, ZERO_UUID, {
+          const scope = withTeam(deps.db, job.data.teamId, NIL_UUID, {
             skipMembershipCheck: true,
           });
           await scope.objects.failTaskCategoryClassification({

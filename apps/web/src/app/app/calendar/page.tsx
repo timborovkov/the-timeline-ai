@@ -1,4 +1,5 @@
 import { teamCalendarSubscriptions, users } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -131,7 +132,7 @@ function calendarPageWindow(
   settings: {
     teamId: string;
     defaultReminderMinutes: number;
-    defaultVisibility: 'private' | 'team' | 'specific_users';
+    defaultVisibility: EventVisibility;
     defaultTimezone: string;
     updatedAt: Date;
   },

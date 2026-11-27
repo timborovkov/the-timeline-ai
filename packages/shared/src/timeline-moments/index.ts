@@ -1,3 +1,5 @@
+import type { EventSource } from '@timeline/db/contracts/event-sources';
+
 import { documentKindLabel, truncateFilenameMiddle } from '#src/documents/presentation.js';
 import {
   classifyCapturedEvent,
@@ -66,17 +68,7 @@ function providerDisplayName(provider: string | null | undefined): string {
   return PROVIDER_LABELS[normalized] ?? titleCaseWords(provider);
 }
 
-export type TimelineEventSource =
-  | 'web'
-  | 'telegram'
-  | 'email'
-  | 'system'
-  | 'document'
-  | 'meeting'
-  | 'integration'
-  | 'ingest_webhook'
-  | 'calendar'
-  | 'slack';
+export type TimelineEventSource = EventSource;
 
 export interface TimelineMomentEvent {
   id: string;

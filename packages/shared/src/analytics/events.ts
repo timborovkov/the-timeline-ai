@@ -1,3 +1,5 @@
+import { MEETING_PLATFORMS } from '@timeline/db/contracts/meeting-platforms';
+import { EVENT_VISIBILITIES } from '@timeline/db/contracts/workspace-access';
 import { NATIVE_PROVIDER_IDS } from '@timeline/db/integration-providers';
 import { z } from 'zod';
 
@@ -220,7 +222,7 @@ const PRODUCT_EVENT_SCHEMAS = {
     .object({
       sizeBucket: z.enum(['under_1mb', '1mb_to_10mb', '10mb_to_50mb', '50mb_plus']),
       contentType: z.enum(['pdf', 'word', 'spreadsheet', 'presentation', 'text', 'image', 'other']),
-      visibility: z.enum(['team', 'private', 'specific_users']),
+      visibility: z.enum(EVENT_VISIBILITIES),
     })
     .strict(),
   document_action_completed: z
@@ -230,8 +232,8 @@ const PRODUCT_EVENT_SCHEMAS = {
     .strict(),
   meeting_bot_scheduled: z
     .object({
-      platform: z.enum(['meet', 'teams', 'zoom']),
-      visibility: z.enum(['team', 'private', 'specific_users']),
+      platform: z.enum(MEETING_PLATFORMS),
+      visibility: z.enum(EVENT_VISIBILITIES),
     })
     .strict(),
   meeting_finalized: z

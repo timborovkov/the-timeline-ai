@@ -7,6 +7,7 @@ import {
   taskCategoryProjectInvalidations,
   userPins,
 } from '@timeline/db';
+import type { DocumentProcessingStatus } from '@timeline/db/contracts/document-kinds';
 import { childLogger, queue } from '@timeline/shared';
 import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
@@ -299,7 +300,7 @@ async function sweepDocumentVersions(
     const rows: {
       id: string;
       teamId: string;
-      status: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'failed' | 'deferred';
+      status: DocumentProcessingStatus;
     }[] = await db
       .select({
         id: documentVersions.id,

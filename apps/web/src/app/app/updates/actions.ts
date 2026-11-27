@@ -1,5 +1,6 @@
 'use server';
 
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import { isBillingAdmissionError, runWithBillingContext } from '@timeline/shared/billing';
 import {
   getDigestPreference,
@@ -51,8 +52,7 @@ export async function updateSchedule(
   const identity = { db, teamId: active.teamId, userId: session.user.id };
   const scope = withTeam(db, identity.teamId, identity.userId);
   const role = await scope.requireMembership('member');
-  if (!['owner', 'admin', 'member'].includes(role))
-    return { error: 'Scheduled updates are unavailable for this role.' };
+  if (!isFullMemberRole(role)) return { error: 'Scheduled updates are unavailable for this role.' };
   const preference = await getDigestPreference(identity);
   const intent = form.get('intent');
   const parsed = optionsSchema.safeParse(Object.fromEntries(form));

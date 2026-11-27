@@ -1,6 +1,7 @@
 import { type Db, telegramChatBindings } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 
+import { NIL_UUID } from '#src/identifiers.js';
 import { childLogger } from '#src/logger.js';
 import { rewriteWorkspaceDigestDedupeKeyTarget } from '#src/messaging/destinations.js';
 
@@ -151,7 +152,7 @@ export function telegramChatMigrationFromMessage(
 }
 
 /** Synthetic team actor; same id as `TEAM_BOT_ACTOR_USER_ID` in the agent runtime. */
-const TELEGRAM_MIGRATION_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
+const TELEGRAM_MIGRATION_ACTOR_USER_ID = NIL_UUID;
 
 export interface TelegramChatMigrationVerifyOptions {
   /**

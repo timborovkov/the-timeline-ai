@@ -1,3 +1,5 @@
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
+
 const TITLE_STOPWORDS = new Set([
   'and',
   'busy',
@@ -25,7 +27,7 @@ export interface EventRow {
   endAt: Date;
   timezone: string;
   allDay: boolean;
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
   recurringParentId: string | null;
   rrule: string | null;
   createdAt: Date;

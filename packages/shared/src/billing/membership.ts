@@ -1,11 +1,9 @@
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
+
 import { TEAM_MONTHLY_USAGE_PER_SEAT_CENTS } from '#src/billing/catalog.js';
 
-export const FULL_MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
-export type FullMemberRole = (typeof FULL_MEMBER_ROLES)[number];
-
-export function isFullMemberRole(role: string | null | undefined): role is FullMemberRole {
-  return FULL_MEMBER_ROLES.some((fullRole) => fullRole === role);
-}
+export { FULL_MEMBER_ROLES, isFullMemberRole } from '@timeline/db/contracts/workspace-access';
+export type { TeamRole as FullMemberRole } from '@timeline/db/contracts/workspace-access';
 
 /** Capacity is acquired only when crossing into a full-member role. */
 export function fullMemberSeatsToAcquire(

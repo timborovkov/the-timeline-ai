@@ -1,6 +1,7 @@
 'use client';
 
 import type { connectionAttentionCategory } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import {
   formatHealthPauseNotice,
   healthPauseAction,
@@ -42,7 +43,7 @@ interface ConnectedRow {
     firstFailedAt: string | null;
   } | null;
   attention: ConnectedAttention[];
-  visibilityDefault: 'team' | 'private' | 'specific_users';
+  visibilityDefault: EventVisibility;
   visibilityDefaultUserIds: string[] | null;
 }
 

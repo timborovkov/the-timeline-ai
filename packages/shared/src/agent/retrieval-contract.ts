@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '#src/identifiers.js';
+
+export const RETRIEVAL_RANKING_MODES = ['auto', 'relevance', 'balanced'] as const;
+export type RetrievalRankingMode = (typeof RETRIEVAL_RANKING_MODES)[number];
 
 export const retrieveWorkspaceContextInput = z.object({
-  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
+  ranking: z.enum(RETRIEVAL_RANKING_MODES).optional(),
   query: z.string().trim().min(1).max(500),
   recipe: z
     .enum([

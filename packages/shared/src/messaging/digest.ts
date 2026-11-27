@@ -12,6 +12,8 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import { FULL_MEMBER_ROLES, isFullMemberRole } from '@timeline/db/contracts/workspace-access';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '@timeline/db/contracts/workspace-time';
 import { and, desc, eq, gte, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -19,6 +21,7 @@ import { CAPACITY_BY_PLAN } from '#src/billing/catalog.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { isBillingAdmissionError, isExpectedBillingAdmissionFailure } from '#src/billing/errors.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -59,8 +62,7 @@ export {
 } from '#src/messaging/digest-window.js';
 
 const log = childLogger('digest');
-const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
-const WORKSPACE_DIGEST_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
+const WORKSPACE_DIGEST_ACTOR_USER_ID = NIL_UUID;
 const QUIET_DIGEST_SUMMARY = 'No useful activity for this digest window.';
 const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
 const UPDATE_BILLING_HOLD = 'Scheduled Update summary billing limit reached.';
@@ -873,7 +875,7 @@ export async function listDailyDigestRecipients(
         workspace ? eq(teamMembers.teamId, workspace.teamId) : undefined,
         activeWorkspaceCondition(teamMembers.teamId),
         isNull(teamMembers.removedAt),
-        inArray(teamMembers.role, ['owner', 'admin', 'member']),
+        inArray(teamMembers.role, FULL_MEMBER_ROLES),
         isNull(users.suspendedAt),
         notExists(
           db
@@ -1303,7 +1305,7 @@ export async function generateDailyDigest(
   );
   if (persist) {
     const role = await scope.requireMembership();
-    if (options && !['owner', 'admin', 'member'].includes(role)) {
+    if (options && !isFullMemberRole(role)) {
       return {
         digestId: '',
         payload: disabledDigestPayload(input, preference.timezone),

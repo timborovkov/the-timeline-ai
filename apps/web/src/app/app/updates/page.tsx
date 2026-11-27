@@ -1,3 +1,4 @@
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import { getDigestPreference } from '@timeline/shared/messaging';
 import { DEFAULT_UPDATE_KEY } from '@timeline/shared/messaging/format';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -28,7 +29,7 @@ export default async function UpdatesPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
-  if (!['owner', 'admin', 'member'].includes(role)) redirect('/app');
+  if (!isFullMemberRole(role)) redirect('/app');
   if (query.legacy === '1') {
     const [preference, personalDestinations] = await Promise.all([
       getDigestPreference({ db, teamId: active.teamId, userId: session.user.id }),

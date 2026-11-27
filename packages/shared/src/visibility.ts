@@ -1,7 +1,6 @@
 import { rawEvents } from '@timeline/db';
+import type { EventVisibility as VisibilityValue } from '@timeline/db/contracts/workspace-access';
 import { and, eq, or, sql } from 'drizzle-orm';
-
-type VisibilityValue = 'private' | 'team' | 'specific_users';
 
 export interface VisibilityAudienceEnvelope {
   visibility: VisibilityValue;

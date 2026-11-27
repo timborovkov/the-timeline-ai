@@ -11,6 +11,11 @@ import {
   rawEvents,
   websitePages,
 } from '@timeline/db';
+import type {
+  DocumentProcessingStatus,
+  ExtractedRepresentationKind,
+} from '@timeline/db/contracts/document-kinds';
+import type { EventVisibility as Visibility } from '@timeline/db/contracts/workspace-access';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
@@ -23,6 +28,7 @@ import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-arti
 import { buildDocumentObjectKey, sanitiseFilename } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { documentVisibleToUser } from '#src/documents/visibility.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -59,9 +65,8 @@ type DbOrTx = Db | DbTx;
 
 /** Document state changes and their timeline events commit together so search,
  * notifications, and agent activity reads cannot observe an unaudited change. */
-type Visibility = 'private' | 'team' | 'specific_users';
 type FileKind = 'captured' | 'document';
-type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
+type RepresentationKind = ExtractedRepresentationKind;
 const log = childLogger('documents:scope');
 const DOCUMENT_UPLOAD_SOURCE_SNAPSHOT_VERSION = 'document-upload-source-snapshot-2026-07';
 const DOCUMENT_LIFECYCLE_SOURCE_SNAPSHOT_VERSION = 'document-lifecycle-source-snapshot-2026-07';
@@ -183,7 +188,7 @@ export interface DocumentVersionRow {
   checksumSha256: string | null;
   uploadedByUserId: string | null;
   sourceEventId: string | null;
-  processingStatus: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'deferred' | 'failed';
+  processingStatus: DocumentProcessingStatus;
   processingError: string | null;
   extractionModelVersion: string | null;
   embeddingModelVersion: string | null;
@@ -306,8 +311,6 @@ export interface DocumentChunkSearchPage {
   items: DocumentChunkSearchHit[];
   nextOffset: number | null;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function searchOptsForDocumentIds(base: SearchOpts, ids: string[]): SearchOpts {
   if (ids.length === 1) {

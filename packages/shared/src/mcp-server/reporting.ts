@@ -8,6 +8,7 @@ import {
   mcpOutboundOAuthGrants,
   auditLog,
 } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -103,7 +104,7 @@ export function createAgentReportingScope({
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (role?: TeamRole) => Promise<unknown>;
 }) {
   async function current(principal: McpAuthPrincipal) {
     await ensureMember();

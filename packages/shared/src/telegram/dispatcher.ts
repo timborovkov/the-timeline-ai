@@ -13,6 +13,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
@@ -2011,7 +2012,7 @@ async function insertEvent(
 ): Promise<{
   id: string;
   teamId: string;
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
   visibilityUserIds: string[] | null;
   visibilityOwnerUserId: string | null;
 } | null> {
@@ -2127,7 +2128,7 @@ async function insertEvent(
   async function insertRawEvent(tx: DbOrTx): Promise<{
     id: string;
     teamId: string;
-    visibility: 'private' | 'team' | 'specific_users';
+    visibility: EventVisibility;
     visibilityUserIds: string[] | null;
     visibilityOwnerUserId: string | null;
   } | null> {
@@ -2566,7 +2567,7 @@ async function ingestTelegramDocumentAttachment(
     id: string;
     teamId: string;
     authorUserId: string | null;
-    visibility: 'private' | 'team' | 'specific_users';
+    visibility: EventVisibility;
     visibilityUserIds: string[] | null;
     visibilityOwnerUserId: string | null;
   } | null,
@@ -2910,7 +2911,7 @@ async function findEventByUpdateId(
 ): Promise<{
   id: string;
   teamId: string;
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
   visibilityUserIds: string[] | null;
   visibilityOwnerUserId: string | null;
 } | null> {

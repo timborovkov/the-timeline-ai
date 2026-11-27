@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb, users } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { NIL_UUID, UUID_RE } from '@timeline/shared/identifiers';
 import { encodeCursor } from '@timeline/shared/pagination';
 import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -36,8 +37,6 @@ import {
 } from '@timeline/shared/timeline-moments/presentation';
 import { inArray } from 'drizzle-orm';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_SINCE_DAYS = 14;
 const DEFAULT_MAX_EVENTS = 500;
 const DEFAULT_LIMIT = 100;
@@ -102,7 +101,7 @@ function parsePositiveInteger(value: string, flag: string): number {
 
 export function parseArgs(argv = process.argv.slice(2), now = new Date()): Args {
   let teamId = '';
-  let userId = ZERO_UUID;
+  let userId = NIL_UUID;
   let since: Date | null = new Date(now.getTime() - DEFAULT_SINCE_DAYS * 24 * 60 * 60 * 1000);
   let until: Date | null = null;
   let source: SourceArg = 'all';

@@ -1,3 +1,4 @@
+import { MCP_AUTH_TYPES } from '@timeline/db/contracts/mcp-auth';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
@@ -31,7 +32,7 @@ const catalogShortcutSchema = z.object({
 const customSchema = z.object({
   name: z.string().min(1).max(80),
   url: z.url().max(1024),
-  authType: z.enum(['none', 'bearer', 'header', 'basic', 'oauth', 'url_key']),
+  authType: z.enum(MCP_AUTH_TYPES),
   authConfig: z
     .union([
       z.object({ token: z.string().min(1).max(8192) }),

@@ -1,7 +1,9 @@
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
+
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { stableJson } from '#src/reconciliation/stable-json.js';
 
-export type Visibility = 'team' | 'private' | 'specific_users';
+export type Visibility = EventVisibility;
 
 export interface VisibilityEnvelope {
   visibility: Visibility;

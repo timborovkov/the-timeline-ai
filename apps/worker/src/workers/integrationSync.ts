@@ -10,6 +10,7 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import {
   driveSyncIntentKind,
   driveTargetCompletesFeedRecovery,
@@ -42,7 +43,6 @@ const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-
 const PAGINATION_LOCK_RETRY_DELAY_MS = 5_000;
 const MAX_PAGINATION_LOCK_RETRY_ATTEMPTS = 3;
 const PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS = 60_000;
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 type TargetedIntegrationSyncJob = Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>;
 interface ContinuationJob {
@@ -1008,7 +1008,7 @@ export async function runOneIntegration(
     }
     const harvestEnabled =
       providerSupportsDocumentHarvest && harvestableUserId !== null && harvestUserStillMember;
-    const teamScope = withTeam(db, integration.teamId, ZERO_UUID, { skipMembershipCheck: true });
+    const teamScope = withTeam(db, integration.teamId, NIL_UUID, { skipMembershipCheck: true });
 
     const scheduleTargetedSync: NonNullable<
       integrationsLib.SyncContext['scheduleTargetedSync']

@@ -1,5 +1,6 @@
 'use server';
 
+import { BOARD_LANE_KINDS, BOARD_TEMPLATE_KINDS } from '@timeline/db/contracts/board-kinds';
 import * as boardDomain from '@timeline/shared/boards';
 import * as objects from '@timeline/shared/objects';
 import { z } from 'zod';
@@ -12,8 +13,8 @@ import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
 
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
-const boardTemplateSchema = z.enum(['pipeline', 'task_board', 'catalog', 'custom']);
-const laneKindSchema = z.enum(['active', 'done', 'terminal', 'lost', 'blocked']);
+const boardTemplateSchema = z.enum(BOARD_TEMPLATE_KINDS);
+const laneKindSchema = z.enum(BOARD_LANE_KINDS);
 
 const qualificationFields = {
   qualificationEnabled: z.boolean().optional(),

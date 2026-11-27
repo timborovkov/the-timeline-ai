@@ -30,6 +30,12 @@ import {
   teams,
 } from '@timeline/db';
 import {
+  IDENTITY_FACET_KINDS,
+  RELATIONSHIP_KINDS,
+  type RelationshipKind,
+} from '@timeline/db/contracts/object-kinds';
+import { EVENT_VISIBILITIES, type EventVisibility } from '@timeline/db/contracts/workspace-access';
+import {
   and,
   asc,
   desc,
@@ -58,6 +64,7 @@ import { isBillingAdmissionError } from '#src/billing/errors.js';
 import type { BoardScope } from '#src/boards/index.js';
 import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
 import { boardQualificationFacts } from '#src/boards/qualification.js';
+import { CALENDAR_AVAILABILITIES, RECURRENCE_EDIT_SCOPES } from '#src/calendar/contract.js';
 import type {
   CalendarEventWithRedaction,
   CalendarScope,
@@ -70,6 +77,7 @@ import {
   type CalendarRecurrenceEditMode,
 } from '#src/calendar/locking.js';
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
 import { verifyNativeTrackerCompletion } from '#src/integrations/github-task-proposals.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
@@ -156,7 +164,7 @@ export {
   uniqueWorkItemAliasesFromText,
 } from '#src/suggestions/work-item-aliases.js';
 
-type Visibility = 'private' | 'team' | 'specific_users';
+type Visibility = EventVisibility;
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';
 type ItemStatus = 'pending' | 'accepted' | 'rejected' | 'failed' | 'superseded';
 type Operation = 'create' | 'update' | 'archive_or_cancel' | 'merge';
@@ -620,7 +628,6 @@ export interface DuplicatePendingApprovalReconcileResult {
   pairs: DuplicatePendingApprovalPair[];
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const uuid = z.string().regex(UUID_RE);
 const blankStringAsNull = <T extends z.ZodType>(schema: T) =>
@@ -717,7 +724,7 @@ const objectUpdatePayload = z.object({
 const identityFacetPayload = z.object({
   entityId: uuid.optional(),
   entityRef: z.string().trim().min(1).max(120).optional(),
-  kind: z.enum(['email', 'phone', 'telegram', 'slack', 'github', 'timeline_user', 'other']),
+  kind: z.enum(IDENTITY_FACET_KINDS),
   value: z.string().trim().min(1).max(300),
   normalizedValue: z.string().trim().min(1).max(300).optional(),
   provider: z.string().trim().min(1).max(80).nullable().optional(),
@@ -750,7 +757,7 @@ const objectRelationshipPayload = z
     toRef: localRef.optional(),
     fromName: z.string().trim().min(1).max(200).optional(),
     toName: z.string().trim().min(1).max(200).optional(),
-    kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
+    kind: z.enum(RELATIONSHIP_KINDS),
   })
   .superRefine((payload, ctx) => {
     const fromEndpoints = [payload.fromEntityId, payload.fromRef, payload.fromName].filter(Boolean);
@@ -828,10 +835,10 @@ const calendarCreatePayload = z.object({
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).nullable().optional(),
-  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  showAs: z.enum(CALENDAR_AVAILABILITIES).optional(),
   rrule: z.string().trim().max(2000).nullable().optional(),
-  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  recurrenceEditMode: z.enum(RECURRENCE_EDIT_SCOPES).optional(),
+  visibility: z.enum(EVENT_VISIBILITIES).default('team'),
   visibilityUserIds: z.array(uuid).nullable().optional(),
   reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   linkedEntityIds: z.array(uuid).max(20).optional(),
@@ -851,10 +858,10 @@ const calendarUpdatePayload = z.object({
   timezone: z.string().max(100).optional(),
   allDay: z.boolean().optional(),
   location: z.string().trim().max(500).nullable().optional(),
-  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  showAs: z.enum(CALENDAR_AVAILABILITIES).optional(),
   rrule: z.string().trim().max(2000).nullable().optional(),
-  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  recurrenceEditMode: z.enum(RECURRENCE_EDIT_SCOPES).optional(),
+  visibility: z.enum(EVENT_VISIBILITIES).optional(),
   visibilityUserIds: z.array(uuid).nullable().optional(),
   reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   linkedEntityIds: z.array(uuid).max(20).optional(),
@@ -1975,13 +1982,13 @@ function rawEventVisibilityPredicate(teamId: string, userId: string) {
 
 function rawEventSupportsAudience(
   event: {
-    visibility: 'team' | 'private' | 'specific_users';
+    visibility: EventVisibility;
     authorUserId: string | null;
     visibilityOwnerUserId: string | null;
     visibilityUserIds: string[] | null;
   },
   audience: {
-    visibility: 'team' | 'private' | 'specific_users';
+    visibility: EventVisibility;
     visibilityOwnerUserId: string | null;
     visibilityUserIds: string[] | null;
   },
@@ -5852,7 +5859,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   ): Promise<{
     fromEntityId: string;
     toEntityId: string;
-    kind: 'parent' | 'child' | 'related' | 'blocks' | 'blocked_by' | 'duplicate_of';
+    kind: RelationshipKind;
   }> {
     const parsed = objectRelationshipPayload.parse(payload);
     return {
@@ -6534,7 +6541,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function undoAutomaticTaskUpdate(itemId: string): Promise<boolean> {
     await ensureMember();
-    if (!UUID_RE.test(itemId) || userId === '00000000-0000-0000-0000-000000000000') return false;
+    if (!UUID_RE.test(itemId) || userId === NIL_UUID) return false;
     const entries = await db
       .select({
         changeId: objectChanges.id,

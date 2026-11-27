@@ -12,10 +12,11 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { FULL_MEMBER_ROLES } from '#src/contracts/workspace-access.js';
 import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 import { users } from '#src/schema/users.js';
 
-export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
+export const teamRole = pgEnum('team_role', FULL_MEMBER_ROLES);
 
 /** How the team mostly works — orders suggestions and the recommended go-live channel. Never team size. */
 export const teamWorkStyle = pgEnum('team_work_style', [

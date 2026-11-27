@@ -8,6 +8,7 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq, gt, inArray, isNull, like } from 'drizzle-orm';
 
 import { childLogger } from '#src/logger.js';
@@ -21,8 +22,6 @@ import {
 } from '#src/telegram/chat-migration.js';
 
 const log = childLogger('telegram');
-
-type TeamRole = 'owner' | 'admin' | 'member';
 
 export interface TelegramLinkTokenRow {
   id: string;

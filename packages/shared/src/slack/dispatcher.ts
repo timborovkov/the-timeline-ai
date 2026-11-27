@@ -12,6 +12,7 @@ import {
   teamMembers,
   teams,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
@@ -1405,7 +1406,7 @@ async function insertSlackEvent(
     authorUserId: string | null;
     text: string | null;
     occurredAt: Date;
-    visibility: 'team' | 'private' | 'specific_users';
+    visibility: EventVisibility;
     visibilityOwnerUserId: string | null;
     metadata: Record<string, unknown>;
     isEdit: boolean;
@@ -1471,7 +1472,7 @@ async function resolveSlackRoute(
   teamId: string;
   sourceOwnerUserId: string | null;
   linkedUserId: string | null;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   isDm: boolean;
   conversationType: string;
   conversationTitle: string | null;
@@ -1524,7 +1525,7 @@ async function processSlackAttachments(
     teamId: string;
     parentRawEventId: string;
     parentAuthorUserId: string | null;
-    visibility: 'team' | 'private' | 'specific_users';
+    visibility: EventVisibility;
     files: SlackFile[];
     workspace: SlackWorkspaceRecord;
     channelId: string;
@@ -1776,7 +1777,7 @@ async function createSlackDocumentAttachment(
     teamId: string;
     parentRawEventId: string;
     parentAuthorUserId: string | null;
-    visibility: 'team' | 'private' | 'specific_users';
+    visibility: EventVisibility;
     workspace: SlackWorkspaceRecord;
     channelId: string;
     messageTs: string;

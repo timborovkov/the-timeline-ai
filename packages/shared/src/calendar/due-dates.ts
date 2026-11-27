@@ -9,6 +9,7 @@ import {
   teamCalendarSettings,
   users,
 } from '@timeline/db';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '@timeline/db/contracts/workspace-time';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
@@ -27,7 +28,6 @@ type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
 const log = childLogger('calendar:due-dates');
-const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
 
 interface DueDateTarget {
   source: 'object' | 'board_item';

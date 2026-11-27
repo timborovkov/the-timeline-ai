@@ -1,4 +1,5 @@
 import { messagePreferences, type Db } from '@timeline/db';
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import { sql } from 'drizzle-orm';
 
 import {
@@ -33,8 +34,7 @@ export function createUpdatePreferencesScope(
       options?: UpdateOptions;
     }) {
       const role = await requireMembership();
-      if (!['owner', 'admin', 'member'].includes(role))
-        throw new Error('Updates require full membership');
+      if (!isFullMemberRole(role)) throw new Error('Updates require full membership');
       const updatedAt = new Date();
       const changeEnabled = sql`${messagePreferences.dailyDigestEnabled} IS DISTINCT FROM ${input.enabled}`;
       await db

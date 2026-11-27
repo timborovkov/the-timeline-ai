@@ -1,6 +1,7 @@
 'use client';
 
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import {
   documentPresentation,
   truncateFilenameMiddle,
@@ -115,7 +116,7 @@ interface Props {
   folders: FolderItem[];
   documents: DocumentItem[];
   documentsNextCursor: string | null;
-  defaultVisibility: 'team' | 'private' | 'specific_users';
+  defaultVisibility: EventVisibility;
   defaultVisibilityUserIds: string[] | null;
   members: { id: string; label: string }[];
 }

@@ -1,10 +1,11 @@
+import type { IdentityFacetKind } from '@timeline/db/contracts/object-kinds';
+
 const EMAIL_IDENTITY_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 const PHONE_IDENTITY_RE = /^(?:\+[1-9]\d{6,14}|\d{7,15})$/;
 
 export type ActorKind = 'user' | 'agent' | 'system';
 
-export type IdentityFacetKind =
-  'email' | 'phone' | 'telegram' | 'slack' | 'github' | 'timeline_user' | 'other';
+export type { IdentityFacetKind };
 
 const IDENTITY_FACET_OBJECT_TYPES = new Set(['person', 'company']);
 

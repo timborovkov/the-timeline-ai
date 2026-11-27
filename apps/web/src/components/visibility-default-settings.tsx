@@ -1,5 +1,6 @@
 'use client';
 
+import type { EventVisibility as Visibility } from '@timeline/db/contracts/workspace-access';
 import { useActionState, useId, useState } from 'react';
 
 import { setVisibilityDefaultAction } from '@/app/actions/visibility';
@@ -17,7 +18,6 @@ type Source =
   | 'meeting'
   | 'integration'
   | 'calendar';
-type Visibility = 'team' | 'private' | 'specific_users';
 
 interface DefaultRow {
   source: Source;

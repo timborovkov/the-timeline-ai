@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import { closeDb, getDb } from '@timeline/db';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import {
   adminReconcileIntegrationWebhookSubscriptions,
   classifyMondayBoardResponse,
@@ -8,7 +9,6 @@ import {
 } from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
 

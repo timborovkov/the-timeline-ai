@@ -34,6 +34,7 @@ import {
   toParsedList,
   type ParsedAddress,
 } from '#src/email/parser.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import { childLogger } from '#src/logger.js';
 import { activeWorkspaceCondition, principalIsActive } from '#src/platform-admin/runtime.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
@@ -193,7 +194,7 @@ export async function handleInbound(
       if (!allowed) {
         // Verified webhook routing establishes the team; this system scope only reads
         // current membership, so joins, removals, and email changes take effect immediately.
-        const members = await withTeam(deps.db, team.id, '00000000-0000-0000-0000-000000000000', {
+        const members = await withTeam(deps.db, team.id, NIL_UUID, {
           skipMembershipCheck: true,
         }).timeline.listMembers();
         allowed = members.some((member) => normalizeEmail(member.email) === senderEmail);
@@ -481,7 +482,7 @@ async function ingestForTeam(
     return false;
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
-  const recoveryScope = withTeam(deps.db, team.id, '00000000-0000-0000-0000-000000000000', {
+  const recoveryScope = withTeam(deps.db, team.id, NIL_UUID, {
     emailIngestRecovery: true,
   });
   const emailDefault = await scope.timeline.resolveVisibilityDefault('email');

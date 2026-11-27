@@ -1,12 +1,11 @@
 import { type Db, rawEvents, reconciliationEvidence } from '@timeline/db';
+import type { EventVisibility as DirectWriteVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq } from 'drizzle-orm';
 
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
-
-type DirectWriteVisibility = 'private' | 'team' | 'specific_users';
 
 interface DirectWriteSourceContext {
   sourceRefs: {

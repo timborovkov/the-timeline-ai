@@ -1,5 +1,6 @@
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
 import { getEnv } from '@timeline/shared/env';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { withQdrantOperation, QdrantUnavailableError } from '@timeline/shared/qdrant';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -12,7 +13,6 @@ import { db } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_OFFSET = 500;
 
 const schema = z.object({

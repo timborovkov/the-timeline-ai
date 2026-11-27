@@ -9,6 +9,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { RELATIONSHIP_KINDS } from '#src/contracts/object-kinds.js';
 import { entities } from '#src/schema/entities.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
@@ -17,14 +18,7 @@ import { users } from '#src/schema/users.js';
 // timeline's co-occurrence signal stays as a derived view (computed on read
 // from fact_entities); this table is the durable, editable relationship
 // graph that boards and object pages render.
-export const relationshipKind = pgEnum('relationship_kind', [
-  'parent',
-  'child',
-  'related',
-  'blocks',
-  'blocked_by',
-  'duplicate_of',
-]);
+export const relationshipKind = pgEnum('relationship_kind', RELATIONSHIP_KINDS);
 
 export const entityRelationships = pgTable(
   'entity_relationships',

@@ -1,4 +1,5 @@
 'use server';
+import type { MeetingPlatform } from '@timeline/db/contracts/meeting-platforms';
 import {
   abortRecallJoinAfterProviderAccept,
   claimMeetingJoinUnderRecallCap,
@@ -8,6 +9,7 @@ import {
   settleElapsedRecallMeetingMinutes,
   stampPendingRecallSettlement,
 } from '@timeline/shared/billing';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
 import { detectMeetingPlatform } from '@timeline/shared/meetings';
@@ -27,8 +29,6 @@ import { reportCaughtError } from '@/lib/sentry-report';
 import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:meetings');
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Result {
   ok: boolean;
@@ -118,7 +118,7 @@ async function startMeetingBot(input: {
   teamId: string;
   meetingId: string;
   meetingUrl: string;
-  platform: 'meet' | 'teams' | 'zoom';
+  platform: MeetingPlatform;
   provider?: string;
 }): Promise<Result> {
   const live = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);

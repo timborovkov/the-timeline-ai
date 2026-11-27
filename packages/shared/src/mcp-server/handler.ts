@@ -13,9 +13,14 @@ import {
   type ToolAnnotations,
 } from '@modelcontextprotocol/server';
 import { eventSource, type Db } from '@timeline/db';
+import { BOARD_TEMPLATE_KINDS } from '@timeline/db/contracts/board-kinds';
 import { z } from 'zod';
 
 import * as agent from '#src/agent/index.js';
+import {
+  RETRIEVAL_RANKING_MODES,
+  type RetrievalRankingMode,
+} from '#src/agent/retrieval-contract.js';
 import {
   retrieveWorkspaceContextInput,
   type RetrievalExecutionContext,
@@ -30,6 +35,7 @@ import {
   type ArtifactRef,
 } from '#src/citation.js';
 import { TIMELINE_EVENT_CLASSES } from '#src/event-class.js';
+import { NIL_UUID, UUID_RE } from '#src/identifiers.js';
 import {
   type AcceptIngestWebhookEvidenceResult,
   type IngestEvidenceEnqueue,
@@ -71,8 +77,7 @@ const MCP_BASE64_SENTINEL_PREFIX = '=?base64?';
 const MCP_BASE64_SENTINEL_SUFFIX = '?=';
 const MCP_CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 const EVENT_SOURCE_VALUES = eventSource.enumValues;
 
 interface SearchHitForMoment {
@@ -128,7 +133,7 @@ const listTasksInput = objectFilterInput.pick({
 });
 
 const searchEventsInput = z.object({
-  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
+  ranking: z.enum(RETRIEVAL_RANKING_MODES).optional(),
   query: z.string().trim().min(1).max(500),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
@@ -139,7 +144,7 @@ const searchEventsInput = z.object({
 const searchBoardsInput = z.object({
   query: z.string().trim().max(300).optional(),
   boardId: z.string().regex(UUID_RE).optional(),
-  templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
+  templateKind: z.enum(BOARD_TEMPLATE_KINDS).optional(),
   pinned: z.boolean().optional(),
   objectId: z.string().regex(UUID_RE).optional(),
   laneId: z.string().regex(UUID_RE).optional(),
@@ -176,7 +181,7 @@ const listIntegrationsInput = z.object({
 });
 
 const searchDocumentsInput = z.object({
-  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
+  ranking: z.enum(RETRIEVAL_RANKING_MODES).optional(),
   query: z.string().trim().min(1).max(500),
   folderId: z.string().regex(UUID_RE).nullable().optional(),
   fileKind: z.enum(['document', 'captured']).optional(),
@@ -217,7 +222,7 @@ const GET_KINDS = [
 ] as const;
 
 const searchWorkspaceInput = z.object({
-  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
+  ranking: z.enum(RETRIEVAL_RANKING_MODES).optional(),
   query: z.string().trim().min(1).max(500).optional(),
   surface: z.enum(SEARCH_SURFACES).optional(),
   timePhrase: z.string().trim().min(1).max(100).optional(),
@@ -242,7 +247,7 @@ const searchWorkspaceInput = z.object({
   dueBefore: z.iso.datetime().optional(),
   provider: nativeProviderSchema.optional(),
   boardId: z.string().regex(UUID_RE).optional(),
-  templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
+  templateKind: z.enum(BOARD_TEMPLATE_KINDS).optional(),
   pinned: z.boolean().optional(),
   objectId: z.string().regex(UUID_RE).optional(),
   laneId: z.string().regex(UUID_RE).optional(),
@@ -358,7 +363,7 @@ function parsedEventSearch(
   from?: Date;
   to?: Date;
   source?: (typeof EVENT_SOURCE_VALUES)[number];
-  ranking?: 'auto' | 'relevance' | 'balanced';
+  ranking?: RetrievalRankingMode;
 } {
   const input = searchEventsInput.parse(args);
   return {

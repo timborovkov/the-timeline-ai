@@ -14,6 +14,7 @@ import {
   objectSummaries as objectSummariesTable,
   rawEvents,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { UnrecoverableError } from 'bullmq';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
@@ -39,7 +40,7 @@ interface RawEventRow {
     | 'integration'
     | 'calendar'
     | 'slack';
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
 }
@@ -145,14 +146,14 @@ export function objectChangeEmbeddable(row: { field: string; note: string | null
 
 export function documentChunkEmbeddable(row: {
   documentDeletedAt: Date | null;
-  documentVisibility: 'private' | 'team' | 'specific_users';
+  documentVisibility: EventVisibility;
   text: string;
 }): boolean {
   return !row.documentDeletedAt && row.text.trim().length > 0;
 }
 
 export function meetingChunkEmbeddable(row: {
-  meetingVisibility: 'private' | 'team' | 'specific_users';
+  meetingVisibility: EventVisibility;
   text: string;
 }): boolean {
   return row.meetingVisibility === 'team' && row.text.trim().length > 0;
@@ -160,7 +161,7 @@ export function meetingChunkEmbeddable(row: {
 
 export function calendarEventEmbeddable(row: {
   deletedAt: Date | null;
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
 }): boolean {
   return !row.deletedAt && row.visibility === 'team';
 }

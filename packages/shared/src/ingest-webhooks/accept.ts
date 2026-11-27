@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { type Db, rawEvents } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { admitAcceptedSourceEnrichment } from '#src/billing/runtime.js';
@@ -15,7 +16,7 @@ import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapsho
 const log = childLogger('ingest-webhooks');
 const INGEST_WEBHOOK_SOURCE_SNAPSHOT_VERSION = 'ingest-webhook-source-snapshot-2026-07';
 
-export type IngestEvidenceVisibility = 'private' | 'team' | 'specific_users';
+export type IngestEvidenceVisibility = EventVisibility;
 
 export interface IngestEvidenceEnqueue {
   enqueueExtractJob: typeof enqueueExtractJob;

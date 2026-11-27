@@ -24,6 +24,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import type { EventVisibility, TeamRole } from '@timeline/db/contracts/workspace-access';
 import type { NativeProviderId } from '@timeline/db/integration-providers';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
@@ -121,7 +122,7 @@ export interface CreateIntegrationInput {
   providerConnectionId?: string | null;
   scopes?: string[];
   tokens?: Record<string, unknown>;
-  visibilityDefault?: 'team' | 'private' | 'specific_users';
+  visibilityDefault?: EventVisibility;
   visibilityDefaultUserIds?: string[] | null;
 }
 
@@ -337,7 +338,7 @@ export function createIntegrationScope(deps: {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (minRole?: TeamRole) => Promise<unknown>;
   requireTeamMember?: (otherUserId: string) => Promise<void>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
@@ -880,7 +881,7 @@ export function createIntegrationScope(deps: {
 
   async function setIntegrationVisibilityDefault(
     id: string,
-    visibilityDefault: 'team' | 'private' | 'specific_users',
+    visibilityDefault: EventVisibility,
     visibilityDefaultUserIds?: string[] | null,
   ): Promise<void> {
     await ensureMember('admin');

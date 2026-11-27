@@ -1,4 +1,5 @@
 import { type Db, entities, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import {
   childLogger,
   conversationReview,
@@ -14,6 +15,7 @@ import {
   currentExtractionModelVersions,
   makeExtractionModelVersion,
 } from '@timeline/shared/extraction-model-version';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import { fireAndForgetObjectSummaryRefresh } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -25,7 +27,6 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:extract');
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface ExtractWorkerDeps {
   db: Db;
@@ -120,7 +121,7 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   source: (typeof rawEvents.$inferSelect)['source'];
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
   sourceMetadata: unknown;
 }
 
@@ -295,7 +296,7 @@ export async function processExtractJobForTests(
     llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
   );
 
-  const evaluation = withTeam(deps.db, teamId, ZERO_UUID, {
+  const evaluation = withTeam(deps.db, teamId, NIL_UUID, {
     skipMembershipCheck: true,
   }).evaluationTracing;
   const ticket = await evaluation
@@ -461,7 +462,7 @@ export async function processExtractJobForTests(
     });
   }
 
-  const objectSummaryScope = withTeam(deps.db, teamId, ZERO_UUID, { skipMembershipCheck: true });
+  const objectSummaryScope = withTeam(deps.db, teamId, NIL_UUID, { skipMembershipCheck: true });
   const enqueueObjectSummaryRefresh =
     io.enqueueObjectSummaryRefresh ??
     ((objectId: string) =>

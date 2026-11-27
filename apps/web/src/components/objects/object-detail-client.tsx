@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { RELATIONSHIP_KINDS } from '@timeline/db/contracts/object-kinds';
 import type * as boards from '@timeline/shared/boards';
 import {
   artifactRefCitation,
@@ -112,13 +113,9 @@ import { TASK_STATUS_COLUMNS, taskDisplayStatus } from '@/lib/task-statuses';
 import type { SaveState } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
-const RELATIONSHIP_KINDS = [
+const relationshipOptions = [
   'related',
-  'parent',
-  'child',
-  'blocks',
-  'blocked_by',
-  'duplicate_of',
+  ...RELATIONSHIP_KINDS.filter((kind) => kind !== 'related'),
 ] as const;
 
 type ObjectDetail = objects.ObjectDetail;
@@ -2747,8 +2744,8 @@ function ObjectRelationshipsSection({
 }) {
   const projectFieldOwnsLink = sourceType === 'task' && selectedLink?.type === 'project';
   const availableKinds = projectFieldOwnsLink
-    ? RELATIONSHIP_KINDS.filter((kind) => kind !== 'child')
-    : RELATIONSHIP_KINDS;
+    ? relationshipOptions.filter((kind) => kind !== 'child')
+    : relationshipOptions;
   return (
     <ObjectRailSection label="Related" aria-label="Related">
       <div className="mt-0.5 grid gap-1.5 px-2">

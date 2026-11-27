@@ -1,6 +1,8 @@
 'use server';
+
 import { bucketDocumentSize, classifyDocumentContentType } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import {
@@ -26,8 +28,6 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 import { visibilitySchema, type Visibility } from '@/lib/visibility';
 
 const log = childLogger('web:actions:documents');
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Cap incoming uploads. 25 MiB matches the worker's processing cap so we
 // reject early rather than waste a presigned PUT on a file the worker will

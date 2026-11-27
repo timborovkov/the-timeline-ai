@@ -1,4 +1,5 @@
 import { getEnv } from '@timeline/shared/env';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import type { SuggestionBundle } from '@timeline/shared/suggestions';
 import { withTeam } from '@timeline/shared/team-scope';
 import type { Metadata } from 'next';
@@ -18,8 +19,6 @@ export const metadata: Metadata = {
   title: 'Object',
   description: 'Review an object timeline and related suggestions.',
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type PageSearchParams = Record<string, string | string[] | undefined>;
 

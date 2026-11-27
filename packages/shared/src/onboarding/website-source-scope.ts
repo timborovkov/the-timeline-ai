@@ -14,6 +14,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { chunkText } from '#src/chunk.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import type { WebsiteSubject } from '#src/onboarding/first-run.js';
 import type { WebsiteScanPage } from '#src/onboarding/website-scan.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
@@ -205,7 +206,7 @@ export function createWebsiteSourceHandlers({
                 teamId,
                 fileKind: 'captured',
                 name: `${page.title}.md`,
-                ownerUserId: userId === '00000000-0000-0000-0000-000000000000' ? null : userId,
+                ownerUserId: userId === NIL_UUID ? null : userId,
                 visibility: 'team',
                 sourceRawEventId: input.eventId,
                 metadata: {
@@ -238,7 +239,7 @@ export function createWebsiteSourceHandlers({
             byteSize: body.length,
             contentType: 'text/markdown',
             checksumSha256: createHash('sha256').update(body).digest('hex'),
-            uploadedByUserId: userId === '00000000-0000-0000-0000-000000000000' ? null : userId,
+            uploadedByUserId: userId === NIL_UUID ? null : userId,
             sourceEventId: input.eventId,
             processingStatus: 'pending',
           })

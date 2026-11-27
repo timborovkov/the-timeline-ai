@@ -1,3 +1,5 @@
+import type { WebsiteScanFrequency } from '@timeline/db/contracts/website-schedule';
+
 /** Dependency-free customer usage contract shared by billing and the public calculator. */
 export const WEBSITE_SOURCE_UNITS_PER_PAGE = 20;
 export const WEBSITE_PAGE_LIMIT = 5;
@@ -12,7 +14,7 @@ export function websiteSourceUnits(
 export function estimateWebsiteUsage(input: {
   websites: number;
   pages: number;
-  frequency: 'manual' | 'daily' | 'weekly';
+  frequency: WebsiteScanFrequency;
   manualScans: number;
 }) {
   if (

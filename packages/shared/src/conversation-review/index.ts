@@ -1,4 +1,5 @@
 import { type Db, entities, factEntities, facts, rawEvents } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import {
   and,
   asc,
@@ -13,6 +14,8 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
+
+import { UUID_RE } from '#src/identifiers.js';
 
 export const CONVERSATION_REVIEW_DEBOUNCE_MS = 10 * 60 * 1000;
 export const CONVERSATION_WINDOW_DAYS = 2;
@@ -33,7 +36,7 @@ export interface ConversationRawEvent {
   source: string;
   contentText: string | null;
   occurredAt: Date;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   visibilityOwnerUserId: string | null;
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -75,8 +78,7 @@ export function conversationIdentityForRawEvent(
   const meta = metadataObject(row.sourceMetadata);
   if (row.source === 'email') {
     const root = metadataString(meta, 'thread_root_id');
-    if (!root || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(root))
-      return null;
+    if (!root || !UUID_RE.test(root)) return null;
     return { key: `email:${row.teamId}:thread:${root}`, source: 'email', kind: 'email_thread' };
   }
   if (row.source === 'telegram') {

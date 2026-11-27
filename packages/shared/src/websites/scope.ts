@@ -19,6 +19,7 @@ import { and, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
 import { encryptJson } from '#src/crypto/secrets.js';
 import { getEnv, isFirecrawlConfigured } from '#src/env.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
 import { cancelWebsiteCrawl } from '#src/onboarding/firecrawl-website-scan.js';
 import { operatorContext } from '#src/platform-admin/runtime.js';
@@ -617,7 +618,7 @@ export function createWebsiteScope({
         .set({ blockedReason: reason })
         .where(and(sourceWhere(run.websiteId), isNull(websites.blockedReason)))
         .returning();
-      if (episode && run.requestedBy !== '00000000-0000-0000-0000-000000000000')
+      if (episode && run.requestedBy !== NIL_UUID)
         await db.insert(notifications).values({
           teamId,
           userId: run.requestedBy,

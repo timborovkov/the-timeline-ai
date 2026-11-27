@@ -13,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { MCP_AUTH_TYPES } from '#src/contracts/mcp-auth.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
@@ -25,14 +26,7 @@ const bytea = customType<{ data: Buffer; default: false }>({
 // Phase 11 — Custom MCP servers per team. Every server is owned by
 // exactly one team and every member of that team can see the tools it
 // exposes to the agent.
-export const mcpAuthType = pgEnum('mcp_auth_type', [
-  'none',
-  'bearer',
-  'header',
-  'basic',
-  'oauth',
-  'url_key',
-]);
+export const mcpAuthType = pgEnum('mcp_auth_type', MCP_AUTH_TYPES);
 
 export const mcpServers = pgTable(
   'mcp_servers',

@@ -10,19 +10,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { IDENTITY_FACET_KINDS } from '#src/contracts/object-kinds.js';
 import { entities } from '#src/schema/entities.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
-export const identityFacetKind = pgEnum('identity_facet_kind', [
-  'email',
-  'phone',
-  'telegram',
-  'slack',
-  'github',
-  'timeline_user',
-  'other',
-]);
+export const identityFacetKind = pgEnum('identity_facet_kind', IDENTITY_FACET_KINDS);
 
 export const identityFacetStatus = pgEnum('identity_facet_status', ['approved', 'archived']);
 

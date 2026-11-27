@@ -11,6 +11,7 @@ import {
   evidenceSourceContextForPrompt,
   type EvidencePackMetrics,
 } from '#src/evidence-pack/index.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
 import { enrichEvidenceContext, expandEvidenceConversations } from '#src/retrieval/context.js';
 import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
@@ -68,7 +69,6 @@ export interface WorkspaceContextAdapterFailure {
   errorReason: string;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
 
 async function recoverAdapter<T>(

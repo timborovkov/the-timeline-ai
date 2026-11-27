@@ -1,5 +1,6 @@
 import { type Db } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import { withTeam } from '@timeline/shared/team-scope';
 import { generateAndStoreTimelineMomentPresentation } from '@timeline/shared/timeline-moments/generation';
 import { Worker, type Job } from 'bullmq';
@@ -7,8 +8,6 @@ import { Worker, type Job } from 'bullmq';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 export interface TimelineMomentPresentationWorkerDeps {
   db: Db;
@@ -30,7 +29,7 @@ export async function processTimelineMomentPresentationJobForTests(
   data: queue.TimelineMomentPresentationJobData,
 ) {
   const scope =
-    data.userId === ZERO_UUID
+    data.userId === NIL_UUID
       ? withTeam(deps.db, data.teamId, data.userId, { skipMembershipCheck: true })
       : withTeam(deps.db, data.teamId, data.userId);
   return generateAndStoreTimelineMomentPresentation(deps.db, scope, {

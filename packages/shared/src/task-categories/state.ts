@@ -11,6 +11,7 @@ import {
 import { type SQL, type SQLWrapper, and, asc, eq, isNull, isNotNull, sql } from 'drizzle-orm';
 
 import { getEnv } from '#src/env.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { recordFromUnknown, stringArrayFromUnknown, toObjectRow } from '#src/objects/row.js';
@@ -37,7 +38,6 @@ import type { TeamScopeCore } from '#src/team-scope.js';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type EntityRow = typeof entities.$inferSelect;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const embedLog = childLogger('objects:embed');
 
 export function enqueueTaskCategoryBestEffort(

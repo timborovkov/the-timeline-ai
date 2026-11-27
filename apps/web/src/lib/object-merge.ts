@@ -1,6 +1,6 @@
-export const MAX_OBJECT_MERGE_SELECTION = 10;
+import { UUID_RE } from '@timeline/shared/identifiers';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const MAX_OBJECT_MERGE_SELECTION = 10;
 
 export function parseObjectMergeIds(value: string | string[] | undefined): string[] {
   const raw = Array.isArray(value) ? value.join(',') : (value ?? '');

@@ -38,9 +38,8 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { qdrant } from '@timeline/shared';
+import { UUID_RE } from '@timeline/shared/identifiers';
 import { and, count, eq, isNotNull, isNull, not, or, sql } from 'drizzle-orm';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Args {
   teamId: string;

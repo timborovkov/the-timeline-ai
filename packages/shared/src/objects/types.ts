@@ -1,3 +1,5 @@
+import type { IdentityFacetKind } from '@timeline/db/contracts/object-kinds';
+
 import type { ImportSource } from '#src/integrations/import-sources.js';
 import type {
   TaskCategory,
@@ -224,7 +226,7 @@ export interface ObjectDetail extends ObjectRow {
   identityFacets: {
     id: string;
     entityId: string;
-    kind: 'email' | 'phone' | 'telegram' | 'slack' | 'github' | 'timeline_user' | 'other';
+    kind: IdentityFacetKind;
     value: string;
     normalizedValue: string;
     provider: string | null;

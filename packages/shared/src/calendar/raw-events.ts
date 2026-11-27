@@ -1,4 +1,5 @@
 import { type Db, rawEvents } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
@@ -16,7 +17,7 @@ type DbOrTx = Db | DbTx;
 const log = childLogger('calendar:raw-events');
 const CALENDAR_SOURCE_SNAPSHOT_VERSION = 'calendar-source-snapshot-2026-07';
 
-export type CalendarRawVisibility = 'private' | 'team' | 'specific_users';
+export type CalendarRawVisibility = EventVisibility;
 export type CalendarRawAction = 'scheduled' | 'event' | 'updated' | 'cancelled';
 
 function uniqueIds(ids: string[]): string[] {

@@ -1,6 +1,11 @@
 'use client';
 
 import { Temporal } from '@js-temporal/polyfill';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
+import type {
+  CalendarRecurrenceEditMode,
+  CalendarShowAs,
+} from '@timeline/shared/calendar/contract';
 import {
   assertValidTimezone,
   isoWeekYear,
@@ -92,7 +97,7 @@ interface CalendarViewProps {
   eventListQuery?: string;
   eventListScope?: 'future' | 'past' | 'all';
   timezone: string;
-  defaultVisibility?: 'team' | 'private' | 'specific_users';
+  defaultVisibility?: EventVisibility;
   defaultVisibilityUserIds?: string[] | null;
   members?: { id: string; label: string }[];
   focusEventId?: string | null;
@@ -104,11 +109,11 @@ interface Draft {
   title: string;
   description: string;
   location: string;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   visibilityUserIds: string[];
-  showAs: 'busy' | 'free' | 'tentative';
+  showAs: CalendarShowAs;
   rrule: string;
-  recurrenceEditMode: 'single' | 'series' | 'this_and_future';
+  recurrenceEditMode: CalendarRecurrenceEditMode;
   allDay: boolean;
   timezone: string;
   startDate: string;
@@ -677,7 +682,7 @@ function useCalendarViewModel({
                     timezone: originalEvent.timezone,
                     allDay: originalEvent.allDay,
                     location: originalEvent.location ?? undefined,
-                    visibility: originalEvent.visibility as 'team' | 'private' | 'specific_users',
+                    visibility: originalEvent.visibility as EventVisibility,
                     showAs: originalEvent.showAs,
                     rrule: originalEvent.rrule,
                     recurrenceEditMode: draft.recurrenceEditMode,

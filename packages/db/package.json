@@ -39,6 +39,12 @@
       "development": "./src/wait-for-migrations.ts",
       "import": "./dist/wait-for-migrations.js",
       "default": "./dist/wait-for-migrations.js"
+    },
+    "./contracts/*": {
+      "types": "./src/contracts/*.ts",
+      "development": "./src/contracts/*.ts",
+      "import": "./dist/contracts/*.js",
+      "default": "./dist/contracts/*.js"
     }
   },
   "main": "./dist/index.js",

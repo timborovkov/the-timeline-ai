@@ -36,6 +36,7 @@ import {
 } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { documentProposalEvidenceIsCurrent } from '@timeline/shared/documents';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import {
   activeWorkspaceCondition,
   isInactiveWorkspaceError,
@@ -85,7 +86,7 @@ import {
 } from '#src/workers/communication-policy.js';
 
 const log = childLogger('worker:suggestions');
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 
 const SUGGESTION_CODE_VERSION = '2026-11-engine-v3-recall';
 const CONVERSATION_NO_ACTION_RECONCILIATION_VERSION = 'conversation-no-action-2026-06';

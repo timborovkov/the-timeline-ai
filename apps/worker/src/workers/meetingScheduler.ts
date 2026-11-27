@@ -15,6 +15,7 @@ import {
   reserveRecallMeetingMinutes,
   runWithConcurrentRecallJoinLock,
 } from '@timeline/shared/billing';
+import { NIL_UUID } from '@timeline/shared/identifiers';
 import {
   activeWorkspaceCondition,
   principalIsActive,
@@ -40,7 +41,7 @@ import { captureWorkerException } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:meeting-scheduler');
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 const MAX_JOIN_OFFSET_MS = 30 * 60 * 1000;
 const DEFAULT_JOIN_OFFSET_MS = 2 * 60 * 1000;
 const SCHEDULED_JOIN_LOOKBACK_MS = 550 * 1000;

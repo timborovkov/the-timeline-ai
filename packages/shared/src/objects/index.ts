@@ -86,10 +86,12 @@ import {
   pinnedObjectIdFromContext,
 } from '#src/chat-context.js';
 import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
+import { uniqueChatTitle } from '#src/conversation-surfaces/titles.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { visibleImportSources } from '#src/integrations/import-sources.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -1122,7 +1124,6 @@ async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: strin
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const RELATIONSHIP_KINDS = relationshipKind.enumValues;
 export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
 
@@ -8419,28 +8420,6 @@ export interface ChatMessageRow {
   createdAt: Date;
 }
 
-const CHAT_TITLE_MAX_LENGTH = 48;
-
-function normalizeStoredChatTitle(title: string): string {
-  const compact = title.replace(/\s+/g, ' ').trim();
-  return (compact || 'New chat').slice(0, CHAT_TITLE_MAX_LENGTH).trim() || 'New chat';
-}
-
-function dedupeStoredChatTitle(title: string, existingTitles: string[]): string {
-  const baseTitle = normalizeStoredChatTitle(title);
-  const seen = new Set(existingTitles.map((value) => value.toLowerCase()));
-  if (!seen.has(baseTitle.toLowerCase())) return baseTitle;
-  for (let n = 2; n < 100; n += 1) {
-    const suffix = ` ${n}`;
-    const base = baseTitle.slice(0, CHAT_TITLE_MAX_LENGTH - suffix.length).trim();
-    const candidate = `${base}${suffix}`;
-    if (!seen.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${baseTitle.slice(0, CHAT_TITLE_MAX_LENGTH - 4).trim()} ${Date.now()
-    .toString()
-    .slice(-3)}`;
-}
-
 export async function hasCompletedChatAnswer(db: Db, scope: TeamScopeCore): Promise<boolean> {
   await scope.requireMembership();
   const rows = await db
@@ -8748,7 +8727,7 @@ export async function setUniqueChatSessionTitle(
           isNotNull(chatSessions.title),
         ),
       );
-    const uniqueTitle = dedupeStoredChatTitle(
+    const uniqueTitle = uniqueChatTitle(
       title,
       existingRows.map((row) => row.title).filter((value): value is string => value !== null),
     );

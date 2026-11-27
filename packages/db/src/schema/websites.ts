@@ -12,6 +12,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import type { WebsiteScanFrequency } from '#src/contracts/website-schedule.js';
 import { teams } from '#src/schema/teams.js';
 
 export const websites = pgTable(
@@ -37,7 +38,7 @@ export const websites = pgTable(
     }>(),
     schedule: jsonb('schedule')
       .$type<{
-        frequency: 'manual' | 'daily' | 'weekly';
+        frequency: WebsiteScanFrequency;
         time: string;
         weekday: number;
         timezone: string;

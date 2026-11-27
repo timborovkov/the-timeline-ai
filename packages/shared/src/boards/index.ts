@@ -14,6 +14,7 @@ import {
   reconciliationRuns,
   userPins,
 } from '@timeline/db';
+import { BOARD_TEMPLATE_KINDS, type BoardLaneKind } from '@timeline/db/contracts/board-kinds';
 import {
   type SQL,
   and,
@@ -43,6 +44,7 @@ import {
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { visibleImportSources, type ImportSource } from '#src/integrations/import-sources.js';
 import { childLogger } from '#src/logger.js';
 import { StaleWorkspaceStateError } from '#src/mutation-errors.js';
@@ -75,16 +77,14 @@ export { buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext } f
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const BOARD_TEMPLATES = ['pipeline', 'task_board', 'catalog', 'custom'] as const;
 const BOARD_ITEM_QUERY_LIMIT_MAX = 50_000;
 const BOARD_DIRECT_WRITE_RUN_VERSION = 'board-direct-write-2026-06';
 const BOARD_DIRECT_WRITE_PLANNER_VERSION = 'board-direct-write-planner-2026-06';
 const BOARD_DIRECT_WRITE_SOURCE_SNAPSHOT_VERSION = 'board-direct-write-source-snapshot-2026-06';
 const reconciliationLog = childLogger('boards:reconciliation');
 
-export type BoardTemplateKind = (typeof BOARD_TEMPLATES)[number];
-export type BoardLaneKind = 'active' | 'done' | 'terminal' | 'lost' | 'blocked';
+export type BoardTemplateKind = (typeof BOARD_TEMPLATE_KINDS)[number];
+export type { BoardLaneKind };
 export type BoardItemChangeStatus = 'applied' | 'suggested' | 'rejected';
 export type BoardItemField =
   | '__add__'
@@ -1458,7 +1458,7 @@ export function createBoardScope({
       await scope.requireMembership();
       boardQualificationPolicySchema.parse(input);
       const name = normalizeName(input.name, 'Board name');
-      const templateKind = BOARD_TEMPLATES.includes(input.templateKind)
+      const templateKind = BOARD_TEMPLATE_KINDS.includes(input.templateKind)
         ? input.templateKind
         : 'custom';
       const lanes = (input.lanes.length > 0 ? input.lanes : defaultBoardLanes(templateKind)).map(

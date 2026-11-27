@@ -27,6 +27,7 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
 import type { BillingProvider } from '#src/billing/provider.js';
+import { UUID_RE } from '#src/identifiers.js';
 import { childLogger } from '#src/logger.js';
 import { withTeam } from '#src/team-scope.js';
 
@@ -409,12 +410,8 @@ function polarCheckoutId(data: PolarWebhookPayload['data']): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-const POLAR_TEAM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function isPolarWebhookTeamUuid(value: unknown): value is string {
-  return (
-    typeof value === 'string' && POLAR_TEAM_UUID_RE.test(value.trim()) && value.trim() === value
-  );
+  return typeof value === 'string' && UUID_RE.test(value.trim()) && value.trim() === value;
 }
 
 function metadataTeamId(value: unknown): unknown {

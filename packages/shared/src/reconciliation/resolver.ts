@@ -8,6 +8,7 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import {
@@ -78,7 +79,7 @@ interface EvidenceRow {
   provider: string | null;
   externalObjectId: string | null;
   eventType: string;
-  visibility: 'team' | 'private' | 'specific_users';
+  visibility: EventVisibility;
   visibilityOwnerUserId: string | null;
   visibilityUserIds: string[] | null;
   title: string | null;

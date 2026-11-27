@@ -1,3 +1,4 @@
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import type { EventSource, SearchEventArtifactCluster } from '@timeline/shared/team-scope';
 import type {
   ImpactItem,
@@ -52,7 +53,7 @@ export interface TimelineEvent {
   contentAudioUrl: string | null;
   occurredAt: string;
   createdAt: string;
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: EventVisibility;
   visibilityUserIds: string[] | null;
   visibilityOwnerUserId: string | null;
   sourceMetadata: unknown;

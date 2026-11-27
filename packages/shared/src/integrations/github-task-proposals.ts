@@ -11,9 +11,11 @@ import {
   users,
   type Db,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
+import { NIL_UUID } from '#src/identifiers.js';
 import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
 import {
   isSignalClass,
@@ -29,7 +31,7 @@ import { withTeam } from '#src/team-scope.js';
 import { rawEventIsActive } from '#src/visibility.js';
 
 const log = childLogger('integrations:github-task-proposals');
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 const OPEN_TASK_STATUSES_EXCLUDED = ['done', 'cancelled', 'canceled', 'shipped'] as const;
 const TASK_CANDIDATE_LIMIT = 500;
 const PENDING_CREATE_LIMIT = 200;
@@ -433,7 +435,7 @@ export async function proposeGithubTaskUpdatesFromRawEvent(input: {
     source: string;
     contentText: string | null;
     sourceMetadata: unknown;
-    visibility: 'team' | 'private' | 'specific_users';
+    visibility: EventVisibility;
   };
 }): Promise<number> {
   if (input.rawEvent.source !== 'integration') return 0;

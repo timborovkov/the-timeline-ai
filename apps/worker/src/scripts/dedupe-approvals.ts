@@ -14,9 +14,9 @@
  */
 import { closeDb, getDb } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
+import { NIL_UUID, UUID_RE } from '@timeline/shared/identifiers';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const PSEUDO_USER = NIL_UUID;
 
 function parseArgs(): { teamId: string; limit: number; dryRun: boolean } {
   const args = process.argv.slice(2);

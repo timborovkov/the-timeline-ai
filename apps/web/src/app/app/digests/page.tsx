@@ -1,3 +1,4 @@
+import { isFullMemberRole } from '@timeline/db/contracts/workspace-access';
 import {
   listDailyDigests,
   presentSavedViewDigest,
@@ -61,7 +62,7 @@ export default async function DigestsPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
-  if (!['owner', 'admin', 'member'].includes(role)) redirect('/app');
+  if (!isFullMemberRole(role)) redirect('/app');
   const identity = { db, teamId: active.teamId, userId: session.user.id };
   const [scheduled, previous, direct] = await Promise.all([
     scope.updates.history(selectedId),

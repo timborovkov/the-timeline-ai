@@ -1,4 +1,6 @@
 import { type Db, auditLog, mcpOauthTokens, mcpServers } from '@timeline/db';
+import type { McpAuthType } from '@timeline/db/contracts/mcp-auth';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import { assertTeamCustomMcpCapacity } from '#src/billing/capacity.js';
@@ -14,7 +16,7 @@ import { getMcpManager } from '#src/mcp/client.js';
 export interface AddMcpServerInput {
   name: string;
   url: string;
-  authType: 'none' | 'bearer' | 'header' | 'basic' | 'oauth' | 'url_key';
+  authType: McpAuthType;
   authConfig?: McpAuthConfig | null;
   /**
    * Phase 11 overlay: `'team'` puts the server in the team catalog (admin
@@ -29,7 +31,7 @@ export function createMcpScope(deps: {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (minRole?: TeamRole) => Promise<unknown>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
 

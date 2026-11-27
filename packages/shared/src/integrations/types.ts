@@ -2,6 +2,7 @@ import type {
   integrations as integrationsTable,
   providerConnections as providerConnectionsTable,
 } from '@timeline/db';
+import type { EventVisibility } from '@timeline/db/contracts/workspace-access';
 import type { NativeProviderId } from '@timeline/db/integration-providers';
 
 import type { TimelineEventClass } from '#src/event-class.js';
@@ -81,7 +82,7 @@ export interface IntegrationEvent {
   occurredAt: Date;
   actor?: { externalId?: string; name?: string; email?: string } | null;
   contentText: string;
-  visibility?: 'team' | 'private' | 'specific_users';
+  visibility?: EventVisibility;
   visibilityUserIds?: string[] | null;
   /**
    * Extra provider-specific fields merged into source_metadata. Providers should

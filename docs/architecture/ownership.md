@@ -23,7 +23,7 @@ Use this map to locate implementation responsibilities. It is not a task list or
 | Worker startup | Queue registration, startup and shutdown inventory is code-owned; do not keep a parallel worker list in prose. |
 | Tests and extraction images | Test execution policy is explicit in the manifest; snapshot identity derives from the image recipe/content. Neither depends on ad-hoc regexes or a manual version bump. |
 
-Persisted value sets belong with the database schema. When clients also need a set at runtime, export a dependency-free tuple from the DB package and derive its TypeScript union, database enum and input validators from it. [Native provider IDs](../../packages/db/src/integration-providers.ts) follow this pattern. A narrower capability such as board imports declares its supported subset explicitly.
+Persisted value sets belong with the database schema. When clients also need a set at runtime, export a dependency-free tuple from the DB package and derive its TypeScript union, database enum and input validators from it. See [workspace access](../../packages/db/src/contracts/workspace-access.ts) and [native provider IDs](../../packages/db/src/integration-providers.ts). A narrower capability such as board imports declares its supported subset explicitly.
 
 For values that describe an operation, the domain that implements the operation owns the list. For example, the job recovery routes and filters share [the recovery policy](../../packages/shared/src/job-recovery/policy.ts).
 

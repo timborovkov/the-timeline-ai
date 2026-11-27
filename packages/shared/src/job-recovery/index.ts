@@ -12,6 +12,7 @@ import {
   rawEvents,
   type Db,
 } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import type { JobType } from 'bullmq';
 import {
   and,
@@ -36,8 +37,6 @@ import {
 } from '#src/job-recovery/policy.js';
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
-
-type TeamRole = 'owner' | 'admin' | 'member';
 
 export type { JobRecoveryKind } from '#src/job-recovery/policy.js';
 

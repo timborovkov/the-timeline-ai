@@ -6,7 +6,7 @@ import type {
   ArtifactEvidenceInput,
   ArtifactReconcileResult,
 } from '#src/artifacts/index.js';
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '#src/identifiers.js';
 
 function normalizeAnchor(input: ArtifactAnchorInput): ArtifactAnchorInput | null {
   const type = input.type

@@ -1,4 +1,5 @@
 import { auditLog, type Db, mcpOutboundKeys } from '@timeline/db';
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { mintKey } from '#src/mcp-server/keys.js';
@@ -22,7 +23,7 @@ interface McpOutboundScopeDeps {
   db: Db;
   teamId: string;
   userId: string;
-  ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  ensureMember: (minRole?: TeamRole) => Promise<unknown>;
 }
 
 function asScopes(value: unknown): string[] {

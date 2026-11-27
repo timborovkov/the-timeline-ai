@@ -1,5 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import type { WebsiteScanFrequency } from '@timeline/db/contracts/website-schedule';
 import { ArrowUpRight, Globe, Plus, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,7 +31,7 @@ interface Website {
   nextScanAt: string | null;
   latestRun: RunSummary | null;
   schedule: {
-    frequency: 'manual' | 'daily' | 'weekly';
+    frequency: WebsiteScanFrequency;
     time: string;
     weekday: number;
     timezone: string;

@@ -1,3 +1,4 @@
+import type { TeamRole } from '@timeline/db/contracts/workspace-access';
 import {
   Cable,
   ChartColumn,
@@ -121,12 +122,12 @@ const NAV_ITEMS: readonly NavItem[] = [
   },
 ] as const;
 
-export function visibleNavItems(role: 'owner' | 'admin' | 'member'): readonly NavItem[] {
+export function visibleNavItems(role: TeamRole): readonly NavItem[] {
   const canSeeAdminItems = role === 'owner' || role === 'admin';
   return NAV_ITEMS.filter((item) => !item.adminOnly || canSeeAdminItems);
 }
 
-export function visibleNavGroups(role: 'owner' | 'admin' | 'member'): readonly NavItemGroup[] {
+export function visibleNavGroups(role: TeamRole): readonly NavItemGroup[] {
   const itemsByGroup: Record<NavGroupId, NavItem[]> = {
     overview: [],
     workspace: [],
