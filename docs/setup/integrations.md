@@ -43,6 +43,10 @@ Disconnecting an active import stops that team's sync path. Deleting a provider 
 3. Review what Timeline will create, link or skip. For example, choose the existing company for an imported renewal, then confirm the deal separately if it also has a possible match. Unresolved matches can wait while independent records proceed. Choose **Confirm and keep in sync** to authorize the rule.
 4. Open an imported card to see the source beside its controlled status or lane. Future provider changes update that field on the board. An admin can stop syncing the field to keep its current value and edit it locally. Changes flow from the provider into Timeline.
 
+If the connection owner restricts the event that currently controls a field, sync pauses and the field becomes editable. A later eligible team-visible provider update can resume sync. To keep local control permanently, use **Stop syncing** on an active link.
+
+When you merge a synced deal into another deal, its source follows the surviving deal and card. If both cards have a source controlling their lane on the same board, stop syncing one before merging.
+
 For the provider-specific mappings and examples, see [GitHub issues and merges](github.md#import-repository-work-into-a-board) and [HubSpot deal pipelines](hubspot.md#import-into-a-board).
 
 <span id="connection-health"></span>

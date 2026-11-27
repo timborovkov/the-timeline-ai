@@ -3,6 +3,13 @@ import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { rawEventIsActive } from '#src/visibility.js';
 
+// Acquire before reading or changing an import target or its source visibility.
+export function lockBoardImports(db: Pick<Db, 'execute'>, teamId: string) {
+  return db.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${'board-import:' + teamId},0))`,
+  );
+}
+
 export interface ImportSource {
   id: string;
   field: string;

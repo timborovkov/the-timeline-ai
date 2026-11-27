@@ -86,7 +86,7 @@ describe('writeIntegrationEvents visibility', () => {
     await pg.close();
   });
 
-  it('imports a selected HubSpot pipeline, preserves company identity, and releases the lane on unlink', async () => {
+  it('keeps HubSpot deals synced through merges and releases the surviving lane on unlink', async () => {
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -117,19 +117,19 @@ describe('writeIntegrationEvents visibility', () => {
       history: false,
       stageLanes: { one: lane1, two: lane2 },
     };
-    const event = (stage: string, serial: number) => ({
+    const event = (stage: string, serial: number, dealId = '1') => ({
       provider: 'hubspot',
       eventType: 'deal.updated',
       signalClass: 'captured_work' as const,
       eventClass: 'work_record' as const,
       occurredAt: new Date(1790000000000 + serial),
-      dedupKey: 'hubspot:55:deal:1:' + String(serial),
-      externalObjectId: '55:deal:1',
+      dedupKey: `hubspot:55:deal:${dealId}:${serial}`,
+      externalObjectId: '55:deal:' + dealId,
       contentText: 'Example renewal',
       extra: {
         hubspot: {
-          id: '1',
-          title: 'Example renewal',
+          id: dealId,
+          title: 'Example renewal ' + dealId,
           active: true,
           pipeline_id: 'sales',
           stage_id: stage,
@@ -138,8 +138,12 @@ describe('writeIntegrationEvents visibility', () => {
         },
       },
     });
-    const write = (stage: string, serial: number) =>
-      writeIntegrationEvents({ db: db as never, integration, events: [event(stage, serial)] });
+    const write = (stage: string, serial: number, dealId = '1') =>
+      writeIntegrationEvents({
+        db: db as never,
+        integration,
+        events: [event(stage, serial, dealId)],
+      });
     await write('one', 1);
     await expect(other.boardImports.preview(config)).rejects.toThrow();
     const preview = await scope.boardImports.preview(config);
@@ -177,20 +181,52 @@ describe('writeIntegrationEvents visibility', () => {
     );
     await write('two', 4);
     expect((await scope.boards.getBoard(boardId))?.items[0]?.laneId).toBe(lane2);
-    const [link] = await scope.boardImports.ownership({ itemId: item.id });
-    if (!link) throw new Error('Expected synced lane');
-    await scope.boardImports.unlink(link.id);
-    await scope.boards.updateBoardItem(
-      item.id,
-      { laneId: lane1 },
-      { kind: 'user', userId: USER_ID },
+    const actor = { kind: 'user' as const, userId: USER_ID };
+    const survivor = await scope.objects.createObject({
+      type: 'deal',
+      canonicalName: 'Renewal',
+      actor,
+    });
+    const keeper = await scope.boards.addBoardItem(boardId, {
+      entityId: survivor.id,
+      laneId: lane1,
+      actor,
+    });
+    await scope.objects.mergeObjects({
+      survivorId: survivor.id,
+      mergedIds: [item.entityId],
+      actor,
+    });
+    expect((await scope.boards.getBoard(boardId))?.items).toMatchObject([
+      { id: keeper.id, laneId: lane2 },
+    ]);
+    await write('one', 5);
+    expect((await scope.boards.getBoard(boardId))?.items).toMatchObject([
+      { id: keeper.id, laneId: lane1 },
+    ]);
+    const [link] = await scope.boardImports.ownership({ itemId: keeper.id });
+    if (!link) throw new Error('Expected synced lane on the surviving card');
+    await write('one', 6, '2');
+    const competingDeal = (await scope.boards.getBoard(boardId))?.items.find(
+      (card) => card.entityId !== survivor.id,
     );
-    await write('two', 5);
+    if (!competingDeal) throw new Error('Expected a second synced deal');
+    await expect(
+      scope.objects.mergeObjects({
+        survivorId: survivor.id,
+        mergedIds: [competingDeal.entityId],
+        actor,
+      }),
+    ).rejects.toThrow('Both cards have a synced lane');
+    expect((await scope.boards.getBoard(boardId))?.items).toHaveLength(2);
+    await scope.boardImports.unlink(link.id);
+    await scope.boards.updateBoardItem(keeper.id, { laneId: lane2 }, actor);
+    await write('one', 7);
     board = await scope.boards.getBoard(boardId);
-    expect(board?.items[0]?.laneId).toBe(lane1);
+    expect(board?.items.find((card) => card.id === keeper.id)?.laneId).toBe(lane2);
   });
 
-  it('syncs issue closure and reopening, attaches its merged PR, and imports standalone work once', async () => {
+  it('syncs GitHub issues and merged work and releases status when source visibility narrows', async () => {
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -297,6 +333,40 @@ describe('writeIntegrationEvents visibility', () => {
         .map((link) => link.field)
         .sort(),
     ).toEqual(['reference', 'status']);
+    const actor = { kind: 'user' as const, userId: USER_ID };
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Surviving project',
+      actor,
+    });
+    await scope.objects.mergeObjects({ survivorId: project.id, mergedIds: [projectId], actor });
+    const [eventId] = await write(1, 'issue.reopened', 10);
+    if (!eventId) throw new Error('Expected a source event for the reopened issue');
+    expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
+    await scope.timeline.setEventVisibility(eventId, { visibility: 'private' });
+    const member = withTeam(db as never, TEAM_ID, USER_B_ID);
+    expect(
+      (await member.boardImports.ownership({ entityId: task.id })).some(
+        (link) => link.field === 'status',
+      ),
+    ).toBe(false);
+    await scope.objects.updateObject(task.id, { status: 'in_progress' }, actor);
+    await write(1, 'issue.closed', 11, [], 'private');
+    expect((await scope.objects.getObject(task.id))?.status).toBe('in_progress');
+    const [sharedEventId] = await write(1, 'issue.closed', 12);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('done');
+    expect(
+      (await scope.boardImports.ownership({ entityId: task.id })).find(
+        (link) => link.field === 'status',
+      )?.state,
+    ).toBe('active');
+    if (!sharedEventId) throw new Error('Expected the team-visible close event');
+    await scope.timeline.setEventVisibility(sharedEventId, {
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_B_ID],
+    });
+    await scope.objects.updateObject(task.id, { status: 'todo' }, actor);
+    expect((await scope.objects.getObject(task.id))?.status).toBe('todo');
   });
 
   it('does not write specific_users without user ids for per-event overrides', async () => {

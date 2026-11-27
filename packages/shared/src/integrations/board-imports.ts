@@ -29,7 +29,7 @@ import { z } from 'zod';
 import { createBoardScope } from '#src/boards/index.js';
 import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
 import { recordsForImport, type ImportRecord } from '#src/integrations/import-records.js';
-import { visibleImportSources } from '#src/integrations/import-sources.js';
+import { lockBoardImports, visibleImportSources } from '#src/integrations/import-sources.js';
 import { githubClosingIssueKeys } from '#src/integrations/providers/github.js';
 import { adminDecryptIntegrationTokens } from '#src/integrations/scope.js';
 import { createObjectScope } from '#src/objects/index.js';
@@ -830,9 +830,7 @@ export function createBoardImportScope(db: Db, core: TeamScopeCore) {
       throw new Error('An active team admin is required.');
     const result = await db.transaction(async (tx) => {
       const query = tx as unknown as Db;
-      await query.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${'board-import:' + teamId},0))`,
-      );
+      await lockBoardImports(query, teamId);
       const [role] = await tx
         .select({ role: teamMembers.role })
         .from(teamMembers)

@@ -16,6 +16,8 @@ import {
   agentSuggestions,
   artifactClusters,
   artifactEvidenceAssociations,
+  boardImportLinks,
+  boardImportRules,
   boardLanes,
   boardItemChanges,
   boardItems,
@@ -92,7 +94,7 @@ import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
 import { UUID_RE } from '#src/identifiers.js';
-import { visibleImportSources } from '#src/integrations/import-sources.js';
+import { lockBoardImports, visibleImportSources } from '#src/integrations/import-sources.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -5474,6 +5476,7 @@ export async function mergeObjects(
   if (ids.length > 10) throw new Error('Merge at most 10 objects at once');
 
   const result = await db.transaction(async (tx) => {
+    await lockBoardImports(tx, scope.teamId);
     const rows = await tx
       .select()
       .from(entities)
@@ -5496,6 +5499,32 @@ export async function mergeObjects(
       .filter((row): row is ObjectRow => row !== undefined);
     const loserIds = losers.map((row) => row.id);
     const nextAliases = mergeAliases(survivor, losers);
+
+    const syncLinks = await tx
+      .select({
+        entityId: boardImportLinks.entityId,
+        itemId: boardImportLinks.itemId,
+        state: boardImportLinks.state,
+        field: boardImportLinks.field,
+      })
+      .from(boardImportLinks)
+      .where(
+        and(
+          eq(boardImportLinks.teamId, scope.teamId),
+          inArray(boardImportLinks.entityId, ids),
+          inArray(boardImportLinks.state, ['active', 'paused']),
+        ),
+      );
+    if (syncLinks.some((link) => objectsById.get(link.entityId)?.type !== survivor.type)) {
+      throw new Error(
+        'Choose a survivor of the synced object’s type or stop syncing before merging.',
+      );
+    }
+    const ownedLanes = new Set(
+      syncLinks.flatMap((link) =>
+        link.state === 'active' && link.field === 'lane' && link.itemId ? [link.itemId] : [],
+      ),
+    );
 
     const relationships = await tx
       .select()
@@ -5669,7 +5698,24 @@ export async function mergeObjects(
           ),
         )
         .limit(1);
-      if (duplicateActive[0]) {
+      const keeper = duplicateActive[0];
+      if (keeper) {
+        if (ownedLanes.has(item.id)) {
+          if (ownedLanes.has(keeper.id)) {
+            throw new Error('Both cards have a synced lane. Stop syncing one before merging.');
+          }
+          await tx
+            .update(boardItems)
+            .set({ laneId: item.laneId, updatedAt: now })
+            .where(and(eq(boardItems.teamId, scope.teamId), eq(boardItems.id, keeper.id)));
+          ownedLanes.add(keeper.id);
+        }
+        await tx
+          .update(boardImportLinks)
+          .set({ itemId: keeper.id })
+          .where(
+            and(eq(boardImportLinks.teamId, scope.teamId), eq(boardImportLinks.itemId, item.id)),
+          );
         const updatedItem = { ...item, entityId: survivor.id, archivedAt: now, updatedAt: now };
         await tx
           .update(boardItems)
@@ -5692,6 +5738,26 @@ export async function mergeObjects(
           await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board),
         );
       }
+    }
+    await tx
+      .update(boardImportLinks)
+      .set({ entityId: survivor.id })
+      .where(
+        and(
+          eq(boardImportLinks.teamId, scope.teamId),
+          inArray(boardImportLinks.entityId, loserIds),
+        ),
+      );
+    if (survivor.type === 'project') {
+      await tx
+        .update(boardImportRules)
+        .set({ projectId: survivor.id })
+        .where(
+          and(
+            eq(boardImportRules.teamId, scope.teamId),
+            inArray(boardImportRules.projectId, loserIds),
+          ),
+        );
     }
     await tx
       .update(boardItemChanges)

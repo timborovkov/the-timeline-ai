@@ -8,6 +8,7 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardImportLinks,
   boardItems,
   calendarEvents,
   documentChunks,
@@ -58,6 +59,7 @@ import {
 } from '#src/ingest-webhooks/accept.js';
 import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createBoardImportScope } from '#src/integrations/board-imports.js';
+import { lockBoardImports } from '#src/integrations/import-sources.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import type { chatStructured } from '#src/llm/chat.js';
@@ -2223,6 +2225,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         }
 
         const updated = await db.transaction(async (tx) => {
+          const restrictImport = existing.source === 'integration' && input.visibility !== 'team';
+          if (restrictImport) await lockBoardImports(tx, teamId);
           const updatedRows = await tx
             .update(rawEvents)
             .set({
@@ -2238,6 +2242,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             .returning();
           const row = updatedRows[0];
           if (!row) return null;
+
+          if (restrictImport) {
+            await tx
+              .update(boardImportLinks)
+              .set({ state: 'paused' })
+              .where(
+                and(
+                  eq(boardImportLinks.teamId, teamId),
+                  eq(boardImportLinks.sourceEventId, id),
+                  eq(boardImportLinks.state, 'active'),
+                ),
+              );
+          }
 
           await tx.insert(auditLog).values({
             teamId,
