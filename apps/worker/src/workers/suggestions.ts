@@ -1344,7 +1344,7 @@ function fallbackCommitmentBundle(
  * routing can multiply them into duplicate hub links. Only independent records
  * with identical review context, identity and operational fields are eligible. */
 export function collapseRepeatedEventCreates(bundles: SuggestionBundleOutput[], text: string) {
-  const seen = new Map<string, SuggestionItemOutput>();
+  const seen = new Map<string, SuggestionItemOutput[]>();
   for (const bundle of bundles) {
     if (
       !bundle.items.every(
@@ -1367,12 +1367,14 @@ export function collapseRepeatedEventCreates(bundles: SuggestionBundleOutput[], 
       )
         item.title = name;
       const { aliases, body, ...fields } = item.proposedPayload;
-      const identityAliases = Array.isArray(aliases)
-        ? aliases.filter(
-            (alias: unknown) =>
-              typeof alias !== 'string' || !evidenceNamePattern([alias]).test(name),
-          )
-        : aliases;
+      const phrases = aliasesForRow({ aliases });
+      if (aliases !== undefined && (!Array.isArray(aliases) || phrases.length !== aliases.length))
+        return true;
+      // Only an ordinary phrase copied from the title is redundant for identity.
+      // IDs (including ticket keys, numeric IDs, handles and URLs) remain part of the key.
+      const identityAliases = phrases.filter(
+        (alias) => !/^[\p{L}\p{M} ]+$/u.test(alias) || !evidenceNamePattern([alias]).test(name),
+      );
       const key = suggestions.suggestionDedupeKey({
         context,
         targetKind: item.targetKind,
@@ -1380,20 +1382,24 @@ export function collapseRepeatedEventCreates(bundles: SuggestionBundleOutput[], 
         title: item.title,
         description: item.description,
         evidence: item.evidenceRawEventIds,
-        aliases: identityAliases ?? [],
+        aliases: identityAliases,
       });
-      const previous = seen.get(key);
+      const matches = seen.get(key) ?? [];
+      const previous = matches.find(
+        (candidate) =>
+          body === undefined ||
+          candidate.proposedPayload.body === undefined ||
+          candidate.proposedPayload.body === body,
+      );
       if (!previous) {
-        seen.set(key, item);
+        matches.push(item);
+        seen.set(key, matches);
         return true;
       }
-      const previousBody = previous.proposedPayload.body;
-      if (previousBody !== undefined && body !== undefined && previousBody !== body) return true;
       if (body !== undefined) previous.proposedPayload.body = body;
       if (Array.isArray(aliases)) {
-        const prior = previous.proposedPayload.aliases;
         previous.proposedPayload.aliases = [
-          ...new Set([...(Array.isArray(prior) ? prior : []), ...aliases]),
+          ...new Set([...aliasesForRow({ aliases: previous.proposedPayload.aliases }), ...phrases]),
         ];
       }
       return false;

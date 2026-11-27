@@ -330,6 +330,42 @@ describe('repeated event-local creates', () => {
       proposedPayload: { body: 'Procurement approved it.' },
     });
   });
+  it('retains each distinct tracker identity even when both keys appear in the same title', () => {
+    const title = 'Reconcile ENG-77 with ENG-78';
+    const draft = bundle(
+      ['ENG-77', 'ENG-78'].map((alias) => ({
+        operation: 'create',
+        targetKind: 'task',
+        title,
+        proposedPayload: { canonicalName: title, aliases: [alias] },
+      })),
+    );
+    collapseRepeatedEventCreates([draft], title);
+    expect(draft.items.map((item) => item.proposedPayload.aliases)).toEqual([
+      ['ENG-77'],
+      ['ENG-78'],
+    ]);
+  });
+
+  it('keeps distinct decision bodies and removes repeated copies of either', () => {
+    const title = 'Use Cedar';
+    const draft = bundle(
+      ['Approval from finance', 'Approval from procurement', 'Approval from procurement'].map(
+        (body) => ({
+          operation: 'create',
+          targetKind: 'object',
+          title,
+          proposedPayload: { canonicalName: title, type: 'decision', body },
+        }),
+      ),
+    );
+    collapseRepeatedEventCreates([draft], title);
+    expect(draft.items.map((item) => item.proposedPayload.body)).toEqual([
+      'Approval from finance',
+      'Approval from procurement',
+    ]);
+  });
+
   it('collapses repeated task drafts across identical bundles and preserves differing tracker IDs', () => {
     const title = 'Move login to done after QA';
     const task = (aliases: string[]) => ({
