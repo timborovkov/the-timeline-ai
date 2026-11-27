@@ -1,0 +1,4 @@
+hubspot.config.y*ml
+.hsaccount
+.hubspot/
+.env*

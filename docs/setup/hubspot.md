@@ -4,10 +4,14 @@ A workspace admin can import deals and their associated companies from a selecte
 
 ## Configure the app
 
-1. Create an OAuth app in a HubSpot developer account. Request `oauth`, `crm.objects.deals.read` and `crm.objects.companies.read`. Register the HTTPS callback at `/api/integrations/hubspot/callback` on the Timeline origin.
-2. Set `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` in the web and worker environments. Use the shared integration encryption key described in [integrations setup](integrations.md#encryption-key-required-first).
-3. Point app webhook subscriptions to `/api/webhooks/hubspot` on the same origin. Subscribe to deal creation, deletion, restoration, deal name, pipeline and stage changes, company name changes and deal–company associations. The handler authenticates notifications and schedules a read of the team's selected pipelines. Scheduled reconciliation also discovers changes.
+The [HubSpot CLI project](../../integrations/hubspot) is the source for the Marketplace app. Edit its [OAuth settings](../../integrations/hubspot/src/app/app-hsmeta.json) and [webhook subscriptions](../../integrations/hubspot/src/app/webhooks/webhooks-hsmeta.json) in this repository. Keep the project name and component UIDs when updating an existing registration.
+
+1. From the repository root, run `cd integrations/hubspot`. Authenticate the HubSpot CLI to the developer account that owns the app with `hs account auth`. Keep account credentials in the local CLI configuration.
+2. When ready to apply the manifests to HubSpot, run `hs project upload` from that directory. Confirm the intended developer account. After deployment, run `hs project open` and open the app’s **Auth** settings. Marketplace listing submission is a separate step.
+3. Set `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` in the Timeline web and worker environments. Use the shared integration encryption key described in [integrations setup](integrations.md#encryption-key-required-first).
 4. Connect the account from **Connections → Sources**, share the pipeline, and activate team capture. Wait for the first capture to populate its stage list.
+
+The committed URLs target `https://thetimeline.cc`. For an isolated preview, use a separate HubSpot test project and point both its OAuth redirect and webhook target at the public HTTPS origin running the integration. Webhooks schedule a read of selected pipelines. Scheduled reconciliation also discovers changes.
 
 ## Import into a board
 

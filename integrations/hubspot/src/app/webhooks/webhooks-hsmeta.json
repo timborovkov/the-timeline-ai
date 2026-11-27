@@ -1,0 +1,60 @@
+{
+  "uid": "thetimeline.cc_webhooks",
+  "type": "webhooks",
+  "config": {
+    "settings": {
+      "targetUrl": "https://thetimeline.cc/api/webhooks/hubspot",
+      "maxConcurrentRequests": 10
+    },
+    "subscriptions": {
+      "crmObjects": [
+        {
+          "subscriptionType": "object.creation",
+          "objectType": "deal",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.deletion",
+          "objectType": "deal",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.restore",
+          "objectType": "deal",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "deal",
+          "propertyName": "dealname",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "deal",
+          "propertyName": "pipeline",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "deal",
+          "propertyName": "dealstage",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "company",
+          "propertyName": "name",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.associationChange",
+          "objectType": "deal",
+          "active": true
+        }
+      ],
+      "legacyCrmObjects": [],
+      "hubEvents": []
+    }
+  }
+}
