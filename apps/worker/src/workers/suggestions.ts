@@ -1210,8 +1210,9 @@ export function fallbackBundles(args: {
       if (
         !quoted.endsWith(quoted.startsWith('“') ? '”' : '"') ||
         !/[ \t]/.test(args.text[offset - 1] ?? '') ||
-        quoted.length > 122 ||
-        !/^["“][\p{L}\p{N}](?:[\p{L}\p{M}\p{N} '&’/–-]|\.(?=[\p{L}\p{N}]))*["”]$/u.test(quoted)
+        quoted.length > 202 ||
+        !quoted.slice(1, -1).trim() ||
+        /[\r\n]/.test(quoted)
       )
         return '\uFFFC';
       const index = titles.length;

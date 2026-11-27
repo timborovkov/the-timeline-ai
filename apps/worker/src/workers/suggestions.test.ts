@@ -454,6 +454,11 @@ describe('fallbackBundles', () => {
       ['Send the report'],
     ],
     ['I will send the “Q4.v2.pdf” tomorrow.', ['Send the “Q4.v2.pdf”']],
+    ['I will send the “Q4_Report” tomorrow.', ['Send the “Q4_Report”']],
+    [
+      'We decided to use "Cedar, Inc" as the shipping provider.',
+      ['Use "Cedar, Inc" as the shipping provider'],
+    ],
     [
       'Decision: use Larch as the shipping provider. The vote is final.',
       ['Use Larch as the shipping provider'],
