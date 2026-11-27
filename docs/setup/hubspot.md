@@ -6,6 +6,8 @@ A workspace admin can import deals and their associated companies from a selecte
 
 The [HubSpot CLI project](../../integrations/hubspot) is the source for the Marketplace app. Edit its [OAuth settings](../../integrations/hubspot/src/app/app-hsmeta.json) and [webhook subscriptions](../../integrations/hubspot/src/app/webhooks/webhooks-hsmeta.json) in this repository. Keep the project name and component UIDs when updating an existing registration.
 
+The project also includes HubSpot’s generated coding-assistant guides and [CLI project overview](../../integrations/hubspot/HUBSPOT_PROJECTS.md). Refresh these files from the scaffold for the platform version in `hsproject.json`. [HubSpot scaffold source](https://github.com/HubSpot/hubspot-project-components/tree/16181f9eb872aba7aedcfbfe27ce9fad178a5d54/2026.09/defaultFiles)
+
 1. From the repository root, run `cd integrations/hubspot`. Authenticate the HubSpot CLI to the developer account that owns the app with `hs account auth`. Keep account credentials in the local CLI configuration.
 2. When ready to apply the manifests to HubSpot, run `hs project upload` from that directory. Confirm the intended developer account. After deployment, run `hs project open` and open the app’s **Auth** settings. Marketplace listing submission is a separate step.
 3. Set `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` in the Timeline web and worker environments. Use the shared integration encryption key described in [integrations setup](integrations.md#encryption-key-required-first).
