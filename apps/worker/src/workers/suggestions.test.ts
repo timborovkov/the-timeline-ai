@@ -7066,6 +7066,21 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('does not turn a board label into a commitment by the capturing author', async () => {
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Notes for reference.',
+      sourceMetadata: { monday_board_name: "I'll send the memo tomorrow" },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+    );
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('mints and attaches a messy Monday capture when the model returns nothing', async () => {
     const rawEventId = 'e1b232fb-a6a7-5394-80b6-f0cbb49b4b44';
     const company = await withTeam(db as never, TEAM_ID, OWNER_ID).objects.createObject({

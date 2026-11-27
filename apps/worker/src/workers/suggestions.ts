@@ -1104,10 +1104,11 @@ function commitmentActionBeforeTimePhrase(s: string): string {
 function messyCommitmentTitle(text: string): string | null {
   // A directive about one thing cannot turn a ticket in another sentence into work.
   if (/[.!?]\s+|\n/.test(text)) return null;
-  const request = text
-    .split(/[,;]/)
-    .map((clause) => clause.trim())
-    .find((clause) => MESSY_COMMITMENT_PATTERN.test(clause) || MOVE_TO_DONE_PATTERN.test(clause));
+  const clauses = text.split(/[,;]/).map((clause) => clause.trim());
+  const requestIndex = clauses.findIndex(
+    (clause) => MESSY_COMMITMENT_PATTERN.test(clause) || MOVE_TO_DONE_PATTERN.test(clause),
+  );
+  const request = clauses[requestIndex];
   if (!request) return null;
   const unique = suggestions.uniqueWorkItemAliasesFromText(text);
   const uniqueAlias = unique?.length === 1 ? unique[0] : null;
@@ -1123,7 +1124,11 @@ function messyCommitmentTitle(text: string): string | null {
     if (uniqueAlias.kind === 'linear') return `Close the loop on ${uniqueAlias.alias}`;
     return `Follow up on Monday item ${uniqueAlias.alias}`;
   }
-  if (/\blogin\b/i.test(request)) return 'Prepare the login page';
+  const action = /^i can take (?:it|that)$/i.test(request)
+    ? (clauses[requestIndex - 1] ?? '')
+    : request;
+  if (/\b(?:prepare (?:the )?login page|move (?:the )?login(?: page)? to done)\b/i.test(action))
+    return 'Prepare the login page';
   return null;
 }
 
@@ -5114,10 +5119,10 @@ async function runSuggestionExtraction(
           shouldUseCommitmentFallback({
             conversation: Boolean(args.conversation),
             evidencePackEnforced,
-            evidenceText,
+            evidenceText: text,
           })
         ? fallbackBundles({
-            text: evidenceText,
+            text,
             timezone: settings.defaultTimezone,
             occurredAt: row.occurredAt,
             authorUserId: activeAuthorUserId,
