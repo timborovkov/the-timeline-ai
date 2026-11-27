@@ -138,12 +138,13 @@ maybeDescribe('live suggestion worker evals', () => {
       { teamId: TEAM_ID, rawEventId: RAW_EVENT_ID },
       {
         getEnv: liveEnv,
-        chatStructured: async (input) => ({
-          model: 'fixture',
-          object: input.schema.parse({
-            bundles: [{ title: 'Track the rollout', quote: text, confidence: 'medium', items }],
+        chatStructured: (input) =>
+          Promise.resolve({
+            model: 'fixture',
+            object: input.schema.parse({
+              bundles: [{ title: 'Track the rollout', quote: text, confidence: 'medium', items }],
+            }),
           }),
-        }),
         reviewProposalEvidence: llm.chatStructured,
       },
     );
@@ -189,20 +190,18 @@ maybeDescribe('live suggestion worker evals', () => {
       { factId: fact.id, entityId: may.id, role: 'subject' },
       { factId: fact.id, entityId: vendor.id, role: 'object' },
     ]);
-    await db
-      .insert(rawEvents)
-      .values({
-        teamId: TEAM_ID,
-        source: 'system',
-        contentText: 'Created task: Prepare May invoices',
-        sourceMetadata: { kind: 'object_create', entity_id: task.id, actor_kind: 'user' },
-        visibility: 'team',
-        occurredAt: new Date(),
-      });
+    await db.insert(rawEvents).values({
+      teamId: TEAM_ID,
+      source: 'system',
+      contentText: 'Created task: Prepare May invoices',
+      sourceMetadata: { kind: 'object_create', entity_id: task.id, actor_kind: 'user' },
+      visibility: 'team',
+      occurredAt: new Date(),
+    });
     await processSuggestionJobForTests(
       { db: db as never },
       { scope: 'object_cleanup', teamId: TEAM_ID, objectId: may.id, triggeredBy: 'memory_repair' },
-      { identityEvidence: async () => [] },
+      { identityEvidence: () => Promise.resolve([]) },
     );
     const pending = await withTeam(
       db as never,

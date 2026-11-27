@@ -3620,7 +3620,7 @@ async function createObjectCleanupSuggestionsForTeam(
   const loadIdentityEvidence =
     io.identityEvidence ?? ((ids: string[]) => scope.engineMaintenance.identityEvidence(ids));
   const semanticReview =
-    repairEnv.IDENTITY_SEMANTIC_ENABLED && (io.chatStructured || repairEnv.OPENROUTER_API_KEY);
+    repairEnv.IDENTITY_SEMANTIC_ENABLED && (io.chatStructured ?? repairEnv.OPENROUTER_API_KEY);
   const repairEvidence =
     repairSubject && semanticReview ? await loadIdentityEvidence([repairSubject.id]) : [];
 

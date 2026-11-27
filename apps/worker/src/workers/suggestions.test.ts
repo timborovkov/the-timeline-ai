@@ -49,9 +49,9 @@ import {
 
 // Other worker tests exercise identity resolution and persistence with a controlled
 // evidence reviewer. Evidence-specific tests below supply explicit verdicts.
-const confirmFixtureClaims: typeof llm.chatStructured = async (input) => {
+const confirmFixtureClaims: typeof llm.chatStructured = (input) => {
   const claims = JSON.parse(input.prompt) as { index: number; source: string }[];
-  return {
+  return Promise.resolve({
     model: 'fixture-review',
     object: input.schema.parse({
       supported: claims.map(({ index, source }) => ({
@@ -62,7 +62,7 @@ const confirmFixtureClaims: typeof llm.chatStructured = async (input) => {
           .slice(0, 1000),
       })),
     }),
-  };
+  });
 };
 
 const processSuggestionJobForTests = (
@@ -2705,7 +2705,7 @@ describe('processSuggestionJobForTests', () => {
 
     const review = {
       getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
-      identityEvidence: async () => [],
+      identityEvidence: () => Promise.resolve([]),
       reviewProposalEvidence: vi.fn().mockResolvedValue({
         model: MODEL_ID,
         object: {
@@ -2903,7 +2903,7 @@ describe('processSuggestionJobForTests', () => {
         getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true }) as never,
         reviewProposalEvidence: chat,
         chatStructured: chat,
-        identityEvidence: async () => [],
+        identityEvidence: () => Promise.resolve([]),
       },
     );
     expect(chat).toHaveBeenCalledTimes(1);
@@ -3159,7 +3159,7 @@ describe('processSuggestionJobForTests', () => {
 
     const review = {
       getEnv: () => ({ IDENTITY_SEMANTIC_ENABLED: true, OPENROUTER_API_KEY: 'test-key' }) as never,
-      identityEvidence: async () => [],
+      identityEvidence: () => Promise.resolve([]),
       reviewProposalEvidence: vi.fn().mockResolvedValue({
         model: MODEL_ID,
         object: {
