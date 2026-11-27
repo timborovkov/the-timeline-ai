@@ -622,7 +622,7 @@ export function groundEventLocalDayOnlyDeadline(args: {
       .at(-1) ?? '';
   const prior = args.text.trim().slice(0, -sentence.length);
   if (
-    /\b(?:due|deadline|by|at|before|after|hour|zone|today|tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i.test(
+    /\b(?:due|deadline|by|at|before|after|hour|zone|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i.test(
       prior,
     )
   )

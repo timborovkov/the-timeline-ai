@@ -4140,7 +4140,7 @@ test('normalizes an ordinary task deadline only for the same identified action a
     occurredAt: new Date('2026-07-01T12:00:00Z'),
   };
   const text =
-    'We launched the Juniper rollout. Casey Lane will send the launch checklist by Friday.';
+    'Casey Lane is our project lead for the Juniper rollout. We kicked off the Juniper rollout project today. Casey Lane will send the launch checklist by Friday.';
   expect(groundEventLocalDayOnlyDeadline({ ...base, text })).toBe('2026-07-02T21:00:00.000Z');
   for (const change of [
     { text: text.replace('by Friday', 'by Friday at 17:00') },
@@ -4148,7 +4148,7 @@ test('normalizes an ordinary task deadline only for the same identified action a
     { text: "Friday's cutoff is 1700 local. " + text },
     { text: "Friday's cutoff is 17h00. " + text },
     { text: text.replace('send the launch checklist', 'send the estimate') },
-    { text: text.replace('Casey Lane', 'Jamie') },
+    { text: text.replace('Casey Lane will', 'Jamie will') },
     { text, claimed: '2026-07-10T17:00:00+03:00' },
   ])
     expect(groundEventLocalDayOnlyDeadline({ ...base, ...change })).toBeUndefined();
